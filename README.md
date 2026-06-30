@@ -1,7 +1,13 @@
-# Flotilla
+<p align="center">
+  <img src="design/flotilla-logo.png" width="120" alt="Flotilla logo">
+</p>
 
-A native macOS menu-bar app to manage Apple's `container` containers on the local
-machine **and** across a fleet of remote Macs — built as a personal summer project.
+<h1 align="center">Flotilla</h1>
+
+<p align="center">
+  A native macOS menu-bar app to manage Apple's <code>container</code> containers on the
+  local machine <strong>and</strong> across a fleet of remote Macs — a personal summer project.
+</p>
 
 This folder is a **portable starter kit**. It contains no Swift code yet — it's the
 plan, design, and prompts you carry to the laptop to begin building with Claude Code
