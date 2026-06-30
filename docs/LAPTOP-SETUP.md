@@ -31,10 +31,11 @@ need the GUI and are yours to do.
    gh auth switch --user melonfleet
    ```
 
-3. **Clone the repo:**
+3. **Get the repo:** if you copied `~/melonfleet/` from the other Mac, it's already
+   at `~/melonfleet/Flotilla` — just `cd` in. Otherwise clone it:
    ```sh
-   gh repo clone melonfleet/flotilla ~/Desktop/Flotilla
-   cd ~/Desktop/Flotilla
+   gh repo clone melonfleet/flotilla ~/melonfleet/Flotilla
+   cd ~/melonfleet/Flotilla
    ```
 
 4. **Run the local setup script** (SSH config, 1Password agent vault, commit

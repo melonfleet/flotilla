@@ -55,8 +55,8 @@ Flotilla/
 
 ## How to start on the laptop
 
-1. Copy this whole `Flotilla/` folder to the laptop (e.g. `~/Desktop/Flotilla`).
-2. Open the folder in Claude Code: `cd ~/Desktop/Flotilla && claude`.
+1. Copy the whole `~/melonfleet/` folder to the laptop (this project lives at `~/melonfleet/Flotilla`).
+2. Open the project in Claude Code: `cd ~/melonfleet/Flotilla && claude`.
 3. Claude reads `CLAUDE.md` automatically. Paste the **Phase 0** prompt from
    `PROMPTS.md` to confirm the scaffold builds (`swift build` / `swift test`), then
    the **Phase 1** prompt to start the local MVP.
