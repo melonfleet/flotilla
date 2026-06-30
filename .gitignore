@@ -1,0 +1,22 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+*.xcworkspace/xcuserdata/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+
+# Secrets — never commit signing/update keys
+*.p12
+*.cer
+sparkle_private_key*
+dsa_priv.pem
+ed25519_priv*

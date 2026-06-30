@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="512" height="512" role="img" aria-label="Flotilla app icon — watermelon slice with sails">
+  <defs><clipPath id="squircle"><rect x="0" y="0" width="120" height="120" rx="27"/></clipPath></defs>
+  <g clip-path="url(#squircle)">
+    <rect x="0" y="0" width="120" height="120" fill="#FC4A6B"/>
+    <rect x="0" y="96" width="120" height="24" fill="#1B5E20"/>
+    <rect x="0" y="90" width="120" height="6" fill="#FFFFFF"/>
+    <path d="M40 86 L40 44 L23 86 Z" fill="#FFFFFF"/>
+    <path d="M64 86 L64 26 L43 86 Z" fill="#FFFFFF"/>
+    <path d="M92 86 L92 52 L73 86 Z" fill="#FFFFFF"/>
+    <ellipse cx="32" cy="64" rx="2.2" ry="3.4" fill="#241F1A"/>
+    <ellipse cx="80" cy="60" rx="2.2" ry="3.4" fill="#241F1A"/>
+    <ellipse cx="54" cy="46" rx="2.2" ry="3.4" fill="#241F1A"/>
+  </g>
+</svg>
