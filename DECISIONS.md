@@ -42,6 +42,22 @@ second-guess settled choices mid-project.
   full-stack tests. Networking/UI is testable in VMs.
 - mDNS doesn't cross subnets/VLANs → manual host-add is mandatory, not optional.
 
+## Infra / security decisions (setup)
+
+- **GitHub account:** dedicated hobby account `melonfleet`, separate from the owner's
+  other GitHub accounts. Repo `melonfleet/flotilla` is **private**.
+- **No PII in the repo or commits:** author identity is `melonfleet` +
+  `…@users.noreply.github.com`; no real name, handle, gmail, or local user paths in
+  tracked files. Keep it that way.
+- **SSH key in 1Password, not on disk:** the melonfleet ed25519 key lives only in
+  1Password (Development vault), served via the 1Password SSH agent (Touch ID).
+  Rejected leaving an unencrypted key on disk.
+- **Commit signing via 1Password** (`op-ssh-sign`, SSH-format) → commits show
+  Verified. Rejected GPG (heavier) and unsigned commits.
+- **Two-account separation:** SSH host alias `github-melonfleet` + per-host
+  `IdentityFile <pub>` + `IdentitiesOnly`, and `agent.toml` whitelisting both the
+  Personal (other account) and Development (melonfleet) vaults.
+
 ## Licensing note
 
 `tdeverx/contained-app` is **PolyForm Noncommercial 1.0.0** — fine to read for

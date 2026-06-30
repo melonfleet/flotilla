@@ -19,7 +19,12 @@ Apple Silicon M1+) and wants a **personal, non-commercial** menu-bar app that:
   since the transport is already cert-based.
 
 Working name: **Flotilla**. This is a personal Swift learning/utility project, not
-a business venture, and uses no AI agents.
+a business venture.
+
+**Status (2026-06-30):** repo live + private at `melonfleet/flotilla`; SwiftPM
+scaffold builds and tests green; `FlotillaCore` models decode real `container` 1.0.0
+JSON; watermelon branding done; GitHub security/1Password-signing set up. Next:
+Phase 1 app layer. Build workflow with ChatGPT Codex is in `docs/AI-WORKFLOW.md`.
 
 **Branding:** icon is a flotilla of three white sails over a **watermelon slice**
 — pink flesh field, green rind base, white pith line, black seeds (playful, personal,

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="512" height="512" role="img" aria-label="melonfleet avatar — watermelon cross-section">
+  <circle cx="60" cy="60" r="58" fill="#1B5E20"/>
+  <circle cx="60" cy="60" r="52" fill="#FFFFFF"/>
+  <circle cx="60" cy="60" r="48" fill="#FC4A6B"/>
+  <ellipse cx="60" cy="32" rx="2.4" ry="3.8" fill="#241F1A"/>
+  <ellipse cx="42" cy="44" rx="2.4" ry="3.8" fill="#241F1A" transform="rotate(-20 42 44)"/>
+  <ellipse cx="78" cy="44" rx="2.4" ry="3.8" fill="#241F1A" transform="rotate(20 78 44)"/>
+  <ellipse cx="38" cy="68" rx="2.4" ry="3.8" fill="#241F1A" transform="rotate(-35 38 68)"/>
+  <ellipse cx="82" cy="68" rx="2.4" ry="3.8" fill="#241F1A" transform="rotate(35 82 68)"/>
+  <ellipse cx="52" cy="84" rx="2.4" ry="3.8" fill="#241F1A" transform="rotate(-12 52 84)"/>
+  <ellipse cx="70" cy="84" rx="2.4" ry="3.8" fill="#241F1A" transform="rotate(12 70 84)"/>
+</svg>

@@ -23,6 +23,24 @@ phase-by-phase kickoff prompts.
   `json-schemas.md` (the real captured schemas), `container-cli.md` (full command
   surface), `networking-mtls-bonjour.md`, `wire-protocol.md`, `liquid-glass.md`,
   `sparkle-updates.md`, `jamf-config-profile.md`. Read the relevant one per phase.
+- **`docs/`** — `LAPTOP-SETUP.md` (bring-up on a new Mac), `AI-WORKFLOW.md` (how
+  Claude + ChatGPT Codex split the work — read before delegating).
+- **`scripts/setup-mac.sh`** — one-shot local config (SSH alias, 1Password agent
+  vault, commit signing).
+
+## Project status (2026-06-30)
+
+- Repo is **live and private** at `melonfleet/flotilla` (a personal hobby GitHub
+  account, separate from the owner's other accounts).
+- Scaffold **builds + tests green**; models decode real `container` 1.0.0 JSON.
+- Branding is **watermelon** (see `design/branding.md`); README has the logo.
+- **Security/infra done:** SSH key lives only in **1Password** (Development vault),
+  commits are **1Password-signed → Verified**, `gh` is authed as melonfleet, account
+  hardened (2FA, push protection, etc.). To reproduce on a new Mac see
+  `docs/LAPTOP-SETUP.md` + `scripts/setup-mac.sh`.
+- Identity for this repo: name `melonfleet`, email
+  `298222390+melonfleet@users.noreply.github.com` — **no real-name/PII in the repo**
+  (public-facing hygiene). Keep it that way.
 
 ## What we're building (essence)
 

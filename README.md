@@ -15,6 +15,9 @@ on a fresh account.
 
 ## What's here
 
+**Status:** repo live + private at `melonfleet/flotilla`; scaffold builds + tests
+green; watermelon branding; security/signing set up. New Mac? → `docs/LAPTOP-SETUP.md`.
+
 ```
 Flotilla/
 ├── README.md            this file
@@ -28,6 +31,11 @@ Flotilla/
 │   ├── FlotillaCore/    ContainerHost, LocalHost, ContainerCLI, Models
 │   └── flotilla-probe/  dumps real `container` JSON (Phase 1 step 1)
 ├── Tests/FlotillaCoreTests/
+├── docs/
+│   ├── LAPTOP-SETUP.md             bring-up on a new Mac
+│   └── AI-WORKFLOW.md              Claude + ChatGPT Codex roles
+├── scripts/
+│   └── setup-mac.sh                one-shot local SSH/signing config
 ├── reference/           pre-researched API docs (read before each phase)
 │   ├── json-schemas.md             real captured container 1.0.0 JSON
 │   ├── container-cli.md            full CLI command surface
@@ -40,7 +48,9 @@ Flotilla/
     ├── branding.md                 watermelon palette + roles
     ├── dashboard-mockup.html       standalone fleet dashboard mockup
     ├── icon-app.svg                watermelon-slice app icon
-    └── icon-menubar.svg            monochrome menu-bar template
+    ├── icon-menubar.svg            monochrome menu-bar template
+    ├── flotilla-logo.png           README logo (rendered)
+    └── melonfleet-avatar.{svg,png} account avatar source
 ```
 
 ## How to start on the laptop
