@@ -62,6 +62,42 @@
     box-shadow: 0 0 0 0.5px var(--hairline); display: flex; flex-direction: column; gap: 6px;
   }
   .cta:hover { box-shadow: 0 0 0 1px var(--accent-fill); }
+  .look-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .look {
+    padding: 10px; border-radius: 10px; background: var(--raised-bg);
+    box-shadow: 0 0 0 0.5px var(--hairline); color: var(--label);
+    display: flex; flex-direction: column; gap: 9px; cursor: default;
+  }
+  .look:hover { box-shadow: 0 0 0 1px var(--accent-fill); text-decoration: none; }
+  .look.on { background: var(--accent-tint); box-shadow: 0 0 0 2px var(--accent-fill); }
+  .look-shot {
+    position: relative; display: block; height: 96px; border-radius: 7px;
+    overflow: hidden; box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  }
+  /* the previews carry fixed palettes on purpose: the Light swatch must stay
+     light while the app around it is dark, so they can't use the theme vars */
+  .lk { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .lk.split { clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+  .lk-bar { flex: 0 0 15px; display: flex; align-items: center; gap: 3px; padding: 0 6px; }
+  .lk-bar i { width: 4.5px; height: 4.5px; border-radius: 50%; }
+  .lk-body { flex: 1 1 auto; min-height: 0; display: flex; }
+  .lk-side { flex: 0 0 32%; display: flex; flex-direction: column; gap: 5px; padding: 6px 5px; }
+  .lk-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; padding: 6px; }
+  .lk-side i, .lk-main i { display: block; height: 4.5px; border-radius: 2.5px; }
+  .lk-main i:nth-child(1) { width: 72%; }
+  .lk-main i:nth-child(2) { width: 50%; }
+  .lk-main i:nth-child(3) { width: 64%; }
+  .lk-main i:nth-child(4) { width: 40%; }
+  .lk.light { background: #ffffff; }
+  .lk.light .lk-bar { background: #ececed; }
+  .lk.light .lk-side { background: #f4f4f6; box-shadow: inset -0.5px 0 0 rgba(0, 0, 0, 0.09); }
+  .lk.light .lk-side i, .lk.light .lk-main i { background: rgba(0, 0, 0, 0.19); }
+  .lk.dark { background: #1e1e20; }
+  .lk.dark .lk-bar { background: #2c2c2f; }
+  .lk.dark .lk-side { background: #26262a; box-shadow: inset -0.5px 0 0 rgba(255, 255, 255, 0.09); }
+  .lk.dark .lk-side i, .lk.dark .lk-main i { background: rgba(255, 255, 255, 0.26); }
+  /* the selected sidebar row, so each swatch reads as Flotilla and not a generic window */
+  .lk.light .lk-side i:first-child, .lk.dark .lk-side i:first-child { background: var(--flesh); }
   .content > .tab-panel.on {
     display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
   }
@@ -114,6 +150,10 @@
           </a>
           <a class="rail-step" data-rail-step="7" data-step-go="7">
             <span class="rs-num">7</span>
+            <span class="col"><span class="rs-title">Appearance</span><span class="t11 ter">Light, Dark or Auto</span></span>
+          </a>
+          <a class="rail-step" data-rail-step="8" data-step-go="8">
+            <span class="rs-num">8</span>
             <span class="col"><span class="rs-title">Done</span></span>
           </a>
 
@@ -544,8 +584,100 @@
           </div>
         </div>
 
-        <!-- ---------- 7 · done ---------- -->
+        <!-- ---------- 7 · appearance ---------- -->
         <div class="tab-panel col" data-step="7" style="flex: 1 1 auto; min-height: 0;">
+          <div class="step-body">
+            <h2 style="margin-bottom: 4px;">Choose how Flotilla looks</h2>
+            <p class="t12 sec" style="margin-bottom: 16px;">
+              <b>Auto</b> follows the macOS system setting and changes with it — and you can change this
+              any time in Settings → General.
+            </p>
+
+            <div class="look-grid">
+              <a class="look" data-appearance-set="light">
+                <span class="look-shot">
+                  <span class="lk light">
+                    <span class="lk-bar"><i style="background: #ec6a5e;"></i><i style="background: #f4bf4f;"></i><i style="background: #61c454;"></i></span>
+                    <span class="lk-body">
+                      <span class="lk-side"><i></i><i></i><i></i></span>
+                      <span class="lk-main"><i></i><i></i><i></i><i></i></span>
+                    </span>
+                  </span>
+                </span>
+                <span class="row gap6">
+                  <span class="radio"><svg class="ic s11"><use href="#i-check"/></svg></span>
+                  <span class="col">
+                    <span class="med t12">Light</span>
+                    <span class="t11 ter">Always light</span>
+                  </span>
+                </span>
+              </a>
+
+              <a class="look" data-appearance-set="dark">
+                <span class="look-shot">
+                  <span class="lk dark">
+                    <span class="lk-bar"><i style="background: #ec6a5e;"></i><i style="background: #f4bf4f;"></i><i style="background: #61c454;"></i></span>
+                    <span class="lk-body">
+                      <span class="lk-side"><i></i><i></i><i></i></span>
+                      <span class="lk-main"><i></i><i></i><i></i><i></i></span>
+                    </span>
+                  </span>
+                </span>
+                <span class="row gap6">
+                  <span class="radio"><svg class="ic s11"><use href="#i-check"/></svg></span>
+                  <span class="col">
+                    <span class="med t12">Dark</span>
+                    <span class="t11 ter">Always dark</span>
+                  </span>
+                </span>
+              </a>
+
+              <a class="look on" data-appearance-set="auto">
+                <span class="look-shot">
+                  <span class="lk light">
+                    <span class="lk-bar"><i style="background: #ec6a5e;"></i><i style="background: #f4bf4f;"></i><i style="background: #61c454;"></i></span>
+                    <span class="lk-body">
+                      <span class="lk-side"><i></i><i></i><i></i></span>
+                      <span class="lk-main"><i></i><i></i><i></i><i></i></span>
+                    </span>
+                  </span>
+                  <span class="lk dark split">
+                    <span class="lk-bar"><i style="background: #ec6a5e;"></i><i style="background: #f4bf4f;"></i><i style="background: #61c454;"></i></span>
+                    <span class="lk-body">
+                      <span class="lk-side"><i></i><i></i><i></i></span>
+                      <span class="lk-main"><i></i><i></i><i></i><i></i></span>
+                    </span>
+                  </span>
+                </span>
+                <span class="row gap6">
+                  <span class="radio on"><svg class="ic s11"><use href="#i-check"/></svg></span>
+                  <span class="col">
+                    <span class="med t12">Auto</span>
+                    <span class="t11 ter">Follow system</span>
+                  </span>
+                </span>
+              </a>
+            </div>
+
+            <div class="callout info" style="margin-top: 14px;">
+              <svg class="ic s14"><use href="#i-info"/></svg>
+              <div>
+                Whichever you pick, Flotilla honours <b>Increase Contrast</b>, <b>Reduce Transparency</b>
+                and <b>Reduce Motion</b> from Accessibility — those stay the system's call, not a
+                setting duplicated here.
+              </div>
+            </div>
+          </div>
+          <div class="step-foot">
+            <span class="t11 ter">The previews are live: the whole app switches as you click.</span>
+            <span class="spacer"></span>
+            <a class="btn lg" data-step-go="6">Back</a>
+            <a class="btn lg primary" data-step-go="8">Continue</a>
+          </div>
+        </div>
+
+        <!-- ---------- 8 · done ---------- -->
+        <div class="tab-panel col" data-step="8" style="flex: 1 1 auto; min-height: 0;">
           <div class="step-body">
             <div class="col gap10" style="align-items: flex-start; max-width: 560px;">
               <svg class="ic s40 green"><use href="#i-check-circle"/></svg>
@@ -651,6 +783,7 @@
     <li><span class="tag">core</span><b>Pairing shows both fingerprints side by side</b> with fixed roles, hostname and IP under each, short grouped hex <em>and</em> a word derivation for eyeball comparison, then explicit Trust / Cancel. Modelled on deskflow and Proxmox's certificate dialogs.</li>
     <li><span class="tag">core</span><b>A changed certificate shows old vs new with a real warning and defaults to Cancel.</b> Never auto-trust, never a silent re-prompt.</li>
     <li><span class="tag">core</span><b>Trust is directional and says so.</b> Trusting a host doesn't grant it anything here.</li>
+    <li><span class="tag">core</span><b>Appearance is chosen here, not hardcoded.</b> Light / Dark / Auto as three live previews, with <b>Auto (follow system)</b> pre-selected, so the default is the one macOS users expect and dark mode isn't a hidden mode. The same three options sit in Settings → General, and Accessibility settings (Increase Contrast, Reduce Transparency) are never duplicated as app preferences.</li>
     <li><span class="tag">core</span><b>Update-check consent is asked exactly once</b>, at the end. No telemetry step at all, because there is no telemetry.</li>
   </ul>
 </template>

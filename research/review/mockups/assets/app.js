@@ -13,22 +13,39 @@
   ];
 
   /* ---- appearance ---------------------------------------------------- */
+  var MODES = ['auto', 'light', 'dark'];
   var mql = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function appearance() {
+    var p = localStorage.getItem('flotilla-appearance');
+    return MODES.indexOf(p) < 0 ? 'auto' : p;
+  }
+
   function resolve() {
-    var pref = localStorage.getItem('flotilla-appearance') || 'auto';
+    var pref = appearance();
     var dark = pref === 'dark' || (pref === 'auto' && mql.matches);
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    var l = document.querySelector('[data-appearance-label]');
-    if (l) l.textContent = pref === 'auto' ? 'Auto' : (dark ? 'Dark' : 'Light');
+    document.querySelectorAll('[data-appearance-label]').forEach(function (l) {
+      l.textContent = pref === 'auto' ? 'Auto' : (dark ? 'Dark' : 'Light');
+    });
+    /* onboarding cards, the Settings segmented control — any picker on the page */
+    document.querySelectorAll('[data-appearance-set]').forEach(function (o) {
+      o.classList.toggle('on', o.dataset.appearanceSet === pref);
+      var mark = o.querySelector('.radio');
+      if (mark) mark.classList.toggle('on', o.dataset.appearanceSet === pref);
+    });
   }
   mql.addEventListener('change', resolve);
   resolve();
 
-  function cycleAppearance() {
-    var order = ['auto', 'light', 'dark'];
-    var cur = localStorage.getItem('flotilla-appearance') || 'auto';
-    localStorage.setItem('flotilla-appearance', order[(order.indexOf(cur) + 1) % 3]);
+  function setAppearance(v) {
+    if (MODES.indexOf(v) < 0) return;
+    localStorage.setItem('flotilla-appearance', v);
     resolve();
+  }
+
+  function cycleAppearance() {
+    setAppearance(MODES[(MODES.indexOf(appearance()) + 1) % MODES.length]);
   }
 
   /* ---- mockup navigator + notes panel -------------------------------- */
@@ -61,6 +78,7 @@
       panel.innerHTML = '<span class="close-notes" data-act="notes">' + ic('i-x') + '</span>' + tpl.innerHTML;
       document.body.appendChild(panel);
     }
+    resolve();
   }
 
   /* ---- generic interactions ------------------------------------------ */
@@ -82,6 +100,15 @@
         if (p) p.classList.toggle('open');
         return;
       }
+    }
+
+    /* explicit appearance pick — before the generic radio/seg handlers so the
+       whole card is clickable, including its radio dot */
+    var pick = t.closest('[data-appearance-set]');
+    if (pick) {
+      setAppearance(pick.dataset.appearanceSet);
+      e.preventDefault();
+      return;
     }
 
     /* switches / checkboxes / radios */
