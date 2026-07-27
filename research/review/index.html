@@ -399,6 +399,109 @@ th.rec { text-align: right; }
   border-radius: 8px; padding: 5px 11px; font-family: var(--mono);
 }
 
+/* ---------- decision recorder (interactive, localStorage-backed) ---------- */
+
+.decision-bar {
+  position: sticky; top: 60px; z-index: 90;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 0 0 22px; padding: 11px 16px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: var(--shadow);
+}
+.decision-bar .count {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 650;
+  color: var(--ink-2); white-space: nowrap;
+}
+.decision-bar .count b { color: var(--brand); font-weight: 700; }
+.decision-bar .meter {
+  flex: 1 1 90px; min-width: 80px; height: 6px; border-radius: 999px;
+  background: var(--line-2); overflow: hidden;
+}
+.decision-bar .meter i {
+  display: block; height: 100%; width: 0; border-radius: 999px;
+  background: var(--brand); transition: width 0.28s ease;
+}
+.decision-bar .saved {
+  font-size: 11.5px; font-family: var(--mono); color: var(--ink-3);
+  white-space: nowrap; opacity: 0; transition: opacity 0.25s ease;
+}
+.decision-bar .saved.show { opacity: 1; }
+.decision-bar .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.btn {
+  font-family: var(--sans); font-size: 12.5px; font-weight: 620; line-height: 1.2;
+  padding: 7px 13px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+}
+.btn:hover { background: var(--line-2); }
+.btn:active { transform: translateY(0.5px); }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn.primary:hover { background: var(--brand-bright); }
+.btn.quiet { color: var(--ink-3); background: transparent; }
+.btn.quiet:hover { color: var(--red); border-color: var(--red); background: transparent; }
+
+.answer {
+  display: grid; gap: 7px; margin-top: 4px;
+  border-top: 1px solid var(--line-2); padding-top: 14px;
+}
+.answer .lbl {
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.opt {
+  display: grid; grid-template-columns: 15px 1fr; gap: 10px; align-items: start;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px;
+  font-size: 13px; line-height: 1.45; cursor: pointer; background: var(--paper);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.opt:hover { border-color: var(--brand-line); background: var(--brand-tint); }
+.opt input { margin: 3px 0 0; accent-color: var(--brand); }
+.opt .t { color: var(--ink-2); }
+.opt .t b { color: var(--ink); font-weight: 640; }
+.opt.on { border-color: var(--brand); background: var(--brand-tint); }
+.opt.on .t b { color: var(--brand); }
+.opt.none .t, .opt.none .t b { color: var(--ink-3); font-weight: 500; }
+.opt.none.on .t b { color: var(--brand); }
+
+/* Q8 — locked: reads as a made decision, not an available choice */
+.opt.locked {
+  cursor: default; border-color: var(--green-line); background: var(--green-tint);
+}
+.opt.locked:hover { border-color: var(--green-line); background: var(--green-tint); }
+.opt.locked input { accent-color: var(--green); }
+.opt.locked .t b { color: var(--green); }
+.opt.locked .lock {
+  float: right; font-family: var(--mono); font-size: 10.5px; font-weight: 650;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--green);
+}
+
+.note {
+  font-family: var(--sans); font-size: 12.5px; line-height: 1.5;
+  width: 100%; min-height: 50px; resize: vertical; display: block;
+  padding: 9px 11px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.note:focus {
+  outline: none; border-color: var(--brand); background: var(--paper);
+  box-shadow: 0 0 0 3px var(--brand-tint);
+}
+.note::placeholder { color: var(--ink-3); }
+
+/* answered state — a green left rail + a tick, so what's left is obvious at a
+   glance. An inset shadow rather than a border, so it follows the card radius. */
+.q { scroll-margin-top: 118px; } /* clears the nav + the sticky decision bar */
+.q .tick { display: none; font-size: 13px; font-weight: 700; color: var(--green); }
+.q.answered { box-shadow: inset 3px 0 0 var(--green), var(--shadow); }
+.q.headline.answered {
+  box-shadow: inset 3px 0 0 var(--green), 0 0 0 3px var(--brand-tint), var(--shadow);
+}
+.q.answered .tick { display: inline; }
+.q.answered .qid { background: var(--green-tint); color: var(--green); }
+.q.headline.answered .qid { background: var(--green); color: #fff; }
+
 /* ---------- contradictions ---------- */
 
 .contra { margin-top: 26px; }
@@ -964,14 +1067,31 @@ footer .spacer { flex: 1; }
         either/or with real consequences. One is already closed. Q1 is the one that prices
         everything downstream.
       </p>
+      <p class="sec-sub">
+        <b>Answer them here.</b> Pick an option and add any reasoning; everything is saved in this
+        browser (<code>localStorage</code>) so you can close the page and come back. When you're
+        done, <b>Copy decisions</b> puts the whole set on the clipboard as plain text.
+      </p>
+    </div>
+
+    <div class="decision-bar" id="dbar">
+      <span class="count"><b id="dcount">0</b> of 9 decided</span>
+      <span class="meter"><i id="dmeter"></i></span>
+      <span class="saved" id="dsaved">saved</span>
+      <span class="btns">
+        <button class="btn primary" id="btn-copy" type="button">Copy decisions</button>
+        <button class="btn" id="btn-md" type="button">Download .md</button>
+        <button class="btn quiet" id="btn-reset" type="button">Reset answers</button>
+      </span>
     </div>
 
     <div class="q-grid">
 
       <!-- Q1 -->
-      <div class="card q headline" id="q1">
+      <div class="card q headline" id="q1" data-q="q1">
         <div class="q-top">
           <span class="qid">Q1</span>
+          <span class="tick">✓</span>
           <span class="flagline">Highest consequence · decide first</span>
         </div>
         <h4>Wire shape: CLI-args passthrough, or typed bounded operations?</h4>
@@ -1007,22 +1127,40 @@ footer .spacer { flex: 1; }
           a validation table that has to be maintained as the CLI grows. Either way it needs your
           call, not ours.
         </p>
+        <div class="answer">
+          <span class="lbl">Your call</span>
+          <label class="opt"><input type="radio" name="q1" value="Args passthrough (RUN)"><span class="t"><b>Args passthrough</b> — the host executes the CLI args it is handed. Phase-1 parity is free in Phase 2; the command string is the audit log.</span></label>
+          <label class="opt"><input type="radio" name="q1" value="Typed bounded operations (OPS)"><span class="t"><b>Typed bounded operations</b> — no arbitrary command string on the wire in Phases 2–3. Every operation validated before anything is spawned.</span></label>
+          <label class="opt"><input type="radio" name="q1" value="Middle path: args + subcommand allowlist"><span class="t"><b>Middle path: args + subcommand allowlist</b> — args passthrough constrained by an <code>args[0]</code> allowlist plus per-subcommand schema validation.</span></label>
+          <label class="opt none"><input type="radio" name="q1" value="Something else (see note)"><span class="t"><b>Something else</b> — describe it in the note.</span></label>
+          <label class="opt none"><input type="radio" name="q1" value="" checked><span class="t"><b>Undecided</b></span></label>
+          <textarea class="note" data-note="q1" placeholder="Reasoning, caveats, conditions…"></textarea>
+        </div>
       </div>
 
       <!-- Q2 -->
-      <div class="card q" id="q2">
-        <div class="q-top"><span class="qid">Q2</span></div>
+      <div class="card q" id="q2" data-q="q2">
+        <div class="q-top"><span class="qid">Q2</span><span class="tick">✓</span></div>
         <h4>Table or the card grid as the default view?</h4>
         <div class="positions">
           <div class="pos a"><span class="who">UX</span><span>A table — running-first, sortable, multi-select. Cards stop scaling around twenty rows; demote them to a toggle.</span></div>
           <div class="pos c"><span class="who">Existing</span><span><code>design/dashboard-mockup.html</code> is a card grid with sparklines, <b>and it's your design</b>.</span></div>
         </div>
         <p class="stakes">The mockups in §2 already assume the table. <b>Needs sign-off either way</b> — this is the most visible reversal in the whole proposal.</p>
+        <div class="answer">
+          <span class="lbl">Your call</span>
+          <label class="opt"><input type="radio" name="q2" value="Table default"><span class="t"><b>Table default</b> — table only; the card grid is dropped.</span></label>
+          <label class="opt"><input type="radio" name="q2" value="Card grid default"><span class="t"><b>Card grid default</b> — keep <code>dashboard-mockup.html</code> as the premise; the mockups in §2 get reworked.</span></label>
+          <label class="opt"><input type="radio" name="q2" value="Table default with a card toggle"><span class="t"><b>Table with card toggle</b> — table is the default, cards survive as a view switch.</span></label>
+          <label class="opt none"><input type="radio" name="q2" value="Something else (see note)"><span class="t"><b>Something else</b> — describe it in the note.</span></label>
+          <label class="opt none"><input type="radio" name="q2" value="" checked><span class="t"><b>Undecided</b></span></label>
+          <textarea class="note" data-note="q2" placeholder="Reasoning, caveats, conditions…"></textarea>
+        </div>
       </div>
 
       <!-- Q3 -->
-      <div class="card q" id="q3">
-        <div class="q-top"><span class="qid">Q3</span></div>
+      <div class="card q" id="q3" data-q="q3">
+        <div class="q-top"><span class="qid">Q3</span><span class="tick">✓</span></div>
         <h4>Does host mode become stateful?</h4>
         <p class="body">
           Two features push it there: the <strong>restart/health loop</strong> (RUN: it must run on
@@ -1036,22 +1174,40 @@ footer .spacer { flex: 1; }
           policies only apply while the client is connected</b> — and say so in the UI, because the
           alternative is a policy that silently lies.
         </p>
+        <div class="answer">
+          <span class="lbl">Your call</span>
+          <label class="opt"><input type="radio" name="q3" value="Yes — host mode gets a persisted policy store"><span class="t"><b>Yes, host mode becomes stateful</b> — a persisted policy store on the peer. Restart/health survives the laptop closing.</span></label>
+          <label class="opt"><input type="radio" name="q3" value="No — stateless host; client-side policy, stated in the UI"><span class="t"><b>No, keep the host stateless</b> — policies apply only while the client is connected, and the UI says so plainly.</span></label>
+          <label class="opt"><input type="radio" name="q3" value="Defer — stateless through Phase 2, revisit at Phase 3"><span class="t"><b>Defer</b> — stateless through Phase 2, decide when restart/health is actually built.</span></label>
+          <label class="opt none"><input type="radio" name="q3" value="Something else (see note)"><span class="t"><b>Something else</b> — describe it in the note.</span></label>
+          <label class="opt none"><input type="radio" name="q3" value="" checked><span class="t"><b>Undecided</b></span></label>
+          <textarea class="note" data-note="q3" placeholder="Reasoning, caveats, conditions…"></textarea>
+        </div>
       </div>
 
       <!-- Q4 -->
-      <div class="card q" id="q4">
-        <div class="q-top"><span class="qid">Q4</span></div>
+      <div class="card q" id="q4" data-q="q4">
+        <div class="q-top"><span class="qid">Q4</span><span class="tick">✓</span></div>
         <h4>Confirm the two-tier <code>defaults</code>/<code>locked</code> managed model now?</h4>
         <div class="positions">
           <div class="pos c"><span class="who">Today</span><span><code>reference/jamf-config-profile.md</code>: "if a managed value is present, it wins."</span></div>
           <div class="pos a"><span class="who">SET</span><span>Upgrade to defaults-seed + locked-override <b>before Phase 2 writes the settings accessors</b>.</span></div>
         </div>
         <p class="stakes">Retrofitting precedence means rewriting every accessor. <b>Cheap now, expensive later</b> — but it is a real scope addition to Phase 1.</p>
+        <div class="answer">
+          <span class="lbl">Your call</span>
+          <label class="opt"><input type="radio" name="q4" value="Confirm two-tier now (defaults + locked)"><span class="t"><b>Confirm two-tier now</b> — <code>defaults</code> seed + <code>locked</code> override, in Phase 1, before the accessors exist.</span></label>
+          <label class="opt"><input type="radio" name="q4" value="Keep the single 'managed wins' rule"><span class="t"><b>Keep "managed wins"</b> — one tier, as <code>jamf-config-profile.md</code> has it today; don't grow Phase 1.</span></label>
+          <label class="opt"><input type="radio" name="q4" value="Design the precedence API now, implement locked later"><span class="t"><b>API now, tiers later</b> — accessors written so precedence can be added without a rewrite; ship one tier.</span></label>
+          <label class="opt none"><input type="radio" name="q4" value="Something else (see note)"><span class="t"><b>Something else</b> — describe it in the note.</span></label>
+          <label class="opt none"><input type="radio" name="q4" value="" checked><span class="t"><b>Undecided</b></span></label>
+          <textarea class="note" data-note="q4" placeholder="Reasoning, caveats, conditions…"></textarea>
+        </div>
       </div>
 
       <!-- Q5 -->
-      <div class="card q" id="q5">
-        <div class="q-top"><span class="qid">Q5</span></div>
+      <div class="card q" id="q5" data-q="q5">
+        <div class="q-top"><span class="qid">Q5</span><span class="tick">✓</span></div>
         <h4>Is §3's Phase 1 the Phase 1 you want?</h4>
         <p class="body">
           As consolidated, Phase 1 includes volumes, networks, the settings registry, the security
@@ -1059,22 +1215,40 @@ footer .spacer { flex: 1; }
           line</strong> ("container grid, images list, run/stop/restart/remove, logs view").
         </p>
         <p class="stakes">Approve as-is, or cut to the PLAN.md line and push the rest to a Phase 1.5. If it gets tight, the ⌘K palette is the designated first cut.</p>
+        <div class="answer">
+          <span class="lbl">Your call</span>
+          <label class="opt"><input type="radio" name="q5" value="Approve §3 as-is"><span class="t"><b>Approve §3 as-is</b> — volumes, networks, settings registry, security baseline, diagnostics and support bundle all land in Phase 1.</span></label>
+          <label class="opt"><input type="radio" name="q5" value="Trim to the PLAN.md Phase 1 line"><span class="t"><b>Trim to the PLAN.md Phase 1 line</b> — grid, images, run/stop/restart/remove, logs. Everything else becomes Phase 1.5.</span></label>
+          <label class="opt"><input type="radio" name="q5" value="Approve minus the ⌘K palette"><span class="t"><b>Approve minus the ⌘K palette</b> — take §3 but pre-cut the designated first cut.</span></label>
+          <label class="opt none"><input type="radio" name="q5" value="Something else (see note)"><span class="t"><b>Something else</b> — list what to cut in the note.</span></label>
+          <label class="opt none"><input type="radio" name="q5" value="" checked><span class="t"><b>Undecided</b></span></label>
+          <textarea class="note" data-note="q5" placeholder="Reasoning, caveats, conditions…"></textarea>
+        </div>
       </div>
 
       <!-- Q6 -->
-      <div class="card q" id="q6">
-        <div class="q-top"><span class="qid">Q6</span></div>
+      <div class="card q" id="q6" data-q="q6">
+        <div class="q-top"><span class="qid">Q6</span><span class="tick">✓</span></div>
         <h4>Notifications in Phase 1 or Phase 3?</h4>
         <div class="positions">
           <div class="pos a"><span class="who">SET</span><span>Per-category toggles are <span class="pill core">core</span> in Phase 1.</span></div>
           <div class="pos b"><span class="who">UX</span><span>Design the categories in Phase 2, ship them in Phase 3.</span></div>
         </div>
         <p class="stakes">PLAN.md doesn't mention notifications at all, so there's no prior to fall back on. Five categories are proposed; error ones are not disableable.</p>
+        <div class="answer">
+          <span class="lbl">Your call</span>
+          <label class="opt"><input type="radio" name="q6" value="Phase 1 — full per-category toggles (SET)"><span class="t"><b>Phase 1</b> — all five categories with per-category toggles ship with the local MVP.</span></label>
+          <label class="opt"><input type="radio" name="q6" value="Phase 3 — design in Phase 2, ship in Phase 3 (UX)"><span class="t"><b>Phase 3</b> — design the categories in Phase 2, ship them in Phase 3.</span></label>
+          <label class="opt"><input type="radio" name="q6" value="Phase 1 minimal — errors only, categories later"><span class="t"><b>Phase 1, minimal</b> — errors only (the non-disableable ones); the rest of the categories come later.</span></label>
+          <label class="opt none"><input type="radio" name="q6" value="Something else (see note)"><span class="t"><b>Something else</b> — describe it in the note.</span></label>
+          <label class="opt none"><input type="radio" name="q6" value="" checked><span class="t"><b>Undecided</b></span></label>
+          <textarea class="note" data-note="q6" placeholder="Reasoning, caveats, conditions…"></textarea>
+        </div>
       </div>
 
       <!-- Q7 -->
-      <div class="card q" id="q7">
-        <div class="q-top"><span class="qid">Q7</span></div>
+      <div class="card q" id="q7" data-q="q7">
+        <div class="q-top"><span class="qid">Q7</span><span class="tick">✓</span></div>
         <h4>Should Flotilla ever <i>write</i> <code>config.toml</code>?</h4>
         <p class="body">
           Reading <code>~/.config/container/config.toml</code> is unambiguously good. Writing means
@@ -1082,21 +1256,39 @@ footer .spacer { flex: 1; }
           restart to apply the change.
         </p>
         <p class="stakes">SET's recommendation: <b>read in Phase 1, edit locally in Phase 3, edit remotely only if it proves necessary.</b></p>
+        <div class="answer">
+          <span class="lbl">Your call</span>
+          <label class="opt"><input type="radio" name="q7" value="Read-only, always — never write config.toml"><span class="t"><b>Read-only, always</b> — Flotilla never owns a file another tool owns.</span></label>
+          <label class="opt"><input type="radio" name="q7" value="SET's ladder: read P1, edit locally P3, remote only if needed"><span class="t"><b>SET's ladder</b> — read in Phase 1, edit locally in Phase 3, remote editing only if it proves necessary.</span></label>
+          <label class="opt"><input type="radio" name="q7" value="Full read/write including remote, with backup + service restart"><span class="t"><b>Full read/write, including remote</b> — with a backup copy and an explicit service restart step.</span></label>
+          <label class="opt none"><input type="radio" name="q7" value="Something else (see note)"><span class="t"><b>Something else</b> — describe it in the note.</span></label>
+          <label class="opt none"><input type="radio" name="q7" value="" checked><span class="t"><b>Undecided</b></span></label>
+          <textarea class="note" data-note="q7" placeholder="Reasoning, caveats, conditions…"></textarea>
+        </div>
       </div>
 
       <!-- Q9 -->
-      <div class="card q" id="q9">
-        <div class="q-top"><span class="qid">Q9</span></div>
+      <div class="card q" id="q9" data-q="q9">
+        <div class="q-top"><span class="qid">Q9</span><span class="tick">✓</span></div>
         <h4>Record "no App Sandbox for v1" as a decision?</h4>
         <p class="body">
           OPS makes the case: we execute an external CLI and listen for network connections, so a
           useful sandbox needs brittle exceptions. DECISIONS.md is currently silent on sandboxing.
         </p>
         <p class="stakes">Worth recording explicitly so it isn't re-litigated — <b>including that notarization ≠ sandboxing ≠ hardened runtime</b>. We still do Developer ID + hardened runtime + least entitlements.</p>
+        <div class="answer">
+          <span class="lbl">Your call</span>
+          <label class="opt"><input type="radio" name="q9" value="Yes — record 'no App Sandbox for v1' in DECISIONS.md"><span class="t"><b>Yes, record it</b> — "no App Sandbox for v1" goes into DECISIONS.md, with the notarization ≠ sandbox ≠ hardened-runtime clarification.</span></label>
+          <label class="opt"><input type="radio" name="q9" value="No — keep sandboxing an open goal"><span class="t"><b>No</b> — leave it open; attempt the sandbox and find out how brittle the exceptions really are.</span></label>
+          <label class="opt"><input type="radio" name="q9" value="Record it, with a revisit-before-1.0 note"><span class="t"><b>Record it, with a revisit</b> — decided for v1, explicitly re-examined before 1.0.</span></label>
+          <label class="opt none"><input type="radio" name="q9" value="Something else (see note)"><span class="t"><b>Something else</b> — describe it in the note.</span></label>
+          <label class="opt none"><input type="radio" name="q9" value="" checked><span class="t"><b>Undecided</b></span></label>
+          <textarea class="note" data-note="q9" placeholder="Reasoning, caveats, conditions…"></textarea>
+        </div>
       </div>
 
       <!-- Q8 — resolved -->
-      <div class="card q resolved" id="q8">
+      <div class="card q resolved answered" id="q8" data-q="q8" data-locked="dev.melonfleet.Flotilla (decided 2026-07-27)">
         <div class="q-top">
           <span class="qid">Q8</span>
           <span class="decided">✓ DECIDED 2026-07-27</span>
@@ -1113,6 +1305,11 @@ footer .spacer { flex: 1; }
           services, launchd labels, pkg identifiers, Sparkle keys and Jamf payloads.
           <b>No longer open.</b>
         </p>
+        <div class="answer">
+          <span class="lbl">Recorded</span>
+          <label class="opt locked on"><input type="radio" name="q8" checked disabled><span class="t"><span class="lock">Locked</span><b><code>dev.melonfleet.Flotilla</code></b> — recorded in DECISIONS.md.</span></label>
+          <textarea class="note" data-note="q8" placeholder="Note (optional) — anything to add now that it's settled…"></textarea>
+        </div>
       </div>
     </div>
 
@@ -1239,6 +1436,213 @@ footer .spacer { flex: 1; }
   }, { rootMargin: '-60px 0px -55% 0px', threshold: [0, 0.15, 0.4, 0.8] });
 
   targets.forEach(function (t) { io.observe(t); });
+})();
+
+// ------------------------------------------------------------------
+// Decision recorder. Static page, no backend: every selection and note
+// is mirrored into localStorage on change and restored on load, so the
+// deck survives a refresh, a close, or a reboot. Q8 is locked — it is
+// already recorded in DECISIONS.md and only accepts a note.
+// ------------------------------------------------------------------
+(function () {
+  var KEY = 'flotilla.review.decisions.v1';
+  var cards = Array.prototype.slice.call(document.querySelectorAll('.q[data-q]'));
+  if (!cards.length) return;
+
+  var bar     = document.getElementById('dbar');
+  var countEl = document.getElementById('dcount');
+  var meterEl = document.getElementById('dmeter');
+  var savedEl = document.getElementById('dsaved');
+  var state   = {};
+
+  try { state = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { state = {}; }
+
+  // Sorted q1…q9 for export, regardless of the DOM order (q8 sits last).
+  var order = cards.slice().sort(function (a, b) {
+    return parseInt(a.dataset.q.slice(1), 10) - parseInt(b.dataset.q.slice(1), 10);
+  });
+
+  function entry(id) {
+    if (!state[id]) state[id] = { choice: '', note: '' };
+    return state[id];
+  }
+  function title(card) {
+    return card.querySelector('h4').textContent.replace(/\s+/g, ' ').trim();
+  }
+  function locked(card) { return card.dataset.locked || ''; }
+
+  var savedTimer;
+  function persist() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { return; }
+    savedEl.classList.add('show');
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(function () { savedEl.classList.remove('show'); }, 1400);
+  }
+
+  function decidedCount() {
+    return order.filter(function (c) {
+      return locked(c) || entry(c.dataset.q).choice;
+    }).length;
+  }
+
+  function paint() {
+    cards.forEach(function (card) {
+      var id = card.dataset.q;
+      var done = !!(locked(card) || entry(id).choice);
+      card.classList.toggle('answered', done);
+      card.querySelectorAll('.opt').forEach(function (opt) {
+        var input = opt.querySelector('input');
+        opt.classList.toggle('on', !!(input && input.checked));
+      });
+    });
+    var n = decidedCount();
+    countEl.textContent = String(n);
+    meterEl.style.width = Math.round((n / order.length) * 100) + '%';
+  }
+
+  // Restore, then wire up.
+  cards.forEach(function (card) {
+    var id = card.dataset.q;
+    var rec = entry(id);
+    var note = card.querySelector('.note');
+
+    card.querySelectorAll('.opt input[type="radio"]').forEach(function (input) {
+      if (input.disabled) return;
+      if (input.value === rec.choice) input.checked = true;
+      input.addEventListener('change', function () {
+        rec.choice = input.value;
+        persist();
+        paint();
+        // "Something else" is only an answer once it's written down.
+        if (/^Something else/.test(input.value) && note) { note.focus(); }
+      });
+    });
+
+    if (note) {
+      note.value = rec.note || '';
+      note.addEventListener('input', function () { rec.note = note.value; persist(); });
+    }
+  });
+  paint();
+
+  // ---------- export ----------
+
+  function rows() {
+    return order.map(function (card) {
+      var id  = card.dataset.q;
+      var rec = entry(id);
+      return {
+        id: id.toUpperCase(),
+        title: title(card),
+        choice: locked(card) || rec.choice,
+        note: (rec.note || '').trim(),
+        locked: !!locked(card)
+      };
+    });
+  }
+
+  function stamp() {
+    var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function asText() {
+    var out = ['Flotilla — proposal review: decisions',
+               stamp() + ' · ' + decidedCount() + ' of ' + order.length + ' decided', ''];
+    rows().forEach(function (r) {
+      out.push(r.id + ' — ' + r.title);
+      out.push('  Decision: ' + (r.choice || '(undecided)') + (r.locked ? '  [locked]' : ''));
+      if (r.note) {
+        r.note.split('\n').forEach(function (line, i) {
+          out.push((i === 0 ? '  Note:     ' : '            ') + line);
+        });
+      }
+      out.push('');
+    });
+    return out.join('\n');
+  }
+
+  function asMarkdown() {
+    var out = ['# Flotilla — proposal review: decisions', '',
+               '_' + stamp() + ' · **' + decidedCount() + ' of ' + order.length +
+               '** decided._', ''];
+    rows().forEach(function (r) {
+      out.push('### ' + r.id + ' — ' + r.title);
+      out.push('**Decision:** ' + (r.choice || '_undecided_') + (r.locked ? ' _(locked)_' : ''));
+      if (r.note) {
+        out.push('');
+        r.note.split('\n').forEach(function (line) { out.push('> ' + line); });
+      }
+      out.push('');
+    });
+    return out.join('\n');
+  }
+
+  function flash(btn, msg) {
+    var was = btn.textContent;
+    btn.textContent = msg;
+    setTimeout(function () { btn.textContent = was; }, 1500);
+  }
+
+  // execCommand is the fallback for browsers that refuse the async
+  // clipboard API on a file:// page.
+  function copy(text, btn) {
+    function legacy() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      flash(btn, ok ? 'Copied ✓' : 'Copy failed');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(function () { flash(btn, 'Copied ✓'); })
+        .catch(legacy);
+    } else { legacy(); }
+  }
+
+  document.getElementById('btn-copy').addEventListener('click', function () {
+    copy(asText(), this);
+  });
+
+  document.getElementById('btn-md').addEventListener('click', function () {
+    var blob = new Blob([asMarkdown()], { type: 'text/markdown;charset=utf-8' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href = url;
+    a.download = 'flotilla-decisions-' + stamp().slice(0, 10) + '.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    flash(this, 'Saved ✓');
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', function () {
+    if (!window.confirm('Clear every answer and note on this page? This cannot be undone.')) return;
+    // Clear the records in place — the per-card handlers hold references to
+    // them, so replacing the state object would orphan every listener.
+    cards.forEach(function (card) {
+      var rec = entry(card.dataset.q);
+      rec.choice = '';
+      rec.note = '';
+      var undecided = card.querySelector('.opt input[value=""]');
+      if (undecided) undecided.checked = true;
+      var note = card.querySelector('.note');
+      if (note) note.value = '';
+    });
+    persist();
+    paint();
+  });
+
+  // Keep the sticky bar clear of the sticky nav on short windows.
+  if (bar && window.matchMedia('(max-width: 620px)').matches) bar.style.position = 'static';
 })();
 </script>
 </body>
