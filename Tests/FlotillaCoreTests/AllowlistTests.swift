@@ -343,8 +343,13 @@ private func requireRejected(
     ]
 
     #expect(cases.count == Allowlist.commands.count)
+    // These are the *positive* shapes, so the `run` case deliberately includes a host
+    // bind mount. Since `MountPolicy.denyHostPaths` is the default, the legitimate case
+    // has to name a policy that permits it — which is the point: a host mount is
+    // authorised by the filesystem owner's policy, never by the command's grammar.
+    let policy = MountPolicy.roots(["/tmp"])
     for testCase in cases {
-        let command = try Allowlist.validated(testCase.input)
+        let command = try Allowlist.validated(testCase.input, mountPolicy: policy)
         let pathLength = command.subcommand.count
         #expect(command.subcommand == Array(testCase.canonical.prefix(pathLength)))
         #expect(command.arguments == testCase.canonical)

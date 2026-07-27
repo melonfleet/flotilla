@@ -178,6 +178,10 @@ public enum AllowlistError: Error, Equatable, Sendable {
     case repeatedFlag(String)
     case invalidValue(context: String, value: String, shape: ValueShape)
     case pathTraversal(context: String, value: String)
+    /// A bind-mount source that is a well-formed absolute path but is not permitted by
+    /// the filesystem owner's `MountPolicy`. Distinct from `invalidValue` on purpose:
+    /// the value is *valid*, the caller is simply not authorised to mount it.
+    case hostPathNotPermitted(context: String, path: String)
     case illegalCharacter(argument: String, scalar: UInt32)
     case tooManyArguments(count: Int, limit: Int)
     case argumentTooLong(length: Int, limit: Int)
@@ -199,6 +203,7 @@ extension AllowlistError: CustomStringConvertible {
         case .repeatedFlag(let f): "flag \(f) repeated"
         case .invalidValue(let c, let v, let s): "\(c): '\(v)' is not a valid \(s.rawValue)"
         case .pathTraversal(let c, let v): "\(c): path traversal in '\(v)'"
+        case .hostPathNotPermitted(let c, let p): "\(c): host path '\(p)' is not permitted by the mount policy"
         case .illegalCharacter(_, let u): "illegal character U+\(String(u, radix: 16, uppercase: true))"
         case .tooManyArguments(let n, let l): "too many arguments: \(n) > \(l)"
         case .argumentTooLong(let n, let l): "argument too long: \(n) > \(l)"
@@ -355,14 +360,24 @@ public enum Allowlist {
 
     /// Validate an argv. **Default deny**: anything not described by the table above
     /// is an error.
-    public static func validate(_ args: [String], limits: Limits = .default) -> Result<ValidatedCommand, AllowlistError> {
-        do { return .success(try validated(args, limits: limits)) }
+    ///
+    /// `mountPolicy` bounds which host paths a bind mount may expose and defaults to
+    /// `.denyHostPaths` — command grammar alone does not make `--volume /Users:/host`
+    /// safe. A caller driving its *own* machine may pass `.unrestricted`; a host
+    /// serving a remote peer must pass its own `.roots(…)` policy and never one the
+    /// client supplied. See `MountPolicy`.
+    public static func validate(_ args: [String],
+                                limits: Limits = .default,
+                                mountPolicy: MountPolicy = .denyHostPaths) -> Result<ValidatedCommand, AllowlistError> {
+        do { return .success(try validated(args, limits: limits, mountPolicy: mountPolicy)) }
         catch let error as AllowlistError { return .failure(error) }
         catch { return .failure(.emptyCommand) } // unreachable: nothing else is thrown
     }
 
     /// Throwing form, for call sites that already propagate errors (`ContainerCLI`).
-    public static func validated(_ args: [String], limits: Limits = .default) throws -> ValidatedCommand {
+    public static func validated(_ args: [String],
+                                 limits: Limits = .default,
+                                 mountPolicy: MountPolicy = .denyHostPaths) throws -> ValidatedCommand {
         guard !args.isEmpty else { throw AllowlistError.emptyCommand }
         try screen(args, limits: limits)
 
@@ -399,7 +414,8 @@ public enum Allowlist {
                 let (name, inlineValue) = splitInlineValue(body)
                 guard let flag = spec.flag(long: name) else { throw AllowlistError.unknownFlag("--\(name)") }
                 try record(flag, spelling: "--\(name)", inlineValue: inlineValue,
-                           rest: rest, cursor: &i, tokens: &flagTokens, counts: &seenFlags)
+                           rest: rest, cursor: &i, tokens: &flagTokens, counts: &seenFlags,
+                           mountPolicy: mountPolicy)
                 presentLongFlags.insert(name)
                 continue
             }
@@ -413,7 +429,7 @@ public enum Allowlist {
                 guard body.count == 1, let short = body.first else { throw AllowlistError.malformedFlag(token) }
                 guard let flag = spec.flag(short: short) else { throw AllowlistError.unknownFlag(token) }
                 try record(flag, spelling: token, inlineValue: nil,
-                           rest: rest, cursor: &i, tokens: &flagTokens, counts: &seenFlags)
+                           rest: rest, cursor: &i, tokens: &flagTokens, counts: &seenFlags, mountPolicy: mountPolicy)
                 if let long = flag.long { presentLongFlags.insert(long) }
                 continue
             }
@@ -436,7 +452,8 @@ public enum Allowlist {
             throw AllowlistError.missingOperand(subcommand: spec.name, need: minRequired)
         }
         for operand in operands {
-            if let error = check(operand, as: spec.operands.shape, context: "<\(spec.operands.shape.rawValue)>") {
+            if let error = check(operand, as: spec.operands.shape, context: "<\(spec.operands.shape.rawValue)>",
+                                 mountPolicy: mountPolicy) {
                 throw error
             }
         }
@@ -447,7 +464,7 @@ public enum Allowlist {
                 throw AllowlistError.tooManyArguments(count: trailing.count, limit: maxTokens)
             }
             for token in trailing {
-                if let error = check(token, as: .commandToken, context: "command") { throw error }
+                if let error = check(token, as: .commandToken, context: "command", mountPolicy: mountPolicy) { throw error }
             }
         } else if !trailing.isEmpty {
             throw AllowlistError.tooManyOperands(count: operands.count + trailing.count, limit: spec.operands.max)
@@ -519,7 +536,8 @@ public enum Allowlist {
                                rest: [String],
                                cursor: inout Int,
                                tokens: inout [String],
-                               counts: inout [String: Int]) throws {
+                               counts: inout [String: Int],
+                               mountPolicy: MountPolicy) throws {
         let key = flag.canonicalSpelling
         let seen = (counts[key] ?? 0) + 1
         counts[key] = seen
@@ -539,14 +557,15 @@ public enum Allowlist {
             value = rest[cursor]
             cursor += 1
         }
-        if let error = check(value, as: shape, context: key) { throw error }
+        if let error = check(value, as: shape, context: key, mountPolicy: mountPolicy) { throw error }
         tokens.append(key)
         tokens.append(value)
     }
 
     // MARK: Shape validation
 
-    private static func check(_ value: String, as shape: ValueShape, context: String) -> AllowlistError? {
+    private static func check(_ value: String, as shape: ValueShape, context: String,
+                              mountPolicy: MountPolicy) -> AllowlistError? {
         let bad = AllowlistError.invalidValue(context: context, value: value, shape: shape)
         switch shape {
         case .identifier:
@@ -558,7 +577,7 @@ public enum Allowlist {
         case .envAssignment:
             return isEnvAssignment(value) ? nil : bad
         case .mountSpec:
-            return checkMountSpec(value, context: context)
+            return checkMountSpec(value, context: context, mountPolicy: mountPolicy)
         case .absolutePath:
             return checkAbsolutePath(value, context: context)
         case .durationSeconds:
@@ -651,7 +670,8 @@ public enum Allowlist {
     }
 
     /// `source:/dest[:ro|rw]`. Source is a named volume or an absolute host path.
-    private static func checkMountSpec(_ value: String, context: String) -> AllowlistError? {
+    private static func checkMountSpec(_ value: String, context: String,
+                                       mountPolicy: MountPolicy) -> AllowlistError? {
         let bad = AllowlistError.invalidValue(context: context, value: value, shape: .mountSpec)
         let parts = value.split(separator: ":", omittingEmptySubsequences: false)
         guard (2...3).contains(parts.count) else { return bad }
@@ -662,6 +682,12 @@ public enum Allowlist {
             // Handing a container the whole host filesystem defeats the point of the
             // allowlist. Bind mounts must name something narrower than `/`.
             if source == "/" { return bad }
+            // Grammar is not authorisation: `/Users:/host:ro` is a well-formed mount
+            // spec and also a total compromise of the host. The path must be permitted
+            // by the filesystem owner's policy — which defaults to allowing none.
+            guard mountPolicy.allowsHostPath(source) else {
+                return .hostPathNotPermitted(context: context, path: source)
+            }
         } else if !isIdentifier(source) {
             return bad
         }
