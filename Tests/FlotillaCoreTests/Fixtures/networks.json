@@ -1,0 +1,1 @@
+[{"id":"default","state":"running","mode":"nat","subnet":"192.168.64.0/24","gateway":"192.168.64.1","labels":{}}]

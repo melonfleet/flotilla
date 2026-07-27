@@ -1,0 +1,1 @@
+[{"name":"flotilla-data","format":"ext4","source":"/var/lib/container/volumes/flotilla-data/_data","createdAt":"2026-07-01T12:00:00Z","sizeInBytes":1073741824,"labels":{"project":"flotilla"},"options":{"journal":"true"}}]
