@@ -65,7 +65,7 @@ struct MainWindowView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    Task { await model.refresh() }
+                    Task { await model.reload() }
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }

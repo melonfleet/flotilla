@@ -30,7 +30,7 @@ struct FlotillaApp: App {
         Window("Flotilla", id: "main") {
             MainWindowView(model: model)
                 .frame(minWidth: 900, minHeight: 520)
-                .task { await model.runPreflight(); await model.refresh() }
+                .task { await model.reload() }
         }
         .defaultSize(width: 1180, height: 720)
     }

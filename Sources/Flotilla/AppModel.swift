@@ -74,6 +74,16 @@ final class AppModel {
         return false
     }
 
+    /// What the Refresh control must call. Re-runs preflight FIRST: if the runtime was
+    /// unusable, `refresh()` alone would hit its own guard and silently do nothing, so the
+    /// user could start the service and never recover without relaunching the app.
+    func reload() async {
+        preflight = nil          // clear the stale verdict, or the guard below still bites
+        state = .loading
+        await runPreflight()
+        await refresh()
+    }
+
     func refresh() async {
         // Don't poll a runtime preflight already told us is unusable — it would replace a
         // precise diagnosis ("container isn't installed") with a generic failure.

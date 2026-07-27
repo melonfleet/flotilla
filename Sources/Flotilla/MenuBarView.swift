@@ -49,13 +49,28 @@ struct MenuBarView: View {
 
             Divider()
 
-            HStack {
-                Button("Open Flotilla") { openWindow(id: "main") }
-                Spacer()
-                Button("Refresh") { Task { await model.refresh() } }
+            // Not .plain: in a MenuBarExtra window that renders as bare text with a
+            // hit area barely larger than the glyphs, so it neither looks nor behaves
+            // like something you can click. Real buttons, real targets.
+            HStack(spacing: 8) {
+                Button("Open Flotilla") {
+                    NSApp.activate(ignoringOtherApps: true)   // popover has focus; the window won't come forward without this
+                    openWindow(id: "main")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Spacer(minLength: 8)
+
+                Button("Refresh") { Task { await model.reload() } }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(model.state == .loading)
+
                 Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             }
-            .buttonStyle(.plain)
             .font(.callout)
         }
         .padding(12)
