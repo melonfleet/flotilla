@@ -83,6 +83,36 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     #expect(host.invocations.isEmpty)
 }
 
+@Test func everyMutatingEntryPointRejectsBeforeReachingTheHost() {
+    let attempts: [(String, (ContainerCLI) throws -> Void)] = [
+        ("start", { try $0.start("") }),
+        ("stop", { try $0.stop("web", timeout: -1) }),
+        ("restart", { try $0.restart("../web") }),
+        ("remove", { try $0.remove("web;id", force: true) }),
+        ("run", { try $0.run(image: "") }),
+        ("pull", { try $0.pull("../alpine") }),
+        ("removeImage", { try $0.removeImage("alpine;id", force: true) }),
+        ("createVolume", { try $0.createVolume("../data") }),
+        ("removeVolume", { try $0.removeVolume("") }),
+        ("createNetwork", { try $0.createNetwork("private network") }),
+        ("removeNetwork", { try $0.removeNetwork("../private") }),
+    ]
+
+    for (name, attempt) in attempts {
+        let host = RecordingHost()
+        let cli = ContainerCLI(host: host)
+        do {
+            try attempt(cli)
+            Issue.record("\(name) accepted an invalid argument")
+        } catch is AllowlistError {
+            // Expected: validation rejected the request before the host boundary.
+        } catch {
+            Issue.record("\(name) threw the wrong error: \(error)")
+        }
+        #expect(host.invocations.isEmpty, "\(name) reached ContainerHost.run")
+    }
+}
+
 @Test func runBuildsTheCanonicalArgvAndAcceptsAnyHostPathLocally() throws {
     let host = RecordingHost()
     let cli = ContainerCLI(host: host)
@@ -117,6 +147,27 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     #expect(Allowlist.validate(["run", "-v", "/etc/flotilla:/config:ro", "alpine"]).isFailure)
 }
 
+@Test func runRejectsAnEmptyInContainerCommandToken() {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host)
+
+    #expect(throws: AllowlistError.self) {
+        try cli.run(image: "alpine", command: [""])
+    }
+    #expect(host.invocations.isEmpty)
+}
+
+@Test func runRejectsContradictoryMountModes() {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host)
+    let options = ContainerCLI.RunOptions(volumes: ["/tmp/data:/data:ro,rw"])
+
+    #expect(throws: AllowlistError.self) {
+        try cli.run(image: "alpine", options: options)
+    }
+    #expect(host.invocations.isEmpty)
+}
+
 @Test func runSeparatesAnInContainerCommandThatLooksLikeAFlag() throws {
     let host = RecordingHost()
     let cli = ContainerCLI(host: host)
@@ -137,6 +188,21 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
     #expect(host.invocations[0] == ["image", "pull", "docker.io/library/alpine:latest"])
     #expect(host.invocations[1] == ["image", "rm", "--force", "docker.io/library/alpine:latest"])
+}
+
+@Test func imageOperationsRejectReferencesWithAnEmptyTag() {
+    let attempts: [(ContainerCLI) throws -> Void] = [
+        { try $0.pull("alpine:") },
+        { try $0.removeImage("alpine:", force: true) },
+    ]
+
+    for attempt in attempts {
+        let host = RecordingHost()
+        #expect(throws: AllowlistError.self) {
+            try attempt(ContainerCLI(host: host))
+        }
+        #expect(host.invocations.isEmpty)
+    }
 }
 
 @Test func volumeAndNetworkMutationsRouteThroughAllowlist() throws {

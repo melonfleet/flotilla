@@ -66,6 +66,16 @@ private func preflight(
     #expect(result.isOK)
 }
 
+@Test func exactReleaseVersionMeetsTheMinimumBoundary() {
+    let result = preflight(version: "1.0.0", minimum: VersionTriple(1, 0, 0)).run()
+    #expect(result == .ok(version: "1.0.0", path: "/usr/local/bin/container"))
+}
+
+@Test func prereleaseDoesNotMeetTheEquivalentReleaseMinimum() {
+    let result = preflight(version: "1.0.0-beta.1", minimum: VersionTriple(1, 0, 0)).run()
+    #expect(result == .tooOld(found: "1.0.0-beta.1", required: "1.0.0"))
+}
+
 @Test func unusableWhenTheServiceIsNotRunning() {
     let result = preflight(version: "1.0.0", running: false).run()
     guard case .unusable = result else {
@@ -98,10 +108,14 @@ private func preflight(
 
 // MARK: - VersionTriple
 
-@Test func versionTripleParsesAndComparesLeniently() {
+@Test func versionTripleParsesSupportedSuffixesAndRejectsMalformedCores() {
     #expect(VersionTriple(parsing: "1.0.0") == VersionTriple(1, 0, 0))
     #expect(VersionTriple(parsing: "2.3.4-beta.1") == VersionTriple(2, 3, 4))
+    #expect(VersionTriple(parsing: "2.3.4+build.17") == VersionTriple(2, 3, 4))
     #expect(VersionTriple(parsing: "1.2") == nil)
+    #expect(VersionTriple(parsing: "1.two.3") == nil)
+    #expect(VersionTriple(parsing: "-1.2.3") == nil)
+    #expect(VersionTriple(parsing: "1.2.3.4") == nil)
     #expect(VersionTriple(parsing: "not-a-version") == nil)
     #expect(VersionTriple(1, 9, 0) < VersionTriple(1, 10, 0))
     #expect(VersionTriple(1, 0, 0) < VersionTriple(1, 0, 1))
