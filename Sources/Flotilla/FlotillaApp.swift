@@ -15,8 +15,22 @@ import FlotillaCore
 ///   default, cards are a toggle).
 /// - appearance is **chosen at first run**, `auto` pre-selected — so nothing here hardcodes a
 ///   `preferredColorScheme`; the system value is honoured until the user picks.
+/// Run as a bare SwiftPM executable there is no app bundle and no Info.plist, so AppKit
+/// never assigns a real activation policy — and a process that isn't a "regular" app
+/// cannot put a window on screen. `openWindow` then fires and nothing appears. Claiming
+/// `.regular` at launch makes windows work before the Xcode project exists.
+///
+/// When this moves to a bundle, the menu-bar behaviour is set by `LSUIElement` in the
+/// Info.plist instead and this shim should go.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+    }
+}
+
 @main
 struct FlotillaApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
 
     var body: some Scene {
