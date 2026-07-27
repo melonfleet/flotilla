@@ -1,8 +1,9 @@
 # Flotilla wire protocol + data model spec
 
 Design for `FlotillaCore/Wire.swift` (Phase 2) and the `Models`. Lets the laptop
-implement without re-deriving the shape. Field names of the *container* models must
-still be confirmed against real `--format json` output (`flotilla-probe`).
+implement without re-deriving the shape. Existing container/image/stats/status
+models are already pinned to real `--format json` fixtures; new decode paths still
+require captured fixtures and tests.
 
 > **SETTLED BY Q1 — THIS IS NOT RAW COMMAND PASSTHROUGH.**
 >
@@ -93,9 +94,9 @@ Flotilla-added (not from the CLI):
 HostRef: id, displayName, endpoint, fingerprint, mode, online: Bool
 ```
 
-Each decoded Container/Image is tagged with the `HostRef` it came from so the fleet
-view knows which Mac it lives on. That association is Flotilla's, layered on top of
-the CLI's JSON.
+The fleet data layer associates each decoded Container/Image with the `HostRef` it
+came from so the UI knows which Mac it lives on. That association is Flotilla's,
+layered on top of the CLI's JSON rather than added to the CLI model itself.
 
 ## Why constrained CLI args over the wire
 

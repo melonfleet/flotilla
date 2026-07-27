@@ -22,8 +22,7 @@ need the GUI and are yours to do.
 ## Steps
 
 1. **[you]** In 1Password → **Settings → Developer → enable "Use the SSH agent."**
-   (The Development vault gets whitelisted automatically by the setup script's
-   `agent.toml` entry.)
+   Confirm the required development vault is available to the agent.
 
 2. **Authenticate gh as melonfleet** (needed to clone the private repo):
    ```sh
@@ -38,11 +37,9 @@ need the GUI and are yours to do.
    cd ~/melonfleet/Flotilla
    ```
 
-4. **Run the local setup script** (SSH config, 1Password agent vault, commit
-   signing, known_hosts — all scriptable bits):
-   ```sh
-   bash scripts/setup-mac.sh
-   ```
+4. **Configure local repository access and signing.** Follow the settled
+   SSH-alias, 1Password SSH-agent, and repo-local signing choices recorded in
+   `DECISIONS.md`. Keep personal identity and credentials out of tracked files.
 
 5. **Bring up `container`:**
    ```sh
@@ -53,21 +50,23 @@ need the GUI and are yours to do.
 
 6. **Verify everything:**
    ```sh
-   swift build && swift test          # scaffold compiles, 6 fixture tests pass
+   swift build && swift test          # core and app compile; 29 tests pass on macOS
    swift run flotilla-probe           # round-trips against local container
    ssh -T git@github-melonfleet       # → "Hi melonfleet!"  (Touch ID via 1Password)
    git commit --allow-empty -m "test signing" && git log -1 --show-signature
    #   → "Good signature"  (Touch ID prompt). Then: git reset --hard HEAD~1
    ```
 
-7. **Start building** — open `PROMPTS.md`, paste the **Phase 0** prompt (re-confirm
-   green) then **Phase 1**. See `docs/AI-WORKFLOW.md` for how Claude + Codex split work.
+7. **Continue Phase 1** — open the repository in Claude Code. `CLAUDE.md` is the
+   auto-loaded steering document; `PHASE1.md` is the current build contract and
+   ownership map.
 
 ## Notes
 
-- The Xcode app target (MenuBarExtra + Liquid Glass) is created during Phase 1;
-  `swift build`/`swift test` cover `FlotillaCore` + `flotilla-probe` until then.
+- The SwiftUI app currently builds as the `Flotilla` SwiftPM executable. There is
+  no Xcode project yet; create one when app-bundle metadata, `LSUIElement`,
+  signing, and distribution require it.
 - Signing config is **repo-local** (in `.git/config`), so it isn't cloned — that's
-  why step 4 re-applies it on this machine.
-- The 1Password agent + key are per-machine state; they're already handled by
-  1Password sync + the script, so there's nothing to copy from the other Mac.
+  why step 4 must be repeated on a new machine.
+- The 1Password agent + key are per-machine state; confirm them after 1Password
+  sync rather than copying key material between Macs.

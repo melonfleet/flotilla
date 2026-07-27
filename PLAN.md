@@ -87,7 +87,8 @@ but it does not require a new typed RPC for every CLI operation.
 - Swift 6.2+ and SwiftUI on macOS 26, Apple Silicon only.
 - Foundation-only `FlotillaCore`, also buildable/testable with Swift 6.1 on Linux.
 - Network.framework for mTLS transport and Bonjour.
-- SwiftData for local history and persisted host policy where appropriate.
+- SwiftData for local history. The persisted host policy store is required, but
+  its storage implementation is not settled here.
 - Swift Charts once Phase 4 has real streaming data.
 - Sparkle for unmanaged updates; Jamf for managed minis.
 - Keychain for identities and trust material.
