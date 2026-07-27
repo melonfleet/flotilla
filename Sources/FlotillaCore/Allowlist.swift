@@ -598,7 +598,7 @@ public enum Allowlist {
             return ["json", "table", "yaml", "toml"].contains(value) ? nil : bad
         case .commandToken:
             // Control characters were already rejected for every argument in `screen`.
-            return value.utf8.count <= 1024 ? nil : bad
+            return (1...1024).contains(value.utf8.count) ? nil : bad
         }
     }
 
@@ -624,6 +624,12 @@ public enum Allowlist {
             if component == "." || component == ".." {
                 return .pathTraversal(context: context, value: value)
             }
+        }
+        // The final path component may carry `:tag`; if it has a colon at all, the
+        // tag after it must be non-empty (`alpine:` is not a valid reference).
+        if let lastComponent = pathPart.split(separator: "/", omittingEmptySubsequences: false).last,
+           let colon = lastComponent.lastIndex(of: ":"), colon == lastComponent.index(before: lastComponent.endIndex) {
+            return bad
         }
         // At most one digest, and it must be a real one.
         let digestParts = value.split(separator: "@", omittingEmptySubsequences: false)
@@ -699,6 +705,9 @@ public enum Allowlist {
         if parts.count == 3 {
             let options = parts[2].split(separator: ",")
             guard !options.isEmpty, options.allSatisfy({ $0 == "ro" || $0 == "rw" }) else { return bad }
+            // `ro` and `rw` together are contradictory, not merely repeated.
+            let optionSet = Set(options)
+            guard !(optionSet.contains("ro") && optionSet.contains("rw")) else { return bad }
         }
         return nil
     }

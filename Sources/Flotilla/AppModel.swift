@@ -37,7 +37,39 @@ final class AppModel {
         self.cli = cli
     }
 
+    /// Result of the last preflight, so the UI can explain *why* nothing is listed.
+    private(set) var preflight: PreflightResult?
+
+    /// Check the runtime before listing anything. Without this the app cannot tell
+    /// "no containers" from "no `container` installed", which are very different and
+    /// look identical in an empty table.
+    func runPreflight() async {
+        let result = await Task.detached { [cli] in Preflight(cli: cli).run() }.value
+        preflight = result
+        switch result {
+        case .ok:
+            break
+        case .missing:
+            state = .unavailable("Apple's `container` CLI isn't installed.")
+        case .tooOld(let found, let required):
+            state = .unavailable("`container` \(found) is too old — \(required) or newer is required.")
+        case .unusable(let reason):
+            state = .unavailable("`container` is installed but unusable: \(reason)")
+        }
+    }
+
+    /// True until preflight says otherwise. Nil means preflight hasn't run yet, in which
+    /// case we optimistically try — an unnecessary refresh is cheaper than a blank screen.
+    private var runtimeUsable: Bool {
+        guard let preflight else { return true }
+        if case .ok = preflight { return true }
+        return false
+    }
+
     func refresh() async {
+        // Don't poll a runtime preflight already told us is unusable — it would replace a
+        // precise diagnosis ("container isn't installed") with a generic failure.
+        guard runtimeUsable else { return }
         state = .loading
         do {
             // Off the main actor: this shells out to `container` and would otherwise stall
@@ -60,4 +92,53 @@ final class AppModel {
 
     var running: [Container] { containers.filter(Self.isRunning) }
     var stopped: [Container] { containers.filter { !Self.isRunning($0) } }
+
+    // MARK: Lifecycle actions
+
+    /// Ids with an action in flight, so the UI can disable their controls rather than
+    /// letting an impatient second click fire a duplicate stop.
+    private(set) var busy: Set<Container.ID> = []
+    /// Surfaced to the user; an action that fails must say so rather than looking like
+    /// nothing happened.
+    private(set) var actionError: String?
+
+    func clearActionError() { actionError = nil }
+
+    enum Action { case start, stop, restart, delete }
+
+    func perform(_ action: Action, on container: Container) async {
+        let id = container.id
+        guard !busy.contains(id) else { return }
+        busy.insert(id)
+        defer { busy.remove(id) }
+
+        do {
+            // Off the main actor: each of these spawns `container` and waits on it.
+            // Note every one routes through ContainerCLI, which validates against the
+            // Allowlist first — the UI never builds an argv itself.
+            try await Task.detached { [cli] in
+                switch action {
+                case .start:   try cli.start(id)
+                case .stop:    try cli.stop(id)
+                case .restart: try cli.restart(id)
+                case .delete:  try cli.remove(id)
+                }
+            }.value
+        } catch {
+            actionError = "\(Self.label(for: action)) failed for \(id): \(error)"
+        }
+
+        // Refresh regardless: on failure the container's real state is now unknown, and
+        // showing a stale row is worse than showing the truth.
+        await refresh()
+    }
+
+    private static func label(for action: Action) -> String {
+        switch action {
+        case .start: "Start"
+        case .stop: "Stop"
+        case .restart: "Restart"
+        case .delete: "Delete"
+        }
+    }
 }

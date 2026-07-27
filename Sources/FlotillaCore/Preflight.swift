@@ -46,7 +46,10 @@ public struct Preflight: Sendable {
         guard let found = VersionTriple(parsing: component.version) else {
             return .unusable(reason: "could not parse version '\(component.version)'")
         }
-        guard found >= minimumVersion else {
+        // A prerelease of the minimum's own version does not satisfy it — only a
+        // strictly newer core, or an exact release-grade match, does.
+        let meetsMinimum = found > minimumVersion || (found == minimumVersion && !found.isPrerelease)
+        guard meetsMinimum else {
             return .tooOld(found: component.version, required: minimumVersion.description)
         }
 
@@ -89,27 +92,43 @@ public struct VersionTriple: Sendable, Equatable, Comparable, CustomStringConver
     public let major: Int
     public let minor: Int
     public let patch: Int
+    /// Whether the parsed string carried a `-prerelease` suffix (as opposed to only
+    /// `+build` metadata, which does not affect precedence). Not part of `==`/`<` —
+    /// those compare the numeric core only, matching this type's existing semantics —
+    /// but `Preflight.run()` consults it so a prerelease never satisfies the exact
+    /// release it is a prerelease of.
+    public let isPrerelease: Bool
 
-    public init(_ major: Int, _ minor: Int, _ patch: Int) {
+    public init(_ major: Int, _ minor: Int, _ patch: Int, isPrerelease: Bool = false) {
         self.major = major
         self.minor = minor
         self.patch = patch
+        self.isPrerelease = isPrerelease
     }
 
-    /// Parses the leading `<int>.<int>.<int>` of `string`. `nil` if it doesn't start
-    /// with at least that much.
+    /// Parses a strict `<int>.<int>.<int>` core, optionally followed by a
+    /// `-prerelease` and/or `+build` suffix (semver §9/§10). `nil` if the core is not
+    /// exactly three non-negative integer components — a malformed core is never
+    /// papered over by a suffix.
     public init?(parsing string: String) {
-        let core = string.split(separator: "-", maxSplits: 1)[0]
-        let parts = core.split(separator: ".")
-        guard parts.count >= 3,
-              let major = Int(parts[0]), let minor = Int(parts[1]), let patch = Int(parts[2])
+        let suffixStart = string.firstIndex(where: { $0 == "-" || $0 == "+" })
+        let core = suffixStart.map { string[string.startIndex..<$0] } ?? Substring(string)
+        let parts = core.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              let major = Int(parts[0]), let minor = Int(parts[1]), let patch = Int(parts[2]),
+              major >= 0, minor >= 0, patch >= 0
         else { return nil }
         self.major = major
         self.minor = minor
         self.patch = patch
+        self.isPrerelease = suffixStart.map { string[$0] == "-" } ?? false
     }
 
     public var description: String { "\(major).\(minor).\(patch)" }
+
+    public static func == (lhs: VersionTriple, rhs: VersionTriple) -> Bool {
+        (lhs.major, lhs.minor, lhs.patch) == (rhs.major, rhs.minor, rhs.patch)
+    }
 
     public static func < (lhs: VersionTriple, rhs: VersionTriple) -> Bool {
         (lhs.major, lhs.minor, lhs.patch) < (rhs.major, rhs.minor, rhs.patch)

@@ -30,11 +30,37 @@ struct MainWindowView: View {
         }
     }
 
+    /// Start/stop/restart/delete for one container. Attached to both the table rows and
+    /// the cards so the two views offer the same capabilities — a toggle that changes what
+    /// you can *do*, not just how it looks, is a trap.
+    @ViewBuilder
+    private func actions(for container: Container) -> some View {
+        let busy = model.busy.contains(container.id)
+        if AppModel.isRunning(container) {
+            Button("Stop") { Task { await model.perform(.stop, on: container) } }.disabled(busy)
+            Button("Restart") { Task { await model.perform(.restart, on: container) } }.disabled(busy)
+        } else {
+            Button("Start") { Task { await model.perform(.start, on: container) } }.disabled(busy)
+        }
+        Divider()
+        // Destructive, and deliberately only in the main window — never the popover.
+        Button("Delete", role: .destructive) {
+            Task { await model.perform(.delete, on: container) }
+        }.disabled(busy)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
             content
+        }
+        .alert("Action failed",
+               isPresented: Binding(get: { model.actionError != nil },
+                                    set: { if !$0 { model.clearActionError() } })) {
+            Button("OK") { model.clearActionError() }
+        } message: {
+            Text(model.actionError ?? "")
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -113,7 +139,11 @@ struct MainWindowView: View {
             }
             .width(min: 90, ideal: 100)
 
-            TableColumn("Name") { c in Text(c.id).lineLimit(1) }
+            TableColumn("Name") { c in
+                Text(c.id)
+                    .lineLimit(1)
+                    .contextMenu { actions(for: c) }
+            }
             TableColumn("Image") { c in
                 Text(c.configuration.image.reference).lineLimit(1).truncationMode(.middle)
             }
@@ -143,6 +173,7 @@ struct MainWindowView: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+                    .contextMenu { actions(for: container) }
                 }
             }
             .padding(12)
