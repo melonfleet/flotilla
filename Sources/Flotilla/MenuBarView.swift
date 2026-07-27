@@ -28,7 +28,11 @@ struct MenuBarView: View {
                 // taught us to avoid.
                 Label(reason, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
-                    .lineLimit(3)
+                    .font(.callout)
+                    // Wrap rather than clip: a truncated diagnosis ("…is installed but
+                    // unusable: the c…") tells the user nothing they can act on.
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             case .loaded where model.containers.isEmpty:
                 Label("No containers", systemImage: "tray")
                     .foregroundStyle(.secondary)

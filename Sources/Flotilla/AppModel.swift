@@ -54,7 +54,15 @@ final class AppModel {
         case .tooOld(let found, let required):
             state = .unavailable("`container` \(found) is too old — \(required) or newer is required.")
         case .unusable(let reason):
-            state = .unavailable("`container` is installed but unusable: \(reason)")
+            // Name the fix, not just the fault. The commonest cause by far is the API
+            // service simply not being started, and the user should not have to go
+            // looking for the one command that resolves it.
+            let remedy = reason.lowercased().contains("apiserver")
+                || reason.lowercased().contains("xpc")
+                || reason.lowercased().contains("connection")
+                ? "\n\nStart it with:  container system start"
+                : ""
+            state = .unavailable("`container` is installed but not usable — \(reason)\(remedy)")
         }
     }
 
