@@ -107,7 +107,15 @@ public struct MountPolicy: Sendable, Equatable {
             // `/private/tmp`, so resolving only one side never matches.
             let rootParts = Self.resolvedComponents(of: root)
             guard rootParts.count <= effective.count else { return false }
-            return Array(effective.prefix(rootParts.count)) == rootParts
+            // Compare LITERALLY, not with `==`. Swift's String equality uses Unicode
+            // canonical equivalence, so the NFC and NFD spellings of a name compare equal
+            // — which is right on APFS (one file) and wrong on ext4 (two distinct files,
+            // so treating them as the same is an outside-root admission). Literal
+            // comparison defers to the filesystem instead: `resolvedComponents` has
+            // already rewritten an existing path to its real on-disk name, so a
+            // normalising filesystem still matches while a byte-exact one does not.
+            return zip(effective.prefix(rootParts.count), rootParts)
+                .allSatisfy { $0.compare($1, options: .literal) == .orderedSame }
         }
     }
 
