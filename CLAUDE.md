@@ -1,141 +1,177 @@
 # Flotilla — project guide for Claude Code
 
-You are helping build **Flotilla**, a native macOS menu-bar app that manages Apple's
-`container` (the WWDC 2025 Swift CLI that runs Linux containers as one micro-VM each
-on Apple Silicon) on the **local** machine and across a **fleet of remote Macs**.
+You are helping build **Flotilla**, a native macOS app that manages Apple's
+`container` CLI on the local machine and across a fleet of remote Apple Silicon
+Macs.
 
-This is a **personal, non-commercial** project. Read `PLAN.md` for the full design,
-`DECISIONS.md` for settled choices (don't relitigate), and `PROMPTS.md` for
-phase-by-phase kickoff prompts.
+This is a **personal, non-commercial** project. Read `DECISIONS.md` before changing
+product or security direction, `PHASE1.md` for the current build contract and
+ownership, `research/FEATURES.md` for the consolidated phase-ordered scope, and
+`PLAN.md` for the six-phase roadmap. Settled decisions are not open design
+questions.
 
-## What already exists in this folder
+## Project status (2026-07-27)
 
-- A **SwiftPM scaffold that builds and passes tests** — validated on macOS 26 with
-  Swift 6.3 (`.macOS(.v26)` confirmed valid). `Package.swift` defines library
-  `FlotillaCore` + executable `flotilla-probe` + tests with `ContainerHost`/
-  `LocalHost`, `ContainerCLI`, and **models that decode real `container` 1.0.0
-  output**. So Phase 0 (scaffold builds) and Phase 1 step 1 (models match the real
-  JSON schema) are already done.
-- **Real JSON, pinned by tests** — `Tests/FlotillaCoreTests/Fixtures/*.json` are
-  live captures from `container` 1.0.0; `swift test` decodes them (6 tests green).
-  `swift run flotilla-probe` round-trips against a live install.
-- **`reference/`** — pre-researched docs so you don't have to re-fetch:
-  `json-schemas.md` (the real captured schemas), `container-cli.md` (full command
-  surface), `networking-mtls-bonjour.md`, `wire-protocol.md`, `liquid-glass.md`,
-  `sparkle-updates.md`, `jamf-config-profile.md`. Read the relevant one per phase.
-- **`docs/`** — `LAPTOP-SETUP.md` (bring-up on a new Mac), `AI-WORKFLOW.md` (how
-  Claude + ChatGPT Codex split the work — read before delegating).
-- **`scripts/setup-mac.sh`** — one-shot local config (SSH alias, 1Password agent
-  vault, commit signing).
+- `FlotillaCore` is real and substantial, not a scaffold. It is Foundation-only
+  and contains:
+  - real `container` JSON models and fixtures;
+  - `ContainerHost`, `LocalHost`, and `CommandResult`;
+  - the currently read-only `ContainerCLI`;
+  - the Q1 `Allowlist` and host-path `MountPolicy` security boundary;
+  - a typed settings registry implementing managed `defaults` + `locked`
+    precedence;
+  - diagnostics snapshot, error-log, and redaction components.
+- The macOS SwiftPM package includes a SwiftUI `Flotilla` executable with a
+  `MenuBarExtra`, main window, and table-first cross-host container view.
+- **29 tests pass on macOS.**
+- `FlotillaCore` also builds and tests on Linux with Swift 6.1 through
+  `Package@swift-6.1.swift`. Keep the portable core Foundation-only so backend and
+  data work remains independently verifiable.
+- Phase 1 remains in progress. Unfinished work includes `ContainerCLI` mutations,
+  volumes, networks and bounded logs; `Preflight`; settings tests; and the complete
+  diagnostics/support-bundle flow.
+- Phase 2 networking is not implemented yet: there is no `Wire`, `RemoteHost`,
+  Network.framework transport, mTLS listener, Bonjour browser/advertiser, or
+  persisted host policy store in the current source tree.
+- Branding is the approved watermelon visual language. Light and dark appearances
+  are both first-class.
 
-## Project status (2026-06-30)
+Do not put personal identity, personal email addresses, credentials, local user
+paths, private keys, certificates, or tokens into tracked files.
 
-- Repo is **live and private** at `melonfleet/flotilla` (a personal hobby GitHub
-  account, separate from the owner's other accounts).
-- Scaffold **builds + tests green**; models decode real `container` 1.0.0 JSON.
-- Branding is **watermelon** (see `design/branding.md`); README has the logo.
-- **Security/infra done:** SSH key lives only in **1Password** (Development vault),
-  commits are **1Password-signed → Verified**, `gh` is authed as melonfleet, account
-  hardened (2FA, push protection, etc.). To reproduce on a new Mac see
-  `docs/LAPTOP-SETUP.md` + `scripts/setup-mac.sh`.
-- Identity for this repo: name `melonfleet`, email
-  `298222390+melonfleet@users.noreply.github.com` — **no real-name/PII in the repo**
-  (public-facing hygiene). Keep it that way.
+## Current and target architecture
 
-## What we're building (essence)
-
-- One app, **two runtime modes**:
-  - **Client mode** (the laptop): SwiftUI UI, discovers and drives remote hosts.
-  - **Host mode** (each fleet Mac): runs headless-ish, listens for the client, and
-    executes `container` commands locally.
-- They talk **Swift-to-Swift over the network** using **Network.framework + mTLS**
-  (NOT the macOS `ssh` binary, NOT gRPC). Cert identities = the "key list".
-- **Bonjour** discovery on the flat LAN, plus **manual host-add by hostname/IP +
-  port** (required — mDNS doesn't cross subnets/VLANs).
-
-## Architecture (target)
-
-```
-Flotilla.app
-├── FlotillaCore  (SwiftPM library, no UI)  ← shared by both modes
-│   ├── Models           Codable: Container, Image, Host, Stats, Event
-│   ├── ContainerCLI     wraps `container … --format json` via Process
-│   ├── ContainerHost    protocol: run(args) / stream(args)
-│   │     ├── LocalHost   → Process (container CLI on this Mac)
-│   │     └── RemoteHost  → NWConnection (mTLS) to a host-mode peer
-│   ├── Wire             Codable request/response + length-prefixed framing
-│   └── Transport/       NWListener, NWConnection, TLSIdentity (Phase 2+)
-├── Host mode runtime    NWListener + mTLS + Bonjour advertise + cert allowlist
-└── Client mode (UI)     MenuBarExtra + NavigationSplitView; Bonjour browse + manual add
+```text
+Flotilla.app / SwiftPM executable
+├── FlotillaCore  (Foundation-only; shared by client and host modes)
+│   ├── Models
+│   ├── ContainerCLI
+│   ├── ContainerHost
+│   │   ├── LocalHost       → Process on this Mac
+│   │   └── RemoteHost      → Phase 2 mTLS peer (not built)
+│   ├── Allowlist           → default-deny command/argument schemas
+│   ├── MountPolicy         → host bind-mount boundary
+│   ├── Settings            → typed registry; defaults/user/locked precedence
+│   ├── Diagnostics         → snapshot, error log, redaction
+│   ├── Wire                → Phase 2 framing/messages (not built)
+│   └── Transport           → Phase 2 Network.framework/mTLS (not built)
+├── Client UI
+│   ├── MenuBarExtra
+│   ├── main window
+│   └── cross-host container table
+└── Stateful host runtime (Phase 2+; not built)
+    ├── mTLS listener + Bonjour advertisement
+    ├── certificate and peer allowlists
+    ├── persisted policy/settings store
+    └── local `container` execution after allowlist validation
 ```
 
-The `ContainerHost` protocol is the spine: the UI never cares whether a host is
-`LocalHost` (Process) or `RemoteHost` (mTLS connection).
+`ContainerHost` is the execution spine: UI code must not construct raw commands
+or care whether a host is local or remote. All commands must flow through
+`ContainerCLI`, and every local or remote execution path must cross the
+`Allowlist` and applicable `MountPolicy`.
 
-## Hard rules / decisions (do not relitigate)
+The app is currently a SwiftPM executable. There is no Xcode project yet. Move to
+an Xcode project when app-bundle metadata, `LSUIElement`, signing, notarization,
+and distribution require it; do not document that migration as already done.
 
-- **Shell out to the `container` CLI and decode `--format json`.** Do NOT link the
-  Containerization framework — too fragile while the CLI is young. JSON output is
-  available and is the integration surface.
-- **CLI bootstrap/preflight.** On launch, detect if `container` is installed and
-  check its version. If missing/outdated, offer a guided install that downloads the
-  latest signed `.pkg` from `apple/container` GitHub releases and runs it via the
-  system installer **with user authorization**. Never silent/privileged auto-install.
-- **Network.framework + mTLS** for all remote comms. No `ssh`. No third-party
-  networking deps.
-- **macOS 26 (Tahoe) only**, Apple Silicon only. Use real **Liquid Glass** SwiftUI
-  materials (`glassEffect` etc.), not faux cards.
-- **No Kubernetes.** For ~8 nodes, orchestration = fleet view + per-host run/stop +
-  (later) self-implemented restart/health (`container` has no native `--restart` or
-  healthcheck).
-- **Swift 6.2+, SwiftUI, SwiftPM two-target package** (`FlotillaCore` lib + `Flotilla`
-  executable), mirroring the structure of `tdeverx/contained-app`.
+## Settled decisions — do not relitigate
 
-## Tooling
+The full reasoning and rejected alternatives are in `DECISIONS.md`. A newcomer
+must preserve all of the following:
 
-- **Sparkle** for auto-updates, appcast hosted on GitHub releases (Phase 5).
-- **SwiftData** for local history; **Swift Charts** for sparklines/stats.
-- Keychain for identities + the cert-fingerprint allowlist.
+1. **Integration:** shell out to `container` and decode `--format json`; do not
+   link the Containerization framework.
+2. **Transport:** Network.framework + mTLS, with Bonjour and mandatory manual host
+   entry. No system `ssh`, gRPC, generic remote shell, or Kubernetes.
+3. **Product shape:** one app with client and host modes; host mode is
+   **stateful**, with a persisted policy store.
+4. **Wire shape (Q1):** args passthrough constrained by a default-deny subcommand
+   allowlist and argument schemas. Enforce frame-length, concurrency, and deadline
+   limits before spawning. Neither arbitrary command strings nor typed RPCs per
+   CLI operation are the design.
+5. **Primary view (Q2):** a running-first table; cards remain an alternate toggle.
+6. **Managed settings (Q4):** two tiers now—`defaults` seed values users may
+   change, and `locked` values that override and disable editing.
+7. **Phase 1 scope (Q5/Q6):** the consolidated `research/FEATURES.md` scope,
+   including volumes, networks, settings registry, security baseline,
+   diagnostics/support bundle, and full per-category notifications.
+8. **`config.toml` (Q7):** read in Phase 1, edit locally in Phase 3, and edit
+   remotely only if evidence shows it is necessary.
+9. **Identity (Q8):** bundle identifier and namespace root are fixed at
+   `dev.melonfleet.Flotilla` / `dev.melonfleet.*`.
+10. **Sandboxing (Q9):** no App Sandbox for v1. Hardened runtime, Developer ID
+    signing, notarization, and least entitlements still apply.
+11. **Appearance:** onboarding asks the user; `Auto` is preselected and means
+    follow the system. Light and dark are equally supported. Keep the single
+    watermelon accent; do not introduce another accent palette.
+12. **Runtime policy:** restart and health are self-implemented and run on the
+    host peer, not only while a client laptop is connected.
+13. **Installation and updates:** never silently perform a privileged `container`
+    package install. Sparkle serves unmanaged Macs; Jamf owns managed-mini app
+    updates.
 
-## Build & run
+The canonical preference domain, Keychain/launchd/package namespace, and Jamf
+payload domain all derive from `dev.melonfleet.Flotilla`.
+
+## Build, run, and test
+
+### macOS
+
+Use Apple Silicon, macOS 26, and Swift 6.2 or newer:
 
 ```sh
-swift build                 # build FlotillaCore + flotilla-probe
-swift run flotilla-probe    # Phase 1 step 1: dump real container JSON, check models
-swift test                  # run the test target
-# The SwiftUI app target moves to an Xcode project in Phase 1 (MenuBarExtra,
-# Liquid Glass, app bundle, signing all want Xcode rather than `swift run`).
+swift build
+swift test
+swift run Flotilla
 ```
 
-## ⚠️ Critical environment constraint — nested virtualization
+The tests use captured JSON and do not need a live `container` installation. With
+the CLI installed, exercise the live data surface separately:
 
-`container` boots a Linux micro-VM per container. The dev laptop is **M2 Max
-(macOS 26.5.1)** → **no nested virtualization** (that needs M3+).
+```sh
+swift run flotilla-probe
+```
 
-- **Local development runs natively on the laptop** — `container` works directly,
-  no VM needed.
-- The **networking/UI layer** is testable in UTM macOS VMs on the M2.
-- **Launching real containers inside a UTM guest will fail on the M2.** Full-stack
-  remote tests use the **physical M1 Mac mini** as the host (runs `container`
-  natively). Pattern: laptop = client, M1 mini = host-mode peer.
+### Linux
 
-Network test topologies:
-- **Isolated:** two macOS VMs on a UTM host-only network → exercises Bonjour + mTLS
-  + allowlist rejection (real container launch fails — expected).
-- **Bridged / physical:** bridged VMs or the M1 mini → real discovery + full
-  container lifecycle.
+Use Swift 6.1:
+
+```sh
+swift build
+swift test
+```
+
+SwiftPM selects `Package@swift-6.1.swift`. It deliberately omits the macOS-only
+SwiftUI target. Never add SwiftUI, AppKit, Network.framework, Security, or other
+Apple-only imports to `FlotillaCore`.
+
+## Phase 1 working rules
+
+- Follow `PHASE1.md` ownership. Do not duplicate existing models, registries, or
+  security boundaries.
+- Read `reference/container-cli.md` before adding CLI operations.
+- Add fixtures for every new decode path and tests for new behavior.
+- Keep types `Sendable` and match the surrounding code's idioms.
+- Say when work is unfinished; source files existing is not evidence that their
+  full Phase 1 contract is complete.
+- Do not run Git when a task or build contract says not to.
+
+## Critical environment constraint — nested virtualization
+
+The development laptop is M2 Max. Apple's `container` boots a Linux micro-VM per
+container, and real container launch inside a UTM macOS guest requires nested
+virtualization unavailable on that host.
+
+- Local development and real local containers run natively on the laptop.
+- Bonjour, mTLS, wire, UI, and rejection paths can be tested in macOS VMs.
+- Real remote lifecycle tests use a physical Apple Silicon Mac, currently the M1
+  Mac mini, as the host-mode peer.
+- Manual host entry remains mandatory because mDNS does not cross VLANs/subnets.
 
 ## Reference
 
-- Apple `container`: https://github.com/apple/container (CLI + signed pkg releases)
+- Apple `container`: https://github.com/apple/container
 - Apple Containerization framework: https://github.com/apple/containerization
-- Inspiration (local-only, **PolyForm Noncommercial** license — read for ideas,
-  do not copy code): https://github.com/tdeverx/contained-app
-
-## Working style
-
-- Build phase by phase (see `PLAN.md`). Phase 1 (local MVP) is chip-independent and
-  comes first. Get the CLI-wrapping + JSON decoding solid before the network layer.
-- Match the surrounding code's idioms. Keep `FlotillaCore` UI-free.
-- This is a learning project — explain non-obvious Swift/Network.framework choices
-  briefly as you go.
+- Local-only inspiration: https://github.com/tdeverx/contained-app
+  (**PolyForm Noncommercial**; learn from patterns, do not copy code)

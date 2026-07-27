@@ -2,179 +2,244 @@
 
 ## Context
 
-Apple shipped `container` (WWDC 2025): an open-source Swift CLI that runs Linux
-containers as one micro-VM each on Apple Silicon. The existing native GUI in this
-space — `tdeverx/contained-app` — is **local-only** and explicitly has **no remote
-host support**. The user has a personal fleet (4 Mac Studios + 4 Mac minis, all
-Apple Silicon M1+) and wants a **personal, non-commercial** menu-bar app that:
+Apple's `container` is an open-source Swift CLI that runs Linux containers as one
+micro-VM each on Apple Silicon. Flotilla is a personal, non-commercial native app
+for managing containers on the local Mac and across a small fleet of remote Macs.
+Each remote Mac runs the same app in host mode.
 
-- Manages containers on the **local** machine, and
-- Manages containers on **remote Macs** in the fleet, where each remote Mac runs
-  the same app in **host mode**.
-- Communicates **Swift-to-Swift over the network** (no reliance on the macOS
-  `ssh` binary), authenticated with **mTLS certificate identities** ("key list"),
-  with **Bonjour** discovery on the LAN.
-- Later: onboard the physical Jamf-managed Mac minis via **configuration
-  profiles** delivering the identity cert + mode/trust settings — no code change,
-  since the transport is already cert-based.
+Flotilla communicates Swift-to-Swift over Network.framework with mTLS. Bonjour
+handles discovery on a flat LAN; manual hostname/IP + port entry is mandatory for
+routed or segmented networks. It does not use the macOS `ssh` binary, expose a
+generic shell, or attempt to be Kubernetes.
 
-Working name: **Flotilla**. This is a personal Swift learning/utility project, not
-a business venture.
+**Status (2026-07-27):** Phase 1 is in progress. `FlotillaCore` contains real JSON
+models, `ContainerHost`/`LocalHost`, a read-only `ContainerCLI`, the Q1
+`Allowlist`, `MountPolicy`, a typed settings registry, and diagnostics/redaction
+components. The SwiftUI executable has a `MenuBarExtra`, main window, and
+table-first cross-host container view. **29 tests pass on macOS**, and the
+Foundation-only core builds and tests on Linux via `Package@swift-6.1.swift`.
 
-**Status (2026-06-30):** repo live + private at `melonfleet/flotilla`; SwiftPM
-scaffold builds and tests green; `FlotillaCore` models decode real `container` 1.0.0
-JSON; watermelon branding done; GitHub security/1Password-signing set up. Next:
-Phase 1 app layer. Build workflow with ChatGPT Codex is in `docs/AI-WORKFLOW.md`.
+Still unfinished in Phase 1: the remaining CLI operations, `Preflight`, settings
+tests, and the complete diagnostics/support-bundle flow. Phase 2 networking and
+the stateful host runtime have not been built.
 
-**Branding:** icon is a flotilla of three white sails over a **watermelon slice**
-— pink flesh field, green rind base, white pith line, black seeds (playful, personal,
-and distinct from Docker's blue whale). Built as a layered **Liquid Glass** app icon
-on macOS 26, with a monochrome three-sails template for the menu-bar extra. The
-watermelon palette carries into the UI: **pink = brand/selection**, **green =
-healthy/running**. Full spec in `design/branding.md`.
+The scope below is the settled, consolidated plan from `DECISIONS.md`,
+`PHASE1.md`, and `research/FEATURES.md`. Earlier phase summaries are superseded.
+
+## Branding and appearance
+
+The approved visual language is the watermelon identity: pink for
+brand/selection, green for healthy/running, and a separate semantic error colour.
+The menu-bar symbol is monochrome. Liquid Glass belongs on chrome and control
+clusters, while data-heavy tables remain opaque.
+
+Appearance is chosen during first run. `Auto` is preselected and follows the
+system; light and dark are both first-class. The watermelon accent is the single
+accent colour in either appearance.
 
 ## Architecture
 
-```
-Flotilla.app  (one app, two runtime modes — menu-bar extra + main window)
-├── FlotillaCore  (SwiftPM library, no UI)   ← shared spine, both modes link it
-│   ├── Models           Codable: Container, Image, Host, Stats, Event
-│   ├── ContainerCLI     wraps `container … --format json` via Process
-│   ├── ContainerHost    protocol: run(args) / stream(args)
-│   │     ├── LocalHost   → Process (container CLI on this Mac)
-│   │     └── RemoteHost  → NWConnection (mTLS) to a host-mode peer
-│   └── Wire             Codable request/response + length-prefixed framing
-│
-├── Host mode runtime
-│   ├── NWListener + NWProtocolTLS (mTLS), advertises via Bonjour
-│   ├── Authorizes peer by cert fingerprint allowlist ("key list")
-│   └── On request → runs container CLI locally, streams stdout/stderr/exit
-│
-└── Client mode runtime (UI)
-    ├── Bonjour browser → discovered hosts
-    ├── RemoteHost per fleet member; LocalHost for this Mac
-    └── SwiftUI: menu-bar extra + NavigationSplitView main window
+```text
+Flotilla.app  (one app, client/host/both modes)
+├── FlotillaCore  (Foundation-only shared spine)
+│   ├── Models
+│   ├── ContainerCLI
+│   ├── ContainerHost
+│   │   ├── LocalHost   → Process
+│   │   └── RemoteHost  → Phase 2 mTLS connection
+│   ├── Allowlist       → permitted subcommands + argument schemas
+│   ├── MountPolicy     → allowed host bind-mount roots
+│   ├── Settings        → typed registry and managed precedence
+│   ├── Diagnostics
+│   ├── Wire            → Phase 2 framing/messages
+│   └── Transport       → Phase 2 Network.framework/mTLS
+├── Client UI
+│   ├── MenuBarExtra + main window
+│   ├── local and remote hosts through ContainerHost
+│   └── table-first aggregate container view
+└── Stateful host runtime
+    ├── mTLS listener + Bonjour advertisement
+    ├── peer/certificate authorization
+    ├── persisted policy and per-host settings store
+    └── validated local CLI execution
 ```
 
-Design decisions (settled during discovery):
+Host mode is deliberately **stateful**. Its persisted policy store is required
+for per-host settings and, in Phase 4, restart/health loops that continue when the
+client laptop disconnects.
 
-- **Shell out to the `container` CLI and decode `--format json`** — do NOT link
-  the Containerization framework. `contained-app` validates this: robust across
-  CLI churn, easy to verify. JSON output confirmed available.
-- **CLI bootstrap/preflight.** On launch (local and host mode), detect whether
-  `container` is installed and check its version. If missing/outdated, offer a
-  one-click guided install that downloads the latest signed `.pkg` from the
-  `apple/container` GitHub releases and runs it via the system installer **with
-  user authorization** — never a silent privileged install (the pkg drops a
-  launchd service and needs admin).
-- **Network.framework + mTLS**, not the system `ssh` binary and not gRPC. Pure
-  Apple, no third-party deps, and certificate identities map 1:1 onto the future
-  Jamf/config-profile onboarding path.
-- **Two ways to add hosts:** (a) **Bonjour** auto-discovery on the flat LAN, and
-  (b) **manual entry** by hostname/IP + port. Manual is mandatory, not optional —
-  mDNS does not cross subnets/VLANs, so routed/segmented networks require it.
-- **One app, two modes** — host mode is the same binary running headless-ish, not
-  a separate daemon. Mode chosen in UI now; profile-delivered later.
-- **No Kubernetes.** For ~8 nodes, "orchestration" = fleet view + per-host
-  run/stop + (later) self-implemented restart/health. Note `container` has no
-  native `--restart`/healthcheck — those are implemented in-app if wanted.
+Every execution path uses the same boundary:
+
+1. `ContainerCLI` creates an argument array.
+2. `Allowlist` validates the subcommand and argument schema; `MountPolicy`
+   validates host paths.
+3. `LocalHost` executes locally, or `RemoteHost` sends the validated shape over
+   the wire.
+4. The host validates again before spawning `container`.
+
+The Q1 wire shape is the settled middle path: **CLI args passthrough constrained
+by a default-deny subcommand allowlist**. The protocol must also bound frame
+length, concurrency, and deadlines. It never accepts an arbitrary command string,
+but it does not require a new typed RPC for every CLI operation.
 
 ## Tech stack
 
-- Swift 6.2+, SwiftUI, SwiftPM two-target package (mirror `contained-app`'s
-  `Core` lib + app split).
-- **Liquid Glass** SwiftUI materials (`glassEffect` et al.) — macOS 26-only target,
-  so use the real design language, not faux cards.
-- Network.framework (`NWListener`/`NWConnection`/`NWProtocolTLS`/`sec_*`).
-- **Sparkle** for auto-updates, with an appcast feed hosted on GitHub releases.
-- SwiftData for local history; Swift Charts for sparklines/stats.
-- `MenuBarExtra` scene + `NavigationSplitView` main window; ⌘K command palette.
-- Identities/allowlist in Keychain. Self-signed certs generated in-app now;
-  Jamf-delivered later.
+- Swift 6.2+ and SwiftUI on macOS 26, Apple Silicon only.
+- Foundation-only `FlotillaCore`, also buildable/testable with Swift 6.1 on Linux.
+- Network.framework for mTLS transport and Bonjour.
+- SwiftData for local history and persisted host policy where appropriate.
+- Swift Charts once Phase 4 has real streaming data.
+- Sparkle for unmanaged updates; Jamf for managed minis.
+- Keychain for identities and trust material.
+- No App Sandbox for v1; use hardened runtime, Developer ID, notarization, and
+  minimal entitlements.
 
 ## Build phases
 
-**Phase 1 — Local MVP (chip-independent, build first).**
-`FlotillaCore` with `Models`, `ContainerCLI` (run + JSON decode), `ContainerHost`
-protocol, `LocalHost`. SwiftUI menu-bar app: container grid (the mockup), images
-list, run/stop/restart/remove, logs view. Goal: a working local manager.
+### Phase 1 — Local MVP and shared foundation
 
-**Phase 2 — Host mode + client mode over mTLS.**
-`Wire` message types + framing. Host runtime: `NWListener` + mTLS + Bonjour
-advertise + fingerprint allowlist. Client runtime: Bonjour browse + manual
-host-add (hostname/IP + port) + `RemoteHost`. Manual cert pinning UI. Test client
-(laptop) ↔ host (physical M1 Mac mini).
+Phase 1 is the **consolidated** scope, not the old “grid + a few buttons”
+one-liner.
 
-**Phase 3 — Fleet view.**
-Multiple host-mode peers, aggregate dashboard, per-host status dots + counts
-(as in mockup), host onboarding/trust management.
+Core runtime:
 
-**Phase 4 — Live streaming + exec.**
-Switch log/stat streaming to a persistent `NWConnection` channel; `container exec`
-interactive terminal tab. Consider self-run restart/health here.
+- Decode real `container --format json` for containers, images, stats, system
+  status, versions, volumes, and networks where JSON exists.
+- Complete lifecycle and image operations through `ContainerCLI`: run, start,
+  stop, restart, kill, delete, pull, delete/prune/tag/inspect, plus bounded logs.
+- Add volume and network list/create/delete/inspect/prune, and the `system df`
+  disk view.
+- Keep the allowlisted args-passthrough boundary and `MountPolicy` default-deny
+  behavior on every operation.
+- Provide numeric snapshot stats in Phase 1; live sparklines wait for Phase 4.
+- Read `config.toml`-backed properties in Phase 1; do not edit the file yet.
 
-**Phase 5 — Auto-updates (before Jamf, for the unmanaged fleet).**
-Integrate Sparkle; publish releases + an appcast feed on GitHub so dev machines
-and unmanaged hosts self-update. Sign/notarize the app. (Managed minis later get
-updates via Jamf instead.)
+App and UX:
 
-**Phase 6 — Jamf / configuration profiles.**
-Replace manual cert + mode setup with profile-delivered identity (Keychain) +
-managed settings (mode, trust anchors, allowlist) on the physical Mac minis.
+- Ship a running-first, sortable table as the default container view, with cards
+  as an alternate toggle.
+- Keep `MenuBarExtra(.window)` shallow and provide a main window for the full
+  interface.
+- Add search/filtering, multi-select bulk actions, run sheet with live command
+  preview, logs/inspect, images, and a combined System surface for volumes and
+  networks.
+- Implement onboarding and preflight: detect CLI presence/version/service/kernel,
+  show inline remediation, and require visible user authorization for package
+  installation.
+- Support Menu bar / Dock / Both presentation and accessible light/dark UI.
 
-## Critical files (to create)
+Settings, security, and operations:
 
-- `Package.swift` — two targets: `FlotillaCore` (lib), `Flotilla` (executable).
-- `Sources/FlotillaCore/Models/*.swift` — Codable models matching `container`
-  JSON output.
-- `Sources/FlotillaCore/ContainerCLI.swift` — Process wrapper, JSON decoding.
-- `Sources/FlotillaCore/ContainerHost.swift` — protocol + `LocalHost`.
-- `Sources/FlotillaCore/Wire.swift` — request/response + length-prefix framing.
-- `Sources/FlotillaCore/Transport/{Listener,Connection,TLSIdentity}.swift` —
-  Network.framework + mTLS + Bonjour (Phase 2).
-- `Sources/Flotilla/App.swift` — `MenuBarExtra` + main window scenes.
-- `Sources/Flotilla/Views/*` — fleet sidebar, container grid, detail tabs.
+- Use the typed settings registry with precedence:
+  `locked` → user → managed `defaults` → built-in.
+- Represent “appearance not chosen yet” separately from “user chose Auto.”
+- Include poll intervals, CLI integration, container defaults, log limits, host
+  settings, update channel, diagnostics choice, and full per-category
+  notification toggles. Mandatory error notifications remain enabled.
+- Establish the security baseline now: hardened-runtime/notarization hygiene,
+  minimal entitlements, structured logging with no secrets, and explicit no
+  telemetry/account/activation.
+- Complete local diagnostics and a previewable, redacted support bundle with no
+  upload. Redaction must remove secrets, certificate material, identifiers, and
+  absolute user paths.
+- Define separate reset semantics for preferences, host/trust state, and window
+  layout.
 
-## ⚠️ Test-plan constraint — nested virtualization (dev laptop is M2 Max, macOS 26.5.1)
+**Current Phase 1 progress:** the core models, local execution spine, read-only
+CLI, allowlist, mount policy, settings registry, diagnostics components, SwiftUI
+shell, menu-bar extra, and cross-host table exist. CLI mutations/volume/network/
+log operations, preflight, settings tests, and the full diagnostics bundle are
+unfinished.
 
-`container` boots a Linux micro-VM per container. Running it **inside a UTM macOS
-guest** is nested virtualization, supported only on **M3+** hosts. The dev laptop
-is **M2 Max** → no nested virtualization. Concretely:
+### Phase 2 — Stateful host mode + client mode over mTLS
 
-- **Phase 1 local MVP runs natively on the laptop** — it's Apple Silicon on macOS
-  26, so `container` works directly. No VM needed for local development/testing.
-- The **comms/UI layer** (Bonjour, mTLS, Wire protocol, host/client modes) is
-  testable in UTM macOS VMs on the M2 — networking and discovery don't need the
-  inner Linux VM.
-- **Launching real containers inside a UTM guest will fail on the M2.** So
-  full-stack remote tests (host mode actually spinning up a container) run against
-  the **physical M1 Mac mini** as the host — it runs `container` natively, no
-  nesting. Pattern: laptop = client, M1 mini = host-mode peer.
+- Add length-prefixed protocol framing, handshake/version/capability negotiation,
+  and explicit request lifecycle.
+- Carry CLI argument arrays only inside the Q1 allowlisted boundary. Validate on
+  both sides and enforce frame, argument, concurrency, and deadline limits.
+- Design client-to-host stdin/resize frames and binary frames now so Phase 4 exec
+  and future transfer work do not break deployed protocol versions.
+- Build `NWListener`/`NWConnection` mTLS transport, unique Keychain identities,
+  two-sided pairing, peer allowlist, immediate revocation, Bonjour discovery, and
+  manual host entry.
+- Add `RemoteHost` while keeping `ContainerCLI` semantics shared with `LocalHost`.
+- Add the persisted host policy/settings store and typed per-host settings
+  get/set messages. Mode itself is never remotely switchable.
+- Keep host-mode UI minimal: listener state, identity/fingerprint, peers, recent
+  commands, and a control to stop accepting connections.
+- Acceptance criterion: safe Phase 1 feature parity through a remote host without
+  adding per-operation RPC types.
 
-### Two network test topologies
+### Phase 3 — Fleet view
 
-- **Isolated (transport/auth):** two macOS VMs on a UTM **host-only/internal**
-  network. Exercises Bonjour discovery + mTLS handshake + allowlist rejection on a
-  clean switch (mDNS works across the virtual switch; real container launch will
-  fail — expected, this validates networking only).
-- **Bridged (real cross-machine):** switch VMs to **bridged**, or use the physical
-  M1 mini, so the laptop and fleet Macs share L2. Tests real discovery and the
-  full container lifecycle. The routed/VLAN case (no mDNS) is what manual host-add
-  covers.
+- Aggregate containers from local and remote hosts in one table with a Host
+  column, grouping, search, staleness, and cached offline data.
+- Add fleet sidebar/status rollups, host detail, trust management, host
+  tags/groups, and per-host identity/settings overrides.
+- Implement adaptive polling; `container` has no event stream.
+- Add version-skew warnings, cross-host bulk actions, fan-out image pulls, and
+  partial-failure reporting.
+- Support safe host/settings import and export without private keys.
+- Add validated local `config.toml` editing. Remote editing remains deferred
+  unless evidence shows it is necessary.
+
+### Phase 4 — Live streaming + exec + host policy loops
+
+- Add live log/stat streams over persistent connections and render sparklines only
+  for visible data.
+- Add interactive `container exec` with a real PTY, fresh visible authorization,
+  bounded lifetime/concurrency, and no transcript logging by default.
+- Implement restart policy and health checks on the **host peer**, backed by its
+  persisted policy store, so policies survive client disconnects.
+- Add read-only-first file browsing/download and host-aware bind-mount/port
+  editing. Upload and broader transfer can follow.
+
+### Phase 5 — Auto-updates
+
+- Integrate Sparkle 2 for unmanaged Macs with HTTPS appcast, Ed25519 artifact
+  signatures, Developer ID, notarization, and release verification.
+- Separate check/download/install controls and obtain first-run consent for update
+  checks.
+- Add a host-safe update interruption point: stop new mutations, finish bounded
+  work, persist consistent state, relaunch, and re-run preflight.
+- Use named-host canaries and an explicit reinstall rollback runbook.
+- Jamf, not Sparkle, remains the update authority on managed minis.
+
+### Phase 6 — Jamf / configuration profiles
+
+- Deliver unique per-device identity and managed settings without changing the
+  transport.
+- Use two managed tiers: `defaults` to seed editable values and `locked` to
+  override and disable editing.
+- Manage mode, listener/Bonjour settings, trust anchors, peer allowlist, identity
+  label, update policy, diagnostics policy, minimum client version, and fleet
+  defaults.
+- Show effective value, source, validation errors, and lock state in diagnostics.
+- Test app-before-profile, profile-before-app, renewal overlap, removal,
+  revocation, restart, and segmented-network behavior on staged managed hardware.
+
+## Critical environment constraint — nested virtualization
+
+The development laptop is M2 Max. Running a `container` Linux micro-VM inside a
+UTM macOS guest requires nested virtualization unavailable on that host.
+
+- Phase 1 runs natively on the laptop.
+- UTM guests can test UI, Bonjour, mTLS, wire framing, and authorization without
+  launching real containers.
+- Full remote lifecycle tests use a physical Apple Silicon Mac, currently the M1
+  Mac mini, as the host peer.
+- Manual host entry covers routed/VLAN networks where mDNS cannot cross.
 
 ## Verification
 
-- Phase 1: build with `swift build`; launch app; confirm local containers/images
-  list, run/stop/logs against `container` running **natively on the M2 Max
-  laptop** (macOS 26 — no VM needed).
-- Phase 2 (networking layer): stand up host mode in a UTM macOS VM on the laptop;
-  from the laptop client, discover it via Bonjour, complete mTLS handshake (reject
-  an un-allowlisted cert), and round-trip a `container ls`. Real container
-  spin-up in that VM will fail (no nested virt) — that's expected; this step
-  validates discovery/transport/auth only.
-- Phase 2/3 (full stack): point the laptop client at a **physical Mac mini/Studio**
-  running host mode and verify real run/stop/logs end to end.
-- Phase 3+: onboard multiple VM hosts; confirm aggregate fleet view matches each
-  host's local `container ls`.
-- Phase 6: install a configuration profile on a Jamf-managed mini; confirm the
-  app picks up identity + mode/trust from the profile with no manual setup.
+- On macOS: `swift build`, `swift test`, then launch with `swift run Flotilla`.
+- On Linux/Swift 6.1: `swift build` and `swift test`; SwiftPM selects the portable
+  manifest and excludes the SwiftUI app.
+- Phase 1: verify local list/run/stop/logs and system features natively against
+  the installed `container` CLI.
+- Phase 2: verify discovery, manual add, bilateral pairing, allowlist rejection,
+  limits, revocation, state persistence, and remote Phase 1 parity.
+- Phase 3+: verify aggregate results and stale/offline behavior across multiple
+  physical or virtual peers.
+- Phase 6: verify both managed tiers and identity/profile lifecycle on a staged
+  Jamf-managed mini.

@@ -5,75 +5,117 @@
 <h1 align="center">Flotilla</h1>
 
 <p align="center">
-  A native macOS menu-bar app to manage Apple's <code>container</code> containers on the
-  local machine <strong>and</strong> across a fleet of remote Macs — a personal summer project.
+  A native macOS app for managing Apple's <code>container</code> containers on the
+  local machine <strong>and</strong> across a fleet of remote Macs.
 </p>
 
-This folder is a **portable starter kit**. It contains no Swift code yet — it's the
-plan, design, and prompts you carry to the laptop to begin building with Claude Code
-on a fresh account.
+Flotilla is a personal, non-commercial fleet console for Apple Silicon Macs. It
+wraps the `container` CLI instead of linking the Containerization framework, and
+uses one shared core for local and eventual remote hosts. The product is
+table-first: the primary view is a cross-host container table, with a shallow
+menu-bar surface for status and quick access.
 
-## What's here
+Remote communication is designed around Network.framework, mTLS, Bonjour
+discovery, and manual host entry for routed networks. It is not an SSH wrapper,
+generic remote shell, or Kubernetes-style orchestrator.
 
-**Status:** repo live + private at `melonfleet/flotilla`; scaffold builds + tests
-green; watermelon branding; security/signing set up. New Mac? → `docs/LAPTOP-SETUP.md`.
+## Current status
 
-```
+The repository contains working Swift code, not a starter kit.
+
+- `FlotillaCore` is a substantial, Foundation-only library. It includes the
+  `ContainerHost`/`LocalHost` execution spine, real `container` JSON models,
+  read-only `ContainerCLI` operations, the Q1 subcommand `Allowlist`,
+  `MountPolicy`, a typed settings registry with managed `defaults` and `locked`
+  precedence, and diagnostics/redaction components.
+- The macOS SwiftUI executable has a `MenuBarExtra`, main window, and table-first
+  cross-host container view.
+- **29 tests pass on macOS.** Fixtures cover real `container` JSON; the allowlist
+  and mount-policy boundary have adversarial coverage.
+- The portable core also builds and tests on Linux with Swift 6.1 via
+  `Package@swift-6.1.swift`. The SwiftUI app is intentionally absent from that
+  manifest.
+
+Phase 1 is not complete. Still unfinished are the remaining `ContainerCLI`
+operations (mutations, volumes, networks, and bounded logs), preflight, settings
+tests, and the complete diagnostics/support-bundle flow. The Phase 2 wire
+transport, mTLS host/client runtime, and persisted host policy store are also
+future work.
+
+The current build contract and ownership live in `PHASE1.md`. Settled product and
+security choices live in `DECISIONS.md`; the phase-ordered scope is consolidated
+in `research/FEATURES.md`.
+
+## Repository layout
+
+```text
 Flotilla/
-├── README.md            this file
-├── CLAUDE.md            steering doc (auto-loaded by Claude Code)
-├── PLAN.md              full 6-phase implementation plan
-├── DECISIONS.md         settled choices + rejected alternatives
-├── PROMPTS.md           paste-ready kickoff prompts per phase
-├── LICENSE             personal, all rights reserved
-├── Package.swift        compilable SwiftPM scaffold
+├── README.md
+├── CLAUDE.md                     auto-loaded project steering
+├── DECISIONS.md                  settled choices and rejected alternatives
+├── PHASE1.md                     current build contract and ownership
+├── PLAN.md                       six-phase implementation plan
+├── Package.swift                 macOS package, including the SwiftUI app
+├── Package@swift-6.1.swift       portable Linux core/test manifest
 ├── Sources/
-│   ├── FlotillaCore/    ContainerHost, LocalHost, ContainerCLI, Models
-│   └── flotilla-probe/  dumps real `container` JSON (Phase 1 step 1)
-├── Tests/FlotillaCoreTests/
-├── docs/
-│   ├── LAPTOP-SETUP.md             bring-up on a new Mac
-│   └── AI-WORKFLOW.md              Claude + ChatGPT Codex roles
-├── scripts/
-│   └── setup-mac.sh                one-shot local SSH/signing config
-├── reference/           pre-researched API docs (read before each phase)
-│   ├── json-schemas.md             real captured container 1.0.0 JSON
-│   ├── container-cli.md            full CLI command surface
-│   ├── networking-mtls-bonjour.md  Network.framework + mTLS + Bonjour
-│   ├── wire-protocol.md            message framing + data model spec
-│   ├── liquid-glass.md             macOS 26 glass APIs
-│   ├── sparkle-updates.md          GitHub appcast auto-update
-│   └── jamf-config-profile.md      managed onboarding
-└── design/
-    ├── branding.md                 watermelon palette + roles
-    ├── dashboard-mockup.html       standalone fleet dashboard mockup
-    ├── icon-app.svg                watermelon-slice app icon
-    ├── icon-menubar.svg            monochrome menu-bar template
-    ├── flotilla-logo.png           README logo (rendered)
-    └── melonfleet-avatar.{svg,png} account avatar source
+│   ├── Flotilla/                 MenuBarExtra, main window, cross-host table
+│   ├── FlotillaCore/
+│   │   ├── Settings/             typed registry and managed precedence
+│   │   ├── Diagnostics/          snapshots, error log, redaction
+│   │   ├── Allowlist.swift       constrained CLI-argument boundary
+│   │   ├── MountPolicy.swift     host-path policy
+│   │   ├── ContainerCLI.swift
+│   │   ├── ContainerHost.swift
+│   │   └── Models.swift
+│   └── flotilla-probe/           live `container` JSON probe
+├── Tests/FlotillaCoreTests/      model, allowlist, and mount-policy tests
+├── reference/                    implementation references
+├── design/                       brand assets, specifications, and mockups
+├── docs/                         laptop setup notes
+└── research/                     consolidated feature and background research
 ```
 
-## How to start on the laptop
+There is not yet an Xcode project. The app currently builds as the `Flotilla`
+SwiftPM executable; an Xcode project becomes necessary when app-bundle metadata,
+`LSUIElement`, signing, and distribution are added.
 
-1. Copy the whole `~/melonfleet/` folder to the laptop (this project lives at `~/melonfleet/Flotilla`).
-2. Open the project in Claude Code: `cd ~/melonfleet/Flotilla && claude`.
-3. Claude reads `CLAUDE.md` automatically. Paste the **Phase 0** prompt from
-   `PROMPTS.md` to confirm the scaffold builds (`swift build` / `swift test`), then
-   the **Phase 1** prompt to start the local MVP.
-4. With `container` installed, `swift run flotilla-probe` dumps the real JSON used
-   to finalize the models.
-5. Open `design/dashboard-mockup.html` in a browser for the target UI; open the
-   SVGs in Preview for the icon.
+## Build and test
 
-> The scaffold **builds and passes tests** (validated on macOS 26 / Swift 6.3), and
-> the models decode real `container` 1.0.0 JSON (fixtures in `Tests/`). So Phase 0
-> and Phase 1's data layer are already done — the laptop starts at the UI.
+### macOS
+
+Requirements: Apple Silicon, macOS 26, and a Swift 6.2-or-newer toolchain.
+The unit tests use captured fixtures and do not require `container` to be
+installed.
+
+```sh
+swift build
+swift test
+swift run Flotilla
+```
+
+With Apple's `container` CLI installed, the probe can exercise the live JSON
+surface:
+
+```sh
+swift run flotilla-probe
+```
+
+### Linux
+
+Use a Swift 6.1 toolchain. SwiftPM selects `Package@swift-6.1.swift`, which exposes
+only the Foundation-based core, probe, and tests:
+
+```sh
+swift build
+swift test
+```
+
+The SwiftUI app is macOS-only and is not expected to build on Linux.
 
 ## The one-line pitch
 
-`contained-app` is a great local-only GUI for Apple `container`. Flotilla is *that,
-plus a fleet*: each remote Mac runs the same app in **host mode**, and a **client**
-on your laptop discovers and drives them over a Swift-to-Swift mTLS connection
-(no `ssh` binary). Hardware: 4 Mac Studios + 4 Mac minis, all Apple Silicon.
+Flotilla is a native local container manager plus a fleet: the same app will run
+in stateful host mode on remote Macs, while a client aggregates and controls them
+over a Swift-to-Swift mTLS connection.
 
-Personal, non-commercial. No AI agents involved in the app itself.
+Personal, non-commercial. No AI agents are part of the app itself.

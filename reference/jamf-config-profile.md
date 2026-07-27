@@ -5,7 +5,7 @@ the profile delivers the identity cert and the managed settings (mode, trust
 anchors, allowlist). Because the transport already uses cert identities, this is a
 config/source change, not a protocol change.
 
-## Two payloads in one profile
+## Identity and managed policy
 
 ### 1. Identity certificate (the "key")
 
@@ -17,25 +17,52 @@ config/source change, not a protocol change.
 - The app finds its identity in the Keychain by a known label (e.g.
   `Flotilla Identity`) — same lookup whether self-generated or profile-delivered.
 
-### 2. Managed settings (mode + trust)
+### 2. Managed settings: two tiers
 
 - **Custom Settings / Preferences payload** writing to the app's preference domain
-  (e.g. `com.<you>.Flotilla`). Managed (force-installed) preferences appear in the
-  app via `UserDefaults.standard` as read-only values. Keys:
+  `dev.melonfleet.Flotilla`.
+- Q4 settled two logical tiers:
+  - **`defaults`** — managed seed values. They apply when the user has not chosen a
+    value, but remain editable in Flotilla.
+  - **`locked`** — managed overrides. They always win, are immutable in the UI,
+    and display a lock with “Managed by configuration profile.”
+- Keys include:
   - `mode` → `host` or `client`
   - `listenPort` (host mode)
+  - `bonjourEnabled`
   - `trustAnchorFingerprints` → array of SHA-256 hex strings the device trusts
   - `peerAllowlist` → array of allowed peer fingerprints
-- The app reads these on launch; if a managed value is present it wins over the
-  local UI setting (so an admin can pin a mini to host mode).
+  - `identityKeychainLabel`
+  - update and diagnostics policy, minimum accepted client version, and fleet
+    defaults
+
+The profile author chooses the tier per key. For example, a suggested listen port
+can be a `defaults` value, while `mode = host`, required mTLS, identity selection,
+and trust policy normally belong in `locked`.
+
+Effective precedence, highest first:
+
+1. managed `locked`;
+2. user value;
+3. managed `defaults`;
+4. built-in default.
+
+A value's mere presence in managed policy does **not** make it authoritative; its
+tier does.
 
 ## App-side requirements (build for this from Phase 2)
 
-- Read `mode`, port, trust anchors, and allowlist from `UserDefaults` so a managed
-  profile can override them later without code changes.
+- Resolve every managed-capable value through the typed settings registry and an
+  injectable managed-preferences source. Do not scatter direct/stringly-typed
+  lookups through the app.
+- Preserve the `defaults`/user/`locked` precedence above for every accessor.
+- Expose value source and `isLocked` so Settings and Diagnostics render the
+  effective policy honestly.
+- Reject invalid managed values and show the validation error/source rather than
+  silently coercing them.
+- Resetting user preferences must not touch either managed tier.
 - Look up the identity by Keychain label, not by a file path.
-- Treat "managed value present" as authoritative; fall back to in-app UI config
-  when unmanaged.
+- Never allow remote settings messages to switch the app's run mode.
 
 ## Jamf mechanics
 
@@ -44,9 +71,13 @@ config/source change, not a protocol change.
   to the mini smart group. Jamf can also deploy the `.app` (signed/notarized) and
   trigger it via policy.
 - Managed app updates go through Jamf here instead of Sparkle.
+- Deliver a unique identity per Mac. Never scope one shared PKCS#12 identity to a
+  group.
 
 ## Note
 
 This phase is the only one that needs the physical managed minis; everything before
 it works with self-generated certs + in-app settings, so it can wait until after
-the core app is solid.
+the core app is solid. Test both installation orders, renewal overlap, profile
+removal, reboot/logout, revocation, and segmented-network behavior on a staged
+smart group before fleet rollout.
