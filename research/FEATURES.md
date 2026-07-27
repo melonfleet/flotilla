@@ -205,7 +205,24 @@ registry all want to land there), and Phases 2–4 hinge on one protocol decisio
 
 ---
 
-## 6. Open questions — genuine either/or, **not decided here**
+## 6. Open questions — ✅ ALL RESOLVED 2026-07-27
+
+> Every question below was answered by the user on 2026-07-27 and is now recorded in
+> `DECISIONS.md` ("Proposal review — settled 2026-07-27"). Kept here for the reasoning
+> and the alternatives considered — **DECISIONS.md is the authority, not this section.**
+>
+> | Q | Decision |
+> |---|---|
+> | Q1 Wire shape | **Middle path** — args passthrough + subcommand allowlist + schema validation |
+> | Q2 Default view | **Table**, card grid demoted to a toggle |
+> | Q3 Host mode | **Stateful** — persisted policy store |
+> | Q4 Managed settings | **Two-tier now** — `defaults` + `locked` |
+> | Q5 Phase 1 scope | **Approved as consolidated** (the fuller Phase 1) |
+> | Q6 Notifications | **Phase 1**, full per-category toggles |
+> | Q7 `config.toml` | Read P1 · edit locally P3 · remote only if needed |
+> | Q8 Bundle ID | `dev.melonfleet.Flotilla` |
+> | Q9 App Sandbox | **No App Sandbox for v1** (still notarized + hardened runtime) |
+
 
 **Q1 — Wire shape: CLI-args passthrough, or typed bounded operations?**
 RUN argues the args-over-wire design is an "unusually strong property": every Phase-1 feature

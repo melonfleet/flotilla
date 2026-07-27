@@ -86,6 +86,46 @@ second-guess settled choices mid-project.
 - Consequence: every view must be built and checked in **both** appearances — an
   auto default means a light bug is as user-visible as a dark one.
 
+## Proposal review — settled 2026-07-27
+
+All nine open questions from `research/FEATURES.md` §6 are closed. Recorded here so
+they are not relitigated.
+
+- **Wire shape: the middle path — args passthrough constrained by a subcommand
+  allowlist (Q1).** The host does NOT accept an arbitrary command string, and it is not
+  a generic remote shell: `args[0]` must match an allowlisted `container` subcommand and
+  the arguments are schema-validated (plus frame-length, concurrency and deadline limits)
+  before anything is spawned. Within that boundary we keep the args-passthrough benefit —
+  Phase-1 features become fleet features in Phase 2 at low marginal cost, and the command
+  string still serves as the audit record. Rejected: unbounded passthrough (the CLI owner's
+  position) and fully typed per-operation RPCs (the review's position).
+- **Container list defaults to a TABLE, with a card/tile toggle (Q2).** Cards stop
+  scaling past ~20 rows; the table is running-first, sortable and multi-select. The card
+  grid survives as a toggle, not the default.
+- **Host mode is stateful (Q3).** It gets a persisted policy store. Required so
+  restart/health policy runs on the host peer — otherwise closing the laptop stops
+  restarting containers on the minis — and so per-host settings can be read/written.
+  This is a deliberate expansion of PLAN.md's "host mode just executes CLI args".
+- **Two-tier managed settings now: `defaults` (seed) + `locked` (override) (Q4).**
+  Adopted before Phase 2 writes the settings accessors, because retrofitting precedence
+  later means rewriting every accessor. Supersedes the simpler "managed value always
+  wins" note in `reference/jamf-config-profile.md`.
+- **Phase 1 scope: approved as consolidated (Q5)** — i.e. the fuller Phase 1 in
+  `research/FEATURES.md`, including volumes, networks, the settings registry, the
+  security baseline, diagnostics and the support bundle. Not trimmed back to PLAN.md's
+  original one-line Phase 1.
+- **Notifications ship in Phase 1 with full per-category toggles (Q6).** Earlier than the
+  UX pass proposed (Phase 3); PLAN.md did not mention them at all.
+- **`config.toml`: read in Phase 1, edit locally in Phase 3, edit remotely only if it
+  proves necessary (Q7).** Avoids owning a file another tool owns on a machine you may
+  not be sitting at.
+- **Bundle identifier `dev.melonfleet.Flotilla` (Q8)** — see the Identity / namespace
+  section above.
+- **No App Sandbox for v1 (Q9).** We execute an external CLI and listen for network
+  connections; a useful sandbox would need brittle exceptions. Recorded explicitly so it
+  isn't reopened. Note this is orthogonal to the other two: we still ship **notarized**
+  with the **hardened runtime** — notarization ≠ sandboxing ≠ hardened runtime.
+
 ## Licensing note
 
 `tdeverx/contained-app` is **PolyForm Noncommercial 1.0.0** — fine to read for
