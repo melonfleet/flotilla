@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — Settings</title>
+<link rel="stylesheet" href="assets/mac.css">
+<style>
+  .pane { padding: 16px 20px 24px; }
+  .win.w-settings { max-width: 760px; height: 700px; }
+  .g-row .g-label { font-size: 13px; }
+  .g-row.top { align-items: flex-start; }
+  .lock { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--label-3); }
+  .restart-flag { font-size: 10.5px; color: var(--sys-orange); }
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 5px 12px; font-size: 11.5px; }
+  .kv dt { color: var(--label-2); }
+  .kv dd { margin: 0; }
+  .fp { font-family: var(--font-mono); font-size: 11px; }
+  .peer-table td { height: 30px; }
+</style>
+</head>
+<body>
+<script src="assets/icons.js"></script>
+
+<div class="desktop">
+  <div class="win w-settings">
+
+    <!-- Settings is its own window, reachable from the popover, the app menu,
+         ⌘, and the sidebar — Tailscale's four-ways rule. -->
+    <div class="toolbar tall">
+      <span class="traffic"><span class="close"><i>×</i></span><span class="min"><i>−</i></span><span class="zoom" style="background: rgba(0,0,0,.16);"><i></i></span></span>
+      <div class="settings-tabs" data-tabs="#settings-panes">
+        <a class="on" data-tab="general"><svg class="ic s18"><use href="#i-gear"/></svg> General</a>
+        <a data-tab="resources"><svg class="ic s18"><use href="#i-cpu"/></svg> Resources</a>
+        <a data-tab="network"><svg class="ic s18"><use href="#i-wifi"/></svg> Network</a>
+        <a data-tab="updates"><svg class="ic s18"><use href="#i-arrow-down-circle"/></svg> Updates</a>
+        <a data-tab="fleet"><svg class="ic s18"><use href="#i-server"/></svg> Fleet</a>
+        <a data-tab="advanced"><svg class="ic s18"><use href="#i-sliders"/></svg> Advanced</a>
+      </div>
+    </div>
+
+    <div id="settings-panes" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; background: var(--grouped-bg);">
+
+      <!-- ================= GENERAL ================= -->
+      <div class="tab-panel on" data-panel="general">
+        <div class="pane">
+          <div class="g-head">Startup &amp; appearance</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="g-label">Launch Flotilla at login</span>
+              <span class="g-ctl"><span class="switch"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Show Flotilla in</span>
+                <span class="g-help">A menu-bar-only app is terminated if you remove its menu-bar item, so the window must stay reachable.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="seg" data-seg><a>Menu bar</a><a>Dock</a><a class="on">Both</a></span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Appearance</span>
+                <span class="g-help">Follows the system, including Increase Contrast and Reduce Transparency.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="popup plain">Use System <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Open the main window at launch</span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+          </div>
+
+          <div class="g-head">Refreshing</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Refresh containers and stats every</span>
+                <span class="g-help">The only resource setting Flotilla genuinely needs: a menu-bar app that spawns a
+                <span class="mono">Process</span> every second shows up in Activity Monitor and on battery.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="popup">5 seconds <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Pause polling when no window is visible</span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+          </div>
+
+          <div class="g-head">Confirmations</div>
+          <div class="group">
+            <div class="g-row stack">
+              <label class="ctl"><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span> Confirm before deleting a container</label>
+              <label class="ctl"><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span> Confirm before deleting an image</label>
+              <label class="ctl"><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span> Confirm before pruning</label>
+              <label class="ctl"><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span> Always confirm bulk actions, and say how many objects are affected</label>
+              <p class="g-help">Nothing here is undoable, and a fleet app can delete across eight Macs at once.</p>
+            </div>
+          </div>
+
+          <div class="g-head">Notifications</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="g-label">Container exited unexpectedly</span>
+              <span class="g-ctl">
+                <span class="lock"><svg class="ic s11"><use href="#i-lock"/></svg> always on</span>
+                <span class="switch on locked"></span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Host went offline</span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Pairing request from an unknown certificate</span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Image pull or build finished</span>
+              <span class="g-ctl"><span class="switch"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Update available</span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Coalesce repeated notifications</span>
+                <span class="g-help">One notification for a restart storm, not one per container.</span>
+              </span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+          </div>
+          <p class="g-foot">
+            There are no announcement, survey or recommendation categories, because Flotilla has
+            nothing to announce.
+          </p>
+
+          <div class="g-head">Privacy</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Telemetry: none</span>
+                <span class="g-help">
+                  No analytics, no crash upload, no phone-home, no account. Flotilla makes exactly two
+                  kinds of outbound connection: to your own hosts, and to GitHub when you ask it to check
+                  for an update.
+                </span>
+              </span>
+              <span class="g-ctl"><span class="pill ok"><svg class="ic s11"><use href="#i-check"/></svg> by design</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= RESOURCES ================= -->
+      <div class="tab-panel" data-panel="resources">
+        <div class="pane">
+          <div class="callout info" style="margin-bottom: 14px;">
+            <svg class="ic s14"><use href="#i-info"/></svg>
+            <div>
+              <b>There is no VM to size.</b> Apple <span class="mono">container</span> runs one micro-VM per
+              container, so the CPU / RAM / disk slider pane that Docker, OrbStack and Colima all have has
+              no analogue here. What exists instead is defaults for new containers, plus per-run flags.
+              Faking a slider would be inventing a control that does nothing.
+            </div>
+          </div>
+
+          <div class="g-head">Defaults for new containers</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">CPUs</span>
+                <span class="g-help">Applied as <span class="mono">container run -c</span>.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="stepper"><span class="field">4</span><span class="arrows"><span>▲</span><span>▼</span></span></span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Memory</span>
+                <span class="g-help">Applied as <span class="mono">container run -m</span>.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="stepper"><span class="field">1</span><span class="arrows"><span>▲</span><span>▼</span></span></span>
+                <span class="t12 sec">GB</span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Default registry</span>
+              <span class="g-ctl">
+                <span class="field" style="width: 180px;"><span class="mono">docker.io</span></span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Also write these to <span class="mono">config.toml</span></span>
+                <span class="g-help">Writes <span class="mono">[container] cpus/memory</span> so the CLI agrees with the app.
+                  <span class="restart-flag">Requires a service restart to take effect.</span></span>
+              </span>
+              <span class="g-ctl"><span class="switch"></span></span>
+            </div>
+          </div>
+
+          <div class="g-head">Build defaults</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="g-label">Build CPUs</span>
+              <span class="g-ctl"><span class="stepper"><span class="field">2</span><span class="arrows"><span>▲</span><span>▼</span></span></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Build memory</span>
+              <span class="g-ctl">
+                <span class="stepper"><span class="field">2048</span><span class="arrows"><span>▲</span><span>▼</span></span></span>
+                <span class="t12 sec">MB</span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Enable Rosetta for builds</span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+          </div>
+
+          <div class="g-head">Effective configuration on this Mac</div>
+          <div class="group">
+            <div class="g-row stack">
+              <div class="row">
+                <span class="t11 sec mono">container system property list --format toml</span>
+                <span class="spacer"></span>
+                <span class="pill">read-only in Phase 1</span>
+              </div>
+              <pre class="code">[<span class="k">build</span>]  rosetta = <span class="n">true</span>   cpus = <span class="n">2</span>   memory = <span class="s">"2048mb"</span>
+[<span class="k">container</span>]  cpus = <span class="n">4</span>   memory = <span class="s">"1g"</span>
+[<span class="k">dns</span>]  domain = <span class="c">unset</span>
+[<span class="k">kernel</span>]  binaryPath = <span class="s">"opt/kata/…/vmlinux-6.12.28"</span>
+[<span class="k">network</span>]  subnet = <span class="c">unset</span>
+[<span class="k">registry</span>]  domain = <span class="s">"docker.io"</span></pre>
+              <p class="g-help">
+                Merged from <span class="mono">~/.config/container/config.toml</span> then the install-root file,
+                first match wins. The editable round-tripping version lives in Advanced.
+              </p>
+            </div>
+          </div>
+
+          <div class="g-head">Disk</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Reclaimable on this Mac</span>
+                <span class="g-help">Images 12.4 GB · containers 3.1 GB · build cache 1.8 GB</span>
+              </span>
+              <span class="g-ctl">
+                <span class="t12 tnum" style="color: var(--sys-orange);">5.2 GB</span>
+                <a class="btn">Prune…</a>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= NETWORK ================= -->
+      <div class="tab-panel" data-panel="network">
+        <div class="pane">
+          <div class="g-head">This Mac's mode</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Mode</span>
+                <span class="g-help">Client drives other Macs. Host mode lets allowlisted Macs run containers here.
+                  Never switchable remotely.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="seg" data-seg><a class="on">Client</a><a>Host</a><a>Both</a></span>
+              </span>
+            </div>
+          </div>
+
+          <div class="g-head">Host mode listener</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="g-label">Listen port</span>
+              <span class="g-ctl"><span class="field" style="width: 90px;"><span class="mono">7443</span></span></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Require mutual TLS</span>
+                <span class="g-help">Shown for clarity; there is no unauthenticated transport to fall back to.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="lock"><svg class="ic s11"><use href="#i-lock"/></svg> not optional</span>
+                <span class="switch on locked"></span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Advertise via Bonjour</span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Bonjour service name</span>
+                <span class="g-help"><span class="mono">_flotilla._tcp</span> · defaults to this Mac's local hostname.</span>
+              </span>
+              <span class="g-ctl"><span class="field" style="width: 180px;"><span class="mono">laptop-01</span></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Stop accepting connections when the display sleeps</span>
+              <span class="g-ctl"><span class="switch"></span></span>
+            </div>
+          </div>
+          <p class="g-foot">
+            mDNS does not cross subnets or VLANs, so manual host entry is a peer of discovery, not a
+            fallback — see Fleet.
+          </p>
+
+          <div class="g-head">Container networking on this Mac</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="g-label">Subnet</span>
+              <span class="g-ctl"><span class="t12 mono sec">192.168.64.0/24 (default)</span></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">DNS domain</span>
+                <span class="g-help">Setting a domain does nothing user-visible until
+                  <span class="mono">container system dns create</span> registers it with the macOS resolver —
+                  which needs an admin prompt.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="field" style="width: 130px;"><span class="ph mono">unset</span></span>
+                <a class="btn sm">Register…</a>
+              </span>
+            </div>
+          </div>
+          <p class="g-foot">
+            No proxy pane: the CLI inherits the system proxy. One place to configure it, so
+            “which of the three proxy settings is in effect?” never comes up.
+          </p>
+        </div>
+      </div>
+
+      <!-- ================= UPDATES ================= -->
+      <div class="tab-panel" data-panel="updates">
+        <div class="pane">
+          <div class="group" style="margin-bottom: 4px;">
+            <div class="g-row">
+              <svg class="ic s28 accent"><use href="#i-sails"/></svg>
+              <span class="col">
+                <span class="g-label med">Flotilla 0.5.0</span>
+                <span class="g-help">Up to date · last checked today at 12:41 · <a>Release notes</a></span>
+              </span>
+              <span class="g-ctl"><a class="btn lg">Check Now</a></span>
+            </div>
+          </div>
+
+          <div class="g-head">Flotilla updates (Sparkle)</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Automatically check for updates</span>
+                <span class="g-help">You were asked once, on first launch. Flotilla never checks silently before you agree.</span>
+              </span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Automatically download updates</span>
+              <span class="g-ctl"><span class="switch"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Check every</span>
+              <span class="g-ctl"><span class="popup">Day <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Update channel</span>
+              <span class="g-ctl"><span class="seg" data-seg><a class="on">Stable</a><a>Prerelease</a></span></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Feed</span>
+                <span class="g-help mono">https://github.com/melonfleet/flotilla/releases/appcast.xml</span>
+              </span>
+              <span class="g-ctl">
+                <span class="lock"><svg class="ic s11"><use href="#i-lock"/></svg> Managed by configuration profile</span>
+              </span>
+            </div>
+          </div>
+          <p class="g-foot">
+            These are Sparkle's own keys (<span class="mono">SUEnableAutomaticChecks</span>,
+            <span class="mono">SUAutomaticallyUpdate</span>, <span class="mono">SUScheduledCheckInterval</span>,
+            <span class="mono">SUFeedURL</span>) so a Jamf profile can lock them for free. Jamf-managed minis
+            get updates from Jamf, not from here.
+          </p>
+
+          <div class="g-head">Fleet versions</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="dot warn"></span>
+              <span class="col">
+                <span class="g-label">mini-02 runs Flotilla 0.4.1</span>
+                <span class="g-help">Log streaming is unavailable against this host until it updates.</span>
+              </span>
+              <span class="g-ctl"><a class="btn">Update host…</a></span>
+            </div>
+            <div class="g-row">
+              <span class="dot running"></span>
+              <span class="col"><span class="g-label">6 hosts on 0.5.0</span></span>
+              <span class="g-ctl"><span class="pill ok">matched</span></span>
+            </div>
+          </div>
+
+          <div class="g-head">The <span class="mono">container</span> runtime</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Installed: <span class="mono">container</span> 1.0.0</span>
+                <span class="g-help">Latest signed release on <span class="mono">apple/container</span>: 1.0.0 · commit ee848e3</span>
+              </span>
+              <span class="g-ctl">
+                <span class="pill ok"><svg class="ic s11"><use href="#i-check"/></svg> current</span>
+                <a class="btn">Check…</a>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Guided install</span>
+                <span class="g-help">Downloads the signed <span class="mono">.pkg</span> and runs the system installer
+                  with your authorization. Never a silent privileged install — the pkg drops a launchd service.</span>
+              </span>
+              <span class="g-ctl"><a class="btn" href="onboarding.html">Reinstall…</a></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= FLEET / PAIRING ================= -->
+      <div class="tab-panel" data-panel="fleet">
+        <div class="pane">
+          <div class="g-head">This Mac's identity</div>
+          <div class="group">
+            <div class="g-row top">
+              <svg class="ic s20 accent" style="margin-top: 2px;"><use href="#i-key"/></svg>
+              <span class="col" style="min-width: 0;">
+                <span class="g-label">Certificate SHA-256</span>
+                <span class="fp" style="margin: 4px 0 3px;">E1 92 · 44 0B · C7 3D · 88 A5 · 61 FE · 20 9C · 7A 14 · D3 66</span>
+                <span class="g-help">
+                  Keychain label <span class="mono">Flotilla Identity</span> · self-signed, generated on this Mac.
+                  The private key never leaves the Keychain and is never exported.
+                </span>
+              </span>
+              <span class="g-ctl col gap6">
+                <a class="btn sm"><svg class="ic s11"><use href="#i-copy"/></svg> Copy</a>
+                <a class="btn sm">Regenerate…</a>
+              </span>
+            </div>
+          </div>
+
+          <div class="g-head">Trusted hosts (the key list)</div>
+          <div class="group">
+            <table class="table peer-table">
+              <thead>
+                <tr>
+                  <th>Host</th><th>Fingerprint</th><th style="width: 96px;">Added</th>
+                  <th style="width: 92px;">Last seen</th><th style="width: 74px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="row gap6"><span class="dot running"></span>studio-01</span></td>
+                  <td class="fp">A4 3F · 7B 08 · 3C A1 · 22 D4</td>
+                  <td class="sec">30 Jun 2026</td><td class="sec">now</td>
+                  <td><a class="btn sm destructive">Revoke</a></td>
+                </tr>
+                <tr>
+                  <td><span class="row gap6"><span class="dot running"></span>studio-02</span></td>
+                  <td class="fp">19 C4 · 5E 71 · B0 2A · 8F 33</td>
+                  <td class="sec">30 Jun 2026</td><td class="sec">now</td>
+                  <td><a class="btn sm destructive">Revoke</a></td>
+                </tr>
+                <tr>
+                  <td><span class="row gap6"><span class="dot running"></span>studio-03</span></td>
+                  <td class="fp">6D 12 · AA 09 · 41 B7 · 5C E8</td>
+                  <td class="sec">2 Jul 2026</td><td class="sec">now</td>
+                  <td><a class="btn sm destructive">Revoke</a></td>
+                </tr>
+                <tr>
+                  <td><span class="row gap6"><span class="dot error"></span>studio-04</span></td>
+                  <td class="fp">F0 8B · 27 5D · 93 1C · E4 A2</td>
+                  <td class="sec">2 Jul 2026</td>
+                  <td style="color: var(--sys-red);">09:12</td>
+                  <td><a class="btn sm destructive">Revoke</a></td>
+                </tr>
+                <tr>
+                  <td><span class="row gap6"><span class="dot running"></span>mini-01</span></td>
+                  <td class="fp">3A 77 · 8C 04 · D5 62 · 10 9B</td>
+                  <td class="sec">4 Jul 2026</td><td class="sec">now</td>
+                  <td><a class="btn sm destructive">Revoke</a></td>
+                </tr>
+                <tr>
+                  <td><span class="row gap6"><span class="dot warn"></span>mini-02</span></td>
+                  <td class="fp">CC 51 · 09 EE · 7F 38 · 4B D0</td>
+                  <td class="sec">4 Jul 2026</td><td class="sec">now</td>
+                  <td><a class="btn sm destructive">Revoke</a></td>
+                </tr>
+                <tr class="dim">
+                  <td><span class="row gap6"><span class="dot untrusted"></span>mini-03</span></td>
+                  <td class="fp">7B 08 · DE 55 · 3C A1 · …</td>
+                  <td class="ter">not trusted</td><td class="sec">now</td>
+                  <td><a class="btn sm primary" href="onboarding.html">Verify…</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="g-foot">
+            Stored in the Keychain, never in a plist or an export. A changed fingerprint is a warning
+            with old and new side by side, defaulting to Cancel — never a silent re-prompt.
+          </p>
+
+          <div class="g-head">Hosts</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Discovery</span>
+                <span class="g-help">Bonjour browse on the local link, plus manual entries for routed or VLAN'd networks.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="switch on"></span>
+                <a class="btn" href="onboarding.html">Add host…</a>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Manual hosts</span>
+                <span class="g-help mono">mini-04.local:7443 · 10.20.3.18:7443</span>
+              </span>
+              <span class="g-ctl"><a class="btn sm">Edit…</a></span>
+            </div>
+          </div>
+
+          <div class="g-head">Fleet defaults, with per-host overrides</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="g-label">Poll interval for remote hosts</span>
+              <span class="g-ctl"><span class="popup">10 seconds <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Include every host in the aggregate view</span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Overrides</span>
+                <span class="g-help">
+                  <span class="pill">mini-01 · poll 30 s</span>
+                  <span class="pill">studio-03 · default 8 CPUs</span>
+                </span>
+              </span>
+              <span class="g-ctl"><a class="btn sm">Manage…</a></span>
+            </div>
+          </div>
+          <p class="g-foot">
+            One template plus explicit deviations — the admin-console shape. Eight Macs stay
+            manageable without eight settings screens.
+          </p>
+
+          <div class="g-head">Import &amp; export</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Host list and settings</span>
+                <span class="g-help">
+                  Configure one Mac, export, deploy to the rest. Exports carry <b>fingerprints only</b> —
+                  they are structurally incapable of carrying a private key, and the importing Mac still
+                  makes its own trust decision.
+                </span>
+              </span>
+              <span class="g-ctl col gap6">
+                <a class="btn sm">Export…</a>
+                <a class="btn sm">Import…</a>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= ADVANCED ================= -->
+      <div class="tab-panel" data-panel="advanced">
+        <div class="pane">
+          <div class="g-head">The <span class="mono">container</span> CLI</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col" style="min-width: 0;">
+                <span class="g-label">Binary path</span>
+                <span class="g-help mono">/usr/local/bin/container</span>
+              </span>
+              <span class="g-ctl">
+                <span class="pill ok"><svg class="ic s11"><use href="#i-check"/></svg> found · 1.0.0</span>
+                <a class="btn sm">Detect</a>
+                <a class="btn sm">Choose…</a>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">If the API service isn't running</span>
+                <span class="g-help"><span class="mono">container system status</span> reports
+                  <span class="mono">unregistered</span> when the service is down; nothing works until it starts.</span>
+              </span>
+              <span class="g-ctl">
+                <span class="popup">Ask me <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span>
+              </span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Notice when configuration changes outside Flotilla</span>
+                <span class="g-help">Offers to reconcile rather than clobbering your hand edits.</span>
+              </span>
+              <span class="g-ctl"><span class="switch on"></span></span>
+            </div>
+          </div>
+
+          <div class="g-head">Raw <span class="mono">config.toml</span> editor</div>
+          <div class="group">
+            <div class="g-row stack">
+              <div class="row">
+                <span class="t11 sec mono">~/.config/container/config.toml</span>
+                <span class="spacer"></span>
+                <span class="pill later">later — Phase 3</span>
+              </div>
+              <pre class="code" style="max-height: 128px;">[<span class="k">container</span>]
+cpus   = <span class="n">4</span>
+memory = <span class="s">"1g"</span>
+
+[<span class="k">registry</span>]
+domain = <span class="s">"docker.io"</span></pre>
+              <div class="callout warn">
+                <svg class="ic s13"><use href="#i-warn"/></svg>
+                <div>
+                  <b>Read once at service start.</b> Edits do nothing until
+                  <span class="mono">container system stop &amp;&amp; start</span> — and restarting the service is
+                  disruptive, so Flotilla asks.
+                </div>
+              </div>
+              <div class="row gap6">
+                <a class="btn sm">Validate</a>
+                <a class="btn sm">Save (round-trips comments)</a>
+                <a class="btn sm">Restart service…</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="g-head">Diagnostics</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Preflight checks</span>
+                <span class="g-help">4 of 4 passing · re-run at every launch</span>
+              </span>
+              <span class="g-ctl"><a class="btn sm" href="onboarding.html">Show…</a></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Support bundle</span>
+                <span class="g-help">App logs, versions, host list with fingerprints. No private keys, no container data.</span>
+              </span>
+              <span class="g-ctl"><a class="btn sm">Save to Desktop…</a></span>
+            </div>
+            <div class="g-row">
+              <span class="g-label">Verbose logging</span>
+              <span class="g-ctl"><span class="switch"></span></span>
+            </div>
+          </div>
+
+          <div class="g-head">Reset</div>
+          <div class="group">
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Reset preferences to defaults</span>
+                <span class="g-help">Settings only. Hosts, trust and containers are untouched.</span>
+              </span>
+              <span class="g-ctl"><a class="btn sm">Reset…</a></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Forget all hosts and trust</span>
+                <span class="g-help">Clears the Keychain allowlist and host inventory. Remote containers keep running.</span>
+              </span>
+              <span class="g-ctl"><a class="btn sm destructive">Forget…</a></span>
+            </div>
+            <div class="g-row">
+              <span class="col">
+                <span class="g-label">Reset window layout</span>
+                <span class="g-help">Sidebar width, column layout, selected tabs — kept apart from preferences on purpose.</span>
+              </span>
+              <span class="g-ctl"><a class="btn sm">Reset…</a></span>
+            </div>
+          </div>
+          <p class="g-foot">
+            Three separate actions, each confirmed on its own. Flotilla will never offer to delete your
+            containers, images or volumes as part of a settings reset — that is the CLI's job and your
+            decision. Values delivered by a configuration profile survive all three.
+          </p>
+
+          <div class="g-head">About this configuration</div>
+          <div class="group">
+            <div class="g-row stack">
+              <dl class="kv">
+                <dt>Preference domain</dt><dd class="mono">com.melonfleet.Flotilla</dd>
+                <dt>Settings schema</dt><dd class="mono">version 1</dd>
+                <dt>Scalar prefs</dt><dd class="mono truncate">~/Library/Preferences/com.melonfleet.Flotilla.plist</dd>
+                <dt>Secrets</dt><dd>Keychain — identity, allowlist, registry credentials</dd>
+                <dt>Inventory &amp; history</dt><dd>SwiftData</dd>
+                <dt>Managed values</dt><dd class="mono truncate">/Library/Managed Preferences/com.melonfleet.Flotilla.plist</dd>
+              </dl>
+              <p class="g-help">
+                Precedence: built-in defaults &lt; managed “defaults” seed &lt; your setting &lt;
+                per-host override &lt; managed “locked”. Every setting is a named typed key, which is
+                also what lets the client read and write a remote host's settings with two Wire messages.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    <b>Settings</b> — a separate window with six panes. Roughly OrbStack's budget of knobs, not
+    Docker's thirteen tabs, and every control here answers a question the research says a
+    menu-bar fleet app must answer.
+  </p>
+</div>
+
+<template id="page-notes">
+  <h3>Settings</h3>
+  <ul>
+    <li><span class="tag">core</span><b>Six panes, ~40 controls.</b> Docker ships 13 tabs and ~60 controls; OrbStack ships ~10 knobs and is the one people praise. This sits deliberately near the OrbStack end while still answering the boring questions OrbStack leaves unanswered (login item, notifications, updates).</li>
+    <li><span class="tag">core</span><b>No CPU/RAM/disk slider pane.</b> Apple <code>container</code> runs one micro-VM per container — there is no shared VM to size. Resources becomes “defaults for new containers” plus per-run flags, and saying that out loud is a differentiator.</li>
+    <li><span class="tag">core</span><b>Restart-required and immutability are stated at the control</b>, not in a doc. <code>config.toml</code> is read once at service start, so an edited value does nothing until a restart — and the restart is offered right there.</li>
+    <li><span class="tag">core</span><b>Managed values are visibly locked</b> with a “Managed by configuration profile” note (see the Sparkle feed URL and “Require mutual TLS”). Never a control that silently does nothing.</li>
+    <li><span class="tag">core</span><b>Reset is three separate actions.</b> Docker's “factory reset” destroys containers, images and volumes along with preferences; users reach for it wanting clean config and lose their data.</li>
+    <li><span class="tag">core</span><b>Telemetry is a stated non-feature.</b> No analytics, no crash upload, no account, no sign-in banner — the single most-complained-about thing in the whole survey.</li>
+    <li><span class="tag">core</span><b>Error notifications can't be disabled</b>, but there are no announcement/survey/recommendation categories to disable either.</li>
+    <li><span class="tag">core</span><b>Every setting is a typed named key</b> in one registry with a schema version. That is what makes remote settings (two Wire messages), the Jamf key list and export/import nearly free later.</li>
+    <li><span class="tag later">later</span>The round-tripping TOML editor, the fleet config-drift view, and “push settings to all hosts” (which needs a diff preview and per-host confirmation).</li>
+  </ul>
+</template>
+
+<script src="assets/app.js"></script>
+<script>
+  /* deep links: settings.html#updates, #fleet, … open that pane */
+  (function () {
+    var h = (location.hash || '').replace('#', '');
+    if (!h) return;
+    var tab = document.querySelector('[data-tab="' + h + '"]');
+    if (tab) tab.click();
+  })();
+</script>
+</body>
+</html>

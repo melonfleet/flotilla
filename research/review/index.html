@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — proposal review deck</title>
+<style>
+/* ============================================================
+   Flotilla review deck — self-contained. No CDNs, no frameworks.
+   Palette follows design/branding.md: watermelon pink = brand,
+   green = healthy, system red/orange = failure (never pink).
+   ============================================================ */
+
+:root {
+  --brand:        #e63956;
+  --brand-bright: #fc4a6b;
+  --brand-tint:   rgba(230, 57, 86, 0.08);
+  --brand-line:   rgba(230, 57, 86, 0.22);
+  --rind:         #1b5e20;
+  --green:        #2e7d32;
+  --green-tint:   rgba(46, 125, 50, 0.10);
+  --green-line:   rgba(46, 125, 50, 0.26);
+  --amber:        #b06000;
+  --amber-tint:   rgba(201, 81, 12, 0.10);
+  --amber-line:   rgba(201, 81, 12, 0.24);
+  --red:          #d70015;
+
+  --bg:        #f7f5f6;
+  --paper:     #ffffff;
+  --ink:       #17151a;
+  --ink-2:     #5b555f;
+  --ink-3:     #8b848f;
+  --line:      #e4e0e6;
+  --line-2:    #efecf1;
+  --shadow:    0 1px 2px rgba(23, 21, 26, 0.05), 0 8px 24px rgba(23, 21, 26, 0.05);
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "Ubuntu Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+
+  --col: 1180px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand:        #ff5f7e;
+    --brand-bright: #ff7590;
+    --brand-tint:   rgba(255, 95, 126, 0.12);
+    --brand-line:   rgba(255, 95, 126, 0.28);
+    --green:        #6fcf74;
+    --green-tint:   rgba(111, 207, 116, 0.12);
+    --green-line:   rgba(111, 207, 116, 0.26);
+    --amber:        #ffab52;
+    --amber-tint:   rgba(255, 171, 82, 0.12);
+    --amber-line:   rgba(255, 171, 82, 0.26);
+    --red:          #ff6961;
+
+    --bg:     #16141a;
+    --paper:  #1e1c23;
+    --ink:    #f0edf2;
+    --ink-2:  #b3acb8;
+    --ink-3:  #837c8a;
+    --line:   #322e39;
+    --line-2: #292630;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.28);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, .mono { font-family: var(--mono); font-size: 0.9em; }
+code {
+  background: var(--line-2);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+.wrap { max-width: var(--col); margin: 0 auto; padding: 0 28px; }
+
+/* ---------- sticky nav ---------- */
+
+nav.top {
+  position: sticky; top: 0; z-index: 100;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--line);
+}
+nav.top .wrap { display: flex; align-items: center; gap: 6px; height: 52px; }
+nav.top .mark {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 650; letter-spacing: -0.01em; margin-right: 14px;
+  color: var(--ink); font-size: 14px;
+}
+nav.top a.jump {
+  font-size: 12.5px; color: var(--ink-2); padding: 5px 10px; border-radius: 7px;
+  white-space: nowrap;
+}
+nav.top a.jump:hover { background: var(--line-2); color: var(--ink); text-decoration: none; }
+nav.top .spacer { flex: 1; }
+nav.top .stamp { font-size: 11.5px; color: var(--ink-3); font-family: var(--mono); }
+
+/* ---------- header ---------- */
+
+header.hero {
+  padding: 64px 0 44px;
+  background:
+    radial-gradient(900px 380px at 12% -10%, var(--brand-tint) 0%, transparent 62%),
+    radial-gradient(700px 340px at 92% 0%, var(--green-tint) 0%, transparent 60%);
+  border-bottom: 1px solid var(--line);
+}
+.eyebrow {
+  font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--brand); font-weight: 650; margin-bottom: 14px;
+}
+h1 {
+  font-size: 44px; line-height: 1.1; letter-spacing: -0.028em;
+  margin: 0 0 16px; font-weight: 680;
+}
+h1 .melon { color: var(--brand); }
+.lede { font-size: 19px; line-height: 1.55; color: var(--ink-2); max-width: 780px; margin: 0; }
+.meta-row {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px;
+}
+.chip {
+  font-size: 12px; padding: 4px 11px; border-radius: 999px;
+  background: var(--paper); border: 1px solid var(--line); color: var(--ink-2);
+}
+.chip b { color: var(--ink); font-weight: 620; }
+
+/* ---------- sections ---------- */
+
+section { padding: 60px 0 8px; }
+.sec-head { margin-bottom: 26px; }
+.sec-num {
+  font-family: var(--mono); font-size: 12px; color: var(--brand);
+  letter-spacing: 0.06em; margin-bottom: 6px;
+}
+h2 {
+  font-size: 29px; letter-spacing: -0.022em; margin: 0 0 8px; font-weight: 660;
+}
+.sec-sub { color: var(--ink-2); font-size: 15px; max-width: 800px; margin: 0; }
+
+h3 {
+  font-size: 17px; letter-spacing: -0.012em; margin: 34px 0 12px; font-weight: 640;
+}
+h3:first-child { margin-top: 0; }
+
+.card {
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: var(--shadow);
+}
+
+hr.rule { border: 0; border-top: 1px solid var(--line); margin: 56px 0 0; }
+
+/* ---------- executive summary ---------- */
+
+.summary-grid {
+  display: grid; grid-template-columns: 1.35fr 1fr; gap: 20px; align-items: start;
+}
+.prose { padding: 26px 28px; }
+.prose p { margin: 0 0 14px; }
+.prose p:last-child { margin-bottom: 0; }
+.prose strong { font-weight: 640; }
+
+.findings { padding: 22px 24px; }
+.findings .fh {
+  font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 640; margin-bottom: 14px;
+}
+.findings ol { margin: 0; padding-left: 20px; }
+.findings li { margin-bottom: 11px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.findings li:last-child { margin-bottom: 0; }
+.findings li b { color: var(--ink); font-weight: 620; }
+.findings li a { font-family: var(--mono); font-size: 11.5px; }
+
+.callout {
+  margin-top: 20px; padding: 20px 24px; border-radius: 14px;
+  background: var(--brand-tint); border: 1px solid var(--brand-line);
+}
+.callout .fh { color: var(--brand); }
+.callout li { color: var(--ink); }
+
+/* ---------- design / mockups ---------- */
+
+.shots { display: flex; flex-direction: column; gap: 34px; }
+
+figure.shot { margin: 0; }
+.shot-head {
+  display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; flex-wrap: wrap;
+}
+.shot-head .n {
+  font-family: var(--mono); font-size: 12px; color: var(--ink-3);
+}
+.shot-head h3 { margin: 0; font-size: 18px; }
+.shot-head .spacer { flex: 1; }
+.shot-head .full {
+  font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 8px;
+  background: var(--brand); color: #fff; border: 1px solid transparent;
+}
+.shot-head .full:hover { background: var(--brand-bright); text-decoration: none; }
+
+.embed {
+  --s: 0.8; --fh: 900px;
+  position: relative; width: 100%;
+  height: calc(var(--fh) * var(--s));
+  overflow: hidden; border-radius: 14px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  background: linear-gradient(155deg, #f3e6ea 0%, #eeeae6 45%, #e7efe9 100%);
+}
+@media (prefers-color-scheme: dark) {
+  .embed { background: linear-gradient(155deg, #241a1f 0%, #1b1a18 45%, #16211a 100%); }
+}
+.embed iframe {
+  position: absolute; top: 0; left: 0;
+  width: calc(100% / var(--s));
+  height: var(--fh);
+  border: 0;
+  transform: scale(var(--s));
+  transform-origin: 0 0;
+}
+
+figcaption {
+  margin-top: 11px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2);
+  max-width: 860px;
+}
+figcaption .look {
+  display: block; margin-top: 6px; color: var(--ink);
+}
+figcaption .look b { color: var(--brand); font-weight: 640; }
+
+.embed-note {
+  font-size: 12.5px; color: var(--ink-3); margin: 0 0 22px;
+}
+
+/* ---------- pills ---------- */
+
+.pill {
+  display: inline-block; font-size: 11px; font-weight: 650; letter-spacing: 0.02em;
+  padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid transparent; font-family: var(--mono);
+}
+.pill.core  { background: var(--green-tint); color: var(--green); border-color: var(--green-line); }
+.pill.later { background: var(--amber-tint); color: var(--amber); border-color: var(--amber-line); }
+.pill.skip  { background: var(--line-2);     color: var(--ink-3); border-color: var(--line); }
+.pill.split { background: var(--brand-tint); color: var(--brand); border-color: var(--brand-line); }
+
+.legend {
+  display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+  padding: 14px 20px; margin-bottom: 26px;
+  font-size: 13px; color: var(--ink-2);
+}
+.legend .item { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- phase blocks ---------- */
+
+.phase {
+  margin-bottom: 26px; overflow: hidden;
+}
+.phase-head {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 18px 24px; border-bottom: 1px solid var(--line);
+  background: var(--line-2);
+}
+.phase-head .tag {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 650;
+  padding: 3px 9px; border-radius: 7px;
+  background: var(--paper); border: 1px solid var(--line); color: var(--ink-2);
+}
+.phase-head h3 { margin: 0; font-size: 18px; letter-spacing: -0.014em; }
+.phase-head .spacer { flex: 1; }
+.phase-head .count { font-size: 12.5px; color: var(--ink-3); font-family: var(--mono); }
+.phase-head .blurb {
+  flex-basis: 100%; font-size: 13px; color: var(--ink-2); margin: -2px 0 0;
+}
+
+.phase.v1 { border-color: var(--brand-line); box-shadow: 0 0 0 3px var(--brand-tint), var(--shadow); }
+.phase.v1 .phase-head { background: var(--brand-tint); border-bottom-color: var(--brand-line); }
+.phase.v1 .phase-head .tag { background: var(--brand); color: #fff; border-color: transparent; }
+.phase.v1 .phase-head h3 { color: var(--ink); }
+.approve {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--brand); border: 1px dashed var(--brand-line); border-radius: 7px;
+  padding: 3px 10px;
+}
+
+.sub-head {
+  padding: 13px 24px 11px; font-size: 12px; font-weight: 650;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3);
+  background: var(--line-2); border-bottom: 1px solid var(--line);
+}
+.phase table + .sub-head { border-top: 1px solid var(--line); }
+
+/* ---------- tables ---------- */
+
+table {
+  width: 100%; border-collapse: collapse; font-size: 13.5px;
+}
+th {
+  text-align: left; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 650; padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+}
+td { padding: 11px 14px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--line-2); }
+
+td.feat { font-weight: 600; width: 24%; line-height: 1.45; }
+td.feat.key { color: var(--brand); }
+td.desc { color: var(--ink-2); line-height: 1.5; }
+td.src {
+  width: 92px; font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+  white-space: nowrap;
+}
+td.rec { width: 78px; text-align: right; }
+th.rec { text-align: right; }
+
+.warn-flag {
+  color: var(--amber); font-weight: 640; font-family: var(--mono); font-size: 11px;
+}
+
+/* ---------- decisions ---------- */
+
+.q-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.q {
+  padding: 22px 24px; display: flex; flex-direction: column; gap: 12px;
+}
+.q .q-top { display: flex; align-items: center; gap: 10px; }
+.q .qid {
+  font-family: var(--mono); font-size: 12px; font-weight: 650;
+  padding: 2px 8px; border-radius: 6px;
+  background: var(--line-2); color: var(--ink-2);
+}
+.q h4 { margin: 0; font-size: 16px; letter-spacing: -0.012em; font-weight: 640; }
+.q .body { font-size: 13.5px; color: var(--ink-2); line-height: 1.55; margin: 0; }
+.q .body strong { color: var(--ink); font-weight: 620; }
+
+.positions { display: grid; gap: 8px; }
+.pos {
+  display: grid; grid-template-columns: 62px 1fr; gap: 12px; align-items: start;
+  font-size: 13px; line-height: 1.5;
+  padding: 10px 12px; border-radius: 10px; background: var(--line-2);
+}
+.pos .who {
+  font-family: var(--mono); font-size: 11px; font-weight: 650; color: var(--ink-3);
+  padding-top: 1px;
+}
+.pos.a { background: var(--brand-tint); }
+.pos.a .who { color: var(--brand); }
+.pos.b { background: var(--green-tint); }
+.pos.b .who { color: var(--green); }
+.pos.c { background: var(--amber-tint); }
+.pos.c .who { color: var(--amber); }
+
+.stakes {
+  font-size: 12.5px; color: var(--ink-2); border-left: 2px solid var(--line);
+  padding-left: 12px; margin: 0;
+}
+.stakes b { color: var(--ink); }
+
+/* Q1 — the big one */
+.q.headline {
+  grid-column: 1 / -1;
+  border-color: var(--brand-line);
+  box-shadow: 0 0 0 3px var(--brand-tint), var(--shadow);
+}
+.q.headline .qid { background: var(--brand); color: #fff; }
+.q.headline h4 { font-size: 20px; }
+.q.headline .flagline {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--brand);
+}
+.q.headline .positions { grid-template-columns: 1fr 1fr; gap: 12px; }
+.q.headline .pos { grid-template-columns: 1fr; gap: 5px; }
+
+/* Q8 — resolved */
+.q.resolved { border-color: var(--green-line); background: var(--paper); }
+.q.resolved .qid { background: var(--green); color: #fff; }
+.q.resolved h4 { color: var(--ink-3); }
+.q.resolved .decided {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 650; color: var(--green);
+  background: var(--green-tint); border: 1px solid var(--green-line);
+  border-radius: 8px; padding: 5px 11px; font-family: var(--mono);
+}
+
+/* ---------- contradictions ---------- */
+
+.contra { margin-top: 26px; }
+.contra td.feat { width: 27%; font-weight: 600; }
+
+/* ---------- not doing ---------- */
+
+.nope-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.nope { padding: 22px 24px; }
+.nope h4 {
+  margin: 0 0 12px; font-size: 14px; font-weight: 640; letter-spacing: -0.008em;
+}
+.nope h4 span { display: block; font-size: 12px; font-weight: 500; color: var(--ink-3); margin-top: 3px; }
+.nope ul { margin: 0; padding-left: 18px; }
+.nope li { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin-bottom: 8px; }
+.nope li:last-child { margin-bottom: 0; }
+.nope li b { color: var(--ink); font-weight: 600; }
+
+/* ---------- footer ---------- */
+
+footer {
+  margin-top: 70px; padding: 32px 0 60px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; color: var(--ink-3);
+}
+footer .wrap { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+footer .spacer { flex: 1; }
+
+/* ---------- narrower windows ---------- */
+
+@media (max-width: 1180px) {
+  .summary-grid, .q-grid, .nope-grid { grid-template-columns: 1fr; }
+  .q.headline .positions { grid-template-columns: 1fr; }
+  td.src { display: none; }
+}
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <span class="mark">
+      <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M2 17h20a7 7 0 0 1-20 0z" fill="#1b5e20"/>
+        <path d="M3 15.6h18A9 9 0 0 0 3 15.6z" fill="#e63956"/>
+        <path d="M12 3.2 15.6 12H12zM11 5.6 8.4 12H11z" fill="currentColor"/>
+      </svg>
+      Flotilla
+    </span>
+    <a class="jump" href="#summary">Summary</a>
+    <a class="jump" href="#design">Design</a>
+    <a class="jump" href="#features">Features</a>
+    <a class="jump" href="#decisions">Decisions</a>
+    <a class="jump" href="#not-doing">Not doing</a>
+    <span class="spacer"></span>
+    <span class="stamp">2026-07-27</span>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Proposal review · decide what we build</div>
+    <h1>Flotilla — a fleet console<br>for Apple <span class="melon">container</span></h1>
+    <p class="lede">
+      Four parallel research passes (UX, settings, runtime, ops) were merged into one
+      phase-ordered feature list, then drawn as six native-Mac mockups. This page is all of it
+      in one place: the screens, every candidate feature with a recommendation, and the nine
+      questions that need your call before Phase 1 starts.
+    </p>
+    <div class="meta-row">
+      <span class="chip"><b>6</b> mockups</span>
+      <span class="chip"><b>6</b> build phases</span>
+      <span class="chip"><b>9</b> open questions · 1 already decided</span>
+      <span class="chip">Sources: <b>FEATURES.md</b> · <b>PLAN.md</b> · <b>DECISIONS.md</b></span>
+      <span class="chip">macOS 26 · Apple Silicon · personal, non-commercial</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============================================================
+     1. EXECUTIVE SUMMARY
+     ============================================================ -->
+<section id="summary">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">01</div>
+      <h2>What the research concluded</h2>
+      <p class="sec-sub">From <code>research/FEATURES.md</code> §1 — the consolidated verdict of all four passes.</p>
+    </div>
+
+    <div class="summary-grid">
+      <div class="card prose">
+        <p>
+          The research converges on a clear product: <strong>a table-first fleet console with a
+          shallow menu-bar popover</strong>, wrapping a CLI that is far smaller than Docker's — which
+          is good news, because it deletes half the feature list before we start (no compose, no
+          events, no pause, no VM-sizing pane).
+        </p>
+        <p>
+          The differentiator no comparable has is the <strong>cross-host container list</strong>:
+          Docker Desktop has no multi-host GUI at all, and Portainer drills into one environment at
+          a time. The differentiator that costs the most is <strong>polling discipline</strong>,
+          since <code>container</code> has no event stream — everything the UI knows, it learned by
+          asking, so adaptive polling is a feature rather than an optimisation.
+        </p>
+        <p>
+          Two structural findings shape the plan. <strong>Phase 1 is bigger than PLAN.md
+          implies</strong> — preflight, the security baseline and the settings registry all want to
+          land there, because each is cheap now and a rewrite later. And <strong>Phases 2–4 hinge on
+          one protocol decision made now</strong>: whether the wire carries CLI arguments or typed
+          bounded operations (Q1).
+        </p>
+      </div>
+
+      <div>
+        <div class="card findings">
+          <div class="fh">The shape of the thing</div>
+          <ol>
+            <li><b>Table first</b>, card grid demoted to a toggle — cards stop scaling around twenty rows.</li>
+            <li><b>Popover is a glance</b>, the main window is the product. No text entry, no destructive confirmations in the popover.</li>
+            <li><b>Everything is polling.</b> No <code>docker events</code> analogue exists.</li>
+            <li><b>Args over the wire</b> would make Phase 1 parity free in Phase 2 — if we accept the security posture. See Q1.</li>
+            <li><b>Zero telemetry, zero account</b>, stated in the UI as a feature.</li>
+          </ol>
+        </div>
+
+        <div class="callout">
+          <div class="fh">The decisions only you can make</div>
+          <ol>
+            <li><b>Wire shape</b> — CLI-args passthrough vs. typed bounded operations. <a href="#q1">Q1</a></li>
+            <li><b>Table vs. the card grid</b> as the default view. <a href="#q2">Q2</a></li>
+            <li><b>Does host mode become stateful?</b> <a href="#q3">Q3</a></li>
+            <li><b>Two-tier managed settings</b> + typed registry, now or never. <a href="#q4">Q4</a></li>
+            <li><b>Phase 1 scope</b> — approve §3 as-is, or trim it. <a href="#q5">Q5</a></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ============================================================
+     2. DESIGN
+     ============================================================ -->
+<section id="design">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">02</div>
+      <h2>The screens</h2>
+      <p class="sec-sub">
+        Six live mockups, embedded below. They are HTML simulations of a native Mac app — real
+        window chrome, SF system type, Liquid Glass on the functional layer only, AppKit-shaped
+        controls. Fake data, but the shapes come from the real captured <code>container</code> 1.0.0
+        JSON. Every embed is interactive: click tabs, rows and buttons inside the frame.
+      </p>
+    </div>
+
+    <p class="embed-note">
+      Each frame is the real page at ~80% scale and scrolls independently. Every mockup also has a
+      <b>Notes</b> button (rationale, phase and priority per idea) and an <b>Auto / Light / Dark</b>
+      switch in its floating navigator. If a frame renders blank — some browsers restrict
+      <code>file://</code> iframes — use <b>Open full size</b>.
+      <a href="./mockups/index.html" target="_blank" rel="noopener">Mockup index &amp; control vocabulary ↗</a>
+    </p>
+
+    <div class="shots">
+
+      <figure class="shot">
+        <div class="shot-head">
+          <span class="n">2.1</span>
+          <h3>Menu-bar popover</h3>
+          <span class="spacer"></span>
+          <a class="full" href="./mockups/menubar.html" target="_blank" rel="noopener">Open full size ↗</a>
+        </div>
+        <div class="embed" style="--fh: 980px;">
+          <iframe src="./mockups/menubar.html" title="Flotilla menu-bar popover mockup" loading="lazy"></iframe>
+        </div>
+        <figcaption>
+          Anchored under a simulated macOS menu bar: rollup meters, running containers with inline
+          stop, per-host fleet summaries, a needs-attention section and footer actions. Also shows
+          the monochrome template glyph in its three states (idle / working / attention) — state by
+          shape and badge, never by colour.
+          <span class="look"><b>Look for:</b> is the popover shallow enough to stay a glance? Do the glyph states read at menu-bar size?</span>
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <div class="shot-head">
+          <span class="n">2.2</span>
+          <h3>Main window</h3>
+          <span class="spacer"></span>
+          <a class="full" href="./mockups/main-window.html" target="_blank" rel="noopener">Open full size ↗</a>
+        </div>
+        <div class="embed" style="--fh: 900px;">
+          <iframe src="./mockups/main-window.html" title="Flotilla main window mockup" loading="lazy"></iframe>
+        </div>
+        <figcaption>
+          The primary UI: sidebar (Containers / Images / Volumes / Fleet / Settings) plus hosts, a
+          sortable container table grouped by host, a multi-select action bar, and the inspector.
+          The run sheet and the row context menu are included and clickable. This is where the
+          search grammar (<code>is:running</code>, <code>image:</code>, <code>host:</code>) and the
+          live <code>container</code> command preview live.
+          <span class="look"><b>Look for:</b> table-by-default instead of the card grid — this overturns <code>design/dashboard-mockup.html</code> and needs sign-off (<a href="#q2">Q2</a>).</span>
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <div class="shot-head">
+          <span class="n">2.3</span>
+          <h3>Container detail</h3>
+          <span class="spacer"></span>
+          <a class="full" href="./mockups/container-detail.html" target="_blank" rel="noopener">Open full size ↗</a>
+        </div>
+        <div class="embed" style="--fh: 920px;">
+          <iframe src="./mockups/container-detail.html" title="Flotilla container detail mockup" loading="lazy"></iframe>
+        </div>
+        <figcaption>
+          Six tabs, all clickable: Overview, Logs (streaming, with the <code>--boot</code> micro-VM
+          boot-log toggle that no Docker GUI has), Terminal, Stats, Files, Inspect. Logs show search
+          + highlight, timestamps, wrap and the capped ring buffer.
+          <span class="look"><b>Look for:</b> which tabs are worth Phase 1 versus waiting for streaming — Overview, Logs and Inspect are cheap; Terminal needs a real PTY, Stats needs streaming, Files needs <code>container cp</code>.</span>
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <div class="shot-head">
+          <span class="n">2.4</span>
+          <h3>Fleet</h3>
+          <span class="spacer"></span>
+          <a class="full" href="./mockups/fleet.html" target="_blank" rel="noopener">Open full size ↗</a>
+        </div>
+        <div class="embed" style="--fh: 900px;">
+          <iframe src="./mockups/fleet.html" title="Flotilla fleet view mockup" loading="lazy"></iframe>
+        </div>
+        <figcaption>
+          The aggregate rollup, nine host cards covering all five connection states, a per-host
+          drill-down inspector (version, <code>system df</code>, service status, fingerprint, last
+          seen) and the config-drift table — a view that is structurally impossible for Docker
+          Desktop.
+          <span class="look"><b>Look for:</b> untrusted vs. unreachable vs. version-mismatch — do they read as three different problems needing three different fixes?</span>
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <div class="shot-head">
+          <span class="n">2.5</span>
+          <h3>Settings</h3>
+          <span class="spacer"></span>
+          <a class="full" href="./mockups/settings.html" target="_blank" rel="noopener">Open full size ↗</a>
+        </div>
+        <div class="embed" style="--fh: 840px;">
+          <iframe src="./mockups/settings.html" title="Flotilla settings mockup" loading="lazy"></iframe>
+        </div>
+        <figcaption>
+          Six panes — General, Resources, Network, Updates, Fleet, Advanced — populated straight
+          from the preferences research: the poll interval, the mode switch, host-mode listener and
+          identity, locked/managed values with their lock glyph, and the three separate resets
+          (preferences ≠ hosts and trust ≠ window layout).
+          <span class="look"><b>Look for:</b> is this the right number of knobs? Anything missing that you'd want on day one — and anything here you'd rather never see?</span>
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <div class="shot-head">
+          <span class="n">2.6</span>
+          <h3>First run</h3>
+          <span class="spacer"></span>
+          <a class="full" href="./mockups/onboarding.html" target="_blank" rel="noopener">Open full size ↗</a>
+        </div>
+        <div class="embed" style="--fh: 800px;">
+          <iframe src="./mockups/onboarding.html" title="Flotilla onboarding mockup" loading="lazy"></iframe>
+        </div>
+        <figcaption>
+          Seven steps: welcome, the preflight checklist with inline per-row fixes, guided
+          <code>.pkg</code> install with a progress log, empty states that carry the primary action,
+          add-host (Bonjour list <em>and</em> manual hostname/IP side by side), the two-sided
+          fingerprint pairing ceremony, and done. The changed-certificate dialog — old vs. new,
+          defaulting to Cancel — is included.
+          <span class="look"><b>Look for:</b> the pairing comparison — is it enough to actually trust, without being a chore you'd click through blind?</span>
+        </figcaption>
+      </figure>
+
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ============================================================
+     3. FEATURES
+     ============================================================ -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">03</div>
+      <h2>Every candidate feature, by phase</h2>
+      <p class="sec-sub">
+        Deduplicated across all four research passes; the <b>From</b> column records who proposed
+        it. Phase names are PLAN.md's. <span class="warn-flag">⚠</span> marks a feature that pushes
+        against a settled doc — those are collected at the end of §4.
+      </p>
+    </div>
+
+    <div class="card legend">
+      <span class="item"><span class="pill core">core</span> build it in that phase</span>
+      <span class="item"><span class="pill later">later</span> deferred, keep the door open</span>
+      <span class="item"><span class="pill skip">skip</span> don't build</span>
+      <span class="item"><span class="pill split">split</span> researchers disagree on phase</span>
+      <span class="item" style="color:var(--ink-3)">UX · SET · RUN · OPS = design / preferences / runtime / ops passes</span>
+    </div>
+
+    <!-- ---------- PHASE 1 ---------- -->
+    <div class="card phase v1">
+      <div class="phase-head">
+        <span class="tag">Phase 1</span>
+        <h3>Local MVP — proposed v1 scope</h3>
+        <span class="spacer"></span>
+        <span class="approve">approve or trim this</span>
+        <p class="blurb">
+          Chip-independent, builds first. As consolidated this is <b>more than PLAN.md's Phase 1
+          line</b> ("container grid, images list, run/stop/restart/remove, logs view") — it also
+          absorbs preflight, the settings registry, the security baseline and diagnostics, because
+          all three are cheap now and a rewrite later. <a href="#q5">Q5 asks you to approve or cut it.</a>
+        </p>
+      </div>
+
+      <div class="sub-head">1.1 · Core runtime features</div>
+      <table>
+        <thead><tr><th>Feature</th><th>One-line</th><th>From</th><th class="rec">Rec</th></tr></thead>
+        <tbody>
+          <tr><td class="feat">Container list</td><td class="desc"><code>ls --all --format json</code> → state, name (<code>configuration.id</code>), image, ports, CPU/mem, started. One call returns everything.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Table view <span class="warn-flag">⚠</span></td><td class="desc">Sortable, resizable, hideable columns; running-first default sort. Cards become an alternate "Cards" toggle — <b>changes the mockup's premise</b>.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Lifecycle actions</td><td class="desc">start / stop / restart / kill / delete. <code>restart</code> = stop+start (no native command); <code>--signal</code>/<code>--time</code> behind a disclosure.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Run sheet</td><td class="desc">One scrollable sheet, not a wizard: image, name, <code>-d -e -p -v --mount -c -m --network --init --stop-signal</code>.</td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Live command preview + copy</td><td class="desc">Shows the exact <code>container</code> CLI line before it runs, everywhere. Teaches the CLI and doubles as the audit string.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Logs viewer</td><td class="desc"><code>logs -n N</code>, follow toggle, search + highlight, timestamps, wrap, copy/save, capped ring buffer, and the <code>--boot</code> micro-VM boot log — unique to this runtime.</td><td class="src">RUN · UX · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Inspect tab</td><td class="desc">Pretty JSON + a friendly summary. Free — <code>ls</code> already returns the whole object.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Stats (snapshot)</td><td class="desc">CPU % computed from Δ<code>cpuUsageUsec</code> across two samples, mem %, net/block IO — <b>numbers, not sparklines</b>.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Search + filter grammar</td><td class="desc"><code>is:running</code>/<code>is:stopped</code> tabs that write into the search field, plus <code>image:</code>, <code>host:</code>, free text. ⌘F focuses.</td><td class="src">UX · RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Multi-select bulk actions</td><td class="desc">stop / kill / delete / restart; use the native <code>-a</code> when the selection is everything.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Images</td><td class="desc">list, pull (with <code>--progress</code>), delete, prune, tag, inspect. Hide <code>architecture:"unknown"</code> attestation variants.</td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Volumes + networks <span class="warn-flag">⚠</span></td><td class="desc">list / create / delete / inspect / prune — cheap. UX wants them on one "System" page rather than new nav items.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat"><code>system df</code> disk panel</td><td class="desc">One call; answers "why is my disk full".</td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Clickable ports / addresses</td><td class="desc">Open <code>http://&lt;ip&gt;:&lt;port&gt;</code>; row context menu with a Copy submenu (ID, image, IP, port URL).</td><td class="src">UX · RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">⌘K command palette</td><td class="desc">Over containers, images, actions (+ hosts from Phase 3). UX would slip it to Phase 3 if Phase 1 gets tight — <b>first thing to cut</b>.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Registry login / logout / list</td><td class="desc">Local-only is fine for v1; remote login needs client→host stdin frames.</td><td class="src">RUN · SET</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Image build UI</td><td class="desc"><code>build -f -t --build-arg --no-cache -o</code>; long output stream — do it after Phase 4 streaming exists.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat"><code>save</code> / <code>load</code> / <code>export</code></td><td class="desc">Niche locally; becomes interesting as host→host image transfer in Phase 3.</td><td class="src">RUN</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Nickname / tint / icon per container</td><td class="desc">Pure polish; local metadata in SwiftData.</td><td class="src">RUN</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Saved run configs / templates</td><td class="desc">Much more valuable once "run this on host N" exists.</td><td class="src">RUN</td><td class="rec"><span class="pill later">later</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="sub-head">1.2 · Shell, onboarding and preflight</div>
+      <table>
+        <thead><tr><th>Feature</th><th>One-line</th><th>From</th><th class="rec">Rec</th></tr></thead>
+        <tbody>
+          <tr><td class="feat key">Preflight checklist</td><td class="desc">binary present → version → <code>system status</code> (<code>"unregistered"</code> = service down) → kernel installed. Per-row fix button, Re-run, badge on nav, and a <b>"Continue anyway" escape — never a trapping modal</b>.</td><td class="src">UX · RUN · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Guided <code>.pkg</code> install</td><td class="desc">Downloads the signed Apple release, verifies it, hands it to the system installer with visible authorization — confirms DECISIONS.md.</td><td class="src">UX · RUN · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat"><code>kernel set --recommended</code></td><td class="desc">A fresh Mac fails without it, and the CLI's prompt can't be answered from a non-TTY.</td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Two surfaces <span class="warn-flag">⚠</span></td><td class="desc"><code>MenuBarExtra(.window)</code> + main window. Popover = glance and quick actions only; the window is the primary UI. Deviates from HIG's "menu, not popover" under its own escape clause.</td><td class="src">UX · RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">"Show in: Menu bar / Dock / Both" <span class="warn-flag">⚠</span></td><td class="desc">Required by HIG + <code>NSStatusBar</code> docs; defuses the <code>LSUIElement</code> auto-termination trap. Extends PLAN's "menu-bar app" framing.</td><td class="src">UX · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Monochrome template glyph</td><td class="desc">State by shape / badge, not colour: idle · working · attention.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Nav capped at 3–4 items</td><td class="desc">Sidebar Fleet · content Containers/Images · inspector tabs. If we ever need "customize nav", the IA is already wrong.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Status vocabulary <span class="warn-flag">⚠</span></td><td class="desc">Driven by <code>status.state</code> + app-level states (starting, action failed, host unreachable); rendered as <b>dot + SF Symbol + text</b>, never colour alone. Pink is brand/selection, so errors need their own colour in <code>branding.md</code>.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Empty states carry the action</td><td class="desc">No containers → "Run a container"; filtered-empty → "Clear filter"; not installed → the preflight card.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Progress sheet for long ops</td><td class="desc"><code>.pkg</code> install, pull, build, export: determinate where the CLI gives it, collapsible + searchable log, Cancel, run-in-background.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Destructive-action policy</td><td class="desc">Confirm with the object named, count on bulk, "don't ask again". <b>Never a confirmation inside the popover.</b> <code>prune</code> always previews exactly what dies.</td><td class="src">UX · RUN · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Quit semantics in the menu item</td><td class="desc">"Quit Flotilla — containers keep running". Docker's ⌘Q ambiguity is its most-cited UX failure.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Dark mode + a11y baseline</td><td class="desc">Light / Dark / Increase Contrast / Reduce Transparency passes; keyboard-reachable everything, VoiceOver status in words, no hover-only affordances, Reduce Motion kills glass morphs.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Liquid Glass placement</td><td class="desc">Glass on popover chrome, toolbar, sidebar, control clusters (one <code>GlassEffectContainer</code>). <b>Tables and cards stay opaque</b>; never glass-on-glass.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Sparklines on cards <span class="warn-flag">⚠</span></td><td class="desc">Needs streaming; Phase 1 ships numeric cells. The existing mockup shows sparklines.</td><td class="src">UX · RUN</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Dockerfile drag-to-build</td><td class="desc">The one concrete feature request in the Davit HN thread.</td><td class="src">UX</td><td class="rec"><span class="pill later">later</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="sub-head">1.3 · Settings, data layer, security baseline</div>
+      <table>
+        <thead><tr><th>Feature</th><th>One-line</th><th>From</th><th class="rec">Rec</th></tr></thead>
+        <tbody>
+          <tr><td class="feat key">Typed settings registry</td><td class="desc"><code>SettingsKey&lt;T&gt;</code> (name, type, default, scope <code>.app/.host/.perHost</code>, <code>requiresRestart</code>) + a static registry. The Settings UI, Wire get/set, the Jamf key list and export all derive from it.</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Four stores, one job each</td><td class="desc"><code>UserDefaults</code> (scalars, free MDM override) · Keychain (identity, fingerprints, creds) · SwiftData (hosts, history) · <b>separate window/UI state</b> so "reset settings" doesn't move your window.</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Schema <code>version</code> + migration</td><td class="desc">One integer field on day one; saves a corrupt-prefs bug later (Rancher shipped <code>"version": 18</code>).</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Precedence model <span class="warn-flag">⚠</span></td><td class="desc">built-in &lt; managed <code>defaults</code> seed &lt; user &lt; per-host override &lt; managed <code>locked</code>. Upgrades <code>jamf-config-profile.md</code>'s single "managed wins" rule — see <a href="#q4">Q4</a>.</td><td class="src">SET · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">General prefs</td><td class="desc">Launch at login (<code>SMAppService</code>, off) · show in menu bar/Dock/both · theme · <b>poll interval (default 5 s, "Off" allowed)</b> · confirm-before-destructive (on).</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">CLI integration prefs</td><td class="desc">Path to <code>container</code> (+ detect) · auto-start the API service (default: ask) · detected version + check for a newer release.</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Defaults for new containers</td><td class="desc">Default CPUs/memory (applied as <code>-c</code>/<code>-m</code>) and default registry — mirroring <code>[container]</code>/<code>[registry]</code> in config.toml.</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Three separate resets</td><td class="desc"><i>Reset preferences</i> ≠ <i>Forget all hosts and trust</i> ≠ <i>Reset window layout</i>. <b>Never offer to delete container/image data from a settings reset.</b></td><td class="src">SET · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Uninstall semantics defined first</td><td class="desc">Four layers: the app · Flotilla prefs + logs · Keychain identity + trust · Apple's runtime and its data. Trashing the app destroys none of the others — define this <b>before</b> creating state.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Hardened runtime + notarize</td><td class="desc">Developer ID, sign every nested binary, secure timestamps, drop <code>get-task-allow</code>, keep library validation; verify with <code>codesign</code>/<code>spctl</code> + a clean-Mac launch. Build hygiene now, distribution in Phase 5.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">No App Sandbox for v1 <span class="warn-flag">⚠</span></td><td class="desc">We execute an external CLI and later listen for connections; a useful sandbox needs brittle exceptions. A deliberate clarification DECISIONS.md doesn't record — see <a href="#q9">Q9</a>.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Minimal entitlements inventory</td><td class="desc">No JIT, unsigned memory, DYLD, Apple Events or broad Keychain group; add the local-network usage string + declared Bonjour service before Phase 2.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Structured Unified Logging</td><td class="desc">Categories: lifecycle, preflight/exec, transport, pairing/trust, update, managed policy. Metadata and durations only — never env vars, creds, keys, terminal I/O or full cert material.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Diagnostics + support bundle</td><td class="desc">Versions, CLI path, preflight results, effective non-secret settings <b>and their source</b>, listener status, cert expiry + short fingerprints. Manifest preview, user-chosen path, <b>no upload, no server-side ID</b>.</td><td class="src">OPS · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">No telemetry, stated in the UI</td><td class="desc">Zero analytics, crash upload or phone-home; an About/Privacy view listing every network destination the app can reach.</td><td class="src">SET · OPS · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Notification categories</td><td class="desc">Container exited unexpectedly, pull/build finished, host offline. Errors not disableable, zero promotional categories. <b>Researchers disagree on the phase</b> — see <a href="#q6">Q6</a>.</td><td class="src">SET · UX</td><td class="rec"><span class="pill split">P1 / P3</span></td></tr>
+          <tr><td class="feat"><code>config.toml</code> view</td><td class="desc">Phase 1 read-only via <code>system property list --format json</code>; a validated round-tripping editor later (<a href="#q7">Q7</a>).</td><td class="src">SET</td><td class="rec"><span class="pill core">core*</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ---------- PHASE 2 ---------- -->
+    <div class="card phase">
+      <div class="phase-head">
+        <span class="tag">Phase 2</span>
+        <h3>Host mode + client mode over mTLS</h3>
+        <span class="spacer"></span>
+        <span class="count">17 items</span>
+        <p class="blurb">Wire types + framing, <code>NWListener</code> + mTLS + Bonjour advertise + fingerprint allowlist, and the trust ceremony. <b>Everything here is priced by <a href="#q1">Q1</a>.</b></p>
+      </div>
+      <table>
+        <thead><tr><th>Feature</th><th>One-line</th><th>From</th><th class="rec">Rec</th></tr></thead>
+        <tbody>
+          <tr><td class="feat key">Full Phase-1 parity over the wire</td><td class="desc">The acceptance criterion for Phase 2 — with <b>zero new feature code</b>, and only true under the args-over-wire design (<a href="#q1">Q1</a>).</td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Add-host sheet, two peer paths</td><td class="desc">Bonjour list <b>and</b> manual hostname/IP + port side by side — manual is mandatory per DECISIONS.md, not a fallback.</td><td class="src">UX · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Two-sided pairing ceremony</td><td class="desc">Side-by-side fingerprints with fixed roles, hostname/IP under each, SHA-256 in grouped hex + a word/emoji form, explicit Trust/Cancel. A <b>changed cert shows old vs. new and defaults to Cancel</b>; approval required at both ends; attempts expire and are rate-limited.</td><td class="src">UX · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Pending-peer waiting room</td><td class="desc">Bonjour-discovered but un-allowlisted Macs queue for approval instead of being silently rejected.</td><td class="src">RUN · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Discovery is never identity</td><td class="desc">Bonjour supplies name / address / port only; both paths enter the same trust flow; fail closed on every TLS verification path.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">mTLS, unique per-device identities</td><td class="desc">Non-exportable Keychain key where practical, no plaintext or server-only fallback. <b>Validate the cert, then separately authorize against the fingerprint allowlist.</b></td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Certificate lifecycle fields</td><td class="desc">issuer/source (self-generated / manual / managed), fingerprint, created, expires, last-seen; warn before expiry; design for overlapping pins; manual re-pair is the v1 recovery path.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Immediate local revocation</td><td class="desc">Removing a peer updates the allowlist atomically, <b>closes live connections</b>, rejects resumption, leaves an audit entry. "Block" ≠ "forget address".</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Protocol/version handshake</td><td class="desc">Exchange app version, wire min/max, capabilities, runtime version and mode before accepting mutations; unknown ops fail closed. Required before Phase 5 can stagger updates.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Wire extensions designed now <span class="warn-flag">⚠</span></td><td class="desc">client→host <code>.stdin</code> frames + <code>.resize(rows:cols:)</code> for exec and <code>registry login</code>, plus a binary frame type for <code>cp</code>/<code>save</code>/<code>export</code>. <code>wire-protocol.md</code> is currently one-way — <b>design it in Phase 2 so Phase 4 isn't a protocol break across a deployed fleet</b>.</td><td class="src">RUN · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Host-mode UI is minimal</td><td class="desc">Status window + its own menu-bar item: listen address/port, Bonjour on/off, allowlist count, last client, recent commands, a big "Stop accepting connections". <b>No container management UI in host mode.</b></td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Mode switch (Client/Host/Both)</td><td class="desc">A <code>UserDefaults</code> key from day one so Phase 6 can force it; plain-language consequence + confirm; <b>never switchable remotely</b>.</td><td class="src">SET · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Host-mode settings</td><td class="desc"><code>listenPort</code>, Bonjour advertise + service name, require-mTLS (shown, locked on), identity Keychain label, generate/regenerate identity, show own fingerprint.</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Per-host connection states</td><td class="desc">online / connecting / unreachable / <b>untrusted</b> / version-mismatch — "untrusted" must not look like "offline", they need different fixes.</td><td class="src">UX · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Per-host settings get/set</td><td class="desc">Two Wire messages over the typed registry; cheapest if the message types land here even if the UI is Phase 3.</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Per-peer role restriction</td><td class="desc">A read-only observer role is the useful version; defer until there's a second controller.</td><td class="src">RUN · OPS</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Connection tuning prefs</td><td class="desc">Connect timeout, retry/backoff, keepalive — sensible defaults first, expose only if they matter.</td><td class="src">SET</td><td class="rec"><span class="pill later">later</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ---------- PHASE 3 ---------- -->
+    <div class="card phase">
+      <div class="phase-head">
+        <span class="tag">Phase 3</span>
+        <h3>Fleet view</h3>
+        <span class="spacer"></span>
+        <span class="count">21 items</span>
+        <p class="blurb">The payoff phase: the aggregate cross-host list is the thing no comparable product does.</p>
+      </div>
+      <table>
+        <thead><tr><th>Feature</th><th>One-line</th><th>From</th><th class="rec">Rec</th></tr></thead>
+        <tbody>
+          <tr><td class="feat key">Aggregate list with a Host column</td><td class="desc">Groupable by host. <b>The differentiator</b> — Docker Desktop has no multi-host GUI; Portainer drills into one environment at a time.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Fleet sidebar + clickable rollup</td><td class="desc">"All hosts" aggregate row, per-host status dot + count, offline dimmed. The header "6 hosts online · 14 containers" <b>filters when clicked</b>, it isn't decoration.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Host detail page</td><td class="desc"><code>system version</code>, <code>system df</code>, service status, container/image counts, last-seen, fingerprint, per-host actions (prune, restart service).</td><td class="src">UX · RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Staleness indicator</td><td class="desc">Last-successful-poll timestamp per host; show cached data greyed rather than empty. <b>Macs sleep.</b></td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Adaptive polling</td><td class="desc">Fast when frontmost, ~30 s menu-bar-only, exponential backoff for down hosts, pause when hidden. With no event stream this is a feature, not an optimisation.</td><td class="src">RUN · UX · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Trust-management view</td><td class="desc">Not just a host list: connection state shown separately from trust state; role, identity source, short fingerprint, expiry, last auth, last address, versions, managed flag. Actions: compare, approve, revoke, rotate/re-pair, export public identity, audit.</td><td class="src">OPS · UX · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Host groups / tags + identity</td><td class="desc">Nickname, colour/tag, role, notes, include-in-aggregate, per-host poll interval. Cheap now, expensive to retrofit; maps onto Phase 6 managed settings. UX rated the display-name half <span class="pill later">later</span>.</td><td class="src">RUN · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Fleet defaults + per-host override</td><td class="desc">One template with explicit per-host deviations shown as overridden — the Jamf/Kandji shape, not eight settings screens.</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Version-skew warning</td><td class="desc">One <code>system version</code> per host already gives it; a classic fleet failure mode.</td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Fan-out: pull to selected hosts</td><td class="desc">The highest-value fleet verb; per-host progress and partial-failure reporting.</td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Cross-host bulk + <code>host:</code> ⌘K</td><td class="desc">Always with an explicit per-host preview of what will be affected.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Import/export hosts + settings</td><td class="desc">JSON of the typed registry + inventory. Two hard rules: <b>never export private keys</b>, and export fingerprints as fingerprints so the importer still makes its own trust decision.</td><td class="src">SET · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Badge on fleet trouble</td><td class="desc">Menu-bar / Dock badge when a host is unreachable or a container is crash-looping.</td><td class="src">UX</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Config drift view</td><td class="desc">Merged <code>system property list --format json</code> from every host in one table, differing keys highlighted — read-only first. Structurally impossible for Docker Desktop.</td><td class="src">SET</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">"Where should this run?"</td><td class="desc">Suggest the host with the most free CPU/RAM instead of showing eight stat rows.</td><td class="src">RUN</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Fleet image inventory</td><td class="desc">"Which hosts have <code>alpine:latest</code>?" — group the aggregate <code>image list</code> by digest.</td><td class="src">RUN</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Image transfer host→host</td><td class="desc"><code>save</code>/<code>load</code> over the wire; avoids running a registry on a LAN-only fleet. Needs binary framing.</td><td class="src">RUN</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Push settings to all hosts</td><td class="desc">Powerful and dangerous; needs a diff preview + per-host confirm. Arguably better served by the Phase 6 profile.</td><td class="src">SET</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Compose file → run sheet</td><td class="desc">Import as form pre-fill, <b>never as an execution engine</b>.</td><td class="src">RUN</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Dock menu mirroring popover</td><td class="desc">HIG recommends it precisely because the extra can vanish into the notch.</td><td class="src">UX</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Editable <code>config.toml</code> (local)</td><td class="desc">Validated TOML round-trip (not regeneration), "requires service restart" banner + restart button.</td><td class="src">SET</td><td class="rec"><span class="pill later">later</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ---------- PHASE 4 ---------- -->
+    <div class="card phase">
+      <div class="phase-head">
+        <span class="tag">Phase 4</span>
+        <h3>Live streaming + exec</h3>
+        <span class="spacer"></span>
+        <span class="count">9 items</span>
+        <p class="blurb">Persistent connection, real charts, a real PTY — and the restart/health loop, whose home is <a href="#q3">Q3</a>.</p>
+      </div>
+      <table>
+        <thead><tr><th>Feature</th><th>One-line</th><th>From</th><th class="rec">Rec</th></tr></thead>
+        <tbody>
+          <tr><td class="feat">Live log + stats streaming</td><td class="desc">Sampling-interval setting, pause when hidden, <b>only stream what's on screen</b> — 8 hosts × per-container streams is a self-inflicted DoS.</td><td class="src">UX · RUN · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Real sparklines + Stats tab</td><td class="desc">Swift Charts. Only now, because only now is the data real.</td><td class="src">UX · RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Exec terminal with a real PTY</td><td class="desc"><code>exec -i -t</code>; the most-wanted tab in every comparable — <b>ship a real PTY or don't ship the tab</b>. Gated: fresh visible user action, target host + container shown, bounded lifetime and concurrency, no transcript logging by default, dies on revocation.</td><td class="src">RUN · UX · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Restart policy + health checks</td><td class="desc">Self-implemented (the CLI has neither): per-container <code>no</code>/<code>on-failure</code>/<code>always</code>, retries, backoff, health cmd + interval + timeout + threshold, history timeline. <b>The UI must say when the policy applies</b> — a policy that silently only runs while the client is open is a trust-destroying lie. UX rated it <span class="pill later">later</span>; see <a href="#q3">Q3</a>.</td><td class="src">SET · RUN · UX</td><td class="rec"><span class="pill split">core / later</span></td></tr>
+          <tr><td class="feat">Log / stats / terminal prefs</td><td class="desc">Default tail (200), wrap, timestamps, follow-on-open, buffer cap, font size; stats sample interval + SwiftData retention/prune.</td><td class="src">SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">File browser + Reveal in Finder</td><td class="desc">Via <code>exec ls</code>/<code>stat</code> + <code>cp</code> — 80% of Docker's Files tab at 5% of the cost. UX says read-only browse + download first; RUN rates the whole thing core.</td><td class="src">RUN · UX</td><td class="rec"><span class="pill core">core*</span></td></tr>
+          <tr><td class="feat key">Host-aware path picker</td><td class="desc">Bind-mount / port editor. <b>The single most likely source of user error in the app</b>: a laptop file picker selects a path that doesn't exist on the target Mac, and published ports are at the <i>host's</i> address, not <code>localhost</code>.</td><td class="src">RUN</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Activity/history log per host</td><td class="desc">Every command Flotilla ran. Genuinely useful fleet forensics; SwiftData is already in the stack.</td><td class="src">RUN · OPS</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Exec prefs</td><td class="desc">Default shell / user / workdir, "open in Terminal.app".</td><td class="src">SET</td><td class="rec"><span class="pill later">later</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ---------- PHASE 5 ---------- -->
+    <div class="card phase">
+      <div class="phase-head">
+        <span class="tag">Phase 5</span>
+        <h3>Auto-updates (Sparkle)</h3>
+        <span class="spacer"></span>
+        <span class="count">8 items</span>
+        <p class="blurb">For the unmanaged fleet, before Jamf exists. The hard part isn't Sparkle — it's updating a Mac that is currently executing someone's container.</p>
+      </div>
+      <table>
+        <thead><tr><th>Feature</th><th>One-line</th><th>From</th><th class="rec">Rec</th></tr></thead>
+        <tbody>
+          <tr><td class="feat">Sparkle 2 with dual trust</td><td class="desc">HTTPS appcast on GitHub releases, <code>SUPublicEDKey</code>, Ed25519-sign every artifact <b>and</b> require a valid Developer ID. Signing keys outside the repo; treat Sparkle security updates as release blockers.</td><td class="src">OPS · SET</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Split check / download / install</td><td class="desc">First-run consent (never silently phone home), release notes in the dialog, "Check for Updates…" in popover + Settings. Use Sparkle's own <code>UserDefaults</code> keys so Phase 6 can lock them for free.</td><td class="src">SET · UX · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat key">Host-safe interruption point</td><td class="desc">Stop accepting new remote mutations, let bounded requests finish, persist no partial trust change, then relaunch and re-run preflight. <b>Never kill a host mid-mutation.</b></td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Release gates</td><td class="desc">Archive → sign → notarize → staple → verify → clean-install + N-1 upgrade test → delta-fallback test → appcast URL/signature/version-monotonicity check → smoke both modes. Don't publish the appcast before the asset and notarization verify.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Canary + rollback runbook</td><td class="desc">Update the client and one noncritical host, verify, then host by host. Keep the previous notarized artifact — <b>Sparkle 2 has no downgrade</b>, rollback is an explicit reinstall. Always preserve an alternate path to every Mac.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">"What's New" sheet</td><td class="desc">After update, with a dismissal that actually sticks.</td><td class="src">UX</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Fleet-wide CLI upgrade <span class="warn-flag">⚠</span></td><td class="desc">Fixes version skew — but "user authorization, never silent" on a <i>remote</i> Mac means a prompt <b>on that Mac</b>, which nobody is sitting at. Needs a design answer before it's promised.</td><td class="src">RUN · OPS</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Phased rollout / channels / deltas</td><td class="desc">Seven-group rollout is for public populations; eight named Macs want a named canary.</td><td class="src">OPS</td><td class="rec"><span class="pill later">later</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ---------- PHASE 6 ---------- -->
+    <div class="card phase">
+      <div class="phase-head">
+        <span class="tag">Phase 6</span>
+        <h3>Jamf / configuration profiles</h3>
+        <span class="spacer"></span>
+        <span class="count">10 items</span>
+        <p class="blurb">Profile-delivered identity + managed settings on the physical minis — no code change, because the transport is already cert-based.</p>
+      </div>
+      <table>
+        <thead><tr><th>Feature</th><th>One-line</th><th>From</th><th class="rec">Rec</th></tr></thead>
+        <tbody>
+          <tr><td class="feat">Two payload tiers</td><td class="desc"><code>defaults</code> (suggest) + <code>locked</code> (enforce) through the same mechanism; on macOS the locked tier is nearly free via <code>/Library/Managed Preferences</code>.</td><td class="src">SET · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Managed key set</td><td class="desc"><code>mode</code>, <code>listenPort</code>, <code>bonjourEnabled</code>, <code>trustAnchorFingerprints</code>, <code>peerAllowlist</code>, <code>identityKeychainLabel</code>, Sparkle keys, diagnostics policy, min accepted client version, fleet defaults.</td><td class="src">SET · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Managed values visibly locked</td><td class="desc">Greyed + lock glyph + "Managed by configuration profile", plus a diagnostics page showing <b>effective value, source, validation errors, last reload</b>. Pairing/cert UI hidden when identity arrives by profile.</td><td class="src">UX · SET · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">MDM identity per Mac</td><td class="desc">Per-device passphrase-protected PKCS#12 (or SCEP once renewal infra exists); select by cert attribute, not an editable path. <b>Never one shared <code>.p12</code> scoped to a group.</b></td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Reset never touches managed</td><td class="desc">It can't anyway — but the UI must say so.</td><td class="src">SET · OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Prove it on a staged group</td><td class="desc">App-before-profile and profile-before-app, renewal overlap, removal, reboot, locked screen, logout, segmented network, revoked controller. Profile removal → a safe "managed identity unavailable", <b>not a self-generated replacement</b>.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Jamf owns updates on managed minis</td><td class="desc">A managed setting disables Sparkle there — two update authorities create races. Confirms DECISIONS.md.</td><td class="src">OPS</td><td class="rec"><span class="pill core">core</span></td></tr>
+          <tr><td class="feat">Export a profile from settings</td><td class="desc">Configure one mini by hand, deploy to seven — and testable long before Jamf exists.</td><td class="src">SET</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Hide managed-away UI</td><td class="desc">On a mini pinned to host mode, hide the client UI rather than showing a dead sidebar.</td><td class="src">SET</td><td class="rec"><span class="pill later">later</span></td></tr>
+          <tr><td class="feat">Managed trust rotation</td><td class="desc">Overlapping anchors, activate new, verify, remove old; profile generation numbers; reject policy rollback. Plus opt-in crash reporting only if local Apple crash reports prove insufficient.</td><td class="src">OPS</td><td class="rec"><span class="pill later">later</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ============================================================
+     4. DECISIONS
+     ============================================================ -->
+<section id="decisions">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">04</div>
+      <h2>Open questions</h2>
+      <p class="sec-sub">
+        Nine items the research deliberately did <b>not</b> resolve, because each is a genuine
+        either/or with real consequences. One is already closed. Q1 is the one that prices
+        everything downstream.
+      </p>
+    </div>
+
+    <div class="q-grid">
+
+      <!-- Q1 -->
+      <div class="card q headline" id="q1">
+        <div class="q-top">
+          <span class="qid">Q1</span>
+          <span class="flagline">Highest consequence · decide first</span>
+        </div>
+        <h4>Wire shape: CLI-args passthrough, or typed bounded operations?</h4>
+        <p class="body">
+          Two researchers reached opposite conclusions from the same facts. This one decision sets
+          <strong>Phase 2's cost, whether Phase-1 parity is free, and how exec is gated in
+          Phase 4</strong> — and once a fleet is deployed, changing it is a protocol break.
+        </p>
+        <div class="positions">
+          <div class="pos a">
+            <span class="who">RUN says</span>
+            <span>
+              Args over the wire is an <b>"unusually strong property"</b>: every Phase-1 feature
+              becomes a fleet feature in Phase 2 at <b>zero marginal cost</b>, and the command
+              string doubles as the audit log. The host stays the stateless executor PLAN.md
+              describes.
+            </span>
+          </div>
+          <div class="pos b">
+            <span class="who">OPS says</span>
+            <span>
+              The host must expose <b>typed, bounded <code>container</code> operations — not a
+              generic remote shell</b>: validate operation, argument schema, frame length,
+              concurrency and deadline before spawning anything. Explicitly: <b>"do not expose an
+              arbitrary command string in Phases 2–3."</b>
+            </span>
+          </div>
+        </div>
+        <p class="stakes">
+          <b>A middle path exists</b> — args passthrough constrained by an <code>args[0]</code>
+          subcommand allowlist plus per-subcommand schema validation, which keeps most of RUN's
+          leverage while closing OPS's "remote shell" objection. It buys the property at the cost of
+          a validation table that has to be maintained as the CLI grows. Either way it needs your
+          call, not ours.
+        </p>
+      </div>
+
+      <!-- Q2 -->
+      <div class="card q" id="q2">
+        <div class="q-top"><span class="qid">Q2</span></div>
+        <h4>Table or the card grid as the default view?</h4>
+        <div class="positions">
+          <div class="pos a"><span class="who">UX</span><span>A table — running-first, sortable, multi-select. Cards stop scaling around twenty rows; demote them to a toggle.</span></div>
+          <div class="pos c"><span class="who">Existing</span><span><code>design/dashboard-mockup.html</code> is a card grid with sparklines, <b>and it's your design</b>.</span></div>
+        </div>
+        <p class="stakes">The mockups in §2 already assume the table. <b>Needs sign-off either way</b> — this is the most visible reversal in the whole proposal.</p>
+      </div>
+
+      <!-- Q3 -->
+      <div class="card q" id="q3">
+        <div class="q-top"><span class="qid">Q3</span></div>
+        <h4>Does host mode become stateful?</h4>
+        <p class="body">
+          Two features push it there: the <strong>restart/health loop</strong> (RUN: it must run on
+          the host peer, or closing the laptop stops restarting containers on the minis) and
+          <strong>per-host settings get/set</strong>. Both mean host mode needs a persisted policy
+          store.
+        </p>
+        <p class="stakes">
+          That's a real expansion of PLAN.md's "host mode is the same binary running headless-ish",
+          which today just executes CLI args. <b>Accept the expansion, or accept that restart
+          policies only apply while the client is connected</b> — and say so in the UI, because the
+          alternative is a policy that silently lies.
+        </p>
+      </div>
+
+      <!-- Q4 -->
+      <div class="card q" id="q4">
+        <div class="q-top"><span class="qid">Q4</span></div>
+        <h4>Confirm the two-tier <code>defaults</code>/<code>locked</code> managed model now?</h4>
+        <div class="positions">
+          <div class="pos c"><span class="who">Today</span><span><code>reference/jamf-config-profile.md</code>: "if a managed value is present, it wins."</span></div>
+          <div class="pos a"><span class="who">SET</span><span>Upgrade to defaults-seed + locked-override <b>before Phase 2 writes the settings accessors</b>.</span></div>
+        </div>
+        <p class="stakes">Retrofitting precedence means rewriting every accessor. <b>Cheap now, expensive later</b> — but it is a real scope addition to Phase 1.</p>
+      </div>
+
+      <!-- Q5 -->
+      <div class="card q" id="q5">
+        <div class="q-top"><span class="qid">Q5</span></div>
+        <h4>Is §3's Phase 1 the Phase 1 you want?</h4>
+        <p class="body">
+          As consolidated, Phase 1 includes volumes, networks, the settings registry, the security
+          baseline, diagnostics and the support bundle — <strong>more than PLAN.md's Phase 1
+          line</strong> ("container grid, images list, run/stop/restart/remove, logs view").
+        </p>
+        <p class="stakes">Approve as-is, or cut to the PLAN.md line and push the rest to a Phase 1.5. If it gets tight, the ⌘K palette is the designated first cut.</p>
+      </div>
+
+      <!-- Q6 -->
+      <div class="card q" id="q6">
+        <div class="q-top"><span class="qid">Q6</span></div>
+        <h4>Notifications in Phase 1 or Phase 3?</h4>
+        <div class="positions">
+          <div class="pos a"><span class="who">SET</span><span>Per-category toggles are <span class="pill core">core</span> in Phase 1.</span></div>
+          <div class="pos b"><span class="who">UX</span><span>Design the categories in Phase 2, ship them in Phase 3.</span></div>
+        </div>
+        <p class="stakes">PLAN.md doesn't mention notifications at all, so there's no prior to fall back on. Five categories are proposed; error ones are not disableable.</p>
+      </div>
+
+      <!-- Q7 -->
+      <div class="card q" id="q7">
+        <div class="q-top"><span class="qid">Q7</span></div>
+        <h4>Should Flotilla ever <i>write</i> <code>config.toml</code>?</h4>
+        <p class="body">
+          Reading <code>~/.config/container/config.toml</code> is unambiguously good. Writing means
+          owning a file another tool owns, on a machine you may not be sitting at, with a service
+          restart to apply the change.
+        </p>
+        <p class="stakes">SET's recommendation: <b>read in Phase 1, edit locally in Phase 3, edit remotely only if it proves necessary.</b></p>
+      </div>
+
+      <!-- Q9 -->
+      <div class="card q" id="q9">
+        <div class="q-top"><span class="qid">Q9</span></div>
+        <h4>Record "no App Sandbox for v1" as a decision?</h4>
+        <p class="body">
+          OPS makes the case: we execute an external CLI and listen for network connections, so a
+          useful sandbox needs brittle exceptions. DECISIONS.md is currently silent on sandboxing.
+        </p>
+        <p class="stakes">Worth recording explicitly so it isn't re-litigated — <b>including that notarization ≠ sandboxing ≠ hardened runtime</b>. We still do Developer ID + hardened runtime + least entitlements.</p>
+      </div>
+
+      <!-- Q8 — resolved -->
+      <div class="card q resolved" id="q8">
+        <div class="q-top">
+          <span class="qid">Q8</span>
+          <span class="decided">✓ DECIDED 2026-07-27</span>
+        </div>
+        <h4>Bundle ID / preference domain</h4>
+        <p class="body">
+          <strong><code>dev.melonfleet.Flotilla</code></strong>. <code>dev.melonfleet.*</code> is the
+          canonical reverse-DNS root for the whole suite (per <code>design/brand/BRAND.md</code>,
+          which supersedes any earlier <code>com.melonfleet.*</code>), matching the owned
+          <code>melonfleet.dev</code> domain.
+        </p>
+        <p class="stakes">
+          Recorded in DECISIONS.md. Governs the UserDefaults / managed-preference domain, Keychain
+          services, launchd labels, pkg identifiers, Sparkle keys and Jamf payloads.
+          <b>No longer open.</b>
+        </p>
+      </div>
+    </div>
+
+    <!-- contradictions -->
+    <h3 style="margin-top:44px">Flagged, not resolved — where research pushes against a settled doc</h3>
+    <div class="card contra">
+      <table>
+        <thead><tr><th>Where</th><th>What it says now</th><th>What the research proposes</th><th class="rec">Src</th></tr></thead>
+        <tbody>
+          <tr><td class="feat"><code>reference/wire-protocol.md</code></td><td class="desc">One-way: <code>WireRequest</code> carries args once, <code>WireResponse</code> flows host→client only.</td><td class="desc">Needs client→host <code>.stdin</code>/<code>.resize</code> frames and a binary frame type (base64 is fine for config files, bad for a 400 MB tar). <b>Extension, not contradiction — but design it in Phase 2.</b></td><td class="src">RUN·OPS</td></tr>
+          <tr><td class="feat"><code>reference/jamf-config-profile.md</code></td><td class="desc">"If a managed value is present it wins."</td><td class="desc">Two tiers: <code>defaults</code> (seed, user may change) + <code>locked</code> (always wins). See <a href="#q4">Q4</a>.</td><td class="src">SET·OPS</td></tr>
+          <tr><td class="feat">PLAN.md — host mode</td><td class="desc">"headless-ish, executes CLI args" — a stateless executor.</td><td class="desc">Restart/health loop and per-host settings both live on the host peer → persisted state. See <a href="#q3">Q3</a>.</td><td class="src">RUN·SET</td></tr>
+          <tr><td class="feat">PLAN.md — "menu-bar app"</td><td class="desc">The menu-bar extra is the entry point.</td><td class="desc">The extra can be hidden in System Settings, swallowed by the notch, or removed (auto-terminating an <code>LSUIElement</code> app). The window must be reachable without it → "Show in: Menu bar / Dock / Both".</td><td class="src">UX</td></tr>
+          <tr><td class="feat">Apple HIG</td><td class="desc">"Display a menu — not a popover — when people click your menu bar extra."</td><td class="desc"><code>MenuBarExtra(.window)</code>, using HIG's own "unless too complex for a menu" clause; mitigated by allowing no text entry, dialogs or destructive confirmations in the popover.</td><td class="src">UX</td></tr>
+          <tr><td class="feat"><code>design/dashboard-mockup.html</code></td><td class="desc">Card grid with sparklines.</td><td class="desc">Table by default, cards as a toggle; sparklines deferred to Phase 4 (Phase 1 shows numeric CPU% from a two-sample delta, because <code>stats</code> returns cumulative µs). See <a href="#q2">Q2</a>.</td><td class="src">UX·RUN</td></tr>
+          <tr><td class="feat"><code>design/branding.md</code></td><td class="desc">Pink = brand/selection, green = healthy.</td><td class="desc">Then pink <b>cannot</b> double as the error colour — needs an explicit semantic red/orange assignment.</td><td class="src">UX</td></tr>
+          <tr><td class="feat">DECISIONS.md (silent)</td><td class="desc">No sandbox position recorded.</td><td class="desc">"No App Sandbox for v1", hardened runtime + least entitlements instead. See <a href="#q9">Q9</a>.</td><td class="src">OPS</td></tr>
+          <tr><td class="feat">DECISIONS.md — guided install</td><td class="desc">"User authorization, never silent" — written for the local Mac.</td><td class="desc">On a <b>remote</b> host, honouring it means an authorization prompt on <i>that</i> Mac, which nobody is sitting at. Fleet CLI upgrade needs a design answer before it's promised.</td><td class="src">RUN·OPS</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="embed-note" style="margin-top:14px">
+      <b>No researcher proposed anything DECISIONS.md rejects</b> — no ssh, no gRPC, no Kubernetes,
+      no Containerization-framework linking, no Electron, no silent privileged install.
+    </p>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ============================================================
+     5. NOT DOING
+     ============================================================ -->
+<section id="not-doing">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-num">05</div>
+      <h2>Deliberately not doing</h2>
+      <p class="sec-sub">
+        The most useful output of the research: a scope that is smaller than Docker Desktop's on
+        purpose, for three separate reasons.
+      </p>
+    </div>
+
+    <div class="nope-grid">
+      <div class="card nope">
+        <h4>Because the runtime can't back it
+          <span><code>container</code> 1.1.0 has no such command — drawing the button would be a lie</span></h4>
+        <ul>
+          <li><b>pause / resume, rename, live resource update, top, commit, diff</b> — no backing commands.</li>
+          <li><b>Compose as an execution engine</b> (stacks, <code>up</code>/<code>down</code>, dependency ordering). Compose-file <i>import into a pre-filled run sheet</i> is the honest version.</li>
+          <li><b>Event-driven UI</b> — no <code>docker events</code> analogue. Everything is polling; that's why polling discipline is a Phase 3 core feature.</li>
+          <li><b>CPU/RAM/disk resource sliders</b> — there is <b>no shared host VM to size</b>. One micro-VM per container; faking the pane invents a control that does nothing.</li>
+          <li><b>File-sharing / bind-mount pane</b> — no VirtioFS-vs-FUSE choice exists; mounts are per-run, so they belong in the run sheet.</li>
+          <li><b>Finder-mounted container filesystems</b> — needs a FileProvider/FUSE-class extension and makes no sense for a remote Mac.</li>
+        </ul>
+      </div>
+
+      <div class="card nope">
+        <h4>Because it's the wrong product
+          <span>personal, non-commercial, local-first</span></h4>
+        <ul>
+          <li><b>Accounts, sign-in, licensing, activation, SSO, cloud control plane</b> — Docker's reappearing "You can do more when you sign in" banner is the single most-complained-about thing in the entire survey.</li>
+          <li><b>Telemetry / analytics of any kind</b> — the correct amount for a personal app is zero, and saying so in Settings is itself a feature. (Docker and Podman both default it <i>on</i>.)</li>
+          <li><b>Image vulnerability scanning</b> — needs a bundled scanner + vuln DB + updates. Enormous, and orthogonal to a fleet manager.</li>
+          <li><b>Extensions / marketplace, Dev Environments, Learning Center, embedded AI assistant, in-app notification centre</b> — product-growth surfaces, not features.</li>
+          <li><b>Docker Hub browse in-app</b> — a "pull by ref" field covers the real need.</li>
+          <li><b>Kubernetes or any orchestrator view</b>; <b>multi-host stack deployment</b> — the fan-out primitives give most of the value without an orchestrator.</li>
+          <li><b>Customizable nav tabs</b>, <b>in-app theme/accent picker</b>, <b>a web dashboard</b> (would mean an HTTP server on every host, contradicting mTLS-only), <b>a "mini player" window</b> (our popover already is that).</li>
+        </ul>
+      </div>
+
+      <div class="card nope">
+        <h4>Because it's disproportionate machinery
+          <span>for eight personal Macs with one administrator</span></h4>
+        <ul>
+          <li><b>Distributed trust authority / shared CA / Tailnet-Lock clone</b> — mutual leaf pinning plus explicit bilateral approval is proportionate. Revisit only with multiple administrators.</li>
+          <li><b>A custom root daemon or privileged updater</b> — Developer ID + Sparkle + Apple's authorized installer cover it; a privileged helper would materially enlarge the attack surface.</li>
+          <li><b>Automatic fleet-wide update, and automatic downgrade</b> — a bad binary could remove the only management path. Named-host canaries, one at a time.</li>
+          <li><b>A general ACL language / fine-grained roles</b> — start with <code>client-controller</code> and <code>host</code>.</li>
+          <li><b>Shell-completion install / PATH management</b> — the <code>container</code> pkg owns <code>/usr/local/bin</code>.</li>
+          <li><b>Beta/experimental features tab</b> — noise inside a pre-1.0 app.</li>
+          <li><b><code>container machine</code> management</b> — read-only <code>machine list</code> in host detail is the ceiling. <b>USB passthrough, sound</b> — irrelevant to headless fleet Macs.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>Flotilla review deck · generated from <code>research/FEATURES.md</code>, <code>PLAN.md</code>, <code>DECISIONS.md</code> and <code>research/review/mockups/</code>.</span>
+    <span class="spacer"></span>
+    <a href="./mockups/index.html" target="_blank" rel="noopener">Mockup index ↗</a>
+  </div>
+</footer>
+
+<script>
+// Highlight the nav item for the section currently in view. Pure progressive
+// enhancement — the deck reads fine with JS off.
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav.top a.jump'));
+  var targets = links
+    .map(function (a) { return document.querySelector(a.getAttribute('href')); })
+    .filter(Boolean);
+  if (!targets.length || !('IntersectionObserver' in window)) return;
+
+  function setActive(id) {
+    links.forEach(function (a) {
+      var on = a.getAttribute('href') === '#' + id;
+      a.style.background = on ? 'var(--brand-tint)' : '';
+      a.style.color = on ? 'var(--brand)' : '';
+    });
+  }
+
+  var seen = {};
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting ? e.intersectionRatio : 0; });
+    var best = null, bestRatio = 0;
+    targets.forEach(function (t) {
+      if ((seen[t.id] || 0) > bestRatio) { bestRatio = seen[t.id]; best = t.id; }
+    });
+    if (best) setActive(best);
+  }, { rootMargin: '-60px 0px -55% 0px', threshold: [0, 0.15, 0.4, 0.8] });
+
+  targets.forEach(function (t) { io.observe(t); });
+})();
+</script>
+</body>
+</html>

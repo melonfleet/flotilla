@@ -72,6 +72,20 @@ second-guess settled choices mid-project.
   preferences and every managed key, so this is fixed before Phase 1 ships.
   (This closes open question Q8 in `research/FEATURES.md`.)
 
+## Appearance (settled 2026-07-27)
+
+- **Appearance is chosen by the user during first run** — the onboarding flow asks, and
+  whatever they pick is persisted to the `dev.melonfleet.Flotilla` preference domain and
+  becomes their default. `Auto` (follow the system `colorScheme`) is the pre-selected
+  option, not a hardcoded default. Changeable afterwards in Settings › General.
+- Light and dark are both first-class; neither is the "real" theme.
+- **Keep the mockups' visual language**: the dark treatment shown in
+  `research/review/mockups/` is approved, and the **watermelon accent** is the single
+  accent colour in both themes. Do not introduce a second accent or a theme-specific
+  palette.
+- Consequence: every view must be built and checked in **both** appearances — an
+  auto default means a light bug is as user-visible as a dark one.
+
 ## Licensing note
 
 `tdeverx/contained-app` is **PolyForm Noncommercial 1.0.0** — fine to read for

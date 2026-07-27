@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — first run</title>
+<link rel="stylesheet" href="assets/mac.css">
+<style>
+  .win.w-onboard { max-width: 940px; height: 660px; }
+  .rail { flex: 0 0 236px; }
+  .rail-step {
+    display: grid; grid-template-columns: 18px 1fr; gap: 8px;
+    padding: 6px 8px; border-radius: var(--r-row); font-size: 12px;
+    color: var(--label-3); align-items: start;
+  }
+  .rail-step.current { color: var(--label); font-weight: 600; background: var(--accent-tint); }
+  .rail-step.current .rs-num { color: var(--accent-text); }
+  .rail-step.done { color: var(--label-2); }
+  .rail-step.done .rs-title { text-decoration: line-through; text-decoration-color: var(--label-4); }
+  .rail-step .rs-num { display: grid; place-items: center; height: 16px; }
+  .step-body { padding: 24px 28px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+  .step-foot {
+    display: flex; align-items: center; gap: 8px; padding: 12px 18px;
+    box-shadow: inset 0 0.5px 0 var(--hairline); background: var(--glass-toolbar);
+    backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+    flex: 0 0 auto;
+  }
+  .check-row {
+    display: grid; grid-template-columns: 20px 1fr auto; gap: 10px;
+    padding: 11px 14px; align-items: start;
+    box-shadow: inset 0 -0.5px 0 var(--hairline);
+  }
+  .check-row:last-child { box-shadow: none; }
+  .empty {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 40px 30px; text-align: center;
+  }
+  .empty .glyph { color: var(--label-4); }
+  .discovered-row {
+    display: grid; grid-template-columns: 20px 1fr auto; gap: 10px; align-items: center;
+    padding: 8px 12px; box-shadow: inset 0 -0.5px 0 var(--hairline);
+  }
+  .discovered-row:last-child { box-shadow: none; }
+  .fp-panel {
+    flex: 1 1 0; min-width: 0; padding: 12px 14px; border-radius: 10px;
+    background: var(--grouped-bg); box-shadow: 0 0 0 0.5px var(--hairline);
+  }
+  .fp {
+    font-family: var(--font-mono); font-size: 12px; line-height: 1.7;
+    letter-spacing: 0.03em; word-spacing: 0.12em;
+  }
+  .fp-words { font-size: 12px; font-weight: 600; letter-spacing: 0.01em; }
+  .loglines {
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.62;
+    max-height: 150px; overflow: auto; padding: 8px 10px;
+    background: var(--grouped-bg); border-radius: 8px;
+    box-shadow: inset 0 0 0 0.5px var(--hairline);
+  }
+  .cta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cta {
+    padding: 16px; border-radius: 10px; background: var(--raised-bg);
+    box-shadow: 0 0 0 0.5px var(--hairline); display: flex; flex-direction: column; gap: 6px;
+  }
+  .cta:hover { box-shadow: 0 0 0 1px var(--accent-fill); }
+  .content > .tab-panel.on {
+    display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
+  }
+</style>
+</head>
+<body>
+<script src="assets/icons.js"></script>
+
+<div class="desktop">
+  <div class="win w-onboard">
+    <div class="split">
+
+      <!-- ===== wizard rail: progress + contextual tip ===== -->
+      <div class="sidebar rail">
+        <div class="sidebar-top">
+          <span class="traffic"><span class="close"><i>×</i></span><span class="min" style="background: rgba(0,0,0,.16);"><i></i></span><span class="zoom" style="background: rgba(0,0,0,.16);"><i></i></span></span>
+        </div>
+        <div class="sidebar-scroll">
+          <div class="row gap6" style="padding: 2px 8px 14px;">
+            <svg class="ic s22 accent"><use href="#i-sails"/></svg>
+            <span class="col">
+              <span class="t13 bold">Set up Flotilla</span>
+              <span class="t11 ter">Version 0.5.0</span>
+            </span>
+          </div>
+
+          <a class="rail-step current" data-rail-step="1" data-step-go="1">
+            <span class="rs-num">1</span>
+            <span class="col"><span class="rs-title">Welcome</span></span>
+          </a>
+          <a class="rail-step" data-rail-step="2" data-step-go="2">
+            <span class="rs-num">2</span>
+            <span class="col"><span class="rs-title">Check this Mac</span><span class="t11 ter">container CLI, service, kernel</span></span>
+          </a>
+          <a class="rail-step" data-rail-step="3" data-step-go="3">
+            <span class="rs-num">3</span>
+            <span class="col"><span class="rs-title">Install what's missing</span></span>
+          </a>
+          <a class="rail-step" data-rail-step="4" data-step-go="4">
+            <span class="rs-num">4</span>
+            <span class="col"><span class="rs-title">Your first container</span></span>
+          </a>
+          <a class="rail-step" data-rail-step="5" data-step-go="5">
+            <span class="rs-num">5</span>
+            <span class="col"><span class="rs-title">Add a remote Mac</span></span>
+          </a>
+          <a class="rail-step" data-rail-step="6" data-step-go="6">
+            <span class="rs-num">6</span>
+            <span class="col"><span class="rs-title">Verify &amp; pair</span></span>
+          </a>
+          <a class="rail-step" data-rail-step="7" data-step-go="7">
+            <span class="rs-num">7</span>
+            <span class="col"><span class="rs-title">Done</span></span>
+          </a>
+
+          <div class="callout brand" style="margin: 16px 4px 0;">
+            <svg class="ic s13"><use href="#i-info"/></svg>
+            <div class="t11">
+              You can leave setup at any point. Flotilla stays usable — it just tells you what
+              isn't working yet.
+            </div>
+          </div>
+        </div>
+        <div class="sidebar-foot">
+          <a class="t11" data-step-go="4">Skip entire setup</a>
+        </div>
+      </div>
+
+      <!-- ===== steps ===== -->
+      <div class="content">
+
+        <!-- ---------- 1 · welcome ---------- -->
+        <div class="tab-panel on col" data-step="1" style="flex: 1 1 auto; min-height: 0;">
+          <div class="step-body">
+            <div class="col gap10" style="align-items: flex-start; max-width: 560px;">
+              <svg class="ic s56 accent"><use href="#i-sails"/></svg>
+              <h1>Manage Apple <span class="mono" style="font-size: 20px;">container</span> on this Mac — and on the rest of your Macs.</h1>
+              <p class="sec" style="line-height: 1.5;">
+                Flotilla wraps the <span class="mono">container</span> CLI. It runs Linux containers as one
+                micro-VM each on Apple Silicon, and Flotilla drives it here and across your fleet over a
+                mutually-authenticated TLS link.
+              </p>
+
+              <div class="col gap10" style="margin-top: 8px; width: 100%;">
+                <div class="row gap10">
+                  <svg class="ic s20 accent"><use href="#i-cube"/></svg>
+                  <span class="col">
+                    <span class="med">Local first</span>
+                    <span class="t12 sec">Containers, images and volumes on this Mac, with logs and a real terminal.</span>
+                  </span>
+                </div>
+                <div class="row gap10">
+                  <svg class="ic s20 accent"><use href="#i-server"/></svg>
+                  <span class="col">
+                    <span class="med">Then the fleet</span>
+                    <span class="t12 sec">Each remote Mac runs the same app in host mode. Discovered by Bonjour, or added by hostname.</span>
+                  </span>
+                </div>
+                <div class="row gap10">
+                  <svg class="ic s20 accent"><use href="#i-key"/></svg>
+                  <span class="col">
+                    <span class="med">No accounts, no telemetry, no server</span>
+                    <span class="t12 sec">Certificate identities in your Keychain. Nothing leaves your network except update checks.</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step-foot">
+            <span class="t11 ter">Nothing is installed or changed until you approve it.</span>
+            <span class="spacer"></span>
+            <a class="btn lg" data-step-go="4">Skip setup</a>
+            <a class="btn lg primary" data-step-go="2">Continue</a>
+          </div>
+        </div>
+
+        <!-- ---------- 2 · preflight ---------- -->
+        <div class="tab-panel col" data-step="2" style="flex: 1 1 auto; min-height: 0;">
+          <div class="step-body">
+            <h2 style="margin-bottom: 4px;">Checking this Mac</h2>
+            <p class="t12 sec" style="margin-bottom: 16px;">
+              Each check that fails carries its own fix. This checklist is also the Diagnostics page —
+              it re-runs at every launch, and the sidebar shows a badge while anything is failing.
+            </p>
+
+            <div class="group">
+              <div class="check-row">
+                <svg class="ic s18 green"><use href="#i-check-circle"/></svg>
+                <span class="col">
+                  <span class="med t13">Apple Silicon Mac on macOS 26</span>
+                  <span class="t11 sec">MacBook Pro (M2 Max) · macOS 26.5.1 · arm64</span>
+                </span>
+                <span class="pill ok">passed</span>
+              </div>
+
+              <div class="check-row">
+                <svg class="ic s18 green"><use href="#i-check-circle"/></svg>
+                <span class="col">
+                  <span class="med t13"><span class="mono">container</span> CLI installed</span>
+                  <span class="t11 sec">1.0.0 at <span class="mono">/usr/local/bin/container</span> · latest release is 1.0.0</span>
+                </span>
+                <span class="pill ok">passed</span>
+              </div>
+
+              <div class="check-row">
+                <svg class="ic s18 orange"><use href="#i-x-circle"/></svg>
+                <span class="col">
+                  <span class="med t13">API service running</span>
+                  <span class="t11 sec">
+                    <span class="mono">container system status</span> reports
+                    <span class="mono">"unregistered"</span> — the service isn't started, so no container
+                    or image command will work.
+                  </span>
+                </span>
+                <a class="btn sm primary">Start service</a>
+              </div>
+
+              <div class="check-row">
+                <svg class="ic s18 orange"><use href="#i-x-circle"/></svg>
+                <span class="col">
+                  <span class="med t13">Linux kernel installed</span>
+                  <span class="t11 sec">
+                    A fresh install needs a kernel before anything boots. Flotilla runs
+                    <span class="mono">container system kernel set --recommended</span>, which downloads the
+                    kata-containers static kernel (about 22 MB).
+                  </span>
+                </span>
+                <a class="btn sm primary" data-step-go="3">Install kernel…</a>
+              </div>
+
+              <div class="check-row">
+                <svg class="ic s18 dim"><use href="#i-dash-circle"/></svg>
+                <span class="col">
+                  <span class="med t13">Nested virtualization</span>
+                  <span class="t11 sec">
+                    Not available on M2 — containers can't be launched inside a macOS VM on this machine.
+                    Only matters if you plan to run host mode in a VM; the physical Macs are unaffected.
+                  </span>
+                </span>
+                <span class="pill">informational</span>
+              </div>
+            </div>
+
+            <div class="callout warn" style="margin-top: 14px;">
+              <svg class="ic s14"><use href="#i-warn"/></svg>
+              <div>
+                <b>2 checks are failing.</b> You can continue anyway — Flotilla will open read-only and
+                explain what's missing instead of trapping you here.
+              </div>
+            </div>
+          </div>
+          <div class="step-foot">
+            <a class="btn lg"><svg class="ic s13"><use href="#i-refresh"/></svg> Re-run checks</a>
+            <span class="spacer"></span>
+            <a class="btn lg" data-step-go="4">Continue anyway</a>
+            <a class="btn lg primary" data-step-go="3">Fix both…</a>
+          </div>
+        </div>
+
+        <!-- ---------- 3 · progress + log ---------- -->
+        <div class="tab-panel col" data-step="3" style="flex: 1 1 auto; min-height: 0;">
+          <div class="step-body">
+            <h2 style="margin-bottom: 4px;">Installing the recommended kernel</h2>
+            <p class="t12 sec" style="margin-bottom: 18px;">
+              The same progress sheet is used for image pulls, builds and the guided
+              <span class="mono">.pkg</span> install: a bar where the CLI reports progress, a spinner where
+              it doesn't, and the raw log one click away.
+            </p>
+
+            <div class="card pad" style="margin-bottom: 14px;">
+              <div class="row" style="margin-bottom: 8px;">
+                <span class="med t13">Downloading vmlinux-6.12.28</span>
+                <span class="spacer"></span>
+                <span class="t12 sec tnum">13.9 MB of 22.4 MB · 62%</span>
+              </div>
+              <div class="bar"><i style="width: 62%"></i></div>
+              <div class="row t11 ter" style="margin-top: 7px;">
+                <span>github.com/kata-containers · verifying digest on completion</span>
+                <span class="spacer"></span>
+                <span>about 8 seconds left</span>
+              </div>
+            </div>
+
+            <div class="card pad" style="margin-bottom: 14px;">
+              <div class="row" style="margin-bottom: 8px;">
+                <span class="spinner"></span>
+                <span class="med t13">Starting the API service</span>
+                <span class="spacer"></span>
+                <span class="t12 ter">queued</span>
+              </div>
+              <div class="bar indeterminate"><i></i></div>
+            </div>
+
+            <div class="card pad">
+              <div class="row" style="margin-bottom: 8px;">
+                <svg class="ic s13 dim"><use href="#i-chev-down"/></svg>
+                <span class="med t12">Log</span>
+                <span class="spacer"></span>
+                <span class="search" style="width: 150px; height: 20px;">
+                  <svg class="ic s11 dim"><use href="#i-search"/></svg><span class="ph t11">Search log</span>
+                </span>
+                <a class="btn sm"><svg class="ic s11"><use href="#i-copy"/></svg></a>
+              </div>
+              <pre class="loglines"><span class="ter">12:58:41</span>  resolving recommended kernel for arm64…
+<span class="ter">12:58:41</span>  → kata-containers 3.10.1 · vmlinux-6.12.28
+<span class="ter">12:58:42</span>  GET https://github.com/kata-containers/kata-containers/releases/…
+<span class="ter">12:58:44</span>  downloading 22.4 MB
+<span class="ter">12:58:47</span>  13.9 MB / 22.4 MB (62%)
+<span class="ter">12:58:47</span>  <span class="ter">next: container system start</span></pre>
+            </div>
+          </div>
+          <div class="step-foot">
+            <span class="t11 ter">No admin password needed for the kernel. The <span class="mono">.pkg</span> install would ask, once, through the system installer.</span>
+            <span class="spacer"></span>
+            <a class="btn lg">Cancel</a>
+            <a class="btn lg">Keep running in background</a>
+            <a class="btn lg primary" data-step-go="4">Done</a>
+          </div>
+        </div>
+
+        <!-- ---------- 4 · empty state ---------- -->
+        <div class="tab-panel col" data-step="4" style="flex: 1 1 auto; min-height: 0;">
+          <div class="step-body">
+            <div class="row" style="margin-bottom: 10px;">
+              <h2>Nothing is running yet</h2>
+              <span class="spacer"></span>
+              <span class="pill">Containers view · empty state</span>
+            </div>
+
+            <div class="card" style="overflow: hidden; margin-bottom: 16px;">
+              <div class="tabs" style="background: transparent;">
+                <span class="tab on">All</span><span class="tab">Running</span><span class="tab">Stopped</span>
+                <span class="spacer"></span>
+                <span class="search" style="width: 150px;"><svg class="ic s12 dim"><use href="#i-search"/></svg><span class="ph">Filter</span></span>
+              </div>
+              <div class="empty">
+                <svg class="ic s40 glyph"><use href="#i-cube"/></svg>
+                <h3 class="t15">No containers on this Mac</h3>
+                <p class="t12 sec" style="max-width: 380px;">
+                  Running one pulls <span class="mono">docker.io/library/alpine:latest</span> (about 4 MB),
+                  starts it with <span class="mono">sleep 300</span>, and shows you its logs. Nothing else
+                  on your Mac changes.
+                </p>
+                <div class="row gap6" style="margin-top: 4px;">
+                  <a class="btn lg primary"><svg class="ic s13"><use href="#i-plus"/></svg> Run a container</a>
+                  <a class="btn lg"><svg class="ic s13"><use href="#i-download"/></svg> Pull an image</a>
+                </div>
+              </div>
+            </div>
+
+            <p class="t12 sec" style="margin-bottom: 10px;">
+              Every empty state carries the action for <em>its</em> context, and says what the button
+              will do before you press it:
+            </p>
+            <div class="group">
+              <div class="g-row"><span class="g-label t12">No images</span><span class="g-ctl"><a class="btn sm">Pull image…</a></span></div>
+              <div class="g-row"><span class="g-label t12">No volumes</span><span class="g-ctl"><a class="btn sm">Create volume…</a></span></div>
+              <div class="g-row"><span class="g-label t12">No hosts in the fleet</span><span class="g-ctl"><a class="btn sm" data-step-go="5">Add a host…</a></span></div>
+              <div class="g-row">
+                <span class="col">
+                  <span class="g-label t12">Nothing matches <span class="mono">is:running redis</span></span>
+                  <span class="g-help">Clearing keeps the <span class="mono">is:</span> tab and drops only the search text.</span>
+                </span>
+                <span class="g-ctl"><a class="btn sm">Clear filter</a></span>
+              </div>
+              <div class="g-row">
+                <span class="col">
+                  <span class="g-label t12"><span class="mono">container</span> isn't installed</span>
+                  <span class="g-help">Shows the preflight card, never an empty list that looks like “you have nothing”.</span>
+                </span>
+                <span class="g-ctl"><a class="btn sm" data-step-go="2">Show checks…</a></span>
+              </div>
+            </div>
+          </div>
+          <div class="step-foot">
+            <a class="btn lg" data-step-go="2">Back</a>
+            <span class="spacer"></span>
+            <a class="btn lg" href="main-window.html">Just open Flotilla</a>
+            <a class="btn lg primary" data-step-go="5">Add a remote Mac</a>
+          </div>
+        </div>
+
+        <!-- ---------- 5 · add host ---------- -->
+        <div class="tab-panel col" data-step="5" style="flex: 1 1 auto; min-height: 0;">
+          <div class="step-body">
+            <h2 style="margin-bottom: 4px;">Add a Mac to the fleet</h2>
+            <p class="t12 sec" style="margin-bottom: 16px;">
+              Install Flotilla on the other Mac and switch it to <b>host mode</b>. Discovery and manual
+              entry are peers here: mDNS doesn't cross subnets or VLANs, so on a routed network manual
+              entry is the only way in.
+            </p>
+
+            <div class="row" style="align-items: flex-start; gap: 14px;">
+
+              <!-- Bonjour -->
+              <div class="card" style="flex: 1 1 0; min-width: 0; overflow: hidden;">
+                <div class="row" style="padding: 10px 12px; box-shadow: inset 0 -0.5px 0 var(--hairline);">
+                  <svg class="ic s14 dim"><use href="#i-broadcast"/></svg>
+                  <span class="med t12">Discovered on this network</span>
+                  <span class="spacer"></span>
+                  <span class="spinner" style="width: 12px; height: 12px;"></span>
+                </div>
+
+                <div class="discovered-row">
+                  <svg class="ic s14 dim"><use href="#i-mini"/></svg>
+                  <span class="col" style="min-width: 0;">
+                    <span class="t12 med truncate">mini-03</span>
+                    <span class="t11 ter truncate">Mac mini (M1) · 192.168.1.33:7443</span>
+                  </span>
+                  <a class="btn sm primary" data-step-go="6">Add</a>
+                </div>
+                <div class="discovered-row">
+                  <svg class="ic s14 dim"><use href="#i-studio"/></svg>
+                  <span class="col" style="min-width: 0;">
+                    <span class="t12 med truncate">studio-04</span>
+                    <span class="t11 ter truncate">Mac Studio (M1 Ultra) · 192.168.1.24:7443</span>
+                  </span>
+                  <a class="btn sm">Add</a>
+                </div>
+                <div class="discovered-row" style="opacity: .55;">
+                  <svg class="ic s14 dim"><use href="#i-studio"/></svg>
+                  <span class="col" style="min-width: 0;">
+                    <span class="t12 truncate">studio-01</span>
+                    <span class="t11 ter truncate">already added · trusted</span>
+                  </span>
+                  <span class="pill ok"><svg class="ic s11"><use href="#i-check"/></svg></span>
+                </div>
+
+                <div style="padding: 10px 12px; box-shadow: inset 0 0.5px 0 var(--hairline);">
+                  <p class="t11 sec" style="line-height: 1.45;">
+                    <b>Not seeing your Mac?</b> Host mode may be off, the Mac may be asleep, or it may be
+                    on another subnet — Bonjour only reaches the local link. Use manual entry.
+                  </p>
+                </div>
+              </div>
+
+              <!-- manual -->
+              <div class="card" style="flex: 1 1 0; min-width: 0; overflow: hidden;">
+                <div class="row" style="padding: 10px 12px; box-shadow: inset 0 -0.5px 0 var(--hairline);">
+                  <svg class="ic s14 dim"><use href="#i-globe"/></svg>
+                  <span class="med t12">Add manually</span>
+                </div>
+                <div style="padding: 12px;">
+                  <div class="col gap10">
+                    <div class="col gap4">
+                      <span class="t11 sec">Hostname or IP address</span>
+                      <span class="field focused grow"><span class="mono">mini-04.local</span></span>
+                    </div>
+                    <div class="row gap10">
+                      <div class="col gap4" style="width: 96px;">
+                        <span class="t11 sec">Port</span>
+                        <span class="field"><span class="mono">7443</span></span>
+                      </div>
+                      <div class="col gap4" style="flex: 1 1 auto;">
+                        <span class="t11 sec">Nickname (optional)</span>
+                        <span class="field grow"><span class="ph">lab mini</span></span>
+                      </div>
+                    </div>
+                    <label class="ctl t12"><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span> Keep trying to reconnect if it's offline</label>
+                    <a class="btn lg primary" style="justify-content: center;" data-step-go="6">Connect</a>
+                    <p class="t11 ter" style="line-height: 1.45;">
+                      Required for VLAN'd or routed networks. Manual hosts are stored as records and
+                      stay editable.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step-foot">
+            <a class="btn lg" data-step-go="4">Back</a>
+            <span class="spacer"></span>
+            <a class="btn lg" data-step-go="7">Skip — I'll add hosts later</a>
+          </div>
+        </div>
+
+        <!-- ---------- 6 · pairing ---------- -->
+        <div class="tab-panel col" data-step="6" style="flex: 1 1 auto; min-height: 0;">
+          <div class="step-body">
+            <div class="row gap10" style="margin-bottom: 4px;">
+              <svg class="ic s22 accent"><use href="#i-key"/></svg>
+              <h2>Do these fingerprints match?</h2>
+            </div>
+            <p class="t12 sec" style="margin-bottom: 16px;">
+              Compare what this Mac sees with what <b>mini-03</b> shows in its own host-mode window.
+              If they differ, something is between you and that Mac — cancel.
+            </p>
+
+            <div class="row" style="align-items: stretch; gap: 12px; margin-bottom: 14px;">
+              <div class="fp-panel">
+                <div class="row gap6" style="margin-bottom: 8px;">
+                  <svg class="ic s14 dim"><use href="#i-laptop"/></svg>
+                  <span class="t12 med">This Mac</span>
+                </div>
+                <div class="t11 ter" style="margin-bottom: 8px;">laptop-01 · 192.168.1.10</div>
+                <div class="t11 sec">Certificate SHA-256</div>
+                <div class="fp">E1 92 44 0B C7 3D 88 A5<br>61 FE 20 9C 7A 14 D3 66</div>
+                <div class="t11 sec" style="margin-top: 8px;">Reads as</div>
+                <div class="fp-words">melon · anchor · rigging · sailcloth</div>
+              </div>
+
+              <div class="col" style="justify-content: center; align-items: center; gap: 6px; flex: 0 0 44px;">
+                <svg class="ic s20 dim"><use href="#i-arrow-right"/></svg>
+                <span class="t11 ter">pairs<br>with</span>
+              </div>
+
+              <div class="fp-panel" style="box-shadow: 0 0 0 1px var(--accent-fill);">
+                <div class="row gap6" style="margin-bottom: 8px;">
+                  <svg class="ic s14 dim"><use href="#i-mini"/></svg>
+                  <span class="t12 med">mini-03</span>
+                  <span class="spacer"></span>
+                  <span class="pill warn">not yet trusted</span>
+                </div>
+                <div class="t11 ter" style="margin-bottom: 8px;">mini-03.local · 192.168.1.33:7443</div>
+                <div class="t11 sec">Certificate SHA-256</div>
+                <div class="fp">7B 08 DE 55 3C A1 60 9E<br>22 D4 8F 10 A4 3F 91 C2</div>
+                <div class="t11 sec" style="margin-top: 8px;">Reads as</div>
+                <div class="fp-words">rind · flotilla · lantern · harbour</div>
+              </div>
+            </div>
+
+            <div class="callout info">
+              <svg class="ic s14"><use href="#i-info"/></svg>
+              <div>
+                Trusting adds mini-03's fingerprint to the Keychain allowlist and lets this Mac run
+                <span class="mono">container</span> commands there. It does <b>not</b> let mini-03 run
+                anything here — that would need host mode on this Mac, which is off.
+              </div>
+            </div>
+
+            <p class="t11 ter" style="margin-top: 12px;">
+              <a data-open="#changed-fp">See what a <b>changed</b> fingerprint looks like →</a>
+            </p>
+          </div>
+          <div class="step-foot">
+            <a class="btn lg" data-step-go="5">Cancel</a>
+            <span class="spacer"></span>
+            <label class="ctl t12"><span class="check"></span> Also trust future certificates from this host</label>
+            <a class="btn lg primary" data-step-go="7"><svg class="ic s13"><use href="#i-shield"/></svg> Trust mini-03</a>
+          </div>
+        </div>
+
+        <!-- ---------- 7 · done ---------- -->
+        <div class="tab-panel col" data-step="7" style="flex: 1 1 auto; min-height: 0;">
+          <div class="step-body">
+            <div class="col gap10" style="align-items: flex-start; max-width: 560px;">
+              <svg class="ic s40 green"><use href="#i-check-circle"/></svg>
+              <h1>mini-03 is paired.</h1>
+              <p class="sec" style="line-height: 1.5;">
+                7 hosts trusted, 6 online, 14 containers running. The menu-bar item is live, and the
+                window is always reachable from it, the Dock, or ⌘O.
+              </p>
+
+              <div class="cta-grid" style="width: 100%; margin-top: 8px;">
+                <a class="cta" href="main-window.html">
+                  <svg class="ic s20 accent"><use href="#i-cube"/></svg>
+                  <span class="med">Open the container list</span>
+                  <span class="t12 sec">Everything on every host, grouped and filterable.</span>
+                </a>
+                <a class="cta" href="fleet.html">
+                  <svg class="ic s20 accent"><use href="#i-server"/></svg>
+                  <span class="med">Look at the fleet</span>
+                  <span class="t12 sec">Host health, disk usage, and configuration drift.</span>
+                </a>
+              </div>
+
+              <div class="group" style="width: 100%; margin-top: 8px;">
+                <div class="g-row">
+                  <span class="col">
+                    <span class="g-label t12">Check for updates automatically</span>
+                    <span class="g-help">Asked once, here. Flotilla never contacts GitHub before you agree.</span>
+                  </span>
+                  <span class="g-ctl"><span class="switch on"></span></span>
+                </div>
+                <div class="g-row">
+                  <span class="col">
+                    <span class="g-label t12">Launch Flotilla at login</span>
+                    <span class="g-help">Off by default.</span>
+                  </span>
+                  <span class="g-ctl"><span class="switch"></span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step-foot">
+            <span class="t11 ter">This is the only setup prompt you'll ever see. No re-appearing tips, no sign-in banner.</span>
+            <span class="spacer"></span>
+            <a class="btn lg primary" href="main-window.html">Get started</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== changed-fingerprint dialog (the dangerous case) ===== -->
+    <div class="scrim center" id="changed-fp" style="display: none;">
+      <div class="sheet dialog" style="width: 520px;">
+        <div class="sheet-body">
+          <div class="row gap10" style="margin-bottom: 10px;">
+            <svg class="ic s28 red"><use href="#i-warn"/></svg>
+            <div class="col">
+              <h2>studio-02's certificate has changed</h2>
+              <span class="t12 sec">Last trusted 30 June 2026</span>
+            </div>
+          </div>
+          <p class="t12 sec" style="margin-bottom: 14px; line-height: 1.5;">
+            This is expected if you reinstalled Flotilla or regenerated the identity on that Mac.
+            If you didn't do either, stop: something else is answering on
+            <span class="mono">192.168.1.22:7443</span>.
+          </p>
+          <div class="col gap10">
+            <div class="fp-panel">
+              <div class="row"><span class="t12 med">Previously trusted</span><span class="spacer"></span><span class="pill">in Keychain</span></div>
+              <div class="fp" style="margin-top: 6px;">19 C4 5E 71 B0 2A 8F 33 …</div>
+              <div class="fp-words" style="margin-top: 4px;">stripe · compass · pith · beacon</div>
+            </div>
+            <div class="fp-panel" style="box-shadow: 0 0 0 1px var(--sys-red); background: rgba(215,0,21,0.06);">
+              <div class="row"><span class="t12 med">Presented now</span><span class="spacer"></span><span class="pill err">unrecognised</span></div>
+              <div class="fp" style="margin-top: 6px;">D2 6A 11 8F 44 C0 9E 57 …</div>
+              <div class="fp-words" style="margin-top: 4px;">seed · quay · tiller · squall</div>
+            </div>
+          </div>
+        </div>
+        <div class="sheet-foot">
+          <a class="btn lg destructive" data-close>Replace trust</a>
+          <span class="spacer"></span>
+          <a class="btn lg primary" data-close>Cancel (recommended)</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    <b>First run</b> — preflight as a checklist with inline fixes and a way out, then the empty state,
+    then adding and pairing a remote Mac. Click the rail steps.
+  </p>
+</div>
+
+<template id="page-notes">
+  <h3>First run &amp; pairing</h3>
+  <ul>
+    <li><span class="tag">core</span><b>Preflight as a checklist, not a wall.</b> Podman's 3-step wizard disabled Next until every check passed, then had to add “Skip entire setup”. Flotilla has “Continue anyway” from the start and opens read-only instead of trapping you.</li>
+    <li><span class="tag">core</span><b>Every failing check carries its own fix</b>, plus Re-run, plus a badge on the nav item while anything fails (Rancher's Diagnostics model). Our checks are real: binary present → version → <code>container system status</code> reporting <code>unregistered</code> → Linux kernel installed.</li>
+    <li><span class="tag">core</span><b>Progress + collapsible searchable log</b> for anything long: kernel download, guided <code>.pkg</code> install, image pull, build. Determinate where the CLI reports progress, spinner where it doesn't, always cancellable, always backgroundable.</li>
+    <li><span class="tag">core</span><b>The <code>.pkg</code> install is user-authorized, never silent.</b> It drops a launchd service and needs admin — a settled decision, and the UI says so at the point of action.</li>
+    <li><span class="tag">core</span><b>Empty states carry the primary action and explain it first</b>, and vary per context — including “Clear filter” when the list is empty because of a filter, which preserves the <code>is:</code> tab.</li>
+    <li><span class="tag">core</span><b>Discovery and manual entry are peers.</b> mDNS doesn't cross subnets, so manual entry is mandatory — and the “not seeing your Mac?” hint names the three real causes.</li>
+    <li><span class="tag">core</span><b>Pairing shows both fingerprints side by side</b> with fixed roles, hostname and IP under each, short grouped hex <em>and</em> a word derivation for eyeball comparison, then explicit Trust / Cancel. Modelled on deskflow and Proxmox's certificate dialogs.</li>
+    <li><span class="tag">core</span><b>A changed certificate shows old vs new with a real warning and defaults to Cancel.</b> Never auto-trust, never a silent re-prompt.</li>
+    <li><span class="tag">core</span><b>Trust is directional and says so.</b> Trusting a host doesn't grant it anything here.</li>
+    <li><span class="tag">core</span><b>Update-check consent is asked exactly once</b>, at the end. No telemetry step at all, because there is no telemetry.</li>
+  </ul>
+</template>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

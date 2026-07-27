@@ -164,6 +164,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 60;
+  align-self: stretch;
   height: 24px;
   margin: -26px -32px 0;
   padding: 0 12px;
@@ -785,7 +786,7 @@ label.ctl { display: flex; align-items: center; gap: 7px; cursor: default; }
 }
 .tab-panel { display: none; }
 .tab-panel.on { display: block; }
-.tab-panel.on.flexcol { display: flex; flex-direction: column; }
+.tab-panel.on.flexcol, .tab-panel.on.col { display: flex; flex-direction: column; }
 
 /* Settings-window toolbar tabs (icon above label) */
 .settings-tabs { display: flex; align-items: center; gap: 2px; margin: 0 auto; }
@@ -817,9 +818,10 @@ label.ctl { display: flex; align-items: center; gap: 7px; cursor: default; }
 @keyframes blink { 50% { opacity: 0; } }
 
 .term {
-  flex: 1 1 auto; min-height: 0; overflow: auto;
+  flex: 1 1 auto; min-height: 0; overflow: auto; margin: 0;
   font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6;
   padding: 10px 12px; background: #16181b; color: #e6e6e6;
+  white-space: pre;
 }
 .term .p-user { color: #7cd992; }
 .term .p-path { color: #6fb3ff; }
