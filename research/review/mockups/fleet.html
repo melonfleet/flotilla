@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — fleet</title>
+<link rel="stylesheet" href="assets/mac.css">
+<style>
+  .rollup {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 12px 14px; box-shadow: inset 0 -0.5px 0 var(--hairline);
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 11px; border-radius: 8px;
+    background: var(--fill-quaternary); font-size: 12px; cursor: default;
+    box-shadow: inset 0 0 0 0.5px var(--hairline); color: var(--label);
+  }
+  .chip:hover { background: var(--hover); text-decoration: none; }
+  .chip.on { background: var(--accent-tint); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-fill); }
+  .chip .tnum { font-weight: 650; }
+  .host-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+    gap: 12px; padding: 14px;
+  }
+  .host-card { padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+  .host-card.offline { opacity: 0.72; }
+  .host-card .hc-top { display: flex; align-items: flex-start; gap: 8px; }
+  .host-card .meters { display: grid; gap: 6px; }
+  .host-card .hc-foot {
+    display: flex; align-items: center; gap: 6px;
+    padding-top: 8px; box-shadow: inset 0 0.5px 0 var(--hairline);
+    font-size: 11px; color: var(--label-3);
+  }
+  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 10px; font-size: 11.5px; }
+  .kv dt { color: var(--label-2); }
+  .kv dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .insp-sec { padding: 12px 14px; box-shadow: inset 0 -0.5px 0 var(--hairline); }
+  .drift td.diff { background: rgba(201, 81, 12, 0.13); color: var(--sys-orange); font-weight: 550; }
+  .fp { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.02em; }
+</style>
+</head>
+<body>
+<script src="assets/icons.js"></script>
+
+<div class="desktop">
+  <div class="win w-main">
+    <div class="split">
+
+      <!-- sidebar -->
+      <div class="sidebar">
+        <div class="sidebar-top">
+          <span class="traffic"><span class="close"><i>×</i></span><span class="min"><i>−</i></span><span class="zoom"><i>⤢</i></span></span>
+        </div>
+        <div class="sidebar-scroll">
+          <a class="side-row" href="main-window.html"><svg class="ic s14 dim"><use href="#i-cube"/></svg> Containers <span class="count">21</span></a>
+          <a class="side-row" href="main-window.html"><svg class="ic s14 dim"><use href="#i-photo"/></svg> Images <span class="count">12</span></a>
+          <a class="side-row" href="main-window.html"><svg class="ic s14 dim"><use href="#i-cylinder"/></svg> Volumes <span class="count">5</span></a>
+          <a class="side-row selected" href="fleet.html"><svg class="ic s14"><use href="#i-server"/></svg> Fleet <span class="count">6/8</span></a>
+
+          <div class="side-head">Hosts</div>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> This Mac <span class="count">3</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-01 <span class="count">3</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-02 <span class="count">3</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-03 <span class="count">2</span></a>
+          <a class="side-row sub dim" href="fleet.html"><span class="dot error"></span> studio-04 <span class="count">—</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> mini-01 <span class="count">2</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot warn"></span> mini-02 <span class="count">1</span></a>
+          <a class="side-row sub" href="onboarding.html"><span class="dot untrusted"></span> mini-03 <span class="badge-attn">!</span></a>
+          <a class="side-row sub dim" href="fleet.html"><span class="dot hollow"></span> mini-04 <span class="count">…</span></a>
+
+          <div class="side-head">System</div>
+          <a class="side-row" href="onboarding.html"><svg class="ic s14 dim"><use href="#i-check-circle"/></svg> Diagnostics</a>
+          <a class="side-row" href="settings.html"><svg class="ic s14 dim"><use href="#i-gear"/></svg> Settings</a>
+        </div>
+        <div class="sidebar-foot">
+          <div class="row gap6"><svg class="ic s12 dim"><use href="#i-broadcast"/></svg> Client mode · this Mac</div>
+          <div class="row gap6" style="margin-top: 3px;"><svg class="ic s12 accent"><use href="#i-key"/></svg> mTLS · 6 trusted keys</div>
+        </div>
+      </div>
+
+      <!-- content -->
+      <div class="content">
+        <div class="toolbar">
+          <div class="col" style="min-width: 0;">
+            <span class="win-title">Fleet</span>
+            <span class="win-subtitle">6 of 8 hosts online · 14 containers running</span>
+          </div>
+          <span class="spacer"></span>
+          <span class="seg" data-seg>
+            <a class="on">Cards</a><a>Table</a>
+          </span>
+          <span class="search" style="width: 170px;">
+            <svg class="ic s12 dim"><use href="#i-search"/></svg><span class="ph">Filter hosts</span>
+          </span>
+          <span class="glass-cluster">
+            <a class="btn" href="onboarding.html"><svg class="ic s13"><use href="#i-plus"/></svg> Add host…</a>
+            <a class="btn"><svg class="ic s13"><use href="#i-refresh"/></svg> Refresh</a>
+            <a class="btn icon" data-menu="#fleet-menu"><svg class="ic s13"><use href="#i-ellipsis"/></svg></a>
+          </span>
+        </div>
+
+        <div class="content-scroll" data-select-scope>
+
+          <!-- aggregate rollup: chips filter, they are not decoration -->
+          <div class="rollup">
+            <a class="chip on"><span class="dot running"></span><span class="tnum">6</span> online</a>
+            <a class="chip"><span class="dot error"></span><span class="tnum">1</span> unreachable</a>
+            <a class="chip"><span class="dot untrusted"></span><span class="tnum">1</span> untrusted</a>
+            <a class="chip"><span class="dot hollow"></span><span class="tnum">1</span> connecting</a>
+            <span style="width: 0.5px; align-self: stretch; background: var(--hairline); margin: 0 4px;"></span>
+            <a class="chip" href="main-window.html"><svg class="ic s12 dim"><use href="#i-cube"/></svg><span class="tnum">14</span> running</a>
+            <a class="chip" href="main-window.html"><span class="tnum">21</span> total containers</a>
+            <a class="chip"><svg class="ic s12 dim"><use href="#i-photo"/></svg><span class="tnum">12</span> images</a>
+            <a class="chip"><svg class="ic s12 dim"><use href="#i-disk"/></svg><span class="tnum">38.6 GB</span> used · 9.4 GB reclaimable</a>
+            <span class="spacer"></span>
+            <span class="t11 ter">updated 3 s ago</span>
+          </div>
+
+          <!-- ===== per-host cards ===== -->
+          <div class="host-grid">
+
+            <!-- local -->
+            <div class="card host-card sel" data-card-select>
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-laptop"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">This Mac</span>
+                  <span class="t11 sec truncate">laptop-01 · MacBook Pro (M2 Max)</span>
+                </div>
+                <span class="pill brand">local</span>
+              </div>
+              <div class="row gap6">
+                <span class="status running"><span class="dot running"></span><span class="st-label">Online</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec tnum">3 running · 5 total</span>
+              </div>
+              <div class="meters">
+                <div>
+                  <div class="row t11 sec"><span>CPU</span><span class="spacer"></span><span class="tnum">22%</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="green" style="width: 22%"></i></div>
+                </div>
+                <div>
+                  <div class="row t11 sec"><span>Memory</span><span class="spacer"></span><span class="tnum">4.2 / 32 GB</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="green" style="width: 13%"></i></div>
+                </div>
+              </div>
+              <div class="hc-foot">
+                <svg class="ic s11"><use href="#i-broadcast"/></svg> no network hop
+                <span class="spacer"></span>
+                <span class="mono">container 1.0.0</span>
+              </div>
+            </div>
+
+            <!-- online hosts -->
+            <div class="card host-card" data-card-select data-ctx="#host-menu">
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-studio"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">studio-01</span>
+                  <span class="t11 sec truncate">Mac Studio (M2 Max) · 192.168.1.21</span>
+                </div>
+                <svg class="ic s13 dim"><use href="#i-ellipsis"/></svg>
+              </div>
+              <div class="row gap6">
+                <span class="status running"><span class="dot running"></span><span class="st-label">Online</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec tnum">3 running · 4 total</span>
+              </div>
+              <div class="meters">
+                <div>
+                  <div class="row t11 sec"><span>CPU</span><span class="spacer"></span><span class="tnum">29%</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="green" style="width: 29%"></i></div>
+                </div>
+                <div>
+                  <div class="row t11 sec"><span>Memory</span><span class="spacer"></span><span class="tnum">7.1 / 64 GB</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="green" style="width: 11%"></i></div>
+                </div>
+              </div>
+              <div class="hc-foot">
+                <svg class="ic s11"><use href="#i-key"/></svg> trusted
+                <span class="spacer"></span>
+                <span class="mono">container 1.0.0</span>
+              </div>
+            </div>
+
+            <div class="card host-card" data-card-select data-ctx="#host-menu">
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-studio"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">studio-02</span>
+                  <span class="t11 sec truncate">Mac Studio (M1 Max) · 192.168.1.22</span>
+                </div>
+                <svg class="ic s13 dim"><use href="#i-ellipsis"/></svg>
+              </div>
+              <div class="row gap6">
+                <span class="status running"><span class="dot running"></span><span class="st-label">Online</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec tnum">3 running · 3 total</span>
+              </div>
+              <div class="meters">
+                <div>
+                  <div class="row t11 sec"><span>CPU</span><span class="spacer"></span><span class="tnum">84%</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="warn" style="width: 84%"></i></div>
+                </div>
+                <div>
+                  <div class="row t11 sec"><span>Memory</span><span class="spacer"></span><span class="tnum">21.4 / 32 GB</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="warn" style="width: 67%"></i></div>
+                </div>
+              </div>
+              <div class="hc-foot">
+                <svg class="ic s11"><use href="#i-key"/></svg> trusted
+                <span class="spacer"></span>
+                <span class="mono">container 1.0.0</span>
+              </div>
+            </div>
+
+            <div class="card host-card" data-card-select data-ctx="#host-menu">
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-studio"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">studio-03</span>
+                  <span class="t11 sec truncate">Mac Studio (M2 Ultra) · 192.168.1.23</span>
+                </div>
+                <svg class="ic s13 dim"><use href="#i-ellipsis"/></svg>
+              </div>
+              <div class="row gap6">
+                <span class="status running"><span class="dot running"></span><span class="st-label">Online</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec tnum">2 running · 2 total</span>
+              </div>
+              <div class="meters">
+                <div>
+                  <div class="row t11 sec"><span>CPU</span><span class="spacer"></span><span class="tnum">55%</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="green" style="width: 55%"></i></div>
+                </div>
+                <div>
+                  <div class="row t11 sec"><span>Memory</span><span class="spacer"></span><span class="tnum">12.9 / 128 GB</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="green" style="width: 10%"></i></div>
+                </div>
+              </div>
+              <div class="hc-foot">
+                <svg class="ic s11"><use href="#i-key"/></svg> trusted
+                <span class="spacer"></span>
+                <span class="mono">container 1.0.0</span>
+              </div>
+            </div>
+
+            <!-- unreachable: red, dimmed, with the fix attached -->
+            <div class="card host-card offline" data-card-select data-ctx="#host-menu"
+                 style="box-shadow: 0 0 0 1px var(--sys-red);">
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-studio"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">studio-04</span>
+                  <span class="t11 sec truncate">Mac Studio (M1 Ultra) · 192.168.1.24</span>
+                </div>
+                <svg class="ic s13 red"><use href="#i-warn"/></svg>
+              </div>
+              <div class="row gap6">
+                <span class="status error"><span class="dot error"></span><span class="st-label">Unreachable</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec">last seen 09:12</span>
+              </div>
+              <p class="t11 sec" style="line-height: 1.4;">
+                Connection refused on <span class="mono">:7443</span>. Host mode may be off, or the Mac is asleep.
+                Showing last known state: <b>3 containers</b>.
+              </p>
+              <div class="row gap6">
+                <a class="btn sm"><svg class="ic s11"><use href="#i-refresh"/></svg> Retry now</a>
+                <a class="btn sm">Diagnose…</a>
+              </div>
+              <div class="hc-foot">
+                <svg class="ic s11"><use href="#i-key"/></svg> trusted
+                <span class="spacer"></span>
+                <span class="mono">container 1.0.0 (cached)</span>
+              </div>
+            </div>
+
+            <div class="card host-card" data-card-select data-ctx="#host-menu">
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-mini"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">mini-01</span>
+                  <span class="t11 sec truncate">Mac mini (M1) · 192.168.1.31</span>
+                </div>
+                <svg class="ic s13 dim"><use href="#i-ellipsis"/></svg>
+              </div>
+              <div class="row gap6">
+                <span class="status running"><span class="dot running"></span><span class="st-label">Online</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec tnum">2 running · 3 total</span>
+              </div>
+              <div class="meters">
+                <div>
+                  <div class="row t11 sec"><span>CPU</span><span class="spacer"></span><span class="tnum">7%</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="green" style="width: 7%"></i></div>
+                </div>
+                <div>
+                  <div class="row t11 sec"><span>Memory</span><span class="spacer"></span><span class="tnum">2.4 / 16 GB</span></div>
+                  <div class="bar thin" style="margin-top: 3px;"><i class="green" style="width: 15%"></i></div>
+                </div>
+              </div>
+              <div class="hc-foot">
+                <svg class="ic s11 orange"><use href="#i-warn"/></svg>
+                <span style="color: var(--sys-orange);">1 container restarting</span>
+                <span class="spacer"></span>
+                <span class="mono">container 1.0.0</span>
+              </div>
+            </div>
+
+            <!-- version mismatch: distinct from offline -->
+            <div class="card host-card" data-card-select data-ctx="#host-menu"
+                 style="box-shadow: 0 0 0 1px var(--sys-orange);">
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-mini"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">mini-02</span>
+                  <span class="t11 sec truncate">Mac mini (M2) · 192.168.1.32</span>
+                </div>
+                <svg class="ic s13 orange"><use href="#i-arrow-down-circle"/></svg>
+              </div>
+              <div class="row gap6">
+                <span class="status warn"><span class="dot warn"></span><span class="st-label">Version mismatch</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec tnum">1 running · 2 total</span>
+              </div>
+              <p class="t11 sec" style="line-height: 1.4;">
+                Host runs Flotilla <b>0.4.1</b>, this client is <b>0.5.0</b>. Streaming logs is
+                unavailable until the host updates. Read-only commands still work.
+              </p>
+              <div class="row gap6">
+                <a class="btn sm" href="settings.html#updates">Update host…</a>
+                <a class="btn sm">Ignore for now</a>
+              </div>
+              <div class="hc-foot">
+                <svg class="ic s11"><use href="#i-key"/></svg> trusted
+                <span class="spacer"></span>
+                <span class="mono">container 1.0.0</span>
+              </div>
+            </div>
+
+            <!-- untrusted: must NOT look like offline; it needs a different fix -->
+            <div class="card host-card" data-card-select data-ctx="#host-menu"
+                 style="box-shadow: 0 0 0 1px var(--sys-orange); background: rgba(201,81,12,0.05);">
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-mini"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">mini-03</span>
+                  <span class="t11 sec truncate">Mac mini (M1) · 192.168.1.33 · discovered via Bonjour</span>
+                </div>
+                <svg class="ic s13 orange"><use href="#i-shield"/></svg>
+              </div>
+              <div class="row gap6">
+                <span class="status warn"><span class="dot untrusted"></span><span class="st-label">Untrusted</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec">reachable, not paired</span>
+              </div>
+              <p class="t11 sec" style="line-height: 1.4;">
+                Presented certificate <span class="fp">7B 08 · DE 55 · 3C A1</span>, which is not on the
+                allowlist. Compare fingerprints on the host before trusting.
+              </p>
+              <div class="row gap6">
+                <a class="btn sm primary" href="onboarding.html"><svg class="ic s11"><use href="#i-key"/></svg> Verify &amp; pair…</a>
+                <a class="btn sm">Ignore host</a>
+              </div>
+              <div class="hc-foot">
+                <svg class="ic s11 orange"><use href="#i-lock"/></svg> mTLS handshake refused
+                <span class="spacer"></span>
+                <span class="mono">unknown</span>
+              </div>
+            </div>
+
+            <!-- connecting -->
+            <div class="card host-card offline" data-card-select data-ctx="#host-menu">
+              <div class="hc-top">
+                <svg class="ic s20 dim"><use href="#i-mini"/></svg>
+                <div class="col" style="min-width: 0;">
+                  <span class="t13 bold truncate">mini-04</span>
+                  <span class="t11 sec truncate">Mac mini (M4) · mini-04.local:7443</span>
+                </div>
+                <span class="spinner"></span>
+              </div>
+              <div class="row gap6">
+                <span class="status"><span class="dot hollow"></span><span class="st-label">Connecting…</span></span>
+                <span class="spacer"></span>
+                <span class="t11 sec">attempt 2 of 5</span>
+              </div>
+              <p class="t11 sec" style="line-height: 1.4;">
+                TLS handshake in progress. Added manually by hostname — this host is on the
+                lab VLAN, where Bonjour doesn't reach.
+              </p>
+              <div class="hc-foot">
+                <svg class="ic s11"><use href="#i-key"/></svg> trusted
+                <span class="spacer"></span>
+                <span class="mono">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== config drift: only possible because we have a fleet ===== -->
+          <div style="padding: 4px 14px 20px;">
+            <div class="row" style="margin-bottom: 8px;">
+              <h3>Effective configuration across hosts</h3>
+              <span class="pill later">later — Phase 3</span>
+              <span class="spacer"></span>
+              <span class="t11 ter mono">container system property list --format json</span>
+            </div>
+            <div class="card" style="overflow: hidden;">
+              <table class="table drift">
+                <thead>
+                  <tr>
+                    <th style="width: 150px;">Key</th>
+                    <th>This Mac</th><th>studio-01</th><th>studio-02</th><th>studio-03</th>
+                    <th>mini-01</th><th>mini-02</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="mono">registry.domain</td>
+                    <td>docker.io</td><td>docker.io</td><td>docker.io</td><td>docker.io</td>
+                    <td class="diff">ghcr.io</td><td>docker.io</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">container.cpus</td>
+                    <td>4</td><td>4</td><td>4</td><td class="diff">8</td><td>2</td><td class="diff">2</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">container.memory</td>
+                    <td>1g</td><td>1g</td><td>1g</td><td class="diff">4g</td><td>1g</td><td>1g</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">dns.domain</td>
+                    <td class="sec">unset</td><td>flot.test</td><td>flot.test</td><td>flot.test</td>
+                    <td class="diff sec">unset</td><td>flot.test</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">kernel.digest</td>
+                    <td class="mono">…a91f</td><td class="mono">…a91f</td><td class="mono">…a91f</td>
+                    <td class="mono">…a91f</td><td class="mono diff">…6c02</td><td class="mono">…a91f</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">container version</td>
+                    <td>1.0.0</td><td>1.0.0</td><td>1.0.0</td><td>1.0.0</td><td>1.0.0</td><td>1.0.0</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="t11 ter" style="margin-top: 8px; line-height: 1.45;">
+              Read-only. Four highlighted deviations are exactly the class of thing that causes
+              “works on mini-01 only” bugs on a hand-built fleet. Writing <span class="mono">config.toml</span>
+              remotely means editing a file and restarting a service on a Mac you're not sitting at, so
+              that stays a deliberate, separate decision.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== per-host drill-down ===== -->
+      <div class="inspector">
+        <div class="insp-sec">
+          <div class="row" style="margin-bottom: 8px;">
+            <svg class="ic s20 dim"><use href="#i-studio"/></svg>
+            <span class="col" style="min-width: 0;">
+              <span class="t15 bold truncate">studio-01</span>
+              <span class="t11 sec truncate">Mac Studio (M2 Max) · macOS 26.1</span>
+            </span>
+          </div>
+          <div class="row gap6 wrap" style="margin-bottom: 10px;">
+            <span class="status running"><span class="dot running"></span><span class="st-label">Online</span></span>
+            <span class="pill">up 14 days</span>
+            <span class="pill ok"><svg class="ic s11"><use href="#i-key"/></svg> trusted</span>
+          </div>
+          <div class="glass-cluster" style="width: 100%;">
+            <a class="btn" href="main-window.html"><svg class="ic s13"><use href="#i-cube"/></svg> Containers</a>
+            <a class="btn"><svg class="ic s13"><use href="#i-terminal"/></svg> Run here…</a>
+            <a class="btn icon" data-menu="#host-menu"><svg class="ic s13"><use href="#i-ellipsis"/></svg></a>
+          </div>
+        </div>
+
+        <div class="insp-sec">
+          <div class="section-title" style="margin-bottom: 8px;">Connection</div>
+          <dl class="kv">
+            <dt>Address</dt><dd class="mono">studio-01.local : 7443</dd>
+            <dt>Resolved</dt><dd class="mono">192.168.1.21</dd>
+            <dt>Discovered</dt><dd>Bonjour <span class="mono">_flotilla._tcp</span></dd>
+            <dt>Transport</dt><dd>TLS 1.3 · mutual auth</dd>
+            <dt>Latency</dt><dd class="tnum">2.4 ms</dd>
+            <dt>Poll interval</dt><dd>10 s <span class="ter">(fleet default)</span></dd>
+            <dt>Last seen</dt><dd>just now</dd>
+          </dl>
+        </div>
+
+        <div class="insp-sec">
+          <div class="section-title" style="margin-bottom: 8px;">Identity</div>
+          <div class="col gap6">
+            <div class="t11 sec">Certificate SHA-256</div>
+            <div class="fp">A4 3F 91 C2 · 7B 08 DE 55 · 3C A1 60 9E · 22 D4 8F 10</div>
+            <div class="row gap6">
+              <a class="btn sm"><svg class="ic s11"><use href="#i-copy"/></svg> Copy</a>
+              <a class="btn sm" href="settings.html#fleet">Manage trust…</a>
+            </div>
+            <div class="t11 ter">Trusted 30 Jun 2026 · stored in Keychain, never in an export</div>
+          </div>
+        </div>
+
+        <div class="insp-sec">
+          <div class="section-title" style="margin-bottom: 8px;">Runtime</div>
+          <dl class="kv">
+            <dt>Flotilla</dt><dd>0.5.0 (host mode)</dd>
+            <dt><span class="mono">container</span></dt><dd>1.0.0 · commit ee848e3</dd>
+            <dt>API service</dt>
+            <dd><span class="status running"><span class="dot running"></span><span class="st-label">running</span></span></dd>
+            <dt>Kernel</dt><dd class="mono truncate">vmlinux-6.12.28 · …a91f</dd>
+            <dt>Containers</dt><dd>4 (3 running)</dd>
+            <dt>Images</dt><dd>9</dd>
+            <dt>Volumes</dt><dd>2</dd>
+          </dl>
+        </div>
+
+        <div class="insp-sec">
+          <div class="row" style="margin-bottom: 8px;">
+            <div class="section-title">Disk usage</div>
+            <span class="spacer"></span>
+            <span class="t11 ter mono">system df</span>
+          </div>
+          <div class="bar" style="margin-bottom: 8px;">
+            <i style="width: 62%; background: linear-gradient(90deg, var(--flesh) 0 62%, var(--stripe) 62% 100%);"></i>
+          </div>
+          <dl class="kv">
+            <dt>Images</dt><dd class="tnum">12.4 GB</dd>
+            <dt>Containers</dt><dd class="tnum">3.1 GB</dd>
+            <dt>Build cache</dt><dd class="tnum">1.8 GB</dd>
+            <dt>Reclaimable</dt><dd class="tnum" style="color: var(--sys-orange);">5.2 GB</dd>
+          </dl>
+          <a class="btn sm" style="margin-top: 9px;"><svg class="ic s11"><use href="#i-trash"/></svg> Prune on this host…</a>
+        </div>
+
+        <div class="insp-sec" style="box-shadow: none;">
+          <div class="section-title" style="margin-bottom: 8px;">Host actions</div>
+          <div class="col gap6">
+            <a class="btn" style="justify-content: center;">Restart <span class="mono">container</span> service</a>
+            <a class="btn" style="justify-content: center;" href="settings.html#fleet">Host settings…</a>
+            <a class="btn destructive" style="justify-content: center;">Revoke trust &amp; forget host…</a>
+          </div>
+          <p class="t11 ter" style="margin-top: 8px; line-height: 1.4;">
+            Forgetting a host never stops its containers. Host mode is a status surface — it is
+            not switchable remotely.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="menu" data-menu-panel id="fleet-menu" style="top: 58px; right: 40px;">
+      <a class="mi" href="onboarding.html">Add host manually…</a>
+      <a class="mi" href="onboarding.html">Browse for hosts…</a>
+      <div class="msep"></div>
+      <a class="mi">Stop all containers on… <span class="kbd">⌘⇧S</span></a>
+      <a class="mi">Prune all hosts… <span class="pill later">later</span></a>
+      <div class="msep"></div>
+      <a class="mi">Export host list…</a>
+      <a class="mi">Import host list…</a>
+      <div class="msep"></div>
+      <a class="mi" href="settings.html#fleet">Fleet settings… <span class="kbd">⌘,</span></a>
+    </div>
+
+    <div class="menu" data-menu-panel id="host-menu" style="left: 520px; top: 300px;">
+      <div class="mhead">studio-01 · Mac Studio (M2 Max)</div>
+      <a class="mi" href="main-window.html">Show containers</a>
+      <a class="mi">Run container here…</a>
+      <a class="mi">Pull image here…</a>
+      <div class="msep"></div>
+      <a class="mi">Restart <span class="mono">container</span> service</a>
+      <a class="mi">Prune…</a>
+      <a class="mi">Set nickname…</a>
+      <a class="mi">Per-host settings…</a>
+      <div class="msep"></div>
+      <div class="mhead">Copy</div>
+      <a class="mi">Hostname</a>
+      <a class="mi">IP address</a>
+      <a class="mi">Certificate fingerprint</a>
+      <div class="msep"></div>
+      <a class="mi" style="color: var(--sys-red);">Revoke trust &amp; forget…</a>
+    </div>
+  </div>
+
+  <p class="caption">
+    <b>Fleet view</b> — aggregate rollup and per-host cards in one place, with a drill-down
+    inspector. Online, unreachable, untrusted, version-mismatch and connecting all look
+    different, because they need different fixes. Right-click a card.
+  </p>
+</div>
+
+<template id="page-notes">
+  <h3>Fleet</h3>
+  <ul>
+    <li><span class="tag">core</span><b>Rollup chips filter, they aren't decoration.</b> “6 online · 14 running” is the header, and clicking a chip scopes the container list.</li>
+    <li><span class="tag">core</span><b>Five distinct connection states.</b> Online / connecting / unreachable / untrusted / version-mismatch. “Untrusted” must never look like “offline” — one needs a fingerprint comparison, the other needs the Mac woken up. Each card carries its own remediation button.</li>
+    <li><span class="tag">core</span><b>An unreachable host keeps its last known state, labelled.</b> Rows that silently disappear teach you to distrust the whole view.</li>
+    <li><span class="tag">core</span><b>Host drill-down</b> = <code>container system version</code>, <code>system df</code>, service status, counts, kernel digest, latency, fingerprint, last seen, plus per-host prune / restart-service / revoke-trust.</li>
+    <li><span class="tag">core</span><b>Client-not-admin boundary</b> (Tailscale's rule). Host mode is a status surface with no container UI of its own, and mode is never switchable remotely.</li>
+    <li><span class="tag">core</span>Fingerprints live in the Keychain and are shown as short grouped hex. Exports carry fingerprints, never private keys.</li>
+    <li><span class="tag later">later</span><b>Config drift table.</b> Merged <code>container system property list</code> from every host with deviations highlighted. Docker Desktop structurally cannot have this feature — nobody else has a fleet. Read-only first.</li>
+    <li><span class="tag later">later</span>Custom host nicknames and sidebar sections (This Mac / Fleet / Offline), so <code>mac-mini-3.local</code> isn't the label you have to read.</li>
+  </ul>
+</template>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

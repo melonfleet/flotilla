@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — menu-bar popover</title>
+<link rel="stylesheet" href="assets/mac.css">
+<style>
+  .pop-wrap { position: absolute; top: 30px; right: 206px; z-index: 40; }
+  .pop-metric { flex: 1 1 0; min-width: 0; }
+  .pop-metric .bar { margin-top: 4px; }
+  .toggle-btn {
+    width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center;
+    color: var(--label-2); flex: 0 0 auto;
+  }
+  .pop-row:hover .toggle-btn { background: var(--fill-tertiary); color: var(--label); }
+  .glyph-demo { display: flex; gap: 14px; flex-wrap: wrap; }
+  .glyph-demo .mini-bar {
+    display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 8px;
+    border-radius: 7px; background: rgba(255, 255, 255, 0.5);
+    box-shadow: inset 0 0 0 0.5px var(--hairline);
+  }
+  [data-theme="dark"] .glyph-demo .mini-bar { background: rgba(255, 255, 255, 0.08); }
+  .glyph-demo .mini-bar.selected { background: var(--accent-fill); color: #fff; }
+  .attn-badge { position: relative; display: inline-flex; }
+  .attn-badge::after {
+    content: ""; position: absolute; right: -2px; top: -1px; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--sys-red);
+    box-shadow: 0 0 0 1.5px var(--glass-toolbar);
+  }
+</style>
+</head>
+<body>
+<script src="assets/icons.js"></script>
+
+<div class="desktop with-menubar">
+
+  <!-- ===== simulated macOS menu bar ===== -->
+  <div class="menubar">
+    <span class="mb-apple"><svg class="ic s14"><use href="#i-apple"/></svg></span>
+    <span class="mb-item app-name">Flotilla</span>
+    <span class="mb-item">File</span>
+    <span class="mb-item">Edit</span>
+    <span class="mb-item">View</span>
+    <span class="mb-item">Fleet</span>
+    <span class="mb-item">Window</span>
+    <span class="mb-item">Help</span>
+    <span class="mb-right">
+      <!-- the extra is "pressed", so the template glyph inverts -->
+      <span class="mb-status active" title="Flotilla — 14 running, 1 host unreachable">
+        <span class="attn-badge"><svg class="ic s14"><use href="#i-sails"/></svg></span>
+      </span>
+      <span class="mb-status"><svg class="ic s14"><use href="#i-mb-wifi"/></svg></span>
+      <span class="mb-status"><svg class="ic s18"><use href="#i-mb-battery"/></svg></span>
+      <span class="mb-status"><svg class="ic s14"><use href="#i-mb-control"/></svg></span>
+      <span class="mb-status"><svg class="ic s13"><use href="#i-mb-spotlight"/></svg></span>
+      <span class="mb-clock">Mon 27 Jul&nbsp; 12:59</span>
+    </span>
+  </div>
+
+  <!-- ===== MenuBarExtra(.window) popover ===== -->
+  <div class="pop-wrap">
+    <div class="popover">
+      <div class="pop-arrow" style="right: 14px;"></div>
+
+      <!-- header: glanceable rollup, clickable to filter in the window -->
+      <div style="padding: 12px 12px 10px;">
+        <div class="row" style="margin-bottom: 9px;">
+          <svg class="ic s18 accent"><use href="#i-sails"/></svg>
+          <span class="med t13">Flotilla</span>
+          <span class="spacer"></span>
+          <span class="pill ok"><span class="dot running"></span>14 running</span>
+        </div>
+        <div class="row gap10">
+          <div class="pop-metric">
+            <div class="row t11 sec"><span>This Mac</span><span class="spacer"></span><span class="tnum">3 running</span></div>
+            <div class="bar"><i class="green" style="width: 22%"></i></div>
+            <div class="t11 ter tnum" style="margin-top: 3px;">CPU 22% · 4.2 GB of 32 GB</div>
+          </div>
+          <div style="width: 0.5px; align-self: stretch; background: var(--hairline);"></div>
+          <div class="pop-metric">
+            <div class="row t11 sec"><span>Fleet</span><span class="spacer"></span><span class="tnum">6 of 8 online</span></div>
+            <div class="bar"><i class="green" style="width: 75%"></i></div>
+            <div class="t11 tnum" style="margin-top: 3px; color: var(--sys-orange);">
+              <svg class="ic s11"><use href="#i-warn"/></svg> 1 unreachable · 1 untrusted
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pop-sep"></div>
+
+      <!-- This Mac: name + image, inline start/stop, no generated names -->
+      <div class="pop-sec">
+        <svg class="ic s12 dim"><use href="#i-laptop"/></svg> This Mac
+        <span class="spacer"></span><span class="ter" style="font-weight: 400;">laptop-01</span>
+      </div>
+
+      <a class="pop-row" href="container-detail.html">
+        <span class="dot running"></span>
+        <svg class="ic s14 dim"><use href="#i-cube"/></svg>
+        <span class="col" style="min-width: 0;">
+          <span class="t12 med truncate">postgres-16</span>
+          <span class="t11 ter truncate">postgres:16 · :5432</span>
+        </span>
+        <span class="spacer"></span>
+        <span class="t11 ter tnum">12%</span>
+        <span class="toggle-btn" title="Stop"><svg class="ic s12"><use href="#i-stop"/></svg></span>
+      </a>
+
+      <a class="pop-row" href="container-detail.html">
+        <span class="dot running"></span>
+        <svg class="ic s14 dim"><use href="#i-globe"/></svg>
+        <span class="col" style="min-width: 0;">
+          <span class="t12 med truncate">nginx-edge</span>
+          <span class="t11 ter truncate">nginx:1.27 · :8080</span>
+        </span>
+        <span class="spacer"></span>
+        <span class="t11 ter tnum">3%</span>
+        <span class="toggle-btn" title="Stop"><svg class="ic s12"><use href="#i-stop"/></svg></span>
+      </a>
+
+      <a class="pop-row" href="container-detail.html">
+        <span class="dot running"></span>
+        <svg class="ic s14 dim"><use href="#i-memory"/></svg>
+        <span class="col" style="min-width: 0;">
+          <span class="t12 med truncate">redis-cache</span>
+          <span class="t11 ter truncate">redis:7 · :6379</span>
+        </span>
+        <span class="spacer"></span>
+        <span class="t11 ter tnum">8%</span>
+        <span class="toggle-btn" title="Stop"><svg class="ic s12"><use href="#i-stop"/></svg></span>
+      </a>
+
+      <div class="pop-row" style="opacity: .72;">
+        <span class="dot stopped"></span>
+        <svg class="ic s14 dim"><use href="#i-cube"/></svg>
+        <span class="col" style="min-width: 0;">
+          <span class="t12 truncate">build-runner</span>
+          <span class="t11 ter truncate">ubuntu:24.04 · stopped</span>
+        </span>
+        <span class="spacer"></span>
+        <span class="toggle-btn" title="Start"><svg class="ic s12"><use href="#i-play"/></svg></span>
+      </div>
+
+      <div class="pop-sep"></div>
+
+      <!-- Fleet: host summaries only. Depth lives in the window, not here. -->
+      <div class="pop-sec">
+        <svg class="ic s12 dim"><use href="#i-server"/></svg> Fleet
+        <span class="spacer"></span>
+        <a class="ter" style="font-weight: 400;" href="fleet.html">Show all</a>
+      </div>
+
+      <a class="pop-row" href="fleet.html">
+        <span class="dot running"></span><svg class="ic s14 dim"><use href="#i-studio"/></svg>
+        <span class="t12 truncate">studio-01</span>
+        <span class="spacer"></span><span class="t11 ter tnum">3 running</span>
+        <svg class="ic s12 dim"><use href="#i-chev-right"/></svg>
+      </a>
+      <a class="pop-row" href="fleet.html">
+        <span class="dot running"></span><svg class="ic s14 dim"><use href="#i-studio"/></svg>
+        <span class="t12 truncate">studio-02</span>
+        <span class="spacer"></span><span class="t11 ter tnum">3 running</span>
+        <svg class="ic s12 dim"><use href="#i-chev-right"/></svg>
+      </a>
+      <a class="pop-row" href="fleet.html">
+        <span class="dot running"></span><svg class="ic s14 dim"><use href="#i-studio"/></svg>
+        <span class="t12 truncate">studio-03</span>
+        <span class="spacer"></span><span class="t11 ter tnum">2 running</span>
+        <svg class="ic s12 dim"><use href="#i-chev-right"/></svg>
+      </a>
+      <a class="pop-row" href="fleet.html">
+        <span class="dot running"></span><svg class="ic s14 dim"><use href="#i-mini"/></svg>
+        <span class="t12 truncate">mini-01</span>
+        <span class="spacer"></span><span class="t11 ter tnum">2 running</span>
+        <svg class="ic s12 dim"><use href="#i-chev-right"/></svg>
+      </a>
+      <a class="pop-row" href="fleet.html">
+        <span class="dot running"></span><svg class="ic s14 dim"><use href="#i-mini"/></svg>
+        <span class="t12 truncate">mini-02</span>
+        <span class="spacer"></span><span class="t11 ter tnum">1 running</span>
+        <svg class="ic s12 dim"><use href="#i-chev-right"/></svg>
+      </a>
+
+      <div class="pop-sec" style="padding-top: 9px;">Needs attention</div>
+      <a class="pop-row" href="fleet.html">
+        <span class="dot error"></span><svg class="ic s14 dim"><use href="#i-studio"/></svg>
+        <span class="col" style="min-width: 0;">
+          <span class="t12 truncate">studio-04</span>
+          <span class="t11 truncate" style="color: var(--sys-red);">Unreachable since 09:12</span>
+        </span>
+        <span class="spacer"></span>
+        <svg class="ic s12 dim"><use href="#i-chev-right"/></svg>
+      </a>
+      <a class="pop-row" href="onboarding.html">
+        <span class="dot untrusted"></span><svg class="ic s14 dim"><use href="#i-mini"/></svg>
+        <span class="col" style="min-width: 0;">
+          <span class="t12 truncate">mini-03</span>
+          <span class="t11 truncate" style="color: var(--sys-orange);">Untrusted — verify fingerprint</span>
+        </span>
+        <span class="spacer"></span>
+        <svg class="ic s12 dim"><use href="#i-chev-right"/></svg>
+      </a>
+      <div class="pop-row dim" style="opacity: .6;">
+        <span class="dot hollow"></span><svg class="ic s14 dim"><use href="#i-mini"/></svg>
+        <span class="col" style="min-width: 0;">
+          <span class="t12 truncate">mini-04</span>
+          <span class="t11 ter truncate">Connecting…</span>
+        </span>
+        <span class="spacer"></span>
+        <span class="spinner" style="width: 12px; height: 12px;"></span>
+      </div>
+
+      <div class="pop-sep"></div>
+
+      <!-- Footer actions. No text fields, no confirmations: those escalate
+           to the window, because a popover dismisses on outside click. -->
+      <div class="pop-foot">
+        <a class="pop-row" href="main-window.html">
+          <svg class="ic s14 dim"><use href="#i-cube"/></svg>
+          <span class="t13">Open Flotilla</span><span class="spacer"></span><span class="kbd">⌘O</span>
+        </a>
+        <a class="pop-row" href="main-window.html">
+          <svg class="ic s14 dim"><use href="#i-plus"/></svg>
+          <span class="t13">Run…</span><span class="spacer"></span><span class="kbd">⌘N</span>
+        </a>
+        <a class="pop-row" href="settings.html">
+          <svg class="ic s14 dim"><use href="#i-gear"/></svg>
+          <span class="t13">Settings…</span><span class="spacer"></span><span class="kbd">⌘,</span>
+        </a>
+        <a class="pop-row" href="settings.html#updates">
+          <svg class="ic s14 dim"><use href="#i-arrow-down-circle"/></svg>
+          <span class="t13">Check for Updates…</span>
+        </a>
+        <div class="pop-sep"></div>
+        <div class="pop-row">
+          <svg class="ic s14 dim"><use href="#i-power"/></svg>
+          <span class="col">
+            <span class="t13">Quit Flotilla</span>
+            <span class="t11 ter">Containers keep running</span>
+          </span>
+          <span class="spacer"></span><span class="kbd">⌘Q</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- spacer so the popover has room, then the glyph-state reference -->
+  <div style="height: 560px;"></div>
+
+  <div class="card pad" style="max-width: 640px; width: 100%;">
+    <div class="row" style="margin-bottom: 4px;">
+      <h3>Menu-bar glyph states</h3>
+      <span class="spacer"></span>
+      <span class="pill mono">design/icon-menubar.svg</span>
+    </div>
+    <p class="t12 sec" style="margin-bottom: 12px;">
+      Monochrome template symbol (black + clear only) so macOS tints it for light, dark and
+      tinted menu bars. State is carried by <b>shape and badge, not colour</b> — colour alone
+      would be invisible in the pressed/inverted state and to colour-blind users.
+    </p>
+    <div class="glyph-demo">
+      <span class="mini-bar"><svg class="ic s14"><use href="#i-sails"/></svg><span class="t11 sec">Idle</span></span>
+      <span class="mini-bar">
+        <span class="spinner" style="width: 12px; height: 12px;"></span><span class="t11 sec">Working — pull in progress</span>
+      </span>
+      <span class="mini-bar">
+        <span class="attn-badge"><svg class="ic s14"><use href="#i-sails"/></svg></span>
+        <span class="t11 sec">Attention — host unreachable</span>
+      </span>
+      <span class="mini-bar selected">
+        <svg class="ic s14"><use href="#i-sails"/></svg><span class="t11">Pressed</span>
+      </span>
+    </div>
+  </div>
+
+  <p class="caption">
+    <b>Menu-bar popover</b> — <code>MenuBarExtra(.window)</code> anchored under the status item.
+    Glanceable status plus one-tap start/stop only; everything with depth, text entry or a
+    confirmation escalates to the main window.
+  </p>
+</div>
+
+<template id="page-notes">
+  <h3>Menu bar &amp; popover</h3>
+  <p class="sec">What this page is arguing for, and where it comes from.</p>
+  <ul>
+    <li><span class="tag">core</span>Popover, not an <code>NSMenu</code>. HIG says “display a menu — not a popover” <em>unless</em> the content is too complex for one; per-host dots, counts, inline toggles and two rollup meters qualify. Tailscale ships exactly this shape.</li>
+    <li><span class="tag">core</span>Fixed section order: rollup → This Mac → Fleet → Needs attention → actions. Sectioning is Tailscale's post-mortem fix for their old flat list.</li>
+    <li><span class="tag">core</span>Every row is <b>name + image + host</b>. Never a generated identifier as the primary label (OrbStack #691 — users could not tell rows apart).</li>
+    <li><span class="tag">core</span>Status = dot + distinct glyph + text label. No colour-only state anywhere (Podman filed #12908 against themselves for this).</li>
+    <li><span class="tag">core</span>“Untrusted” and “unreachable” look different on purpose — they need different fixes. “Connecting” gets a spinner, not a dim grey dot.</li>
+    <li><span class="tag">core</span>Quit says <b>“Containers keep running”</b>. Docker's ambiguous ⌘Q semantics are the loudest trust complaint in the survey.</li>
+    <li><span class="tag">core</span>No text fields, no delete confirmations, no dialogs in here — the popover dismisses on outside click, so destructive or multi-step flows open the window instead.</li>
+    <li><span class="tag">core</span>Glyph is a template symbol with badge-based state. The extra can also be hidden by the user or swallowed by the notch, so nothing is reachable <em>only</em> from here.</li>
+    <li><span class="tag later">later</span>A Dock menu mirroring these essentials, for when the extra is hidden.</li>
+  </ul>
+  <h3>Liquid Glass</h3>
+  <ul>
+    <li>Popover chrome is the glass layer (functional). The rows inside are content and stay plain — one glass layer per stack, never glass on glass.</li>
+  </ul>
+</template>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

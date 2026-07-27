@@ -1,5 +1,11 @@
 # Flotilla — branding
 
+> **Part of the melonfleet suite.** The canonical brand system — full palette (incl.
+> the melon spectrum), Ubuntu / Open Sans / Ubuntu Mono type, `dev.melonfleet.*`
+> identifiers, and the logo set — lives in `../../brand/BRAND.md`. This file covers only
+> **Flotilla's product specifics**: its three-sails watermelon icon and its signature
+> accent (watermelon flesh + rind). Everything else is inherited from the suite.
+
 ## Concept
 
 A flotilla of sails over a **watermelon slice**: pink flesh field, green rind base,

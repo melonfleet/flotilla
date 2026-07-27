@@ -58,6 +58,20 @@ second-guess settled choices mid-project.
   `IdentityFile <pub>` + `IdentitiesOnly`, and `agent.toml` whitelisting both the
   Personal (other account) and Development (melonfleet) vaults.
 
+## Identity / namespace (settled 2026-07-27)
+
+- **Bundle identifier: `dev.melonfleet.Flotilla`.** Not `com.melonfleet.*` — the
+  canonical reverse-DNS root for the whole suite is **`dev.melonfleet.*`** (see
+  `design/brand/BRAND.md`, which explicitly supersedes any earlier `com.` mention),
+  matching the owned `melonfleet.dev` domain. Rejected `com.melonfleet.*`.
+- The same root governs everything namespaced off the bundle ID: the UserDefaults /
+  managed-preference domain (`dev.melonfleet.Flotilla`), Keychain services, launchd
+  labels (e.g. `dev.melonfleet.Flotilla.host`), pkg identifiers, Sparkle keys, and
+  Jamf configuration-profile payloads.
+- **Decide-once, change-never in practice:** changing it later strands users'
+  preferences and every managed key, so this is fixed before Phase 1 ships.
+  (This closes open question Q8 in `research/FEATURES.md`.)
+
 ## Licensing note
 
 `tdeverx/contained-app` is **PolyForm Noncommercial 1.0.0** — fine to read for

@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — main window</title>
+<link rel="stylesheet" href="assets/mac.css">
+<style>
+  .selbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px; background: var(--accent-tint);
+    box-shadow: inset 0 -0.5px 0 var(--hairline);
+    font-size: 12px; color: var(--accent-text);
+  }
+  .insp-sec { padding: 12px 14px; box-shadow: inset 0 -0.5px 0 var(--hairline); }
+  .kv { display: grid; grid-template-columns: 88px 1fr; gap: 5px 10px; font-size: 11.5px; }
+  .kv dt { color: var(--label-2); }
+  .kv dd { margin: 0; overflow: hidden; text-overflow: ellipsis; }
+  .meter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .runsheet-grid { display: grid; grid-template-columns: 92px 1fr; gap: 9px 12px; align-items: center; }
+</style>
+</head>
+<body>
+<script src="assets/icons.js"></script>
+
+<div class="desktop">
+  <div class="win w-main">
+    <div class="split">
+
+      <!-- ================= sidebar (glass, vibrant) ================= -->
+      <div class="sidebar">
+        <div class="sidebar-top">
+          <span class="traffic"><span class="close"><i>×</i></span><span class="min"><i>−</i></span><span class="zoom"><i>⤢</i></span></span>
+        </div>
+        <div class="sidebar-scroll">
+          <a class="side-row selected" href="main-window.html">
+            <svg class="ic s14"><use href="#i-cube"/></svg> Containers <span class="count">21</span>
+          </a>
+          <a class="side-row" href="main-window.html">
+            <svg class="ic s14 dim"><use href="#i-photo"/></svg> Images <span class="count">12</span>
+          </a>
+          <a class="side-row" href="main-window.html">
+            <svg class="ic s14 dim"><use href="#i-cylinder"/></svg> Volumes <span class="count">5</span>
+          </a>
+          <a class="side-row" href="fleet.html">
+            <svg class="ic s14 dim"><use href="#i-server"/></svg> Fleet <span class="count">6/8</span>
+          </a>
+
+          <div class="side-head">Hosts</div>
+          <a class="side-row" href="main-window.html">
+            <span class="dot running"></span> All hosts <span class="count">14</span>
+          </a>
+          <a class="side-row sub" href="main-window.html">
+            <span class="dot running"></span> This Mac <span class="count">3</span>
+          </a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-01 <span class="count">3</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-02 <span class="count">3</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-03 <span class="count">2</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> mini-01 <span class="count">2</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> mini-02 <span class="count">1</span></a>
+          <a class="side-row sub dim" href="fleet.html"><span class="dot error"></span> studio-04 <span class="count">—</span></a>
+          <a class="side-row sub" href="onboarding.html"><span class="dot untrusted"></span> mini-03 <span class="badge-attn">!</span></a>
+          <a class="side-row sub dim" href="fleet.html"><span class="dot hollow"></span> mini-04 <span class="count">…</span></a>
+
+          <div class="side-head">System</div>
+          <a class="side-row" href="onboarding.html">
+            <svg class="ic s14 dim"><use href="#i-check-circle"/></svg> Diagnostics
+          </a>
+          <a class="side-row" href="settings.html">
+            <svg class="ic s14 dim"><use href="#i-gear"/></svg> Settings
+          </a>
+        </div>
+        <div class="sidebar-foot">
+          <div class="row gap6"><svg class="ic s12 dim"><use href="#i-broadcast"/></svg> Client mode · this Mac</div>
+          <div class="row gap6" style="margin-top: 3px;">
+            <svg class="ic s12 accent"><use href="#i-key"/></svg> mTLS · 6 trusted keys
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= content ================= -->
+      <div class="content">
+
+        <div class="toolbar">
+          <div class="col" style="min-width: 0;">
+            <span class="win-title">Containers</span>
+            <span class="win-subtitle">All hosts · 14 running of 21</span>
+          </div>
+          <span class="spacer"></span>
+
+          <!-- filter tabs are sugar over the text filter grammar -->
+          <span class="seg" data-seg data-seg-sync="#filter-token">
+            <a class="on" data-token="">All</a>
+            <a data-token="&lt;span class=&quot;token&quot;&gt;is:running&lt;/span&gt;">Running</a>
+            <a data-token="&lt;span class=&quot;token&quot;&gt;is:stopped&lt;/span&gt;">Stopped</a>
+          </span>
+
+          <span class="search focused" style="width: 232px;">
+            <svg class="ic s12 dim"><use href="#i-search"/></svg>
+            <span id="filter-token"></span>
+            <span class="ph">host:… image:… name</span>
+            <span class="spacer"></span><span class="kbd">⌘F</span>
+          </span>
+
+          <span class="seg" data-seg>
+            <a class="on" title="List"><svg class="ic s12"><use href="#i-list"/></svg></a>
+            <a title="Cards"><svg class="ic s12"><use href="#i-grid"/></svg></a>
+          </span>
+
+          <!-- one GlassEffectContainer: the Run / Pull control cluster -->
+          <span class="glass-cluster">
+            <a class="btn" data-open="#run-sheet"><svg class="ic s13"><use href="#i-plus"/></svg> Run…</a>
+            <a class="btn"><svg class="ic s13"><use href="#i-download"/></svg> Pull image…</a>
+            <a class="btn icon" data-menu="#more-menu"><svg class="ic s13"><use href="#i-ellipsis"/></svg></a>
+          </span>
+        </div>
+
+        <!-- selection action bar: buttons enable from the selection's state -->
+        <div class="selbar">
+          <svg class="ic s12"><use href="#i-check-circle"/></svg>
+          <span class="med">2 selected</span>
+          <span style="opacity: .6;">· both running on This Mac</span>
+          <span class="spacer"></span>
+          <a class="btn sm"><svg class="ic s11"><use href="#i-stop"/></svg> Stop</a>
+          <a class="btn sm"><svg class="ic s11"><use href="#i-restart"/></svg> Restart</a>
+          <a class="btn sm disabled" title="Only available for stopped containers"><svg class="ic s11"><use href="#i-play"/></svg> Start</a>
+          <a class="btn sm destructive"><svg class="ic s11"><use href="#i-trash"/></svg> Delete…</a>
+        </div>
+
+        <div class="content-scroll">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 28px;"><span class="check on mixed"></span></th>
+                <th class="sorted" style="width: 104px;">State <span class="sortarrow">▲</span></th>
+                <th style="width: 168px;">Name</th>
+                <th style="width: 210px;">Image</th>
+                <th style="width: 96px;">Host</th>
+                <th style="width: 132px;">Ports</th>
+                <th class="num" style="width: 62px;">CPU</th>
+                <th class="num" style="width: 90px;">Memory</th>
+                <th style="width: 96px;">Started</th>
+                <th style="width: 30px;"></th>
+              </tr>
+            </thead>
+            <tbody data-ctx="#row-menu">
+
+              <tr class="group-head"><td colspan="10">This Mac · laptop-01 — 5 containers (3 running)</td></tr>
+
+              <tr class="focused" data-href="container-detail.html">
+                <td><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">postgres-16</td>
+                <td class="sec">postgres:16</td>
+                <td class="sec">This Mac</td>
+                <td><a class="port-link">:5432 ↗</a></td>
+                <td class="num tnum">12%</td>
+                <td class="num tnum">340 MB</td>
+                <td class="sec">2 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr class="sel" data-href="container-detail.html">
+                <td><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">nginx-edge</td>
+                <td class="sec">nginx:1.27</td>
+                <td class="sec">This Mac</td>
+                <td><a class="port-link">:8080 ↗</a></td>
+                <td class="num tnum">3%</td>
+                <td class="num tnum">64 MB</td>
+                <td class="sec">6 hours ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">redis-cache</td>
+                <td class="sec">redis:7</td>
+                <td class="sec">This Mac</td>
+                <td><a class="port-link">:6379 ↗</a></td>
+                <td class="num tnum">8%</td>
+                <td class="num tnum">110 MB</td>
+                <td class="sec">4 hours ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr class="dim" data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status"><span class="dot stopped"></span><span class="st-label">Stopped</span></span></td>
+                <td>build-runner</td>
+                <td class="sec">ubuntu:24.04</td>
+                <td class="sec">This Mac</td>
+                <td class="ter">—</td>
+                <td class="num ter">—</td>
+                <td class="num ter">—</td>
+                <td class="sec">yesterday</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status error"><span class="dot error"></span><span class="st-label">Exited (137)</span></span></td>
+                <td class="med">llama-warmup</td>
+                <td class="sec">ghcr.io/ggml-org/llama.cpp:server</td>
+                <td class="sec">This Mac</td>
+                <td class="ter">—</td>
+                <td class="num ter">—</td>
+                <td class="num ter">—</td>
+                <td class="sec">11 min ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr class="group-head"><td colspan="10">studio-01 · Mac Studio (M2 Max) — 4 containers (3 running)</td></tr>
+
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">grafana</td>
+                <td class="sec">grafana/grafana:11.2</td>
+                <td class="sec">studio-01</td>
+                <td><a class="port-link">:3000 ↗</a></td>
+                <td class="num tnum">9%</td>
+                <td class="num tnum">220 MB</td>
+                <td class="sec">5 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">prometheus</td>
+                <td class="sec">prom/prometheus:v2.54</td>
+                <td class="sec">studio-01</td>
+                <td><a class="port-link">:9090 ↗</a></td>
+                <td class="num tnum">14%</td>
+                <td class="num tnum">512 MB</td>
+                <td class="sec">5 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">loki</td>
+                <td class="sec">grafana/loki:3.1</td>
+                <td class="sec">studio-01</td>
+                <td><a class="port-link">:3100 ↗</a></td>
+                <td class="num tnum">6%</td>
+                <td class="num tnum">180 MB</td>
+                <td class="sec">5 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr class="dim" data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status"><span class="dot stopped"></span><span class="st-label">Stopped</span></span></td>
+                <td>pg-backup</td>
+                <td class="sec">postgres:16</td>
+                <td class="sec">studio-01</td>
+                <td class="ter">—</td>
+                <td class="num ter">—</td>
+                <td class="num ter">—</td>
+                <td class="sec">3 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr class="group-head"><td colspan="10">studio-02 · Mac Studio (M1 Max) — 3 containers (3 running)</td></tr>
+
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">llama-server</td>
+                <td class="sec">ghcr.io/ggml-org/llama.cpp:server</td>
+                <td class="sec">studio-02</td>
+                <td><a class="port-link">:8081 ↗</a></td>
+                <td class="num tnum">78%</td>
+                <td class="num tnum">6.2 GB</td>
+                <td class="sec">2 hours ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">minio</td>
+                <td class="sec">quay.io/minio/minio</td>
+                <td class="sec">studio-02</td>
+                <td><a class="port-link">:9000, :9001 ↗</a></td>
+                <td class="num tnum">4%</td>
+                <td class="num tnum">300 MB</td>
+                <td class="sec">8 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">caddy</td>
+                <td class="sec">caddy:2.8</td>
+                <td class="sec">studio-02</td>
+                <td><a class="port-link">:443 ↗</a></td>
+                <td class="num tnum">2%</td>
+                <td class="num tnum">48 MB</td>
+                <td class="sec">8 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr class="group-head"><td colspan="10">studio-03 · Mac Studio (M2 Ultra) — 2 containers (2 running)</td></tr>
+
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">buildkit-arm</td>
+                <td class="sec">moby/buildkit:v0.16</td>
+                <td class="sec">studio-03</td>
+                <td class="ter">—</td>
+                <td class="num tnum">34%</td>
+                <td class="num tnum">1.8 GB</td>
+                <td class="sec">1 day ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">ci-runner-3</td>
+                <td class="sec">ubuntu:24.04</td>
+                <td class="sec">studio-03</td>
+                <td class="ter">—</td>
+                <td class="num tnum">21%</td>
+                <td class="num tnum">740 MB</td>
+                <td class="sec">40 min ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr class="group-head"><td colspan="10">mini-01 · Mac mini (M1) — 3 containers (2 running)</td></tr>
+
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">homebridge</td>
+                <td class="sec">homebridge/homebridge:2024</td>
+                <td class="sec">mini-01</td>
+                <td><a class="port-link">:8581 ↗</a></td>
+                <td class="num tnum">5%</td>
+                <td class="num tnum">190 MB</td>
+                <td class="sec">21 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">mosquitto</td>
+                <td class="sec">eclipse-mosquitto:2</td>
+                <td class="sec">mini-01</td>
+                <td><a class="port-link">:1883 ↗</a></td>
+                <td class="num tnum">1%</td>
+                <td class="num tnum">22 MB</td>
+                <td class="sec">21 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr class="dim" data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status warn"><span class="dot warn"></span><span class="st-label">Restarting (3)</span></span></td>
+                <td>zigbee2mqtt</td>
+                <td class="sec">koenkk/zigbee2mqtt:1.40</td>
+                <td class="sec">mini-01</td>
+                <td class="ter">—</td>
+                <td class="num ter">—</td>
+                <td class="num ter">—</td>
+                <td class="sec">2 min ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr class="group-head"><td colspan="10">mini-02 · Mac mini (M2) — 2 containers (1 running)</td></tr>
+
+              <tr data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span></td>
+                <td class="med">syncthing</td>
+                <td class="sec">syncthing/syncthing:1.27</td>
+                <td class="sec">mini-02</td>
+                <td><a class="port-link">:8384 ↗</a></td>
+                <td class="num tnum">3%</td>
+                <td class="num tnum">120 MB</td>
+                <td class="sec">14 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+              <tr class="dim" data-href="container-detail.html">
+                <td><span class="check"></span></td>
+                <td><span class="status"><span class="dot stopped"></span><span class="st-label">Stopped</span></span></td>
+                <td>duplicati</td>
+                <td class="sec">duplicati/duplicati:2</td>
+                <td class="sec">mini-02</td>
+                <td class="ter">—</td>
+                <td class="num ter">—</td>
+                <td class="num ter">—</td>
+                <td class="sec">6 days ago</td>
+                <td><svg class="ic s12 dim"><use href="#i-ellipsis"/></svg></td>
+              </tr>
+
+              <tr class="group-head">
+                <td colspan="10" style="color: var(--sys-red);">
+                  studio-04 · unreachable since 09:12 — showing last known state ·
+                  <a href="fleet.html">Diagnose</a>
+                </td>
+              </tr>
+              <tr class="dim">
+                <td><span class="check"></span></td>
+                <td><span class="status"><span class="dot hollow"></span><span class="st-label">Unknown</span></span></td>
+                <td>gitea</td>
+                <td class="sec">gitea/gitea:1.22</td>
+                <td class="sec">studio-04</td>
+                <td class="ter">—</td>
+                <td class="num ter">—</td>
+                <td class="num ter">—</td>
+                <td class="sec">—</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="row t11 ter" style="padding: 8px 12px 16px;">
+            21 containers · 14 running · 6 hosts reporting ·
+            <span class="mono">last refresh 2 s ago</span>
+            <span class="spacer"></span>
+            <span>Right-click a row for actions and the Copy submenu</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= inspector ================= -->
+      <div class="inspector">
+        <div class="insp-sec">
+          <div class="row" style="margin-bottom: 8px;">
+            <svg class="ic s20 dim"><use href="#i-cube"/></svg>
+            <span class="col" style="min-width: 0;">
+              <span class="t15 bold truncate">postgres-16</span>
+              <span class="t11 sec truncate">postgres:16 · This Mac</span>
+            </span>
+          </div>
+          <div class="row gap6" style="margin-bottom: 10px;">
+            <span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span>
+            <span class="pill">up 2 days</span>
+          </div>
+          <div class="glass-cluster" style="width: 100%;">
+            <a class="btn"><svg class="ic s13"><use href="#i-stop"/></svg> Stop</a>
+            <a class="btn"><svg class="ic s13"><use href="#i-restart"/></svg> Restart</a>
+            <a class="btn icon" data-menu="#insp-menu"><svg class="ic s13"><use href="#i-ellipsis"/></svg></a>
+          </div>
+          <a class="btn lg" style="width: 100%; justify-content: center; margin-top: 8px;" href="container-detail.html">
+            Open detail <svg class="ic s13"><use href="#i-chev-right"/></svg>
+          </a>
+        </div>
+
+        <div class="insp-sec">
+          <div class="section-title" style="margin-bottom: 8px;">Resource use</div>
+          <div class="meter-row">
+            <div>
+              <div class="row t11 sec"><span>CPU</span><span class="spacer"></span><span class="tnum">12%</span></div>
+              <div class="bar" style="margin-top: 4px;"><i class="green" style="width: 12%"></i></div>
+            </div>
+            <div>
+              <div class="row t11 sec"><span>Memory</span><span class="spacer"></span><span class="tnum">340 MB</span></div>
+              <div class="bar" style="margin-top: 4px;"><i class="green" style="width: 33%"></i></div>
+            </div>
+          </div>
+          <p class="t11 ter" style="margin-top: 8px; line-height: 1.4;">
+            Numeric only in Phase 1 — <span class="mono">container stats</span> reports cumulative
+            <span class="mono">cpuUsageUsec</span>, so this is a two-sample delta. Live sparklines
+            arrive with streaming.
+          </p>
+        </div>
+
+        <div class="insp-sec">
+          <div class="section-title" style="margin-bottom: 8px;">Ports &amp; address</div>
+          <div class="col gap6">
+            <div class="row t12">
+              <span class="mono">5432 → 5432/tcp</span><span class="spacer"></span>
+              <a class="link-btn t11">Open <svg class="ic s11"><use href="#i-external"/></svg></a>
+            </div>
+            <div class="row t12">
+              <span class="mono">192.168.64.2</span><span class="spacer"></span>
+              <a class="link-btn t11">Copy <svg class="ic s11"><use href="#i-copy"/></svg></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="insp-sec">
+          <div class="section-title" style="margin-bottom: 8px;">Configuration</div>
+          <dl class="kv">
+            <dt>Image</dt><dd class="mono">docker.io/library/postgres:16</dd>
+            <dt>Digest</dt><dd class="mono truncate">sha256:9a1f4b…c07d</dd>
+            <dt>Platform</dt><dd>linux/arm64</dd>
+            <dt>Resources</dt><dd>4 CPUs · 1 GB</dd>
+            <dt>Created</dt><dd>25 Jul 2026, 10:14</dd>
+            <dt>Started</dt><dd>25 Jul 2026, 10:14</dd>
+            <dt>Network</dt><dd>default · mtu 1280</dd>
+            <dt>Mounts</dt><dd>1 volume · <span class="mono">pgdata</span></dd>
+            <dt>Restart</dt><dd>on-failure, max 3 <span class="pill later">later</span></dd>
+          </dl>
+        </div>
+
+        <div class="insp-sec" style="box-shadow: none;">
+          <a class="btn" style="width: 100%; justify-content: center;">
+            <svg class="ic s13"><use href="#i-copy"/></svg> Copy <span class="mono">container</span> command
+          </a>
+          <p class="t11 ter" style="margin-top: 7px; line-height: 1.4;">
+            <span class="mono">container run -d --name postgres-16 -c 4 -m 1g -p 5432:5432 postgres:16</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ toolbar overflow menu ============ -->
+    <div class="menu" data-menu-panel id="more-menu" style="top: 58px; right: 40px;">
+      <a class="mi">Build from Dockerfile… <span class="pill later">later</span></a>
+      <a class="mi">Prune stopped containers…</a>
+      <a class="mi">Prune unused images…</a>
+      <div class="msep"></div>
+      <a class="mi">Group by host <span class="kbd">✓</span></a>
+      <a class="mi">Show columns…</a>
+      <a class="mi">Refresh now <span class="kbd">⌘R</span></a>
+      <div class="msep"></div>
+      <a class="mi" href="settings.html">Settings… <span class="kbd">⌘,</span></a>
+    </div>
+
+    <!-- ============ inspector overflow menu ============ -->
+    <div class="menu" data-menu-panel id="insp-menu" style="top: 150px; right: 30px;">
+      <a class="mi" href="container-detail.html">Open Logs <span class="kbd">⌘L</span></a>
+      <a class="mi" href="container-detail.html">Open Terminal <span class="kbd">⌘T</span></a>
+      <a class="mi" href="container-detail.html">Show Files</a>
+      <div class="msep"></div>
+      <a class="mi">Pause</a>
+      <a class="mi">Kill</a>
+      <div class="msep"></div>
+      <a class="mi" style="color: var(--sys-red);">Delete “postgres-16”…</a>
+    </div>
+
+    <!-- ============ row context menu (right-click a row) ============ -->
+    <div class="menu" data-menu-panel id="row-menu" style="left: 400px; top: 260px;">
+      <div class="mhead">postgres-16 · This Mac</div>
+      <a class="mi"><svg class="ic s13"><use href="#i-stop"/></svg> Stop</a>
+      <a class="mi"><svg class="ic s13"><use href="#i-restart"/></svg> Restart</a>
+      <a class="mi"><svg class="ic s13"><use href="#i-pause"/></svg> Pause</a>
+      <div class="msep"></div>
+      <a class="mi" href="container-detail.html"><svg class="ic s13"><use href="#i-doc"/></svg> Logs…</a>
+      <a class="mi" href="container-detail.html"><svg class="ic s13"><use href="#i-terminal"/></svg> Open Terminal…</a>
+      <a class="mi" href="container-detail.html"><svg class="ic s13"><use href="#i-folder"/></svg> Show Files…</a>
+      <a class="mi"><svg class="ic s13"><use href="#i-external"/></svg> Open :5432 in Browser</a>
+      <div class="msep"></div>
+      <div class="mhead">Copy</div>
+      <a class="mi">Container ID</a>
+      <a class="mi">Name</a>
+      <a class="mi">Image reference</a>
+      <a class="mi">IPv4 address</a>
+      <a class="mi">Published port URL</a>
+      <a class="mi"><b><span class="mono">container</span> command</b></a>
+      <div class="msep"></div>
+      <a class="mi" style="color: var(--sys-red);"><svg class="ic s13"><use href="#i-trash"/></svg> Delete…</a>
+    </div>
+
+    <!-- ============ Run sheet ============ -->
+    <div class="scrim" id="run-sheet" style="display: none;">
+      <div class="sheet">
+        <div class="sheet-body">
+          <div class="row" style="margin-bottom: 14px;">
+            <svg class="ic s22 accent"><use href="#i-plus"/></svg>
+            <div class="col">
+              <h2>Run a container</h2>
+              <span class="t12 sec">Runs <span class="mono">container run</span> on the selected host.</span>
+            </div>
+          </div>
+
+          <div class="runsheet-grid">
+            <span class="t12 sec" style="text-align: right;">Host</span>
+            <span class="popup" style="width: 190px;">
+              <span class="dot running"></span> This Mac
+              <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span>
+            </span>
+
+            <span class="t12 sec" style="text-align: right;">Image</span>
+            <span class="field grow focused"><span>docker.io/library/redis:7</span></span>
+
+            <span class="t12 sec" style="text-align: right;">Name</span>
+            <span class="field grow"><span>redis-cache-2</span></span>
+
+            <span class="t12 sec" style="text-align: right;">Publish ports</span>
+            <span class="field grow"><span class="mono">6379:6379</span></span>
+
+            <span class="t12 sec" style="text-align: right;">Resources</span>
+            <span class="row gap10">
+              <span class="stepper">
+                <span class="field">4</span>
+                <span class="arrows"><span>▲</span><span>▼</span></span>
+              </span>
+              <span class="t12 sec">CPUs</span>
+              <span class="stepper">
+                <span class="field">1</span>
+                <span class="arrows"><span>▲</span><span>▼</span></span>
+              </span>
+              <span class="t12 sec">GB memory</span>
+            </span>
+
+            <span class="t12 sec" style="text-align: right;">Options</span>
+            <span class="col gap6">
+              <label class="ctl t12"><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span> Run detached (<span class="mono">-d</span>)</label>
+              <label class="ctl t12"><span class="check"></span> Remove when it exits (<span class="mono">--rm</span>)</label>
+              <label class="ctl t12"><span class="check"></span> Enable Rosetta (<span class="mono">--rosetta</span>)</label>
+            </span>
+          </div>
+
+          <div class="callout brand" style="margin-top: 16px;">
+            <svg class="ic s14"><use href="#i-terminal"/></svg>
+            <div>
+              <b>Command preview</b>
+              <div class="mono" style="margin-top: 4px; color: var(--label);">
+                container run -d --name redis-cache-2 -c 4 -m 1g -p 6379:6379 docker.io/library/redis:7
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sheet-foot">
+          <a class="btn plain" data-close>Copy command</a>
+          <span class="spacer"></span>
+          <a class="btn lg" data-close>Cancel</a>
+          <a class="btn lg primary" data-close>Run</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    <b>Main window</b> — <code>NavigationSplitView</code>: vibrant sidebar, plain content table,
+    inspector. Table is the default view (cards are a toggle), rows group by host, and the
+    selection bar's buttons enable from the selection's state. Right-click a row.
+  </p>
+</div>
+
+<template id="page-notes">
+  <h3>Main window</h3>
+  <p class="sec">Deliberate choices, and the evidence behind them.</p>
+  <ul>
+    <li><span class="tag">core</span><b>Table by default, cards as a toggle.</b> The existing <code>design/dashboard-mockup.html</code> card grid is lovely at 4 containers and unusable at 40. This changes that mockup's premise and needs your sign-off.</li>
+    <li><span class="tag">core</span>Columns State · Name · Image · Host · Ports · CPU · Memory · Started; sortable, resizable, hideable; running-first default sort (Rancher's default).</li>
+    <li><span class="tag">core</span>Filter tabs write <code>is:running</code> / <code>is:stopped</code> into the search field (Podman). One mental model for mouse and keyboard, and it extends to <code>host:</code> and <code>image:</code>.</li>
+    <li><span class="tag">core</span>Nav is capped at four content items plus System. Docker needed a “customise nav” feature — that is a symptom of IA sprawl, not a feature.</li>
+    <li><span class="tag">core</span>Group-by-host headers carry counts, so a flat fleet list stays legible at 8 hosts.</li>
+    <li><span class="tag">core</span>Unreachable host shows <b>last known state, labelled as such</b>, rather than vanishing rows or pretending the containers are gone.</li>
+    <li><span class="tag">core</span>Ports are links that open the thing. The IP and published port are already in the JSON we decode — cheapest big win available.</li>
+    <li><span class="tag">core</span>Row context menu has a <b>Copy submenu</b> ending in “Copy <code>container</code> command”. This audience lives in the terminal and trusts a GUI that shows its work.</li>
+    <li><span class="tag">core</span>Selection bar: Start is disabled because the selection is running. No dead controls (Rancher).</li>
+    <li><span class="tag later">later</span>Sparklines per row. <code>container stats</code> gives cumulative CPU, so Phase 1 shows a two-sample numeric delta and the moving chart waits for streaming.</li>
+  </ul>
+  <h3>Liquid Glass</h3>
+  <ul>
+    <li>Glass on sidebar, toolbar and the Run/Pull cluster (one <code>GlassEffectContainer</code>). The table and inspector rows are the content layer and stay opaque, so data stays legible over a busy desktop picture.</li>
+  </ul>
+</template>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

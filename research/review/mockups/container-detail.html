@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — container detail</title>
+<link rel="stylesheet" href="assets/mac.css">
+<style>
+  .ctlbar {
+    display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+    box-shadow: inset 0 -0.5px 0 var(--hairline);
+    background: var(--content-bg); flex: 0 0 auto; flex-wrap: wrap;
+  }
+  .ov-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px; padding: 14px;
+  }
+  .ov-grid .wide { grid-column: 1 / -1; }
+  .kv { display: grid; grid-template-columns: 104px 1fr; gap: 6px 12px; font-size: 12px; }
+  .kv dt { color: var(--label-2); }
+  .kv dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .tl-row { display: grid; grid-template-columns: 14px 1fr auto; gap: 9px; padding: 5px 0; align-items: start; }
+  .tl-dot { width: 8px; height: 8px; border-radius: 50%; margin: 4px 3px; }
+  .tl-line { grid-column: 1; justify-self: center; width: 0.5px; background: var(--hairline); }
+  .filerow {
+    display: grid; grid-template-columns: 1fr 90px 130px 24px; gap: 10px;
+    padding: 0 12px; height: 28px; align-items: center; font-size: 12px;
+    box-shadow: inset 0 -0.5px 0 var(--hairline);
+  }
+  .filerow:hover { background: var(--hover); }
+  .filerow.head { font-size: 11px; color: var(--label-2); background: var(--grouped-bg); }
+  .crumbs { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+  .crumbs a { color: var(--label-2); }
+  .crumbs .cur { color: var(--label); font-weight: 550; }
+  .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px; }
+</style>
+</head>
+<body>
+<script src="assets/icons.js"></script>
+
+<div class="desktop">
+  <div class="win w-detail">
+    <div class="split">
+
+      <!-- sidebar -->
+      <div class="sidebar">
+        <div class="sidebar-top">
+          <span class="traffic"><span class="close"><i>×</i></span><span class="min"><i>−</i></span><span class="zoom"><i>⤢</i></span></span>
+        </div>
+        <div class="sidebar-scroll">
+          <a class="side-row selected" href="main-window.html"><svg class="ic s14"><use href="#i-cube"/></svg> Containers <span class="count">21</span></a>
+          <a class="side-row" href="main-window.html"><svg class="ic s14 dim"><use href="#i-photo"/></svg> Images <span class="count">12</span></a>
+          <a class="side-row" href="main-window.html"><svg class="ic s14 dim"><use href="#i-cylinder"/></svg> Volumes <span class="count">5</span></a>
+          <a class="side-row" href="fleet.html"><svg class="ic s14 dim"><use href="#i-server"/></svg> Fleet <span class="count">6/8</span></a>
+          <div class="side-head">Hosts</div>
+          <a class="side-row" href="main-window.html"><span class="dot running"></span> All hosts <span class="count">14</span></a>
+          <a class="side-row sub selected" href="main-window.html"><span class="dot running"></span> This Mac <span class="count">3</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-01 <span class="count">3</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-02 <span class="count">3</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> studio-03 <span class="count">2</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> mini-01 <span class="count">2</span></a>
+          <a class="side-row sub" href="fleet.html"><span class="dot running"></span> mini-02 <span class="count">1</span></a>
+          <a class="side-row sub dim" href="fleet.html"><span class="dot error"></span> studio-04 <span class="count">—</span></a>
+          <div class="side-head">System</div>
+          <a class="side-row" href="onboarding.html"><svg class="ic s14 dim"><use href="#i-check-circle"/></svg> Diagnostics</a>
+          <a class="side-row" href="settings.html"><svg class="ic s14 dim"><use href="#i-gear"/></svg> Settings</a>
+        </div>
+        <div class="sidebar-foot">
+          <div class="row gap6"><svg class="ic s12 dim"><use href="#i-broadcast"/></svg> Client mode · this Mac</div>
+          <div class="row gap6" style="margin-top: 3px;"><svg class="ic s12 accent"><use href="#i-key"/></svg> mTLS · 6 trusted keys</div>
+        </div>
+      </div>
+
+      <!-- content -->
+      <div class="content">
+
+        <div class="toolbar tall">
+          <a class="btn icon" href="main-window.html" title="Back to Containers">
+            <svg class="ic s13"><use href="#i-chev-right"/></svg>
+          </a>
+          <svg class="ic s22 dim"><use href="#i-cube"/></svg>
+          <div class="col" style="min-width: 0;">
+            <span class="row gap6">
+              <span class="win-title">postgres-16</span>
+              <span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span>
+            </span>
+            <span class="win-subtitle">
+              postgres:16 · This Mac · up 2 days · <span class="mono">192.168.64.2</span>
+            </span>
+          </div>
+          <span class="spacer"></span>
+          <span class="glass-cluster">
+            <a class="btn"><svg class="ic s13"><use href="#i-stop"/></svg> Stop</a>
+            <a class="btn"><svg class="ic s13"><use href="#i-restart"/></svg> Restart</a>
+            <a class="btn"><svg class="ic s13"><use href="#i-copy"/></svg> Copy</a>
+            <a class="btn icon" data-menu="#det-menu"><svg class="ic s13"><use href="#i-ellipsis"/></svg></a>
+          </span>
+        </div>
+
+        <!-- contextual detail tabs: only ones the CLI can actually back -->
+        <div class="tabs" data-tabs="#detail-panels">
+          <a class="tab on" data-tab="overview"><svg class="ic s13"><use href="#i-info"/></svg> Overview</a>
+          <a class="tab" data-tab="logs"><svg class="ic s13"><use href="#i-doc"/></svg> Logs</a>
+          <a class="tab" data-tab="exec"><svg class="ic s13"><use href="#i-terminal"/></svg> Terminal</a>
+          <a class="tab" data-tab="stats"><svg class="ic s13"><use href="#i-chart"/></svg> Stats</a>
+          <a class="tab" data-tab="files"><svg class="ic s13"><use href="#i-folder"/></svg> Files</a>
+          <a class="tab" data-tab="inspect"><svg class="ic s13"><use href="#i-braces"/></svg> Inspect</a>
+          <span class="spacer"></span>
+          <span class="t11 ter" style="padding-right: 4px;">polling every 5 s</span>
+        </div>
+
+        <div id="detail-panels" style="flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;">
+
+          <!-- ============ OVERVIEW ============ -->
+          <div class="tab-panel on" data-panel="overview" style="overflow-y: auto;">
+            <div class="ov-grid">
+
+              <div class="card pad">
+                <div class="section-title" style="margin-bottom: 10px;">State</div>
+                <div class="row gap10" style="margin-bottom: 12px;">
+                  <span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span>
+                  <span class="pill">pid 1 · <span class="mono">postgres</span></span>
+                  <span class="pill">1 process</span>
+                </div>
+                <dl class="kv">
+                  <dt>Started</dt><dd>25 Jul 2026, 10:14 · 2 d 2 h ago</dd>
+                  <dt>Created</dt><dd>25 Jul 2026, 10:14</dd>
+                  <dt>Exit code</dt><dd class="sec">—</dd>
+                  <dt>Restart policy</dt>
+                  <dd>on-failure, max 3 <span class="pill later">later</span></dd>
+                  <dt>Health check</dt>
+                  <dd class="sec">None <span class="pill later">later</span></dd>
+                </dl>
+                <div class="callout warn" style="margin-top: 10px;">
+                  <svg class="ic s13"><use href="#i-info"/></svg>
+                  <div><b>Apple <span class="mono">container</span> has no native restart policy or health check.</b>
+                  Flotilla implements these itself, so they only apply while Flotilla is running — the UI has to say so.</div>
+                </div>
+              </div>
+
+              <div class="card pad">
+                <div class="section-title" style="margin-bottom: 10px;">Resource use</div>
+                <div class="col gap10">
+                  <div>
+                    <div class="row t12"><span class="sec">CPU</span><span class="spacer"></span><span class="tnum">12%</span></div>
+                    <div class="bar" style="margin-top: 5px;"><i class="green" style="width: 12%"></i></div>
+                  </div>
+                  <div>
+                    <div class="row t12"><span class="sec">Memory</span><span class="spacer"></span><span class="tnum">340 MB of 1 GB</span></div>
+                    <div class="bar" style="margin-top: 5px;"><i class="green" style="width: 33%"></i></div>
+                  </div>
+                  <div>
+                    <div class="row t12"><span class="sec">Network</span><span class="spacer"></span><span class="tnum">↓ 24.6 KB · ↑ 602 B</span></div>
+                  </div>
+                  <div>
+                    <div class="row t12"><span class="sec">Block I/O</span><span class="spacer"></span><span class="tnum">↓ 1.7 MB · ↑ 0 B</span></div>
+                  </div>
+                </div>
+                <dl class="kv" style="margin-top: 12px;">
+                  <dt>Allocated</dt><dd>4 CPUs · 1 GB memory</dd>
+                  <dt>CPU overhead</dt><dd>1</dd>
+                </dl>
+              </div>
+
+              <div class="card pad">
+                <div class="section-title" style="margin-bottom: 10px;">Ports &amp; network</div>
+                <div class="col gap6" style="margin-bottom: 10px;">
+                  <div class="row t12">
+                    <span class="mono">5432 → 5432/tcp</span>
+                    <span class="spacer"></span>
+                    <a class="link-btn t11">Open in browser <svg class="ic s11"><use href="#i-external"/></svg></a>
+                  </div>
+                </div>
+                <dl class="kv">
+                  <dt>Network</dt><dd>default</dd>
+                  <dt>Hostname</dt><dd class="mono">postgres-16</dd>
+                  <dt>IPv4</dt><dd class="mono">192.168.64.2/24 · gw 192.168.64.1</dd>
+                  <dt>IPv6</dt><dd class="mono truncate">fd15:4ba5:5a2b:1008:…/64</dd>
+                  <dt>MAC</dt><dd class="mono">fe:dd:4c:9a:11:02</dd>
+                  <dt>MTU</dt><dd>1280</dd>
+                </dl>
+              </div>
+
+              <div class="card pad">
+                <div class="section-title" style="margin-bottom: 10px;">Image &amp; command</div>
+                <dl class="kv">
+                  <dt>Reference</dt><dd class="mono">docker.io/library/postgres:16</dd>
+                  <dt>Digest</dt><dd class="mono truncate">sha256:9a1f4b2e77c0a1d5…c07d</dd>
+                  <dt>Platform</dt><dd>linux/arm64</dd>
+                  <dt>Executable</dt><dd class="mono">postgres</dd>
+                  <dt>Working dir</dt><dd class="mono">/var/lib/postgresql</dd>
+                  <dt>User</dt><dd>uid 999 · gid 999</dd>
+                  <dt>Mounts</dt><dd class="mono">pgdata → /var/lib/postgresql/data</dd>
+                  <dt>Labels</dt><dd><span class="pill mono">stack=observability</span></dd>
+                </dl>
+                <a class="btn sm" style="margin-top: 10px;">
+                  <svg class="ic s11"><use href="#i-copy"/></svg> Copy <span class="mono">container</span> command
+                </a>
+              </div>
+
+              <div class="card pad wide">
+                <div class="row" style="margin-bottom: 8px;">
+                  <div class="section-title">Recent events</div>
+                  <span class="spacer"></span>
+                  <span class="t11 ter">from local history (SwiftData)</span>
+                </div>
+                <div class="timeline">
+                  <div class="tl-row">
+                    <span class="tl-dot" style="background: var(--online);"></span>
+                    <span class="t12">Started · <span class="sec">exit of previous run was clean</span></span>
+                    <span class="t11 ter">25 Jul, 10:14</span>
+                  </div>
+                  <div class="tl-row">
+                    <span class="tl-dot" style="background: var(--label-4);"></span>
+                    <span class="t12">Stopped by user <span class="sec">from menu-bar popover</span></span>
+                    <span class="t11 ter">25 Jul, 10:12</span>
+                  </div>
+                  <div class="tl-row">
+                    <span class="tl-dot" style="background: var(--sys-orange);"></span>
+                    <span class="t12">Restarted after failure <span class="sec">attempt 1 of 3</span></span>
+                    <span class="t11 ter">24 Jul, 22:41</span>
+                  </div>
+                  <div class="tl-row">
+                    <span class="tl-dot" style="background: var(--sys-blue);"></span>
+                    <span class="t12">Image pulled <span class="mono sec">postgres:16</span></span>
+                    <span class="t11 ter">21 Jul, 09:03</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ LOGS ============ -->
+          <div class="tab-panel flexcol" data-panel="logs" style="flex: 1 1 auto; min-height: 0;">
+            <div class="ctlbar">
+              <label class="ctl t12"><span class="switch on" data-follow></span> Follow</label>
+              <span class="popup">Tail 200 <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span>
+              <label class="ctl t12"><span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span> Timestamps</label>
+              <label class="ctl t12"><span class="check"></span> Wrap</label>
+              <!-- container-specific: micro-VM boot log, no comparable has this -->
+              <label class="ctl t12"><span class="check"></span> Show <span class="mono">--boot</span> log</label>
+              <span class="spacer"></span>
+              <span class="search" style="width: 180px;">
+                <svg class="ic s12 dim"><use href="#i-search"/></svg>
+                <span>checkpoint</span>
+                <span class="spacer"></span><span class="kbd">3</span>
+              </span>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-copy"/></svg> Copy</a>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-download"/></svg> Save…</a>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-chev-down"/></svg> Bottom</a>
+            </div>
+
+            <div class="logview" data-stream='[
+              ["info","LOG:  checkpoint starting: time"],
+              ["info","LOG:  checkpoint complete: wrote 42 buffers (0.3%); 0 WAL file(s) added"],
+              ["info","LOG:  automatic vacuum of table \"public.events\": index scans: 1"],
+              ["warn","WARNING:  there is already a transaction in progress"],
+              ["info","LOG:  connection received: host=192.168.64.1 port=54882"],
+              ["info","LOG:  connection authenticated: user=flotilla method=scram-sha-256"]
+            ]'>
+              <div class="ln"><span class="ts">10:14:02.118</span><span class="lvl-boot">[boot] vminit: starting containerization init (kernel 6.12.28)</span></div>
+              <div class="ln"><span class="ts">10:14:02.240</span><span class="lvl-boot">[boot] mounted rootfs read-write, 1 network interface up</span></div>
+              <div class="ln"><span class="ts">10:14:02.512</span><span class="lvl-info">PostgreSQL init process complete; ready for start up.</span></div>
+              <div class="ln"><span class="ts">10:14:02.601</span><span class="lvl-info">LOG:  starting PostgreSQL 16.3 on aarch64-unknown-linux-musl</span></div>
+              <div class="ln"><span class="ts">10:14:02.604</span><span class="lvl-info">LOG:  listening on IPv4 address "0.0.0.0", port 5432</span></div>
+              <div class="ln"><span class="ts">10:14:02.688</span><span class="lvl-info">LOG:  database system was shut down at 2026-07-25 10:12:44 UTC</span></div>
+              <div class="ln"><span class="ts">10:14:02.744</span><span class="lvl-info">LOG:  database system is ready to accept connections</span></div>
+              <div class="ln"><span class="ts">10:19:02.031</span><span class="lvl-info">LOG:  <mark>checkpoint</mark> starting: time</span></div>
+              <div class="ln"><span class="ts">10:19:07.845</span><span class="lvl-info">LOG:  <mark>checkpoint</mark> complete: wrote 118 buffers (0.7%); 0 WAL file(s) added</span></div>
+              <div class="ln"><span class="ts">11:02:55.117</span><span class="lvl-warn">WARNING:  autovacuum worker started for "events" — long-running transaction blocks cleanup</span></div>
+              <div class="ln"><span class="ts">11:03:12.902</span><span class="lvl-err">ERROR:  duplicate key value violates unique constraint "events_pkey"</span></div>
+              <div class="ln"><span class="ts">11:03:12.902</span><span class="lvl-err">DETAIL:  Key (id)=(88421) already exists.</span></div>
+              <div class="ln"><span class="ts">12:24:02.006</span><span class="lvl-info">LOG:  <mark>checkpoint</mark> starting: time</span></div>
+              <div class="ln caret-line"><span class="ts">&nbsp;</span><span class="lvl-info blink">▍</span></div>
+            </div>
+
+            <div class="ctlbar" style="box-shadow: inset 0 0.5px 0 var(--hairline);">
+              <span class="t11 ter">
+                Streaming from <span class="mono">container logs -f --boot postgres-16</span> ·
+                12 484 lines buffered (cap 50 000)
+              </span>
+              <span class="spacer"></span>
+              <span class="pill ok"><span class="dot running"></span>attached</span>
+            </div>
+          </div>
+
+          <!-- ============ TERMINAL ============ -->
+          <div class="tab-panel flexcol" data-panel="exec" style="flex: 1 1 auto; min-height: 0;">
+            <div class="ctlbar">
+              <span class="popup">Shell: <span class="mono">/bin/sh</span> <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span>
+              <span class="popup">User: root <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span>
+              <span class="field" style="width: 170px;"><span class="mono">/var/lib/postgresql</span></span>
+              <span class="spacer"></span>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-copy"/></svg> Copy transcript</a>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-external"/></svg> Open in Terminal.app</a>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-restart"/></svg> Reconnect</a>
+            </div>
+            <div class="term">
+<span class="dim"># container exec -it postgres-16 /bin/sh — real PTY, not a text box</span>
+<span class="p-user">postgres-16</span>:<span class="p-path">/var/lib/postgresql</span># psql -U postgres -c '\l'
+                                  List of databases
+   Name    |  Owner   | Encoding | Collate |  Ctype  |   Access privileges
+-----------+----------+----------+---------+---------+-----------------------
+ events    | flotilla | UTF8     | C.UTF-8 | C.UTF-8 |
+ postgres  | postgres | UTF8     | C.UTF-8 | C.UTF-8 |
+ template0 | postgres | UTF8     | C.UTF-8 | C.UTF-8 | =c/postgres          +
+           |          |          |         |         | postgres=CTc/postgres
+(4 rows)
+
+<span class="p-user">postgres-16</span>:<span class="p-path">/var/lib/postgresql</span># df -h /var/lib/postgresql/data
+Filesystem                Size      Used Available Use% Mounted on
+/dev/vda                 20.0G      2.1G     17.9G  11% /var/lib/postgresql/data
+
+<span class="p-user">postgres-16</span>:<span class="p-path">/var/lib/postgresql</span># <span class="blink">▍</span>
+            </div>
+            <div class="ctlbar" style="box-shadow: inset 0 0.5px 0 var(--hairline);">
+              <span class="pill ok"><span class="dot running"></span>PTY attached · 132×34</span>
+              <span class="t11 ter">
+                Ship a real PTY through <span class="mono">container exec -it</span> or don't ship the
+                tab — Docker's half-terminal is a known irritant.
+              </span>
+              <span class="spacer"></span>
+              <span class="pill later">Phase 4</span>
+            </div>
+          </div>
+
+          <!-- ============ STATS ============ -->
+          <div class="tab-panel" data-panel="stats" style="overflow-y: auto;">
+            <div class="ctlbar">
+              <span class="popup">Sample every 5 s <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span>
+              <span class="seg" data-seg>
+                <a>5 min</a><a class="on">15 min</a><a>1 hour</a><a>24 hours</a>
+              </span>
+              <label class="ctl t12"><span class="switch on"></span> Pause when window hidden</label>
+              <span class="spacer"></span>
+              <span class="pill later">real charts arrive with Phase 4 streaming</span>
+            </div>
+
+            <div class="stats-grid">
+              <div class="chart">
+                <div class="row" style="margin-bottom: 6px;">
+                  <span class="t12 med">CPU</span>
+                  <span class="spacer"></span>
+                  <span class="t12 tnum">12% <span class="ter">· peak 41%</span></span>
+                </div>
+                <svg viewBox="0 0 600 130" role="img" aria-label="CPU usage over the last 15 minutes, currently 12 percent">
+                  <line class="grid-line" x1="0" y1="10" x2="600" y2="10"/>
+                  <line class="grid-line" x1="0" y1="45" x2="600" y2="45"/>
+                  <line class="grid-line" x1="0" y1="80" x2="600" y2="80"/>
+                  <line class="grid-line" x1="0" y1="115" x2="600" y2="115"/>
+                  <polygon fill="rgba(46,125,50,0.14)" points="0,104 40,96 80,100 120,74 160,80 200,56 240,64 280,46 320,62 360,38 400,52 440,32 480,46 520,28 560,42 600,88 600,115 0,115"/>
+                  <polyline fill="none" stroke="#2e7d32" stroke-width="1.6" points="0,104 40,96 80,100 120,74 160,80 200,56 240,64 280,46 320,62 360,38 400,52 440,32 480,46 520,28 560,42 600,88"/>
+                  <text class="axis-label" x="2" y="8">100%</text>
+                  <text class="axis-label" x="2" y="43">66%</text>
+                  <text class="axis-label" x="2" y="78">33%</text>
+                </svg>
+                <div class="row t11 ter" style="margin-top: 2px;"><span>−15 min</span><span class="spacer"></span><span>now</span></div>
+              </div>
+
+              <div class="chart">
+                <div class="row" style="margin-bottom: 6px;">
+                  <span class="t12 med">Memory</span>
+                  <span class="spacer"></span>
+                  <span class="t12 tnum">340 MB <span class="ter">of 1 GB limit</span></span>
+                </div>
+                <svg viewBox="0 0 600 130" role="img" aria-label="Memory usage over the last 15 minutes, currently 340 megabytes of a 1 gigabyte limit">
+                  <line class="grid-line" x1="0" y1="10" x2="600" y2="10"/>
+                  <line class="grid-line" x1="0" y1="45" x2="600" y2="45"/>
+                  <line class="grid-line" x1="0" y1="80" x2="600" y2="80"/>
+                  <line class="grid-line" x1="0" y1="115" x2="600" y2="115"/>
+                  <polygon fill="rgba(252,74,107,0.13)" points="0,98 60,96 120,92 180,90 240,86 300,88 360,84 420,80 480,82 540,79 600,78 600,115 0,115"/>
+                  <polyline fill="none" stroke="#e63956" stroke-width="1.6" points="0,98 60,96 120,92 180,90 240,86 300,88 360,84 420,80 480,82 540,79 600,78"/>
+                  <line x1="0" y1="14" x2="600" y2="14" stroke="var(--sys-orange)" stroke-width="1" stroke-dasharray="4 4"/>
+                  <text class="axis-label" x="4" y="26" fill="var(--sys-orange)">limit 1 GB</text>
+                </svg>
+                <div class="row t11 ter" style="margin-top: 2px;"><span>−15 min</span><span class="spacer"></span><span>now</span></div>
+              </div>
+
+              <div class="chart">
+                <div class="row" style="margin-bottom: 6px;">
+                  <span class="t12 med">Network</span>
+                  <span class="spacer"></span>
+                  <span class="t12 tnum">↓ 24.6 KB · ↑ 602 B</span>
+                </div>
+                <svg viewBox="0 0 600 130" role="img" aria-label="Network receive and transmit over the last 15 minutes">
+                  <line class="grid-line" x1="0" y1="10" x2="600" y2="10"/>
+                  <line class="grid-line" x1="0" y1="62" x2="600" y2="62"/>
+                  <line class="grid-line" x1="0" y1="115" x2="600" y2="115"/>
+                  <polyline fill="none" stroke="#0a64d2" stroke-width="1.6" points="0,110 50,88 100,102 150,70 200,96 250,64 300,92 350,58 400,86 450,72 500,94 550,66 600,90"/>
+                  <polyline fill="none" stroke="#7cb342" stroke-width="1.6" stroke-dasharray="3 3" points="0,113 50,108 100,112 150,104 200,110 250,102 300,108 350,100 400,110 450,105 500,111 550,103 600,109"/>
+                </svg>
+                <div class="row t11 ter gap10" style="margin-top: 2px;">
+                  <span style="color: var(--sys-blue);">— received</span>
+                  <span style="color: var(--stripe);">-- transmitted</span>
+                  <span class="spacer"></span><span>now</span>
+                </div>
+              </div>
+
+              <div class="chart">
+                <div class="row" style="margin-bottom: 6px;">
+                  <span class="t12 med">Block I/O</span>
+                  <span class="spacer"></span>
+                  <span class="t12 tnum">read 1.7 MB · write 0 B</span>
+                </div>
+                <svg viewBox="0 0 600 130" role="img" aria-label="Block read and write per sample over the last 15 minutes">
+                  <line class="grid-line" x1="0" y1="115" x2="600" y2="115"/>
+                  <g fill="#8e8e93">
+                    <rect x="10" y="96" width="16" height="19" rx="2"/><rect x="50" y="88" width="16" height="27" rx="2"/>
+                    <rect x="90" y="104" width="16" height="11" rx="2"/><rect x="130" y="70" width="16" height="45" rx="2"/>
+                    <rect x="170" y="100" width="16" height="15" rx="2"/><rect x="210" y="82" width="16" height="33" rx="2"/>
+                    <rect x="250" y="108" width="16" height="7" rx="2"/><rect x="290" y="60" width="16" height="55" rx="2"/>
+                    <rect x="330" y="98" width="16" height="17" rx="2"/><rect x="370" y="90" width="16" height="25" rx="2"/>
+                    <rect x="410" y="106" width="16" height="9" rx="2"/><rect x="450" y="76" width="16" height="39" rx="2"/>
+                    <rect x="490" y="102" width="16" height="13" rx="2"/><rect x="530" y="94" width="16" height="21" rx="2"/>
+                    <rect x="570" y="110" width="16" height="5" rx="2"/>
+                  </g>
+                </svg>
+                <div class="row t11 ter" style="margin-top: 2px;"><span>read per sample</span><span class="spacer"></span><span>now</span></div>
+              </div>
+            </div>
+
+            <div style="padding: 0 14px 16px;">
+              <div class="callout info">
+                <svg class="ic s14"><use href="#i-info"/></svg>
+                <div>
+                  <b>Honest charts only.</b> <span class="mono">container stats</span> returns cumulative
+                  <span class="mono">cpuUsageUsec</span> with no push feed, so a percentage needs two samples and a
+                  wall-clock delta. Until the persistent connection lands, polling 8 hosts per second would be a
+                  battery and bandwidth cost for a chart nobody is watching — hence the sampling interval and
+                  “pause when hidden”.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ FILES ============ -->
+          <div class="tab-panel flexcol" data-panel="files" style="flex: 1 1 auto; min-height: 0;">
+            <div class="ctlbar">
+              <a class="btn icon sm"><svg class="ic s11"><use href="#i-chev-right"/></svg></a>
+              <span class="crumbs">
+                <a>/</a><span class="ter">›</span><a>var</a><span class="ter">›</span><a>lib</a>
+                <span class="ter">›</span><a>postgresql</a><span class="ter">›</span><span class="cur">data</span>
+              </span>
+              <span class="spacer"></span>
+              <span class="pill"><svg class="ic s11"><use href="#i-lock"/></svg> read-only browse</span>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-download"/></svg> Download…</a>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-refresh"/></svg></a>
+            </div>
+
+            <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto;">
+              <div class="filerow head"><span>Name</span><span class="num">Size</span><span>Modified</span><span></span></div>
+              <div class="filerow"><span><svg class="ic s13 dim"><use href="#i-folder"/></svg> base</span><span class="num sec tnum">—</span><span class="sec">25 Jul 10:14</span><span><svg class="ic s12 dim"><use href="#i-chev-right"/></svg></span></div>
+              <div class="filerow"><span><svg class="ic s13 dim"><use href="#i-folder"/></svg> global</span><span class="num sec tnum">—</span><span class="sec">25 Jul 10:14</span><span><svg class="ic s12 dim"><use href="#i-chev-right"/></svg></span></div>
+              <div class="filerow"><span><svg class="ic s13 dim"><use href="#i-folder"/></svg> pg_wal</span><span class="num sec tnum">—</span><span class="sec">27 Jul 12:24</span><span><svg class="ic s12 dim"><use href="#i-chev-right"/></svg></span></div>
+              <div class="filerow"><span><svg class="ic s13 dim"><use href="#i-file"/></svg> PG_VERSION</span><span class="num sec tnum">3 B</span><span class="sec">25 Jul 10:14</span><span></span></div>
+              <div class="filerow"><span><svg class="ic s13 dim"><use href="#i-file"/></svg> postgresql.conf</span><span class="num sec tnum">29.4 KB</span><span class="sec">25 Jul 10:14</span><span></span></div>
+              <div class="filerow"><span><svg class="ic s13 dim"><use href="#i-file"/></svg> pg_hba.conf</span><span class="num sec tnum">4.8 KB</span><span class="sec">25 Jul 10:14</span><span></span></div>
+              <div class="filerow"><span><svg class="ic s13 dim"><use href="#i-file"/></svg> postmaster.pid</span><span class="num sec tnum">104 B</span><span class="sec">27 Jul 12:24</span><span></span></div>
+              <div class="filerow"><span><svg class="ic s13 dim"><use href="#i-file"/></svg> pg_ident.conf</span><span class="num sec tnum">1.6 KB</span><span class="sec">25 Jul 10:14</span><span></span></div>
+            </div>
+
+            <div class="ctlbar" style="box-shadow: inset 0 0.5px 0 var(--hairline);">
+              <span class="t11 ter">
+                Built on <span class="mono">container cp</span> — browse and download first.
+                Editing and drag-and-drop only if they prove useful.
+              </span>
+              <span class="spacer"></span><span class="pill later">Phase 4</span>
+            </div>
+          </div>
+
+          <!-- ============ INSPECT ============ -->
+          <div class="tab-panel flexcol" data-panel="inspect" style="flex: 1 1 auto; min-height: 0;">
+            <div class="ctlbar">
+              <span class="seg" data-seg><a class="on">JSON</a><a>Table</a></span>
+              <span class="search" style="width: 170px;">
+                <svg class="ic s12 dim"><use href="#i-search"/></svg><span class="ph">Filter keys</span>
+              </span>
+              <span class="spacer"></span>
+              <span class="t11 ter mono">container inspect postgres-16</span>
+              <a class="btn sm"><svg class="ic s11"><use href="#i-copy"/></svg> Copy JSON</a>
+            </div>
+            <div style="flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px 14px;">
+<pre class="code">{
+  <span class="k">"id"</span>: <span class="s">"postgres-16"</span>,
+  <span class="k">"configuration"</span>: {
+    <span class="k">"id"</span>: <span class="s">"postgres-16"</span>,
+    <span class="k">"creationDate"</span>: <span class="s">"2026-07-25T10:14:02Z"</span>,
+    <span class="k">"image"</span>: {
+      <span class="k">"reference"</span>: <span class="s">"docker.io/library/postgres:16"</span>,
+      <span class="k">"descriptor"</span>: {
+        <span class="k">"digest"</span>: <span class="s">"sha256:9a1f4b2e77c0a1d5…c07d"</span>,
+        <span class="k">"mediaType"</span>: <span class="s">"application/vnd.oci.image.index.v1+json"</span>,
+        <span class="k">"size"</span>: <span class="n">9218</span>
+      }
+    },
+    <span class="k">"platform"</span>: { <span class="k">"architecture"</span>: <span class="s">"arm64"</span>, <span class="k">"os"</span>: <span class="s">"linux"</span> },
+    <span class="k">"resources"</span>: { <span class="k">"cpus"</span>: <span class="n">4</span>, <span class="k">"memoryInBytes"</span>: <span class="n">1073741824</span>, <span class="k">"cpuOverhead"</span>: <span class="n">1</span> },
+    <span class="k">"networks"</span>: [ { <span class="k">"network"</span>: <span class="s">"default"</span>, <span class="k">"options"</span>: { <span class="k">"hostname"</span>: <span class="s">"postgres-16"</span>, <span class="k">"mtu"</span>: <span class="n">1280</span> } } ],
+    <span class="k">"initProcess"</span>: {
+      <span class="k">"executable"</span>: <span class="s">"postgres"</span>,
+      <span class="k">"arguments"</span>: [],
+      <span class="k">"environment"</span>: [ <span class="s">"PATH=/usr/local/sbin:…"</span>, <span class="s">"POSTGRES_PASSWORD=••••••"</span> ],
+      <span class="k">"workingDirectory"</span>: <span class="s">"/var/lib/postgresql"</span>,
+      <span class="k">"terminal"</span>: <span class="n">false</span>,
+      <span class="k">"user"</span>: { <span class="k">"id"</span>: { <span class="k">"uid"</span>: <span class="n">999</span>, <span class="k">"gid"</span>: <span class="n">999</span> } }
+    },
+    <span class="k">"labels"</span>: { <span class="k">"stack"</span>: <span class="s">"observability"</span> },
+    <span class="k">"mounts"</span>: [ { <span class="k">"source"</span>: <span class="s">"pgdata"</span>, <span class="k">"destination"</span>: <span class="s">"/var/lib/postgresql/data"</span> } ],
+    <span class="k">"publishedPorts"</span>: [ { <span class="k">"hostPort"</span>: <span class="n">5432</span>, <span class="k">"containerPort"</span>: <span class="n">5432</span>, <span class="k">"protocol"</span>: <span class="s">"tcp"</span> } ],
+    <span class="k">"rosetta"</span>: <span class="n">false</span>, <span class="k">"readOnly"</span>: <span class="n">false</span>, <span class="k">"virtualization"</span>: <span class="n">false</span>,
+    <span class="k">"runtimeHandler"</span>: <span class="s">"container-runtime-linux"</span>
+  },
+  <span class="k">"status"</span>: {
+    <span class="k">"state"</span>: <span class="s">"running"</span>,
+    <span class="k">"startedDate"</span>: <span class="s">"2026-07-25T10:14:02Z"</span>,
+    <span class="k">"networks"</span>: [ {
+      <span class="k">"network"</span>: <span class="s">"default"</span>,
+      <span class="k">"hostname"</span>: <span class="s">"postgres-16"</span>,
+      <span class="k">"ipv4Address"</span>: <span class="s">"192.168.64.2/24"</span>,
+      <span class="k">"ipv4Gateway"</span>: <span class="s">"192.168.64.1"</span>,
+      <span class="k">"macAddress"</span>: <span class="s">"fe:dd:4c:9a:11:02"</span>,
+      <span class="k">"mtu"</span>: <span class="n">1280</span>
+    } ]
+  }
+}
+<span class="c">// secrets in environment[] are masked in the UI; “Copy JSON” asks first</span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="menu" data-menu-panel id="det-menu" style="top: 60px; right: 40px;">
+      <a class="mi">Pause</a>
+      <a class="mi">Kill</a>
+      <div class="msep"></div>
+      <a class="mi">Rename…</a>
+      <a class="mi">Duplicate with new options…</a>
+      <a class="mi">Export as <span class="mono">container run</span> command</a>
+      <div class="msep"></div>
+      <a class="mi">Restart policy… <span class="pill later">later</span></a>
+      <div class="msep"></div>
+      <a class="mi" style="color: var(--sys-red);">Delete “postgres-16”…</a>
+    </div>
+  </div>
+
+  <p class="caption">
+    <b>Container detail</b> — the tab set every comparable converged on (Overview, Logs, Terminal,
+    Stats, Files, Inspect), trimmed to what the <code>container</code> CLI can honestly back.
+    Click the tabs.
+  </p>
+</div>
+
+<template id="page-notes">
+  <h3>Container detail</h3>
+  <ul>
+    <li><span class="tag">core</span><b>Tabs users already expect.</b> Docker, Podman and OrbStack all converge on Summary / Logs / Terminal / Stats / Files / Inspect, so people arrive with the expectation pre-installed. We meet it — but only with tabs the CLI can back.</li>
+    <li><span class="tag">core</span><b>Logs</b>: follow, tail-N, search with match count, timestamps, wrap, copy/save, monospace. Plus a <code>--boot</code> toggle for the micro-VM boot log — a <code>container</code>-specific diagnostic no comparable has, and the first thing you want when a container won't start.</li>
+    <li><span class="tag">core</span><b>Stats are deliberately modest.</b> Sampling interval is a setting, streaming pauses when the window is hidden, and the charts only exist once there's a real feed. Charts that imply live data they don't have are a lie with a battery cost.</li>
+    <li><span class="tag">core</span><b>Restart policy and health checks are labelled as ours.</b> Apple <code>container</code> has neither, so Flotilla implements them — and must admit they only apply while Flotilla runs. A silent partial policy would be trust-destroying.</li>
+    <li><span class="tag later">later</span><b>Terminal</b> ships only as a real PTY over <code>container exec -it</code>. Docker's shell-ish text box is a known irritant; better no tab than a fake one.</li>
+    <li><span class="tag later">later</span><b>Files</b> is read-only browse + download on top of <code>container cp</code>. Editing and drag-and-drop only if they earn it.</li>
+    <li><span class="tag">core</span><b>Inspect</b> is the real captured schema from <code>reference/json-schemas.md</code> — the container name is <code>configuration.id</code>, state is <code>status.state</code>. Env values that look like secrets are masked.</li>
+  </ul>
+</template>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
