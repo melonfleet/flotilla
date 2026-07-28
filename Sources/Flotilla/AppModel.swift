@@ -137,7 +137,7 @@ final class AppModel {
 
     func createVolume(_ name: String) async {
         do {
-            try await Task.detached { [cli] in try cli.createVolume(name) }.value
+            _ = try await Task.detached { [cli] in try cli.createVolume(name) }.value
         } catch {
             actionError = "Create volume failed for \(name): \(error)"
         }
@@ -149,7 +149,7 @@ final class AppModel {
         busy.insert(volume.id)
         defer { busy.remove(volume.id) }
         do {
-            try await Task.detached { [cli] in try cli.removeVolume(volume.name) }.value
+            _ = try await Task.detached { [cli] in try cli.removeVolume(volume.name) }.value
         } catch {
             actionError = "Delete volume failed for \(volume.name): \(error)"
         }
@@ -178,7 +178,7 @@ final class AppModel {
 
     func createNetwork(_ name: String) async {
         do {
-            try await Task.detached { [cli] in try cli.createNetwork(name) }.value
+            _ = try await Task.detached { [cli] in try cli.createNetwork(name) }.value
         } catch {
             actionError = "Create network failed for \(name): \(error)"
         }
@@ -190,7 +190,7 @@ final class AppModel {
         busy.insert(network.id)
         defer { busy.remove(network.id) }
         do {
-            try await Task.detached { [cli] in try cli.removeNetwork(network.id) }.value
+            _ = try await Task.detached { [cli] in try cli.removeNetwork(network.id) }.value
         } catch {
             actionError = "Delete network failed for \(network.id): \(error)"
         }
@@ -206,6 +206,57 @@ final class AppModel {
 
     var running: [Container] { containers.filter(Self.isRunning) }
     var stopped: [Container] { containers.filter { !Self.isRunning($0) } }
+
+    // MARK: Images
+
+    private(set) var imagesState: LoadState = .idle
+    private(set) var images: [ContainerImage] = []
+
+    func refreshImages() async {
+        guard runtimeUsable else {
+            imagesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "`container` is unavailable.")
+            return
+        }
+        imagesState = .loading
+        do {
+            let fetched = try await Task.detached { [cli] in try cli.listImages() }.value
+            images = fetched
+            imagesState = .loaded
+        } catch {
+            imagesState = .failed(String(describing: error))
+        }
+    }
+
+    func pullImage(_ reference: String) async {
+        do {
+            _ = try await Task.detached { [cli] in try cli.pull(reference) }.value
+        } catch {
+            actionError = "Pull failed for \(reference): \(error)"
+        }
+        await refreshImages()
+    }
+
+    func removeImage(_ image: ContainerImage) async {
+        guard !busy.contains(image.id) else { return }
+        busy.insert(image.id)
+        defer { busy.remove(image.id) }
+        do {
+            _ = try await Task.detached { [cli] in try cli.removeImage(image.reference) }.value
+        } catch {
+            actionError = "Delete image failed for \(image.reference): \(error)"
+        }
+        await refreshImages()
+    }
+
+    // MARK: Logs
+
+    /// Backs `ContainerDetailView`'s Logs tab. Streaming and `exec` are Phase 4, so this
+    /// is a plain bounded fetch — the view drives it with its own Reload button and owns
+    /// its own loading/error display, rather than the shared `actionError` alert, because
+    /// a stale log view failing to reload shouldn't pop a modal over the rest of the app.
+    func fetchLogs(for id: String, lines: Int = 200) async throws -> LogChunk {
+        try await Task.detached { [cli] in try cli.logs(id, lines: lines) }.value
+    }
 
     // MARK: Lifecycle actions
 
@@ -230,7 +281,7 @@ final class AppModel {
             // Off the main actor: each of these spawns `container` and waits on it.
             // Note every one routes through ContainerCLI, which validates against the
             // Allowlist first — the UI never builds an argv itself.
-            try await Task.detached { [cli] in
+            try await Task.detached { [cli] () -> Void in
                 switch action {
                 case .start:   try cli.start(id)
                 case .stop:    try cli.stop(id)
@@ -244,6 +295,55 @@ final class AppModel {
 
         // Refresh regardless: on failure the container's real state is now unknown, and
         // showing a stale row is worse than showing the truth.
+        await refresh()
+    }
+
+    /// Bulk counterpart to `perform(_:on:)`, for the containers table's multi-selection
+    /// action bar. Runs every id through the same allowlisted `ContainerCLI` calls and
+    /// refreshes once at the end rather than once per id — `perform(_:on:)` itself is left
+    /// untouched so single-row callers keep their existing per-action refresh.
+    func performBulk(_ action: Action, on ids: Set<Container.ID>) async {
+        // Collected, not assigned per-iteration. Writing `actionError` inside the loop
+        // meant each failure overwrote the last, so stopping eight containers and failing
+        // five of them reported exactly one — the user would fix that one and believe the
+        // job was done. A bulk operation has to report its true blast radius.
+        var failures: [(id: Container.ID, error: String)] = []
+
+        for id in ids.sorted() where !busy.contains(id) {
+            busy.insert(id)
+            do {
+                try await Task.detached { [cli] () -> Void in
+                    switch action {
+                    case .start:   try cli.start(id)
+                    case .stop:    try cli.stop(id)
+                    case .restart: try cli.restart(id)
+                    case .delete:  try cli.remove(id)
+                    }
+                }.value
+            } catch {
+                failures.append((id, String(describing: error)))
+            }
+            busy.remove(id)
+        }
+
+        if let first = failures.first {
+            let verb = Self.label(for: action)
+            if failures.count == 1 {
+                actionError = "\(verb) failed for \(first.id): \(first.error)"
+            } else {
+                // Name a bounded handful rather than a wall of ids, but always state the
+                // true count so the number is never smaller than what actually failed.
+                let named = failures.prefix(4).map(\.id).joined(separator: ", ")
+                let rest = failures.count > 4 ? ", and \(failures.count - 4) more" : ""
+                actionError = """
+                    \(verb) failed for \(failures.count) of \(ids.count) containers \
+                    (\(named)\(rest)).
+
+                    First error: \(first.error)
+                    """
+            }
+        }
+
         await refresh()
     }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 import FlotillaCore
 
 /// The containers section: **the product**.
@@ -11,8 +12,8 @@ import FlotillaCore
 /// carrying it from the start.
 ///
 /// Moved out of `MainWindowView` unchanged when the window became a `NavigationSplitView`
-/// (Phase 1 UI contract) — the CLI owner extends this file next with filter tabs, a bulk-action
-/// bar, and extra columns.
+/// (Phase 1 UI contract), then extended here with filter tabs, a bulk-action bar, the
+/// Created/IP columns, and the detail sheet hook.
 struct ContainersView: View {
     let model: AppModel
 
@@ -22,17 +23,52 @@ struct ContainersView: View {
         var id: Self { self }
     }
 
+    enum Filter: String, CaseIterable, Identifiable {
+        case all = "All"
+        case running = "Running"
+        case stopped = "Stopped"
+        var id: Self { self }
+    }
+
     @State private var presentation: Presentation = .list
+    @State private var filter: Filter = .all
     @State private var selection = Set<Container.ID>()
     @State private var search = ""
+    @State private var detailContainer: Container?
+    @State private var confirmingBulkDelete = false
+
+    private var filtered: [Container] {
+        switch filter {
+        case .all: model.containers
+        case .running: model.running
+        case .stopped: model.stopped
+        }
+    }
 
     private var visible: [Container] {
-        guard !search.isEmpty else { return model.containers }
+        guard !search.isEmpty else { return filtered }
         let needle = search.lowercased()
-        return model.containers.filter {
+        return filtered.filter {
             $0.id.lowercased().contains(needle) || $0.status.state.lowercased().contains(needle)
         }
     }
+
+    private var visibleIDs: Set<Container.ID> { Set(visible.map(\.id)) }
+
+    /// What a bulk action may actually touch: the selection **intersected with what is on
+    /// screen**.
+    ///
+    /// `selection` outlives the rows that produced it. Select three containers under
+    /// `All`, switch the filter to `Running` so two of them are hidden, and the raw
+    /// selection still holds all three — so a bulk Delete would destroy two containers the
+    /// user cannot see and was never shown in the confirmation count. Searching hides rows
+    /// the same way, and a deleted container leaves its id behind entirely. Every bulk
+    /// path therefore acts on this, never on `selection`.
+    private var actionable: Set<Container.ID> { selection.intersection(visibleIDs) }
+
+    /// True while any actionable id has an action in flight — disables the bulk bar so a
+    /// second click can't fire a duplicate operation on top of the first.
+    private var selectionBusy: Bool { !actionable.isDisjoint(with: model.busy) }
 
     /// Start/stop/restart/delete for one container. Attached to both the table rows and
     /// the cards so the two views offer the same capabilities — a toggle that changes what
@@ -40,6 +76,8 @@ struct ContainersView: View {
     @ViewBuilder
     private func actions(for container: Container) -> some View {
         let busy = model.busy.contains(container.id)
+        Button("Details…") { detailContainer = container }
+        Divider()
         if AppModel.isRunning(container) {
             Button("Stop") { Task { await model.perform(.stop, on: container) } }.disabled(busy)
             Button("Restart") { Task { await model.perform(.restart, on: container) } }.disabled(busy)
@@ -56,6 +94,7 @@ struct ContainersView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
+            bulkActionBar
             Divider()
             content
         }
@@ -65,6 +104,29 @@ struct ContainersView: View {
             Button("OK") { model.clearActionError() }
         } message: {
             Text(model.actionError ?? "")
+        }
+        .sheet(item: $detailContainer) { container in
+            ContainerDetailView(model: model, container: container)
+        }
+        // `actionable` already stops a hidden row from being *acted on*; this stops one
+        // from being *counted*. One observation covers all three ways the visible set
+        // moves out from under the selection — filter change, search change, and the data
+        // itself changing (a bulk delete leaves the dead ids behind otherwise, so the bar
+        // would linger claiming rows that no longer exist).
+        .onChange(of: visibleIDs) { _, ids in
+            selection.formIntersection(ids)
+        }
+        .confirmationDialog(
+            "Delete \(actionable.count) container\(actionable.count == 1 ? "" : "s")?",
+            isPresented: $confirmingBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(actionable.count) Container\(actionable.count == 1 ? "" : "s")", role: .destructive) {
+                Task { await model.performBulk(.delete, on: actionable) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This cannot be undone.")
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -85,6 +147,12 @@ struct ContainersView: View {
             .pickerStyle(.segmented)
             .fixedSize()
 
+            Picker("Filter", selection: $filter) {
+                ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+
             TextField("Search containers…", text: $search)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 280)
@@ -98,6 +166,31 @@ struct ContainersView: View {
             }
         }
         .padding(12)
+    }
+
+    /// Shown only while rows are multi-selected — the hook the `selection` state existed
+    /// for but went unused before this.
+    @ViewBuilder
+    private var bulkActionBar: some View {
+        if !actionable.isEmpty {
+            HStack(spacing: 12) {
+                Text("\(actionable.count) selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Start") { Task { await model.performBulk(.start, on: actionable) } }
+                    .disabled(selectionBusy)
+                Button("Stop") { Task { await model.performBulk(.stop, on: actionable) } }
+                    .disabled(selectionBusy)
+                Button("Restart") { Task { await model.performBulk(.restart, on: actionable) } }
+                    .disabled(selectionBusy)
+                Button("Delete", role: .destructive) { confirmingBulkDelete = true }
+                    .disabled(selectionBusy)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.3))
+        }
     }
 
     @ViewBuilder
@@ -131,30 +224,54 @@ struct ContainersView: View {
         }
     }
 
+    /// A macOS `Table` fills all available vertical space with alternating-background
+    /// placeholder rows past the last real one, which looks broken with just a handful of
+    /// containers. Cap the table to its content height for short lists and let a plain
+    /// `Spacer` take the rest; once the list is long enough to need scrolling, let the
+    /// table fill normally.
     private var table: some View {
-        Table(visible, selection: $selection) {
-            TableColumn("State") { c in
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(AppModel.isRunning(c) ? Color.green : Color.secondary)
-                        .frame(width: 7, height: 7)
-                    Text(c.status.state.capitalized)
+        VStack(spacing: 0) {
+            Table(visible, selection: $selection) {
+                TableColumn("State") { c in
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(AppModel.isRunning(c) ? Color.green : Color.secondary)
+                            .frame(width: 7, height: 7)
+                        Text(c.status.state.capitalized)
+                    }
                 }
-            }
-            .width(min: 90, ideal: 100)
+                .width(min: 90, ideal: 100)
 
-            TableColumn("Name") { c in
-                Text(c.id)
-                    .lineLimit(1)
-                    .contextMenu { actions(for: c) }
+                TableColumn("Name") { c in
+                    Text(c.id)
+                        .lineLimit(1)
+                        .contextMenu { actions(for: c) }
+                }
+                TableColumn("Image") { c in
+                    Text(c.configuration.image.reference).lineLimit(1).truncationMode(.middle)
+                }
+                TableColumn("Created") { c in
+                    Text(Self.createdLabel(c.configuration.creationDate))
+                        .foregroundStyle(.secondary)
+                }
+                .width(min: 90, ideal: 130)
+                TableColumn("IP / Network") { c in
+                    Text(Self.ipNetworkLabel(c))
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                }
+                .width(min: 100, ideal: 150)
+                TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
+                    .width(min: 90, ideal: 110)
             }
-            TableColumn("Image") { c in
-                Text(c.configuration.image.reference).lineLimit(1).truncationMode(.middle)
-            }
-            TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
-                .width(min: 90, ideal: 110)
+            .frame(maxHeight: isShortList ? shortListHeight : .infinity)
+
+            if isShortList { Spacer(minLength: 0) }
         }
     }
+
+    private var isShortList: Bool { visible.count < 12 }
+    private var shortListHeight: CGFloat { CGFloat(visible.count) * 28 + 32 }
 
     private var cards: some View {
         ScrollView {
@@ -178,9 +295,30 @@ struct ContainersView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
                     .contextMenu { actions(for: container) }
+                    .onTapGesture(count: 2) { detailContainer = container }
                 }
             }
             .padding(12)
+        }
+    }
+
+    /// `creationDate` is an ISO-8601 string from `container`, not a `Date` — parse it here
+    /// for display only; `FlotillaCore` keeps the raw string.
+    private static func createdLabel(_ iso: String?) -> String {
+        guard let iso else { return "—" }
+        let strict = ISO8601DateFormatter()
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = strict.date(from: iso) ?? fractional.date(from: iso) else { return "—" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private static func ipNetworkLabel(_ c: Container) -> String {
+        switch (c.ipv4, c.status.networks?.first?.network) {
+        case let (ip?, network?): "\(ip) (\(network))"
+        case let (ip?, nil): ip
+        case let (nil, network?): network
+        case (nil, nil): "—"
         }
     }
 }
