@@ -1,0 +1,273 @@
+[
+  {
+    "configuration": {
+      "capAdd": [],
+      "capDrop": [],
+      "creationDate": "2026-07-28T15:33:54Z",
+      "dns": {
+        "nameservers": [],
+        "options": [],
+        "searchDomains": []
+      },
+      "id": "flotilla-portprobe",
+      "image": {
+        "descriptor": {
+          "digest": "sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
+          "mediaType": "application/vnd.oci.image.index.v1+json",
+          "size": 9218
+        },
+        "reference": "docker.io/library/alpine:latest"
+      },
+      "initProcess": {
+        "arguments": [
+          "120"
+        ],
+        "environment": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "executable": "sleep",
+        "rlimits": [],
+        "supplementalGroups": [],
+        "terminal": false,
+        "user": {
+          "id": {
+            "gid": 0,
+            "uid": 0
+          }
+        },
+        "workingDirectory": "/"
+      },
+      "labels": {},
+      "mounts": [],
+      "networks": [
+        {
+          "network": "default",
+          "options": {
+            "hostname": "flotilla-portprobe",
+            "mtu": 1280
+          }
+        }
+      ],
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux"
+      },
+      "publishedPorts": [
+        {
+          "containerPort": 80,
+          "count": 1,
+          "hostAddress": "0.0.0.0",
+          "hostPort": 18080,
+          "proto": "tcp"
+        }
+      ],
+      "publishedSockets": [],
+      "readOnly": false,
+      "resources": {
+        "cpuOverhead": 1,
+        "cpus": 4,
+        "memoryInBytes": 1073741824
+      },
+      "rosetta": false,
+      "runtimeHandler": "container-runtime-linux",
+      "ssh": false,
+      "sysctls": {},
+      "useInit": false,
+      "virtualization": false
+    },
+    "id": "flotilla-portprobe",
+    "status": {
+      "networks": [
+        {
+          "hostname": "flotilla-portprobe",
+          "ipv4Address": "192.168.64.3/24",
+          "ipv4Gateway": "192.168.64.1",
+          "ipv6Address": "fd6d:1605:d4b8:ad0f:f07c:d9ff:fe9a:5b05/64",
+          "macAddress": "f2:7c:d9:9a:5b:05",
+          "mtu": 1280,
+          "network": "default"
+        }
+      ],
+      "startedDate": "2026-07-28T15:33:55Z",
+      "state": "running"
+    }
+  },
+  {
+    "configuration": {
+      "capAdd": [],
+      "capDrop": [],
+      "creationDate": "2026-07-28T15:33:54Z",
+      "dns": {
+        "nameservers": [],
+        "options": [],
+        "searchDomains": []
+      },
+      "id": "range-demo",
+      "image": {
+        "descriptor": {
+          "digest": "sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
+          "mediaType": "application/vnd.oci.image.index.v1+json",
+          "size": 9218
+        },
+        "reference": "docker.io/library/alpine:latest"
+      },
+      "initProcess": {
+        "arguments": [
+          "120"
+        ],
+        "environment": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "executable": "sleep",
+        "rlimits": [],
+        "supplementalGroups": [],
+        "terminal": false,
+        "user": {
+          "id": {
+            "gid": 0,
+            "uid": 0
+          }
+        },
+        "workingDirectory": "/"
+      },
+      "labels": {},
+      "mounts": [],
+      "networks": [
+        {
+          "network": "default",
+          "options": {
+            "hostname": "flotilla-portprobe",
+            "mtu": 1280
+          }
+        }
+      ],
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux"
+      },
+      "publishedPorts": [
+        {
+          "containerPort": 7000,
+          "count": 3,
+          "hostAddress": "127.0.0.1",
+          "hostPort": 7000,
+          "proto": "udp"
+        }
+      ],
+      "publishedSockets": [],
+      "readOnly": false,
+      "resources": {
+        "cpuOverhead": 1,
+        "cpus": 4,
+        "memoryInBytes": 1073741824
+      },
+      "rosetta": false,
+      "runtimeHandler": "container-runtime-linux",
+      "ssh": false,
+      "sysctls": {},
+      "useInit": false,
+      "virtualization": false
+    },
+    "id": "range-demo",
+    "status": {
+      "networks": [
+        {
+          "hostname": "flotilla-portprobe",
+          "ipv4Address": "192.168.64.3/24",
+          "ipv4Gateway": "192.168.64.1",
+          "ipv6Address": "fd6d:1605:d4b8:ad0f:f07c:d9ff:fe9a:5b05/64",
+          "macAddress": "f2:7c:d9:9a:5b:05",
+          "mtu": 1280,
+          "network": "default"
+        }
+      ],
+      "startedDate": "2026-07-28T15:33:55Z",
+      "state": "running"
+    }
+  },
+  {
+    "configuration": {
+      "capAdd": [],
+      "capDrop": [],
+      "creationDate": "2026-07-28T15:33:54Z",
+      "dns": {
+        "nameservers": [],
+        "options": [],
+        "searchDomains": []
+      },
+      "id": "no-ports",
+      "image": {
+        "descriptor": {
+          "digest": "sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
+          "mediaType": "application/vnd.oci.image.index.v1+json",
+          "size": 9218
+        },
+        "reference": "docker.io/library/alpine:latest"
+      },
+      "initProcess": {
+        "arguments": [
+          "120"
+        ],
+        "environment": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "executable": "sleep",
+        "rlimits": [],
+        "supplementalGroups": [],
+        "terminal": false,
+        "user": {
+          "id": {
+            "gid": 0,
+            "uid": 0
+          }
+        },
+        "workingDirectory": "/"
+      },
+      "labels": {},
+      "mounts": [],
+      "networks": [
+        {
+          "network": "default",
+          "options": {
+            "hostname": "flotilla-portprobe",
+            "mtu": 1280
+          }
+        }
+      ],
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux"
+      },
+      "publishedPorts": [],
+      "publishedSockets": [],
+      "readOnly": false,
+      "resources": {
+        "cpuOverhead": 1,
+        "cpus": 4,
+        "memoryInBytes": 1073741824
+      },
+      "rosetta": false,
+      "runtimeHandler": "container-runtime-linux",
+      "ssh": false,
+      "sysctls": {},
+      "useInit": false,
+      "virtualization": false
+    },
+    "id": "no-ports",
+    "status": {
+      "networks": [
+        {
+          "hostname": "flotilla-portprobe",
+          "ipv4Address": "192.168.64.3/24",
+          "ipv4Gateway": "192.168.64.1",
+          "ipv6Address": "fd6d:1605:d4b8:ad0f:f07c:d9ff:fe9a:5b05/64",
+          "macAddress": "f2:7c:d9:9a:5b:05",
+          "mtu": 1280,
+          "network": "default"
+        }
+      ],
+      "startedDate": "2026-07-28T15:33:55Z",
+      "state": "running"
+    }
+  }
+]

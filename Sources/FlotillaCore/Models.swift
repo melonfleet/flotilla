@@ -31,6 +31,9 @@ public struct Container: Codable, Identifiable, Sendable {
         public var image: ImageRef
         public var platform: Platform?
         public var resources: Resources?
+        /// Host→container port mappings from `--publish`. Absent on older output and
+        /// `[]` for a container that publishes nothing, so both decode to empty.
+        public var publishedPorts: [PublishedPort]?
 
         public struct ImageRef: Codable, Sendable {
             public var reference: String
@@ -39,6 +42,41 @@ public struct Container: Codable, Identifiable, Sendable {
         public struct Resources: Codable, Sendable {
             public var cpus: Int?
             public var memoryInBytes: Int64?
+        }
+
+        /// One `--publish` mapping. Captured from real `container ls --format json`
+        /// output — note the key is `proto`, not `protocol`, and `hostAddress` is
+        /// `0.0.0.0` rather than absent when unbound.
+        public struct PublishedPort: Codable, Sendable, Hashable {
+            public var containerPort: Int
+            public var hostPort: Int
+            public var hostAddress: String?
+            public var proto: String?
+            /// `container` publishes a contiguous range as one entry with a count,
+            /// rather than repeating the mapping — so a `count` above 1 means
+            /// `hostPort ..< hostPort + count`, and rendering only `hostPort` would
+            /// under-report what is exposed.
+            public var count: Int?
+
+            public init(
+                containerPort: Int, hostPort: Int, hostAddress: String? = nil,
+                proto: String? = nil, count: Int? = nil
+            ) {
+                self.containerPort = containerPort
+                self.hostPort = hostPort
+                self.hostAddress = hostAddress
+                self.proto = proto
+                self.count = count
+            }
+
+            /// `18080:80/tcp`, or `18080-18082:80-82/tcp` for a published range.
+            public var displayText: String {
+                let span = max(count ?? 1, 1)
+                let hosts = span > 1 ? "\(hostPort)-\(hostPort + span - 1)" : "\(hostPort)"
+                let guests = span > 1 ? "\(containerPort)-\(containerPort + span - 1)" : "\(containerPort)"
+                let suffix = proto.map { "/\($0)" } ?? ""
+                return "\(hosts):\(guests)\(suffix)"
+            }
         }
     }
 
@@ -59,6 +97,17 @@ public struct Container: Codable, Identifiable, Sendable {
     public var imageReference: String { configuration.image.reference }
     public var isRunning: Bool { status.state.caseInsensitiveCompare("running") == .orderedSame }
     public var ipv4: String? { status.networks?.first?.ipv4Address }
+
+    public var publishedPorts: [Configuration.PublishedPort] { configuration.publishedPorts ?? [] }
+
+    /// Comma-separated `18080:80/tcp` mappings, or nil when nothing is published — so a
+    /// table column can show an unambiguous em dash rather than an empty cell that reads
+    /// as missing data.
+    public var portSummary: String? {
+        let ports = publishedPorts
+        guard !ports.isEmpty else { return nil }
+        return ports.map(\.displayText).joined(separator: ", ")
+    }
 }
 
 // MARK: - Image  (`container image list --format json`, `container image inspect`)

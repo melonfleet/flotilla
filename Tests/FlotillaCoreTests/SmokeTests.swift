@@ -52,3 +52,50 @@ private func fixture(_ name: String) throws -> Data {
     #expect(CommandResult(stdout: "", stderr: "", exitCode: 0).ok)
     #expect(!CommandResult(stdout: "", stderr: "boom", exitCode: 1).ok)
 }
+
+// MARK: - Published ports
+//
+// `publishedPorts` was present in `container ls --format json` from the start and the
+// model simply dropped it, so the containers table had no ports column and the build
+// contract asked for one that could not be written. The pre-existing `containers.json`
+// fixture happens to publish nothing (`publishedPorts: []`), which is exactly why the
+// gap went unnoticed — an always-empty field decodes identically whether you model it
+// or not. `containers-ports.json` is captured from a real container started with
+// `-p 18080:80`, plus a range and a no-ports case.
+
+@Test func decodePublishedPorts() throws {
+    let containers = try JSONDecoder.flotilla.decode([Container].self, from: fixture("containers-ports"))
+    #expect(containers.count == 3)
+
+    let published = try #require(containers.first { $0.id == "flotilla-portprobe" })
+    let port = try #require(published.publishedPorts.first)
+    #expect(port.hostPort == 18080)
+    #expect(port.containerPort == 80)
+    #expect(port.proto == "tcp")
+    #expect(port.hostAddress == "0.0.0.0")
+    #expect(published.portSummary == "18080:80/tcp")
+}
+
+@Test func aPublishedRangeReportsEveryPortItExposes() throws {
+    let containers = try JSONDecoder.flotilla.decode([Container].self, from: fixture("containers-ports"))
+    let ranged = try #require(containers.first { $0.id == "range-demo" })
+
+    // `container` collapses a contiguous range into ONE entry with a count rather than
+    // repeating it. Rendering only `hostPort` would tell the user 7000 is exposed while
+    // 7001 and 7002 quietly are too — under-reporting an exposed port is a security
+    // statement, not a formatting nicety.
+    #expect(ranged.portSummary == "7000-7002:7000-7002/udp")
+}
+
+@Test func noPublishedPortsIsDistinctFromPortsWeFailedToRead() throws {
+    let containers = try JSONDecoder.flotilla.decode([Container].self, from: fixture("containers-ports"))
+    let bare = try #require(containers.first { $0.id == "no-ports" })
+    #expect(bare.publishedPorts.isEmpty)
+    // nil, not "" — the column shows a deliberate em dash rather than a blank cell that
+    // reads as "we don't know".
+    #expect(bare.portSummary == nil)
+
+    // And a container whose JSON omits the key entirely must behave the same way, not trap.
+    let legacy = try JSONDecoder.flotilla.decode([Container].self, from: fixture("containers"))
+    #expect(try #require(legacy.first).portSummary == nil)
+}

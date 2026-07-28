@@ -382,7 +382,7 @@ public enum Allowlist {
         try screen(args, limits: limits)
 
         let spec = try resolve(args)
-        var rest = Array(args.dropFirst(spec.path.count))
+        let rest = Array(args.dropFirst(spec.path.count))
 
         // Parsed pieces, kept in encounter order so the canonical argv is stable.
         var flagTokens: [String] = []

@@ -255,6 +255,16 @@ struct ContainersView: View {
                         .foregroundStyle(.secondary)
                 }
                 .width(min: 90, ideal: 130)
+                TableColumn("Ports") { c in
+                    // An em dash, not a blank cell: "publishes nothing" and "we couldn't
+                    // read this" must not look the same.
+                    Text(c.portSummary ?? "—")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(c.portSummary == nil ? .tertiary : .secondary)
+                        .help(c.portSummary ?? "No published ports")
+                }
+                .width(min: 90, ideal: 130)
                 TableColumn("IP / Network") { c in
                     Text(Self.ipNetworkLabel(c))
                         .lineLimit(1)

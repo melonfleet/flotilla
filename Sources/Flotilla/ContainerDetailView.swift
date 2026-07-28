@@ -64,6 +64,20 @@ struct ContainerDetailView: View {
                 LabeledContent("IP", value: container.ipv4 ?? "—")
                 LabeledContent("Network", value: container.status.networks?.first?.network ?? "—")
                 LabeledContent("Created", value: Self.createdLabel(container.configuration.creationDate))
+                // One row per mapping rather than the table's comma-joined summary — the
+                // detail pane has the space, and a container publishing several ports is
+                // exactly where a single truncated line is least useful.
+                if container.publishedPorts.isEmpty {
+                    LabeledContent("Ports", value: "None published")
+                } else {
+                    LabeledContent("Ports") {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            ForEach(container.publishedPorts, id: \.self) { port in
+                                Text(port.displayText).monospacedDigit()
+                            }
+                        }
+                    }
+                }
             }
         }
         .formStyle(.grouped)
