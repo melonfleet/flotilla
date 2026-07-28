@@ -1,0 +1,34 @@
+import Foundation
+
+/// The sidebar's content, per the Phase 1 UI navigation contract.
+///
+/// Deliberately named `Section` per the contract even though `SwiftUI` also exports a
+/// `Section` view builder — a top-level type in this module shadows the imported one,
+/// so any file that needs the SwiftUI grouping type inside a `Form`/`List` must spell it
+/// `SwiftUI.Section` explicitly. the CLI owner codes against this enum as-is; do not edit it here
+/// without updating that agreement.
+enum Section: String, CaseIterable, Identifiable, Hashable {
+    case containers, images, volumes, networks, settings
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .containers: "Containers"
+        case .images: "Images"
+        case .volumes: "Volumes"
+        case .networks: "Networks"
+        case .settings: "Settings"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .containers: "shippingbox"
+        case .images: "square.stack.3d.down.right"
+        case .volumes: "cylinder.split.1x2"
+        case .networks: "network"
+        case .settings: "gearshape"
+        }
+    }
+}

@@ -33,8 +33,14 @@ final class AppModel {
 
     private let cli: ContainerCLI
 
-    init(cli: ContainerCLI = ContainerCLI(host: LocalHost())) {
+    /// Shared with the Settings screen. Unmanaged by default, matching the personal,
+    /// unmanaged-Mac case (`DECISIONS.md` Q4) — a managed source is wired in once the
+    /// app reads `/Library/Managed Preferences` for real.
+    let settingsStore: SettingsStore
+
+    init(cli: ContainerCLI = ContainerCLI(host: LocalHost()), settingsStore: SettingsStore = SettingsStore()) {
         self.cli = cli
+        self.settingsStore = settingsStore
     }
 
     /// Result of the last preflight, so the UI can explain *why* nothing is listed.
@@ -46,13 +52,21 @@ final class AppModel {
     func runPreflight() async {
         let result = await Task.detached { [cli] in Preflight(cli: cli).run() }.value
         preflight = result
+        if let reason = Self.unavailableReason(for: result) {
+            state = .unavailable(reason)
+        }
+    }
+
+    /// Shared with `refreshVolumes`/`refreshNetworks`: they fail the same runtime check
+    /// containers do, and repeating the diagnosis text in three places would let them drift.
+    private static func unavailableReason(for result: PreflightResult) -> String? {
         switch result {
         case .ok:
-            break
+            return nil
         case .missing:
-            state = .unavailable("Apple's `container` CLI isn't installed.")
+            return "Apple's `container` CLI isn't installed."
         case .tooOld(let found, let required):
-            state = .unavailable("`container` \(found) is too old — \(required) or newer is required.")
+            return "`container` \(found) is too old — \(required) or newer is required."
         case .unusable(let reason):
             // Name the fix, not just the fault. The commonest cause by far is the API
             // service simply not being started, and the user should not have to go
@@ -62,7 +76,7 @@ final class AppModel {
                 || reason.lowercased().contains("connection")
                 ? "\n\nStart it with:  container system start"
                 : ""
-            state = .unavailable("`container` is installed but not usable — \(reason)\(remedy)")
+            return "`container` is installed but not usable — \(reason)\(remedy)"
         }
     }
 
@@ -99,6 +113,88 @@ final class AppModel {
         } catch {
             state = .failed(String(describing: error))
         }
+    }
+
+    // MARK: Volumes
+
+    private(set) var volumesState: LoadState = .idle
+    private(set) var volumes: [ContainerVolume] = []
+
+    func refreshVolumes() async {
+        guard runtimeUsable else {
+            volumesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "`container` is unavailable.")
+            return
+        }
+        volumesState = .loading
+        do {
+            let fetched = try await Task.detached { [cli] in try cli.listVolumes() }.value
+            volumes = fetched
+            volumesState = .loaded
+        } catch {
+            volumesState = .failed(String(describing: error))
+        }
+    }
+
+    func createVolume(_ name: String) async {
+        do {
+            try await Task.detached { [cli] in try cli.createVolume(name) }.value
+        } catch {
+            actionError = "Create volume failed for \(name): \(error)"
+        }
+        await refreshVolumes()
+    }
+
+    func removeVolume(_ volume: ContainerVolume) async {
+        guard !busy.contains(volume.id) else { return }
+        busy.insert(volume.id)
+        defer { busy.remove(volume.id) }
+        do {
+            try await Task.detached { [cli] in try cli.removeVolume(volume.name) }.value
+        } catch {
+            actionError = "Delete volume failed for \(volume.name): \(error)"
+        }
+        await refreshVolumes()
+    }
+
+    // MARK: Networks
+
+    private(set) var networksState: LoadState = .idle
+    private(set) var networks: [ContainerNetwork] = []
+
+    func refreshNetworks() async {
+        guard runtimeUsable else {
+            networksState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "`container` is unavailable.")
+            return
+        }
+        networksState = .loading
+        do {
+            let fetched = try await Task.detached { [cli] in try cli.listNetworks() }.value
+            networks = fetched
+            networksState = .loaded
+        } catch {
+            networksState = .failed(String(describing: error))
+        }
+    }
+
+    func createNetwork(_ name: String) async {
+        do {
+            try await Task.detached { [cli] in try cli.createNetwork(name) }.value
+        } catch {
+            actionError = "Create network failed for \(name): \(error)"
+        }
+        await refreshNetworks()
+    }
+
+    func removeNetwork(_ network: ContainerNetwork) async {
+        guard !busy.contains(network.id) else { return }
+        busy.insert(network.id)
+        defer { busy.remove(network.id) }
+        do {
+            try await Task.detached { [cli] in try cli.removeNetwork(network.id) }.value
+        } catch {
+            actionError = "Delete network failed for \(network.id): \(error)"
+        }
+        await refreshNetworks()
     }
 
     /// `container` reports state as a free-form string. Compare case-insensitively and
