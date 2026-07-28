@@ -248,13 +248,19 @@ struct ContainersView: View {
                         .contextMenu { actions(for: c) }
                 }
                 TableColumn("Image") { c in
-                    Text(c.configuration.image.reference).lineLimit(1).truncationMode(.middle)
+                    Text(Self.imageLabel(c.configuration.image.reference))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(c.configuration.image.reference)
                 }
+                .width(min: 110, ideal: 190)
                 TableColumn("Created") { c in
                     Text(Self.createdLabel(c.configuration.creationDate))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(Self.createdTooltip(c.configuration.creationDate))
                 }
-                .width(min: 90, ideal: 130)
+                .width(min: 90, ideal: 120)
                 TableColumn("Ports") { c in
                     // An em dash, not a blank cell: "publishes nothing" and "we couldn't
                     // read this" must not look the same.
@@ -294,11 +300,16 @@ struct ContainersView: View {
                                 .frame(width: 8, height: 8)
                             Text(container.id).font(.headline).lineLimit(1)
                         }
-                        Text(container.configuration.image.reference)
+                        Text(Self.imageLabel(container.configuration.image.reference))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            .truncationMode(.middle)
+                            .truncationMode(.tail)
+                            .help(container.configuration.image.reference)
+                        // Cards have room for the ports the table has to compress.
+                        if let ports = container.portSummary {
+                            Text(ports).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        }
                         Text(model.hostLabel).font(.caption2).foregroundStyle(.tertiary)
                     }
                     .padding(12)
@@ -320,7 +331,29 @@ struct ContainersView: View {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         guard let date = strict.date(from: iso) ?? fractional.date(from: iso) else { return "—" }
+        // Relative, not absolute. "Jul 27, 2026 at 5:56 PM" does not fit the column and
+        // truncated to "Jul 27, 2026 at 5:56 P…" it wastes every character on parts that
+        // never vary. Age is the question you actually ask of a container; the exact
+        // timestamp stays available on hover.
+        return date.formatted(.relative(presentation: .named))
+    }
+
+    /// The absolute timestamp, for the row's tooltip.
+    private static func createdTooltip(_ iso: String?) -> String {
+        guard let iso else { return "Creation date unknown" }
+        let strict = ISO8601DateFormatter()
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = strict.date(from: iso) ?? fractional.date(from: iso) else {
+            return "Creation date unreadable (\(iso))"
+        }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    /// Shortening lives in `FlotillaCore` (`ContainerImage.shortReference`) so its awkward
+    /// cases — digests, registry ports — are covered by tests this target cannot have.
+    private static func imageLabel(_ reference: String) -> String {
+        ContainerImage.shortReference(reference)
     }
 
     private static func ipNetworkLabel(_ c: Container) -> String {

@@ -99,3 +99,35 @@ private func fixture(_ name: String) throws -> Data {
     let legacy = try JSONDecoder.flotilla.decode([Container].self, from: fixture("containers"))
     #expect(try #require(legacy.first).portSummary == nil)
 }
+
+// MARK: - Reference shortening
+//
+// The containers table middle-truncated the full image reference, so every row read
+// "docker.i…ne:latest" — identical for all of them and saying nothing about what was
+// running. Shortening happens in the view, but the awkward cases are worth pinning:
+// digest references (64 hex chars would swallow the whole cell) and bare names.
+
+@Test func shortReferenceKeepsThePartThatDistinguishesOneImageFromAnother() throws {
+    #expect(ContainerImage.shortReference("docker.io/library/alpine:latest") == "alpine:latest")
+    #expect(ContainerImage.shortReference("ghcr.io/melonfleet/inkwarden:1.4.2") == "inkwarden:1.4.2")
+    // No registry or namespace at all.
+    #expect(ContainerImage.shortReference("alpine") == "alpine")
+    #expect(ContainerImage.shortReference("alpine:3.24") == "alpine:3.24")
+}
+
+@Test func shortReferenceAbbreviatesADigestInsteadOfBeingSwallowedByIt() throws {
+    let digest = "sha256:" + String(repeating: "a", count: 64)
+    let short = ContainerImage.shortReference("ghcr.io/melonfleet/inkwarden@\(digest)")
+
+    // Recognisable, but not 71 characters of it.
+    #expect(short.hasPrefix("inkwarden@sha256:"))
+    #expect(short.count < 32)
+    // A registry port must not be mistaken for a tag, and the digest must not be dropped
+    // silently — showing a bare name for a digest-pinned image would hide the pinning.
+    #expect(short.contains("sha256:"))
+}
+
+@Test func shortReferenceDoesNotMistakeARegistryPortForATag() throws {
+    // `host:5000/name:tag` — the FIRST colon belongs to the port, not the tag.
+    #expect(ContainerImage.shortReference("registry.example:5000/team/tool:2.1") == "tool:2.1")
+}

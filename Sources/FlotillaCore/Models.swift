@@ -130,6 +130,42 @@ public struct ContainerImage: Codable, Identifiable, Sendable {
 
     public var reference: String { configuration.name }
 
+    /// `docker.io/library/alpine:latest` → `alpine:latest`.
+    ///
+    /// For narrow table cells. Middle-truncating a full reference produced
+    /// `docker.i…ne:latest` — the same string for every row, carrying no information about
+    /// what was actually running. The last path component is what distinguishes one image
+    /// from another; registry and namespace are near-identical across a fleet. Callers
+    /// should keep the full reference available on hover.
+    ///
+    /// Lives here rather than in the view because the awkward cases are real: a digest
+    /// reference would otherwise contribute 64 hex characters, and `host:5000/name` must
+    /// not have its registry port mistaken for a tag. That is worth a test, and the
+    /// SwiftUI target has none.
+    public static func shortReference(_ reference: String) -> String {
+        // Split the digest off first, or the last path component swallows all of it.
+        let path: String
+        let digest: String?
+        if let at = reference.firstIndex(of: "@") {
+            path = String(reference[reference.startIndex..<at])
+            digest = String(reference[reference.index(after: at)...])
+        } else {
+            path = reference
+            digest = nil
+        }
+
+        // Splitting on "/" is what keeps a registry port out of the way: in
+        // `registry.example:5000/team/tool:2.1` the port is in an earlier component, so the
+        // last component's colon is unambiguously the tag.
+        let short = path.split(separator: "/").last.map(String.init) ?? path
+
+        guard let digest else { return short }
+        // Enough of the digest to recognise, short enough to read — and never dropped
+        // entirely, because hiding it would hide that the image is pinned at all.
+        let abbreviated = digest.count > 19 ? String(digest.prefix(19)) + "…" : digest
+        return "\(short)@\(abbreviated)"
+    }
+
     /// Size of the variant matching the host arch (arm64), else the largest variant.
     public var displaySize: Int64? {
         let arm = variants?.first { $0.platform?.architecture == "arm64" }?.size
