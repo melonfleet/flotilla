@@ -12,13 +12,13 @@ import FlotillaCore
 /// carrying it from the start.
 ///
 /// Moved out of `MainWindowView` unchanged when the window became a `NavigationSplitView`
-/// (Phase 1 UI contract), then extended here with ui.filter tabs, a bulk-action bar, the
+/// (Phase 1 UI contract), then extended here with state filtering, a bulk-action bar, the
 /// Created/IP columns, and the detail sheet hook.
 struct ContainersView: View {
     let model: AppModel
     /// Held by `MainWindowView` so it outlives this view — see `ContainersUIState`.
     /// Without it, navigating to another section and back reset the user's columns, sort,
-    /// ui.filter and ui.search.
+    /// filter and search.
     @Bindable var ui: ContainersUIState
 
     enum Presentation: String, CaseIterable, Identifiable {
@@ -39,11 +39,27 @@ struct ContainersView: View {
         }
     }
 
-    enum Filter: String, CaseIterable, Identifiable {
-        case all = "All"
+    /// Which container states are shown. A **set**, not a one-of-three choice, because the
+    /// control is now a checkbox menu like Columns — and checkboxes that behave like radio
+    /// buttons are a lie about what they do.
+    ///
+    /// `All` therefore stops being an option and becomes "both ticked", which is also a
+    /// truer model: the two states are independent facts about the fleet, not three modes.
+    /// Unticking both is allowed and shows the empty state with a Clear Filter action rather
+    /// than being blocked — a checkbox you cannot untick is the same lie in reverse.
+    enum StateFilter: String, CaseIterable, Identifiable, Hashable {
         case running = "Running"
         case stopped = "Stopped"
         var id: Self { self }
+
+        var systemImage: String {
+            switch self {
+            case .running: "play.circle"
+            case .stopped: "stop.circle"
+            }
+        }
+
+        static let all: Set<StateFilter> = [.running, .stopped]
     }
 
     @State private var selection = Set<Container.ID>()
@@ -57,6 +73,7 @@ struct ContainersView: View {
 
 
     @State private var showingColumns = false
+    @State private var showingFilter = false
 
     /// The columns the Columns popover offers, in table order.
     ///
@@ -116,6 +133,55 @@ struct ContainersView: View {
         openWindow(id: "container-detail", value: id)
     }
 
+    /// Same shape as `columnsButton`, deliberately: both answer "what am I looking at",
+    /// both are icon-and-popover, both use checkboxes. The icon fills when a filter is
+    /// active, so a hidden state is visible from the toolbar rather than being something you
+    /// discover by wondering where your containers went.
+    private var filterButton: some View {
+        Button {
+            showingFilter.toggle()
+        } label: {
+            Image(systemName: isStateFiltered
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : "line.3.horizontal.decrease.circle")
+        }
+        .help(isStateFiltered ? "Filtering by state" : "Filter by state")
+        .accessibilityLabel("Filter by state")
+        .popover(isPresented: $showingFilter, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(StateFilter.allCases) { state in
+                    Toggle(isOn: stateBinding(state)) {
+                        Label(state.rawValue, systemImage: state.systemImage)
+                    }
+                    .toggleStyle(.checkbox)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 2)
+                }
+                Divider().padding(.vertical, 6)
+                HStack {
+                    Spacer()
+                    Button("Show All") { ui.visibleStates = StateFilter.all }
+                        .disabled(!isStateFiltered)
+                }
+                .controlSize(.small)
+                .padding(.horizontal, 12)
+            }
+            .padding(.vertical, 10)
+            .frame(width: 190)
+        }
+    }
+
+    private var isStateFiltered: Bool { ui.visibleStates != StateFilter.all }
+
+    private func stateBinding(_ state: StateFilter) -> Binding<Bool> {
+        Binding(
+            get: { ui.visibleStates.contains(state) },
+            set: { on in
+                if on { ui.visibleStates.insert(state) } else { ui.visibleStates.remove(state) }
+            }
+        )
+    }
+
     private func binding(for id: String) -> Binding<Bool> {
         Binding(
             get: { ui.columnCustomization[visibility: id] != .hidden },
@@ -133,10 +199,8 @@ struct ContainersView: View {
     }
 
     private var filtered: [Container] {
-        switch ui.filter {
-        case .all: model.containers
-        case .running: model.running
-        case .stopped: model.stopped
+        model.containers.filter { container in
+            ui.visibleStates.contains(AppModel.isRunning(container) ? .running : .stopped)
         }
     }
 
@@ -156,10 +220,10 @@ struct ContainersView: View {
     /// that never do.
     private var sorted: [Container] { visible.sorted(using: ui.sortOrder) }
 
-    /// Whether anything the user chose is hiding rows. Both the ui.search field and the ui.filter
+    /// Whether anything the user chose is hiding rows. Both the search field and the state
     /// tabs can empty the table, and an empty state that only mentions ui.search would be wrong
     /// half the time.
-    private var isFiltered: Bool { !ui.search.isEmpty || ui.filter != .all }
+    private var isFiltered: Bool { !ui.search.isEmpty || ui.visibleStates != StateFilter.all }
 
     private var visibleIDs: Set<Container.ID> { Set(visible.map(\.id)) }
 
@@ -167,7 +231,7 @@ struct ContainersView: View {
     /// screen**.
     ///
     /// `selection` outlives the rows that produced it. Select three containers under
-    /// `All`, switch the ui.filter to `Running` so two of them are hidden, and the raw
+    /// `All`, hide the running ones so two of them disappear, and the raw
     /// selection still holds all three — so a bulk Delete would destroy two containers the
     /// user cannot see and was never shown in the confirmation count. Searching hides rows
     /// the same way, and a deleted container leaves its id behind entirely. Every bulk
@@ -335,7 +399,7 @@ struct ContainersView: View {
         }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. One observation covers all three ways the visible set
-        // moves out from under the selection — ui.filter change, ui.search change, and the data
+        // moves out from under the selection — filter change, search change, and the data
         // itself changing (a bulk delete leaves the dead ids behind otherwise, so the bar
         // would linger claiming rows that no longer exist).
         .onChange(of: visibleIDs) { _, ids in
@@ -393,11 +457,7 @@ struct ContainersView: View {
             columnsButton
                 .disabled(ui.presentation != .list)     // cards have no columns to configure
 
-            Picker("Filter", selection: $ui.filter) {
-                ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .fixedSize()
+            filterButton
 
             TextField("Search containers…", text: $ui.search)
                 .textFieldStyle(.roundedBorder)
@@ -504,13 +564,13 @@ struct ContainersView: View {
                 Label(isFiltered ? "No matches" : "No containers", systemImage: "tray")
             } description: {
                 Text(isFiltered
-                     ? "No container matches the current ui.filter."
+                     ? "No container matches the current filter."
                      : "Nothing is running on this Mac yet.")
             } actions: {
                 if isFiltered {
                     Button("Clear Filter") {
                         ui.search = ""
-                        ui.filter = .all
+                        ui.visibleStates = StateFilter.all
                     }
                 } else {
                     Button("Run a Container…") { showingRun = true }

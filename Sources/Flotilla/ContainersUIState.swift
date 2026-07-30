@@ -22,7 +22,9 @@ import FlotillaCore
 final class ContainersUIState {
 
     var presentation: ContainersView.Presentation = .list
-    var filter: ContainersView.Filter = .all
+    /// Which states are shown. Both by default — see `ContainersView.StateFilter` for why
+    /// this is a set rather than a one-of-three mode.
+    var visibleStates: Set<ContainersView.StateFilter> = ContainersView.StateFilter.all
     var search = ""
 
     /// Running-first by default, per `DECISIONS.md` Q2 — the containers you can act on stay
