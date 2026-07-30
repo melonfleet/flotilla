@@ -28,6 +28,16 @@ enum SettingsPersistence {
     static let domain = "dev.melonfleet.Flotilla"
 
     private static let key = "userSettings"
+    private static let versionKey = "userSettingsSchemaVersion"
+
+    /// `research/FEATURES.md`: *"Schema `version` integer + migration — one field on day one;
+    /// saves a corrupt-prefs bug later."* This was omitted when persistence first landed,
+    /// which is exactly the mistake that note warns about: without it, the first format
+    /// change is indistinguishable from corruption, so every user silently loses their
+    /// settings to the fallback path.
+    ///
+    /// Bump this **only** alongside a migration step in `migrate(_:from:)`.
+    static let currentSchemaVersion = 1
 
     private static var defaults: UserDefaults {
         UserDefaults(suiteName: domain) ?? .standard
@@ -40,17 +50,55 @@ enum SettingsPersistence {
     /// recoverable; a launch failure is not.
     static func load() -> [String: SettingValue] {
         guard let data = defaults.data(forKey: key) else { return [:] }
+
+        // Absent version on existing data means "written before versioning existed", which
+        // is schema 1 — not an error. Treating it as unknown would discard the settings of
+        // anyone who ran the build between persistence landing and this field being added.
+        let stored = defaults.object(forKey: versionKey) as? Int ?? currentSchemaVersion
+
+        // Newer than we understand: keep it and fall back to defaults for this launch
+        // rather than "migrating" by guessing, which would overwrite a newer build's
+        // preferences with a downgrade's idea of them.
+        if stored > currentSchemaVersion {
+            log.error("""
+                Stored preferences are schema \(stored, privacy: .public), newer than this \
+                build understands (\(currentSchemaVersion, privacy: .public)). Using defaults \
+                for this launch and leaving them untouched.
+                """)
+            return [:]
+        }
+
         do {
-            return try JSONDecoder().decode([String: SettingValue].self, from: data)
+            let decoded = try JSONDecoder().decode([String: SettingValue].self, from: data)
+            return migrate(decoded, from: stored)
         } catch {
             log.error("Ignoring unreadable stored preferences: \(error.localizedDescription, privacy: .public)")
             return [:]
         }
     }
 
+    /// Forward migration, one step per version. Nothing to do yet — there is only one
+    /// schema — but the seam exists so the first change is a two-line addition rather than
+    /// a decision about what to do with everybody's existing preferences.
+    private static func migrate(
+        _ values: [String: SettingValue], from stored: Int
+    ) -> [String: SettingValue] {
+        guard stored < currentSchemaVersion else { return values }
+        // One `case` per version bump, each transforming forward:
+        //     if stored < 2 { values = migrateV1ToV2(values) }
+        // Nothing yet — schema 1 is the only version that has ever existed — but the call
+        // site and the version field are in place, so the first change is additive.
+        return values
+    }
+
     static func save(_ values: [String: SettingValue]) {
         do {
-            defaults.set(try JSONEncoder().encode(values), forKey: key)
+            let encoded = try JSONEncoder().encode(values)
+            // Version first: a crash between the two writes must not leave data that claims
+            // to be older than it is, which would re-run a migration over already-migrated
+            // values.
+            defaults.set(currentSchemaVersion, forKey: versionKey)
+            defaults.set(encoded, forKey: key)
         } catch {
             log.error("Failed to persist preferences: \(error.localizedDescription, privacy: .public)")
         }

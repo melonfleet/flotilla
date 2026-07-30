@@ -22,6 +22,8 @@ struct RunSheetView: View {
     @State private var env: [Row] = []
     @State private var volumes: [Row] = []
     @State private var commandText = ""
+    /// Transient tick on the Copy button; reset whenever the command changes.
+    @State private var copiedCommand = false
 
     /// Gives each list row a stable identity across add/remove — `Allowlist`'s own
     /// per-flag maxima (`maxPorts`/`maxEnv`/`maxVolumes` below) are just this view's
@@ -183,10 +185,31 @@ struct RunSheetView: View {
 
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(previewLine)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 8) {
+                Text(previewLine)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                // `FEATURES.md` wants "Copy `container` command" wherever a command is shown:
+                // it teaches the CLI, and it doubles as the audit string you can paste into a
+                // change record. Deliberately enabled even when the command is invalid —
+                // copying it into a terminal to see the real error is a legitimate thing to
+                // want, and the validation message is right underneath either way.
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(previewLine, forType: .string)
+                    copiedCommand = true
+                } label: {
+                    Label(copiedCommand ? "Copied" : "Copy",
+                          systemImage: copiedCommand ? "checkmark" : "doc.on.doc")
+                }
+                .controlSize(.small)
+                .help("Copy the container command to the clipboard")
+                // Reset on any edit, so the tick always refers to what is on screen now.
+                .onChange(of: previewLine) { copiedCommand = false }
+            }
             switch preview {
             case .success:
                 Label("Valid — ready to run.", systemImage: "checkmark.circle")

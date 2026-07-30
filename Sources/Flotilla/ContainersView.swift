@@ -36,6 +36,13 @@ struct ContainersView: View {
     @State private var search = ""
     @State private var detailContainer: Container?
     @State private var confirmingBulkDelete = false
+    /// Non-nil while a single row's trash button is awaiting confirmation. Destructive
+    /// actions confirm with the object *named* (`FEATURES.md`'s destructive-action policy),
+    /// which is why this holds the container rather than a bool.
+    @State private var confirmingRowDelete: Container?
+    /// Running-first by default, per DECISIONS.md Q2. Sorting is on state, so the containers
+    /// you can act on stay at the top rather than being buried alphabetically.
+    @State private var sortOrder = [KeyPathComparator(\Container.sortRank)]
     @State private var showingRun = false
 
     private var filtered: [Container] {
@@ -54,6 +61,19 @@ struct ContainersView: View {
         }
     }
 
+    /// `visible` filtered, then ordered by whatever the user clicked in the header.
+    ///
+    /// The table binds to this rather than to `visible` — a `Table` with a `sortOrder`
+    /// binding does **not** reorder its rows for you, it only reports what was clicked.
+    /// Binding the header without applying the comparator gives arrows that move and rows
+    /// that never do.
+    private var sorted: [Container] { visible.sorted(using: sortOrder) }
+
+    /// Whether anything the user chose is hiding rows. Both the search field and the filter
+    /// tabs can empty the table, and an empty state that only mentions search would be wrong
+    /// half the time.
+    private var isFiltered: Bool { !search.isEmpty || filter != .all }
+
     private var visibleIDs: Set<Container.ID> { Set(visible.map(\.id)) }
 
     /// What a bulk action may actually touch: the selection **intersected with what is on
@@ -70,6 +90,102 @@ struct ContainersView: View {
     /// True while any actionable id has an action in flight — disables the bulk bar so a
     /// second click can't fire a duplicate operation on top of the first.
     private var selectionBusy: Bool { !actionable.isDisjoint(with: model.busy) }
+
+    /// Per-row action buttons, in an **Actions** column — the pattern Docker Desktop uses and
+    /// the one the owner asked for: small, always-visible, icon-only controls on the row they
+    /// affect, rather than a bar above the table that acts on a selection you have to make
+    /// first.
+    ///
+    /// Three rules this follows deliberately:
+    /// - **Always visible, never hover-revealed.** `research/FEATURES.md`'s accessibility
+    ///   baseline rules out hover-only affordances, and a control that appears on approach is
+    ///   also unreachable by keyboard.
+    /// - **Labelled.** Icon-only buttons carry `accessibilityLabel` plus `help` — a glyph with
+    ///   no name is invisible to VoiceOver and ambiguous to everyone else.
+    /// - **Start and Stop swap, they do not both show.** Offering Stop on a stopped container
+    ///   would be a control that does nothing, which is the failure mode this whole pass is
+    ///   about.
+    @ViewBuilder
+    private func rowActions(for container: Container) -> some View {
+        let busy = model.busy.contains(container.id)
+        let running = AppModel.isRunning(container)
+
+        HStack(spacing: 2) {
+            if running {
+                iconButton("stop.fill", "Stop", help: "Stop \(container.id)", busy: busy) {
+                    Task { await model.perform(.stop, on: container) }
+                }
+                iconButton("arrow.clockwise", "Restart", help: "Restart \(container.id)", busy: busy) {
+                    Task { await model.perform(.restart, on: container) }
+                }
+            } else {
+                iconButton("play.fill", "Start", help: "Start \(container.id)", busy: busy) {
+                    Task { await model.perform(.start, on: container) }
+                }
+                // Keeps the column a stable width whichever state the row is in, so the
+                // buttons don't jump sideways as containers start and stop.
+                iconButton("arrow.clockwise", "Restart", help: "Restart \(container.id)", busy: true) {}
+                    .hidden()
+            }
+
+            // The overflow: everything that isn't a one-tap lifecycle action.
+            Menu {
+                Button("Details…") { detailContainer = container }
+                Divider()
+                copyMenu(for: container)
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More actions for \(container.id)")
+            .disabled(busy)
+
+            Divider().frame(height: 14)
+
+            iconButton("trash", "Delete", help: "Delete \(container.id)", busy: busy, destructive: true) {
+                confirmingRowDelete = container
+            }
+        }
+    }
+
+    private func iconButton(
+        _ symbol: String, _ label: String, help: String,
+        busy: Bool, destructive: Bool = false, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(width: 16, height: 16)          // even taps regardless of glyph width
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .foregroundStyle(destructive ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+        .disabled(busy)
+        .help(help)
+        .accessibilityLabel(label)
+    }
+
+    /// `FEATURES.md` asks for a Copy submenu (id, image, IP, port URL) on the row.
+    @ViewBuilder
+    private func copyMenu(for container: Container) -> some View {
+        Menu("Copy") {
+            Button("Name") { copy(container.id) }
+            Button("Image") { copy(container.configuration.image.reference) }
+            if let ip = container.ipv4 {
+                Button("IP Address") { copy(ip) }
+            }
+            if let port = container.publishedPorts.first {
+                // The useful form is something you can paste into a browser, not the mapping.
+                Button("Port URL") { copy("http://localhost:\(port.hostPort)") }
+            }
+        }
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
 
     /// Start/stop/restart/delete for one container. Attached to both the table rows and
     /// the cards so the two views offer the same capabilities — a toggle that changes what
@@ -119,6 +235,24 @@ struct ContainersView: View {
         // would linger claiming rows that no longer exist).
         .onChange(of: visibleIDs) { _, ids in
             selection.formIntersection(ids)
+        }
+        // Single-row delete, from the trash button. Names the container — a dialog that just
+        // says "are you sure" makes you go back and check which row you clicked.
+        .confirmationDialog(
+            "Delete “\(confirmingRowDelete?.id ?? "")”?",
+            isPresented: Binding(get: { confirmingRowDelete != nil },
+                                 set: { if !$0 { confirmingRowDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let target = confirmingRowDelete {
+                    Task { await model.perform(.delete, on: target) }
+                }
+                confirmingRowDelete = nil
+            }
+            Button("Cancel", role: .cancel) { confirmingRowDelete = nil }
+        } message: {
+            Text("This cannot be undone.")
         }
         .confirmationDialog(
             "Delete \(actionable.count) container\(actionable.count == 1 ? "" : "s")?",
@@ -183,7 +317,11 @@ struct ContainersView: View {
     /// for but went unused before this.
     @ViewBuilder
     private var bulkActionBar: some View {
-        if !actionable.isEmpty {
+        // 2+, not 1+. Every row now carries its own start/stop/restart/delete, so a bar
+        // above the table for a single selection would just be a second way to do the same
+        // thing — and it was the bar the owner didn't want. Bulk is the one thing per-row
+        // controls genuinely cannot do, so that is all it appears for.
+        if actionable.count > 1 {
             HStack(spacing: 12) {
                 Text("\(actionable.count) selected")
                     .font(.subheadline)
@@ -222,13 +360,27 @@ struct ContainersView: View {
             )
 
         case .loaded where visible.isEmpty:
-            ContentUnavailableView(
-                search.isEmpty ? "No containers" : "No matches",
-                systemImage: "tray",
-                description: Text(search.isEmpty
-                                  ? "Nothing is running on this Mac yet."
-                                  : "No container matches “\(search)”.")
-            )
+            // An empty state that carries the primary action, per `FEATURES.md`. Until the
+            // run sheet existed there was nothing to offer here; now "no containers" has an
+            // obvious next step, and a filtered-empty list can undo the thing hiding rows
+            // rather than leaving the user to work out which control did it.
+            ContentUnavailableView {
+                Label(isFiltered ? "No matches" : "No containers", systemImage: "tray")
+            } description: {
+                Text(isFiltered
+                     ? "No container matches the current filter."
+                     : "Nothing is running on this Mac yet.")
+            } actions: {
+                if isFiltered {
+                    Button("Clear Filter") {
+                        search = ""
+                        filter = .all
+                    }
+                } else {
+                    Button("Run a Container…") { showingRun = true }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
 
         case .loaded:
             if presentation == .list { table } else { cards }
@@ -242,8 +394,8 @@ struct ContainersView: View {
     /// table fill normally.
     private var table: some View {
         VStack(spacing: 0) {
-            Table(visible, selection: $selection) {
-                TableColumn("State") { c in
+            Table(sorted, selection: $selection, sortOrder: $sortOrder) {
+                TableColumn("State", value: \.sortRank) { c in
                     HStack(spacing: 6) {
                         Circle()
                             .fill(AppModel.isRunning(c) ? Color.green : Color.secondary)
@@ -253,19 +405,19 @@ struct ContainersView: View {
                 }
                 .width(min: 90, ideal: 100)
 
-                TableColumn("Name") { c in
+                TableColumn("Name", value: \.id) { c in
                     Text(c.id)
                         .lineLimit(1)
                         .contextMenu { actions(for: c) }
                 }
-                TableColumn("Image") { c in
+                TableColumn("Image", value: \.imageReference) { c in
                     Text(Self.imageLabel(c.configuration.image.reference))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .help(c.configuration.image.reference)
                 }
                 .width(min: 110, ideal: 190)
-                TableColumn("Created") { c in
+                TableColumn("Created", value: \.creationSortKey) { c in
                     Text(Self.createdLabel(c.configuration.creationDate))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -290,6 +442,13 @@ struct ContainersView: View {
                 .width(min: 100, ideal: 150)
                 TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
                     .width(min: 90, ideal: 110)
+
+                // Last, and fixed-width: the row's own controls, per the Docker-style
+                // pattern. Not sortable — there is nothing to sort by.
+                TableColumn("Actions") { c in
+                    rowActions(for: c)
+                }
+                .width(132)
             }
             .frame(maxHeight: isShortList ? shortListHeight : .infinity)
 

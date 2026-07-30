@@ -137,6 +137,46 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     #expect(image.reference == "docker.io/library/alpine:latest")
 }
 
+@Test func rawInspectJSONReturnsTheCLIsOwnOutputVerbatimAndRoutesThroughAllowlist() throws {
+    let host = RecordingHost()
+    let raw = String(decoding: try fixture("inspect-container"), as: UTF8.self)
+    host.stdoutByPath["inspect"] = raw
+    let cli = ContainerCLI(host: host)
+
+    let result = try cli.rawInspectJSON("web-demo")
+
+    #expect(host.invocations[0] == ["inspect", "web-demo"])
+    #expect(result == raw)
+}
+
+@Test func rawInspectImageJSONReturnsTheCLIsOwnOutputVerbatimAndRoutesThroughAllowlist() throws {
+    let host = RecordingHost()
+    let raw = String(decoding: try fixture("images"), as: UTF8.self)
+    host.stdoutByPath["image inspect"] = raw
+    let cli = ContainerCLI(host: host)
+
+    let result = try cli.rawInspectImageJSON("docker.io/library/alpine:latest")
+
+    #expect(host.invocations[0] == ["image", "inspect", "docker.io/library/alpine:latest"])
+    #expect(result == raw)
+}
+
+@Test func rawInspectAccessorsRejectAnInvalidIdentifierBeforeReachingTheHost() {
+    let attempts: [(String, (ContainerCLI) throws -> Void)] = [
+        ("rawInspectJSON", { try $0.rawInspectJSON("web; rm -rf /") }),
+        ("rawInspectImageJSON", { try $0.rawInspectImageJSON("alpine:") }),
+    ]
+
+    for (name, attempt) in attempts {
+        let host = RecordingHost()
+        let cli = ContainerCLI(host: host)
+        #expect(throws: AllowlistError.self, "\(name) accepted an invalid argument") {
+            try attempt(cli)
+        }
+        #expect(host.invocations.isEmpty, "\(name) reached ContainerHost.run")
+    }
+}
+
 @Test func inspectThrowsRatherThanCrashingOnAnEmptyResult() throws {
     let host = RecordingHost()
     host.stdoutByPath["inspect"] = "[]"

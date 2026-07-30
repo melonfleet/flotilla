@@ -12,6 +12,14 @@ struct ImagesView: View {
     @State private var pullReference = ""
     @State private var pendingDelete: ContainerImage?
 
+    @State private var taggingImage: ContainerImage?
+    @State private var tagTarget = ""
+    @State private var tagError: String?
+
+    @State private var showingPrune = false
+    @State private var pruning = false
+    @State private var pruneError: String?
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -26,7 +34,21 @@ struct ImagesView: View {
         } message: {
             Text(model.actionError ?? "")
         }
+        .alert("Tag failed",
+               isPresented: Binding(get: { tagError != nil }, set: { if !$0 { tagError = nil } })) {
+            Button("OK") { tagError = nil }
+        } message: {
+            Text(tagError ?? "")
+        }
+        .alert("Prune failed",
+               isPresented: Binding(get: { pruneError != nil }, set: { if !$0 { pruneError = nil } })) {
+            Button("OK") { pruneError = nil }
+        } message: {
+            Text(pruneError ?? "")
+        }
         .sheet(isPresented: $showingPull) { pullSheet }
+        .sheet(item: $taggingImage) { image in tagSheet(for: image) }
+        .sheet(isPresented: $showingPrune) { pruneSheet }
         .confirmationDialog(
             "Delete image “\(pendingDelete.map(Self.repository) ?? "")”?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
@@ -48,6 +70,11 @@ struct ImagesView: View {
         HStack(spacing: 12) {
             Text("Images").font(.title3.bold())
             Spacer()
+            Button {
+                showingPrune = true
+            } label: {
+                Label("Prune Unused…", systemImage: "trash.slash")
+            }
             Button {
                 pullReference = ""
                 showingPull = true
@@ -87,9 +114,20 @@ struct ImagesView: View {
             )
 
         case .loaded:
-            List(model.images) { image in
+            List(displayedImages) { image in
                 row(for: image)
             }
+        }
+    }
+
+    /// Hides attestation/provenance manifests (`architecture: "unknown"`) — they're noise
+    /// in a list meant to show pullable, runnable images, not build metadata. Only hidden
+    /// when EVERY variant is `"unknown"`; a real multi-arch image that happens to carry an
+    /// attestation alongside real platforms keeps showing.
+    private var displayedImages: [ContainerImage] {
+        model.images.filter { image in
+            guard let variants = image.variants, !variants.isEmpty else { return true }
+            return !variants.allSatisfy { $0.platform?.architecture == "unknown" }
         }
     }
 
@@ -107,14 +145,122 @@ struct ImagesView: View {
                 }
             }
             Spacer()
+            Button {
+                tagTarget = ""
+                taggingImage = image
+            } label: {
+                Image(systemName: "tag")
+            }
+            .accessibilityLabel("Tag \(Self.repository(image))")
+            .disabled(model.busy.contains(image.id))
             Button(role: .destructive) {
                 requestDelete(image)
             } label: {
                 Image(systemName: "trash")
             }
+            .accessibilityLabel("Delete \(Self.repository(image))")
             .disabled(model.busy.contains(image.id))
         }
         .padding(.vertical, 4)
+    }
+
+    private func tagSheet(for image: ContainerImage) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Tag Image").font(.headline)
+            Text(Self.repository(image)).font(.caption).foregroundStyle(.secondary)
+            TextField("New reference, e.g. myregistry/name:tag", text: $tagTarget)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { taggingImage = nil }
+                Button("Tag") {
+                    let target = tagTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let source = image.reference
+                    taggingImage = nil
+                    guard !target.isEmpty else { return }
+                    Task {
+                        do {
+                            try await model.tagImage(source, as: target)
+                            await model.refreshImages()
+                        } catch {
+                            tagError = "Tag failed for \(source) → \(target): \(error)"
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(tagTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
+
+    /// Every image not referenced by any known container — client-side, since the CLI has
+    /// no dry-run/prune-preview output to ask for. This IS the set `deleteImages` below
+    /// will delete, by construction (loop over exactly these references), so the preview
+    /// can never drift from the outcome. It may not be bit-for-bit what `container image
+    /// prune`'s own internal definition of "unused" would remove — that's the trade-off
+    /// for a guaranteed-accurate preview over using the CLI's blanket verb. Flagged in the
+    /// report as a judgment call, not silently assumed.
+    private var pruneCandidates: [ContainerImage] {
+        let referenced = Set(model.containers.map(\.configuration.image.reference))
+        return model.images.filter { !referenced.contains($0.reference) }
+    }
+
+    /// Always shows the preview, regardless of `confirmDestructiveActions` — that setting
+    /// governs whether a single delete needs an "are you sure," but the brief is explicit
+    /// that a bulk prune must always show exactly what dies, which is more than a yes/no
+    /// confirmation.
+    private var pruneSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Prune Unused Images").font(.headline)
+            if pruneCandidates.isEmpty {
+                Text("Nothing to prune — every image is referenced by a container.")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("These \(pruneCandidates.count) image(s) aren't referenced by any "
+                     + "container and will be deleted:")
+                    .font(.subheadline)
+                List(pruneCandidates) { image in
+                    HStack {
+                        Text(Self.repository(image)).lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        if let size = image.displaySize {
+                            Text(Self.byteCount(size)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(minHeight: 120, maxHeight: 240)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { showingPrune = false }
+                Button("Delete \(pruneCandidates.count) Image(s)", role: .destructive) {
+                    let targets = pruneCandidates.map(\.reference)
+                    showingPrune = false
+                    Task {
+                        pruning = true
+                        let failures = await model.deleteImages(targets)
+                        pruning = false
+                        if let first = failures.first {
+                            if failures.count == 1 {
+                                pruneError = "Prune failed for \(first.reference): \(first.error)"
+                            } else {
+                                pruneError = """
+                                    Prune failed for \(failures.count) of \(targets.count) images.
+
+                                    First error: \(first.error)
+                                    """
+                            }
+                        }
+                        await model.refreshImages()
+                    }
+                }
+                .disabled(pruneCandidates.isEmpty || pruning)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 
     private var pullSheet: some View {

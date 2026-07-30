@@ -100,6 +100,17 @@ public struct Container: Codable, Identifiable, Sendable {
 
     public var publishedPorts: [Configuration.PublishedPort] { configuration.publishedPorts ?? [] }
 
+    /// Sort key that puts **running first** (DECISIONS.md Q2), which is the table's default
+    /// order. A `Bool` would sort false-before-true, i.e. stopped first — exactly backwards —
+    /// so this is an explicit rank rather than the obvious-looking `!isRunning`.
+    public var sortRank: Int { isRunning ? 0 : 1 }
+
+    /// Sortable form of `creationDate`, which the CLI gives as an ISO-8601 *string*.
+    /// ISO-8601 with a fixed offset happens to sort correctly lexicographically, and an
+    /// absent date sorts last rather than first — a container whose date we could not read
+    /// should not claim to be the oldest thing on the machine.
+    public var creationSortKey: String { configuration.creationDate ?? "9999" }
+
     /// Comma-separated `18080:80/tcp` mappings, or nil when nothing is published — so a
     /// table column can show an unambiguous em dash rather than an empty cell that reads
     /// as missing data.

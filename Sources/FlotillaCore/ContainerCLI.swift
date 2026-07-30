@@ -147,6 +147,15 @@ public struct ContainerCLI: Sendable {
         return container
     }
 
+    /// The CLI's own `inspect` output, verbatim — for the inspect tab's raw JSON view,
+    /// which must show *the CLI's* shape rather than a re-encode of `Container` that would
+    /// silently drop every field Flotilla does not model (`capAdd`, `dns`, `initProcess`,
+    /// `rosetta`, `sysctls`, …). Still goes through `execute` so `Allowlist` validates `id`
+    /// exactly as `inspect(_:)` does — never bypass it with a direct `host.run`.
+    public func rawInspectJSON(_ id: String) throws -> String {
+        try execute(["inspect", id]).stdout
+    }
+
     /// Options for `container run`. Ports, env and volumes are passed as already-shaped
     /// CLI values (`HOST:CONTAINER`, `KEY=VALUE`, `SOURCE:DEST[:ro|rw]`) — `Allowlist`
     /// validates their shape at `execute` time, so there is no need to duplicate that
@@ -263,6 +272,11 @@ public struct ContainerCLI: Sendable {
             throw ContainerCLIError.emptyInspectResult(id: reference)
         }
         return image
+    }
+
+    /// Same rationale as `rawInspectJSON(_:)`, for images.
+    public func rawInspectImageJSON(_ reference: String) throws -> String {
+        try execute(["image", "inspect", reference]).stdout
     }
 
     // MARK: Volumes — mutate

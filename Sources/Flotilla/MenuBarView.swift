@@ -67,7 +67,11 @@ struct MenuBarView: View {
                     .controlSize(.small)
                     .disabled(model.state == .loading)
 
-                Button("Quit") { NSApplication.shared.terminate(nil) }
+                // Wording matters here: research/FEATURES.md singles out Docker Desktop's
+                // ambiguous Quit as "its most-cited UX failure" — people quit the app
+                // expecting their containers to stop, or expecting them not to, and it is
+                // never clear which. Say it on the control.
+                Button("Quit — containers keep running") { NSApplication.shared.terminate(nil) }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }

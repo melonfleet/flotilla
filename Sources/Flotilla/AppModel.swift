@@ -31,7 +31,13 @@ final class AppModel {
     /// from the start rather than being retrofitted in Phase 3.
     var hostLabel: String { "This Mac" }
 
-    private let cli: ContainerCLI
+    /// Internal rather than `private` so `AppModelDetail.swift`'s extension can share **this**
+    /// instance. It was private, which Swift's same-file rule put out of reach of an
+    /// extension in another file, so that extension built a second `ContainerCLI` of its own.
+    /// That compiles as a bypass of nothing — both cross `Allowlist` — but it silently
+    /// discards this one's `mountPolicy`, and a narrowed policy that some call sites quietly
+    /// ignore is worse than no policy at all. One instance, one boundary.
+    let cli: ContainerCLI
 
     /// Shared with the Settings screen. Unmanaged by default, matching the personal,
     /// unmanaged-Mac case (`DECISIONS.md` Q4) — a managed source is wired in once the
@@ -88,6 +94,53 @@ final class AppModel {
     private func reloadAppearance() {
         appearance = settingsStore.effectiveAppearance
         needsAppearanceOnboarding = settingsStore.needsAppearanceOnboarding
+        // The interval may have been what changed; restart the timer against the new value.
+        restartPolling()
+    }
+
+    // MARK: Polling
+    //
+    // `pollIntervalSeconds` has been in the registry and on the Settings screen from the
+    // start — "Seconds between `container ls` refreshes. 0 disables polling." — and nothing
+    // ever polled. Flotilla only refreshed when you pressed Refresh, so a container that
+    // exited on its own sat in the table looking healthy indefinitely. That is the same
+    // class of bug as showing an empty list for a failed load, just slower to notice.
+
+    private var pollTask: Task<Void, Never>?
+
+    /// Seconds between refreshes, or nil when the user has turned polling off. Guards
+    /// against a nonsensical stored value: a negative or absurd interval from a corrupt
+    /// preference or a managed profile must not become a spin loop.
+    private var pollInterval: Duration? {
+        let seconds = settingsStore[SettingsKeys.pollIntervalSeconds]
+        guard seconds > 0 else { return nil }          // 0 (or nonsense) means off
+        return .seconds(min(seconds, 3600))
+    }
+
+    /// Called on launch and whenever settings change. Cancelling first is what makes this
+    /// safe to call repeatedly — otherwise every settings edit would leave another timer
+    /// running and the refresh rate would silently multiply.
+    func restartPolling() {
+        pollTask?.cancel()
+        guard let interval = pollInterval else { pollTask = nil; return }
+
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled else { return }
+                guard let self else { return }
+                // Skip a tick rather than queue behind one: if an action is in flight it
+                // will refresh when it finishes, and a poll landing mid-action would fight
+                // the optimistic state the row is showing.
+                guard self.busy.isEmpty else { continue }
+                await self.refresh()
+            }
+        }
+    }
+
+    func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
     }
 
     /// Records the first-run choice. Failure is surfaced rather than swallowed: the only
@@ -155,6 +208,9 @@ final class AppModel {
         state = .loading
         await runPreflight()
         await refresh()
+        // Start (or restart) polling only once we know the runtime is usable — polling a
+        // runtime that isn't there would spawn a doomed Process every few seconds.
+        restartPolling()
     }
 
     func refresh() async {
