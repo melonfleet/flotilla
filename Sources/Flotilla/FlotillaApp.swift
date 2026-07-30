@@ -140,7 +140,7 @@ struct FlotillaApp: App {
         // decisions, and traffic lights on a "delete this?" prompt would be wrong.
         WindowGroup(id: "new-network") {
             NewNetworkView(model: model)
-                .formWindowChrome()
+                .modalFormWindow(model)
                 .preferredColorScheme(model.appearance.colorScheme)
         }
         .windowResizability(.contentSize)

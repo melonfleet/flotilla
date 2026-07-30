@@ -50,5 +50,24 @@ struct MainWindowView: View {
                 SettingsView(model: model)
             }
         }
+        // The modal treatment. Dimming *and* disabling: a dim alone would look modal while
+        // still accepting clicks, which is worse than no dim at all — it says "you cannot
+        // touch this" and then lets you.
+        //
+        // `.allowsHitTesting(false)` rather than `.disabled(true)` because `disabled`
+        // recursively greys every control, which fights the dim and makes text unreadable.
+        // The dim already communicates the state; this just makes it true.
+        .allowsHitTesting(model.openFormCount == 0)
+        .overlay {
+            if model.openFormCount > 0 {
+                Rectangle()
+                    .fill(.black.opacity(0.28))
+                    .ignoresSafeArea()
+                    // Not decorative: it is what tells the user the window is inert.
+                    .accessibilityLabel("Dimmed — a form is open in front")
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: model.openFormCount)
     }
 }

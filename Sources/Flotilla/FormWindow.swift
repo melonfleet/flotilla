@@ -38,6 +38,38 @@ private struct FormWindowChrome: NSViewRepresentable {
         // the controls, because the window would move with no visible way to bring it back.
         window.styleMask.remove(.miniaturizable)
         window.collectionBehavior.insert(.fullScreenNone)
+
+        // Make it *feel* modal, which is the half a plain window does not give you.
+        //
+        // Attached as a child of the main window, so it always floats in front and can never
+        // end up lost behind the thing it is modal to — the failure that makes a free-floating
+        // form worse than a sheet. Child windows also move with their parent, so dragging the
+        // main window does not leave the form stranded across the screen.
+        if let parent = mainWindow(excluding: window) {
+            if window.parent == nil {
+                parent.addChildWindow(window, ordered: .above)
+            }
+            // Centred on the parent rather than the screen: with a large display the screen
+            // centre can be nowhere near the window you were working in.
+            let frame = window.frame
+            let target = NSRect(
+                x: parent.frame.midX - frame.width / 2,
+                y: parent.frame.midY - frame.height / 2,
+                width: frame.width,
+                height: frame.height
+            )
+            if window.frame.origin != target.origin {
+                window.setFrame(target, display: false)
+            }
+        }
+    }
+
+    /// The app's main window — the one the form is modal *to*. Identified by title rather than
+    /// by index because window order changes as things open and close.
+    private static func mainWindow(excluding form: NSWindow) -> NSWindow? {
+        NSApp.windows.first {
+            $0 !== form && $0.isVisible && $0.title == "Flotilla" && $0.parent == nil
+        }
     }
 }
 
@@ -64,6 +96,17 @@ extension View {
     /// Close-only window chrome, for forms presented in their own window.
     func formWindowChrome() -> some View {
         background(FormWindowChrome().frame(width: 0, height: 0))
+    }
+
+    /// Close-only chrome **plus** the modal treatment: the window is parented and centred on
+    /// the main window, and the interface behind it dims and stops accepting clicks for as
+    /// long as this form is open.
+    ///
+    /// Counted rather than flagged, so two open forms do not lift each other's dim.
+    func modalFormWindow(_ model: AppModel) -> some View {
+        formWindowChrome()
+            .onAppear { model.formDidOpen() }
+            .onDisappear { model.formDidClose() }
     }
 
     /// Close-and-zoom chrome, for detail windows whose content can usefully fill the screen.

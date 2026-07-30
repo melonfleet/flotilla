@@ -127,6 +127,23 @@ final class AppModel {
         notifier.updateCategories(Self.notificationSettings(from: settingsStore))
     }
 
+    // MARK: Modal form presentation
+    //
+    // the owner wants the web-modal feel — the interface behind dims and stops responding while
+    // the form sits in front — AND macOS's own red close button. Stock presentations force a
+    // choice: a sheet is modal but has no title bar and therefore no traffic lights, while a
+    // window has traffic lights but floats free.
+    //
+    // So the form stays a real window and is made to *behave* modally: it counts itself while
+    // open, and `MainWindowView` dims and disables its content whenever the count is above
+    // zero. A count rather than a flag because two forms can be open at once, and the dim must
+    // not lift when only the first closes.
+
+    private(set) var openFormCount = 0
+
+    func formDidOpen() { openFormCount += 1 }
+    func formDidClose() { openFormCount = max(0, openFormCount - 1) }
+
     // MARK: Polling
     //
     // `pollIntervalSeconds` has been in the registry and on the Settings screen from the
