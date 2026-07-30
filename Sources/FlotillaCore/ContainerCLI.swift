@@ -1,9 +1,33 @@
 import Foundation
 
-public enum ContainerCLIError: Error, Equatable, Sendable {
+public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertible {
     /// `container inspect`/`image inspect` returned a well-formed but empty JSON array
     /// for an id the caller asked about.
     case emptyInspectResult(id: String)
+
+    /// The CLI ran and **failed**, reporting why on stderr.
+    ///
+    /// This case exists because for a long time nothing checked the exit code.
+    /// `LocalHost.run` returned a `CommandResult` carrying `exitCode` and an `ok` property
+    /// that no call site read, so every failure the CLI reported was discarded and the
+    /// operation looked like it had worked. Creating a network that already exists is the
+    /// clearest example — the CLI exits 1 saying `network X already exists` and the app said
+    /// nothing at all.
+    case commandFailed(command: String, exitCode: Int32, message: String)
+
+    public var description: String {
+        switch self {
+        case .emptyInspectResult(let id):
+            "‘\(id)’ returned no information."
+        case .commandFailed(let command, let exitCode, let message):
+            // Lead with what the CLI said. A usage dump is useful in a diagnostic bundle and
+            // useless in an alert, so `message` is already reduced to the salient line by
+            // `ContainerCLI.failureMessage`.
+            message.isEmpty
+                ? "`container \(command)` failed (exit \(exitCode))."
+                : message
+        }
+    }
 }
 
 /// High-level, typed convenience over a `ContainerHost`. Both `LocalHost` and (later)
@@ -23,10 +47,10 @@ public struct ContainerCLI: Sendable {
     // MARK: Raw JSON
 
     public func rawContainersJSON() throws -> String {
-        try host.run(["ls", "--all", "--format", "json"]).stdout
+        try succeeding(["ls", "--all", "--format", "json"]).stdout
     }
     public func rawImagesJSON() throws -> String {
-        try host.run(["image", "list", "--format", "json"]).stdout
+        try succeeding(["image", "list", "--format", "json"]).stdout
     }
 
     // MARK: Typed reads
@@ -40,18 +64,18 @@ public struct ContainerCLI: Sendable {
     public func stats(noStream: Bool = true) throws -> [ContainerStats] {
         var args = ["stats", "--format", "json"]
         if noStream { args.append("--no-stream") }
-        return try JSONDecoder.flotilla.decode([ContainerStats].self, from: Data(try host.run(args).stdout.utf8))
+        return try JSONDecoder.flotilla.decode([ContainerStats].self, from: Data(try succeeding(args).stdout.utf8))
     }
     public func systemStatus() throws -> SystemStatus {
         try JSONDecoder.flotilla.decode(SystemStatus.self,
-                                        from: Data(try host.run(["system", "status", "--format", "json"]).stdout.utf8))
+                                        from: Data(try succeeding(["system", "status", "--format", "json"]).stdout.utf8))
     }
     public func versions() throws -> [VersionComponent] {
         try JSONDecoder.flotilla.decode([VersionComponent].self,
-                                        from: Data(try host.run(["system", "version", "--format", "json"]).stdout.utf8))
+                                        from: Data(try succeeding(["system", "version", "--format", "json"]).stdout.utf8))
     }
     public func rawSystemDiskUsageJSON() throws -> String {
-        try host.run(["system", "df", "--format", "json"]).stdout
+        try succeeding(["system", "df", "--format", "json"]).stdout
     }
 
     /// The disk view. Now typed: the payload was captured from a live `container 1.0.0`
@@ -63,11 +87,11 @@ public struct ContainerCLI: Sendable {
     }
     public func listVolumes() throws -> [ContainerVolume] {
         try JSONDecoder.flotilla.decode([ContainerVolume].self,
-                                        from: Data(try host.run(["volume", "list", "--format", "json"]).stdout.utf8))
+                                        from: Data(try succeeding(["volume", "list", "--format", "json"]).stdout.utf8))
     }
     public func listNetworks() throws -> [ContainerNetwork] {
         try JSONDecoder.flotilla.decode([ContainerNetwork].self,
-                                        from: Data(try host.run(["network", "list", "--format", "json"]).stdout.utf8))
+                                        from: Data(try succeeding(["network", "list", "--format", "json"]).stdout.utf8))
     }
 
     // MARK: Allowlisted execution
@@ -85,7 +109,44 @@ public struct ContainerCLI: Sendable {
     @discardableResult
     private func execute(_ args: [String]) throws -> CommandResult {
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy)
-        return try host.run(validated.arguments)
+        return try succeeding(validated.arguments)
+    }
+
+    /// Runs `args` and **throws unless the CLI exited zero**.
+    ///
+    /// Everything goes through here. Without it a non-zero exit was simply returned and
+    /// ignored: a duplicate network, a failed start, a refused pull all completed silently.
+    /// The one prior symptom users did see — an invalid name — came from `Allowlist`
+    /// throwing *before* execution, which is why validation errors surfaced and real CLI
+    /// errors did not.
+    private func succeeding(_ args: [String]) throws -> CommandResult {
+        let result = try host.run(args)
+        guard result.ok else {
+            throw ContainerCLIError.commandFailed(
+                command: args.joined(separator: " "),
+                exitCode: result.exitCode,
+                message: Self.failureMessage(result)
+            )
+        }
+        return result
+    }
+
+    /// The salient line of a CLI failure.
+    ///
+    /// `container` prefixes real problems with `Error:` and may then print a `Help:`/`Usage:`
+    /// block — valuable in a support bundle, noise in an alert. Prefer the `Error:` line;
+    /// fall back to the first non-empty line; fall back again to stdout, because some
+    /// failures report there instead.
+    static func failureMessage(_ result: CommandResult) -> String {
+        func lines(_ text: String) -> [String] {
+            text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        }
+        let candidates = lines(result.stderr) + lines(result.stdout)
+        if let errorLine = candidates.first(where: { $0.hasPrefix("Error:") }) {
+            return String(errorLine.dropFirst("Error:".count)).trimmingCharacters(in: .whitespaces)
+        }
+        return candidates.first ?? ""
     }
 
     // MARK: Containers — lifecycle

@@ -494,3 +494,101 @@ private extension Result {
     }
     #expect(host.invocations.count == 1)
 }
+
+// MARK: - A failing CLI must fail loudly
+//
+// For a long time nothing read the exit code. `LocalHost.run` returned a `CommandResult`
+// carrying `exitCode` and an `ok` property no call site touched, so every failure the CLI
+// reported was thrown away and the operation looked successful. Creating a network that
+// already exists was the clearest case: `container` exits 1 with `Error: network X already
+// exists`, and the app said nothing whatsoever.
+
+/// Answers a fixed non-zero result, so the exit-code path can be tested without a live CLI.
+private final class FailingHost: ContainerHost, @unchecked Sendable {
+    let stderr: String
+    let code: Int32
+    private(set) var invocations: [[String]] = []
+
+    init(stderr: String, code: Int32 = 1) {
+        self.stderr = stderr
+        self.code = code
+    }
+
+    func run(_ args: [String]) throws -> CommandResult {
+        invocations.append(args)
+        return CommandResult(stdout: "", stderr: stderr, exitCode: code)
+    }
+}
+
+@Test func aNonZeroExitBecomesAThrownError() throws {
+    let host = FailingHost(stderr: "Error: network test2 already exists")
+    let cli = ContainerCLI(host: host)
+
+    #expect(throws: (any Error).self) {
+        try cli.createNetwork("test2")
+    }
+    // It really did attempt it — this is not the Allowlist refusing beforehand, which is the
+    // only kind of failure that used to surface.
+    #expect(host.invocations.count == 1)
+}
+
+@Test func theCLIsOwnWordsReachTheUser() throws {
+    let host = FailingHost(stderr: "Error: network test2 already exists")
+    let cli = ContainerCLI(host: host)
+
+    do {
+        try cli.createNetwork("test2")
+        Issue.record("expected a failure")
+    } catch let error as ContainerCLIError {
+        // "already exists" is the whole point: a generic "operation failed" would leave the
+        // user guessing at exactly the moment the CLI already knew the answer.
+        #expect(error.description.contains("already exists"))
+        // And without the `Error:` prefix, which is noise once it is in an alert.
+        #expect(error.description.hasPrefix("Error:") == false)
+    }
+}
+
+@Test func aUsageDumpIsReducedToItsFirstLine() throws {
+    // `container` follows a bad flag value with Help: and Usage: blocks. Useful in a support
+    // bundle, unreadable in an alert.
+    let host = FailingHost(
+        stderr: """
+        Error: The value '999.999.999.0/24' is invalid for '--subnet <subnet>': unableToParse
+        Help:  --subnet <subnet>  Set subnet for a network
+        Usage: container network create [--internal] [--label <label> ...] <name>
+        """,
+        code: 64
+    )
+    let cli = ContainerCLI(host: host)
+
+    do {
+        try cli.createNetwork("net", options: .init(subnet: "10.0.0.0/24"))
+        Issue.record("expected a failure")
+    } catch let error as ContainerCLIError {
+        #expect(error.description.contains("unableToParse"))
+        #expect(error.description.contains("Usage:") == false)
+        #expect(error.description.contains("Help:") == false)
+    }
+}
+
+@Test func readsFailLoudlyToo() throws {
+    // A failed `ls` used to return empty stdout, which then surfaced as a confusing JSON
+    // decode error rather than the reason the CLI gave.
+    let host = FailingHost(stderr: "Error: the container runtime is not running")
+    let cli = ContainerCLI(host: host)
+
+    do {
+        _ = try cli.listContainers()
+        Issue.record("expected a failure")
+    } catch let error as ContainerCLIError {
+        #expect(error.description.contains("not running"))
+    }
+}
+
+@Test func aZeroExitIsStillSuccess() throws {
+    // The guard must not turn ordinary success into an error.
+    let host = RecordingHost()
+    #expect(throws: Never.self) {
+        try ContainerCLI(host: host).createNetwork("fine")
+    }
+}
