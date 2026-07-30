@@ -39,27 +39,28 @@ struct ContainersView: View {
         }
     }
 
-    /// Which container states are shown. A **set**, not a one-of-three choice, because the
-    /// control is now a checkbox menu like Columns — and checkboxes that behave like radio
-    /// buttons are a lie about what they do.
+    /// What the list is showing. Single-select, and rendered as a **radio group** in the
+    /// filter popover.
     ///
-    /// `All` therefore stops being an option and becomes "both ticked", which is also a
-    /// truer model: the two states are independent facts about the fleet, not three modes.
-    /// Unticking both is allowed and shows the empty state with a Clear Filter action rather
-    /// than being blocked — a checkbox you cannot untick is the same lie in reverse.
-    enum StateFilter: String, CaseIterable, Identifiable, Hashable {
+    /// This was briefly a multi-select set of checkboxes, matching the Columns menu. Radio is
+    /// the better fit and the owner called it: there are exactly three meaningful outcomes and
+    /// radio names all three, including `All`. Checkboxes left "All" implicit in *both ticked*
+    /// and admitted a fourth, useless state — neither ticked, showing nothing — that then
+    /// needed designing around. A control with no degenerate state beats one with a
+    /// well-handled degenerate state.
+    enum Filter: String, CaseIterable, Identifiable, Hashable {
+        case all = "All"
         case running = "Running"
         case stopped = "Stopped"
         var id: Self { self }
 
         var systemImage: String {
             switch self {
+            case .all: "circle.grid.2x2"
             case .running: "play.circle"
             case .stopped: "stop.circle"
             }
         }
-
-        static let all: Set<StateFilter> = [.running, .stopped]
     }
 
     @State private var selection = Set<Container.ID>()
@@ -133,53 +134,33 @@ struct ContainersView: View {
         openWindow(id: "container-detail", value: id)
     }
 
-    /// Same shape as `columnsButton`, deliberately: both answer "what am I looking at",
-    /// both are icon-and-popover, both use checkboxes. The icon fills when a filter is
-    /// active, so a hidden state is visible from the toolbar rather than being something you
-    /// discover by wondering where your containers went.
+    /// Same icon-and-popover shape as `columnsButton` — both answer "what am I looking at",
+    /// so both are a glyph with a menu rather than words spread across the toolbar. The
+    /// contents differ because the questions differ: columns are independent (checkboxes),
+    /// the state filter is one choice (radio).
+    ///
+    /// The icon fills when a filter is active, so a hidden state is visible from the toolbar
+    /// rather than something you discover by wondering where your containers went.
     private var filterButton: some View {
         Button {
             showingFilter.toggle()
         } label: {
-            Image(systemName: isStateFiltered
-                  ? "line.3.horizontal.decrease.circle.fill"
-                  : "line.3.horizontal.decrease.circle")
+            Image(systemName: ui.filter == .all
+                  ? "line.3.horizontal.decrease.circle"
+                  : "line.3.horizontal.decrease.circle.fill")
         }
-        .help(isStateFiltered ? "Filtering by state" : "Filter by state")
+        .help(ui.filter == .all ? "Filter by state" : "Showing \(ui.filter.rawValue.lowercased()) only")
         .accessibilityLabel("Filter by state")
         .popover(isPresented: $showingFilter, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(StateFilter.allCases) { state in
-                    Toggle(isOn: stateBinding(state)) {
-                        Label(state.rawValue, systemImage: state.systemImage)
-                    }
-                    .toggleStyle(.checkbox)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 2)
+            Picker("Show", selection: $ui.filter) {
+                ForEach(Filter.allCases) { option in
+                    Label(option.rawValue, systemImage: option.systemImage).tag(option)
                 }
-                Divider().padding(.vertical, 6)
-                HStack {
-                    Spacer()
-                    Button("Show All") { ui.visibleStates = StateFilter.all }
-                        .disabled(!isStateFiltered)
-                }
-                .controlSize(.small)
-                .padding(.horizontal, 12)
             }
-            .padding(.vertical, 10)
-            .frame(width: 190)
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .padding(14)
         }
-    }
-
-    private var isStateFiltered: Bool { ui.visibleStates != StateFilter.all }
-
-    private func stateBinding(_ state: StateFilter) -> Binding<Bool> {
-        Binding(
-            get: { ui.visibleStates.contains(state) },
-            set: { on in
-                if on { ui.visibleStates.insert(state) } else { ui.visibleStates.remove(state) }
-            }
-        )
     }
 
     private func binding(for id: String) -> Binding<Bool> {
@@ -199,8 +180,10 @@ struct ContainersView: View {
     }
 
     private var filtered: [Container] {
-        model.containers.filter { container in
-            ui.visibleStates.contains(AppModel.isRunning(container) ? .running : .stopped)
+        switch ui.filter {
+        case .all: model.containers
+        case .running: model.running
+        case .stopped: model.stopped
         }
     }
 
@@ -223,7 +206,7 @@ struct ContainersView: View {
     /// Whether anything the user chose is hiding rows. Both the search field and the state
     /// tabs can empty the table, and an empty state that only mentions ui.search would be wrong
     /// half the time.
-    private var isFiltered: Bool { !ui.search.isEmpty || ui.visibleStates != StateFilter.all }
+    private var isFiltered: Bool { !ui.search.isEmpty || ui.filter != .all }
 
     private var visibleIDs: Set<Container.ID> { Set(visible.map(\.id)) }
 
@@ -570,7 +553,7 @@ struct ContainersView: View {
                 if isFiltered {
                     Button("Clear Filter") {
                         ui.search = ""
-                        ui.visibleStates = StateFilter.all
+                        ui.filter = .all
                     }
                 } else {
                     Button("Run a Container…") { showingRun = true }
