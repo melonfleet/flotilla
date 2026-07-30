@@ -63,10 +63,23 @@ VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")
 SHORT_VERSION="$(printf '%s' "$VERSION" | sed 's/^v//; s/-.*//')"
 [ -n "$SHORT_VERSION" ] || SHORT_VERSION="0.0.0"
 
+# Icons are generated from the brand geometry, not rasterised from the SVG — see
+# Scripts/make-icons.swift for why (the wordmark SVGs fetch a webfont, which an app promising
+# no phone-home must not ship).
+echo "▸ generating icons…"
+swift "$ROOT/Scripts/make-icons.swift" | sed 's/^/   /'
+iconutil -c icns "$ROOT/build/icons/Flotilla.iconset" -o "$ROOT/build/icons/Flotilla.icns"
+
 echo "▸ assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/Flotilla"
+
+cp "$ROOT/build/icons/Flotilla.icns" "$APP/Contents/Resources/Flotilla.icns"
+# The menu-bar template, at both scales. Loaded by URL at runtime and marked isTemplate
+# explicitly — the "…Template" filename convention only applies to NSImage(named:).
+cp "$ROOT/Resources/MenuBarIconTemplate.png" "$APP/Contents/Resources/"
+cp "$ROOT/Resources/MenuBarIconTemplate@2x.png" "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -77,6 +90,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key>          <string>Flotilla</string>
     <key>CFBundleIdentifier</key>           <string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key>           <string>Flotilla</string>
+    <key>CFBundleIconFile</key>             <string>Flotilla</string>
     <key>CFBundlePackageType</key>          <string>APPL</string>
     <key>CFBundleShortVersionString</key>   <string>$SHORT_VERSION</string>
     <key>CFBundleVersion</key>              <string>$VERSION</string>

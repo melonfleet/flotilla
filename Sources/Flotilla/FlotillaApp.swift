@@ -71,17 +71,42 @@ extension AppearanceMode {
 
 @main
 struct FlotillaApp: App {
+    /// Loaded once. `isTemplate` is set explicitly rather than relying on the filename
+    /// convention, which only applies to `NSImage(named:)` and would silently do nothing for
+    /// an image loaded from a bundle URL — leaving a black glyph that vanishes on a dark menu
+    /// bar. Falls back to an SF Symbol if the resource is missing, so a packaging mistake
+    /// degrades to a visible placeholder rather than an invisible menu-bar item.
+    static let menuBarIcon: NSImage = {
+        if let url = Bundle.main.url(forResource: "MenuBarIconTemplate", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            image.isTemplate = true
+            image.size = NSSize(width: 18, height: 18)
+            return image
+        }
+        let fallback = NSImage(systemSymbolName: "sailboat", accessibilityDescription: "Flotilla")
+            ?? NSImage(systemSymbolName: "shippingbox", accessibilityDescription: "Flotilla")!
+        fallback.isTemplate = true
+        return fallback
+    }()
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
 
     var body: some Scene {
         // The glance. `.menuBarExtraStyle(.window)` gives a real popover we can lay out,
         // rather than a plain menu of NSMenuItems.
-        MenuBarExtra("Flotilla", systemImage: "shippingbox") {
+        MenuBarExtra {
             MenuBarView(model: model)
                 // The popover needs it too: appearance applied only to the main window
                 // would leave the menu bar disagreeing with the rest of the app.
                 .preferredColorScheme(model.appearance.colorScheme)
+        } label: {
+            // The brand mark, as a **template** image: macOS inverts it for a light or dark
+            // menu bar automatically, so one asset serves both and there is no pair to drift.
+            // Monochrome is not a compromise here — `research/FEATURES.md` specifies a
+            // monochrome template with state shown by shape or badge, which is what every
+            // system menu-bar item does. `shippingbox` was a placeholder SF Symbol.
+            Image(nsImage: Self.menuBarIcon)
         }
         .menuBarExtraStyle(.window)
 

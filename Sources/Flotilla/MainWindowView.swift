@@ -24,7 +24,16 @@ struct MainWindowView: View {
             List(Section.allCases, selection: $selection) { section in
                 Label(section.title, systemImage: section.systemImage)
             }
-            .navigationTitle("Flotilla")
+            // The wordmark replaces the plain title. `.navigationTitle` only takes text, so
+            // the lockup goes in a safe-area inset above the list and the title is cleared.
+            .navigationTitle("")
+            .safeAreaInset(edge: .top) {
+                Wordmark(size: 14)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+                    .padding(.bottom, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             .listStyle(.sidebar)
             // Liquid Glass on the **sidebar**, per the placement note in
             // `research/review/mockups/main-window.html`: "Glass on sidebar, toolbar and the
