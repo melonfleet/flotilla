@@ -509,3 +509,44 @@ private func requireRejected(
         try Allowlist.validated(["volume", "create", "--size", "64M", "data"])
     }
 }
+
+// MARK: - the review's allowlist audit, applied
+//
+// All three verified against the live CLI before being fixed, not taken on the help text alone.
+
+@Test func startTakesExactlyOneContainer() throws {
+    // `container start idle cache` is refused with "Unexpected argument 'cache'". The table
+    // previously allowed 32 operands and so canonicalised a command the CLI rejects.
+    #expect(throws: Never.self) { try Allowlist.validated(["start", "web"]) }
+    #expect(throws: (any Error).self) { try Allowlist.validated(["start", "web", "cache"]) }
+    // The genuinely plural ones must keep working.
+    #expect(throws: Never.self) { try Allowlist.validated(["stop", "web", "cache"]) }
+    #expect(throws: Never.self) { try Allowlist.validated(["rm", "web", "cache"]) }
+}
+
+@Test func aBarePortIsNotAValidPublishValue() throws {
+    // The CLI refuses `-p 9998` with `invalid publish value: 9998`. Our shape accepted it,
+    // making it LOOSER than the CLI — the one direction that matters, since a too-loose shape
+    // lets invalid input cross the boundary that Phase 2 exposes to a remote caller.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["run", "-p", "9998", "alpine"])
+    }
+    // The real forms still pass.
+    for good in ["8080:80", "8080:80/tcp", "127.0.0.1:8080:80", "127.0.0.1:8080:80/udp"] {
+        #expect(throws: Never.self, "should accept \(good)") {
+            try Allowlist.validated(["run", "-p", good, "alpine"])
+        }
+    }
+}
+
+@Test func memoryAcceptsEveryDocumentedSuffix() throws {
+    // K, M, G, T, P are all documented; T and P were rejected. Verified: `-m 1T` and `-m 1P`
+    // both run.
+    for good in ["512K", "512M", "2G", "1T", "1P", "1024"] {
+        #expect(throws: Never.self, "should accept \(good)") {
+            try Allowlist.validated(["run", "-m", good, "alpine"])
+        }
+    }
+    #expect(throws: (any Error).self) { try Allowlist.validated(["run", "-m", "2X", "alpine"]) }
+    #expect(throws: (any Error).self) { try Allowlist.validated(["run", "-m", "0", "alpine"]) }
+}

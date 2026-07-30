@@ -343,8 +343,12 @@ public enum Allowlist {
                         operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
 
             // MARK: containers — mutate
+            // Exactly one operand. Verified: `container start idle cache` is refused with
+            // "Unexpected argument 'cache'" and the usage line is singular — unlike `stop`,
+            // `rm` and `inspect`, which really are plural. Accepting 32 here let the allowlist
+            // canonicalise a command the CLI would reject. (the review's audit, High.)
             CommandSpec(["start"], mutates: true, timeoutHint: 120,
-                        operands: OperandSpec(shape: .identifier, min: 1, max: 32)),
+                        operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
             CommandSpec(["stop"], mutates: true, timeoutHint: 120,
                         flags: [all,
                                 FlagSpec(long: "time", short: "t", value: .durationSeconds),
@@ -793,7 +797,12 @@ public enum Allowlist {
         }
         let parts = body.split(separator: ":", omittingEmptySubsequences: false)
         switch parts.count {
-        case 1: return isPort(parts[0])
+        // A bare port is NOT valid. The CLI's grammar is `[host-ip:]host-port:container-port`,
+        // and it refuses a single part outright: `-p 9998` fails with
+        // `invalid publish value: 9998` (verified). Accepting it here made this shape looser
+        // than the CLI's, which is the one direction that matters — a too-loose shape lets
+        // invalid input cross the boundary to be rejected less clearly downstream, and in
+        // Phase 2 that boundary faces a remote caller. (the review's audit, High.)
         case 2: return isPort(parts[0]) && isPort(parts[1])
         case 3: return isIPv4(String(parts[0])) && isPort(parts[1]) && isPort(parts[2])
         default: return false
@@ -875,7 +884,10 @@ public enum Allowlist {
 
     private static func isMemorySize(_ value: String) -> Bool {
         var digits = Substring(value)
-        for suffix in ["KB", "MB", "GB", "K", "M", "G", "B"] where value.uppercased().hasSuffix(suffix) {
+        // `T` and `P` are documented and accepted — verified: `-m 1T` and `-m 1P` both run.
+        // Longest suffixes first so `KB` is not mistaken for `B`.
+        for suffix in ["KB", "MB", "GB", "TB", "PB", "K", "M", "G", "T", "P", "B"]
+        where value.uppercased().hasSuffix(suffix) {
             digits = value.prefix(value.count - suffix.count)
             break
         }
