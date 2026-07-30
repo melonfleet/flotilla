@@ -440,8 +440,12 @@ struct ContainersView: View {
                         showingRun = true
                     } label: {
                         Label("Run…", systemImage: "plus")
+                            .labelStyle(.iconOnly)
                     }
-                    .help("Create and start a new container")
+                    // Icon only, with the word on hover — the label is still there for
+                    // VoiceOver and the tooltip, so nothing is lost by not printing it.
+                    .help("Run a container…")
+                    .accessibilityLabel("Run a container")
 
                     Button {
                         Task { await model.reload() }
@@ -560,8 +564,17 @@ struct ContainersView: View {
                 .customizationID("state")
 
                 TableColumn("Name", value: \.id) { c in
-                    Text(c.id)
-                        .lineLimit(1)
+                    // Clicking the name opens the container, the way Docker Desktop does.
+                    // A plain `Button` inside a `Table` row swallows row selection, so this
+                    // is a link-styled button with the selection behaviour left intact:
+                    // `.buttonStyle(.link)` keeps the click local to the text.
+                    Button {
+                        detailContainer = c
+                    } label: {
+                        Text(c.id).lineLimit(1)
+                    }
+                    .buttonStyle(.link)
+                    .help("Open \(c.id)")
                 }
                 TableColumn("Image", value: \.imageReference) { c in
                     Text(Self.imageLabel(c.configuration.image.reference))

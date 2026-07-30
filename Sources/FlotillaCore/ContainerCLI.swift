@@ -147,6 +147,21 @@ public struct ContainerCLI: Sendable {
         return container
     }
 
+    /// The processes running **inside** a container.
+    ///
+    /// Docker Desktop shows what a container is actually running, and Apple's `container`
+    /// can answer it — `container exec <id> ps` works today, no Phase 4 streaming needed.
+    ///
+    /// The `Allowlist` entry behind this is locked to exactly this one argv (`TrailingPolicy
+    /// .exact`), so this method cannot be generalised into arbitrary in-container execution
+    /// by passing different arguments — there are none to pass. Interactive `exec` remains
+    /// Phase 4 and remains deliberately unallowlisted.
+    ///
+    /// Returns raw `ps` output; parsing belongs to the caller that renders it.
+    public func processes(_ id: String) throws -> String {
+        try execute(["exec", id, "--", "ps", "-o", "pid,comm,args"]).stdout
+    }
+
     /// The CLI's own `inspect` output, verbatim — for the inspect tab's raw JSON view,
     /// which must show *the CLI's* shape rather than a re-encode of `Container` that would
     /// silently drop every field Flotilla does not model (`capAdd`, `dns`, `initProcess`,

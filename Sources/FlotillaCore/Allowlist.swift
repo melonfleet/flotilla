@@ -108,6 +108,18 @@ public enum TrailingPolicy: Sendable, Equatable {
     case forbidden
     /// A command line to run inside the container (`container run alpine echo hi`).
     case command(maxTokens: Int)
+    /// **Exactly** this token sequence, or nothing. Nothing else is accepted — not a
+    /// superset, not a reordering, not a single extra flag.
+    ///
+    /// Exists for `exec`. A process list needs `container exec <id> ps …`, but allowlisting
+    /// `exec` with `.command` would permit `exec <id> sh`, which is arbitrary code execution
+    /// inside the container and would hollow out the whole point of having a command
+    /// allowlist — most of all in Phase 2, where this grammar *is* the wire boundary and the
+    /// caller is a remote peer rather than the machine's owner.
+    ///
+    /// So the app gets the one fixed invocation it needs and nothing more. If a second fixed
+    /// command is ever required, add a second `CommandSpec`; do not relax this to `.command`.
+    case exact([String])
 }
 
 /// One allowlisted subcommand.
@@ -265,6 +277,17 @@ public enum Allowlist {
             CommandSpec(["stats"], mutates: false,
                         flags: [format, FlagSpec(long: "no-stream")],
                         operands: OperandSpec(shape: .identifier, min: 0, max: 32)),
+            // `exec`, deliberately crippled to ONE command: the process list.
+            //
+            // Not `.command(maxTokens:)`. That would permit `exec <id> sh` — an interactive
+            // shell inside the container — which is exactly the "generic remote shell" this
+            // whole table exists to prevent (DECISIONS.md, transport). The UI needs a process
+            // list and nothing else, so that is all this grants. `mutates: false` because a
+            // `ps` changes nothing; the `--tty`/`--interactive` flags are absent on purpose.
+            CommandSpec(["exec"], mutates: false, timeoutHint: 15,
+                        operands: OperandSpec(shape: .identifier, min: 1, max: 1),
+                        trailing: .exact(["ps", "-o", "pid,comm,args"])),
+
             CommandSpec(["logs"], mutates: false,
                         flags: [FlagSpec(short: "n", value: .count), FlagSpec(long: "boot")],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
@@ -420,7 +443,13 @@ public enum Allowlist {
             }
 
             if token == "--" {
-                guard case .command = spec.trailing else { throw AllowlistError.separatorNotAllowed }
+                // `.exact` carries an in-container command too, so it needs the separator
+                // just as `.command` does — without this the one invocation the spec
+                // permits is unreachable.
+                switch spec.trailing {
+                case .command, .exact: break
+                case .forbidden: throw AllowlistError.separatorNotAllowed
+                }
                 afterSeparator = true
                 continue
             }
@@ -483,15 +512,40 @@ public enum Allowlist {
             for token in trailing {
                 if let error = check(token, as: .commandToken, context: "command", mountPolicy: mountPolicy) { throw error }
             }
+        } else if case .exact(let permitted) = spec.trailing {
+            // All-or-nothing, compared element-wise with `.literal` so no Unicode
+            // equivalence can smuggle a different command past a visual match — the same
+            // reasoning as the operand checks.
+            guard trailing.count == permitted.count,
+                  zip(trailing, permitted).allSatisfy({ $0.compare($1, options: .literal) == .orderedSame })
+            else {
+                // Reported as an invalid value rather than a count problem: the objection is
+                // *what* was asked for, not how much of it.
+                throw AllowlistError.invalidValue(
+                    context: "command",
+                    value: trailing.joined(separator: " "),
+                    shape: .commandToken
+                )
+            }
         } else if !trailing.isEmpty {
             throw AllowlistError.tooManyOperands(count: operands.count + trailing.count, limit: spec.operands.max)
         }
 
-        // Canonical argv: subcommand, flags, operands, then the in-container command
-        // behind an explicit `--`. The separator matters: without it a command token
-        // like `--rm` would be re-parsed as a flag *of `container run`* by the CLI.
+        // Canonical argv: subcommand, flags, operands, then the in-container command.
+        //
+        // `run` needs an explicit `--` before that command, or a token like `--rm` gets
+        // re-parsed as a flag *of `container run`* by the CLI.
+        //
+        // `exec` is the opposite: it has no separator at all. `container exec web -- ps`
+        // fails with "failed to find target executable --" — it takes `--` as the program
+        // name. Verified against the live CLI; the unit tests passed either way, so this was
+        // only caught by running it. The input grammar still requires the separator so
+        // parsing stays unambiguous, but it is dropped from the argv we actually execute.
         var argv = spec.path + flagTokens + operands
-        if !trailing.isEmpty { argv.append("--"); argv.append(contentsOf: trailing) }
+        if !trailing.isEmpty {
+            if case .command = spec.trailing { argv.append("--") }
+            argv.append(contentsOf: trailing)
+        }
 
         return ValidatedCommand(subcommand: spec.path,
                                 arguments: argv,
