@@ -6,7 +6,7 @@ import FlotillaCore
 struct NetworksView: View {
     let model: AppModel
 
-    @Environment(\.openWindow) private var openWindow
+    @State private var showingCreate = false
     @State private var pendingDelete: ContainerNetwork?
 
     var body: some View {
@@ -17,6 +17,17 @@ struct NetworksView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
+        // A real sheet: the system makes it modal and attaches it to this window, which is
+        // the behaviour a free-floating window could only imitate. The dim below is what
+        // supplies the web-modal look the system does not.
+        .sheet(isPresented: $showingCreate) {
+            NewNetworkView(model: model) { showingCreate = false }
+                // Reported to the model rather than dimmed locally: a dim applied here would
+                // only cover the detail pane and leave the sidebar bright. `MainWindowView`
+                // owns the dim so the *whole* interface greys, which is the effect asked for.
+                .onAppear { model.formDidOpen() }
+                .onDisappear { model.formDidClose() }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {
@@ -46,7 +57,7 @@ struct NetworksView: View {
             Text("Networks").font(.title3.bold())
             Spacer()
             Button {
-                openWindow(id: "new-network")
+                showingCreate = true
             } label: {
                 Label("New Network…", systemImage: "plus")
                     .labelStyle(.iconOnly)
@@ -169,7 +180,10 @@ struct NetworksView: View {
 /// decisions, and traffic lights on a "delete this?" prompt would be wrong.
 struct NewNetworkView: View {
     let model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    /// Supplied by the presenter rather than using `@Environment(\.dismiss)`: the sheet's
+    /// own `isPresented` binding is the single source of truth for whether it is open, and
+    /// two mechanisms for closing one thing is how a sheet gets stuck.
+    let dismiss: () -> Void
 
     @State private var newNetworkName = ""
     @State private var newSubnet = ""
@@ -188,6 +202,13 @@ struct NewNetworkView: View {
     /// split in two: v4 and v6 are independent, a network may be either or both, and mixing
     /// their examples in one column made neither clear.
     var body: some View {
+        ModalCard(title: "New Network", onClose: dismiss) {
+            form
+        }
+        .frame(minWidth: 460)
+    }
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Name").font(.caption).foregroundStyle(.secondary)
@@ -263,7 +284,6 @@ struct NewNetworkView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 460)
     }
 
     enum AddressFamily: String, CaseIterable, Identifiable {

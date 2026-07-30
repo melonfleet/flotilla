@@ -131,20 +131,6 @@ struct FlotillaApp: App {
         }
         .defaultSize(width: 720, height: 600)
 
-        // Forms in their own windows, so each gets macOS's own red close button instead of a
-        // button spelling out "Close" — and `formWindowChrome()` strips the minimise and zoom
-        // controls, which mean nothing on a form. `.contentSize` resizability keeps them
-        // sized to what they contain.
-        //
-        // Confirmations and error alerts stay as alerts, deliberately: those are modal
-        // decisions, and traffic lights on a "delete this?" prompt would be wrong.
-        WindowGroup(id: "new-network") {
-            NewNetworkView(model: model)
-                .modalFormWindow(model)
-                .preferredColorScheme(model.appearance.colorScheme)
-        }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
     }
 }
 
