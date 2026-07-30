@@ -253,17 +253,17 @@ private func requireRejected(
 
 @Test func mutationClassificationMatchesTheSecurityPolicy() {
     let expectedMutating: Set<String> = [
-        "start", "stop", "delete", "rm", "run",
-        "image pull", "image delete", "image rm",
-        "volume create", "volume delete", "volume rm",
-        "network create", "network delete", "network rm",
+        "start", "stop", "kill", "delete", "rm", "prune", "run",
+        "image pull", "image delete", "image rm", "image prune", "image tag",
+        "volume create", "volume delete", "volume rm", "volume prune",
+        "network create", "network delete", "network rm", "network prune",
     ]
     let actualMutating = Set(Allowlist.commands.filter(\.mutates).map(\.name))
     #expect(actualMutating == expectedMutating)
 
     let expectedReadOnly: Set<String> = [
         "ls", "list", "inspect", "stats", "logs",
-        "image list",
+        "image list", "image inspect",
         "volume list", "volume inspect",
         "network list", "network inspect",
         "system status", "system version", "system df",
@@ -291,6 +291,10 @@ private func requireRejected(
         AllowedCase(["delete", "-f", "one"], canonical: ["delete", "--force", "one"],
                     mutates: true, timeout: 120),
         AllowedCase(["rm", "--all"], mutates: true, timeout: 120),
+        AllowedCase(["kill", "-a", "-s", "TERM"],
+                    canonical: ["kill", "--all", "--signal", "TERM"],
+                    mutates: true, timeout: 30),
+        AllowedCase(["prune"], mutates: true, timeout: 120),
         AllowedCase(
             ["run", "-d", "--rm", "--name=friendly", "-e", "KEY=value", "-p", "8080:80/tcp",
              "-v", "/tmp/data:/data:ro", "-c", "4", "-m", "512MB", "--network", "bridge",
@@ -306,6 +310,7 @@ private func requireRejected(
 
         AllowedCase(["image", "list", "-q", "--format=yaml"],
                     canonical: ["image", "list", "--quiet", "--format", "yaml"], mutates: false),
+        AllowedCase(["image", "inspect", "alpine", "docker.io/library/alpine:latest"], mutates: false),
         AllowedCase(["image", "pull", "--platform=linux/arm64", "alpine@sha256:\(digest)"],
                     canonical: ["image", "pull", "--platform", "linux/arm64",
                                 "alpine@sha256:\(digest)"],
@@ -314,6 +319,9 @@ private func requireRejected(
                     mutates: true),
         AllowedCase(["image", "rm", "-f", "alpine"], canonical: ["image", "rm", "--force", "alpine"],
                     mutates: true),
+        AllowedCase(["image", "prune", "-a"], canonical: ["image", "prune", "--all"],
+                    mutates: true, timeout: 120),
+        AllowedCase(["image", "tag", "alpine:latest", "alpine:mine"], mutates: true),
 
         AllowedCase(["volume", "list", "--format", "toml"], mutates: false),
         AllowedCase(["volume", "inspect", "data"], mutates: false),
@@ -323,6 +331,7 @@ private func requireRejected(
                                 "--label", "team=infra", "data"], mutates: true),
         AllowedCase(["volume", "delete", "--all"], mutates: true),
         AllowedCase(["volume", "rm", "data"], mutates: true),
+        AllowedCase(["volume", "prune"], mutates: true, timeout: 120),
 
         AllowedCase(["network", "list", "-q"], canonical: ["network", "list", "--quiet"],
                     mutates: false),
@@ -335,6 +344,7 @@ private func requireRejected(
         AllowedCase(["network", "delete", "-a"], canonical: ["network", "delete", "--all"],
                     mutates: true),
         AllowedCase(["network", "rm", "private"], mutates: true),
+        AllowedCase(["network", "prune"], mutates: true, timeout: 120),
 
         AllowedCase(["system", "status", "--format=json"],
                     canonical: ["system", "status", "--format", "json"], mutates: false),

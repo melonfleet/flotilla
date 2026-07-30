@@ -244,8 +244,10 @@ public enum Allowlist {
     ///   each is a data-exfiltration or credential surface that deserves its own review.
     /// - `logs --follow`, `stats` streaming — Phase 4 streaming transport; a bounded
     ///   fetch is all Phase 1 offers, so `-f` is not accepted.
-    /// - `system start/stop`, `builder …`, `prune` — fleet-wide destructive or
-    ///   privileged; Phase 3+.
+    /// - `system start/stop`, `builder …` — fleet-wide destructive or privileged;
+    ///   Phase 3+. (`prune`, unlike those, *is* Phase 1 scope — see the `prune` rows
+    ///   below, one per resource kind, matching the real CLI's shape rather than a
+    ///   single fleet-wide verb.)
     /// - `restart` — **not a real `container` subcommand**; `ContainerCLI.restart`
     ///   composes `stop` + `start`.
     public static let commands: [CommandSpec] = {
@@ -275,12 +277,20 @@ public enum Allowlist {
                                 FlagSpec(long: "time", short: "t", value: .durationSeconds),
                                 FlagSpec(long: "signal", short: "s", value: .signal)],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32, minWaivedBy: ["all"])),
+            // `container kill` has no `--time` — it is the immediate counterpart to
+            // `stop`, and its default signal is KILL rather than stop's TERM.
+            CommandSpec(["kill"], mutates: true, timeoutHint: 30,
+                        flags: [all, FlagSpec(long: "signal", short: "s", value: .signal)],
+                        operands: OperandSpec(shape: .identifier, min: 1, max: 32, minWaivedBy: ["all"])),
             CommandSpec(["delete"], mutates: true, timeoutHint: 120,
                         flags: [force, all],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32, minWaivedBy: ["all"])),
             CommandSpec(["rm"], mutates: true, timeoutHint: 120,
                         flags: [force, all],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32, minWaivedBy: ["all"])),
+            // Real `container prune` takes no operands and no flags beyond `--debug`
+            // (which Flotilla does not expose) — it removes every stopped container.
+            CommandSpec(["prune"], mutates: true, timeoutHint: 120),
             CommandSpec(["run"], mutates: true, timeoutHint: 600,
                         flags: [FlagSpec(long: "detach", short: "d"),
                                 FlagSpec(long: "rm"),
@@ -300,6 +310,8 @@ public enum Allowlist {
 
             // MARK: images
             CommandSpec(["image", "list"], mutates: false, flags: [format, quiet]),
+            CommandSpec(["image", "inspect"], mutates: false,
+                        operands: OperandSpec(shape: .imageReference, min: 1, max: 32)),
             CommandSpec(["image", "pull"], mutates: true, timeoutHint: 1800,
                         flags: [FlagSpec(long: "platform", value: .platform)],
                         operands: OperandSpec(shape: .imageReference, min: 1, max: 1)),
@@ -309,6 +321,9 @@ public enum Allowlist {
             CommandSpec(["image", "rm"], mutates: true,
                         flags: [all, force],
                         operands: OperandSpec(shape: .imageReference, min: 1, max: 32, minWaivedBy: ["all"])),
+            CommandSpec(["image", "prune"], mutates: true, timeoutHint: 120, flags: [all]),
+            CommandSpec(["image", "tag"], mutates: true,
+                        operands: OperandSpec(shape: .imageReference, min: 2, max: 2)),
 
             // MARK: volumes
             CommandSpec(["volume", "list"], mutates: false, flags: [format, quiet]),
@@ -325,6 +340,7 @@ public enum Allowlist {
             CommandSpec(["volume", "rm"], mutates: true,
                         flags: [all],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32, minWaivedBy: ["all"])),
+            CommandSpec(["volume", "prune"], mutates: true, timeoutHint: 120),
 
             // MARK: networks
             CommandSpec(["network", "list"], mutates: false, flags: [format, quiet]),
@@ -342,6 +358,7 @@ public enum Allowlist {
             CommandSpec(["network", "rm"], mutates: true,
                         flags: [all],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32, minWaivedBy: ["all"])),
+            CommandSpec(["network", "prune"], mutates: true, timeoutHint: 120),
 
             // MARK: system — read only
             CommandSpec(["system", "status"], mutates: false, flags: [format]),

@@ -131,3 +131,60 @@ private func fixture(_ name: String) throws -> Data {
     // `host:5000/name:tag` — the FIRST colon belongs to the port, not the tag.
     #expect(ContainerImage.shortReference("registry.example:5000/team/tool:2.1") == "tool:2.1")
 }
+
+// MARK: - inspect and system df, against real captures
+//
+// Both were added without a live `container` to capture from, so `inspect` was only known
+// to decode `ls` output and `system df` was left as a raw passthrough rather than a
+// fabricated schema. These fixtures are real captures from `container 1.0.0` taken on the
+// Mac afterwards, which is what lets both be pinned properly.
+
+@Test func containerInspectReallyEmitsAnArrayLikeListDoes() throws {
+    // The unverified assumption: `inspect` returns a single object, not a one-element
+    // array. It is an array — so decoding it as `[Container]` and taking `.first` is right,
+    // and this fixture is what stops that being a guess.
+    let containers = try JSONDecoder.flotilla.decode(
+        [Container].self, from: fixture("inspect-container"))
+    #expect(containers.count == 1)
+
+    let c = try #require(containers.first)
+    #expect(c.id == "web-demo")
+    #expect(c.isRunning)
+    // The shape really is `ls`-identical, including the field the model only learned about
+    // later.
+    #expect(c.portSummary == "18080:80/tcp")
+}
+
+@Test func imageInspectDecodesAsTheImageModelToo() throws {
+    let images = try JSONDecoder.flotilla.decode(
+        [ContainerImage].self, from: fixture("inspect-image"))
+    let img = try #require(images.first)
+    #expect(img.reference == "docker.io/library/alpine:latest")
+}
+
+@Test func systemDiskUsageDecodesTheRealPayload() throws {
+    let df = try JSONDecoder.flotilla.decode(SystemDiskUsage.self, from: fixture("system-df"))
+
+    // Keyed by resource, not an array — unlike every list command.
+    #expect(df.containers.total == 3)
+    #expect(df.containers.active == 1)
+    #expect(df.images.total == 2)
+    #expect(df.volumes.total == 0)
+
+    // Row order matches the CLI's own table so the app and terminal agree.
+    #expect(df.categories.map(\.id) == ["Images", "Containers", "Local Volumes"])
+    #expect(df.totalReclaimableBytes == df.containers.reclaimable + df.images.reclaimable + df.volumes.reclaimable)
+}
+
+@Test func nothingStoredIsDistinctFromNothingReclaimable() throws {
+    let df = try JSONDecoder.flotilla.decode(SystemDiskUsage.self, from: fixture("system-df"))
+
+    // Volumes hold nothing at all, so "what fraction is reclaimable" has no answer —
+    // reporting 0% would imply there is something here that cannot be freed. The CLI's own
+    // table prints `0 B (0%)` for both cases and loses that distinction; we keep it.
+    #expect(df.volumes.reclaimableFraction == nil)
+
+    let images = try #require(df.categories.first { $0.id == "Images" })
+    let fraction = try #require(images.reclaimableFraction)
+    #expect(fraction > 0.7 && fraction < 0.8)   // CLI reported 74%
+}

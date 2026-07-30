@@ -196,6 +196,66 @@ public struct ContainerStats: Codable, Identifiable, Sendable {
 
 // MARK: - System
 
+// MARK: - Disk usage  (`container system df --format json`)
+
+/// Captured from a live `container 1.0.0` install on 2026-07-28. The payload is an object
+/// keyed by resource — not the array the list commands return — with the same four counters
+/// under each key.
+public struct SystemDiskUsage: Codable, Sendable {
+    public var containers: Category
+    public var images: Category
+    public var volumes: Category
+
+    public struct Category: Codable, Sendable, Hashable, Identifiable {
+        public var total: Int
+        public var active: Int
+        public var sizeInBytes: Int64
+        public var reclaimable: Int64
+
+        /// Set by `SystemDiskUsage.categories` so a table can identify rows; not part of
+        /// the decoded payload, which is keyed rather than labelled.
+        public var id: String = ""
+
+        private enum CodingKeys: String, CodingKey {
+            case total, active, sizeInBytes, reclaimable
+        }
+
+        public init(total: Int, active: Int, sizeInBytes: Int64, reclaimable: Int64, id: String = "") {
+            self.total = total
+            self.active = active
+            self.sizeInBytes = sizeInBytes
+            self.reclaimable = reclaimable
+            self.id = id
+        }
+
+        /// Share of this category's bytes that could be freed. Nil rather than zero when
+        /// nothing is stored — "0% reclaimable" and "nothing here" are different answers,
+        /// and the CLI's own table prints `0 B (0%)` for both.
+        public var reclaimableFraction: Double? {
+            guard sizeInBytes > 0 else { return nil }
+            return Double(reclaimable) / Double(sizeInBytes)
+        }
+    }
+
+    /// Row order matching the CLI's own `system df` table, so the app and the terminal
+    /// don't disagree about what comes first.
+    public var categories: [Category] {
+        [labelled(images, "Images"),
+         labelled(containers, "Containers"),
+         labelled(volumes, "Local Volumes")]
+    }
+
+    private func labelled(_ category: Category, _ id: String) -> Category {
+        var copy = category
+        copy.id = id
+        return copy
+    }
+
+    public var totalReclaimableBytes: Int64 {
+        containers.reclaimable + images.reclaimable + volumes.reclaimable
+    }
+}
+
 public struct SystemStatus: Codable, Sendable {
     public var status: String
     public var apiServerVersion: String?

@@ -1,11 +1,24 @@
 import Foundation
 
+public enum ContainerCLIError: Error, Equatable, Sendable {
+    /// `container inspect`/`image inspect` returned a well-formed but empty JSON array
+    /// for an id the caller asked about.
+    case emptyInspectResult(id: String)
+}
+
 /// High-level, typed convenience over a `ContainerHost`. Both `LocalHost` and (later)
 /// `RemoteHost` flow through this identically, so client and host modes share all
 /// container semantics. See `reference/container-cli.md` for the command surface.
 public struct ContainerCLI: Sendable {
     public let host: ContainerHost
-    public init(host: ContainerHost) { self.host = host }
+    /// See the note on `execute` below: `.unrestricted` is the right default only
+    /// because a `ContainerCLI` driving `LocalHost` is trusted with its own disk.
+    public let mountPolicy: MountPolicy
+
+    public init(host: ContainerHost, mountPolicy: MountPolicy = .unrestricted) {
+        self.host = host
+        self.mountPolicy = mountPolicy
+    }
 
     // MARK: Raw JSON
 
@@ -37,6 +50,17 @@ public struct ContainerCLI: Sendable {
         try JSONDecoder.flotilla.decode([VersionComponent].self,
                                         from: Data(try host.run(["system", "version", "--format", "json"]).stdout.utf8))
     }
+    public func rawSystemDiskUsageJSON() throws -> String {
+        try host.run(["system", "df", "--format", "json"]).stdout
+    }
+
+    /// The disk view. Now typed: the payload was captured from a live `container 1.0.0`
+    /// install (`Fixtures/system-df.json`) after this was first left as a raw passthrough
+    /// for want of a real schema.
+    public func systemDiskUsage() throws -> SystemDiskUsage {
+        try JSONDecoder.flotilla.decode(SystemDiskUsage.self,
+                                        from: Data(try rawSystemDiskUsageJSON().utf8))
+    }
     public func listVolumes() throws -> [ContainerVolume] {
         try JSONDecoder.flotilla.decode([ContainerVolume].self,
                                         from: Data(try host.run(["volume", "list", "--format", "json"]).stdout.utf8))
@@ -51,16 +75,16 @@ public struct ContainerCLI: Sendable {
     /// Every mutation — and every read that carries an externally-supplied identifier —
     /// is validated by `Allowlist` before it reaches `ContainerHost.run`.
     ///
-    /// `mountPolicy: .unrestricted` is passed **explicitly and only here**: this
-    /// `ContainerCLI` drives the machine `host` runs on *on behalf of its own owner*, so
-    /// the caller already trusts itself with its own filesystem — there is no wire
-    /// between "who asked" and "whose disk". Do **not** copy `.unrestricted` into a
-    /// remote-serving path: a host peer accepting requests from a client (Phase 2) must
-    /// supply its own `MountPolicy.roots(...)` instead, or a client could mount
+    /// `mountPolicy` defaults to `.unrestricted`, which is only safe for a `ContainerCLI`
+    /// driving the machine `host` runs on *on behalf of its own owner* — the caller
+    /// already trusts itself with its own filesystem, so there is no wire between "who
+    /// asked" and "whose disk". Do **not** construct a remote-serving `ContainerCLI` with
+    /// the default: a host peer accepting requests from a client (Phase 2) must be given
+    /// its own `MountPolicy.roots(...)` at `init`, or a client could mount
     /// `/Users:/host:ro` on someone else's Mac. See `MountPolicy`.
     @discardableResult
     private func execute(_ args: [String]) throws -> CommandResult {
-        let validated = try Allowlist.validated(args, mountPolicy: .unrestricted)
+        let validated = try Allowlist.validated(args, mountPolicy: mountPolicy)
         return try host.run(validated.arguments)
     }
 
@@ -91,6 +115,38 @@ public struct ContainerCLI: Sendable {
         return try execute(args)
     }
 
+    /// Immediate, unlike `stop`: no `--time` grace period exists on the real CLI, and
+    /// the default signal is `KILL` rather than `stop`'s `TERM`.
+    @discardableResult public func kill(_ id: String, signal: String? = nil) throws -> CommandResult {
+        var args = ["kill"]
+        if let signal { args += ["--signal", signal] }
+        args.append(id)
+        return try execute(args)
+    }
+
+    /// Every container that has ever run and stopped, gone in one call — the real CLI
+    /// takes no operands and no confirmation flag, so there is nothing to narrow here
+    /// beyond what `Allowlist`'s grammar already enforces.
+    @discardableResult public func pruneContainers() throws -> CommandResult {
+        try execute(["prune"])
+    }
+
+    /// `container inspect` returns the same `[Container]`-shaped JSON array as
+    /// `ls --format json`, so this reuses `Container` rather than a parallel model.
+    ///
+    /// That was an unverified assumption when written — no live install was available to
+    /// capture from. Since confirmed against a real `container 1.0.0` capture
+    /// (`Fixtures/inspect-container.json`): it genuinely is a one-element array, not a bare
+    /// object, so decoding as `[Container]` and taking `.first` is correct.
+    public func inspect(_ id: String) throws -> Container {
+        let result = try execute(["inspect", id])
+        let containers = try JSONDecoder.flotilla.decode([Container].self, from: Data(result.stdout.utf8))
+        guard let container = containers.first else {
+            throw ContainerCLIError.emptyInspectResult(id: id)
+        }
+        return container
+    }
+
     /// Options for `container run`. Ports, env and volumes are passed as already-shaped
     /// CLI values (`HOST:CONTAINER`, `KEY=VALUE`, `SOURCE:DEST[:ro|rw]`) — `Allowlist`
     /// validates their shape at `execute` time, so there is no need to duplicate that
@@ -101,25 +157,58 @@ public struct ContainerCLI: Sendable {
         public var env: [String]
         public var volumes: [String]
         public var detach: Bool
+        /// `--rm`: remove the container automatically when it exits.
+        public var rm: Bool
+        /// `--cpus`/`-c`: whole CPU count, `Allowlist`'s `.count` shape (1…1024).
+        public var cpus: Int?
+        /// `--memory`/`-m`: `Allowlist`'s `.memorySize` shape, e.g. `"512M"` or plain digits.
+        public var memory: String?
+        /// `--network`: an existing network's identifier.
+        public var network: String?
+        /// `--platform`: `os/arch[/variant]`.
+        public var platform: String?
 
         public init(name: String? = nil, ports: [String] = [], env: [String] = [],
-                    volumes: [String] = [], detach: Bool = true) {
+                    volumes: [String] = [], detach: Bool = true, rm: Bool = false,
+                    cpus: Int? = nil, memory: String? = nil, network: String? = nil,
+                    platform: String? = nil) {
             self.name = name
             self.ports = ports
             self.env = env
             self.volumes = volumes
             self.detach = detach
+            self.rm = rm
+            self.cpus = cpus
+            self.memory = memory
+            self.network = network
+            self.platform = platform
         }
     }
 
-    @discardableResult
-    public func run(image: String, options: RunOptions = RunOptions(), command: [String] = []) throws -> CommandResult {
+    /// The argv `run` will execute, without executing it.
+    ///
+    /// Exists so the run sheet's **live command preview** shows the real thing rather than
+    /// a hand-assembled lookalike. A view must never build an argv to *execute* — that is
+    /// what keeps the `Allowlist` meaningful — but a preview that drifts from what actually
+    /// runs is worse than no preview at all, so both share this one construction.
+    ///
+    /// Pair it with `Allowlist.validated(_:mountPolicy:)` to show the user a command that
+    /// is not merely plausible but accepted: an invalid mount or port should be visible in
+    /// the sheet before anyone presses Run.
+    public static func runArguments(
+        image: String, options: RunOptions = RunOptions(), command: [String] = []
+    ) -> [String] {
         var args = ["run"]
         if options.detach { args.append("-d") }
         if let name = options.name { args += ["--name", name] }
         for assignment in options.env { args += ["-e", assignment] }
         for mapping in options.ports { args += ["-p", mapping] }
         for mount in options.volumes { args += ["-v", mount] }
+        if options.rm { args.append("--rm") }
+        if let cpus = options.cpus { args += ["--cpus", String(cpus)] }
+        if let memory = options.memory { args += ["--memory", memory] }
+        if let network = options.network { args += ["--network", network] }
+        if let platform = options.platform { args += ["--platform", platform] }
         args.append(image)
         // An explicit `--` before the in-container command, even when it happens to be
         // empty here: a command token that itself starts with `-` (e.g. `--version`)
@@ -129,7 +218,12 @@ public struct ContainerCLI: Sendable {
             args.append("--")
             args.append(contentsOf: command)
         }
-        return try execute(args)
+        return args
+    }
+
+    @discardableResult
+    public func run(image: String, options: RunOptions = RunOptions(), command: [String] = []) throws -> CommandResult {
+        try execute(Self.runArguments(image: image, options: options, command: command))
     }
 
     // MARK: Images
@@ -145,6 +239,32 @@ public struct ContainerCLI: Sendable {
         return try execute(args)
     }
 
+    /// `container image tag <source> <target>` — the real CLI has no `--force` or other
+    /// flags; retagging an existing target simply overwrites it.
+    @discardableResult public func tag(_ source: String, as target: String) throws -> CommandResult {
+        try execute(["image", "tag", source, target])
+    }
+
+    /// Every unused image (or, with `all`, every image not referenced by a container)
+    /// gone in one call — see `pruneContainers` for why there is nothing to narrow.
+    @discardableResult public func pruneImages(all: Bool = false) throws -> CommandResult {
+        var args = ["image", "prune"]
+        if all { args.append("--all") }
+        return try execute(args)
+    }
+
+    /// Same reuse rationale as `inspect(_:)`: `image inspect` is documented as emitting
+    /// the same detailed JSON as `image list`, so this decodes into `[ContainerImage]`
+    /// rather than a parallel type. Unverified against a live capture — see that note.
+    public func inspectImage(_ reference: String) throws -> ContainerImage {
+        let result = try execute(["image", "inspect", reference])
+        let images = try JSONDecoder.flotilla.decode([ContainerImage].self, from: Data(result.stdout.utf8))
+        guard let image = images.first else {
+            throw ContainerCLIError.emptyInspectResult(id: reference)
+        }
+        return image
+    }
+
     // MARK: Volumes — mutate
 
     @discardableResult public func createVolume(_ name: String) throws -> CommandResult {
@@ -155,6 +275,10 @@ public struct ContainerCLI: Sendable {
         try execute(["volume", "rm", name])
     }
 
+    @discardableResult public func pruneVolumes() throws -> CommandResult {
+        try execute(["volume", "prune"])
+    }
+
     // MARK: Networks — mutate
 
     @discardableResult public func createNetwork(_ name: String) throws -> CommandResult {
@@ -163,6 +287,10 @@ public struct ContainerCLI: Sendable {
 
     @discardableResult public func removeNetwork(_ name: String) throws -> CommandResult {
         try execute(["network", "rm", name])
+    }
+
+    @discardableResult public func pruneNetworks() throws -> CommandResult {
+        try execute(["network", "prune"])
     }
 
     // MARK: Logs

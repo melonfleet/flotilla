@@ -73,6 +73,80 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     #expect(host.invocations[1] == ["rm", "--force", "web"])
 }
 
+@Test func killIsImmediateAndDefaultsToNoExplicitSignal() throws {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host)
+
+    try cli.kill("web")
+    try cli.kill("web", signal: "TERM")
+
+    // Unlike `stop`, there is no `--time` grace period to pass.
+    #expect(host.invocations[0] == ["kill", "web"])
+    #expect(host.invocations[1] == ["kill", "--signal", "TERM", "web"])
+}
+
+@Test func pruneOperationsRouteThroughAllowlistWithNoOperands() throws {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host)
+
+    try cli.pruneContainers()
+    try cli.pruneImages()
+    try cli.pruneImages(all: true)
+    try cli.pruneVolumes()
+    try cli.pruneNetworks()
+
+    #expect(host.invocations[0] == ["prune"])
+    #expect(host.invocations[1] == ["image", "prune"])
+    #expect(host.invocations[2] == ["image", "prune", "--all"])
+    #expect(host.invocations[3] == ["volume", "prune"])
+    #expect(host.invocations[4] == ["network", "prune"])
+}
+
+@Test func tagRoutesThroughAllowlist() throws {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host)
+
+    try cli.tag("docker.io/library/alpine:latest", as: "alpine:mine")
+
+    #expect(host.invocations[0] == ["image", "tag", "docker.io/library/alpine:latest", "alpine:mine"])
+}
+
+@Test func inspectDecodesTheSameShapeAsListContainers() throws {
+    let host = RecordingHost()
+    // `inspect`'s stdout is keyed on args.first here since the id varies; this reuses
+    // the real, live-captured `containers.json` fixture to prove the [Container] decode
+    // path works — it does not by itself prove `container inspect` emits an array like
+    // `ls` does, which is unverified (see the doc comment on `ContainerCLI.inspect`).
+    host.stdoutByPath["inspect"] = String(decoding: try fixture("containers"), as: UTF8.self)
+    let cli = ContainerCLI(host: host)
+
+    let container = try cli.inspect("flotilla-probe-test")
+
+    #expect(host.invocations[0] == ["inspect", "flotilla-probe-test"])
+    #expect(container.name == "flotilla-probe-test")
+}
+
+@Test func inspectImageDecodesTheSameShapeAsListImages() throws {
+    let host = RecordingHost()
+    host.stdoutByPath["image inspect"] = String(decoding: try fixture("images"), as: UTF8.self)
+    let cli = ContainerCLI(host: host)
+
+    let image = try cli.inspectImage("docker.io/library/alpine:latest")
+
+    #expect(host.invocations[0] == ["image", "inspect", "docker.io/library/alpine:latest"])
+    #expect(image.reference == "docker.io/library/alpine:latest")
+}
+
+@Test func inspectThrowsRatherThanCrashingOnAnEmptyResult() throws {
+    let host = RecordingHost()
+    host.stdoutByPath["inspect"] = "[]"
+    let cli = ContainerCLI(host: host)
+
+    #expect(throws: ContainerCLIError.emptyInspectResult(id: "ghost")) {
+        try cli.inspect("ghost")
+    }
+}
+
 @Test func startRejectsAnAttemptedInjectionInTheIdentifier() {
     let host = RecordingHost()
     let cli = ContainerCLI(host: host)
@@ -89,9 +163,12 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
         ("stop", { try $0.stop("web", timeout: -1) }),
         ("restart", { try $0.restart("../web") }),
         ("remove", { try $0.remove("web;id", force: true) }),
+        ("kill", { try $0.kill("web; rm -rf /") }),
         ("run", { try $0.run(image: "") }),
         ("pull", { try $0.pull("../alpine") }),
         ("removeImage", { try $0.removeImage("alpine;id", force: true) }),
+        ("tag", { try $0.tag("../alpine", as: "alpine:mine") }),
+        ("inspectImage", { try $0.inspectImage("alpine:") }),
         ("createVolume", { try $0.createVolume("../data") }),
         ("removeVolume", { try $0.removeVolume("") }),
         ("createNetwork", { try $0.createNetwork("private network") }),
@@ -251,4 +328,102 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 private extension Result {
     var isFailure: Bool { if case .failure = self { true } else { false } }
+}
+
+// MARK: - Run argument construction (the run sheet's preview seam)
+
+// The run sheet shows a live command preview. If it assembled its own argv the preview
+// would drift from what actually executes — a preview that lies is worse than none — so
+// `runArguments` is the single construction both use. These pin it.
+
+@Test func runArgumentsAreWhatRunActuallyExecutes() throws {
+    let args = ContainerCLI.runArguments(
+        image: "docker.io/library/alpine:latest",
+        options: .init(name: "web", ports: ["8080:80"], env: ["TZ=UTC"], volumes: ["data:/data"], detach: true),
+        command: []
+    )
+    #expect(args == ["run", "-d", "--name", "web", "-e", "TZ=UTC", "-p", "8080:80",
+                     "-v", "data:/data", "docker.io/library/alpine:latest"])
+
+    // And the preview must be something the Allowlist accepts, not merely plausible.
+    let validated = try Allowlist.validated(args, mountPolicy: .unrestricted)
+    #expect(validated.arguments.first == "run")
+}
+
+@Test func aTrailingCommandIsSeparatedSoItCannotBeReadAsAFlag() throws {
+    let args = ContainerCLI.runArguments(
+        image: "alpine", options: .init(detach: false), command: ["--version"]
+    )
+    // Without the `--`, `--version` would be parsed as a flag of `container run` itself.
+    let separator = try #require(args.firstIndex(of: "--"))
+    let versionToken = try #require(args.firstIndex(of: "--version"))
+    #expect(separator < versionToken)
+    #expect(!args.contains("-d"))
+}
+
+@Test func anInvalidMountIsRejectedAtPreviewTimeNotRunTime() throws {
+    // The sheet should be able to tell the user *before* they press Run. A named volume
+    // is fine; a traversal is not.
+    let ok = ContainerCLI.runArguments(image: "alpine", options: .init(volumes: ["data:/data"]))
+    #expect(throws: Never.self) { try Allowlist.validated(ok, mountPolicy: .denyHostPaths) }
+
+    let bad = ContainerCLI.runArguments(image: "alpine", options: .init(volumes: ["/Users:/host:ro"]))
+    #expect(throws: (any Error).self) { try Allowlist.validated(bad, mountPolicy: .denyHostPaths) }
+}
+
+@Test func runArgumentsAppendsTheNewFlagsAfterExistingOnesWithoutReordering() throws {
+    let args = ContainerCLI.runArguments(
+        image: "alpine",
+        options: .init(name: "web", ports: ["8080:80"], env: ["TZ=UTC"], volumes: ["data:/data"],
+                       detach: true, rm: true, cpus: 2, memory: "512M", network: "islet", platform: "linux/arm64")
+    )
+    // The pinned prefix from `runArgumentsAreWhatRunActuallyExecutes` is untouched; the
+    // five new flags are appended after volumes and before the image operand.
+    #expect(args == ["run", "-d", "--name", "web", "-e", "TZ=UTC", "-p", "8080:80", "-v", "data:/data",
+                     "--rm", "--cpus", "2", "--memory", "512M", "--network", "islet",
+                     "--platform", "linux/arm64", "alpine"])
+
+    let validated = try Allowlist.validated(args, mountPolicy: .unrestricted)
+    #expect(validated.arguments.first == "run")
+}
+
+@Test func runArgumentsOmitsTheNewFlagsWhenUnset() throws {
+    // Every new `RunOptions` field is optional, so a caller that never touches them
+    // (like the three pre-existing pinned tests above) must see byte-identical output.
+    let args = ContainerCLI.runArguments(image: "alpine")
+    #expect(args == ["run", "-d", "alpine"])
+}
+
+// MARK: - Mount policy is injectable, and only ever narrows
+
+@Test func aContainerCLIBuiltWithTheDefaultAcceptsAHostBindMount() throws {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host) // default mountPolicy: .unrestricted
+
+    try cli.run(image: "alpine", options: .init(volumes: ["/etc/flotilla:/config:ro"]))
+
+    #expect(host.invocations.count == 1)
+}
+
+@Test func aContainerCLIBuiltWithDenyHostPathsRejectsTheSameMount() {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host, mountPolicy: .denyHostPaths)
+
+    #expect(throws: AllowlistError.self) {
+        try cli.run(image: "alpine", options: .init(volumes: ["/etc/flotilla:/config:ro"]))
+    }
+    #expect(host.invocations.isEmpty)
+}
+
+@Test func aContainerCLIBuiltWithARootsPolicyAcceptsOnlyPathsUnderIt() throws {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp"]))
+
+    try cli.run(image: "alpine", options: .init(volumes: ["/tmp/data:/data"]))
+    #expect(host.invocations.count == 1)
+
+    #expect(throws: AllowlistError.self) {
+        try cli.run(image: "alpine", options: .init(volumes: ["/etc/flotilla:/config:ro"]))
+    }
+    #expect(host.invocations.count == 1)
 }
