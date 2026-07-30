@@ -45,6 +45,22 @@ struct ContainersView: View {
     @State private var sortOrder = [KeyPathComparator(\Container.sortRank)]
     @State private var showingRun = false
 
+    /// Which columns are shown, in what order and at what width — driven by the header's
+    /// own right-click menu, which is what `FEATURES.md` means by "hideable columns".
+    ///
+    /// Host starts hidden: with a single host it prints "This Mac" on every row. Ten columns
+    /// cannot fit a window, and the table was scrolling sideways with the Actions column off
+    /// the right-hand edge entirely, which is the bug this fixes.
+    ///
+    /// Deliberately **not** persisted into `SettingsStore`: `FEATURES.md` keeps window and UI
+    /// state separate from preferences precisely so "reset preferences" does not rearrange
+    /// your table. Persisting it belongs with the window-state work, not here.
+    @State private var columnCustomization: TableColumnCustomization<Container> = {
+        var customization = TableColumnCustomization<Container>()
+        customization[visibility: "host"] = .hidden
+        return customization
+    }()
+
     private var filtered: [Container] {
         switch filter {
         case .all: model.containers
@@ -287,22 +303,6 @@ struct ContainersView: View {
         } message: {
             Text("This cannot be undone.")
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingRun = true
-                } label: {
-                    Label("Run Container…", systemImage: "plus")
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    Task { await model.reload() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-            }
-        }
     }
 
     private var toolbar: some View {
@@ -330,8 +330,39 @@ struct ContainersView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            // The mockup's **one** `GlassEffectContainer` — the Run/Pull control cluster.
+            // Kept to a single container deliberately: the placement note says glass belongs
+            // on chrome only, and stacking glass on glass is explicitly ruled out.
+            GlassEffectContainer(spacing: 6) {
+                HStack(spacing: 6) {
+                    Button {
+                        showingRun = true
+                    } label: {
+                        Label("Run…", systemImage: "plus")
+                    }
+                    .help("Create and start a new container")
+
+                    Button {
+                        Task { await model.reload() }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                            .labelStyle(.iconOnly)
+                    }
+                    .help("Refresh now")
+                    .accessibilityLabel("Refresh")
+                    .disabled(model.state == .loading)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .glassEffect(in: .rect(cornerRadius: 8))
+            }
+            .fixedSize()
         }
         .padding(12)
+        // Glass on the toolbar band itself, matching the sidebar. The table below stays
+        // opaque — it is the content layer.
+        .background(.ultraThinMaterial)
     }
 
     /// Shown only while rows are multi-selected — the hook the `selection` state existed
@@ -415,7 +446,8 @@ struct ContainersView: View {
     /// table fill normally.
     private var table: some View {
         VStack(spacing: 0) {
-            Table(sorted, selection: $selection, sortOrder: $sortOrder) {
+            Table(sorted, selection: $selection, sortOrder: $sortOrder,
+                  columnCustomization: $columnCustomization) {
                 TableColumn("State", value: \.sortRank) { c in
                     HStack(spacing: 6) {
                         Circle()
@@ -424,7 +456,8 @@ struct ContainersView: View {
                         Text(c.status.state.capitalized)
                     }
                 }
-                .width(min: 90, ideal: 100)
+                .width(min: 76, ideal: 92)
+                .customizationID("state")
 
                 TableColumn("Name", value: \.id) { c in
                     Text(c.id)
@@ -436,14 +469,16 @@ struct ContainersView: View {
                         .truncationMode(.tail)
                         .help(c.configuration.image.reference)
                 }
-                .width(min: 110, ideal: 190)
+                .width(min: 90, ideal: 150)
+                .customizationID("image")
                 TableColumn("Created", value: \.creationSortKey) { c in
                     Text(Self.createdLabel(c.configuration.creationDate))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .help(Self.createdTooltip(c.configuration.creationDate))
                 }
-                .width(min: 90, ideal: 120)
+                .width(min: 80, ideal: 100)
+                .customizationID("created")
                 TableColumn("Ports") { c in
                     // An em dash, not a blank cell: "publishes nothing" and "we couldn't
                     // read this" must not look the same.
@@ -453,22 +488,54 @@ struct ContainersView: View {
                         .foregroundStyle(c.portSummary == nil ? .tertiary : .secondary)
                         .help(c.portSummary ?? "No published ports")
                 }
-                .width(min: 90, ideal: 130)
+                .width(min: 80, ideal: 110)
+                .customizationID("ports")
+                // CPU and Memory, which the approved mockup's table has had all along and
+                // this table never did. nil renders as a dash, never 0% — an unsampled
+                // container is not an idle one, and a table that says 0% and then jumps is
+                // lying twice.
+                TableColumn("CPU") { c in
+                    Text(model.cpuLabel(for: c.id))
+                        .monospacedDigit()
+                        .foregroundStyle(model.cpuPercent(for: c.id) == nil ? .tertiary : .secondary)
+                        .lineLimit(1)
+                }
+                .width(min: 56, ideal: 68)
+                .customizationID("cpu")
+
+                TableColumn("Memory") { c in
+                    Text(model.memoryLabel(for: c.id))
+                        .monospacedDigit()
+                        .foregroundStyle(model.memoryBytes(for: c.id) == nil ? .tertiary : .secondary)
+                        .lineLimit(1)
+                }
+                .width(min: 68, ideal: 84)
+                .customizationID("memory")
+
                 TableColumn("IP / Network") { c in
                     Text(Self.ipNetworkLabel(c))
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
                 }
-                .width(min: 100, ideal: 150)
-                TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
-                    .width(min: 90, ideal: 110)
+                .width(min: 90, ideal: 130)
+                .customizationID("ip")
 
-                // Last, and fixed-width: the row's own controls, per the Docker-style
-                // pattern. Not sortable — there is nothing to sort by.
+                // Hidden by default (see `columnCustomization`): with one host it reads
+                // "This Mac" on every row, and a column identical in every row is pure
+                // width. The cross-host *dimension* stays — the data is on the row and the
+                // column is one header-menu click away — it just stops costing space until
+                // Phase 3 gives it something to say.
+                TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
+                    .width(min: 80, ideal: 100)
+                    .customizationID("host")
+
+                // Last. Sized to its content rather than fixed, so it compresses with
+                // everything else instead of forcing the table wider than the window.
                 TableColumn("Actions") { c in
                     rowActions(for: c)
                 }
-                .width(132)
+                .width(min: 118, ideal: 128)
+                .customizationID("actions")
             }
             // On the Table, not on a cell: `.contextMenu` inside a `TableColumn` only covers
             // that one cell, so right-clicking a row anywhere but the name did nothing at all.
@@ -491,34 +558,32 @@ struct ContainersView: View {
     private var isShortList: Bool { visible.count < 12 }
     private var shortListHeight: CGFloat { CGFloat(visible.count) * 28 + 32 }
 
+    /// The Cards toggle. Previously a status dot, a name, an image and a host label — no
+    /// controls at all, and none of the usage figures the mockup shows, which is exactly what
+    /// the owner flagged. `ContainerCard` now carries the row's content plus its own action
+    /// cluster and a CPU sparkline.
+    ///
+    /// Actions arrive as closures rather than the card reaching into `AppModel`: it keeps
+    /// every mutation on the one path through `ContainerCLI`, and keeps the card previewable.
     private var cards: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
                 ForEach(visible) { container in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Circle()
-                                .fill(AppModel.isRunning(container) ? Color.green : Color.secondary)
-                                .frame(width: 8, height: 8)
-                            Text(container.id).font(.headline).lineLimit(1)
-                        }
-                        Text(Self.imageLabel(container.configuration.image.reference))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .help(container.configuration.image.reference)
-                        // Cards have room for the ports the table has to compress.
-                        if let ports = container.portSummary {
-                            Text(ports).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Text(model.hostLabel).font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+                    ContainerCard(
+                        container: container,
+                        cpuPercent: model.cpuPercent(for: container.id),
+                        memoryBytes: model.memoryBytes(for: container.id),
+                        history: model.cpuHistory(for: container.id),
+                        isBusy: model.busy.contains(container.id),
+                        onStart: { Task { await model.perform(.start, on: container) } },
+                        onStop: { Task { await model.perform(.stop, on: container) } },
+                        onRestart: { Task { await model.perform(.restart, on: container) } },
+                        onDetails: { detailContainer = container },
+                        onDelete: { confirmingRowDelete = container }
+                    )
+                    // Same menu as the table row, so the two presentations offer identical
+                    // capabilities — a toggle that changes what you can *do* is a trap.
                     .contextMenu { actions(for: container) }
-                    .onTapGesture(count: 2) { detailContainer = container }
                 }
             }
             .padding(12)

@@ -20,6 +20,16 @@ struct MainWindowView: View {
             }
             .navigationTitle("Flotilla")
             .listStyle(.sidebar)
+            // Liquid Glass on the **sidebar**, per the placement note in
+            // `research/review/mockups/main-window.html`: "Glass on sidebar, toolbar and the
+            // Run/Pull cluster. The table and inspector rows are the content layer and stay
+            // opaque, so data stays legible over a busy desktop picture."
+            //
+            // Hiding the scroll background is what lets the glass show through — a `List`
+            // paints its own opaque backing otherwise, which is why the sidebar read as flat
+            // white no matter what was placed behind it.
+            .scrollContentBackground(.hidden)
+            .background(.ultraThinMaterial)
         } detail: {
             switch selection ?? .containers {
             case .containers:

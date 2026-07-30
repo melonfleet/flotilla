@@ -94,8 +94,9 @@ final class AppModel {
     private func reloadAppearance() {
         appearance = settingsStore.effectiveAppearance
         needsAppearanceOnboarding = settingsStore.needsAppearanceOnboarding
-        // The interval may have been what changed; restart the timer against the new value.
+        // The interval may have been what changed; restart the timers against the new values.
         restartPolling()
+        restartStatsPolling()
     }
 
     // MARK: Polling
@@ -141,6 +142,101 @@ final class AppModel {
     func stopPolling() {
         pollTask?.cancel()
         pollTask = nil
+        statsTask?.cancel()
+        statsTask = nil
+    }
+
+    // MARK: Stats
+    //
+    // `cli.stats` and `StatsSampler` both existed and nothing rendered either, so the table
+    // had no CPU or Memory columns despite the approved mockup carrying them from the start.
+    // CPU is a *delta* measure: one sample cannot produce a percentage, which is why the
+    // sampler returns nil until it has two and why nil must never be drawn as 0%.
+
+    private let sampler = StatsSampler()
+    private var statsTask: Task<Void, Never>?
+
+    /// CPU percent per container id, or absent when not yet measurable.
+    private(set) var cpuPercents: [String: Double] = [:]
+    /// Memory bytes per container id, straight from the last sample.
+    private(set) var memoryUsage: [String: Int64] = [:]
+
+    func cpuPercent(for id: String) -> Double? { cpuPercents[id] }
+    func memoryBytes(for id: String) -> Int64? { memoryUsage[id] }
+
+    /// A dash, never "0%". "We have not sampled this yet" and "this container is idle" are
+    /// different facts and must not share a rendering.
+    func cpuLabel(for id: String) -> String {
+        guard let percent = cpuPercents[id] else { return "—" }
+        return percent < 10 ? String(format: "%.1f%%", percent) : String(format: "%.0f%%", percent)
+    }
+
+    func memoryLabel(for id: String) -> String {
+        guard let bytes = memoryUsage[id] else { return "—" }
+        return ByteCountFormatStyle(style: .memory).format(bytes)
+    }
+
+    /// CPU history for one container, oldest → newest, for the card's sparkline.
+    ///
+    /// `nil` entries are preserved rather than dropped: they are the samples where a
+    /// percentage could not be computed (first sample, or a counter reset after a restart),
+    /// and a line drawn straight through them would claim continuity that never existed.
+    ///
+    /// Reads through `statsGeneration` so SwiftUI actually re-renders — `StatsSampler` is a
+    /// reference type outside the observation graph, so a view calling this directly would
+    /// never be invalidated when new samples land.
+    func cpuHistory(for id: String) -> [Double?] {
+        _ = statsGeneration
+        return sampler.history(for: id).map(\.cpuPercent)
+    }
+
+    /// Bumped on every sample so `@Observable` has a stored property to track.
+    private(set) var statsGeneration = 0
+
+    private var statsInterval: Duration? {
+        let seconds = settingsStore[SettingsKeys.statsPollIntervalSeconds]
+        guard seconds > 0 else { return nil }
+        return .seconds(min(seconds, 3600))
+    }
+
+    /// Separate from the container poll on purpose: `container stats` is heavier than `ls`,
+    /// and the registry gives the two their own intervals so stats can be slowed or switched
+    /// off without blinding the container list.
+    func restartStatsPolling() {
+        statsTask?.cancel()
+        guard let interval = statsInterval else { statsTask = nil; return }
+
+        statsTask = Task { [weak self] in
+            // Sample immediately, then on the interval: the first sample can never produce a
+            // percentage, so waiting a full interval before taking it would leave the columns
+            // empty for twice as long as necessary.
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.sampleStats()
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
+    private func sampleStats() async {
+        guard runtimeUsable else { return }
+        do {
+            let samples = try await Task.detached { [cli] in try cli.stats() }.value
+            let now = Date()
+            cpuPercents = sampler.update(with: samples, at: now)
+            memoryUsage = Dictionary(
+                uniqueKeysWithValues: samples.compactMap { sample in
+                    sample.memoryUsageBytes.map { (sample.id, $0) }
+                }
+            )
+            statsGeneration &+= 1
+        } catch {
+            // Deliberately quiet: stats are decoration next to the container list, and a
+            // failing `stats` must not raise a modal over a table that is working fine. The
+            // columns fall back to dashes, which is the honest rendering of "unknown".
+            cpuPercents = [:]
+            memoryUsage = [:]
+        }
     }
 
     /// Records the first-run choice. Failure is surfaced rather than swallowed: the only
@@ -211,6 +307,7 @@ final class AppModel {
         // Start (or restart) polling only once we know the runtime is usable — polling a
         // runtime that isn't there would spawn a doomed Process every few seconds.
         restartPolling()
+        restartStatsPolling()
     }
 
     func refresh() async {

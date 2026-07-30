@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import FlotillaCore
 
-private func stat(_ id: String, usec: Int64) -> ContainerStats {
-    ContainerStats(id: id, cpuUsageUsec: usec, memoryUsageBytes: nil, memoryLimitBytes: nil,
+private func stat(_ id: String, usec: Int64, memory: Int64? = nil) -> ContainerStats {
+    ContainerStats(id: id, cpuUsageUsec: usec, memoryUsageBytes: memory, memoryLimitBytes: nil,
                    networkRxBytes: nil, networkTxBytes: nil, blockReadBytes: nil,
                    blockWriteBytes: nil, numProcesses: nil)
 }
@@ -107,4 +107,126 @@ private func stat(_ id: String, usec: Int64) -> ContainerStats {
     // 2_000_000 usec over 2s = 100%; 200_000 usec over 2s = 10%.
     #expect(result["web"] == 100.0)
     #expect(result["db"] == 10.0)
+}
+
+@Test func firstSampleStillRecordsAHistoryPointWithANilCPUGap() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+
+    _ = sampler.update(with: [stat("web", usec: 1_000_000, memory: 4_096)], at: t0)
+
+    let history = sampler.history(for: "web")
+    #expect(history.count == 1)
+    #expect(history[0].cpuPercent == nil)
+    #expect(history[0].memoryUsageBytes == 4_096)
+}
+
+@Test func aCounterResetRecordsAHistoryPointWithANilCPUGapNotAHugeSpike() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+    let t1 = t0.addingTimeInterval(1)
+
+    _ = sampler.update(with: [stat("web", usec: 1_000_000, memory: 1_024)], at: t0)
+    _ = sampler.update(with: [stat("web", usec: 100, memory: 2_048)], at: t1)
+
+    let history = sampler.history(for: "web")
+    #expect(history.count == 2)
+    #expect(history[1].cpuPercent == nil)
+    #expect(history[1].memoryUsageBytes == 2_048)
+}
+
+@Test func cpuPercentAndMemoryStayAlignedInTheSamePoint() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+    let t1 = t0.addingTimeInterval(1)
+
+    _ = sampler.update(with: [stat("web", usec: 0, memory: 1_000)], at: t0)
+    // 500_000 usec over 1s = 50%.
+    _ = sampler.update(with: [stat("web", usec: 500_000, memory: 2_000)], at: t1)
+
+    let history = sampler.history(for: "web")
+    #expect(history.count == 2)
+    #expect(history[1].cpuPercent == 50.0)
+    #expect(history[1].memoryUsageBytes == 2_000)
+}
+
+@Test func historyIsReturnedOldestToNewest() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+
+    for i in 0..<5 {
+        _ = sampler.update(with: [stat("web", usec: Int64(i) * 1_000_000, memory: Int64(i))],
+                            at: t0.addingTimeInterval(Double(i)))
+    }
+
+    let history = sampler.history(for: "web")
+    #expect(history.map { $0.memoryUsageBytes } == [0, 1, 2, 3, 4])
+}
+
+@Test func historyBufferCapsAtTheLimitAndDropsOldestFirst() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+    let limit = 40
+    let overflow = 10
+
+    for i in 0..<(limit + overflow) {
+        _ = sampler.update(with: [stat("web", usec: Int64(i) * 1_000_000, memory: Int64(i))],
+                            at: t0.addingTimeInterval(Double(i)))
+    }
+
+    let history = sampler.history(for: "web")
+    #expect(history.count == limit)
+    // The oldest surviving point is the one from iteration `overflow`, not 0.
+    #expect(history.first?.memoryUsageBytes == Int64(overflow))
+    #expect(history.last?.memoryUsageBytes == Int64(limit + overflow - 1))
+}
+
+@Test func aVanishedContainersHistoryIsReleased() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+    let t1 = t0.addingTimeInterval(1)
+
+    _ = sampler.update(with: [stat("web", usec: 0, memory: 1_024)], at: t0)
+    #expect(sampler.history(for: "web").count == 1)
+
+    // "web" disappears from this sample (container removed).
+    _ = sampler.update(with: [], at: t1)
+
+    #expect(sampler.history(for: "web").isEmpty)
+}
+
+@Test func aReappearingContainerStartsHistoryOverFromEmpty() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+    let t1 = t0.addingTimeInterval(1)
+    let t2 = t1.addingTimeInterval(1)
+
+    _ = sampler.update(with: [stat("web", usec: 0, memory: 1_024)], at: t0)
+    _ = sampler.update(with: [], at: t1)
+    _ = sampler.update(with: [stat("web", usec: 999_999_999, memory: 2_048)], at: t2)
+
+    let history = sampler.history(for: "web")
+    #expect(history.count == 1)
+    #expect(history[0].cpuPercent == nil)
+    #expect(history[0].memoryUsageBytes == 2_048)
+}
+
+@Test func historyForAnUnknownIdIsEmpty() {
+    let sampler = StatsSampler()
+
+    #expect(sampler.history(for: "never-seen").isEmpty)
+}
+
+@Test func multipleContainersHaveIndependentHistories() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+    let t1 = t0.addingTimeInterval(1)
+
+    _ = sampler.update(with: [stat("web", usec: 0, memory: 10), stat("db", usec: 0, memory: 20)],
+                        at: t0)
+    _ = sampler.update(with: [stat("web", usec: 500_000, memory: 11), stat("db", usec: 0, memory: 20)],
+                        at: t1)
+
+    #expect(sampler.history(for: "web").count == 2)
+    #expect(sampler.history(for: "db").count == 2)
 }

@@ -20,6 +20,27 @@ import Foundation
 /// Call sites inject `now` rather than this type calling `Date()` itself, so behaviour is
 /// deterministic under test.
 public final class StatsSampler: @unchecked Sendable {
+    /// One retained history point for a container: the CPU percentage this sampler computed
+    /// at that call (or `nil` when unknowable — see the type-level doc on why that happens)
+    /// and the memory bytes reported at the same moment. Bundling both in one point means a
+    /// caller drawing a CPU sparkline and a memory sparkline reads from one buffer instead of
+    /// zipping two separately-trimmed arrays back together.
+    ///
+    /// Unknown CPU is stored as `nil`, not skipped: dropping the point would let a sparkline
+    /// silently interpolate across a gap it never actually measured (a counter reset, a first
+    /// sample) and claim continuity that did not exist. Storing the gap lets a renderer show
+    /// one.
+    public struct HistoryPoint: Sendable, Equatable {
+        public let cpuPercent: Double?
+        public let memoryUsageBytes: Int64?
+    }
+
+    /// Points retained per container. `pollIntervalSeconds` in `SettingsRegistry` defaults to
+    /// 5s, so 40 points is ~3.3 minutes of trend — enough for a small sparkline to read as a
+    /// shape rather than noise — while staying trivial in memory even for a fleet with many
+    /// containers and a long-running app.
+    private static let historyLimit = 40
+
     private struct Sample {
         var cpuUsageUsec: Int64
         var timestamp: Date
@@ -27,6 +48,7 @@ public final class StatsSampler: @unchecked Sendable {
 
     private let lock = NSLock()
     private var previous: [String: Sample] = [:]
+    private var history: [String: [HistoryPoint]] = [:]
 
     public init() {}
 
@@ -37,7 +59,7 @@ public final class StatsSampler: @unchecked Sendable {
     /// - Returns: CPU percent per container id, for ids where it could be computed. A
     ///   container missing from `stats` (stopped, removed) has its prior sample dropped so
     ///   it cannot leak state forever; if the same id reappears later it starts over as a
-    ///   fresh first sample.
+    ///   fresh first sample. Its retained `history(for:)` is dropped the same way.
     public func update(with stats: [ContainerStats], at now: Date) -> [String: Double] {
         lock.lock()
         defer { lock.unlock() }
@@ -48,25 +70,53 @@ public final class StatsSampler: @unchecked Sendable {
         for stat in stats {
             seen.insert(stat.id)
 
-            guard let usec = stat.cpuUsageUsec else {
-                previous.removeValue(forKey: stat.id)
-                continue
+            let cpuPercent = cpuPercent(for: stat, at: now)
+            if let cpuPercent {
+                result[stat.id] = cpuPercent
             }
-            defer { previous[stat.id] = Sample(cpuUsageUsec: usec, timestamp: now) }
-
-            guard let last = previous[stat.id] else { continue }
-
-            let elapsed = now.timeIntervalSince(last.timestamp)
-            let delta = usec - last.cpuUsageUsec
-            guard elapsed > 0, delta >= 0 else { continue }
-
-            result[stat.id] = Double(delta) / (elapsed * 1_000_000) * 100
+            append(HistoryPoint(cpuPercent: cpuPercent, memoryUsageBytes: stat.memoryUsageBytes),
+                   for: stat.id)
         }
 
         // Drop state for any id no longer present, so a removed container's previous
-        // sample cannot leak forever.
+        // sample — and its history — cannot leak forever.
         previous = previous.filter { seen.contains($0.key) }
+        history = history.filter { seen.contains($0.key) }
 
         return result
+    }
+
+    /// Retained history for `id`, oldest point first — the order a sparkline draws in, so the
+    /// caller never has to reverse it. Empty if `id` has never been sampled or has since
+    /// disappeared.
+    public func history(for id: String) -> [HistoryPoint] {
+        lock.lock()
+        defer { lock.unlock() }
+        return history[id] ?? []
+    }
+
+    private func cpuPercent(for stat: ContainerStats, at now: Date) -> Double? {
+        guard let usec = stat.cpuUsageUsec else {
+            previous.removeValue(forKey: stat.id)
+            return nil
+        }
+        defer { previous[stat.id] = Sample(cpuUsageUsec: usec, timestamp: now) }
+
+        guard let last = previous[stat.id] else { return nil }
+
+        let elapsed = now.timeIntervalSince(last.timestamp)
+        let delta = usec - last.cpuUsageUsec
+        guard elapsed > 0, delta >= 0 else { return nil }
+
+        return Double(delta) / (elapsed * 1_000_000) * 100
+    }
+
+    private func append(_ point: HistoryPoint, for id: String) {
+        var points = history[id, default: []]
+        points.append(point)
+        if points.count > Self.historyLimit {
+            points.removeFirst(points.count - Self.historyLimit)
+        }
+        history[id] = points
     }
 }
