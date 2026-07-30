@@ -166,25 +166,46 @@ struct ContainersView: View {
         .accessibilityLabel(label)
     }
 
-    /// `FEATURES.md` asks for a Copy submenu (id, image, IP, port URL) on the row.
-    @ViewBuilder
-    private func copyMenu(for container: Container) -> some View {
-        Menu("Copy") {
-            Button("Name") { copy(container.id) }
-            Button("Image") { copy(container.configuration.image.reference) }
-            if let ip = container.ipv4 {
-                Button("IP Address") { copy(ip) }
-            }
-            if let port = container.publishedPorts.first {
-                // The useful form is something you can paste into a browser, not the mapping.
-                Button("Port URL") { copy("http://localhost:\(port.hostPort)") }
-            }
-        }
+    /// `FEATURES.md` asks for a Copy submenu (id, image, IP, port URL) on the row. Shape and
+    /// nil-dropping come from `CopyMenu` so every surface's Copy menu behaves alike.
+    private func copyMenu(for container: Container) -> CopyMenu {
+        CopyMenu([
+            ("Name", container.id),
+            ("Image", container.configuration.image.reference),
+            ("IP Address", container.ipv4),
+            // The useful form is something you can paste into a browser, not the mapping.
+            ("Port URL", container.publishedPorts.first.map { "http://localhost:\($0.hostPort)" }),
+        ])
     }
 
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+    /// The context menu for a right-click that landed on one or more rows.
+    ///
+    /// `ids` comes from the table itself, so everything in it is on screen by construction —
+    /// this is the one bulk path that does not need intersecting with `visible`.
+    @ViewBuilder
+    private func tableContextMenu(for ids: Set<Container.ID>) -> some View {
+        if ids.isEmpty {
+            // Right-click on empty space still deserves the primary action rather than an
+            // empty menu that looks like a bug.
+            Button("Run a Container…") { showingRun = true }
+        } else if ids.count == 1,
+                  let container = visible.first(where: { $0.id == ids.first }) {
+            actions(for: container)
+        } else {
+            let busy = !ids.isDisjoint(with: model.busy)
+            Button("Start \(ids.count)") { Task { await model.performBulk(.start, on: ids) } }
+                .disabled(busy)
+            Button("Stop \(ids.count)") { Task { await model.performBulk(.stop, on: ids) } }
+                .disabled(busy)
+            Button("Restart \(ids.count)") { Task { await model.performBulk(.restart, on: ids) } }
+                .disabled(busy)
+            Divider()
+            Button("Delete \(ids.count)…", role: .destructive) {
+                selection = ids            // so the confirmation counts what was right-clicked
+                confirmingBulkDelete = true
+            }
+            .disabled(busy)
+        }
     }
 
     /// Start/stop/restart/delete for one container. Attached to both the table rows and
@@ -408,7 +429,6 @@ struct ContainersView: View {
                 TableColumn("Name", value: \.id) { c in
                     Text(c.id)
                         .lineLimit(1)
-                        .contextMenu { actions(for: c) }
                 }
                 TableColumn("Image", value: \.imageReference) { c in
                     Text(Self.imageLabel(c.configuration.image.reference))
@@ -449,6 +469,18 @@ struct ContainersView: View {
                     rowActions(for: c)
                 }
                 .width(132)
+            }
+            // On the Table, not on a cell: `.contextMenu` inside a `TableColumn` only covers
+            // that one cell, so right-clicking a row anywhere but the name did nothing at all.
+            // `forSelectionType:` also hands us the whole right-clicked selection, which is
+            // what makes bulk actions reachable from the menu.
+            .contextMenu(forSelectionType: Container.ID.self) { ids in
+                tableContextMenu(for: ids)
+            } primaryAction: { ids in
+                // Double-click opens the detail sheet, matching the cards.
+                if let id = ids.first, let container = visible.first(where: { $0.id == id }) {
+                    detailContainer = container
+                }
             }
             .frame(maxHeight: isShortList ? shortListHeight : .infinity)
 

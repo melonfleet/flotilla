@@ -117,6 +117,23 @@ struct VolumesView: View {
             .disabled(model.busy.contains(volume.id))
         }
         .padding(.vertical, 4)
+        // On the whole row (and after `.padding`, so the hit area covers the padding too),
+        // not on the label — a menu you can only summon by right-clicking exactly the text
+        // reads as no menu at all. Shape per `ContextMenus.swift`: actions, Copy, destructive
+        // last.
+        .contextMenu { menu(for: volume) }
+    }
+
+    @ViewBuilder
+    private func menu(for volume: ContainerVolume) -> some View {
+        CopyMenu([
+            ("Name", volume.name),
+            ("Source Path", volume.source),
+            ("Format", volume.format),
+        ])
+        Divider()
+        Button("Delete…", role: .destructive) { requestDelete(volume) }
+            .disabled(model.busy.contains(volume.id))
     }
 
     private var createSheet: some View {

@@ -11,6 +11,9 @@ struct ImagesView: View {
     @State private var showingPull = false
     @State private var pullReference = ""
     @State private var pendingDelete: ContainerImage?
+    /// Set from the row menu's Run — presents the run sheet with this reference already in
+    /// place. Nothing is launched from here; the sheet's validated preview still gates it.
+    @State private var runImage: String?
 
     @State private var taggingImage: ContainerImage?
     @State private var tagTarget = ""
@@ -45,6 +48,10 @@ struct ImagesView: View {
             Button("OK") { pruneError = nil }
         } message: {
             Text(pruneError ?? "")
+        }
+        .sheet(item: Binding(get: { runImage.map(RunTarget.init) },
+                            set: { if $0 == nil { runImage = nil } })) { target in
+            RunSheetView(model: model, initialImage: target.reference)
         }
         .sheet(isPresented: $showingPull) { pullSheet }
         .sheet(item: $taggingImage) { image in tagSheet(for: image) }
@@ -162,6 +169,31 @@ struct ImagesView: View {
             .disabled(model.busy.contains(image.id))
         }
         .padding(.vertical, 4)
+        .contextMenu { menu(for: image) }
+    }
+
+    /// Parity with the row's own buttons (Tag, Delete) plus the Copy submenu, in the order
+    /// `ContextMenus.swift` sets out. "Run" is here because an image you can see is an image
+    /// you are likely to want to start — it opens the run sheet pre-filled rather than
+    /// launching anything directly, so the command preview still gets the final say.
+    @ViewBuilder
+    private func menu(for image: ContainerImage) -> some View {
+        Button("Run…") { runImage = image.reference }
+        Divider()
+        Button("Tag…") {
+            tagTarget = ""
+            taggingImage = image
+        }
+        .disabled(model.busy.contains(image.id))
+        CopyMenu([
+            ("Reference", image.reference),
+            ("Repository", Self.repository(image)),
+            ("Tag", Self.tag(image)),
+            ("Digest", image.configuration.descriptor?.digest),
+        ])
+        Divider()
+        Button("Delete…", role: .destructive) { requestDelete(image) }
+            .disabled(model.busy.contains(image.id))
     }
 
     private func tagSheet(for image: ContainerImage) -> some View {
@@ -312,4 +344,13 @@ struct ImagesView: View {
     private static func byteCount(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
+}
+
+/// Wraps a reference so `.sheet(item:)` has something `Identifiable` to key on — a bare
+/// `String` is not, and keying on the value itself would re-present the sheet if the same
+/// image were chosen twice in a row.
+private struct RunTarget: Identifiable {
+    let reference: String
+    var id: String { reference }
+    init(_ reference: String) { self.reference = reference }
 }

@@ -116,6 +116,19 @@ struct NetworksView: View {
             .disabled(model.busy.contains(network.id))
         }
         .padding(.vertical, 4)
+        .contextMenu { menu(for: network) }
+    }
+
+    @ViewBuilder
+    private func menu(for network: ContainerNetwork) -> some View {
+        CopyMenu([
+            ("Name", network.id),
+            ("Subnet", network.subnet),
+            ("Gateway", network.gateway),
+        ])
+        Divider()
+        Button("Delete…", role: .destructive) { requestDelete(network) }
+            .disabled(model.busy.contains(network.id))
     }
 
     private var createSheet: some View {

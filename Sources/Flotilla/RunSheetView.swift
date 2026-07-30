@@ -15,7 +15,15 @@ struct RunSheetView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var image = ""
+    @State private var image: String
+
+    /// `initialImage` lets the Images screen's **Run…** open the sheet already pointed at a
+    /// reference. It pre-fills, it does not launch — the validated command preview still has
+    /// the final say, so nothing starts without the user seeing exactly what will run.
+    init(model: AppModel, initialImage: String = "") {
+        self.model = model
+        _image = State(initialValue: initialImage)
+    }
     @State private var name = ""
     @State private var detach = true
     @State private var ports: [Row] = []
