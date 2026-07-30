@@ -11,6 +11,12 @@ import FlotillaCore
 struct MainWindowView: View {
     let model: AppModel
 
+    /// Owned here, not in `ContainersView`. This view is the window's root and is built
+    /// once; the detail views are destroyed and recreated on every sidebar change, so any
+    /// `@State` they hold is lost. Keeping the containers screen's columns, sort, filter and
+    /// search here is what makes them survive a trip to Images and back.
+    @State private var containersUI = ContainersUIState()
+
     @State private var selection: Section? = .containers
 
     var body: some View {
@@ -33,7 +39,7 @@ struct MainWindowView: View {
         } detail: {
             switch selection ?? .containers {
             case .containers:
-                ContainersView(model: model)
+                ContainersView(model: model, ui: containersUI)
             case .images:
                 ImagesView(model: model)
             case .volumes:

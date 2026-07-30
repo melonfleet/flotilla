@@ -12,10 +12,14 @@ import FlotillaCore
 /// carrying it from the start.
 ///
 /// Moved out of `MainWindowView` unchanged when the window became a `NavigationSplitView`
-/// (Phase 1 UI contract), then extended here with filter tabs, a bulk-action bar, the
+/// (Phase 1 UI contract), then extended here with ui.filter tabs, a bulk-action bar, the
 /// Created/IP columns, and the detail sheet hook.
 struct ContainersView: View {
     let model: AppModel
+    /// Held by `MainWindowView` so it outlives this view — see `ContainersUIState`.
+    /// Without it, navigating to another section and back reset the user's columns, sort,
+    /// ui.filter and ui.search.
+    @Bindable var ui: ContainersUIState
 
     enum Presentation: String, CaseIterable, Identifiable {
         case list = "List"
@@ -42,42 +46,15 @@ struct ContainersView: View {
         var id: Self { self }
     }
 
-    @State private var presentation: Presentation = .list
-    @State private var filter: Filter = .all
     @State private var selection = Set<Container.ID>()
-    @State private var search = ""
     @State private var detailContainer: Container?
     @State private var confirmingBulkDelete = false
     /// Non-nil while a single row's trash button is awaiting confirmation. Destructive
     /// actions confirm with the object *named* (`FEATURES.md`'s destructive-action policy),
     /// which is why this holds the container rather than a bool.
     @State private var confirmingRowDelete: Container?
-    /// Running-first by default, per DECISIONS.md Q2. Sorting is on state, so the containers
-    /// you can act on stay at the top rather than being buried alphabetically.
-    @State private var sortOrder = [KeyPathComparator(\Container.sortRank)]
     @State private var showingRun = false
 
-    /// Which columns are shown, in what order and at what width — driven by the header's
-    /// own right-click menu, which is what `FEATURES.md` means by "hideable columns".
-    ///
-    /// Host starts hidden: with a single host it prints "This Mac" on every row. Ten columns
-    /// cannot fit a window, and the table was scrolling sideways with the Actions column off
-    /// the right-hand edge entirely, which is the bug this fixes.
-    ///
-    /// Deliberately **not** persisted into `SettingsStore`: `FEATURES.md` keeps window and UI
-    /// state separate from preferences precisely so "reset preferences" does not rearrange
-    /// your table. Persisting it belongs with the window-state work, not here.
-    @State private var columnCustomization: TableColumnCustomization<Container> = {
-        var customization = TableColumnCustomization<Container>()
-        // Host: one host today, so it prints "This Mac" on every row.
-        customization[visibility: "host"] = .hidden
-        // Created: the identifier and the live figures earn their space first. The owner asked
-        // for this hidden by default in favour of showing the container's id — and on
-        // Apple's `container` the id *is* the name, so the Name column already covers it
-        // (see `columnSpecs`).
-        customization[visibility: "created"] = .hidden
-        return customization
-    }()
 
     @State private var showingColumns = false
 
@@ -135,8 +112,8 @@ struct ContainersView: View {
 
     private func binding(for id: String) -> Binding<Bool> {
         Binding(
-            get: { columnCustomization[visibility: id] != .hidden },
-            set: { columnCustomization[visibility: id] = $0 ? .visible : .hidden }
+            get: { ui.columnCustomization[visibility: id] != .hidden },
+            set: { ui.columnCustomization[visibility: id] = $0 ? .visible : .hidden }
         )
     }
 
@@ -145,12 +122,12 @@ struct ContainersView: View {
     /// `.automatic / .visible / .hidden` used everywhere else in SwiftUI.
     private func setAllColumns(_ visibility: Visibility) {
         for spec in Self.columnSpecs {
-            columnCustomization[visibility: spec.id] = visibility
+            ui.columnCustomization[visibility: spec.id] = visibility
         }
     }
 
     private var filtered: [Container] {
-        switch filter {
+        switch ui.filter {
         case .all: model.containers
         case .running: model.running
         case .stopped: model.stopped
@@ -158,8 +135,8 @@ struct ContainersView: View {
     }
 
     private var visible: [Container] {
-        guard !search.isEmpty else { return filtered }
-        let needle = search.lowercased()
+        guard !ui.search.isEmpty else { return filtered }
+        let needle = ui.search.lowercased()
         return filtered.filter {
             $0.id.lowercased().contains(needle) || $0.status.state.lowercased().contains(needle)
         }
@@ -167,16 +144,16 @@ struct ContainersView: View {
 
     /// `visible` filtered, then ordered by whatever the user clicked in the header.
     ///
-    /// The table binds to this rather than to `visible` — a `Table` with a `sortOrder`
+    /// The table binds to this rather than to `visible` — a `Table` with a `ui.sortOrder`
     /// binding does **not** reorder its rows for you, it only reports what was clicked.
     /// Binding the header without applying the comparator gives arrows that move and rows
     /// that never do.
-    private var sorted: [Container] { visible.sorted(using: sortOrder) }
+    private var sorted: [Container] { visible.sorted(using: ui.sortOrder) }
 
-    /// Whether anything the user chose is hiding rows. Both the search field and the filter
-    /// tabs can empty the table, and an empty state that only mentions search would be wrong
+    /// Whether anything the user chose is hiding rows. Both the ui.search field and the ui.filter
+    /// tabs can empty the table, and an empty state that only mentions ui.search would be wrong
     /// half the time.
-    private var isFiltered: Bool { !search.isEmpty || filter != .all }
+    private var isFiltered: Bool { !ui.search.isEmpty || ui.filter != .all }
 
     private var visibleIDs: Set<Container.ID> { Set(visible.map(\.id)) }
 
@@ -184,7 +161,7 @@ struct ContainersView: View {
     /// screen**.
     ///
     /// `selection` outlives the rows that produced it. Select three containers under
-    /// `All`, switch the filter to `Running` so two of them are hidden, and the raw
+    /// `All`, switch the ui.filter to `Running` so two of them are hidden, and the raw
     /// selection still holds all three — so a bulk Delete would destroy two containers the
     /// user cannot see and was never shown in the confirmation count. Searching hides rows
     /// the same way, and a deleted container leaves its id behind entirely. Every bulk
@@ -355,7 +332,7 @@ struct ContainersView: View {
         }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. One observation covers all three ways the visible set
-        // moves out from under the selection — filter change, search change, and the data
+        // moves out from under the selection — ui.filter change, ui.search change, and the data
         // itself changing (a bulk delete leaves the dead ids behind otherwise, so the bar
         // would linger claiming rows that no longer exist).
         .onChange(of: visibleIDs) { _, ids in
@@ -395,7 +372,7 @@ struct ContainersView: View {
 
     private var toolbar: some View {
         HStack(spacing: 12) {
-            Picker("View", selection: $presentation) {
+            Picker("View", selection: $ui.presentation) {
                 ForEach(Presentation.allCases) { option in
                     Label(option.rawValue, systemImage: option.systemImage)
                         .labelStyle(.iconOnly)
@@ -411,15 +388,15 @@ struct ContainersView: View {
             // Immediately beside the view switcher, as in Docker Desktop — the two are both
             // "how do I want to look at this", so they belong together.
             columnsButton
-                .disabled(presentation != .list)     // cards have no columns to configure
+                .disabled(ui.presentation != .list)     // cards have no columns to configure
 
-            Picker("Filter", selection: $filter) {
+            Picker("Filter", selection: $ui.filter) {
                 ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .fixedSize()
 
-            TextField("Search containers…", text: $search)
+            TextField("Search containers…", text: $ui.search)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 280)
 
@@ -524,13 +501,13 @@ struct ContainersView: View {
                 Label(isFiltered ? "No matches" : "No containers", systemImage: "tray")
             } description: {
                 Text(isFiltered
-                     ? "No container matches the current filter."
+                     ? "No container matches the current ui.filter."
                      : "Nothing is running on this Mac yet.")
             } actions: {
                 if isFiltered {
                     Button("Clear Filter") {
-                        search = ""
-                        filter = .all
+                        ui.search = ""
+                        ui.filter = .all
                     }
                 } else {
                     Button("Run a Container…") { showingRun = true }
@@ -539,7 +516,7 @@ struct ContainersView: View {
             }
 
         case .loaded:
-            if presentation == .list { table } else { cards }
+            if ui.presentation == .list { table } else { cards }
         }
     }
 
@@ -550,8 +527,8 @@ struct ContainersView: View {
     /// table fill normally.
     private var table: some View {
         VStack(spacing: 0) {
-            Table(sorted, selection: $selection, sortOrder: $sortOrder,
-                  columnCustomization: $columnCustomization) {
+            Table(sorted, selection: $selection, sortOrder: $ui.sortOrder,
+                  columnCustomization: $ui.columnCustomization) {
                 TableColumn("State", value: \.sortRank) { c in
                     HStack(spacing: 6) {
                         Circle()
@@ -633,7 +610,7 @@ struct ContainersView: View {
                 .width(min: 90, ideal: 130)
                 .customizationID("ip")
 
-                // Hidden by default (see `columnCustomization`): with one host it reads
+                // Hidden by default (see `ui.columnCustomization`): with one host it reads
                 // "This Mac" on every row, and a column identical in every row is pure
                 // width. The cross-host *dimension* stays — the data is on the row and the
                 // column is one header-menu click away — it just stops costing space until
