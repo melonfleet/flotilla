@@ -69,9 +69,83 @@ struct ContainersView: View {
     /// your table. Persisting it belongs with the window-state work, not here.
     @State private var columnCustomization: TableColumnCustomization<Container> = {
         var customization = TableColumnCustomization<Container>()
+        // Host: one host today, so it prints "This Mac" on every row.
         customization[visibility: "host"] = .hidden
+        // Created: the identifier and the live figures earn their space first. The owner asked
+        // for this hidden by default in favour of showing the container's id — and on
+        // Apple's `container` the id *is* the name, so the Name column already covers it
+        // (see `columnSpecs`).
+        customization[visibility: "created"] = .hidden
         return customization
     }()
+
+    @State private var showingColumns = false
+
+    /// The columns the Columns popover offers, in table order.
+    ///
+    /// Name and Actions are deliberately absent: Name is the row's identity and Actions is
+    /// how you operate on it, so neither is something to hide. Docker Desktop's own column
+    /// menu makes the same choice about its Name column.
+    private static let columnSpecs: [(id: String, title: String)] = [
+        ("state", "State"),
+        ("image", "Image"),
+        ("created", "Created"),
+        ("ports", "Ports"),
+        ("cpu", "CPU"),
+        ("memory", "Memory"),
+        ("ip", "IP / Network"),
+        ("host", "Host"),
+    ]
+
+    /// Docker Desktop's columns control, which is a good pattern: an explicit button beside
+    /// the view switcher rather than relying on people discovering a right-click on the
+    /// header. The header menu still works — this just makes it findable.
+    private var columnsButton: some View {
+        Button {
+            showingColumns.toggle()
+        } label: {
+            Image(systemName: "rectangle.split.3x1")
+        }
+        .help("Show or hide columns")
+        .accessibilityLabel("Columns")
+        .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Self.columnSpecs, id: \.id) { spec in
+                    Toggle(spec.title, isOn: binding(for: spec.id))
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 3)
+                }
+                Divider().padding(.vertical, 6)
+                HStack {
+                    Button("Hide All") { setAllColumns(.hidden) }
+                    Spacer()
+                    Button("Show All") { setAllColumns(.visible) }
+                }
+                .controlSize(.small)
+                .padding(.horizontal, 12)
+            }
+            .padding(.vertical, 10)
+            .frame(width: 210)
+        }
+    }
+
+    private func binding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { columnCustomization[visibility: id] != .hidden },
+            set: { columnCustomization[visibility: id] = $0 ? .visible : .hidden }
+        )
+    }
+
+    /// `Visibility` is SwiftUI's own top-level enum, not a type nested in
+    /// `TableColumnCustomization` — the `[visibility:]` subscript trades in the same
+    /// `.automatic / .visible / .hidden` used everywhere else in SwiftUI.
+    private func setAllColumns(_ visibility: Visibility) {
+        for spec in Self.columnSpecs {
+            columnCustomization[visibility: spec.id] = visibility
+        }
+    }
 
     private var filtered: [Container] {
         switch filter {
@@ -331,6 +405,11 @@ struct ContainersView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
+
+            // Immediately beside the view switcher, as in Docker Desktop — the two are both
+            // "how do I want to look at this", so they belong together.
+            columnsButton
+                .disabled(presentation != .list)     // cards have no columns to configure
 
             Picker("Filter", selection: $filter) {
                 ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
