@@ -12,16 +12,18 @@ handles discovery on a flat LAN; manual hostname/IP + port entry is mandatory fo
 routed or segmented networks. It does not use the macOS `ssh` binary, expose a
 generic shell, or attempt to be Kubernetes.
 
-**Status (2026-07-27):** Phase 1 is in progress. `FlotillaCore` contains real JSON
-models, `ContainerHost`/`LocalHost`, a read-only `ContainerCLI`, the Q1
-`Allowlist`, `MountPolicy`, a typed settings registry, and diagnostics/redaction
-components. The SwiftUI executable has a `MenuBarExtra`, main window, and
-table-first cross-host container view. **29 tests pass on macOS**, and the
-Foundation-only core builds and tests on Linux via `Package@swift-6.1.swift`.
+**Status (2026-07-31):** Phase 1 is close to complete and the app is genuinely
+usable. `FlotillaCore` has the full CLI surface behind the Q1 `Allowlist` and an
+injectable `MountPolicy`, models pinned to real captured output, a settings registry
+that now persists, and stats sampling. The app ships as a real signed bundle with the
+whole navigation shell, a validated run sheet, and a container detail window.
+**183 tests pass on macOS**; the Foundation-only core still builds and tests on Linux
+via `Package@swift-6.1.swift`.
 
-Still unfinished in Phase 1: the remaining CLI operations, `Preflight`, settings
-tests, and the complete diagnostics/support-bundle flow. Phase 2 networking and
-the stateful host runtime have not been built.
+See the Phase 1 progress note below for what remains. Phase 2 networking and the
+stateful host runtime have not been built — and per `research/ALLOWLIST-AUDIT.md` the
+allowlist is **not** yet trustworthy as the complete Phase 2 wire boundary, so that is
+a prerequisite rather than a detail.
 
 The scope below is the settled, consolidated plan from `DECISIONS.md`,
 `PHASE1.md`, and `research/FEATURES.md`. Earlier phase summaries are superseded.
@@ -146,35 +148,43 @@ Settings, security, and operations:
 - Define separate reset semantics for preferences, host/trust state, and window
   layout.
 
-**Current Phase 1 progress (2026-07-28).** Done: core models, local execution
-spine, allowlist, mount policy, settings registry, diagnostics components, and —
-newer than the previous note claimed — **CLI mutations, volumes, networks, bounded
-logs, and preflight**, plus the full navigation shell (sidebar, Containers with
-filter tabs and bulk actions, container detail with logs, Images, Volumes,
-Networks, Settings) and `publishedPorts`.
+**Current Phase 1 progress (2026-07-31).**
+
+Done: core models (pinned to real captures), local execution spine, allowlist,
+mount policy, settings registry with **persistence**, diagnostics components, the
+full CLI surface (mutations, volumes, networks, bounded logs, kill, inspect, prune,
+tag, `system df`), preflight, and the whole navigation shell — Containers with
+sortable/hideable columns, per-row actions, context menus everywhere, bulk actions,
+CPU/memory columns, cards with sparklines; Images; Volumes; Networks; Settings; the
+run sheet with a validated live command preview; and a container detail window with
+Overview / Processes / Logs / Inspect / Configuration.
+
+Also now real rather than declared: appearance, first-run onboarding, auto-refresh,
+the menu-bar/Dock setting, and notifications — all four were settings driving
+nothing. And there is an **app bundle** (`Scripts/make-app.sh`), which is what
+unblocked the last three.
 
 Still unfinished:
 
-- **Run sheet with live command preview** — `ContainerCLI.run` and
-  `runArguments` exist; the UI to create a container does not. This is the
-  conspicuous gap: Flotilla cannot currently create a container at all.
-- `kill`, `inspect`, `prune`, `tag`, and the `system df` disk view.
-- `stats` is implemented in the core and rendered nowhere.
-- **Settings that do not take effect.** The picker for *Show Flotilla in*
-  (menu bar / Dock / both) is inert because `AppDelegate` hardcodes
-  `.regular`; doing it properly needs `LSUIElement`, so it is deliberately
-  deferred to the Xcode-project move. Per-category notification toggles are
-  inert because nothing delivers a notification — there is no
-  `UNUserNotificationCenter` use anywhere yet.
-- Diagnostics: the snapshot, error log and redaction components exist, but the
+- **Diagnostics**: the snapshot, error log and redaction components exist; the
   previewable redacted support-bundle flow does not.
-- Separate reset semantics for preferences, host/trust state and window layout.
-- `config.toml`-backed properties are declared in the registry but not read.
+- **Launch at login** (`SMAppService`) — the bundle makes it possible; not wired.
+- **Separate reset semantics** for preferences, host/trust state and window layout.
+- **`config.toml`** is declared in the registry but not read.
+- **About/Privacy view** listing every network destination.
+- **⌘K palette** and the `is:`/`image:`/`host:` search grammar.
+- **Clickable ports** and detail views for volumes and networks (both are immutable,
+  so these are read-only by necessity — there is no `update` command for either).
+- **Progress for long operations** (pull has none), and prune previewing what dies.
+- **Accessibility passes**: Increase Contrast, Reduce Transparency, Reduce Motion,
+  VoiceOver wording.
+- **The Xcode project**: hardened runtime, Developer ID, notarization. The bundle
+  script is deliberately not this.
 
-Fixed on the way through, worth not regressing: appearance is now actually
-applied (the stored choice drove nothing), and the user tier of settings is now
-persisted — `SettingsStore` is in-memory by design and the app layer never wrote
-`userValuesSnapshot()` anywhere, so every setting reset on every launch.
+Two things that are *not* going to happen, and why, so nobody re-proposes them:
+Compose (Apple has no Compose object; building one makes Flotilla an orchestrator)
+and a general interactive `exec` in the Phase 2 grammar (it is remote code
+execution; see `research/DOCKER-PORTABILITY.md`).
 
 ### Phase 2 — Stateful host mode + client mode over mTLS
 

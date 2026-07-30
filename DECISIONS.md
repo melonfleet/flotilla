@@ -131,3 +131,79 @@ they are not relitigated.
 `tdeverx/contained-app` is **PolyForm Noncommercial 1.0.0** — fine to read for
 ideas and for personal non-commercial use, but don't copy its code into anything
 commercial. Learn the patterns; write our own.
+
+## Settled 2026-07-30/31 — packaging, presentation, and honesty about the runtime
+
+### App bundle before Xcode project
+
+`Scripts/make-app.sh` assembles a real `dev.melonfleet.Flotilla` bundle around the
+SwiftPM binary — Info.plist, generated icon, ad-hoc signature — while the build stays
+SwiftPM and `FlotillaCore` keeps building on Linux.
+
+This is **not** the Xcode migration, and must not be documented as such. It exists
+because four Phase 1 features were gated on a bundle identifier rather than on missing
+code: `UNUserNotificationCenter.current()` does not degrade without one, it raises
+`bundleProxyForCurrentProcess is nil` and kills the process; `LSUIElement` is a plist
+key; `SMAppService` registers a bundle; and signing needs one. Xcode still owns
+notarization, Sparkle and distribution.
+
+The ad-hoc signature is load-bearing, not decoration: notification authorization is
+remembered per code identity, so an unsigned bundle re-prompts on every rebuild.
+
+### Presentation defaults to `both`, not `menuBar`
+
+Honouring the previously-inert "Show Flotilla in" setting exposed its default as
+hostile. `.menuBar` maps to `NSApplication.ActivationPolicy.accessory`, which removes
+Flotilla from the Dock **and from ⌘-Tab** — so switching to another app left the
+menu-bar icon as the only route back. For an app whose main window is the product
+(Q2), being unreachable by ⌘-Tab is a defect, not a preference. `.menuBar` remains
+available for anyone who wants a true accessory app.
+
+### Forms are modal sheets with a drawn red ×; detail is a real window
+
+Two requests conflicted: the web-modal feel (interface behind dims and stops
+responding) and macOS's own red close button. They cannot coexist — traffic lights
+exist only on a real title bar, a sheet has no title bar, and a plain window is not
+modal. A window route was built and then removed.
+
+Settled shape:
+
+| Presentation | Used for | Close |
+|---|---|---|
+| Modal sheet in `ModalCard` | forms (run, network, volume, pull, tag) | red ×, Escape |
+| Real window | container detail | macOS traffic lights, zoom kept, minimise removed |
+| Alert | confirmations and errors | named buttons |
+
+The red × is deliberately **not** a traffic-light imitation placed where a title bar
+would be. It is a close control that happens to be red and carries the glyph everyone
+reads as close — the point being that an icon travels further than the word "Close".
+The dim is owned by `MainWindowView`, not by each sheet, so the whole interface greys
+rather than just the detail pane.
+
+### Nothing in `container` is editable after creation
+
+Verified against the CLI: there is no `update`, `edit`, `set`, `resize` or `modify` for
+containers, volumes or networks. Every one is create/delete only.
+
+Consequences that shape the UI rather than being footnotes:
+
+- The **create form is the only moment** any option can be chosen, so every flag the
+  CLI accepts is offered there — networks get IPv4/IPv6 addressing, host-only, labels,
+  plugin options and plugin; volumes get size, labels and driver options.
+- The Configuration tab is **read-only by necessity**, and says so. An editable pane
+  would invite changes that could never be applied.
+- Changing anything means delete and recreate, which for a volume means moving data
+  first. Do not offer a "resize" that quietly destroys.
+
+### Brand assets are generated, never fetched
+
+The brand SVGs contain `@import url('https://fonts.googleapis.com/…')`. Flotilla
+promises no telemetry and no phone-home, with an About view meant to list every
+network destination — shipping a decorative asset that fetches a font on every launch
+would make that claim false, and would render as Helvetica anywhere the font is
+absent.
+
+So: the app icon and menu-bar glyph are **generated** from the brand geometry
+(`Scripts/make-icons.swift`), and the wordmark is **drawn** in SwiftUI
+(`Wordmark.swift`). The menu-bar glyph is a monochrome **template** image — macOS
+inverts it, so one asset serves light and dark and there is no pair to drift.

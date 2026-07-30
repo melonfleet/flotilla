@@ -10,31 +10,78 @@ ownership, `research/FEATURES.md` for the consolidated phase-ordered scope, and
 `PLAN.md` for the six-phase roadmap. Settled decisions are not open design
 questions.
 
-## Project status (2026-07-27)
+## Project status (2026-07-31)
 
-- `FlotillaCore` is real and substantial, not a scaffold. It is Foundation-only
-  and contains:
-  - real `container` JSON models and fixtures;
-  - `ContainerHost`, `LocalHost`, and `CommandResult`;
-  - the currently read-only `ContainerCLI`;
-  - the Q1 `Allowlist` and host-path `MountPolicy` security boundary;
-  - a typed settings registry implementing managed `defaults` + `locked`
-    precedence;
-  - diagnostics snapshot, error-log, and redaction components.
-- The macOS SwiftPM package includes a SwiftUI `Flotilla` executable with a
-  `MenuBarExtra`, main window, and table-first cross-host container view.
-- **29 tests pass on macOS.**
-- `FlotillaCore` also builds and tests on Linux with Swift 6.1 through
-  `Package@swift-6.1.swift`. Keep the portable core Foundation-only so backend and
-  data work remains independently verifiable.
-- Phase 1 remains in progress. Unfinished work includes `ContainerCLI` mutations,
-  volumes, networks and bounded logs; `Preflight`; settings tests; and the complete
-  diagnostics/support-bundle flow.
-- Phase 2 networking is not implemented yet: there is no `Wire`, `RemoteHost`,
-  Network.framework transport, mTLS listener, Bonjour browser/advertiser, or
-  persisted host policy store in the current source tree.
-- Branding is the approved watermelon visual language. Light and dark appearances
-  are both first-class.
+- `FlotillaCore` is real and substantial. Foundation-only, and contains:
+  - `container` JSON models pinned to **real captured output** — see the fixture
+    warning below;
+  - `ContainerHost`, `LocalHost`, `CommandResult`;
+  - `ContainerCLI`, now covering reads **and** mutations: run, start, stop, kill,
+    restart, remove, prune, inspect, logs, images (pull/tag/delete/prune),
+    volumes, networks, `system df`;
+  - the Q1 `Allowlist` and host-path `MountPolicy` boundary. `MountPolicy` is
+    injectable at `ContainerCLI.init` — it used to be hardcoded, which left Phase 2
+    with no way to narrow it;
+  - a typed settings registry with managed `defaults` + `locked` precedence;
+  - `StatsSampler` (CPU deltas + bounded history), `JSONPrettyPrinter`, diagnostics
+    snapshot, error log, redaction.
+- The macOS app has a `MenuBarExtra` glance and a main window with Containers
+  (sortable, hideable columns, per-row actions, context menus, cards with
+  sparklines), Images, Volumes, Networks, Settings, a run sheet with a validated
+  live command preview, and a container detail window with Overview / Processes /
+  Logs / Inspect / Configuration.
+- **183 tests pass on macOS.** `FlotillaCore` also builds and tests on Linux with
+  Swift 6.1 via `Package@swift-6.1.swift`. Keep the portable core Foundation-only
+  so backend and data work stays independently verifiable.
+- **There is an app bundle now**, built by `Scripts/make-app.sh` — a real
+  `dev.melonfleet.Flotilla` identity, Info.plist, icon and ad-hoc signature. This
+  is **not** the Xcode migration; it is the cheap half. Four features were gated on
+  it, not on missing code: notifications (`UNUserNotificationCenter` *crashes*
+  without a bundle), the menu-bar/Dock setting (`LSUIElement`), launch at login
+  (`SMAppService`), and signing hygiene. Xcode still owns notarization and Sparkle.
+- Phase 2 networking is not implemented: no `Wire`, `RemoteHost`,
+  Network.framework transport, mTLS listener, Bonjour, or persisted host policy
+  store.
+
+### Hard-won lessons — read before trusting anything here
+
+Five bugs found in one day, all invisible to a green test suite. The suite checked
+that we *built* the right command; almost nothing checked the command was
+*accepted*.
+
+- **Fixtures must be captured, never written.** `volumes.json` and `networks.json`
+  were fabricated flat shapes matching the models rather than the CLI. The real
+  payloads nest under `configuration`/`status`, so `ContainerNetwork` decoded only
+  `id`, and `ContainerVolume` *threw* the moment a volume existed. Tests were green
+  throughout. Capture with the real CLI or leave the gap.
+- **Exit codes must be checked.** `LocalHost.run` returned `exitCode` and an `ok`
+  property nothing read, so every CLI failure was silent — a duplicate network, a
+  failed start, a refused pull. `ContainerCLI.succeeding(_:)` now throws on
+  non-zero.
+- **The `Allowlist` must be at least as strict as the CLI.** `--publish` accepted a
+  bare port the CLI refuses; `start` accepted 32 operands when the CLI takes one.
+  A too-loose shape is the dangerous direction, and in Phase 2 that grammar faces a
+  remote caller. `reference/cli-help/` holds captured `--help` for 49 subcommands —
+  audit against it, not against docs, which have been wrong repeatedly.
+- **the review's verdict stands:** the `Allowlist` is **not** trustworthy as the complete
+  Phase 2 wire boundary yet (22 plugin-backed specs unverified). See
+  `research/ALLOWLIST-AUDIT.md`.
+- **A setting that drives nothing is worse than a missing one.** Appearance,
+  presentation, poll interval and notifications were all inert; and no setting
+  persisted at all, because `SettingsStore` is in-memory by design and the app layer
+  never wrote `userValuesSnapshot()` anywhere.
+- **Run the app.** The flicker, the dead Refresh, the useless columns and the
+  fabricated fixtures were all found by using it, not by testing it.
+
+### Branding
+
+The approved watermelon language; light and dark are both first-class. Icons are
+**generated** from the brand geometry by `Scripts/make-icons.swift`, and the
+wordmark is **drawn** in SwiftUI (`Wordmark.swift`) rather than shipped as an
+image — the brand SVGs contain
+`@import url('https://fonts.googleapis.com/…')`, and an app that promises no
+phone-home must not fetch a font. The menu-bar glyph is a monochrome **template**
+image, so macOS inverts it for light and dark from one asset.
 
 Do not put personal identity, personal email addresses, credentials, local user
 paths, private keys, certificates, or tokens into tracked files.
