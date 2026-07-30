@@ -23,7 +23,6 @@ struct ContainerDetailView: View {
     }
 
     @State private var tab: Tab = .overview
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,17 +32,32 @@ struct ContainerDetailView: View {
                 ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+            // The label was rendering as a literal "Tab" beside the control. A segmented
+            // picker of tab names does not need to be told it is tabs.
+            .labelsHidden()
             .padding(12)
 
-            switch tab {
-            case .overview: overview
-            case .processes: ProcessesTab(model: model, container: container)
-            case .logs: LogsTab(model: model, containerID: container.id)
-            case .inspect: InspectTab(model: model, container: container)
-            case .configuration: ConfigurationTab(model: model, container: container)
+            // Each tab fills the remaining height. Without this the `VStack` sizes itself to
+            // whichever tab is showing and centres the lot inside the fixed sheet frame, so a
+            // short tab — Logs with no output, most obviously — left a large empty band above
+            // the title and below the content.
+            Group {
+                switch tab {
+                case .overview: overview
+                case .processes: ProcessesTab(model: model, container: container)
+                case .logs: LogsTab(model: model, containerID: container.id)
+                case .inspect: InspectTab(model: model, container: container)
+                case .configuration: ConfigurationTab(model: model, container: container)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: 640, height: 560)
+        // A real window, not a sheet — which is what gives it macOS's own red close button
+        // in the title bar rather than a button spelling out the word "Close". The owner's point
+        // generalises: an icon everyone already recognises beats a word not everyone reads.
+        // Resizable, with a sensible minimum, because a fixed sheet frame was also what made
+        // a short tab leave a band of empty space.
+        .frame(minWidth: 620, minHeight: 520)
     }
 
     private var header: some View {
@@ -57,7 +71,6 @@ struct ContainerDetailView: View {
                     .truncationMode(.middle)
             }
             Spacer()
-            Button("Close") { dismiss() }
         }
         .padding(12)
     }
@@ -796,9 +809,19 @@ private struct ConfigurationTab: View {
         .task { await load() }
     }
 
+    /// Why this view is read-only, stated here so it is not mistaken for unfinished work:
+    /// **Apple's `container` has no command that mutates an existing container.** There is no
+    /// `container update`, and no pause/resume/set — the lifecycle is create, start, stop,
+    /// kill, delete. An editable configuration pane would therefore let someone type changes
+    /// that could never be applied, which is worse than not offering the field.
+    ///
+    /// The real "edit" is to recreate: the review's portability review recommends a `Duplicate…`
+    /// action that pre-fills the run sheet from this container's configuration, which is the
+    /// honest shape of the same intent. See `research/DOCKER-PORTABILITY.md`.
     private var caption: some View {
         Label(
-            "Generated from the container's configuration. Apple's container has no YAML config file.",
+            "Read-only. Apple's `container` has no YAML config file, and no command to change "
+                + "an existing container's settings — to change one, recreate it.",
             systemImage: "info.circle"
         )
         .font(.caption)

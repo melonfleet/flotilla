@@ -110,5 +110,43 @@ struct FlotillaApp: App {
                 }
         }
         .defaultSize(width: 1180, height: 720)
+
+        // Container detail as a real window rather than a sheet. Three reasons:
+        // macOS supplies its own close button (the red traffic light), so there is no
+        // word-button spelling out "Close"; a window is resizable, which a fixed sheet frame
+        // was not; and you can keep one open — or several — while working in the table,
+        // which a modal sheet forbids.
+        //
+        // Keyed by container **id** rather than the value: a window can outlive the snapshot
+        // that opened it, and re-reading from the model each time means the window shows
+        // current state rather than whatever was true when it opened.
+        WindowGroup(id: "container-detail", for: String.self) { $containerID in
+            if let containerID {
+                ContainerDetailWindow(model: model, containerID: containerID)
+                    .preferredColorScheme(model.appearance.colorScheme)
+            }
+        }
+        .defaultSize(width: 720, height: 600)
+    }
+}
+
+/// Resolves a container id to the live `Container` each time the model changes, so a detail
+/// window reflects current state. If the container is deleted while its window is open the
+/// window says so rather than showing a frozen snapshot of something that no longer exists.
+private struct ContainerDetailWindow: View {
+    let model: AppModel
+    let containerID: String
+
+    var body: some View {
+        if let container = model.containers.first(where: { $0.id == containerID }) {
+            ContainerDetailView(model: model, container: container)
+        } else {
+            ContentUnavailableView(
+                "Container unavailable",
+                systemImage: "questionmark.square.dashed",
+                description: Text("“\(containerID)” is no longer on this Mac. It may have been deleted.")
+            )
+            .frame(minWidth: 620, minHeight: 520)
+        }
     }
 }

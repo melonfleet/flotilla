@@ -47,7 +47,7 @@ struct ContainersView: View {
     }
 
     @State private var selection = Set<Container.ID>()
-    @State private var detailContainer: Container?
+    @Environment(\.openWindow) private var openWindow
     @State private var confirmingBulkDelete = false
     /// Non-nil while a single row's trash button is awaiting confirmation. Destructive
     /// actions confirm with the object *named* (`FEATURES.md`'s destructive-action policy),
@@ -108,6 +108,12 @@ struct ContainersView: View {
             .padding(.vertical, 10)
             .frame(width: 210)
         }
+    }
+
+    /// Detail opens as its own window (see `FlotillaApp`), so macOS provides the close
+    /// button rather than us drawing one.
+    private func openDetail(_ id: String) {
+        openWindow(id: "container-detail", value: id)
     }
 
     private func binding(for id: String) -> Binding<Bool> {
@@ -211,7 +217,7 @@ struct ContainersView: View {
 
             // The overflow: everything that isn't a one-tap lifecycle action.
             Menu {
-                Button("Details…") { detailContainer = container }
+                Button("Details…") { openDetail(container.id) }
                 Divider()
                 copyMenu(for: container)
             } label: {
@@ -295,7 +301,7 @@ struct ContainersView: View {
     @ViewBuilder
     private func actions(for container: Container) -> some View {
         let busy = model.busy.contains(container.id)
-        Button("Details…") { detailContainer = container }
+        Button("Details…") { openDetail(container.id) }
         Divider()
         if AppModel.isRunning(container) {
             Button("Stop") { Task { await model.perform(.stop, on: container) } }.disabled(busy)
@@ -323,9 +329,6 @@ struct ContainersView: View {
             Button("OK") { model.clearActionError() }
         } message: {
             Text(model.actionError ?? "")
-        }
-        .sheet(item: $detailContainer) { container in
-            ContainerDetailView(model: model, container: container)
         }
         .sheet(isPresented: $showingRun) {
             RunSheetView(model: model)
@@ -546,7 +549,7 @@ struct ContainersView: View {
                     // is a link-styled button with the selection behaviour left intact:
                     // `.buttonStyle(.link)` keeps the click local to the text.
                     Button {
-                        detailContainer = c
+                        openDetail(c.id)
                     } label: {
                         Text(c.id).lineLimit(1)
                     }
@@ -636,7 +639,7 @@ struct ContainersView: View {
             } primaryAction: { ids in
                 // Double-click opens the detail sheet, matching the cards.
                 if let id = ids.first, let container = visible.first(where: { $0.id == id }) {
-                    detailContainer = container
+                    openDetail(container.id)
                 }
             }
             .frame(maxHeight: isShortList ? shortListHeight : .infinity)
@@ -668,7 +671,7 @@ struct ContainersView: View {
                         onStart: { Task { await model.perform(.start, on: container) } },
                         onStop: { Task { await model.perform(.stop, on: container) } },
                         onRestart: { Task { await model.perform(.restart, on: container) } },
-                        onDetails: { detailContainer = container },
+                        onDetails: { openDetail(container.id) },
                         onDelete: { confirmingRowDelete = container }
                     )
                     // Same menu as the table row, so the two presentations offer identical
