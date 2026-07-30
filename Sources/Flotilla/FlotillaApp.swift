@@ -28,6 +28,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// `AppearanceMode` lives in `FlotillaCore`, which is Foundation-only and so cannot name
+/// SwiftUI's `ColorScheme`. The mapping therefore belongs here, in the one target allowed
+/// to import SwiftUI. `nil` is what makes `.auto` follow the system.
+extension AppearanceMode {
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .auto: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 @main
 struct FlotillaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -38,13 +51,25 @@ struct FlotillaApp: App {
         // rather than a plain menu of NSMenuItems.
         MenuBarExtra("Flotilla", systemImage: "shippingbox") {
             MenuBarView(model: model)
+                // The popover needs it too: appearance applied only to the main window
+                // would leave the menu bar disagreeing with the rest of the app.
+                .preferredColorScheme(model.appearance.colorScheme)
         }
         .menuBarExtraStyle(.window)
 
         Window("Flotilla", id: "main") {
             MainWindowView(model: model)
                 .frame(minWidth: 900, minHeight: 520)
+                // Nothing *hardcodes* a scheme — this is the user's own stored choice, and
+                // `.auto` resolves to nil so the system value still wins.
+                .preferredColorScheme(model.appearance.colorScheme)
                 .task { await model.reload() }
+                // First run: ask, with Auto pre-selected. `needsAppearanceOnboarding` is
+                // false once answered, including when the answer was Auto — which is
+                // exactly why the store models `notChosen` separately.
+                .sheet(isPresented: .constant(model.needsAppearanceOnboarding)) {
+                    OnboardingView(model: model)
+                }
         }
         .defaultSize(width: 1180, height: 720)
     }

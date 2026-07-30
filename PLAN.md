@@ -146,11 +146,35 @@ Settings, security, and operations:
 - Define separate reset semantics for preferences, host/trust state, and window
   layout.
 
-**Current Phase 1 progress:** the core models, local execution spine, read-only
-CLI, allowlist, mount policy, settings registry, diagnostics components, SwiftUI
-shell, menu-bar extra, and cross-host table exist. CLI mutations/volume/network/
-log operations, preflight, settings tests, and the full diagnostics bundle are
-unfinished.
+**Current Phase 1 progress (2026-07-28).** Done: core models, local execution
+spine, allowlist, mount policy, settings registry, diagnostics components, and —
+newer than the previous note claimed — **CLI mutations, volumes, networks, bounded
+logs, and preflight**, plus the full navigation shell (sidebar, Containers with
+filter tabs and bulk actions, container detail with logs, Images, Volumes,
+Networks, Settings) and `publishedPorts`.
+
+Still unfinished:
+
+- **Run sheet with live command preview** — `ContainerCLI.run` and
+  `runArguments` exist; the UI to create a container does not. This is the
+  conspicuous gap: Flotilla cannot currently create a container at all.
+- `kill`, `inspect`, `prune`, `tag`, and the `system df` disk view.
+- `stats` is implemented in the core and rendered nowhere.
+- **Settings that do not take effect.** The picker for *Show Flotilla in*
+  (menu bar / Dock / both) is inert because `AppDelegate` hardcodes
+  `.regular`; doing it properly needs `LSUIElement`, so it is deliberately
+  deferred to the Xcode-project move. Per-category notification toggles are
+  inert because nothing delivers a notification — there is no
+  `UNUserNotificationCenter` use anywhere yet.
+- Diagnostics: the snapshot, error log and redaction components exist, but the
+  previewable redacted support-bundle flow does not.
+- Separate reset semantics for preferences, host/trust state and window layout.
+- `config.toml`-backed properties are declared in the registry but not read.
+
+Fixed on the way through, worth not regressing: appearance is now actually
+applied (the stored choice drove nothing), and the user tier of settings is now
+persisted — `SettingsStore` is in-memory by design and the app layer never wrote
+`userValuesSnapshot()` anywhere, so every setting reset on every launch.
 
 ### Phase 2 — Stateful host mode + client mode over mTLS
 

@@ -36,6 +36,7 @@ struct ContainersView: View {
     @State private var search = ""
     @State private var detailContainer: Container?
     @State private var confirmingBulkDelete = false
+    @State private var showingRun = false
 
     private var filtered: [Container] {
         switch filter {
@@ -108,6 +109,9 @@ struct ContainersView: View {
         .sheet(item: $detailContainer) { container in
             ContainerDetailView(model: model, container: container)
         }
+        .sheet(isPresented: $showingRun) {
+            RunSheetView(model: model)
+        }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. One observation covers all three ways the visible set
         // moves out from under the selection — filter change, search change, and the data
@@ -129,6 +133,13 @@ struct ContainersView: View {
             Text("This cannot be undone.")
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingRun = true
+                } label: {
+                    Label("Run Container…", systemImage: "plus")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task { await model.reload() }

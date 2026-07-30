@@ -38,9 +38,68 @@ final class AppModel {
     /// app reads `/Library/Managed Preferences` for real.
     let settingsStore: SettingsStore
 
-    init(cli: ContainerCLI = ContainerCLI(host: LocalHost()), settingsStore: SettingsStore = SettingsStore()) {
+    /// Retained for as long as the app runs. `SettingsPersistence` writes on every change
+    /// through this token, and dropping it would stop persistence silently — which looks
+    /// identical to the bug it exists to fix.
+    private let persistence: SettingsObservation?
+
+    /// The default store is seeded from `UserDefaults` and writes back on change. Tests and
+    /// previews pass their own in-memory store, which then persists nothing.
+    init(cli: ContainerCLI = ContainerCLI(host: LocalHost()), settingsStore: SettingsStore? = nil) {
+        let resolved: (store: SettingsStore, observation: SettingsObservation?)
+        if let settingsStore {
+            resolved = (settingsStore, nil)
+        } else {
+            let made = SettingsPersistence.makeStore()
+            resolved = (made.store, made.observation)
+        }
+
         self.cli = cli
-        self.settingsStore = settingsStore
+        self.settingsStore = resolved.store
+        self.persistence = resolved.observation
+        self.appearance = resolved.store.effectiveAppearance
+        self.needsAppearanceOnboarding = resolved.store.needsAppearanceOnboarding
+        observeSettings()
+    }
+
+    // MARK: Appearance
+    //
+    // `SettingsStore` is Foundation-only, so it is not `@Observable` and cannot drive
+    // SwiftUI on its own — and `SettingRow` keeps each edit in local `@State`, so nothing
+    // propagated past the row that made it. The result was a picker offering Light / Dark /
+    // Auto that changed precisely nothing. This is the bridge: the store's change
+    // notifications become observable properties the scenes can read.
+
+    /// What the app should actually render with. `.auto` means follow the system.
+    private(set) var appearance: AppearanceMode
+    /// True until the user (or a managed profile) has answered the first-run question.
+    /// Distinct from "chose auto" — see `AppearancePreference.notChosen`.
+    private(set) var needsAppearanceOnboarding: Bool
+
+    private var settingsObservation: SettingsObservation?
+
+    private func observeSettings() {
+        settingsObservation = settingsStore.observeChanges { [weak self] _ in
+            // The store may notify from any thread; this state is main-actor isolated.
+            Task { @MainActor [weak self] in self?.reloadAppearance() }
+        }
+    }
+
+    private func reloadAppearance() {
+        appearance = settingsStore.effectiveAppearance
+        needsAppearanceOnboarding = settingsStore.needsAppearanceOnboarding
+    }
+
+    /// Records the first-run choice. Failure is surfaced rather than swallowed: the only
+    /// realistic cause is a managed profile having locked appearance, and silently
+    /// discarding the user's pick would leave onboarding looking broken.
+    func chooseAppearance(_ mode: AppearanceMode) {
+        do {
+            try settingsStore.chooseAppearance(mode)
+        } catch {
+            actionError = "Couldn't save that appearance choice: \(error)"
+        }
+        reloadAppearance()
     }
 
     /// Result of the last preflight, so the UI can explain *why* nothing is listed.
@@ -354,5 +413,29 @@ final class AppModel {
         case .restart: "Restart"
         case .delete: "Delete"
         }
+    }
+
+    // MARK: Run
+
+    func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = []) async {
+        do {
+            _ = try await Task.detached { [cli] in try cli.run(image: image, options: options, command: command) }.value
+        } catch {
+            actionError = "Run failed for \(image): \(error)"
+        }
+        await refresh()
+    }
+
+    /// The validated argv for `container run …`, or the `Allowlist` error that rejects
+    /// it. Built from `ContainerCLI.runArguments` — the same construction `run(image:...)`
+    /// itself executes — and validated with `mountPolicy: .unrestricted`, matching
+    /// `ContainerCLI`'s own local-execution policy exactly, so the run sheet's live
+    /// preview can never show a command as accepted or rejected differently than reality
+    /// would. Static and pure so the view holds no allowlist logic of its own.
+    static func runPreview(
+        image: String, options: ContainerCLI.RunOptions, command: [String] = []
+    ) -> Result<ValidatedCommand, AllowlistError> {
+        Allowlist.validate(ContainerCLI.runArguments(image: image, options: options, command: command),
+                           mountPolicy: .unrestricted)
     }
 }

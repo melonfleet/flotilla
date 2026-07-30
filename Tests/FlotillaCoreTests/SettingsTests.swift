@@ -314,3 +314,52 @@ import Testing
     #expect(AppearancePreference.auto.isChosen)
     #expect(AppearancePreference.selectable == [.auto, .light, .dark])
 }
+
+// MARK: - Persistence shape
+//
+// SettingsStore is in-memory by design and hands `userValuesSnapshot()` to the app layer
+// to persist. For a long time the app layer never did, so every setting — including the
+// first-run appearance choice — reset on every launch. These pin the wire shape that
+// crossing that boundary depends on.
+
+@Test func userValuesRoundTripThroughJSONAsBarePlistShapedValues() throws {
+    let store = SettingsStore()
+    try store.chooseAppearance(.dark)
+
+    let encoded = try JSONEncoder().encode(store.userValuesSnapshot())
+
+    // Bare values, not tagged wrappers — an exported file has to be pasteable into a Jamf
+    // Custom Settings payload.
+    let asText = try #require(String(data: encoded, encoding: .utf8))
+    #expect(asText.contains("\"dark\""))
+    #expect(!asText.contains("\"string\""))   // no type tag leaked into the payload
+
+    let decoded = try JSONDecoder().decode([String: SettingValue].self, from: encoded)
+    let restored = SettingsStore(userValues: decoded)
+    #expect(restored.chosenAppearance == .dark)
+    #expect(restored.needsAppearanceOnboarding == false)
+}
+
+@Test func aStoreRestoredFromNothingStillNeedsOnboarding() throws {
+    // The first-run path: nothing on disk must mean "ask", not "assume auto". If these
+    // collapsed, the question would either never be asked or be asked forever.
+    let fresh = SettingsStore(userValues: [:])
+    #expect(fresh.needsAppearanceOnboarding)
+    #expect(fresh.chosenAppearance == nil)
+    #expect(fresh.effectiveAppearance == .auto)   // render as auto meanwhile
+}
+
+@Test func choosingAutoIsPersistedAsAnAnswerNotAsAnAbsentValue() throws {
+    // The subtle one: picking Auto must be *recorded*, or the user is asked again next
+    // launch despite having answered.
+    let store = SettingsStore()
+    try store.chooseAppearance(.auto)
+
+    let decoded = try JSONDecoder().decode(
+        [String: SettingValue].self, from: try JSONEncoder().encode(store.userValuesSnapshot()))
+    #expect(!decoded.isEmpty, "choosing Auto wrote nothing, so it would be re-asked forever")
+
+    let restored = SettingsStore(userValues: decoded)
+    #expect(restored.needsAppearanceOnboarding == false)
+    #expect(restored.chosenAppearance == .auto)
+}
