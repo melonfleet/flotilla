@@ -8,6 +8,8 @@ struct NetworksView: View {
 
     @State private var showingCreate = false
     @State private var newNetworkName = ""
+    @State private var newSubnet = ""
+    @State private var newInternal = false
     @State private var pendingDelete: ContainerNetwork?
 
     var body: some View {
@@ -152,27 +154,97 @@ struct NetworksView: View {
             .disabled(model.busy.contains(network.id))
     }
 
+    /// The **only** moment a network's settings can be chosen.
+    ///
+    /// `container network` has create, delete, list, inspect and prune — no update, edit or
+    /// set. A network is immutable once it exists, so a subnet not set here is assigned
+    /// automatically and the only route to a different one is delete and recreate. That is
+    /// why this sheet is worth more than a name field, and why the note says so on screen.
     private var createSheet: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("New Network").font(.headline)
-            TextField("Network name", text: $newNetworkName)
-                .textFieldStyle(.roundedBorder)
+
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Name", text: $newNetworkName)
+                    .textFieldStyle(.roundedBorder)
+                if let problem = nameProblem {
+                    Text(problem).font(.caption).foregroundStyle(.red)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Subnet — optional, e.g. 10.10.0.0/24", text: $newSubnet)
+                    .textFieldStyle(.roundedBorder)
+                if let problem = subnetProblem {
+                    Text(problem).font(.caption).foregroundStyle(.red)
+                } else {
+                    Text("Leave empty to have one assigned. This cannot be changed later.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Toggle("Host-only (no external access)", isOn: $newInternal)
+                .toggleStyle(.checkbox)
+
+            // Same idea as the run sheet: show the command, validated, before it runs.
+            Text((["container"] + ContainerCLI.createNetworkArguments(
+                    trimmedName, subnet: trimmedSubnet, isInternal: newInternal))
+                    .joined(separator: " "))
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
             HStack {
                 Spacer()
                 Button("Cancel") { showingCreate = false }
                 Button("Create") {
-                    let name = newNetworkName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let name = trimmedName
+                    let subnet = trimmedSubnet
+                    let hostOnly = newInternal
                     showingCreate = false
-                    guard !name.isEmpty else { return }
-                    Task { await model.createNetwork(name) }
+                    Task { await model.createNetwork(name, subnet: subnet, isInternal: hostOnly) }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(newNetworkName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(trimmedName.isEmpty || nameProblem != nil || subnetProblem != nil)
             }
         }
         .padding(20)
-        .frame(width: 360)
+        .frame(width: 420)
     }
+
+    private var trimmedName: String {
+        newNetworkName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var trimmedSubnet: String? {
+        let value = newSubnet.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    /// Validated **here**, against the same `Allowlist` the execution path uses, so an invalid
+    /// name is refused with the reason while it is still being typed. Previously the only
+    /// feedback was an "Action failed" alert after the fact, whose message named the verdict
+    /// and not the rule — "'Test 1' is not a valid identifier" led to the wrong conclusion
+    /// that capitals were the problem. They are not; the space was.
+    private var nameProblem: String? {
+        guard !trimmedName.isEmpty else { return nil }   // don't scold an empty field
+        return problem(in: ContainerCLI.createNetworkArguments(trimmedName))
+    }
+
+    private var subnetProblem: String? {
+        guard let subnet = trimmedSubnet else { return nil }
+        // Validate the subnet alone, with a name known to be fine, so the message can only be
+        // about the subnet.
+        return problem(in: ContainerCLI.createNetworkArguments("placeholder", subnet: subnet))
+    }
+
+    private func problem(in args: [String]) -> String? {
+        switch Allowlist.validate(args) {
+        case .success: nil
+        case .failure(let error): error.description
+        }
+    }
+
 
     /// Honours `confirmDestructiveActions` — the whole point of that registry key.
     private func requestDelete(_ network: ContainerNetwork) {

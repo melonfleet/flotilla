@@ -310,8 +310,35 @@ public struct ContainerCLI: Sendable {
 
     // MARK: Networks — mutate
 
-    @discardableResult public func createNetwork(_ name: String) throws -> CommandResult {
-        try execute(["network", "create", name])
+    /// Options are **create-time only**, and that is a property of the runtime rather than a
+    /// gap in this API: `container network` offers create, delete, list, inspect and prune —
+    /// there is no update, edit or set (verified 2026-07-30). A network's subnet cannot be
+    /// changed once it exists, so if it is not chosen here it is assigned automatically and
+    /// the only way to a different one is delete and recreate.
+    ///
+    /// `Allowlist` has permitted `--subnet` and `--internal` from the start; nothing reached
+    /// them until now, which is why every network came out with an auto-assigned range.
+    @discardableResult public func createNetwork(
+        _ name: String, subnet: String? = nil, isInternal: Bool = false
+    ) throws -> CommandResult {
+        var args = ["network", "create"]
+        if isInternal { args.append("--internal") }
+        if let subnet, !subnet.isEmpty { args += ["--subnet", subnet] }
+        args.append(name)
+        return try execute(args)
+    }
+
+    /// The argv `createNetwork` will run, so the sheet can show and validate it before
+    /// anything happens — same seam as `runArguments`, same reason: a preview that is
+    /// assembled separately drifts from what executes.
+    public static func createNetworkArguments(
+        _ name: String, subnet: String? = nil, isInternal: Bool = false
+    ) -> [String] {
+        var args = ["network", "create"]
+        if isInternal { args.append("--internal") }
+        if let subnet, !subnet.isEmpty { args += ["--subnet", subnet] }
+        args.append(name)
+        return args
     }
 
     @discardableResult public func removeNetwork(_ name: String) throws -> CommandResult {

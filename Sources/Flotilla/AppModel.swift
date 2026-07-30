@@ -484,9 +484,11 @@ final class AppModel {
         }
     }
 
-    func createNetwork(_ name: String) async {
+    func createNetwork(_ name: String, subnet: String? = nil, isInternal: Bool = false) async {
         do {
-            _ = try await Task.detached { [cli] in try cli.createNetwork(name) }.value
+            _ = try await Task.detached { [cli] in
+                try cli.createNetwork(name, subnet: subnet, isInternal: isInternal)
+            }.value
         } catch {
             actionError = "Create network failed for \(name): \(error)"
         }
