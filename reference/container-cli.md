@@ -40,17 +40,24 @@ All take `--format <json|table|yaml|toml>` (default `table`):
 - `container kill <id>` — `-a/--all`, `-s/--signal` (KILL).
 - `container delete|rm <id>` — `-a/--all`, `-f/--force`.
 - `container exec [flags] <id> <cmd>` — `-i`, `-t`, `-e`, `-u`, `-w`, `-d`.
+  **Never emit a bare `--` before the command.** `container exec web -- ps` fails with
+  `failed to find target executable --`: the separator is taken as the program name.
+  Unlike `run`, which requires it. Flotilla's `Allowlist` accepts `--` on input for
+  unambiguous parsing and strips it from the executed argv.
 - `container logs <id>` — `-f/--follow`, `-n <lines>`, `--boot`.
 - `container cp <src> <id>:/path` (and reverse) — file transfer.
 - `container prune` — remove stopped containers.
-- `container export -o <tar> <id>` — export rootfs.
+- `container export -o <tar> <id>` — export rootfs. **The container must be stopped**;
+  on a running one it fails with `invalidState: "container is not stopped"` (verified).
 
 ## Images
 
 - `container image pull <ref>` — `--platform`, `--arch`, `--os`,
   `--max-concurrent-downloads` (3), `--progress …`.
 - `container image push <ref>` — `--progress …`.
-- `container image build` *(top-level `container build`)* — `-f/--file`, `-t/--tag`,
+- `container build` — a **top-level** command, not a subcommand of `container image`.
+  There is no `container image build` at all (verified: it falls through to `image`
+  help). Flags: `-f/--file`, `-t/--tag`,
   `--build-arg`, `--target`, `--no-cache`, `--pull`, `-o/--output type=oci|tar|local`,
   `-c/--cpus` (2), `-m/--memory` (2048MB).
 - `container image tag <src> <dst>`
@@ -80,5 +87,19 @@ All take `--format <json|table|yaml|toml>` (default `table`):
 - The **API service** (`container system start`) must be running for commands to
   work — Flotilla's preflight should check `container system status` and offer to
   start it.
-- The `machine` subcommands manage the host VM/runtime — Flotilla mostly ignores
-  these except possibly surfacing `machine list`.
+- **`container machine` is not host-runtime plumbing.** There is no shared host VM to
+  manage — every container already gets its own micro-VM. `machine` is an additive
+  feature: a persistent, general-purpose Linux dev environment built from any OCI image
+  containing `/sbin/init`, with a host-matching user and passwordless sudo. Closer to a
+  lightweight Vagrant box than to internal plumbing. Whether Flotilla surfaces it is a
+  product question about managing users' dev VMs, not a runtime-visibility one.
+
+## `container run` flags — verified against 1.0.0 on real hardware (2026-07-30)
+
+Present: `--init --mount --rosetta --arch --platform --cpus --memory --network --publish
+--volume --env --rm --detach`.
+
+**Absent: `--stop-signal`.** The 1.0.0 release notes claim it was added, but it is not in
+`container run --help`, not in `docs/command-reference.md` at the 1.0.0 tag, and not in
+`ContainerRun.swift` at that tag. `research/FEATURES.md` lists it in the run-sheet scope —
+that scope line is wrong and the run sheet must not offer it.

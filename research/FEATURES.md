@@ -43,7 +43,7 @@ registry all want to land there), and Phases 2–4 hinge on one protocol decisio
 | Container list | `ls --all --format json` → state, name (`configuration.id`), image, ports, CPU/mem, started; one call returns everything | RUN, UX | **[core]** |
 | **Table view, sortable/resizable/hideable columns** | Running-first default sort; cards become an alternate "Cards" toggle **⚠ changes the mockup's premise** | UX | **[core]** |
 | Lifecycle actions | start / stop / restart / kill / delete; `restart` = stop+start (no native cmd); `--signal`/`--time` behind a disclosure | RUN, UX | **[core]** |
-| Run sheet | One scrollable sheet (not a wizard): image, name, `-d -e -p -v --mount -c -m --network --init --stop-signal` | RUN | **[core]** |
+| Run sheet | One scrollable sheet (not a wizard): image, name, `-d -e -p -v --mount -c -m --network --init` — **and not `--stop-signal`, which does not exist**: the 1.0.0 release notes claim it, but it is absent from `container run --help`, from `docs/command-reference.md` at that tag, and from `ContainerRun.swift`. Verified on hardware 2026-07-30. `--rosetta`/`--arch` do exist and are worth adding. | RUN | **[core]** |
 | **Live command preview + "Copy `container` command"** | Shows the exact CLI before it runs, everywhere; teaches the CLI and doubles as the audit string | RUN, UX | **[core]** |
 | Logs viewer | `logs -n N`, follow toggle, search+highlight, timestamps, wrap, copy/save, capped ring buffer, **`--boot` toggle** (micro-VM boot log — unique to this runtime) | RUN, UX, SET | **[core]** |
 | Inspect tab | Pretty JSON + friendly summary; free, `ls` already returns the whole object | RUN, UX | **[core]** |
