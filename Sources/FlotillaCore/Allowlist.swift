@@ -402,8 +402,13 @@ public enum Allowlist {
             CommandSpec(["volume", "list"], mutates: false, flags: [format, quiet]),
             CommandSpec(["volume", "inspect"], mutates: false,
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32)),
+            // `-s` has **no long form**. `container volume create --size 64M` is rejected
+            // outright (verified against the CLI); only `-s` is accepted. Declaring `long:
+            // "size"` here was therefore a latent bug: `canonicalSpelling` prefers the long
+            // spelling, so every sized volume Flotilla created would have emitted `--size`
+            // and failed. Short-only is deliberate — do not "tidy" a long name back in.
             CommandSpec(["volume", "create"], mutates: true,
-                        flags: [FlagSpec(long: "size", short: "s", value: .memorySize),
+                        flags: [FlagSpec(short: "s", value: .memorySize),
                                 FlagSpec(long: "opt", value: .keyValue, repeatable: true, maxRepeats: 8),
                                 FlagSpec(long: "label", value: .keyValue, repeatable: true, maxRepeats: 8)],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 1)),

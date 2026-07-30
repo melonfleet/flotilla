@@ -460,9 +460,11 @@ final class AppModel {
         }
     }
 
-    func createVolume(_ name: String) async {
+    func createVolume(_ name: String, options: ContainerCLI.VolumeOptions = .init()) async {
         do {
-            _ = try await Task.detached { [cli] in try cli.createVolume(name) }.value
+            _ = try await Task.detached { [cli] in
+                try cli.createVolume(name, options: options)
+            }.value
         } catch {
             actionError = "Create volume failed for \(name): \(error)"
         }

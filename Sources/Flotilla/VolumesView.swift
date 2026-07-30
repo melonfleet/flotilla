@@ -10,6 +10,9 @@ struct VolumesView: View {
 
     @State private var showingCreate = false
     @State private var newVolumeName = ""
+    @State private var newSize = ""
+    @State private var newLabels: [String] = []
+    @State private var newDriverOptions: [String] = []
     @State private var pendingDelete: ContainerVolume?
 
     var body: some View {
@@ -145,33 +148,131 @@ struct VolumesView: View {
 
     private var createSheet: some View {
         ModalCard(title: "New Volume", onClose: { showingCreate = false }) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("Name", text: $newVolumeName)
-                        .textFieldStyle(.roundedBorder)
-                    // Validated against the same Allowlist the execution path uses, so a bad
-                    // name is refused with its reason while it is being typed rather than as
-                    // an alert afterwards.
-                    if let problem = nameProblem {
-                        Text(problem).font(.caption).foregroundStyle(.red)
-                    }
-                }
-                HStack {
-                    Spacer()
-                    Button("Create") {
-                        let name = trimmedName
-                        showingCreate = false
-                        Task { await model.createVolume(name) }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(trimmedName.isEmpty || nameProblem != nil)
-                }
-            }
-            .padding(20)
+            createForm.padding(20)
         }
-        .frame(width: 400)
+        .frame(width: 440)
         .onAppear { model.formDidOpen() }
         .onDisappear { model.formDidClose() }
+    }
+
+    private var createForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Name").font(.caption).foregroundStyle(.secondary)
+                TextField("my-data", text: $newVolumeName)
+                    .textFieldStyle(.roundedBorder)
+                if let problem = nameProblem {
+                    Text(problem).font(.caption).foregroundStyle(.red)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Size").font(.caption).foregroundStyle(.secondary)
+                TextField("64M, 2G, …", text: $newSize)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+                if let problem = sizeProblem {
+                    Text(problem).font(.caption).foregroundStyle(.red)
+                } else {
+                    // Worth stating: the default is enormous and sparse, which is why the
+                    // Size column in the list looks alarming until you set one yourself.
+                    Text("Optional. Left empty the driver provisions 512 GiB as a sparse image — it does not consume that, but it is what the size column reports.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            DisclosureGroup("Advanced") {
+                VStack(alignment: .leading, spacing: 10) {
+                    keyValueList($newLabels, title: "Labels", placeholder: "team=infra")
+                    keyValueList($newDriverOptions, title: "Driver options", placeholder: "type=fast")
+                }
+                .padding(.top, 8)
+            }
+
+            Divider()
+
+            Text((["container"] + ContainerCLI.createVolumeArguments(trimmedName, options: options))
+                    .joined(separator: " "))
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Spacer()
+                Button("Create") {
+                    let name = trimmedName
+                    let opts = options
+                    showingCreate = false
+                    Task { await model.createVolume(name, options: opts) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(trimmedName.isEmpty || anyProblem != nil)
+            }
+        }
+    }
+
+    /// Repeatable `key=value` flags, capped at the `Allowlist`'s own maximum of 8 — shown
+    /// rather than silently enforced.
+    @ViewBuilder
+    private func keyValueList(_ list: Binding<[String]>, title: String, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(list.wrappedValue.count)/8").font(.caption2).foregroundStyle(.secondary)
+            }
+            ForEach(list.wrappedValue.indices, id: \.self) { index in
+                HStack {
+                    TextField(placeholder, text: Binding(
+                        get: { list.wrappedValue.indices.contains(index) ? list.wrappedValue[index] : "" },
+                        set: { if list.wrappedValue.indices.contains(index) { list.wrappedValue[index] = $0 } }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    Button { list.wrappedValue.remove(at: index) } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Remove")
+                }
+            }
+            Button { list.wrappedValue.append("") } label: {
+                Label("Add", systemImage: "plus.circle")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .disabled(list.wrappedValue.count >= 8)
+        }
+    }
+
+    private var options: ContainerCLI.VolumeOptions {
+        ContainerCLI.VolumeOptions(
+            size: newSize.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil : newSize.trimmingCharacters(in: .whitespacesAndNewlines),
+            labels: newLabels.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty },
+            driverOptions: newDriverOptions.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        )
+    }
+
+    private var sizeProblem: String? {
+        let value = newSize.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        return problem(in: ContainerCLI.createVolumeArguments("placeholder", options: .init(size: value)))
+    }
+
+    /// One pass over the whole command, so Create is disabled for any bad field — labels and
+    /// driver options included, not just the two with their own messages.
+    private var anyProblem: String? {
+        problem(in: ContainerCLI.createVolumeArguments(
+            trimmedName.isEmpty ? "placeholder" : trimmedName, options: options))
+    }
+
+    private func problem(in args: [String]) -> String? {
+        switch Allowlist.validate(args) {
+        case .success: nil
+        case .failure(let error): error.description
+        }
     }
 
     private var trimmedName: String {
@@ -180,10 +281,7 @@ struct VolumesView: View {
 
     private var nameProblem: String? {
         guard !trimmedName.isEmpty else { return nil }
-        switch Allowlist.validate(["volume", "create", trimmedName]) {
-        case .success: return nil
-        case .failure(let error): return error.description
-        }
+        return problem(in: ContainerCLI.createVolumeArguments(trimmedName))
     }
 
     /// Honours `confirmDestructiveActions` — the whole point of that registry key.

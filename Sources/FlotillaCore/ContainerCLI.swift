@@ -357,8 +357,46 @@ public struct ContainerCLI: Sendable {
 
     // MARK: Volumes — mutate
 
-    @discardableResult public func createVolume(_ name: String) throws -> CommandResult {
-        try execute(["volume", "create", name])
+    /// Everything `container volume create` accepts: a size, labels and driver options.
+    ///
+    /// Size matters more than it looks. Left unset, a volume is provisioned at the driver's
+    /// default — **512 GiB** on this runtime — as a sparse ext4 image. Nothing like that much
+    /// is consumed, but it is what `volume list` reports, which makes the size column
+    /// misleading unless you set one deliberately.
+    public struct VolumeOptions: Sendable, Equatable {
+        /// `64M`, `2G`, … — the CLI's own suffixes. Nil means the driver default.
+        public var size: String?
+        /// `key=value`, max 8 (the `Allowlist` cap).
+        public var labels: [String]
+        /// `key=value`, max 8. Driver-specific.
+        public var driverOptions: [String]
+
+        public init(size: String? = nil, labels: [String] = [], driverOptions: [String] = []) {
+            self.size = size
+            self.labels = labels
+            self.driverOptions = driverOptions
+        }
+    }
+
+    @discardableResult public func createVolume(
+        _ name: String, options: VolumeOptions = VolumeOptions()
+    ) throws -> CommandResult {
+        try execute(Self.createVolumeArguments(name, options: options))
+    }
+
+    /// The argv `createVolume` will run, so a form can preview and validate it first.
+    ///
+    /// Note `-s` and not `--size`: the CLI has no long form for it, and emitting one is
+    /// rejected outright. See the `volume create` entry in `Allowlist`.
+    public static func createVolumeArguments(
+        _ name: String, options: VolumeOptions = VolumeOptions()
+    ) -> [String] {
+        var args = ["volume", "create"]
+        if let size = options.size, !size.isEmpty { args += ["-s", size] }
+        for label in options.labels where !label.isEmpty { args += ["--label", label] }
+        for option in options.driverOptions where !option.isEmpty { args += ["--opt", option] }
+        args.append(name)
+        return args
     }
 
     @discardableResult public func removeVolume(_ name: String) throws -> CommandResult {

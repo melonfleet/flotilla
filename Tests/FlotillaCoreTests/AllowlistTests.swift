@@ -329,9 +329,11 @@ private func requireRejected(
 
         AllowedCase(["volume", "list", "--format", "toml"], mutates: false),
         AllowedCase(["volume", "inspect", "data"], mutates: false),
+        // Canonicalises to `-s`, NOT `--size`: the CLI has no long form for it. This case
+        // previously asserted `--size` and so encoded the bug rather than catching it.
         AllowedCase(["volume", "create", "-s", "2GB", "--opt", "type=fast",
                      "--label=team=infra", "data"],
-                    canonical: ["volume", "create", "--size", "2GB", "--opt", "type=fast",
+                    canonical: ["volume", "create", "-s", "2GB", "--opt", "type=fast",
                                 "--label", "team=infra", "data"], mutates: true),
         AllowedCase(["volume", "delete", "--all"], mutates: true),
         AllowedCase(["volume", "rm", "data"], mutates: true),
@@ -486,5 +488,24 @@ private func requireRejected(
         try Allowlist.validated([
             "network", "create", "--subnet", "10.10.0.0/24", "--subnet-v6", "fd00:1234::/64", "net"
         ])
+    }
+}
+
+// MARK: - `volume create -s` has no long form
+
+@Test func volumeSizeCanonicalisesToTheShortFlagOnly() throws {
+    // The CLI rejects `--size` outright; only `-s` exists. Since `canonicalSpelling` prefers
+    // a long name when one is declared, declaring one here silently produced an argv the CLI
+    // would refuse. This pins the emitted spelling.
+    let validated = try Allowlist.validated(["volume", "create", "-s", "64M", "data"])
+    #expect(validated.arguments == ["volume", "create", "-s", "64M", "data"])
+    #expect(validated.arguments.contains("--size") == false)
+}
+
+@Test func volumeSizeRejectsTheLongFormJustAsTheCLIDoes() throws {
+    // Better to refuse it here, where the message names the rule, than to pass it through
+    // and have the CLI answer with a usage dump.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["volume", "create", "--size", "64M", "data"])
     }
 }
