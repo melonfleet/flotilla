@@ -144,25 +144,46 @@ struct VolumesView: View {
     }
 
     private var createSheet: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("New Volume").font(.headline)
-            TextField("Volume name", text: $newVolumeName)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Spacer()
-                Button("Cancel") { showingCreate = false }
-                Button("Create") {
-                    let name = newVolumeName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    showingCreate = false
-                    guard !name.isEmpty else { return }
-                    Task { await model.createVolume(name) }
+        ModalCard(title: "New Volume", onClose: { showingCreate = false }) {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Name", text: $newVolumeName)
+                        .textFieldStyle(.roundedBorder)
+                    // Validated against the same Allowlist the execution path uses, so a bad
+                    // name is refused with its reason while it is being typed rather than as
+                    // an alert afterwards.
+                    if let problem = nameProblem {
+                        Text(problem).font(.caption).foregroundStyle(.red)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(newVolumeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                HStack {
+                    Spacer()
+                    Button("Create") {
+                        let name = trimmedName
+                        showingCreate = false
+                        Task { await model.createVolume(name) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(trimmedName.isEmpty || nameProblem != nil)
+                }
             }
+            .padding(20)
         }
-        .padding(20)
-        .frame(width: 360)
+        .frame(width: 400)
+        .onAppear { model.formDidOpen() }
+        .onDisappear { model.formDidClose() }
+    }
+
+    private var trimmedName: String {
+        newVolumeName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var nameProblem: String? {
+        guard !trimmedName.isEmpty else { return nil }
+        switch Allowlist.validate(["volume", "create", trimmedName]) {
+        case .success: return nil
+        case .failure(let error): return error.description
+        }
     }
 
     /// Honours `confirmDestructiveActions` — the whole point of that registry key.

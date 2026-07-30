@@ -52,7 +52,7 @@ struct ImagesView: View {
         }
         .sheet(item: Binding(get: { runImage.map(RunTarget.init) },
                             set: { if $0 == nil { runImage = nil } })) { target in
-            RunSheetView(model: model, initialImage: target.reference)
+            runSheet(for: target.reference)
         }
         .sheet(isPresented: $showingPull) { pullSheet }
         .sheet(item: $taggingImage) { image in tagSheet(for: image) }
@@ -148,6 +148,39 @@ struct ImagesView: View {
         }
     }
 
+    /// Extracted for the same reason as in `ContainersView`: inlined, the modifier chain
+    /// becomes too much for the type-checker.
+    private func runSheet(for reference: String) -> some View {
+        RunSheetView(model: model, initialImage: reference) { runImage = nil }
+            .onAppear { model.formDidOpen() }
+            .onDisappear { model.formDidClose() }
+    }
+
+    private var trimmedPull: String {
+        pullReference.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var trimmedTag: String {
+        tagTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// An image reference has its own shape, and its own rule text — so "not a valid
+    /// imageReference" now comes with "expected something like docker.io/library/alpine:latest".
+    private var pullProblem: String? {
+        guard !trimmedPull.isEmpty else { return nil }
+        return problem(in: ["image", "pull", trimmedPull])
+    }
+    private var tagProblem: String? {
+        guard !trimmedTag.isEmpty else { return nil }
+        return problem(in: ["image", "tag", "placeholder:latest", trimmedTag])
+    }
+
+    private func problem(in args: [String]) -> String? {
+        switch Allowlist.validate(args) {
+        case .success: nil
+        case .failure(let error): error.description
+        }
+    }
+
     private func row(for image: ContainerImage) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -207,14 +240,28 @@ struct ImagesView: View {
     }
 
     private func tagSheet(for image: ContainerImage) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Tag Image").font(.headline)
-            Text(Self.repository(image)).font(.caption).foregroundStyle(.secondary)
-            TextField("New reference, e.g. myregistry/name:tag", text: $tagTarget)
-                .textFieldStyle(.roundedBorder)
+        ModalCard(title: "Tag Image", onClose: { taggingImage = nil }) {
+            tagForm(for: image).padding(20)
+        }
+        .frame(width: 440)
+        .onAppear { model.formDidOpen() }
+        .onDisappear { model.formDidClose() }
+    }
+
+    private func tagForm(for image: ContainerImage) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(image.reference)
+                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("myregistry/name:tag", text: $tagTarget)
+                    .textFieldStyle(.roundedBorder)
+                if let problem = tagProblem {
+                    Text(problem).font(.caption).foregroundStyle(.red)
+                }
+            }
             HStack {
                 Spacer()
-                Button("Cancel") { taggingImage = nil }
                 Button("Tag") {
                     let target = tagTarget.trimmingCharacters(in: .whitespacesAndNewlines)
                     let source = image.reference
@@ -306,13 +353,25 @@ struct ImagesView: View {
     }
 
     private var pullSheet: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Pull Image").font(.headline)
-            TextField("Image reference, e.g. docker.io/library/nginx:latest", text: $pullReference)
-                .textFieldStyle(.roundedBorder)
+        ModalCard(title: "Pull Image", onClose: { showingPull = false }) {
+            pullForm.padding(20)
+        }
+        .frame(width: 440)
+        .onAppear { model.formDidOpen() }
+        .onDisappear { model.formDidClose() }
+    }
+
+    private var pullForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("docker.io/library/nginx:latest", text: $pullReference)
+                    .textFieldStyle(.roundedBorder)
+                if let problem = pullProblem {
+                    Text(problem).font(.caption).foregroundStyle(.red)
+                }
+            }
             HStack {
                 Spacer()
-                Button("Cancel") { showingPull = false }
                 Button("Pull") {
                     let reference = pullReference.trimmingCharacters(in: .whitespacesAndNewlines)
                     showingPull = false
@@ -320,11 +379,9 @@ struct ImagesView: View {
                     Task { await model.pullImage(reference) }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(pullReference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(trimmedPull.isEmpty || pullProblem != nil)
             }
         }
-        .padding(20)
-        .frame(width: 420)
     }
 
     /// Honours `confirmDestructiveActions` — the whole point of that registry key.

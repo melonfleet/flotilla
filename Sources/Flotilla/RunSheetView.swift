@@ -13,15 +13,19 @@ import FlotillaCore
 /// row that produced it.
 struct RunSheetView: View {
     let model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    /// From the presenter, not `@Environment(\.dismiss)`: the sheet's own `isPresented`
+    /// binding is the single source of truth for whether it is open, and two mechanisms for
+    /// closing one thing is how a sheet gets stuck.
+    let dismiss: () -> Void
 
     @State private var image: String
 
     /// `initialImage` lets the Images screen's **Run…** open the sheet already pointed at a
     /// reference. It pre-fills, it does not launch — the validated command preview still has
     /// the final say, so nothing starts without the user seeing exactly what will run.
-    init(model: AppModel, initialImage: String = "") {
+    init(model: AppModel, initialImage: String = "", dismiss: @escaping () -> Void) {
         self.model = model
+        self.dismiss = dismiss
         _image = State(initialValue: initialImage)
     }
     @State private var name = ""
@@ -49,9 +53,17 @@ struct RunSheetView: View {
     private enum Field: Equatable { case image, name, ports, env, volumes, command }
 
     var body: some View {
+        ModalCard(title: "Run Container", onClose: dismiss) {
+            content
+        }
+        .frame(width: 560, height: 680)
+        // Suggestions want the local image list; a user opening this sheet without ever
+        // visiting Images otherwise sees none.
+        .task { await model.refreshImages() }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
             Form {
                 SwiftUI.Section("Image") { imageField }
                 SwiftUI.Section("Name") { nameField }
@@ -74,24 +86,11 @@ struct RunSheetView: View {
             Divider()
             footer
         }
-        .frame(width: 560, height: 680)
-        // Suggestions want the local image list; a user opening this sheet without ever
-        // visiting Images otherwise sees none.
-        .task { await model.refreshImages() }
-    }
-
-    private var header: some View {
-        HStack {
-            Text("Run Container").font(.headline)
-            Spacer()
-        }
-        .padding(12)
     }
 
     private var footer: some View {
         HStack {
             Spacer()
-            Button("Cancel") { dismiss() }
             Button("Run") {
                 let ranImage = trimmedImage
                 let ranOptions = options

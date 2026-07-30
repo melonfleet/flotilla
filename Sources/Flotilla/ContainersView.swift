@@ -130,6 +130,14 @@ struct ContainersView: View {
 
     /// Detail opens as its own window (see `FlotillaApp`), so macOS provides the close
     /// button rather than us drawing one.
+    /// Extracted rather than inlined in the modifier chain: with the chain this long the
+    /// type-checker gives up ("unable to type-check this expression in reasonable time").
+    private var runSheet: some View {
+        RunSheetView(model: model) { showingRun = false }
+            .onAppear { model.formDidOpen() }
+            .onDisappear { model.formDidClose() }
+    }
+
     private func openDetail(_ id: String) {
         openWindow(id: "container-detail", value: id)
     }
@@ -377,9 +385,7 @@ struct ContainersView: View {
         } message: {
             Text(model.actionError ?? "")
         }
-        .sheet(isPresented: $showingRun) {
-            RunSheetView(model: model)
-        }
+        .sheet(isPresented: $showingRun) { runSheet }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. One observation covers all three ways the visible set
         // moves out from under the selection — filter change, search change, and the data
