@@ -15,8 +15,10 @@ struct ContainerDetailView: View {
 
     private enum Tab: String, CaseIterable, Identifiable {
         case overview = "Overview"
+        case processes = "Processes"
         case logs = "Logs"
         case inspect = "Inspect"
+        case configuration = "Configuration"
         var id: Self { self }
     }
 
@@ -35,8 +37,10 @@ struct ContainerDetailView: View {
 
             switch tab {
             case .overview: overview
+            case .processes: ProcessesTab(model: model, container: container)
             case .logs: LogsTab(model: model, containerID: container.id)
             case .inspect: InspectTab(model: model, container: container)
+            case .configuration: ConfigurationTab(model: model, container: container)
             }
         }
         .frame(width: 640, height: 560)
@@ -458,5 +462,410 @@ private struct InspectTab: View {
             self.error = String(describing: error)
         }
         loading = false
+    }
+}
+
+// MARK: - Processes
+
+/// One parsed `ps -o pid,comm,args` row.
+private struct ProcessRow: Identifiable {
+    let id: Int
+    let pid: String
+    let command: String
+    let arguments: String
+}
+
+/// Parses `container exec <id> -- ps -o pid,comm,args` output into rows, or reports that it
+/// couldn't so the caller can fall back to the raw text instead of guessing.
+///
+/// The real output repeats the header word `COMMAND` for both the `comm` and `args`
+/// columns:
+/// ```
+/// PID   COMMAND          COMMAND
+///     1 sh               sh -c while true; do i=0; ...
+///     5 ps               ps -o pid,comm,args
+/// ```
+/// Splitting on whitespace is only safe for the first two fields — PID and `comm` never
+/// contain spaces — everything after that is `args` verbatim, including its own internal
+/// spaces, and must be taken as one remainder rather than tokenized further.
+private enum ProcessParse {
+    /// `nil` means "couldn't make sense of this" — no header, or a body line that isn't at
+    /// least three whitespace-separated fields. An empty (non-nil) array means a real,
+    /// recognised header with no process rows under it, which is a different and equally
+    /// honest outcome ("no processes"), not a parse failure.
+    static func parse(_ raw: String) -> [ProcessRow]? {
+        let lines = raw.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        guard let header = lines.first, isHeader(header) else { return nil }
+        let body = lines.dropFirst()
+        guard !body.isEmpty else { return [] }
+
+        var rows: [ProcessRow] = []
+        rows.reserveCapacity(body.count)
+        for (index, line) in body.enumerated() {
+            guard let fields = splitFields(line) else { return nil }
+            rows.append(ProcessRow(id: index, pid: fields.pid, command: fields.command, arguments: fields.arguments))
+        }
+        return rows
+    }
+
+    private static func isHeader(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespaces).uppercased().hasPrefix("PID")
+    }
+
+    private static func splitFields(_ line: String) -> (pid: String, command: String, arguments: String)? {
+        func isSpace(_ c: Character) -> Bool { c == " " || c == "\t" }
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+
+        var remainder = Substring(trimmed)
+        guard let pidEnd = remainder.firstIndex(where: isSpace) else { return nil }
+        let pid = String(remainder[remainder.startIndex..<pidEnd])
+        remainder = remainder[pidEnd...].drop(while: isSpace)
+
+        // No third field means a process with a command but no arguments. Return it with
+        // empty arguments rather than nil: dropping the row would hide a running process,
+        // and a process list that silently omits entries is worse than an ugly one.
+        guard let commandEnd = remainder.firstIndex(where: isSpace) else {
+            return (pid, String(remainder), "")
+        }
+        let command = String(remainder[remainder.startIndex..<commandEnd])
+        remainder = remainder[commandEnd...].drop(while: isSpace)
+
+        return (pid, command, String(remainder))
+    }
+}
+
+/// What is actually running inside a running container — `container exec <id> ps -o
+/// pid,comm,args`. No `--`: the real CLI takes the separator as the program name and fails,
+/// so the allowlist accepts it on input and strips it from the executed argv (see
+/// `ContainerCLI.processes(_:)`). No auto-poll: this shells into the container on every
+/// call, which is not something to do on a timer without being asked — only the Logs tab's
+/// explicit "Follow" toggle earns that, and even that is a fixed-interval fetch, not a
+/// stream.
+private struct ProcessesTab: View {
+    let model: AppModel
+    let container: Container
+
+    @State private var rows: [ProcessRow]?
+    @State private var rawOutput: String?
+    @State private var loading = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            controls
+            Divider()
+            content
+        }
+        .task {
+            guard container.isRunning else { return }
+            await load()
+        }
+    }
+
+    private var controls: some View {
+        HStack {
+            Spacer()
+            Button {
+                Task { await load() }
+            } label: {
+                Label("Reload", systemImage: "arrow.clockwise")
+            }
+            .disabled(loading || !container.isRunning)
+        }
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !container.isRunning {
+            ContentUnavailableView(
+                "Not running",
+                systemImage: "pause.circle",
+                description: Text("Only a running container has processes to list.")
+            )
+        } else if loading && rows == nil && rawOutput == nil {
+            ProgressView("Loading processes…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error {
+            ContentUnavailableView(
+                "Couldn't list processes",
+                systemImage: "exclamationmark.triangle",
+                description: Text(error)
+            )
+        } else if let rows {
+            if rows.isEmpty {
+                ContentUnavailableView(
+                    "No processes",
+                    systemImage: "list.bullet",
+                    description: Text("The container reported no running processes.")
+                )
+            } else {
+                Table(rows) {
+                    TableColumn("PID") { row in
+                        Text(row.pid).monospacedDigit()
+                    }
+                    .width(60)
+                    TableColumn("Command") { row in
+                        Text(row.command).font(.system(.body, design: .monospaced))
+                    }
+                    .width(160)
+                    TableColumn("Arguments") { row in
+                        Text(row.arguments).font(.system(.body, design: .monospaced))
+                    }
+                }
+            }
+        } else if let rawOutput {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Couldn't parse process output — showing it as text.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+                LineListView(lines: Self.rawLines(rawOutput), search: "", wrap: true)
+            }
+        }
+    }
+
+    private static func rawLines(_ text: String) -> [DisplayLine] {
+        text.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, line in
+            DisplayLine(id: index, text: String(line), color: .primary)
+        }
+    }
+
+    private func load() async {
+        loading = true
+        error = nil
+        do {
+            let raw = try await model.fetchProcesses(for: container.id)
+            if let parsed = ProcessParse.parse(raw) {
+                rows = parsed
+                rawOutput = nil
+            } else {
+                rows = nil
+                rawOutput = raw
+            }
+        } catch {
+            self.error = String(describing: error)
+        }
+        loading = false
+    }
+}
+
+// MARK: - Configuration (rendered YAML)
+
+/// A hand-rolled JSON→YAML renderer. `Foundation` has no YAML encoder, and this can't be
+/// built or run on this machine to catch a subtle emitter bug before it ships — so every
+/// string scalar, key and value alike, is double-quoted and escaped unconditionally rather
+/// than emitted plain when it "looks safe."
+///
+/// That is the deliberate choice the brief calls out explicitly: *valid but ugly* over
+/// *pretty but wrong*. A plain-scalar emitter has to get right, all at once, that `no`,
+/// `true`, `~`, `0755`, a leading `-`, an embedded `: `, a leading `#`, an empty string, and
+/// leading/trailing whitespace all corrupt meaning if left unquoted — one missed case is a
+/// silent data-corruption bug in a view whose whole job is to be trustworthy about what the
+/// container is configured to do. Double-quoting everything sidesteps all of those cases
+/// simultaneously. Its known cost: the output is noisier than a hand-written YAML file, and
+/// numeric formatting comes from `NSNumber.stringValue`, which is not guaranteed to
+/// reproduce unusual source literals (e.g. a float written in scientific notation) exactly.
+///
+/// Object keys are sorted so the rendering is stable between refreshes rather than
+/// reshuffling with whatever order `JSONSerialization` happens to hand back.
+private enum ConfigurationYAML {
+    static func render(fromJSON json: String) -> String? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        guard let root = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+            return nil
+        }
+        return lines(for: root, indent: 0).joined(separator: "\n")
+    }
+
+    private static func lines(for value: Any, indent: Int) -> [String] {
+        let pad = String(repeating: "  ", count: indent)
+        if let dict = value as? [String: Any] {
+            guard !dict.isEmpty else { return ["\(pad){}"] }
+            var out: [String] = []
+            for (key, v) in dict.sorted(by: { $0.key < $1.key }) {
+                appendEntry(prefix: "\(pad)\(quoted(key)):", value: v, indent: indent, into: &out)
+            }
+            return out
+        }
+        if let array = value as? [Any] {
+            guard !array.isEmpty else { return ["\(pad)[]"] }
+            var out: [String] = []
+            for item in array {
+                appendEntry(prefix: "\(pad)-", value: item, indent: indent, into: &out)
+            }
+            return out
+        }
+        return ["\(pad)\(scalar(value))"]
+    }
+
+    /// Appends a `key:` (or `-`) entry, plus whatever follows it: inline for a scalar or an
+    /// empty container, or on further-indented lines below for a non-empty nested one — as
+    /// `key:` / `-` alone on their own line, which is plain valid YAML and needs no special
+    /// handling of where a nested mapping's first field lands relative to its dash.
+    private static func appendEntry(prefix: String, value: Any, indent: Int, into out: inout [String]) {
+        let childIndent = indent + 1
+        if let dict = value as? [String: Any] {
+            if dict.isEmpty {
+                out.append("\(prefix) {}")
+            } else {
+                out.append(prefix)
+                out.append(contentsOf: lines(for: value, indent: childIndent))
+            }
+            return
+        }
+        if let array = value as? [Any] {
+            if array.isEmpty {
+                out.append("\(prefix) []")
+            } else {
+                out.append(prefix)
+                out.append(contentsOf: lines(for: value, indent: childIndent))
+            }
+            return
+        }
+        out.append("\(prefix) \(scalar(value))")
+    }
+
+    private static func scalar(_ value: Any) -> String {
+        switch value {
+        case is NSNull:
+            return "null"
+        case let number as NSNumber:
+            // `JSONSerialization` bridges JSON booleans to `NSNumber` on Apple platforms;
+            // `CFGetTypeID` is the standard way to tell an `NSNumber` holding a real `Bool`
+            // apart from one holding a numeric value that happens to be 0 or 1.
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue ? "true" : "false"
+            }
+            return number.stringValue
+        case let string as String:
+            return quoted(string)
+        default:
+            return quoted(String(describing: value))
+        }
+    }
+
+    /// Double-quoted YAML scalar escaping: backslash, double quote, and the common control
+    /// characters get named escapes; anything else below `0x20` — a raw newline would
+    /// otherwise break a plain scalar, which is exactly the case the brief calls out — gets
+    /// a `\xNN` escape so the result stays valid on one logical line.
+    private static func quoted(_ s: String) -> String {
+        var out = "\""
+        for scalar in s.unicodeScalars {
+            switch scalar {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case "\n": out += "\\n"
+            case "\t": out += "\\t"
+            case "\r": out += "\\r"
+            default:
+                if scalar.value < 0x20 {
+                    out += String(format: "\\x%02X", scalar.value)
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        out += "\""
+        return out
+    }
+}
+
+/// Configuration tab: the container's inspect JSON, rendered as YAML by `ConfigurationYAML`.
+/// Apple's `container` has no YAML anywhere — no compose file, no YAML config, TOML for
+/// system config and JSON per-container — so this is a rendering, not a file on disk, and
+/// says so on screen rather than letting the YAML syntax imply otherwise.
+private struct ConfigurationTab: View {
+    let model: AppModel
+    let container: Container
+
+    @State private var yaml: String?
+    @State private var loading = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            caption
+            Divider()
+            controls
+            Divider()
+            content
+        }
+        .task { await load() }
+    }
+
+    private var caption: some View {
+        Label(
+            "Generated from the container's configuration. Apple's container has no YAML config file.",
+            systemImage: "info.circle"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(12)
+    }
+
+    private var controls: some View {
+        HStack {
+            Spacer()
+            Button {
+                Task { await load() }
+            } label: {
+                Label("Reload", systemImage: "arrow.clockwise")
+            }
+            .disabled(loading)
+            Button {
+                copyAll()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .disabled(yaml == nil)
+        }
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if loading && yaml == nil {
+            ProgressView("Rendering configuration…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error {
+            ContentUnavailableView(
+                "Couldn't render configuration",
+                systemImage: "exclamationmark.triangle",
+                description: Text(error)
+            )
+        } else if let yaml {
+            LineListView(lines: Self.displayLines(yaml), search: "", wrap: true)
+        }
+    }
+
+    private static func displayLines(_ text: String) -> [DisplayLine] {
+        text.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, line in
+            DisplayLine(id: index, text: String(line), color: .primary)
+        }
+    }
+
+    private func load() async {
+        loading = true
+        error = nil
+        do {
+            let json = try await model.fetchInspectJSON(for: container.id)
+            if let rendered = ConfigurationYAML.render(fromJSON: json) {
+                yaml = rendered
+            } else {
+                error = "Couldn't parse the container's configuration JSON."
+            }
+        } catch {
+            self.error = String(describing: error)
+        }
+        loading = false
+    }
+
+    private func copyAll() {
+        guard let yaml else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(yaml, forType: .string)
     }
 }

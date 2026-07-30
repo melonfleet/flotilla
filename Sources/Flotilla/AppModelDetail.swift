@@ -30,6 +30,17 @@ extension AppModel {
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
+    // MARK: Processes
+
+    /// `ContainerCLI.processes(_:)` returns only `stdout` — `execute(_:)` inside
+    /// `FlotillaCore` discards `CommandResult.exitCode`/`stderr`, so a failed `exec` (a
+    /// stopped container has none to list) comes back as an empty string, not a thrown
+    /// error. The Processes tab relies on `Container.isRunning` to skip the call entirely
+    /// rather than trying to reconstruct "stopped" from an empty result after the fact.
+    func fetchProcesses(for id: String) async throws -> String {
+        try await Task.detached { [cli] in try cli.processes(id) }.value
+    }
+
     // MARK: System — disk usage
 
     /// Backs `SystemView`'s disk usage section. `systemDiskUsage()` is already typed and
