@@ -24,16 +24,7 @@ struct MainWindowView: View {
             List(Section.allCases, selection: $selection) { section in
                 Label(section.title, systemImage: section.systemImage)
             }
-            // The wordmark replaces the plain title. `.navigationTitle` only takes text, so
-            // the lockup goes in a safe-area inset above the list and the title is cleared.
             .navigationTitle("")
-            .safeAreaInset(edge: .top) {
-                Wordmark(size: 14)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
-                    .padding(.bottom, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
             .listStyle(.sidebar)
             // Liquid Glass on the **sidebar**, per the placement note in
             // `research/review/mockups/main-window.html`: "Glass on sidebar, toolbar and the
@@ -66,6 +57,19 @@ struct MainWindowView: View {
         // `.allowsHitTesting(false)` rather than `.disabled(true)` because `disabled`
         // recursively greys every control, which fights the dim and makes text unreadable.
         // The dim already communicates the state; this just makes it true.
+        // The wordmark goes in the title bar, replacing the plain word "Flotilla" — the
+        // sidebar was too narrow for the lockup and wrapped it to "melonfl / eet".
+        //
+        // `.navigation` places it top-leading, just after the sidebar toggle, which is where
+        // the title text sat. `HiddenWindowTitle` suppresses the text itself; without that the
+        // window would show the name twice.
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Wordmark(size: 14)
+                    .fixedSize()          // never wrap — it is a lockup, not a paragraph
+            }
+        }
+        .background(HiddenWindowTitle())
         .allowsHitTesting(model.openFormCount == 0)
         .overlay {
             if model.openFormCount > 0 {
