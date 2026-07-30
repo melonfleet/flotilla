@@ -20,7 +20,7 @@ Colima/Lima, Apple's own `container` CLI, and — for the fleet/menu-bar angle �
 Jamf/Kandji admin UIs, Tailscale's menu-bar app, or similar Mac fleet/menubar utilities.
 
 ## Output format (IMPORTANT — same for everyone)
-Write ONE markdown file to `/Users/example/melonfleet/Flotilla/research/<your-area>.md`:
+Write ONE markdown file to `<workspace>/Flotilla/research/<your-area>.md`:
 
 ```
 # Flotilla research — <area>
