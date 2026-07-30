@@ -6,10 +6,7 @@ import FlotillaCore
 struct NetworksView: View {
     let model: AppModel
 
-    @State private var showingCreate = false
-    @State private var newNetworkName = ""
-    @State private var newSubnet = ""
-    @State private var newInternal = false
+    @Environment(\.openWindow) private var openWindow
     @State private var pendingDelete: ContainerNetwork?
 
     var body: some View {
@@ -27,7 +24,6 @@ struct NetworksView: View {
         } message: {
             Text(model.actionError ?? "")
         }
-        .sheet(isPresented: $showingCreate) { createSheet }
         .confirmationDialog(
             "Delete network “\(pendingDelete?.id ?? "")”?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
@@ -50,8 +46,7 @@ struct NetworksView: View {
             Text("Networks").font(.title3.bold())
             Spacer()
             Button {
-                newNetworkName = ""
-                showingCreate = true
+                openWindow(id: "new-network")
             } label: {
                 Label("New Network…", systemImage: "plus")
                     .labelStyle(.iconOnly)
@@ -154,41 +149,101 @@ struct NetworksView: View {
             .disabled(model.busy.contains(network.id))
     }
 
+
+
+    /// Honours `confirmDestructiveActions` — the whole point of that registry key.
+    private func requestDelete(_ network: ContainerNetwork) {
+        if model.settingsStore[SettingsKeys.confirmDestructiveActions] {
+            pendingDelete = network
+        } else {
+            Task { await model.removeNetwork(network) }
+        }
+    }
+}
+
+/// The New Network form, hosted in its own **window** rather than a sheet.
+///
+/// the owner's rule, stated generally: any window that comes up should carry macOS's own traffic
+/// lights. A sheet has no title bar, so it cannot — which is why this is a `WindowGroup`
+/// (see `FlotillaApp`). Confirmations and error alerts stay as alerts: those are modal
+/// decisions, and traffic lights on a "delete this?" prompt would be wrong.
+struct NewNetworkView: View {
+    let model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var newNetworkName = ""
+    @State private var newSubnet = ""
+    @State private var newSubnetV6 = ""
+    @State private var newInternal = false
+    @State private var newLabels: [String] = []
+    @State private var newOptions: [String] = []
+    @State private var newPlugin = ""
+    @State private var addressFamily: AddressFamily = .ipv4
+
     /// The **only** moment a network's settings can be chosen.
     ///
     /// `container network` has create, delete, list, inspect and prune — no update, edit or
-    /// set. A network is immutable once it exists, so a subnet not set here is assigned
-    /// automatically and the only route to a different one is delete and recreate. That is
-    /// why this sheet is worth more than a name field, and why the note says so on screen.
-    private var createSheet: some View {
+    /// set. A network is immutable once it exists, so anything not chosen here can never be
+    /// changed. That is why every flag the CLI accepts is offered, and why the addressing is
+    /// split in two: v4 and v6 are independent, a network may be either or both, and mixing
+    /// their examples in one column made neither clear.
+    var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("New Network").font(.headline)
-
             VStack(alignment: .leading, spacing: 4) {
-                TextField("Name", text: $newNetworkName)
+                Text("Name").font(.caption).foregroundStyle(.secondary)
+                TextField("my-network", text: $newNetworkName)
                     .textFieldStyle(.roundedBorder)
                 if let problem = nameProblem {
                     Text(problem).font(.caption).foregroundStyle(.red)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                TextField("Subnet — optional, e.g. 10.10.0.0/24", text: $newSubnet)
-                    .textFieldStyle(.roundedBorder)
-                if let problem = subnetProblem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
-                } else {
-                    Text("Leave empty to have one assigned. This cannot be changed later.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+            Picker("Addressing", selection: $addressFamily) {
+                ForEach(AddressFamily.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            // Each family gets its own field, example and note — that is the point of
+            // separating them.
+            switch addressFamily {
+            case .ipv4:
+                addressField(
+                    text: $newSubnet,
+                    placeholder: "10.10.0.0/24",
+                    problem: subnetProblem,
+                    note: "Optional. Leave empty and a private range is assigned for you."
+                )
+            case .ipv6:
+                addressField(
+                    text: $newSubnetV6,
+                    placeholder: "fd00:1234::/64",
+                    problem: subnetV6Problem,
+                    note: "Optional. Use a unique-local prefix (fd00::/8) for a private network."
+                )
             }
 
-            Toggle("Host-only (no external access)", isOn: $newInternal)
+            Toggle("Host-only — no external access", isOn: $newInternal)
                 .toggleStyle(.checkbox)
 
-            // Same idea as the run sheet: show the command, validated, before it runs.
-            Text((["container"] + ContainerCLI.createNetworkArguments(
-                    trimmedName, subnet: trimmedSubnet, isInternal: newInternal))
+            DisclosureGroup("Advanced") {
+                VStack(alignment: .leading, spacing: 10) {
+                    keyValueList($newLabels, title: "Labels", placeholder: "team=infra")
+                    keyValueList($newOptions, title: "Plugin options", placeholder: "mtu=1500")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Plugin").font(.caption).foregroundStyle(.secondary)
+                        TextField("container-network-vmnet", text: $newPlugin)
+                            .textFieldStyle(.roundedBorder)
+                        Text("Leave empty for the default.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 8)
+            }
+
+            Divider()
+
+            Text((["container"] + ContainerCLI.createNetworkArguments(trimmedName, options: options))
                     .joined(separator: " "))
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
@@ -197,20 +252,99 @@ struct NetworksView: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { showingCreate = false }
                 Button("Create") {
                     let name = trimmedName
-                    let subnet = trimmedSubnet
-                    let hostOnly = newInternal
-                    showingCreate = false
-                    Task { await model.createNetwork(name, subnet: subnet, isInternal: hostOnly) }
+                    let opts = options
+                    dismiss()
+                    Task { await model.createNetwork(name, options: opts) }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(trimmedName.isEmpty || nameProblem != nil || subnetProblem != nil)
+                .disabled(trimmedName.isEmpty || anyProblem != nil)
             }
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(minWidth: 460)
+    }
+
+    enum AddressFamily: String, CaseIterable, Identifiable {
+        case ipv4 = "IPv4"
+        case ipv6 = "IPv6"
+        var id: Self { self }
+    }
+
+    @ViewBuilder
+    private func addressField(
+        text: Binding<String>, placeholder: String, problem: String?, note: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Subnet").font(.caption).foregroundStyle(.secondary)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.roundedBorder)
+                .monospaced()
+            if let problem {
+                Text(problem).font(.caption).foregroundStyle(.red)
+            } else {
+                Text(note + " Cannot be changed later.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Repeatable `key=value` flags, capped at the `Allowlist`'s own maximum of 8 — the cap is
+    /// shown rather than silently enforced.
+    @ViewBuilder
+    private func keyValueList(_ list: Binding<[String]>, title: String, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(list.wrappedValue.count)/8").font(.caption2).foregroundStyle(.secondary)
+            }
+            ForEach(list.wrappedValue.indices, id: \.self) { index in
+                HStack {
+                    TextField(placeholder, text: Binding(
+                        get: { list.wrappedValue.indices.contains(index) ? list.wrappedValue[index] : "" },
+                        set: { if list.wrappedValue.indices.contains(index) { list.wrappedValue[index] = $0 } }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    Button {
+                        list.wrappedValue.remove(at: index)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Remove")
+                }
+            }
+            Button {
+                list.wrappedValue.append("")
+            } label: {
+                Label("Add", systemImage: "plus.circle")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .disabled(list.wrappedValue.count >= 8)
+        }
+    }
+
+    private var options: ContainerCLI.NetworkOptions {
+        ContainerCLI.NetworkOptions(
+            subnet: addressFamily == .ipv4 ? trimmedSubnet : nil,
+            subnetV6: addressFamily == .ipv6 ? trimmedSubnetV6 : nil,
+            isInternal: newInternal,
+            labels: newLabels.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty },
+            options: newOptions.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty },
+            plugin: newPlugin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil : newPlugin.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    /// One validation pass over the whole command, so Create is disabled for *any* bad field —
+    /// labels and plugin options included, not just the two with their own messages.
+    private var anyProblem: String? {
+        problem(in: ContainerCLI.createNetworkArguments(
+            trimmedName.isEmpty ? "placeholder" : trimmedName, options: options))
     }
 
     private var trimmedName: String {
@@ -218,6 +352,10 @@ struct NetworksView: View {
     }
     private var trimmedSubnet: String? {
         let value = newSubnet.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+    private var trimmedSubnetV6: String? {
+        let value = newSubnetV6.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
 
@@ -233,25 +371,24 @@ struct NetworksView: View {
 
     private var subnetProblem: String? {
         guard let subnet = trimmedSubnet else { return nil }
-        // Validate the subnet alone, with a name known to be fine, so the message can only be
-        // about the subnet.
-        return problem(in: ContainerCLI.createNetworkArguments("placeholder", subnet: subnet))
+        // Validated alone, with a name known to be fine, so the message can only be about
+        // this field.
+        return problem(in: ContainerCLI.createNetworkArguments(
+            "placeholder", options: .init(subnet: subnet)))
     }
+
+    private var subnetV6Problem: String? {
+        guard let v6 = trimmedSubnetV6 else { return nil }
+        return problem(in: ContainerCLI.createNetworkArguments(
+            "placeholder", options: .init(subnetV6: v6)))
+    }
+
+
 
     private func problem(in args: [String]) -> String? {
         switch Allowlist.validate(args) {
         case .success: nil
         case .failure(let error): error.description
-        }
-    }
-
-
-    /// Honours `confirmDestructiveActions` — the whole point of that registry key.
-    private func requestDelete(_ network: ContainerNetwork) {
-        if model.settingsStore[SettingsKeys.confirmDestructiveActions] {
-            pendingDelete = network
-        } else {
-            Task { await model.removeNetwork(network) }
         }
     }
 }

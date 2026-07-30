@@ -46,6 +46,10 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     case platform
     /// IPv4 CIDR, `a.b.c.d/n`.
     case cidr
+    /// IPv6 CIDR, `prefix::/n`. Separate from `.cidr` rather than a widened version of it:
+    /// accepting either shape wherever one is expected would let an IPv6 prefix through to
+    /// `--subnet` (and vice versa), which the CLI would then reject far less clearly.
+    case cidrV6
     /// `key=value` for `--label` / `--opt` / `--option`.
     case keyValue
     /// One of the CLI's `--format` values.
@@ -89,6 +93,8 @@ extension ValueShape {
             "Expected `os/arch`, optionally `/variant` — for example `linux/arm64`."
         case .cidr:
             "Expected an IPv4 range in CIDR form — for example `10.0.0.0/24`."
+        case .cidrV6:
+            "Expected an IPv6 prefix in CIDR form — for example `fd00:1234::/64`."
         case .keyValue:
             "Expected `key=value`."
         case .outputFormat:
@@ -413,9 +419,15 @@ public enum Allowlist {
             CommandSpec(["network", "list"], mutates: false, flags: [format, quiet]),
             CommandSpec(["network", "inspect"], mutates: false,
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32)),
+            // `--subnet-v6` and `--plugin` were missing here — found by the core owner's CLI study and
+            // confirmed against `container network create --help`. A network's addressing can
+            // only be set at creation, so an unreachable flag is a permanently unreachable
+            // choice.
             CommandSpec(["network", "create"], mutates: true, timeoutHint: 60,
                         flags: [FlagSpec(long: "internal"),
                                 FlagSpec(long: "subnet", value: .cidr),
+                                FlagSpec(long: "subnet-v6", value: .cidrV6),
+                                FlagSpec(long: "plugin", value: .identifier),
                                 FlagSpec(long: "label", value: .keyValue, repeatable: true, maxRepeats: 8),
                                 FlagSpec(long: "option", value: .keyValue, repeatable: true, maxRepeats: 8)],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
@@ -707,6 +719,8 @@ public enum Allowlist {
             return isPlatform(value) ? nil : bad
         case .cidr:
             return isCIDR(value) ? nil : bad
+        case .cidrV6:
+            return isCIDRV6(value) ? nil : bad
         case .keyValue:
             return isKeyValue(value) ? nil : bad
         case .outputFormat:
@@ -888,6 +902,45 @@ public enum Allowlist {
         guard (1...2).contains(parts[1].count), parts[1].allSatisfy({ $0.isASCII && $0.isNumber }),
               let prefix = Int(parts[1]) else { return false }
         return (0...32).contains(prefix)
+    }
+
+    /// IPv6 CIDR. Written out rather than delegating to `inet_pton` because `FlotillaCore`
+    /// stays Foundation-only so it builds and tests identically on Linux.
+    ///
+    /// Accepts the forms that matter for a private network prefix — full groups and a single
+    /// `::` elision — and rejects everything else. It is a *validator*, not a parser: being
+    /// strict costs a user one clear rejection, while being loose costs a confusing CLI error
+    /// later, or an argument shape we did not intend to allow.
+    private static func isCIDRV6(_ value: String) -> Bool {
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return false }
+        guard (1...3).contains(parts[1].count), parts[1].allSatisfy({ $0.isASCII && $0.isNumber }),
+              let prefix = Int(parts[1]), (0...128).contains(prefix) else { return false }
+        return isIPv6(String(parts[0]))
+    }
+
+    private static func isIPv6(_ value: String) -> Bool {
+        // At most one "::" elision.
+        let elisions = value.ranges(of: "::").count
+        guard elisions <= 1 else { return false }
+        guard !value.isEmpty, value.count <= 45 else { return false }
+        // No stray ":::" and no leading/trailing single colon.
+        guard !value.contains(":::") else { return false }
+        if value.hasPrefix(":") && !value.hasPrefix("::") { return false }
+        if value.hasSuffix(":") && !value.hasSuffix("::") { return false }
+
+        let groups = value.components(separatedBy: ":")
+        // Every non-empty group is 1–4 hex digits.
+        for group in groups where !group.isEmpty {
+            guard (1...4).contains(group.count),
+                  group.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return false }
+        }
+        let filled = groups.filter { !$0.isEmpty }.count
+        if elisions == 1 {
+            // An elision stands for one or more zero groups, so there must be room for it.
+            return filled <= 7
+        }
+        return filled == 8
     }
 
     private static func isKeyValue(_ value: String) -> Bool {

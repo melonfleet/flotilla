@@ -310,33 +310,57 @@ public struct ContainerCLI: Sendable {
 
     // MARK: Networks — mutate
 
-    /// Options are **create-time only**, and that is a property of the runtime rather than a
-    /// gap in this API: `container network` offers create, delete, list, inspect and prune —
-    /// there is no update, edit or set (verified 2026-07-30). A network's subnet cannot be
-    /// changed once it exists, so if it is not chosen here it is assigned automatically and
-    /// the only way to a different one is delete and recreate.
+    /// Everything `container network create` accepts. Options are **create-time only**, and
+    /// that is the runtime rather than a gap here: `container network` has create, delete,
+    /// list, inspect and prune — no update, edit or set (verified 2026-07-30). A network's
+    /// addressing cannot be changed once it exists, so a flag not offered at creation is a
+    /// permanently unreachable choice. That is why all of them are plumbed through.
     ///
-    /// `Allowlist` has permitted `--subnet` and `--internal` from the start; nothing reached
-    /// them until now, which is why every network came out with an auto-assigned range.
+    /// A network may be v4-only, v6-only, or dual-stack — the two prefixes are independent,
+    /// which is why they are separate parameters and separate `ValueShape`s.
+    public struct NetworkOptions: Sendable, Equatable {
+        public var subnet: String?
+        public var subnetV6: String?
+        public var isInternal: Bool
+        /// `key=value`, max 8 — the `Allowlist` cap.
+        public var labels: [String]
+        /// `key=value`, max 8. Plugin-specific.
+        public var options: [String]
+        /// Defaults to `container-network-vmnet` when nil; only set it if you mean to.
+        public var plugin: String?
+
+        public init(
+            subnet: String? = nil, subnetV6: String? = nil, isInternal: Bool = false,
+            labels: [String] = [], options: [String] = [], plugin: String? = nil
+        ) {
+            self.subnet = subnet
+            self.subnetV6 = subnetV6
+            self.isInternal = isInternal
+            self.labels = labels
+            self.options = options
+            self.plugin = plugin
+        }
+    }
+
     @discardableResult public func createNetwork(
-        _ name: String, subnet: String? = nil, isInternal: Bool = false
+        _ name: String, options: NetworkOptions = NetworkOptions()
     ) throws -> CommandResult {
-        var args = ["network", "create"]
-        if isInternal { args.append("--internal") }
-        if let subnet, !subnet.isEmpty { args += ["--subnet", subnet] }
-        args.append(name)
-        return try execute(args)
+        try execute(Self.createNetworkArguments(name, options: options))
     }
 
     /// The argv `createNetwork` will run, so the sheet can show and validate it before
-    /// anything happens — same seam as `runArguments`, same reason: a preview that is
-    /// assembled separately drifts from what executes.
+    /// anything happens — same seam as `runArguments`, same reason: a preview assembled
+    /// separately drifts from what executes.
     public static func createNetworkArguments(
-        _ name: String, subnet: String? = nil, isInternal: Bool = false
+        _ name: String, options: NetworkOptions = NetworkOptions()
     ) -> [String] {
         var args = ["network", "create"]
-        if isInternal { args.append("--internal") }
-        if let subnet, !subnet.isEmpty { args += ["--subnet", subnet] }
+        if options.isInternal { args.append("--internal") }
+        if let subnet = options.subnet, !subnet.isEmpty { args += ["--subnet", subnet] }
+        if let v6 = options.subnetV6, !v6.isEmpty { args += ["--subnet-v6", v6] }
+        if let plugin = options.plugin, !plugin.isEmpty { args += ["--plugin", plugin] }
+        for label in options.labels where !label.isEmpty { args += ["--label", label] }
+        for option in options.options where !option.isEmpty { args += ["--option", option] }
         args.append(name)
         return args
     }

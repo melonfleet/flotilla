@@ -123,10 +123,28 @@ struct FlotillaApp: App {
         WindowGroup(id: "container-detail", for: String.self) { $containerID in
             if let containerID {
                 ContainerDetailWindow(model: model, containerID: containerID)
+                    // Detail keeps zoom — a log or a JSON tree genuinely benefits from a
+                    // full-height window — but loses minimise, which would only strand it.
+                    .detailWindowChrome()
                     .preferredColorScheme(model.appearance.colorScheme)
             }
         }
         .defaultSize(width: 720, height: 600)
+
+        // Forms in their own windows, so each gets macOS's own red close button instead of a
+        // button spelling out "Close" — and `formWindowChrome()` strips the minimise and zoom
+        // controls, which mean nothing on a form. `.contentSize` resizability keeps them
+        // sized to what they contain.
+        //
+        // Confirmations and error alerts stay as alerts, deliberately: those are modal
+        // decisions, and traffic lights on a "delete this?" prompt would be wrong.
+        WindowGroup(id: "new-network") {
+            NewNetworkView(model: model)
+                .formWindowChrome()
+                .preferredColorScheme(model.appearance.colorScheme)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
     }
 }
 

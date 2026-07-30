@@ -434,3 +434,57 @@ private func requireRejected(
         try Allowlist.validated(["exec", "../etc", "--", "ps", "-o", "pid,comm,args"])
     }
 }
+
+// MARK: - IPv6 prefixes
+//
+// `--subnet-v6` needs its own shape: accepting either family wherever one is expected would
+// let an IPv6 prefix reach `--subnet` and vice versa, which the CLI then rejects far less
+// clearly than we can. The validator is hand-rolled because FlotillaCore stays
+// Foundation-only, so it is worth attacking properly.
+
+@Test func ipv6PrefixesAreAccepted() throws {
+    for good in ["fd00:1234::/64", "fd6d:1605:d4b8:ad0f::/64", "2001:db8::/32",
+                 "::/0", "fe80::1/128", "1:2:3:4:5:6:7:8/128"] {
+        #expect(throws: Never.self, "should accept \(good)") {
+            try Allowlist.validated(["network", "create", "--subnet-v6", good, "net"])
+        }
+    }
+}
+
+@Test func malformedIPv6PrefixesAreRejected() throws {
+    for bad in [
+        "fd00:1234::",              // no prefix length
+        "fd00:1234::/",             // empty prefix length
+        "fd00:1234::/129",          // out of range
+        "fd00:1234::/-1",           // negative
+        "fd00::1::2/64",            // two elisions
+        "fd00:::1/64",              // triple colon
+        "fd00:12345::/64",          // group too long
+        "fd00:zzzz::/64",           // not hex
+        "1:2:3:4:5:6:7/64",         // too few groups, no elision
+        "1:2:3:4:5:6:7:8:9/64",     // too many groups
+        "10.0.0.0/24",              // an IPv4 range must NOT satisfy the v6 shape
+        "fd00:1234::/64 extra",     // trailing junk
+        "",                         // empty
+    ] {
+        #expect(throws: (any Error).self, "should reject \(bad)") {
+            try Allowlist.validated(["network", "create", "--subnet-v6", bad, "net"])
+        }
+    }
+}
+
+@Test func theTwoAddressFamiliesDoNotAcceptEachOther() throws {
+    // The whole reason `.cidrV6` is a separate shape.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["network", "create", "--subnet", "fd00:1234::/64", "net"])
+    }
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["network", "create", "--subnet-v6", "10.0.0.0/24", "net"])
+    }
+    // Both together is legitimate — a dual-stack network.
+    #expect(throws: Never.self) {
+        try Allowlist.validated([
+            "network", "create", "--subnet", "10.10.0.0/24", "--subnet-v6", "fd00:1234::/64", "net"
+        ])
+    }
+}
