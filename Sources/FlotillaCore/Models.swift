@@ -6,13 +6,13 @@ import Foundation
 
 // MARK: - Shared
 
-public struct Descriptor: Codable, Sendable {
+public struct Descriptor: Codable, Sendable, Equatable {
     public var digest: String?
     public var mediaType: String?
     public var size: Int64?
 }
 
-public struct Platform: Codable, Sendable {
+public struct Platform: Codable, Sendable, Equatable {
     public var architecture: String?
     public var os: String?
     public var variant: String?
@@ -20,12 +20,12 @@ public struct Platform: Codable, Sendable {
 
 // MARK: - Container  (`container ls --all --format json`, `container inspect`)
 
-public struct Container: Codable, Identifiable, Sendable {
+public struct Container: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var configuration: Configuration
     public var status: Status
 
-    public struct Configuration: Codable, Sendable {
+    public struct Configuration: Codable, Sendable, Equatable {
         public var id: String
         public var creationDate: String?
         public var image: ImageRef
@@ -35,11 +35,11 @@ public struct Container: Codable, Identifiable, Sendable {
         /// `[]` for a container that publishes nothing, so both decode to empty.
         public var publishedPorts: [PublishedPort]?
 
-        public struct ImageRef: Codable, Sendable {
+        public struct ImageRef: Codable, Sendable, Equatable {
             public var reference: String
             public var descriptor: Descriptor?
         }
-        public struct Resources: Codable, Sendable {
+        public struct Resources: Codable, Sendable, Equatable {
             public var cpus: Int?
             public var memoryInBytes: Int64?
         }
@@ -80,12 +80,12 @@ public struct Container: Codable, Identifiable, Sendable {
         }
     }
 
-    public struct Status: Codable, Sendable {
+    public struct Status: Codable, Sendable, Equatable {
         public var state: String
         public var startedDate: String?
         public var networks: [NetworkStatus]?
 
-        public struct NetworkStatus: Codable, Sendable {
+        public struct NetworkStatus: Codable, Sendable, Equatable {
             public var hostname: String?
             public var ipv4Address: String?
             public var network: String?

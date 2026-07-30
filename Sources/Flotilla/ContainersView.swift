@@ -110,12 +110,14 @@ struct ContainersView: View {
         .accessibilityLabel("Columns")
         .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
+                // Checkboxes, not switches. `.checkbox` puts the control leading with the
+                // label after it, so every row shares one left edge — switches trail their
+                // labels, which left the boxes ragged against text of different lengths.
                 ForEach(Self.columnSpecs, id: \.id) { spec in
                     Toggle(spec.title, isOn: binding(for: spec.id))
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
+                        .toggleStyle(.checkbox)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 3)
+                        .padding(.vertical, 2)
                 }
                 Divider().padding(.vertical, 6)
                 HStack {

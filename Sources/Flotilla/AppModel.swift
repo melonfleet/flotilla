@@ -256,12 +256,20 @@ final class AppModel {
         do {
             let samples = try await Task.detached { [cli] in try cli.stats() }.value
             let now = Date()
-            cpuPercents = sampler.update(with: samples, at: now)
-            memoryUsage = Dictionary(
+            // Same discipline as `containers`: an unconditional write invalidates every
+            // view reading these on each sample, whether or not a single figure moved.
+            let newCPU = sampler.update(with: samples, at: now)
+            if newCPU != cpuPercents { cpuPercents = newCPU }
+
+            let newMemory = Dictionary(
                 uniqueKeysWithValues: samples.compactMap { sample in
                     sample.memoryUsageBytes.map { (sample.id, $0) }
                 }
             )
+            if newMemory != memoryUsage { memoryUsage = newMemory }
+
+            // The history grew by a point, so this genuinely did change — it is what drives
+            // the sparkline forward.
             statsGeneration &+= 1
         } catch {
             // Deliberately quiet: stats are decoration next to the container list, and a
@@ -336,26 +344,44 @@ final class AppModel {
         preflight = nil          // clear the stale verdict, or the guard below still bites
         state = .loading
         await runPreflight()
-        await refresh()
+        // Explicit, user-initiated: a spinner here is honest, unlike on a background tick.
+        await refresh(showingProgress: true)
         // Start (or restart) polling only once we know the runtime is usable — polling a
         // runtime that isn't there would spawn a doomed Process every few seconds.
         restartPolling()
         restartStatsPolling()
     }
 
-    func refresh() async {
+    /// - Parameter showingProgress: whether this refresh may put the UI into `.loading`.
+    ///   **False for every background poll**, and that is the whole point.
+    ///
+    /// This used to set `.loading` unconditionally. Since the poll timer landed that meant
+    /// the container list switched to a spinner and back every few seconds — SwiftUI tore
+    /// down the whole table and rebuilt it on each tick, which is exactly the flicker the owner
+    /// saw and correctly noted that Docker Desktop does not have. Live data does not require
+    /// a visible reload; it requires updating the data *in place*.
+    ///
+    /// A spinner is only honest when there is nothing on screen yet. Once rows exist, a
+    /// background fetch should be invisible until it has something different to show.
+    func refresh(showingProgress: Bool = false) async {
         // Don't poll a runtime preflight already told us is unusable — it would replace a
         // precise diagnosis ("container isn't installed") with a generic failure.
         guard runtimeUsable else { return }
-        state = .loading
+        if showingProgress { state = .loading }
         do {
             // Off the main actor: this shells out to `container` and would otherwise stall
             // the UI on a slow or unreachable runtime.
             let fetched = try await Task.detached { [cli] in try cli.listContainers() }.value
             notifyUnexpectedExits(previous: containers, current: fetched)
-            containers = fetched
+
+            // Only assign when something actually changed. `@Observable` notifies on every
+            // write regardless of equality, so an unconditional assignment invalidates every
+            // view reading `containers` on each poll even when the fleet is completely
+            // static — the second half of the flicker.
+            if fetched != containers { containers = fetched }
+
             lastRefresh = Date()
-            state = .loaded
+            if state != .loaded { state = .loaded }
         } catch {
             state = .failed(String(describing: error))
         }
