@@ -29,6 +29,7 @@ struct ImagesView: View {
             Divider()
             content
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshImages() }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
@@ -81,18 +82,27 @@ struct ImagesView: View {
                 showingPrune = true
             } label: {
                 Label("Prune Unused…", systemImage: "trash.slash")
+                    .labelStyle(.iconOnly)
             }
+            .help("Delete images no container is using")
+            .accessibilityLabel("Prune Unused")
             Button {
                 pullReference = ""
                 showingPull = true
             } label: {
                 Label("Pull Image…", systemImage: "arrow.down.circle")
+                    .labelStyle(.iconOnly)
             }
+            .help("Pull an image from a registry")
+            .accessibilityLabel("Pull Image")
             Button {
                 Task { await model.refreshImages() }
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
             }
+            .help("Refresh images")
+            .accessibilityLabel("Refresh")
         }
         .padding(12)
     }

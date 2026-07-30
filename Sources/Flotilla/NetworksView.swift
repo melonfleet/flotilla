@@ -16,6 +16,7 @@ struct NetworksView: View {
             Divider()
             content
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
@@ -51,12 +52,18 @@ struct NetworksView: View {
                 showingCreate = true
             } label: {
                 Label("New Network…", systemImage: "plus")
+                    .labelStyle(.iconOnly)
             }
+            .help("Create a network")
+            .accessibilityLabel("New Network")
             Button {
                 Task { await model.refreshNetworks() }
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
             }
+            .help("Refresh networks")
+            .accessibilityLabel("Refresh")
         }
         .padding(12)
     }
@@ -94,16 +101,30 @@ struct NetworksView: View {
     private func row(for network: ContainerNetwork) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(network.id)
+                HStack(spacing: 6) {
+                    Text(network.name)
+                    // Apple's own `default` network carries a builtin role label. Worth
+                    // marking: deleting it is not the same kind of act as deleting your own.
+                    if network.isBuiltin {
+                        Text("built-in")
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.quaternary, in: Capsule())
+                    }
+                }
+                // Subnet and gateway come from `status`, and are what actually answers "what
+                // is this network for" — the old row could show none of it, because the model
+                // did not match the CLI's real shape.
                 HStack(spacing: 8) {
                     if let mode = network.mode {
                         Text(mode).font(.caption).foregroundStyle(.secondary)
                     }
                     if let subnet = network.subnet {
-                        Text(subnet).font(.caption).foregroundStyle(.secondary)
+                        Text(subnet).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
-                    if let state = network.state {
-                        Text(state).font(.caption).foregroundStyle(.secondary)
+                    if let gateway = network.gateway {
+                        Text("gw \(gateway)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
             }
@@ -113,7 +134,7 @@ struct NetworksView: View {
             } label: {
                 Image(systemName: "trash")
             }
-            .disabled(model.busy.contains(network.id))
+            .disabled(model.busy.contains(network.id) || network.isBuiltin)
         }
         .padding(.vertical, 4)
         .contextMenu { menu(for: network) }

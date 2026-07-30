@@ -55,6 +55,50 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     case commandToken
 }
 
+extension ValueShape {
+    /// What the shape actually permits, in words a user can act on.
+    ///
+    /// Added because the message read `'Test 1' is not a valid identifier`, which states the
+    /// verdict and withholds the rule. The owner reasonably concluded capitals were the problem
+    /// and retried in lowercase; the real objection was the **space** — `Test1` is fine. A
+    /// validation message that leads someone to the wrong conclusion is worse than a terse
+    /// one, because they then design around a constraint that does not exist.
+    public var rule: String {
+        switch self {
+        case .identifier:
+            "Use letters, numbers, dots, dashes or underscores, starting with a letter or number. No spaces."
+        case .imageReference:
+            "Expected something like `docker.io/library/alpine:latest` — no spaces."
+        case .portMapping:
+            "Expected `hostPort:containerPort`, optionally `/tcp` or `/udp` — for example `8080:80`."
+        case .envAssignment:
+            "Expected `KEY=VALUE`."
+        case .mountSpec:
+            "Expected `source:/destination`, optionally `:ro` or `:rw`, where source is a named volume or an absolute path."
+        case .absolutePath:
+            "Expected an absolute path with no `.` or `..` components."
+        case .durationSeconds:
+            "Expected whole seconds, 0 to 86400."
+        case .signal:
+            "Expected a signal name like `SIGTERM` or `TERM`, or a number from 1 to 64."
+        case .memorySize:
+            "Expected a size like `512M` or `2G`."
+        case .count:
+            "Expected a whole number from 1 to 1024."
+        case .platform:
+            "Expected `os/arch`, optionally `/variant` — for example `linux/arm64`."
+        case .cidr:
+            "Expected an IPv4 range in CIDR form — for example `10.0.0.0/24`."
+        case .keyValue:
+            "Expected `key=value`."
+        case .outputFormat:
+            "Expected one of the CLI's `--format` values."
+        case .commandToken:
+            "Not a permitted command token."
+        }
+    }
+}
+
 // MARK: - Table types
 
 /// One flag a subcommand accepts. `value == nil` means a boolean switch.
@@ -213,7 +257,7 @@ extension AllowlistError: CustomStringConvertible {
         case .flagRequiresValue(let f): "flag \(f) requires a value"
         case .flagTakesNoValue(let f): "flag \(f) takes no value"
         case .repeatedFlag(let f): "flag \(f) repeated"
-        case .invalidValue(let c, let v, let s): "\(c): '\(v)' is not a valid \(s.rawValue)"
+        case .invalidValue(let c, let v, let s): "‘\(v)’ isn't a valid \(s.rawValue) for \(c). \(s.rule)"
         case .pathTraversal(let c, let v): "\(c): path traversal in '\(v)'"
         case .hostPathNotPermitted(let c, let p): "\(c): host path '\(p)' is not permitted by the mount policy"
         case .illegalCharacter(_, let u): "illegal character U+\(String(u, radix: 16, uppercase: true))"

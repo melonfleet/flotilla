@@ -12,20 +12,47 @@ private func fixture(_ name: String) throws -> Data {
     return try Data(contentsOf: url)
 }
 
+// Fabricated fixture until 2026-07-30, same as networks below. The invented one claimed a
+// volume named "flotilla-data" with a 1 GiB size and a project label — none of which the real
+// CLI emits at the top level. Worse, `name` was non-optional, so against genuine output
+// decoding THREW: the Volumes screen showed a runtime error the moment a volume existed.
 @Test func decodeVolumes() throws {
     let volumes = try JSONDecoder.flotilla.decode([ContainerVolume].self, from: fixture("volumes"))
     let v = try #require(volumes.first)
-    #expect(v.name == "flotilla-data")
-    #expect(v.sizeInBytes == 1_073_741_824)
-    #expect(v.labels?["project"] == "flotilla")
+    #expect(v.id == "audit-probe")
+    #expect(v.name == "audit-probe")
+    #expect(v.format == "ext4")
+    #expect(v.driver == "local")
+    // The real size is the ext4 image's provisioned size, not what is in use — 512 GiB for a
+    // freshly created volume. Worth knowing before showing it to anyone as "disk used".
+    #expect(v.sizeInBytes == 549_755_813_888)
+    // `source` is an absolute path under the user's Library. It must never reach a support
+    // bundle unredacted; `Redaction` handles that, and this asserts the field is populated so
+    // the redactor has something to find.
+    #expect(v.source?.hasSuffix("volumes/audit-probe/volume.img") == true)
 }
 
+// The fixture behind this was FABRICATED until 2026-07-30 — a flat shape written to match the
+// model rather than captured from the CLI. It is now a real `container network list` capture,
+// which is why the assertions changed: subnet and gateway live under `status`, and there is no
+// `state` field at all.
 @Test func decodeNetworks() throws {
     let networks = try JSONDecoder.flotilla.decode([ContainerNetwork].self, from: fixture("networks"))
-    let n = try #require(networks.first)
-    #expect(n.id == "default")
-    #expect(n.isDefault)
-    #expect(n.subnet == "192.168.64.0/24")
+    #expect(networks.count == 2)
+
+    let builtin = try #require(networks.first { $0.id == "default" })
+    #expect(builtin.name == "default")
+    #expect(builtin.mode == "nat")
+    #expect(builtin.plugin == "container-network-vmnet")
+    #expect(builtin.subnet == "192.168.64.0/24")
+    #expect(builtin.gateway == "192.168.64.1")
+    #expect(builtin.isBuiltin, "Apple's own network carries the builtin role label")
+
+    // A network the user made: same shape, but not builtin — which is what gates whether we
+    // offer to delete it.
+    let mine = try #require(networks.first { $0.id == "test" })
+    #expect(mine.isBuiltin == false)
+    #expect(mine.subnet == "192.168.65.0/24")
 }
 
 // MARK: - ContainerCLI: every mutation is allowlisted

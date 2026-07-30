@@ -1,1 +1,1 @@
-[{"name":"flotilla-data","format":"ext4","source":"/var/lib/container/volumes/flotilla-data/_data","createdAt":"2026-07-01T12:00:00Z","sizeInBytes":1073741824,"labels":{"project":"flotilla"},"options":{"journal":"true"}}]
+[{"configuration":{"creationDate":"2026-07-30T22:32:08Z","driver":"local","format":"ext4","labels":{},"name":"audit-probe","options":{},"sizeInBytes":549755813888,"source":"\/Users\/example\/Library\/Application Support\/com.apple.container\/volumes\/audit-probe\/volume.img"},"id":"audit-probe"}]

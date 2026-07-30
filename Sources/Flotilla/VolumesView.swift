@@ -18,6 +18,7 @@ struct VolumesView: View {
             Divider()
             content
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
@@ -53,12 +54,18 @@ struct VolumesView: View {
                 showingCreate = true
             } label: {
                 Label("New Volume…", systemImage: "plus")
+                    .labelStyle(.iconOnly)
             }
+            .help("Create a volume")
+            .accessibilityLabel("New Volume")
             Button {
                 Task { await model.refreshVolumes() }
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
             }
+            .help("Refresh volumes")
+            .accessibilityLabel("Refresh")
         }
         .padding(12)
     }

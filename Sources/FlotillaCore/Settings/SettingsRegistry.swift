@@ -28,9 +28,23 @@ public enum SettingsKeys {
         summary: "Register Flotilla as a login item (SMAppService)."
     )
 
+    /// Default **`.both`**, not `.menuBar`.
+    ///
+    /// This setting was inert until 2026-07-30 — the app delegate hardcoded `.regular`
+    /// regardless. Honouring it exposed the default as hostile: `.menuBar` maps to
+    /// `NSApplication.ActivationPolicy.accessory`, which removes Flotilla from the Dock **and
+    /// from ⌘-Tab**, so once you switched to another app the only way back was the menu-bar
+    /// icon. For an app whose *main window is the product* (`DECISIONS.md` Q2 — the popover
+    /// is a glance), being unreachable by ⌘-Tab is a defect, not a preference.
+    ///
+    /// `.menuBar` stays available for anyone who wants a true accessory app; it is simply not
+    /// what a new user should be given without asking.
+    ///
+    /// `requiresRestart` is false because it no longer does: `AppDelegate.applyPresentation`
+    /// switches activation policy live when the setting changes.
     public static let presentation = SettingsKey<AppPresentation>(
-        "presentation", default: .menuBar,
-        requiresRestart: true,
+        "presentation", default: .both,
+        requiresRestart: false,
         summary: "Show Flotilla in the menu bar, the Dock, or both."
     )
 

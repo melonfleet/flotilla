@@ -294,63 +294,58 @@ public struct VersionComponent: Codable, Identifiable, Sendable {
 // and the identifier accepts either `name` or `id`, so an unexpected schema degrades to
 // a sparse row rather than a decode failure. Capture a real fixture and tighten this the
 // first time it runs against a live install.
-public struct ContainerVolume: Codable, Identifiable, Sendable {
-    public var name: String
-    public var format: String?
-    public var source: String?
-    public var createdAt: String?
-    public var sizeInBytes: Int64?
-    public var labels: [String: String]?
-    public var options: [String: String]?
+/// A volume, as `container volume list --format json` actually returns it.
+///
+/// **This model was wrong until 2026-07-30, and its fixture was fabricated.** The old shape
+/// was flat (`name`, `format`, `source`, … at the top level) and `volumes.json` had been
+/// written to match the model rather than captured from the CLI, so the tests passed while
+/// the real payload — `{ "configuration": { … }, "id": … }` — could not decode at all.
+/// `name` was non-optional, so the moment a volume existed, decoding *threw* and the Volumes
+/// screen showed a runtime error instead of a list. A fixture nobody captured is worse than
+/// no fixture: it makes a broken decode look verified.
+public struct ContainerVolume: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var configuration: Configuration
 
-    public var id: String { name }
+    public struct Configuration: Codable, Sendable, Equatable {
+        public var name: String
+        public var driver: String?
+        public var format: String?
+        public var source: String?
+        public var creationDate: String?
+        public var sizeInBytes: Int64?
+        public var labels: [String: String]?
+        public var options: [String: String]?
 
-    private enum CodingKeys: String, CodingKey {
-        case name, id, format, source, createdAt, sizeInBytes, labels, options
-    }
-
-    public init(
-        name: String, format: String? = nil, source: String? = nil, createdAt: String? = nil,
-        sizeInBytes: Int64? = nil, labels: [String: String]? = nil, options: [String: String]? = nil
-    ) {
-        self.name = name
-        self.format = format
-        self.source = source
-        self.createdAt = createdAt
-        self.sizeInBytes = sizeInBytes
-        self.labels = labels
-        self.options = options
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        guard let identifier = try c.decodeIfPresent(String.self, forKey: .name)
-            ?? c.decodeIfPresent(String.self, forKey: .id) else {
-            throw DecodingError.keyNotFound(CodingKeys.name, .init(
-                codingPath: c.codingPath, debugDescription: "Volume has neither `name` nor `id`."
-            ))
+        public init(
+            name: String, driver: String? = nil, format: String? = nil, source: String? = nil,
+            creationDate: String? = nil, sizeInBytes: Int64? = nil,
+            labels: [String: String]? = nil, options: [String: String]? = nil
+        ) {
+            self.name = name
+            self.driver = driver
+            self.format = format
+            self.source = source
+            self.creationDate = creationDate
+            self.sizeInBytes = sizeInBytes
+            self.labels = labels
+            self.options = options
         }
-        name = identifier
-        format = try c.decodeIfPresent(String.self, forKey: .format)
-        source = try c.decodeIfPresent(String.self, forKey: .source)
-        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
-        sizeInBytes = try c.decodeIfPresent(Int64.self, forKey: .sizeInBytes)
-        labels = try c.decodeIfPresent([String: String].self, forKey: .labels)
-        options = try c.decodeIfPresent([String: String].self, forKey: .options)
     }
 
-    // Explicit because `CodingKeys` carries the `id` decoding alias, which has no
-    // stored property to synthesise from. Re-encodes under `name` only.
-    public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(name, forKey: .name)
-        try c.encodeIfPresent(format, forKey: .format)
-        try c.encodeIfPresent(source, forKey: .source)
-        try c.encodeIfPresent(createdAt, forKey: .createdAt)
-        try c.encodeIfPresent(sizeInBytes, forKey: .sizeInBytes)
-        try c.encodeIfPresent(labels, forKey: .labels)
-        try c.encodeIfPresent(options, forKey: .options)
+    public init(id: String, configuration: Configuration) {
+        self.id = id
+        self.configuration = configuration
     }
+
+    // Convenience so call sites read the same as before the shape was corrected.
+    public var name: String { configuration.name }
+    public var format: String? { configuration.format }
+    public var source: String? { configuration.source }
+    public var driver: String? { configuration.driver }
+    public var createdAt: String? { configuration.creationDate }
+    public var sizeInBytes: Int64? { configuration.sizeInBytes }
+    public var labels: [String: String]? { configuration.labels }
 }
 
 // MARK: - Network  (`container network list --format json`)
@@ -363,60 +358,73 @@ public struct ContainerVolume: Codable, Identifiable, Sendable {
 // Named `ContainerNetwork`, not `Network`, on purpose — matching `ContainerImage`, and
 // because a `FlotillaCore.Network` would collide with `import Network` in the Phase 2
 // transport code.
-public struct ContainerNetwork: Codable, Identifiable, Sendable {
+/// A network, as `container network list --format json` actually returns it.
+///
+/// Same story as `ContainerVolume`: the old model was flat and `networks.json` was written to
+/// match it rather than captured, so only `id` ever decoded from real output and every row
+/// rendered as a bare name with no mode, subnet or gateway. That is exactly what it looked
+/// like in use — "I don't see any information".
+///
+/// Note the subnet and gateway live under **`status`**, not configuration: they are assigned
+/// by the network plugin at creation, so they are observed state rather than declared intent.
+public struct ContainerNetwork: Codable, Identifiable, Sendable, Equatable {
     public var id: String
-    public var state: String?
-    public var mode: String?
-    public var subnet: String?
-    public var gateway: String?
-    public var labels: [String: String]?
+    public var configuration: Configuration
+    public var status: Status?
 
-    private enum CodingKeys: String, CodingKey {
-        case id, name, state, mode, subnet, gateway, labels
-    }
+    public struct Configuration: Codable, Sendable, Equatable {
+        public var name: String
+        public var mode: String?
+        public var plugin: String?
+        public var creationDate: String?
+        public var labels: [String: String]?
+        public var options: [String: String]?
 
-    public init(
-        id: String, state: String? = nil, mode: String? = nil,
-        subnet: String? = nil, gateway: String? = nil, labels: [String: String]? = nil
-    ) {
-        self.id = id
-        self.state = state
-        self.mode = mode
-        self.subnet = subnet
-        self.gateway = gateway
-        self.labels = labels
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        guard let identifier = try c.decodeIfPresent(String.self, forKey: .id)
-            ?? c.decodeIfPresent(String.self, forKey: .name) else {
-            throw DecodingError.keyNotFound(CodingKeys.id, .init(
-                codingPath: c.codingPath, debugDescription: "Network has neither `id` nor `name`."
-            ))
+        public init(
+            name: String, mode: String? = nil, plugin: String? = nil, creationDate: String? = nil,
+            labels: [String: String]? = nil, options: [String: String]? = nil
+        ) {
+            self.name = name
+            self.mode = mode
+            self.plugin = plugin
+            self.creationDate = creationDate
+            self.labels = labels
+            self.options = options
         }
-        id = identifier
-        state = try c.decodeIfPresent(String.self, forKey: .state)
-        mode = try c.decodeIfPresent(String.self, forKey: .mode)
-        subnet = try c.decodeIfPresent(String.self, forKey: .subnet)
-        gateway = try c.decodeIfPresent(String.self, forKey: .gateway)
-        labels = try c.decodeIfPresent([String: String].self, forKey: .labels)
     }
 
-    // Explicit for the same reason as `ContainerVolume`: `name` is a decoding alias.
-    public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(id, forKey: .id)
-        try c.encodeIfPresent(state, forKey: .state)
-        try c.encodeIfPresent(mode, forKey: .mode)
-        try c.encodeIfPresent(subnet, forKey: .subnet)
-        try c.encodeIfPresent(gateway, forKey: .gateway)
-        try c.encodeIfPresent(labels, forKey: .labels)
+    public struct Status: Codable, Sendable, Equatable {
+        public var ipv4Subnet: String?
+        public var ipv4Gateway: String?
+        public var ipv6Subnet: String?
+
+        public init(ipv4Subnet: String? = nil, ipv4Gateway: String? = nil, ipv6Subnet: String? = nil) {
+            self.ipv4Subnet = ipv4Subnet
+            self.ipv4Gateway = ipv4Gateway
+            self.ipv6Subnet = ipv6Subnet
+        }
     }
 
-    /// `container` ships a network called `default`; deleting it isn't a thing the UI
-    /// should offer.
-    public var isDefault: Bool { id == "default" }
+    public init(id: String, configuration: Configuration, status: Status? = nil) {
+        self.id = id
+        self.configuration = configuration
+        self.status = status
+    }
+
+    public var name: String { configuration.name }
+    public var mode: String? { configuration.mode }
+    public var plugin: String? { configuration.plugin }
+    public var subnet: String? { status?.ipv4Subnet }
+    public var gateway: String? { status?.ipv4Gateway }
+    public var ipv6Subnet: String? { status?.ipv6Subnet }
+    public var labels: [String: String]? { configuration.labels }
+
+    /// A builtin network is one Apple created, not the user — `default` carries
+    /// `com.apple.container.resource.role: builtin`. Deleting it is not something to offer
+    /// as casually as deleting your own.
+    public var isBuiltin: Bool {
+        configuration.labels?["com.apple.container.resource.role"] == "builtin"
+    }
 }
 
 // MARK: - Logs
