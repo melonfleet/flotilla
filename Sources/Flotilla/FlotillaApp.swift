@@ -22,9 +22,37 @@ import FlotillaCore
 ///
 /// When this moves to a bundle, the menu-bar behaviour is set by `LSUIElement` in the
 /// Info.plist instead and this shim should go.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Set by `FlotillaApp` before launch finishes, so the delegate can read the user's
+    /// presentation preference without owning a second `SettingsStore`.
+    weak var model: AppModel?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        applyPresentation()
+    }
+
+    /// Honours **Show Flotilla in: Menu bar / Dock / Both**, which had been a picker driving
+    /// nothing: this shim previously hardcoded `.regular` regardless of the setting.
+    ///
+    /// `LSUIElement` in the bundle sets only the *starting* policy. Switching at runtime is
+    /// what makes the preference take effect without a relaunch, and is why the setting can
+    /// now be honest.
+    ///
+    /// `menuBar` maps to `.accessory` — no Dock icon, no menu bar for the app itself, which
+    /// is the point of a menu-bar app. `dock` and `both` are both `.regular`: macOS has no
+    /// policy for "Dock icon but no menu bar", so the two collapse, and the distinction is
+    /// only meaningful once the menu-bar extra itself can be hidden (Phase 5 territory).
+    func applyPresentation() {
+        let presentation = model?.presentation ?? .both
+        let policy: NSApplication.ActivationPolicy = presentation == .menuBar ? .accessory : .regular
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+        // Coming *back* from .accessory leaves the app without a foreground presence until
+        // something asks for one, so a switch to a Dock-visible policy has to activate.
+        if policy == .regular {
+            NSApp.activate(ignoringOtherApps: false)
+        }
     }
 }
 
@@ -59,6 +87,16 @@ struct FlotillaApp: App {
 
         Window("Flotilla", id: "main") {
             MainWindowView(model: model)
+                // The delegate owns activation policy; the model owns the preference. Wire
+                // them here rather than giving the delegate its own SettingsStore, which
+                // would be a second source of truth for the same setting.
+                .onAppear {
+                    appDelegate.model = model
+                    model.onPresentationChange = { [weak appDelegate] in
+                        appDelegate?.applyPresentation()
+                    }
+                    appDelegate.applyPresentation()
+                }
                 .frame(minWidth: 900, minHeight: 520)
                 // Nothing *hardcodes* a scheme — this is the user's own stored choice, and
                 // `.auto` resolves to nil so the system value still wins.

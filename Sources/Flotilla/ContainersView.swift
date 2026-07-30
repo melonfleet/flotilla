@@ -21,6 +21,18 @@ struct ContainersView: View {
         case list = "List"
         case cards = "Cards"
         var id: Self { self }
+
+        /// Icons rather than words in the segmented control — the two views are a visual
+        /// choice, and the glyphs read faster than reading "List"/"Cards" every time.
+        /// `list.bullet` is the lines-with-dots list mark; `square.grid.2x2` the four
+        /// squares. The words survive as accessibility labels and tooltips, so nothing is
+        /// lost to anyone who cannot see the glyph.
+        var systemImage: String {
+            switch self {
+            case .list: "list.bullet"
+            case .cards: "square.grid.2x2"
+            }
+        }
     }
 
     enum Filter: String, CaseIterable, Identifiable {
@@ -308,9 +320,16 @@ struct ContainersView: View {
     private var toolbar: some View {
         HStack(spacing: 12) {
             Picker("View", selection: $presentation) {
-                ForEach(Presentation.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(Presentation.allCases) { option in
+                    Label(option.rawValue, systemImage: option.systemImage)
+                        .labelStyle(.iconOnly)
+                        .accessibilityLabel("\(option.rawValue) view")
+                        .help("\(option.rawValue) view")
+                        .tag(option)
+                }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .fixedSize()
 
             Picker("Filter", selection: $filter) {

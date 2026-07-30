@@ -65,6 +65,8 @@ final class AppModel {
         self.persistence = resolved.observation
         self.appearance = resolved.store.effectiveAppearance
         self.needsAppearanceOnboarding = resolved.store.needsAppearanceOnboarding
+        self.presentation = resolved.store[SettingsKeys.presentation]
+        self.notifier = Notifier(categories: Self.notificationSettings(from: resolved.store))
         observeSettings()
     }
 
@@ -91,12 +93,38 @@ final class AppModel {
         }
     }
 
+    /// `SettingsStore` exposes notification state one category at a time
+    /// (`isEnabled(_:)`); `NotificationSettings` is the value the notifier wants. This
+    /// collects the former into the latter, honouring precedence per key, so a managed
+    /// profile that locks a category is respected here too.
+    private static func notificationSettings(from store: SettingsStore) -> NotificationSettings {
+        NotificationSettings(enabled: Dictionary(uniqueKeysWithValues:
+            NotificationCategory.allCases.map { ($0, store.isEnabled($0)) }
+        ))
+    }
+
+    /// **Show Flotilla in: Menu bar / Dock / Both.** Read by `AppDelegate`, which is the only
+    /// place that can act on it — activation policy is an `NSApplication` concern.
+    private(set) var presentation: AppPresentation
+
+    /// Called after any settings change, so a preference edit takes effect without relaunch.
+    var onPresentationChange: (() -> Void)?
+
     private func reloadAppearance() {
         appearance = settingsStore.effectiveAppearance
         needsAppearanceOnboarding = settingsStore.needsAppearanceOnboarding
+
+        let newPresentation = settingsStore[SettingsKeys.presentation]
+        if newPresentation != presentation {
+            presentation = newPresentation
+            onPresentationChange?()
+        }
+
         // The interval may have been what changed; restart the timers against the new values.
         restartPolling()
         restartStatsPolling()
+        // Categories may have been toggled.
+        notifier.updateCategories(Self.notificationSettings(from: settingsStore))
     }
 
     // MARK: Polling
@@ -152,6 +180,11 @@ final class AppModel {
     // had no CPU or Memory columns despite the approved mockup carrying them from the start.
     // CPU is a *delta* measure: one sample cannot produce a percentage, which is why the
     // sampler returns nil until it has two and why nil must never be drawn as 0%.
+
+    /// Delivers the per-category notifications the Settings pane has been offering toggles
+    /// for all along with nothing behind them. A no-op when there is no app bundle, so
+    /// `swift run Flotilla` keeps working — see `Notifier`.
+    let notifier: Notifier
 
     private let sampler = StatsSampler()
     private var statsTask: Task<Void, Never>?
@@ -319,6 +352,7 @@ final class AppModel {
             // Off the main actor: this shells out to `container` and would otherwise stall
             // the UI on a slow or unreachable runtime.
             let fetched = try await Task.detached { [cli] in try cli.listContainers() }.value
+            notifyUnexpectedExits(previous: containers, current: fetched)
             containers = fetched
             lastRefresh = Date()
             state = .loaded
@@ -326,6 +360,42 @@ final class AppModel {
             state = .failed(String(describing: error))
         }
     }
+
+    /// "Container exited unexpectedly" — the category the notifications pane has offered
+    /// since day one with nothing behind it.
+    ///
+    /// *Unexpectedly* is the whole point: a container we were asked to stop is expected and
+    /// must stay silent, so anything with an action in flight is excluded. `busy` is the
+    /// signal — a user-initiated stop holds the id for the duration of the call, and the
+    /// refresh that follows it happens after `busy` is released, which is why this also
+    /// requires the container to have been absent from `busy` when the poll ran.
+    ///
+    /// Only fires for containers we previously *saw* running: a container that was already
+    /// stopped when the app launched has not just exited, and announcing it on first refresh
+    /// would be noise on every launch.
+    private func notifyUnexpectedExits(previous: [Container], current: [Container]) {
+        guard !previous.isEmpty else { return }   // first load has no "before" to compare
+
+        let stillRunning = Set(current.filter(Self.isRunning).map(\.id))
+        let nowStopped = previous
+            .filter { Self.isRunning($0) && !stillRunning.contains($0.id) }
+            .filter { !recentlyActed.contains($0.id) }
+
+        for container in nowStopped {
+            let name = container.id
+            Task { [notifier] in
+                await notifier.post(
+                    .containerExited,
+                    title: "Container exited",
+                    body: "\(name) stopped on its own."
+                )
+            }
+        }
+    }
+
+    /// Ids we deliberately acted on recently, so their stopping is not reported as a
+    /// surprise. Cleared as each action completes its follow-up refresh.
+    private var recentlyActed: Set<Container.ID> = []
 
     // MARK: Volumes
 
@@ -487,6 +557,9 @@ final class AppModel {
         let id = container.id
         guard !busy.contains(id) else { return }
         busy.insert(id)
+        // Held past `busy` being released, so the refresh that follows this action does not
+        // report an intentional stop as an unexpected exit.
+        recentlyActed.insert(id)
         defer { busy.remove(id) }
 
         do {
@@ -502,12 +575,18 @@ final class AppModel {
                 }
             }.value
         } catch {
-            actionError = "\(Self.label(for: action)) failed for \(id): \(error)"
+            let message = "\(Self.label(for: action)) failed for \(id): \(error)"
+            actionError = message
+            // Errors are the one mandatory category — not disableable, per FEATURES.md.
+            Task { [notifier] in
+                await notifier.post(.error, title: "\(Self.label(for: action)) failed", body: message)
+            }
         }
 
         // Refresh regardless: on failure the container's real state is now unknown, and
         // showing a stale row is worse than showing the truth.
         await refresh()
+        recentlyActed.remove(id)
     }
 
     /// Bulk counterpart to `perform(_:on:)`, for the containers table's multi-selection

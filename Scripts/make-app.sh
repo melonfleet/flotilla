@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Assemble Flotilla.app around the SwiftPM binary.
+#
+# WHY THIS EXISTS
+#
+# Run as a bare SwiftPM executable, Flotilla has no Info.plist and therefore no bundle
+# identifier — and four Phase 1 features are gated on exactly that, not on any missing code:
+#
+#   * notifications — `UNUserNotificationCenter.current()` does not degrade without a
+#     bundle, it raises `bundleProxyForCurrentProcess is nil` and kills the process
+#     (verified 2026-07-30);
+#   * "Show Flotilla in: Menu bar / Dock / Both" — needs `LSUIElement`;
+#   * launch at login — `SMAppService` registers a bundle, not a loose binary;
+#   * hardened runtime, Developer ID signing and notarization.
+#
+# This is deliberately NOT the Xcode-project migration `CLAUDE.md` describes. It is the
+# cheap, reversible half: a real bundle so those features can be built and used now, while
+# the build stays SwiftPM and keeps working unchanged on Linux for FlotillaCore. Xcode still
+# owns the distribution story (notarization, Sparkle, Jamf) when we get there.
+#
+# USAGE
+#   Scripts/make-app.sh [--release] [--dock]
+#
+#   --release  build with -c release (default: debug, for the faster loop)
+#   --dock     ship LSUIElement=false so the app starts with a Dock icon
+#
+# `LSUIElement` only sets the STARTING policy. The user's "Show Flotilla in" preference is
+# applied at runtime by `AppDelegate`, so this flag is just the default for a first launch
+# before any preference exists.
+
+set -euo pipefail
+
+CONFIG="debug"
+LSUIELEMENT="true"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --release) CONFIG="release" ;;
+    --dock)    LSUIELEMENT="false" ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+BUNDLE_ID="dev.melonfleet.Flotilla"      # DECISIONS.md Q8 — fixed, do not vary by config
+APP="$ROOT/build/Flotilla.app"
+
+echo "▸ building ($CONFIG)…"
+if [ "$CONFIG" = "release" ]; then
+  swift build -c release --product Flotilla
+else
+  swift build --product Flotilla
+fi
+BINARY="$(swift build -c "$CONFIG" --product Flotilla --show-bin-path)/Flotilla"
+[ -x "$BINARY" ] || { echo "no binary at $BINARY" >&2; exit 1; }
+
+# Version comes from the git description so a support bundle can name the exact build it
+# came from. A dirty tree is marked as such rather than silently claiming a clean tag.
+VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")"
+SHORT_VERSION="$(printf '%s' "$VERSION" | sed 's/^v//; s/-.*//')"
+[ -n "$SHORT_VERSION" ] || SHORT_VERSION="0.0.0"
+
+echo "▸ assembling $APP"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$BINARY" "$APP/Contents/MacOS/Flotilla"
+
+cat > "$APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>                 <string>Flotilla</string>
+    <key>CFBundleDisplayName</key>          <string>Flotilla</string>
+    <key>CFBundleIdentifier</key>           <string>$BUNDLE_ID</string>
+    <key>CFBundleExecutable</key>           <string>Flotilla</string>
+    <key>CFBundlePackageType</key>          <string>APPL</string>
+    <key>CFBundleShortVersionString</key>   <string>$SHORT_VERSION</string>
+    <key>CFBundleVersion</key>              <string>$VERSION</string>
+    <key>LSMinimumSystemVersion</key>       <string>26.0</string>
+    <!-- Menu-bar-first by default. AppDelegate overrides this at runtime from the
+         user's "Show Flotilla in" preference, so this is only the first-launch state. -->
+    <key>LSUIElement</key>                  <$LSUIELEMENT/>
+    <key>NSHighResolutionCapable</key>      <true/>
+    <!-- No telemetry, no account, no phone-home (FEATURES.md). Nothing here requests a
+         network entitlement or a usage string beyond what Phase 2 mTLS will need. -->
+</dict>
+PLIST
+echo "</plist>" >> "$APP/Contents/Info.plist"
+
+printf 'APPL????' > "$APP/Contents/PkgInfo"
+
+# Ad-hoc signature. Not distribution signing — that is Developer ID + notarization in
+# Phase 5 — but an unsigned bundle gets an unstable identity, and notification
+# authorization is remembered per identity, so without this the permission prompt can
+# reappear on every rebuild.
+echo "▸ signing (ad-hoc)…"
+codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>&1 | sed 's/^/   /'
+
+echo "▸ verifying…"
+codesign --verify --verbose=1 "$APP" 2>&1 | sed 's/^/   /'
+/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist" | sed 's/^/   bundle id: /'
+/usr/libexec/PlistBuddy -c "Print :LSUIElement" "$APP/Contents/Info.plist" | sed 's/^/   LSUIElement: /'
+
+echo "✓ $APP"
+echo "  open it with:  open \"$APP\""

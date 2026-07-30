@@ -20,3 +20,6 @@ xcuserdata/
 sparkle_private_key*
 dsa_priv.pem
 ed25519_priv*
+
+# Assembled app bundle from Scripts/make-app.sh — a build product, not source.
+build/
