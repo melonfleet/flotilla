@@ -54,4 +54,21 @@ struct CopyMenu: View {
             }
         }
     }
+
+    /// The Copy menu for a container — id, image, IP, port URL, per `FEATURES.md`.
+    ///
+    /// Defined **once** and called from both the table row and the card. It lived as a private
+    /// method on `ContainersView`, so the card had no way to reach it and simply went without:
+    /// switching to Cards silently cost you Copy. The owner's rule — "we shouldn't lose features
+    /// across views" — is only durable if the two surfaces share the definition rather than
+    /// each keeping a list that has to be remembered.
+    static func forContainer(_ container: Container) -> CopyMenu {
+        CopyMenu([
+            ("Name", container.id),
+            ("Image", container.configuration.image.reference),
+            ("IP Address", container.ipv4),
+            // The useful form is something you can paste into a browser, not the mapping.
+            ("Port URL", container.publishedPorts.first.map { "http://localhost:\($0.hostPort)" }),
+        ])
+    }
 }

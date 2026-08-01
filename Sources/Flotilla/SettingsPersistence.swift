@@ -39,8 +39,21 @@ enum SettingsPersistence {
     /// Bump this **only** alongside a migration step in `migrate(_:from:)`.
     static let currentSchemaVersion = 1
 
+    /// `.standard` when we are running as the bundle that owns `domain`, an explicit suite
+    /// otherwise.
+    ///
+    /// Asking for `UserDefaults(suiteName:)` with your *own* bundle identifier is a documented
+    /// mistake, and AppKit says so out loud on every launch: "Using your own bundle identifier
+    /// as an NSUserDefaults suite name does not make sense and will not work." It returned nil,
+    /// so `?? .standard` quietly did the right thing and the domain was correct by luck rather
+    /// than by intent — a fallback carrying the real behaviour is one bad edit from silently
+    /// moving everyone's preferences.
+    ///
+    /// The suite branch still matters: run as a bare SwiftPM executable there is no bundle
+    /// identifier, and `.standard` would write somewhere we do not own.
     private static var defaults: UserDefaults {
-        UserDefaults(suiteName: domain) ?? .standard
+        if Bundle.main.bundleIdentifier == domain { return .standard }
+        return UserDefaults(suiteName: domain) ?? .standard
     }
 
     /// The persisted user tier, or empty on first run.

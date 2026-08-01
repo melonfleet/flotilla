@@ -52,27 +52,27 @@ struct ContainerDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        // A real window, not a sheet — which is what gives it macOS's own red close button
-        // in the title bar rather than a button spelling out the word "Close". The owner's point
-        // generalises: an icon everyone already recognises beats a word not everyone reads.
-        // Resizable, with a sensible minimum, because a fixed sheet frame was also what made
-        // a short tab leave a band of empty space.
-        .frame(minWidth: 620, minHeight: 520)
+        // No frame here: the presenting `ModalCard` sizes the sheet. This carried
+        // `minWidth/minHeight` back when detail was a resizable window, and leaving it would
+        // fight the sheet's fixed frame.
+        //
+        // The header the title bar used to supply is now `ModalCard`'s, so this view no longer
+        // draws a name of its own — see `header`, which keeps only the image reference.
     }
 
+    /// The image reference only. The container's **name** is the modal's title, and printing it
+    /// again immediately beneath would be the "Flotilla Flotilla" mistake in miniature.
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(container.id).font(.headline)
-                Text(container.configuration.image.reference)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+            Text(container.configuration.image.reference)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer()
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 
     private var overview: some View {

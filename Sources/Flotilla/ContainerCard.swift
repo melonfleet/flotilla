@@ -49,9 +49,16 @@ struct ContainerCard: View {
                 .frame(width: 8, height: 8)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
-                Text(container.id)
-                    .font(.headline)
-                    .lineLimit(1)
+                // The name is the way in, exactly as it is in the table. It was plain text
+                // here, so the only route to detail from a card was a `⋯` menu with a single
+                // item in it — a second control for something the name should already do.
+                Button(action: onDetails) {
+                    Text(container.id)
+                        .font(.headline)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.link)
+                .help("Open \(container.id)")
                 Text(ContainerImage.shortReference(container.imageReference))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -101,20 +108,33 @@ struct ContainerCard: View {
         }
     }
 
-    /// Mirrors `ContainersView.rowActions`: Start/Stop swap and never both show, always
-    /// visible rather than hover-revealed, icon buttons carry `accessibilityLabel` and
-    /// `help`, and Delete sits last, separated, and disabled (not absent) while busy.
+    /// Mirrors `ContainersView.rowActions` deliberately and closely: Start/Stop swap and never
+    /// both show, icon buttons are always visible rather than hover-revealed and carry both
+    /// `accessibilityLabel` and `help`, and Delete sits last behind a divider, disabled rather
+    /// than absent while busy.
+    ///
+    /// The cluster is left-aligned and tight — play, `⋯`, bin together — rather than throwing
+    /// the bin to the far edge with a `Spacer`. The two views should read as the same controls
+    /// in a different container, and a trash can floating alone across the card did not.
     private var actionCluster: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             if container.isRunning {
                 actionButton("stop.fill", "Stop", help: "Stop \(container.id)", action: onStop)
                 actionButton("arrow.clockwise", "Restart", help: "Restart \(container.id)", action: onRestart)
             } else {
                 actionButton("play.fill", "Start", help: "Start \(container.id)", action: onStart)
+                // Holds the cluster's width steady as containers start and stop, so the
+                // buttons don't shuffle sideways under the pointer — same trick as the table.
+                actionButton("arrow.clockwise", "Restart", help: "", action: {}).hidden()
             }
 
+            // The same overflow menu as the table row, from the same definition. It briefly
+            // held only "Details…" here, which is why Copy was missing from cards entirely —
+            // the toggle quietly cost you a feature.
             Menu {
                 Button("Details…", action: onDetails)
+                Divider()
+                CopyMenu.forContainer(container)
             } label: {
                 Image(systemName: "ellipsis")
             }
@@ -124,11 +144,11 @@ struct ContainerCard: View {
             .accessibilityLabel("More actions for \(container.id)")
             .disabled(isBusy)
 
-            Spacer()
-
             Divider().frame(height: 14)
 
             actionButton("trash", "Delete", help: "Delete \(container.id)", destructive: true, action: onDelete)
+
+            Spacer()
         }
     }
 

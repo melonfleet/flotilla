@@ -64,7 +64,17 @@ struct ContainersView: View {
     }
 
     @State private var selection = Set<Container.ID>()
-    @Environment(\.openWindow) private var openWindow
+
+    /// The container whose detail sheet is open, by **id** rather than by value: the sheet can
+    /// outlive the snapshot that opened it, so it re-reads from the model on every refresh and
+    /// shows current state instead of a frozen copy.
+    @State private var detailTarget: DetailTarget?
+
+    /// `sheet(item:)` needs `Identifiable`, and a bare `String` is not. Small enough to live
+    /// here rather than becoming a shared type.
+    private struct DetailTarget: Identifiable, Hashable {
+        let id: String
+    }
     @State private var confirmingBulkDelete = false
     /// Non-nil while a single row's trash button is awaiting confirmation. Destructive
     /// actions confirm with the object *named* (`FEATURES.md`'s destructive-action policy),
@@ -128,8 +138,6 @@ struct ContainersView: View {
         }
     }
 
-    /// Detail opens as its own window (see `FlotillaApp`), so macOS provides the close
-    /// button rather than us drawing one.
     /// Extracted rather than inlined in the modifier chain: with the chain this long the
     /// type-checker gives up ("unable to type-check this expression in reasonable time").
     private var runSheet: some View {
@@ -138,8 +146,36 @@ struct ContainersView: View {
             .onDisappear { model.formDidClose() }
     }
 
+    /// Detail as a modal, in the same `ModalCard` shell as every other pop-up: red ×, no
+    /// traffic lights, and the window behind it dimmed and inert. `formDidOpen`/`formDidClose`
+    /// are what drive that dim — detail was previously a real window and so did neither, which
+    /// is what made it the odd one out.
+    ///
+    /// The container is resolved from the model on each pass rather than captured, so the sheet
+    /// tracks the live state and says so plainly if the container is deleted underneath it.
+    private func detailSheet(_ target: DetailTarget) -> some View {
+        ModalCard(title: target.id, onClose: { detailTarget = nil }) {
+            Group {
+                if let container = model.containers.first(where: { $0.id == target.id }) {
+                    ContainerDetailView(model: model, container: container)
+                } else {
+                    ContentUnavailableView(
+                        "Container unavailable",
+                        systemImage: "questionmark.square.dashed",
+                        description: Text("“\(target.id)” is no longer on this Mac. It may have been deleted.")
+                    )
+                }
+            }
+            // A sheet is not user-resizable, so the size is chosen once and has to suit the
+            // roomiest tab rather than the emptiest — Logs and Inspect, not Overview.
+            .frame(width: 780, height: 620)
+        }
+        .onAppear { model.formDidOpen() }
+        .onDisappear { model.formDidClose() }
+    }
+
     private func openDetail(_ id: String) {
-        openWindow(id: "container-detail", value: id)
+        detailTarget = DetailTarget(id: id)
     }
 
     /// Same icon-and-popover shape as `columnsButton` — both answer "what am I looking at",
@@ -308,16 +344,11 @@ struct ContainersView: View {
         .accessibilityLabel(label)
     }
 
-    /// `FEATURES.md` asks for a Copy submenu (id, image, IP, port URL) on the row. Shape and
-    /// nil-dropping come from `CopyMenu` so every surface's Copy menu behaves alike.
+    /// `FEATURES.md` asks for a Copy submenu (id, image, IP, port URL) on the row. The contents
+    /// now live on `CopyMenu` itself so the card gets the identical menu — see
+    /// `CopyMenu.forContainer`.
     private func copyMenu(for container: Container) -> CopyMenu {
-        CopyMenu([
-            ("Name", container.id),
-            ("Image", container.configuration.image.reference),
-            ("IP Address", container.ipv4),
-            // The useful form is something you can paste into a browser, not the mapping.
-            ("Port URL", container.publishedPorts.first.map { "http://localhost:\($0.hostPort)" }),
-        ])
+        CopyMenu.forContainer(container)
     }
 
     /// The context menu for a right-click that landed on one or more rows.
@@ -386,6 +417,7 @@ struct ContainersView: View {
             Text(model.actionError ?? "")
         }
         .sheet(isPresented: $showingRun) { runSheet }
+        .sheet(item: $detailTarget) { detailSheet($0) }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. One observation covers all three ways the visible set
         // moves out from under the selection — filter change, search change, and the data

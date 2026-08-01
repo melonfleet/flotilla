@@ -55,7 +55,13 @@ struct Wordmark: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        // `.firstTextBaseline`, not the default `.center`. This matters more than it looks:
+        // the melon and the rule both position themselves with `alignmentGuide(.firstTextBaseline)`,
+        // and a guide for an alignment the stack is not using is **silently ignored** — which
+        // is exactly what left the melon floating above the word. A circle centred in the line
+        // box sits higher than a lowercase letter, because the line box includes ascender and
+        // descender space the letter does not use.
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text("mel").font(brandFont).foregroundStyle(melonGreen)
             melon
             Text("nfleet").font(brandFont).foregroundStyle(melonGreen)
@@ -65,6 +71,10 @@ struct Wordmark: View {
             RoundedRectangle(cornerRadius: size * 0.035)
                 .fill(rule)
                 .frame(width: max(1, size * 0.07), height: size)
+                // Spans y 19…91 against a baseline at 80, so 11 of its 72 points hang below
+                // the baseline. Without this the stack would align its bottom to the baseline
+                // and the rule would sit a sixth of its height too high.
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - size * (11.0 / 72.0) }
                 .padding(.horizontal, size * 0.30)
 
             Text("Flotilla").font(brandFont).foregroundStyle(appInk)
@@ -93,9 +103,11 @@ struct Wordmark: View {
             seed(seedSize).offset(x: diameter * (6 / 37), y: diameter * (2.5 / 37))
         }
         .frame(width: diameter, height: diameter)
-        // The melon stands in for a letter, so it sits on the text baseline rather than being
-        // centred against the line box — otherwise it floats above the word.
-        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - diameter * 0.16 }
+        // The melon stands in for a letter, so it sits on the baseline like one. In the SVG
+        // its centre is at y 61 with r 18.5, putting its lowest point at 79.5 against a
+        // baseline of 80 — half a point of overshoot, the same trick every typeface uses so a
+        // round letter does not read as short beside a flat-bottomed one.
+        .alignmentGuide(.firstTextBaseline) { $0[.bottom] + size * (0.5 / 72.0) }
     }
 
     private func seed(_ size: CGSize) -> some View {

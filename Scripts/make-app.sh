@@ -19,24 +19,28 @@
 # owns the distribution story (notarization, Sparkle, Jamf) when we get there.
 #
 # USAGE
-#   Scripts/make-app.sh [--release] [--dock]
+#   Scripts/make-app.sh [--release] [--menubar]
 #
 #   --release  build with -c release (default: debug, for the faster loop)
-#   --dock     ship LSUIElement=false so the app starts with a Dock icon
+#   --menubar  ship LSUIElement=true so the app starts as a menu-bar accessory
 #
-# `LSUIElement` only sets the STARTING policy. The user's "Show Flotilla in" preference is
-# applied at runtime by `AppDelegate`, so this flag is just the default for a first launch
-# before any preference exists.
+# `LSUIElement` is NOT just a cosmetic starting policy, which is what the old comment here
+# claimed and what made a real bug hard to see. Measured on macOS 26: when the app starts as
+# an accessory, SwiftUI never instantiates the `Window` scene at all, and switching to
+# `.regular` afterwards does not build one — the app takes the Dock tile and the menu bar and
+# has no window to show. So this must default to FALSE, matching the shipped `both`
+# preference, and menu-bar-only users are dropped to `.accessory` by `AppDelegate` before any
+# scene materialises. See `applyPresentation`.
 
 set -euo pipefail
 
 CONFIG="debug"
-LSUIELEMENT="true"
+LSUIELEMENT="false"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --release) CONFIG="release" ;;
-    --dock)    LSUIELEMENT="false" ;;
+    --menubar) LSUIELEMENT="true" ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -95,8 +99,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key>   <string>$SHORT_VERSION</string>
     <key>CFBundleVersion</key>              <string>$VERSION</string>
     <key>LSMinimumSystemVersion</key>       <string>26.0</string>
-    <!-- Menu-bar-first by default. AppDelegate overrides this at runtime from the
-         user's "Show Flotilla in" preference, so this is only the first-launch state. -->
+    <!-- False by default, matching the shipped "both" preference. This decides whether a
+         main window is ever created, not merely how the app looks at launch — AppDelegate
+         narrows to .accessory for menu-bar-only users before any scene exists. -->
     <key>LSUIElement</key>                  <$LSUIELEMENT/>
     <key>NSHighResolutionCapable</key>      <true/>
     <!-- No telemetry, no account, no phone-home (FEATURES.md). Nothing here requests a
