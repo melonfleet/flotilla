@@ -702,6 +702,36 @@ final class AppModel {
         try await Task.detached { [cli] in try cli.logs(id, lines: lines) }.value
     }
 
+    // MARK: Requests from the menu bar
+    //
+    // The popover can *ask* for a screen; it cannot reach into the window's `@State` to set
+    // one. These are one-shot requests the window consumes and clears, which keeps the
+    // window's selection owned by the window while still letting "Settings…" and "Run…" in
+    // the popover land somewhere real. Without them those rows would open a blank window and
+    // look broken.
+
+    /// A section the popover asked the window to show. Cleared by `MainWindowView`.
+    var pendingSection: Section?
+    /// Whether the popover asked for the Run sheet. Cleared by `ContainersView`.
+    var pendingRunSheet = false
+
+    func requestSection(_ section: Section) { pendingSection = section }
+    func requestRunSheet() {
+        // Run lives on the containers screen, so ask for both — otherwise the sheet would
+        // open behind whatever section happened to be selected.
+        pendingSection = .containers
+        pendingRunSheet = true
+    }
+
+    /// This Mac's short host name, for the popover's "This Mac" heading.
+    ///
+    /// Trailing `.local` stripped: it is noise on every Mac on the network, and the point of
+    /// the label is to tell two machines apart once Phase 2 has more than one.
+    var hostName: String {
+        let name = ProcessInfo.processInfo.hostName
+        return name.hasSuffix(".local") ? String(name.dropLast(6)) : name
+    }
+
     // MARK: Lifecycle actions
 
     /// Ids with an action in flight, so the UI can disable their controls rather than

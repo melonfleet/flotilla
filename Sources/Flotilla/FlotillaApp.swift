@@ -145,6 +145,7 @@ struct FlotillaApp: App {
                 // The popover needs it too: appearance applied only to the main window
                 // would leave the menu bar disagreeing with the rest of the app.
                 .preferredColorScheme(model.appearance.colorScheme)
+                .tint(Theme.accent)
         } label: {
             // The brand mark, as a **template** image: macOS inverts it for a light or dark
             // menu bar automatically, so one asset serves both and there is no pair to drift.
@@ -169,6 +170,10 @@ struct FlotillaApp: App {
                 // Nothing *hardcodes* a scheme — this is the user's own stored choice, and
                 // `.auto` resolves to nil so the system value still wins.
                 .preferredColorScheme(model.appearance.colorScheme)
+                // The watermelon accent, applied once at the scene root so every stock
+                // control inherits it. Set per-view it would be forgotten somewhere, and
+                // one blue segmented control in a pink app is worse than all-blue.
+                .tint(Theme.accent)
                 .task { await model.reload() }
                 // First run: ask, with Auto pre-selected. `needsAppearanceOnboarding` is
                 // false once answered, including when the answer was Auto — which is

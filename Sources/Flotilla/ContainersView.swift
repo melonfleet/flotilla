@@ -338,7 +338,7 @@ struct ContainersView: View {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .foregroundStyle(destructive ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+        .foregroundStyle(destructive ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
         .disabled(busy)
         .help(help)
         .accessibilityLabel(label)
@@ -417,6 +417,14 @@ struct ContainersView: View {
             Text(model.actionError ?? "")
         }
         .sheet(isPresented: $showingRun) { runSheet }
+        // "Run…" in the menu-bar popover. One-shot: consumed and cleared, so the sheet does
+        // not reopen every time this view is rebuilt.
+        .onChange(of: model.pendingRunSheet) { _, requested in
+            if requested { showingRun = true; model.pendingRunSheet = false }
+        }
+        .onAppear {
+            if model.pendingRunSheet { showingRun = true; model.pendingRunSheet = false }
+        }
         .sheet(item: $detailTarget) { detailSheet($0) }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. One observation covers all three ways the visible set
@@ -619,7 +627,7 @@ struct ContainersView: View {
                 TableColumn("State", value: \.sortRank) { c in
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(AppModel.isRunning(c) ? Color.green : Color.secondary)
+                            .fill(c.stateColor)
                             .frame(width: 7, height: 7)
                         Text(c.status.state.capitalized)
                     }
@@ -638,6 +646,8 @@ struct ContainersView: View {
                         Text(c.id).lineLimit(1)
                     }
                     .buttonStyle(.link)
+                    // `.link` hardcodes the system blue and ignores the scene tint.
+                    .foregroundStyle(Theme.accentText)
                     .help("Open \(c.id)")
                 }
                 TableColumn("Image", value: \.imageReference) { c in

@@ -45,7 +45,10 @@ struct ContainerCard: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 8) {
             Circle()
-                .fill(container.isRunning ? Color.green : Color.secondary)
+                // `stateColor`, not a local `.green`/`.secondary` pair: the table and the
+                // cards were each picking their own, so the same container had two greens.
+                // It also distinguishes "exited (137)" from "stopped", which one bool cannot.
+                .fill(container.stateColor)
                 .frame(width: 8, height: 8)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
@@ -58,6 +61,9 @@ struct ContainerCard: View {
                         .lineLimit(1)
                 }
                 .buttonStyle(.link)
+                // `.link` hardcodes the system blue and ignores the scene tint, so the one
+                // brand-coloured thing on the card came out stock-macOS blue.
+                .foregroundStyle(Theme.accentText)
                 .help("Open \(container.id)")
                 Text(ContainerImage.shortReference(container.imageReference))
                     .font(.caption)
@@ -162,7 +168,7 @@ struct ContainerCard: View {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .foregroundStyle(destructive ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+        .foregroundStyle(destructive ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
         .disabled(isBusy)
         .help(help)
         .accessibilityLabel(label)
