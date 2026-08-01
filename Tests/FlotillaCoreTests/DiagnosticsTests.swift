@@ -297,7 +297,14 @@ import Testing
 
     // Whole-snapshot audit: encode it and re-scan every byte, the way a support
     // bundle would before it is handed to someone else.
+    //
+    // `.withoutEscapingSlashes` is load-bearing, not tidiness. Foundation writes `/`
+    // as `\/` by default, so `/Users/example` becomes `\/Users\/example` and the audit's
+    // `/Users/…` and `/var/folders/…` detectors match nothing — the path half of this
+    // assertion passed vacuously until `SupportBundleBuilder` was written and the
+    // escaping was noticed. `SupportBundleBuilder.encoder` sets the same option.
     let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
     encoder.dateEncodingStrategy = .iso8601
     let data = try encoder.encode(snapshot)
     #expect(RedactionAudit.leaks(in: data).isEmpty)

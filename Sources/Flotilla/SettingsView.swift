@@ -123,6 +123,9 @@ struct SettingsView: View {
     let model: AppModel
 
     private var store: SettingsStore { model.settingsStore }
+    @State private var pendingReset: ResetAction?
+    @State private var showingSupportBundle = false
+    @State private var showingAbout = false
 
     var body: some View {
         Form {
@@ -275,10 +278,163 @@ struct SettingsView: View {
                 SettingRow(store: store, key: SettingsKeys.diagnosticsErrorLogCap, title: "Error log cap") { binding in
                     Stepper(value: binding, in: 10...5_000, step: 10) { Text("\(binding.wrappedValue)") }
                 }
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Support bundle")
+                        Text("Assemble a redacted diagnostic bundle. You see every file before "
+                             + "it is saved, and nothing is uploaded.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("Create…") { showingSupportBundle = true }
+                }
+                .padding(.vertical, 2)
+
+                HStack {
+                    Text("About Flotilla")
+                    Spacer()
+                    Button("Show") { showingAbout = true }
+                }
             }
+
+            resetSection
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
+        .sheet(isPresented: $showingSupportBundle) {
+            SupportBundleView(model: model) { showingSupportBundle = false }
+        }
+        .sheet(isPresented: $showingAbout) {
+            AboutView(model: model) { showingAbout = false }
+        }
+        .confirmationDialog(
+            pendingReset?.title ?? "",
+            isPresented: Binding(get: { pendingReset != nil },
+                                 set: { if !$0 { pendingReset = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let reset = pendingReset {
+                Button(reset.confirmLabel, role: .destructive) {
+                    reset.perform(model)
+                    pendingReset = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingReset = nil }
+        } message: {
+            Text(pendingReset?.message ?? "")
+        }
+    }
+
+    /// **Three** resets, deliberately separate — `research/FEATURES.md`:
+    /// *Reset preferences ≠ Forget all hosts and trust ≠ Reset window layout*.
+    ///
+    /// Someone whose window is stranded on a display they no longer have should be able to
+    /// recover it without losing every preference, and vice versa. One "Reset everything"
+    /// button is the version of this that nobody dares press.
+    ///
+    /// Each confirmation names what it will do **and what it will not touch**, because the
+    /// fear that stops people using a reset is not knowing where it stops. The scope note
+    /// below states the thing that matters most: none of these can delete a container, an
+    /// image or a volume. `FEATURES.md` is explicit that a settings reset must never offer to.
+    private var resetSection: some View {
+        SwiftUI.Section("Reset") {
+            ForEach(ResetAction.allCases) { action in
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(action.title)
+                        Text(action.summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("Reset") { pendingReset = action }
+                        .disabled(!action.isAvailable(model))
+                }
+                .padding(.vertical, 2)
+            }
+
+            Label(
+                "None of these touch your containers, images or volumes — those belong to the "
+                    + "`container` runtime, not to Flotilla.",
+                systemImage: "info.circle"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    enum ResetAction: String, CaseIterable, Identifiable {
+        case preferences, hostTrust, windowLayout
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .preferences: "Reset preferences"
+            case .hostTrust: "Forget all hosts and trust"
+            case .windowLayout: "Reset window layout"
+            }
+        }
+
+        var summary: String {
+            switch self {
+            case .preferences:
+                "Every setting back to its default. Your window position is left alone."
+            case .hostTrust:
+                "Removes paired hosts and their trusted keys. Nothing is paired yet."
+            case .windowLayout:
+                "Forgets window size, position and the sidebar width. Takes effect at next launch."
+            }
+        }
+
+        var confirmLabel: String {
+            switch self {
+            case .preferences: "Reset Preferences"
+            case .hostTrust: "Forget Hosts"
+            case .windowLayout: "Reset Layout"
+            }
+        }
+
+        /// Says what survives, not just what goes. The unstated half is what makes people
+        /// hesitate.
+        var message: String {
+            switch self {
+            case .preferences:
+                "Every setting returns to its default, including your appearance choice, so "
+                    + "Flotilla will ask about it again next launch.\n\nYour window layout, "
+                    + "your containers, images and volumes are all untouched."
+            case .hostTrust:
+                "Removes every paired host and the keys that trust them. You would need to "
+                    + "pair each host again.\n\nNo containers are stopped or deleted."
+            case .windowLayout:
+                "Forgets the window's size and position and the sidebar width. Useful if the "
+                    + "window has ended up off-screen.\n\nTakes effect at next launch, because "
+                    + "an open window saves its position again when it closes. No preferences "
+                    + "or data change."
+            }
+        }
+
+        /// Host/trust has nothing to forget until Phase 2. Shown disabled rather than hidden:
+        /// a control that only appears once you have something to lose is one nobody finds in
+        /// time.
+        @MainActor func isAvailable(_ model: AppModel) -> Bool {
+            switch self {
+            case .preferences, .windowLayout: true
+            case .hostTrust: model.hasHostTrustToForget
+            }
+        }
+
+        @MainActor func perform(_ model: AppModel) {
+            switch self {
+            case .preferences: model.resetPreferences()
+            case .windowLayout: model.resetWindowLayout()
+            case .hostTrust: break   // Phase 2 — no host store to clear yet.
+            }
+        }
     }
 
     private static func title(for presentation: AppPresentation) -> String {

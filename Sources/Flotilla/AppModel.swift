@@ -67,6 +67,7 @@ final class AppModel {
         self.needsAppearanceOnboarding = resolved.store.needsAppearanceOnboarding
         self.presentation = resolved.store[SettingsKeys.presentation]
         self.notifier = Notifier(categories: Self.notificationSettings(from: resolved.store))
+        self.errorLog = ErrorLog(settings: resolved.store)
         observeSettings()
     }
 
@@ -143,6 +144,120 @@ final class AppModel {
 
     func formDidOpen() { openFormCount += 1 }
     func formDidClose() { openFormCount = max(0, openFormCount - 1) }
+
+    // MARK: Diagnostics
+    //
+    // The error log has to be *fed*, or the support bundle ships an empty one and looks like a
+    // feature while helping nobody — the same hollow shape as the settings that drove nothing.
+    // Every failure that reaches `actionError` is recorded here as well.
+
+    /// Capacity comes from the registry, so the cap the Settings screen shows is the cap that
+    /// applies rather than a number the UI invents.
+    ///
+    /// `@ObservationIgnored` because `ErrorLog` is a thread-safe reference type that manages
+    /// its own locking — putting it in the observation graph would invalidate views on every
+    /// recorded error for no benefit. It also cannot be `lazy`: `@Observable` rejects that on
+    /// stored properties.
+    @ObservationIgnored let errorLog: ErrorLog
+
+    /// Honours `diagnosticsEnabled`: with the log switched off, nothing is retained at all —
+    /// not merely hidden from the bundle.
+    func record(_ message: String, subsystem: String = "app") {
+        guard settingsStore[SettingsKeys.diagnosticsEnabled] else { return }
+        errorLog.record(.error, subsystem: subsystem, message: message)
+    }
+
+    /// Everything the builder needs about this build. `Bundle.main` is empty under
+    /// `swift run`, so the fallbacks describe a development build rather than leaving blanks
+    /// that read as missing data.
+    private var appInfo: DiagnosticsSnapshot.AppInfo {
+        DiagnosticsSnapshot.AppInfo(
+            name: "Flotilla",
+            version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
+            build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+            bundleIdentifier: Bundle.main.bundleIdentifier ?? "dev.melonfleet.Flotilla",
+            mode: settingsStore[SettingsKeys.mode],
+            isManaged: !settingsStore.lockedKeyNames().isEmpty
+        )
+    }
+
+    /// Model identifier, never the serial or hardware UUID — those identify the machine and
+    /// a support bundle must not.
+    private var systemInfo: DiagnosticsSnapshot.SystemInfo {
+        var model: String?
+        var size = 0
+        if sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 0 {
+            var bytes = [UInt8](repeating: 0, count: size)
+            if sysctlbyname("hw.model", &bytes, &size, nil, 0) == 0 {
+                // sysctl returns a NUL-terminated C string; drop the terminator before
+                // decoding, or the trailing \0 ends up inside the Swift string.
+                model = String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
+            }
+        }
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        return DiagnosticsSnapshot.SystemInfo(
+            osName: "macOS",
+            osVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)",
+            architecture: Self.architecture,
+            modelIdentifier: model
+        )
+    }
+
+    private static var architecture: String {
+        #if arch(arm64)
+        "arm64"
+        #else
+        "x86_64"
+        #endif
+    }
+
+    /// Assemble a support bundle. Throws `SupportBundleLeakError` if the final audit finds
+    /// anything that must not leave the machine — deliberately a failure rather than a
+    /// quietly-scrubbed file, so a redaction gap surfaces here instead of in someone's inbox.
+    func makeSupportBundle() throws -> SupportBundle {
+        try SupportBundleBuilder().build(
+            at: Date(),
+            app: appInfo,
+            system: systemInfo,
+            settings: settingsStore,
+            preflight: preflight,
+            errorLog: errorLog
+        )
+    }
+
+    // MARK: Resets
+    //
+    // Three, and deliberately separate — `research/FEATURES.md`: *Reset preferences ≠ Forget
+    // all hosts and trust ≠ Reset window layout*, and **never offer to delete container or
+    // image data from a settings reset**. Someone whose window is stranded on a disconnected
+    // display should not have to lose their preferences to recover it.
+    //
+    // Nothing here can reach the container runtime. These clear our own `UserDefaults` keys
+    // and in-memory state; containers, images and volumes are owned by `container` and are not
+    // ours to delete from a settings screen.
+
+    /// Return every user-set preference to its built-in or managed default.
+    func resetPreferences() {
+        settingsStore.resetAll()
+        SettingsPersistence.clearUserValues()
+        reloadAppearance()
+    }
+
+    /// Forget saved window geometry. Takes effect on next launch — AppKit writes frames on
+    /// close, so a window open right now would immediately save its position again.
+    func resetWindowLayout() {
+        SettingsPersistence.clearWindowState()
+    }
+
+    /// Whether there is any paired host or trust material to forget.
+    ///
+    /// False throughout Phase 1: there are no hosts and no Keychain identity yet. The control
+    /// is shown anyway, disabled, rather than hidden — a reset that appears only once you have
+    /// something to lose is one nobody discovers in time.
+    var hasHostTrustToForget: Bool {
+        !settingsStore[SettingsKeys.peerAllowlist].isEmpty
+            || !settingsStore[SettingsKeys.trustAnchorFingerprints].isEmpty
+    }
 
     // MARK: Polling
     //
@@ -624,6 +739,7 @@ final class AppModel {
         } catch {
             let message = "\(Self.label(for: action)) failed for \(id): \(error)"
             actionError = message
+            record(message, subsystem: "container.lifecycle")
             // Errors are the one mandatory category — not disableable, per FEATURES.md.
             Task { [notifier] in
                 await notifier.post(.error, title: "\(Self.label(for: action)) failed", body: message)

@@ -104,6 +104,38 @@ enum SettingsPersistence {
         }
     }
 
+    /// Forget every **user-set preference**, returning each key to its built-in or managed
+    /// default.
+    ///
+    /// Scoped deliberately. `research/FEATURES.md` requires three *separate* resets and warns
+    /// that a settings reset must never move your window — so this touches the preferences
+    /// blob and nothing else. It also cannot touch containers, images or volumes, because it
+    /// only knows about this one `UserDefaults` key.
+    static func clearUserValues() {
+        defaults.removeObject(forKey: key)
+        defaults.removeObject(forKey: versionKey)
+    }
+
+    /// Forget saved **window geometry** — position, size, and the sidebar split.
+    ///
+    /// The counterpart to `clearUserValues`, and the reason they are separate: someone whose
+    /// window has ended up half off a disconnected display wants it back without losing every
+    /// preference they have set, and vice versa.
+    ///
+    /// AppKit stores frames under `NSWindow Frame <autosave name>` in the app's own domain.
+    /// The keys are enumerated rather than named individually because the set grows with each
+    /// window the app defines, and a hardcoded list would silently stop covering new ones.
+    static func clearWindowState() {
+        let app = UserDefaults.standard
+        for name in app.dictionaryRepresentation().keys where name.hasPrefix("NSWindow Frame ") {
+            app.removeObject(forKey: name)
+        }
+        // Some SwiftUI scene state lands in the suite rather than the standard domain.
+        for name in defaults.dictionaryRepresentation().keys where name.hasPrefix("NSWindow Frame ") {
+            defaults.removeObject(forKey: name)
+        }
+    }
+
     /// A store seeded from disk, plus the observation that keeps disk in step with it.
     ///
     /// The observation token must be retained by the caller — dropping it silently stops
