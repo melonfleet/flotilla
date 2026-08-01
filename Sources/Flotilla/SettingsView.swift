@@ -127,8 +127,94 @@ struct SettingsView: View {
     @State private var showingSupportBundle = false
     @State private var showingAbout = false
 
+    /// Which pane is showing. The mockup's own six, in its order.
+    @State private var tab: Tab = .general
+
+    private enum Tab: String, CaseIterable, Identifiable, Hashable {
+        case general, resources, network, updates, fleet, advanced
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .general: "General"
+            case .resources: "Resources"
+            case .network: "Network"
+            case .updates: "Updates"
+            case .fleet: "Fleet"
+            case .advanced: "Advanced"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .general: "gearshape"
+            case .resources: "cpu"
+            case .network: "wifi"
+            case .updates: "arrow.down.circle"
+            case .fleet: "server.rack"
+            case .advanced: "slider.horizontal.3"
+            }
+        }
+    }
+
+    /// Six panes rather than one scroll, per `research/review/mockups/settings.html`.
+    ///
+    /// The content was already all here; it was stacked into a single `Form` eleven sections
+    /// long, so finding anything meant scrolling past everything. Panes are how macOS's own
+    /// Settings works and how the mockup draws it, and the grouping is the mockup's — the
+    /// value is not the tab bar, it is that "where would I look for this" now has an answer.
     var body: some View {
+        TabView(selection: $tab) {
+            ForEach(Tab.allCases) { tab in
+                SwiftUI.Tab(tab.title, systemImage: tab.systemImage, value: tab) {
+                    pane(for: tab)
+                }
+            }
+        }
+        .navigationTitle("Settings")
+        .sheet(isPresented: $showingSupportBundle) {
+            SupportBundleView(model: model) { showingSupportBundle = false }
+        }
+        .sheet(isPresented: $showingAbout) {
+            AboutView(model: model) { showingAbout = false }
+        }
+        .confirmationDialog(
+            pendingReset?.title ?? "",
+            isPresented: Binding(get: { pendingReset != nil },
+                                 set: { if !$0 { pendingReset = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let reset = pendingReset {
+                Button(reset.confirmLabel, role: .destructive) {
+                    reset.perform(model)
+                    pendingReset = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingReset = nil }
+        } message: {
+            Text(pendingReset?.message ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private func pane(for tab: Tab) -> some View {
         Form {
+            switch tab {
+            case .general: generalPane
+            case .resources: resourcesPane
+            case .network: networkPane
+            case .updates: updatesPane
+            case .fleet: fleetPane
+            case .advanced: advancedPane
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: General
+
+    @ViewBuilder
+    private var generalPane: some View {
             SwiftUI.Section("Startup & Appearance") {
                 SettingRow(store: store, key: SettingsKeys.launchAtLogin, title: "Launch at login") { binding in
                     Toggle("", isOn: binding).labelsHidden()
@@ -188,6 +274,15 @@ struct SettingsView: View {
                 }
             }
 
+    }
+
+    // MARK: Advanced
+    //
+    // The settings you reach for when something is wrong, or when you know exactly what you
+    // are changing: the CLI itself, log volumes, diagnostics and the resets.
+
+    @ViewBuilder
+    private var advancedPane: some View {
             SwiftUI.Section("The container CLI") {
                 SettingRow(store: store, key: SettingsKeys.containerBinaryPath, title: "Binary path") { binding in
                     TextField("", text: binding).textFieldStyle(.roundedBorder).frame(minWidth: 220)
@@ -203,6 +298,15 @@ struct SettingsView: View {
                 }
             }
 
+            logsSection
+            diagnosticsSection
+            resetSection
+    }
+
+    // MARK: Resources
+
+    @ViewBuilder
+    private var resourcesPane: some View {
             SwiftUI.Section("Defaults for new containers") {
                 SettingRow(store: store, key: SettingsKeys.defaultContainerCPUs, title: "CPUs") { binding in
                     Stepper(value: binding, in: 1...32) { Text("\(binding.wrappedValue)") }
@@ -215,6 +319,10 @@ struct SettingsView: View {
                 }
             }
 
+    }
+
+    @ViewBuilder
+    private var logsSection: some View {
             SwiftUI.Section("Logs") {
                 SettingRow(store: store, key: SettingsKeys.logTailLines, title: "Lines requested when opening logs") { binding in
                     Stepper(value: binding, in: 0...5_000, step: 50) { Text("\(binding.wrappedValue)") }
@@ -227,6 +335,12 @@ struct SettingsView: View {
                 }
             }
 
+    }
+
+    // MARK: Network
+
+    @ViewBuilder
+    private var networkPane: some View {
             SwiftUI.Section("Host mode") {
                 SettingRow(store: store, key: SettingsKeys.mode, title: "Mode") { binding in
                     Picker("", selection: binding) {
@@ -249,6 +363,12 @@ struct SettingsView: View {
                 }
             }
 
+    }
+
+    // MARK: Updates
+
+    @ViewBuilder
+    private var updatesPane: some View {
             SwiftUI.Section("Updates") {
                 SettingRow(store: store, key: SettingsKeys.automaticUpdateChecks, title: "Automatically check for updates") { binding in
                     Toggle("", isOn: binding).labelsHidden()
@@ -271,6 +391,10 @@ struct SettingsView: View {
                 }
             }
 
+    }
+
+    @ViewBuilder
+    private var diagnosticsSection: some View {
             SwiftUI.Section("Diagnostics") {
                 SettingRow(store: store, key: SettingsKeys.diagnosticsEnabled, title: "Keep a local error log") { binding in
                     Toggle("", isOn: binding).labelsHidden()
@@ -300,31 +424,33 @@ struct SettingsView: View {
                 }
             }
 
-            resetSection
-        }
-        .formStyle(.grouped)
-        .navigationTitle("Settings")
-        .sheet(isPresented: $showingSupportBundle) {
-            SupportBundleView(model: model) { showingSupportBundle = false }
-        }
-        .sheet(isPresented: $showingAbout) {
-            AboutView(model: model) { showingAbout = false }
-        }
-        .confirmationDialog(
-            pendingReset?.title ?? "",
-            isPresented: Binding(get: { pendingReset != nil },
-                                 set: { if !$0 { pendingReset = nil } }),
-            titleVisibility: .visible
-        ) {
-            if let reset = pendingReset {
-                Button(reset.confirmLabel, role: .destructive) {
-                    reset.perform(model)
-                    pendingReset = nil
-                }
+    }
+
+    // MARK: Fleet
+
+    /// The mockup's Fleet pane lists paired peers with their certificate fingerprints. None of
+    /// that exists yet, so rather than draw an empty table — which reads as *your peers have
+    /// vanished* rather than *there are no peers* — this states the position and shows what is
+    /// actually true right now.
+    @ViewBuilder
+    private var fleetPane: some View {
+        SwiftUI.Section("Paired hosts") {
+            ContentUnavailableView {
+                Label("No paired hosts", systemImage: "server.rack")
+            } description: {
+                Text("Flotilla is managing containers on this Mac only. Pairing with remote "
+                     + "Apple silicon Macs over mutual TLS, with Bonjour discovery and manual "
+                     + "host entry, arrives in Phase 2.")
             }
-            Button("Cancel", role: .cancel) { pendingReset = nil }
-        } message: {
-            Text(pendingReset?.message ?? "")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+
+        SwiftUI.Section("Current posture") {
+            LabeledContent("Mode", value: "Client")
+            LabeledContent("Managing", value: model.hostLabel)
+            LabeledContent("Listening for peers", value: "No")
+            LabeledContent("Trusted certificates", value: "None")
         }
     }
 
