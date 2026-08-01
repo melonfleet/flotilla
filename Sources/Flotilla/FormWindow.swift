@@ -41,23 +41,3 @@ extension View {
         background(DetailWindowChrome().frame(width: 0, height: 0))
     }
 }
-
-/// Hides a window's **text title** while keeping its title bar — and therefore its traffic
-/// lights — intact.
-///
-/// The wordmark now sits in the toolbar's leading slot, where the title used to be. Without
-/// this the window would print "Flotilla" as well, immediately beside a lockup that already
-/// says it. `.windowStyle(.hiddenTitleBar)` would remove the whole bar including the close
-/// button, which is not the same thing at all.
-struct HiddenWindowTitle: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async { view.window?.titleVisibility = .hidden }
-        return view
-    }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        // Reapplied on update: a window recreated by SwiftUI comes back with its title shown.
-        DispatchQueue.main.async { view.window?.titleVisibility = .hidden }
-    }
-}

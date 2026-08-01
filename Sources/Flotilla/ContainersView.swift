@@ -493,9 +493,12 @@ struct ContainersView: View {
             .fixedSize()
         }
         .padding(12)
-        // Glass on the toolbar band itself, matching the sidebar. The table below stays
-        // opaque — it is the content layer.
-        .background(.ultraThinMaterial)
+        // No material here, deliberately. This band sits directly beneath the window's real
+        // toolbar, which on macOS 26 is Liquid Glass already; a second translucent strip under
+        // it produced two disagreeing translucencies and made the `glassEffect` cluster below
+        // glass-on-glass — the one thing Apple's guidance rules out. The band is the content
+        // layer's own chrome, so it takes the window background and lets the real glass above
+        // it be the glass.
     }
 
     /// Shown only while rows are multi-selected — the hook the `selection` state existed

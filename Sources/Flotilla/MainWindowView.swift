@@ -31,11 +31,15 @@ struct MainWindowView: View {
             // Run/Pull cluster. The table and inspector rows are the content layer and stay
             // opaque, so data stays legible over a busy desktop picture."
             //
-            // Hiding the scroll background is what lets the glass show through — a `List`
-            // paints its own opaque backing otherwise, which is why the sidebar read as flat
-            // white no matter what was placed behind it.
+            // Hiding the scroll background is the whole of it. On macOS 26 a
+            // `NavigationSplitView` sidebar is *already* Liquid Glass; a `List` simply paints
+            // an opaque backing over it, which is why the sidebar read as flat white.
+            //
+            // This used to also carry `.background(.ultraThinMaterial)`, which was the bug.
+            // `ultraThinMaterial` is the 2018 `NSVisualEffectView` vibrancy, not Liquid Glass —
+            // so that line replaced the system's real glass with a flat blur and then took
+            // credit for it in a comment. Removing it is what turns the glass on.
             .scrollContentBackground(.hidden)
-            .background(.ultraThinMaterial)
         } detail: {
             switch selection ?? .containers {
             case .containers:
@@ -61,15 +65,27 @@ struct MainWindowView: View {
         // sidebar was too narrow for the lockup and wrapped it to "melonfl / eet".
         //
         // `.navigation` places it top-leading, just after the sidebar toggle, which is where
-        // the title text sat. `HiddenWindowTitle` suppresses the text itself; without that the
-        // window would show the name twice.
+        // the title text sat.
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Wordmark(size: 14)
                     .fixedSize()          // never wrap — it is a lockup, not a paragraph
             }
+            // On macOS 26 every toolbar item is given its own Liquid Glass capsule. That is
+            // right for controls and wrong for a logo: it drew an off-white pill behind the
+            // wordmark that read as a mismatched, non-transparent patch against the title bar.
+            // Hiding the shared background lets the mark sit directly on the glass.
+            .sharedBackgroundVisibility(.hidden)
         }
-        .background(HiddenWindowTitle())
+        // Suppress the window's own title text. Without this the title bar reads
+        // "melonfleet | Flotilla   Flotilla" — the name twice.
+        //
+        // This replaces an `NSViewRepresentable` that reached for `view.window` and set
+        // `titleVisibility = .hidden`. It did not work, and the reason is worth keeping: a
+        // `NavigationSplitView` re-asserts the title as a toolbar item of its own, so setting
+        // the window property lost a race it could not win. `removing: .title` removes that
+        // item, which is the thing actually being drawn.
+        .toolbar(removing: .title)
         .allowsHitTesting(model.openFormCount == 0)
         .overlay {
             if model.openFormCount > 0 {
