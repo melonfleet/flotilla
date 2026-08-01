@@ -10,7 +10,7 @@ ownership, `research/FEATURES.md` for the consolidated phase-ordered scope, and
 `PLAN.md` for the six-phase roadmap. Settled decisions are not open design
 questions.
 
-## Project status (2026-07-31)
+## Project status (2026-08-01)
 
 - `FlotillaCore` is real and substantial. Foundation-only, and contains:
   - `container` JSON models pinned to **real captured output** — see the fixture
@@ -28,9 +28,12 @@ questions.
 - The macOS app has a `MenuBarExtra` glance and a main window with Containers
   (sortable, hideable columns, per-row actions, context menus, cards with
   sparklines), Images, Volumes, Networks, Settings, a run sheet with a validated
-  live command preview, and a container detail window with Overview / Processes /
-  Logs / Inspect / Configuration.
-- **183 tests pass on macOS.** `FlotillaCore` also builds and tests on Linux with
+  live command preview, and a container detail **modal** with Overview / Processes /
+  Logs / Inspect / Configuration. Detail was a real window until 2026-08-01; it is
+  now a sheet in the same `ModalCard` shell as every other pop-up, so it dims the
+  window behind it and closes with the red ×. The cost, accepted deliberately: it is
+  no longer resizable and you cannot keep several open at once.
+- **210 tests pass on macOS.** `FlotillaCore` also builds and tests on Linux with
   Swift 6.1 via `Package@swift-6.1.swift`. Keep the portable core Foundation-only
   so backend and data work stays independently verifiable.
 - **There is an app bundle now**, built by `Scripts/make-app.sh` — a real
@@ -39,13 +42,19 @@ questions.
   it, not on missing code: notifications (`UNUserNotificationCenter` *crashes*
   without a bundle), the menu-bar/Dock setting (`LSUIElement`), launch at login
   (`SMAppService`), and signing hygiene. Xcode still owns notarization and Sparkle.
+- **`LSUIElement` now ships `false`, and that is load-bearing** — see the launch
+  lesson below. `Scripts/make-app.sh --menubar` flips it for testing.
+- **Known limitation:** with *Show Flotilla in: Menu bar*, the Dock icon correctly
+  disappears but a window still opens at login. `.suppressed`, `dismissWindow` and
+  an AppKit `close()` were all tried and none held. Do not re-attempt without a new
+  idea; the fix is probably a real `NSWindow` delegate once the Xcode project lands.
 - Phase 2 networking is not implemented: no `Wire`, `RemoteHost`,
   Network.framework transport, mTLS listener, Bonjour, or persisted host policy
   store.
 
 ### Hard-won lessons — read before trusting anything here
 
-Five bugs found in one day, all invisible to a green test suite. The suite checked
+Nine bugs of the same family, all invisible to a green test suite. The suite checked
 that we *built* the right command; almost nothing checked the command was
 *accepted*.
 
@@ -70,6 +79,23 @@ that we *built* the right command; almost nothing checked the command was
   presentation, poll interval and notifications were all inert; and no setting
   persisted at all, because `SettingsStore` is in-memory by design and the app layer
   never wrote `userValuesSnapshot()` anywhere.
+- **Do not let SwiftUI infer whether the main window opens.** With an accessory
+  activation policy at launch, SwiftUI never instantiates the `Window` scene at all
+  — no window object, `onAppear` never fires, and a later switch to `.regular` does
+  not build one. `setActivationPolicy` returns `true` throughout, so nothing looks
+  wrong. The app came up as a menu-bar icon with nothing behind it for days.
+  `defaultLaunchBehavior(.presented)` states it instead of guessing.
+- **The same unchecked-result bug keeps recurring.** After `LocalHost.run`'s exit
+  code: `NSApp.setActivationPolicy` returns a `Bool` that was discarded, so a
+  refused policy change reported to nobody. And `UserDefaults(suiteName:)` was
+  handed our *own* bundle identifier — AppKit rejects that out loud on every launch
+  — returning nil, with `?? .standard` quietly doing the right thing. Correct by
+  luck. When an API returns a result, read it; when a fallback carries the real
+  behaviour, that is a bug waiting for someone to edit the line above it.
+- **Verify the mechanism, not just the symptom.** Three attempts to suppress the
+  menu-bar-only launch window each "worked" in a test that was confounded — the
+  window was not appearing for an unrelated reason at the time. Always establish a
+  known-good control before believing a fix.
 - **Run the app.** The flicker, the dead Refresh, the useless columns and the
   fabricated fixtures were all found by using it, not by testing it.
 
@@ -82,6 +108,13 @@ image — the brand SVGs contain
 `@import url('https://fonts.googleapis.com/…')`, and an app that promises no
 phone-home must not fetch a font. The menu-bar glyph is a monochrome **template**
 image, so macOS inverts it for light and dark from one asset.
+
+`Wordmark.swift` must match `design/brand/logos/melonfleet-flotilla{,-dark}.svg`
+**element for element**, and the first version did not: it was built from a `grep`
+of the SVG's colours instead of its structure, so "melonfleet" came out near-black
+rather than green, the rule came out pink, and the `o` was an ordinary letter. The
+`o` **is a watermelon** — rind, pith, flesh and three seeds — and that melon is the
+whole identity. Read the geometry, not the palette.
 
 Do not put personal identity, personal email addresses, credentials, local user
 paths, private keys, certificates, or tokens into tracked files.
