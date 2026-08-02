@@ -43,6 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyPresentation()
     }
 
+    /// Shells are live `container exec` processes. Quitting Flotilla must not leave them
+    /// attached to containers with nothing on screen owning them — which would also make
+    /// "Quit — containers keep running" quietly untrue about the shells.
+    func applicationWillTerminate(_ notification: Notification) {
+        model?.terminals.closeEverything()
+    }
+
     /// Honours **Show Flotilla in: Menu bar / Dock / Both**, which had been a picker driving
     /// nothing: this shim previously hardcoded `.regular` regardless of the setting.
     ///

@@ -719,6 +719,13 @@ final class AppModel {
         try await Task.detached { [cli] in try cli.logs(id, lines: lines) }.value
     }
 
+    /// Live terminal sessions, owned here so they outlive any view.
+    ///
+    /// `@ObservationIgnored` on the reference — the store is itself `@Observable`, so views
+    /// still react to shells opening and closing; what must not be tracked is this constant
+    /// property, which never changes.
+    @ObservationIgnored let terminals = TerminalSessionStore()
+
     // MARK: Requests from the menu bar
     //
     // The popover can *ask* for a screen; it cannot reach into the window's `@State` to set
