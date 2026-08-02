@@ -25,20 +25,28 @@ struct ContainerDetailView: View {
         case inspect = "Inspect"
         case configuration = "Configuration"
         var id: Self { self }
+
+        /// The mockup names an icon per tab (`i-info`, `i-doc`, `i-terminal`, `i-braces`).
+        /// Processes and Configuration have no counterpart there — that mockup shows Stats and
+        /// Files, which the CLI cannot back — so those two are chosen to stay distinguishable
+        /// from their neighbours rather than invented to look busy.
+        var systemImage: String {
+            switch self {
+            case .overview: "info.circle"
+            case .processes: "list.bullet.rectangle"
+            case .logs: "doc.text"
+            case .terminal: "terminal"
+            case .inspect: "curlybraces"
+            case .configuration: "doc.plaintext"
+            }
+        }
     }
 
     @State private var tab: Tab = .overview
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Tab", selection: $tab) {
-                ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            // The label was rendering as a literal "Tab" beside the control. A segmented
-            // picker of tab names does not need to be told it is tabs.
-            .labelsHidden()
-            .padding(12)
+            tabBar
 
             // Each tab fills the remaining height. Without this the `VStack` sizes itself to
             // whichever tab is showing and centres the lot inside the fixed sheet frame, so a
@@ -60,6 +68,51 @@ struct ContainerDetailView: View {
         // state, image, host and uptime above this, so a second header here would repeat them;
         // and now that detail is embedded rather than sheeted, it should take whatever height
         // the window has rather than pin itself to a fixed one.
+    }
+
+    /// The mockup's `.tabs` strip, transcribed from `assets/mac.css` rather than eyeballed.
+    ///
+    /// It replaces a centred segmented `Picker`, which was wrong twice over: no icons, and
+    /// centred when the mockup is **left-aligned**. Note this is a different shape from the
+    /// Settings strip on purpose — Settings uses chips with the icon stacked above the label,
+    /// these are underlined tabs with the icon beside it. Two different jobs, two different
+    /// controls, both from the same stylesheet.
+    ///
+    /// The selected tab is marked by a 2pt accent underline inset 8pt at each end, plus a
+    /// heavier weight and full-strength text — three signals, so it does not rely on colour
+    /// alone.
+    private var tabBar: some View {
+        HStack(spacing: 2) {
+            ForEach(Tab.allCases) { candidate in
+                let selected = candidate == tab
+                Button { tab = candidate } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: candidate.systemImage).font(.system(size: 12))
+                        Text(candidate.rawValue)
+                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    }
+                    .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                    .frame(height: 34)
+                    .padding(.horizontal, 11)
+                    .overlay(alignment: .bottom) {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(Theme.accent)
+                                .frame(height: 2)
+                                .padding(.horizontal, 8)
+                        }
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Detail sections")
     }
 
     private var overview: some View {
