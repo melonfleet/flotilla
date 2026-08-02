@@ -115,34 +115,190 @@ struct ContainerDetailView: View {
         .accessibilityLabel("Detail sections")
     }
 
+    /// The mockup's overview: a grid of cards rather than one long `Form` of label/value rows.
+    ///
+    /// The point is that everything is visible at once instead of scrolled through — state,
+    /// what it is using, how to reach it, and what it was built from, side by side.
+    ///
+    /// **What is deliberately absent matters as much as what is here.** The mockup also shows
+    /// Network I/O, Block I/O, MAC, MTU, IPv6, working directory, mounts, labels and a Recent
+    /// Events timeline. `StatsSampler` measures CPU and memory only, and the container model
+    /// carries none of the rest, so every one of those would be a plausible-looking number
+    /// with nothing behind it. Fabricated fixtures already cost this project a day; fabricated
+    /// *readouts* would be worse, because nothing would ever fail to reveal them. They arrive
+    /// when the data does.
     private var overview: some View {
-        Form {
-            // `Navigation.swift` declares a top-level `Section` that shadows SwiftUI's —
-            // must be spelled out here.
-            SwiftUI.Section("Overview") {
-                LabeledContent("State", value: container.status.state.capitalized)
-                LabeledContent("Image", value: container.configuration.image.reference)
-                LabeledContent("ID", value: container.id)
-                LabeledContent("IP", value: container.ipv4 ?? "—")
-                LabeledContent("Network", value: container.status.networks?.first?.network ?? "—")
-                LabeledContent("Created", value: Self.createdLabel(container.configuration.creationDate))
-                // One row per mapping rather than the table's comma-joined summary — the
-                // detail pane has the space, and a container publishing several ports is
-                // exactly where a single truncated line is least useful.
-                if container.publishedPorts.isEmpty {
-                    LabeledContent("Ports", value: "None published")
-                } else {
-                    LabeledContent("Ports") {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            ForEach(container.publishedPorts, id: \.self) { port in
-                                Text(port.displayText).monospacedDigit()
-                            }
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 12)],
+                      alignment: .leading, spacing: 12) {
+                stateCard
+                resourceCard
+                networkCard
+                imageCard
+            }
+            .padding(12)
+        }
+    }
+
+    private var stateCard: some View {
+        card("State") {
+            HStack(spacing: 6) {
+                Circle().fill(container.stateColor).frame(width: 7, height: 7)
+                Text(container.status.state.capitalized).font(.system(size: 13, weight: .medium))
+            }
+            detailRow("Started", RelativeDate.relative(container.status.startedDate, prefix: ""))
+            detailRow("Created", RelativeDate.relative(container.configuration.creationDate, prefix: ""))
+
+            // The mockup carries this note and it is true of Apple's runtime, not a limitation
+            // of ours: there is no `--restart` and no health check in `container run`, checked
+            // against the captured CLI help. Flotilla implements restart policy itself in a
+            // later phase, and until it does, saying nothing here would imply the container is
+            // being watched when it is not.
+            Text("Apple `container` has no native restart policy or health check.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+        }
+    }
+
+    private var resourceCard: some View {
+        card("Resource use") {
+            meter("CPU",
+                  value: model.cpuLabel(for: container.id),
+                  // Against one core, which is what a per-container percentage means here.
+                  fraction: (model.cpuPercent(for: container.id) ?? 0) / 100)
+            meter("Memory",
+                  value: model.memoryLabel(for: container.id),
+                  fraction: memoryFraction)
+
+            if let allocated = container.configuration.resources {
+                detailRow("Allocated", Self.allocationLabel(allocated))
+            }
+
+            // Real sampled history, or nothing. An empty sparkline drawn flat at zero would
+            // read as an idle container rather than an unmeasured one.
+            let history = model.cpuHistory(for: container.id)
+            if history.contains(where: { $0 != nil }) {
+                Sparkline(values: history, maximum: nil).frame(height: 30).padding(.top, 2)
+            }
+        }
+    }
+
+    private var networkCard: some View {
+        card("Ports & network") {
+            if container.publishedPorts.isEmpty {
+                detailRow("Ports", "None published")
+            } else {
+                ForEach(container.publishedPorts, id: \.self) { port in
+                    HStack {
+                        Text(port.displayText).font(.system(size: 12).monospacedDigit())
+                        Spacer()
+                        // Only offered for TCP: a UDP port has nothing a browser can open, and
+                        // a link that goes nowhere is worse than no link.
+                        if port.proto?.lowercased() != "udp" {
+                            Link("Open", destination: URL(string: "http://localhost:\(port.hostPort)")!)
+                                .font(.caption)
+                                // `Link`, like `buttonStyle(.link)`, hardcodes the system blue
+                                // and ignores the scene tint.
+                                .foregroundStyle(Theme.accentText)
                         }
                     }
                 }
             }
+            Divider().padding(.vertical, 2)
+            detailRow("Network", container.status.networks?.first?.network ?? "—")
+            detailRow("Hostname", container.status.networks?.first?.hostname ?? "—")
+            detailRow("IPv4", container.ipv4 ?? "—", monospaced: true)
         }
-        .formStyle(.grouped)
+    }
+
+    private var imageCard: some View {
+        card("Image") {
+            detailRow("Reference", container.configuration.image.reference)
+            if let digest = container.configuration.image.descriptor?.digest {
+                detailRow("Digest", digest, monospaced: true, truncateMiddle: true)
+            }
+            if let platform = container.configuration.platform {
+                detailRow("Platform", [platform.os, platform.architecture, platform.variant]
+                    .compactMap { $0 }.joined(separator: "/"))
+            }
+            if let size = container.configuration.image.descriptor?.size {
+                detailRow("Size", ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+            }
+        }
+    }
+
+    // MARK: Card building blocks
+
+    /// The mockup's `.card.pad` with a `.section-title` heading.
+    private func card<Content: View>(_ title: String,
+                                     @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .semibold))
+                .kerning(0.5)
+                .foregroundStyle(.tertiary)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
+    }
+
+    private func detailRow(_ label: String, _ value: String,
+                           monospaced: Bool = false, truncateMiddle: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.system(size: 12, design: monospaced ? .monospaced : .default))
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+                .truncationMode(truncateMiddle ? .middle : .tail)
+                .help(value)
+        }
+    }
+
+    /// A labelled bar. Not a `ProgressView`: this is a level, and the stock indicator styles it
+    /// as an operation in progress.
+    private func meter(_ label: String, value: String, fraction: Double) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
+                Spacer()
+                Text(value).font(.system(size: 12).monospacedDigit())
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule()
+                        .fill(fraction > 0.85 ? Theme.warning : Theme.online)
+                        .frame(width: max(0, min(1, fraction)) * geo.size.width)
+                }
+            }
+            .frame(height: 5)
+        }
+    }
+
+    /// Used over allocated, when both are known. Without an allocation there is no denominator
+    /// and the bar stays empty rather than inventing one.
+    private var memoryFraction: Double {
+        guard let used = model.memoryBytes(for: container.id),
+              let limit = container.configuration.resources?.memoryInBytes, limit > 0
+        else { return 0 }
+        return Double(used) / Double(limit)
+    }
+
+    private static func allocationLabel(_ resources: Container.Configuration.Resources) -> String {
+        var parts: [String] = []
+        if let cpus = resources.cpus { parts.append("\(cpus) CPU\(cpus == 1 ? "" : "s")") }
+        if let memory = resources.memoryInBytes {
+            parts.append(ByteCountFormatter.string(fromByteCount: memory, countStyle: .memory))
+        }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
     }
 
     /// `creationDate` is an ISO-8601 string from `container`, not a `Date` — parse it here
