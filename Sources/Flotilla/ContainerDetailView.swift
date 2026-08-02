@@ -16,33 +16,18 @@ struct ContainerDetailView: View {
     let model: AppModel
     let container: Container
 
-    private enum Tab: String, CaseIterable, Identifiable {
-        case overview = "Overview"
-        case processes = "Processes"
-        case logs = "Logs"
-        // Between Logs and Inspect, matching the mockup's tab order.
-        case terminal = "Terminal"
-        case inspect = "Inspect"
-        case configuration = "Configuration"
-        var id: Self { self }
+    typealias Tab = DetailTab
 
-        /// The mockup names an icon per tab (`i-info`, `i-doc`, `i-terminal`, `i-braces`).
-        /// Processes and Configuration have no counterpart there — that mockup shows Stats and
-        /// Files, which the CLI cannot back — so those two are chosen to stay distinguishable
-        /// from their neighbours rather than invented to look busy.
-        var systemImage: String {
-            switch self {
-            case .overview: "info.circle"
-            case .processes: "list.bullet.rectangle"
-            case .logs: "doc.text"
-            case .terminal: "terminal"
-            case .inspect: "curlybraces"
-            case .configuration: "doc.plaintext"
-            }
-        }
+    @State private var tab: Tab
+
+    /// Seeded from the model so reopening a container returns you to the tab you left it on,
+    /// and defaults to Overview the first time you open it this run. See `AppModel.lastDetailTab`.
+    init(model: AppModel, container: Container) {
+        self.model = model
+        self.container = container
+        _tab = State(initialValue: model.lastDetailTab[container.id] ?? .overview)
     }
 
-    @State private var tab: Tab = .overview
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,6 +49,9 @@ struct ContainerDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        // Remembered for this run only — see `AppModel.lastDetailTab` for why it is not
+        // persisted to disk.
+        .onChange(of: tab) { _, newTab in model.lastDetailTab[container.id] = newTab }
         // No frame and no header of its own. `ContainersView.detailHeader` supplies the name,
         // state, image, host and uptime above this, so a second header here would repeat them;
         // and now that detail is embedded rather than sheeted, it should take whatever height
@@ -129,12 +117,23 @@ struct ContainerDetailView: View {
     /// when the data does.
     private var overview: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 12)],
-                      alignment: .leading, spacing: 12) {
-                stateCard
-                resourceCard
-                networkCard
-                imageCard
+            VStack(spacing: 12) {
+                // Two fixed columns rather than `.adaptive`, so the four cards are the same
+                // width as each other instead of re-flowing to three-up or one-up as the
+                // window resizes. `minHeight` then squares them off vertically: without it a
+                // card with two rows sat half the height of its neighbour and the grid looked
+                // ragged. The cards still grow if their content needs it.
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                    GridItem(.flexible(), spacing: 12)],
+                          alignment: .leading, spacing: 12) {
+                    stateCard
+                    resourceCard
+                    networkCard
+                    imageCard
+                }
+                // Full width beneath the grid, as in the mockup — a timeline reads badly in a
+                // narrow column.
+                eventsCard
             }
             .padding(12)
         }
@@ -255,6 +254,44 @@ struct ContainerDetailView: View {
         }
     }
 
+    /// The mockup's Recent Events, backed by what Flotilla actually watched happen.
+    ///
+    /// The mockup sources this "from local history (SwiftData)". There is no store, so rather
+    /// than fake a history this shows the transitions the poll loop observed **this run**, and
+    /// says exactly that. A timeline that starts at app launch but presents itself as complete
+    /// would be a lie of omission — the sort this project has already paid for once.
+    private var eventsCard: some View {
+        card("Recent events") {
+            let events = model.events(for: container.id)
+            if events.isEmpty {
+                Text("Nothing has changed since Flotilla started. State changes appear here as "
+                     + "they happen; history from before launch is not recorded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(events.prefix(8)) { event in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(event.isFailure ? Theme.danger : Theme.online)
+                            .frame(width: 6, height: 6)
+                        Text(event.summary).font(.system(size: 12, weight: .medium))
+                        Text(event.detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(event.date.formatted(date: .omitted, time: .shortened))
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                if events.count > 8 {
+                    Text("+ \(events.count - 8) earlier this session")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
     // MARK: Card building blocks
 
     /// The mockup's `.card.pad` with a `.section-title` heading.
@@ -270,6 +307,9 @@ struct ContainerDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        // Squares the grid off. The events card opts out — it is full width and its height
+        // follows how much actually happened.
+        .frame(minHeight: title == "Recent events" ? 0 : 148, alignment: .topLeading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
     }
@@ -1242,5 +1282,35 @@ private struct ConfigurationTab: View {
         guard let yaml else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(yaml, forType: .string)
+    }
+}
+
+/// Which pane of the container detail is showing.
+///
+/// Top-level rather than nested in the view because `AppModel` remembers the last one per
+/// container, and a model reaching into a view's private nested type would be backwards.
+enum DetailTab: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case processes = "Processes"
+    case logs = "Logs"
+    // Between Logs and Inspect, matching the mockup's tab order.
+    case terminal = "Terminal"
+    case inspect = "Inspect"
+    case configuration = "Configuration"
+    var id: Self { self }
+
+    /// The mockup names an icon per tab (`i-info`, `i-doc`, `i-terminal`, `i-braces`).
+    /// Processes and Configuration have no counterpart there — that mockup shows Stats and
+    /// Files, which the CLI cannot back — so those two are chosen to stay distinguishable
+    /// from their neighbours rather than invented to look busy.
+    var systemImage: String {
+        switch self {
+        case .overview: "info.circle"
+        case .processes: "list.bullet.rectangle"
+        case .logs: "doc.text"
+        case .terminal: "terminal"
+        case .inspect: "curlybraces"
+        case .configuration: "doc.plaintext"
+        }
     }
 }

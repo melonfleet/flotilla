@@ -513,6 +513,7 @@ final class AppModel {
             // the UI on a slow or unreachable runtime.
             let fetched = try await Task.detached { [cli] in try cli.listContainers() }.value
             notifyUnexpectedExits(previous: containers, current: fetched)
+            recordTransitions(previous: containers, current: fetched)
 
             // Only assign when something actually changed. `@Observable` notifies on every
             // write regardless of equality, so an unconditional assignment invalidates every
@@ -718,6 +719,57 @@ final class AppModel {
     func fetchLogs(for id: String, lines: Int = 200) async throws -> LogChunk {
         try await Task.detached { [cli] in try cli.logs(id, lines: lines) }.value
     }
+
+    /// What we have actually **watched happen** to each container, newest first.
+    ///
+    /// The mockup's Recent Events card is fed "from local history (SwiftData)". There is no
+    /// store, so this is the honest version of the same idea: the poll loop already compares
+    /// the previous list against the new one to spot unexpected exits, and every state change
+    /// it sees is recorded here as it happens. Nothing is inferred or backfilled — the card
+    /// says so, because a timeline that begins when the app launched but looks like a complete
+    /// history is a lie of omission.
+    ///
+    /// In memory and bounded. Persisting it needs a real store, which is a Phase 4 decision
+    /// rather than something to bolt on here.
+    @ObservationIgnored private var events: [String: [ContainerEvent]] = [:]
+
+    func events(for containerID: String) -> [ContainerEvent] { events[containerID] ?? [] }
+
+    /// Records the transition and returns nothing — called from the poll loop, which is the
+    /// only place that can see a *change* rather than a state.
+    private func recordTransitions(previous: [Container], current: [Container]) {
+        let before = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0.status.state) })
+        for container in current {
+            let now = container.status.state
+            guard let was = before[container.id] else {
+                // First sighting is not a transition. Recording "appeared" for every container
+                // present at launch would fill the card with noise about nothing happening.
+                continue
+            }
+            guard was.caseInsensitiveCompare(now) != .orderedSame else { continue }
+            append(ContainerEvent(date: Date(), from: was, to: now), to: container.id)
+        }
+    }
+
+    private func append(_ event: ContainerEvent, to containerID: String) {
+        var log = events[containerID] ?? []
+        log.insert(event, at: 0)
+        // Bounded: this is a glance at what just happened, not an audit trail.
+        if log.count > 50 { log.removeLast(log.count - 50) }
+        events[containerID] = log
+    }
+
+    /// Which detail tab each container was last showing, **for this run only**.
+    ///
+    /// the owner's rule, and it is a good one: reopening a container should return you to the tab
+    /// you were on, but a restart should forget. So this is in memory and deliberately not in
+    /// `SettingsStore` — a preference that survives a relaunch would make Flotilla open on
+    /// Logs weeks later because of something you did once.
+    ///
+    /// `@ObservationIgnored` because the view seeds its own `@State` from this at init and
+    /// writes back on change; making it observable would rebuild the detail view every time
+    /// you switched tab, to tell it something it already knows.
+    @ObservationIgnored var lastDetailTab: [String: DetailTab] = [:]
 
     /// Live terminal sessions, owned here so they outlive any view.
     ///
