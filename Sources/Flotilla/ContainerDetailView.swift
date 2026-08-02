@@ -4,11 +4,14 @@ import AppKit
 import UniformTypeIdentifiers
 import FlotillaCore
 
-/// Detail sheet for one container: Overview, Logs, and Inspect.
+/// Detail sheet for one container: Overview, Processes, Logs, Terminal, Inspect, Configuration.
 ///
-/// Live streaming and `exec` are Phase 4 (`PHASE1-UI.md`). Logs is a repeated bounded fetch
-/// (`cli.logs(id, lines:, bootLog:)`), not a subscription — even "Follow" below is just that
-/// fetch on a timer.
+/// Logs is still a repeated bounded fetch (`cli.logs(id, lines:, bootLog:)`), not a
+/// subscription — even "Follow" is that fetch on a timer. Live *streaming* remains Phase 4.
+///
+/// **Terminal is Phase 4 scope pulled forward deliberately**, at the owner's request and after
+/// checking it was possible at all: `container exec` supports `-i/-t` and yields a real PTY.
+/// It is gated on `ExecPolicy.interactiveShell`, which the default allowlist does not grant.
 struct ContainerDetailView: View {
     let model: AppModel
     let container: Container
@@ -17,6 +20,8 @@ struct ContainerDetailView: View {
         case overview = "Overview"
         case processes = "Processes"
         case logs = "Logs"
+        // Between Logs and Inspect, matching the mockup's tab order.
+        case terminal = "Terminal"
         case inspect = "Inspect"
         case configuration = "Configuration"
         var id: Self { self }
@@ -46,6 +51,7 @@ struct ContainerDetailView: View {
                 case .overview: overview
                 case .processes: ProcessesTab(model: model, container: container)
                 case .logs: LogsTab(model: model, containerID: container.id)
+                case .terminal: TerminalTab(model: model, container: container)
                 case .inspect: InspectTab(model: model, container: container)
                 case .configuration: ConfigurationTab(model: model, container: container)
                 }

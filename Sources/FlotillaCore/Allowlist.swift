@@ -172,6 +172,28 @@ public enum TrailingPolicy: Sendable, Equatable {
     case exact([String])
 }
 
+/// Whether this caller may run **arbitrary** commands inside a container.
+///
+/// The `.exact` note above says not to relax `exec` to `.command`, and that still stands —
+/// this does not relax it. It selects between two separate specs, so the strict one remains
+/// the default and the permissive one has to be asked for by name.
+///
+/// The distinction is *who is asking*, which grammar alone cannot express. On the machine's
+/// own owner a shell inside a container grants nothing they could not get by typing
+/// `container exec -it … sh` themselves. Reached over the Phase 2 wire it is remote code
+/// execution on someone else's Mac. Same tokens, completely different risk — so a host
+/// serving a remote peer must leave this at `.processListOnly`, exactly as it must pass its
+/// own `MountPolicy` rather than one the client supplied.
+public enum ExecPolicy: Sendable, Equatable {
+    /// `exec` is limited to the one fixed process-list query. **The default**, and the only
+    /// safe setting for a host acting on behalf of anyone but itself.
+    case processListOnly
+    /// `exec` may also start an interactive process — a shell — in a running container.
+    /// Only ever for a `ContainerCLI` driving its own machine on behalf of the person at the
+    /// keyboard. This is what backs the detail view's Terminal tab.
+    case interactiveShell
+}
+
 /// One allowlisted subcommand.
 public struct CommandSpec: Sendable, Equatable {
     /// `["ls"]`, `["image", "pull"]`, …
@@ -461,6 +483,28 @@ public enum Allowlist {
     /// The spec for a subcommand path, e.g. `spec(for: ["image", "pull"])`.
     public static func spec(for path: [String]) -> CommandSpec? { index[path.joined(separator: " ")] }
 
+    /// Swaps in the permissive `exec` grammar when — and only when — the caller asked for it.
+    ///
+    /// A substitution rather than a mutable table: the strict spec stays the one in
+    /// `commands`, so anything that inspects the allowlist (the audit, the Phase 2 wire
+    /// documentation) still reports the default posture, and a caller has to hold an
+    /// `ExecPolicy.interactiveShell` to get anything else.
+    private static func substituting(_ policy: ExecPolicy, into spec: CommandSpec) -> CommandSpec {
+        guard policy == .interactiveShell, spec.path == ["exec"] else { return spec }
+        return interactiveExec
+    }
+
+    /// `container exec [-i] [-t] <id> <command…>`.
+    ///
+    /// `mutates: true` — a shell can do anything the container's user can, so nothing about
+    /// this is a read. The token cap is deliberately small: this exists to launch a shell,
+    /// not to smuggle a script in as argv.
+    private static let interactiveExec = CommandSpec(
+        ["exec"], mutates: true, timeoutHint: 0,
+        flags: [FlagSpec(long: "interactive", short: "i"), FlagSpec(long: "tty", short: "t")],
+        operands: OperandSpec(shape: .identifier, min: 1, max: 1),
+        trailing: .command(maxTokens: 8))
+
     // MARK: Entry points
 
     /// Validate an argv. **Default deny**: anything not described by the table above
@@ -473,8 +517,10 @@ public enum Allowlist {
     /// client supplied. See `MountPolicy`.
     public static func validate(_ args: [String],
                                 limits: Limits = .default,
-                                mountPolicy: MountPolicy = .denyHostPaths) -> Result<ValidatedCommand, AllowlistError> {
-        do { return .success(try validated(args, limits: limits, mountPolicy: mountPolicy)) }
+                                mountPolicy: MountPolicy = .denyHostPaths,
+                                execPolicy: ExecPolicy = .processListOnly) -> Result<ValidatedCommand, AllowlistError> {
+        do { return .success(try validated(args, limits: limits, mountPolicy: mountPolicy,
+                                           execPolicy: execPolicy)) }
         catch let error as AllowlistError { return .failure(error) }
         catch { return .failure(.emptyCommand) } // unreachable: nothing else is thrown
     }
@@ -482,11 +528,12 @@ public enum Allowlist {
     /// Throwing form, for call sites that already propagate errors (`ContainerCLI`).
     public static func validated(_ args: [String],
                                  limits: Limits = .default,
-                                 mountPolicy: MountPolicy = .denyHostPaths) throws -> ValidatedCommand {
+                                 mountPolicy: MountPolicy = .denyHostPaths,
+                                 execPolicy: ExecPolicy = .processListOnly) throws -> ValidatedCommand {
         guard !args.isEmpty else { throw AllowlistError.emptyCommand }
         try screen(args, limits: limits)
 
-        let spec = try resolve(args)
+        let spec = try substituting(execPolicy, into: try resolve(args))
         let rest = Array(args.dropFirst(spec.path.count))
 
         // Parsed pieces, kept in encounter order so the canonical argv is stable.
@@ -608,7 +655,12 @@ public enum Allowlist {
         // parsing stays unambiguous, but it is dropped from the argv we actually execute.
         var argv = spec.path + flagTokens + operands
         if !trailing.isEmpty {
-            if case .command = spec.trailing { argv.append("--") }
+            // Keyed on the SUBCOMMAND, not just the trailing policy. `exec` never takes a
+            // separator regardless of how its trailing is specified — which matters now that
+            // `interactiveExec` uses `.command`, the very case that appends one. Getting this
+            // wrong produces "failed to find target executable --" at runtime and passes
+            // every unit test, which is how it was missed the first time.
+            if case .command = spec.trailing, spec.path != ["exec"] { argv.append("--") }
             argv.append(contentsOf: trailing)
         }
 

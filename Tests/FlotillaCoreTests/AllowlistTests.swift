@@ -550,3 +550,65 @@ private func requireRejected(
     #expect(throws: (any Error).self) { try Allowlist.validated(["run", "-m", "2X", "alpine"]) }
     #expect(throws: (any Error).self) { try Allowlist.validated(["run", "-m", "0", "alpine"]) }
 }
+
+// MARK: - ExecPolicy
+//
+// The Terminal tab needs `exec <id> sh`, which the default allowlist refuses on purpose. These
+// pin both halves: that the refusal is still the default, and that opting in does not quietly
+// widen anything else. The asymmetry IS the feature — a host serving a remote peer keeps the
+// strict grammar while the machine's own owner gets a shell.
+
+@Test("By default a shell inside a container is refused")
+func defaultExecPolicyRefusesAShell() {
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web", "--", "sh"])
+    }
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["exec", "web", "--", "sh"], execPolicy: .processListOnly)
+    }
+}
+
+@Test("The default still permits exactly the process-list query")
+func defaultExecPolicyStillAllowsTheProcessList() throws {
+    let validated = try Allowlist.validated(["exec", "web", "--", "ps", "-o", "pid,comm,args"])
+    #expect(validated.arguments == ["exec", "web", "ps", "-o", "pid,comm,args"])
+}
+
+@Test("interactiveShell permits a shell, and emits NO -- separator")
+func interactiveShellPermitsAShellWithoutASeparator() throws {
+    let validated = try Allowlist.validated(["exec", "-i", "-t", "web", "--", "sh"],
+                                            execPolicy: .interactiveShell)
+    // The separator is required on input so parsing stays unambiguous, and must be absent
+    // from the argv we execute: `container exec web -- sh` fails with "failed to find target
+    // executable --". Verified against the live CLI, and invisible to a test that only
+    // checks the command was built.
+    #expect(!validated.arguments.contains("--"))
+    #expect(validated.arguments == ["exec", "--interactive", "--tty", "web", "sh"])
+}
+
+@Test("interactiveShell widens exec and nothing else")
+func interactiveShellDoesNotWidenOtherCommands() {
+    // `run` still refuses a host bind mount under the default mount policy: two independent
+    // boundaries, and opting into one must not relax the other.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["run", "--volume", "/Users:/host", "alpine"],
+                                execPolicy: .interactiveShell)
+    }
+    // An unknown subcommand is still unknown.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["shell", "web"], execPolicy: .interactiveShell)
+    }
+}
+
+@Test("interactiveShell still caps the command length")
+func interactiveShellCapsTrailingTokens() {
+    let tooMany = ["exec", "web", "--"] + Array(repeating: "x", count: 40)
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(tooMany, execPolicy: .interactiveShell)
+    }
+}
+
+@Test("A ContainerCLI defaults to refusing shells")
+func containerCLIDefaultsToStrictExec() {
+    #expect(ContainerCLI(host: LocalHost()).execPolicy == .processListOnly)
+}

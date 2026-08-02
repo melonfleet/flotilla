@@ -29,11 +29,11 @@ questions.
   (sortable, hideable columns, per-row actions, context menus, cards with
   sparklines), Images, Volumes, Networks, Settings, a run sheet with a validated
   live command preview, and a container detail **modal** with Overview / Processes /
-  Logs / Inspect / Configuration. Detail was a real window until 2026-08-01; it is
+  Logs / Terminal / Inspect / Configuration. Detail was a real window until 2026-08-01; it is
   now a sheet in the same `ModalCard` shell as every other pop-up, so it dims the
   window behind it and closes with the red ×. The cost, accepted deliberately: it is
   no longer resizable and you cannot keep several open at once.
-- **210 tests pass on macOS.** `FlotillaCore` also builds and tests on Linux with
+- **216 tests pass on macOS.** `FlotillaCore` also builds and tests on Linux with
   Swift 6.1 via `Package@swift-6.1.swift`. Keep the portable core Foundation-only
   so backend and data work stays independently verifiable.
 - **There is an app bundle now**, built by `Scripts/make-app.sh` — a real
@@ -51,6 +51,28 @@ questions.
 - Phase 2 networking is not implemented: no `Wire`, `RemoteHost`,
   Network.framework transport, mTLS listener, Bonjour, or persisted host policy
   store.
+
+### The Terminal tab, and the one dependency
+
+`container exec` supports `-i/--interactive` and `-t/--tty` and yields a **real PTY** —
+verified against the live CLI, not the docs. Without a PTY on the calling side it fails
+with "Operation not supported by device", so the terminal needs one; **SwiftTerm** (MIT)
+supplies both that and the VT100 emulation. It is the only third-party dependency, is
+attached to the **`Flotilla` target only**, and `Package@swift-6.1.swift` is untouched so
+`FlotillaCore` still builds and tests on Linux.
+
+This is **Phase 4 scope pulled forward** at the owner's request, not a quiet scope change.
+
+The security shape matters more than the feature. `Allowlist` still refuses
+`exec <id> sh` by default and must keep doing so — the permissive grammar is selected by
+`ExecPolicy.interactiveShell`, which only a `ContainerCLI` built for the machine's own owner
+carries. The same tokens over the Phase 2 wire are remote code execution on someone else's
+Mac. `AppModel` sets the policy in one place; `TerminalTab` reads `model.cli.execPolicy`
+rather than hardcoding it, so a CLI pointed at a remote peer makes the terminal refuse.
+
+Note the separator trap: `exec` must never receive `--`, and `interactiveExec` uses
+`.command` trailing — the very case that used to append one. That is now keyed on the
+subcommand, with a test.
 
 ### Hard-won lessons — read before trusting anything here
 

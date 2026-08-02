@@ -39,9 +39,17 @@ public struct ContainerCLI: Sendable {
     /// because a `ContainerCLI` driving `LocalHost` is trusted with its own disk.
     public let mountPolicy: MountPolicy
 
-    public init(host: ContainerHost, mountPolicy: MountPolicy = .unrestricted) {
+    /// Whether this instance may start a shell inside a container. Defaults to the strict
+    /// setting, so a `ContainerCLI` built without thinking about it cannot hand out shells —
+    /// the same default-deny shape as `MountPolicy`. See `ExecPolicy`.
+    public let execPolicy: ExecPolicy
+
+    public init(host: ContainerHost,
+                mountPolicy: MountPolicy = .unrestricted,
+                execPolicy: ExecPolicy = .processListOnly) {
         self.host = host
         self.mountPolicy = mountPolicy
+        self.execPolicy = execPolicy
     }
 
     // MARK: Raw JSON
@@ -108,7 +116,8 @@ public struct ContainerCLI: Sendable {
     /// `/Users:/host:ro` on someone else's Mac. See `MountPolicy`.
     @discardableResult
     private func execute(_ args: [String]) throws -> CommandResult {
-        let validated = try Allowlist.validated(args, mountPolicy: mountPolicy)
+        let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
+                                                execPolicy: execPolicy)
         return try succeeding(validated.arguments)
     }
 

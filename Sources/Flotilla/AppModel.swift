@@ -51,7 +51,15 @@ final class AppModel {
 
     /// The default store is seeded from `UserDefaults` and writes back on change. Tests and
     /// previews pass their own in-memory store, which then persists nothing.
-    init(cli: ContainerCLI = ContainerCLI(host: LocalHost()), settingsStore: SettingsStore? = nil) {
+    /// `execPolicy: .interactiveShell` is set **here**, at the one place a client driving its
+    /// own Mac is constructed, and nowhere else. It backs the detail view's Terminal tab.
+    ///
+    /// Deliberately not a constant inside that tab: when Phase 2 builds a `ContainerCLI` for a
+    /// remote peer it will pass the strict default, and the terminal must then refuse rather
+    /// than carry on because it had the permissive value baked in. The policy travels with the
+    /// CLI, exactly as `MountPolicy` does.
+    init(cli: ContainerCLI = ContainerCLI(host: LocalHost(), execPolicy: .interactiveShell),
+         settingsStore: SettingsStore? = nil) {
         let resolved: (store: SettingsStore, observation: SettingsObservation?)
         if let settingsStore {
             resolved = (settingsStore, nil)
