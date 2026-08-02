@@ -557,6 +557,10 @@ final class AppModel {
 
     // MARK: Volumes
 
+    /// When this section last loaded, for the toolbar's "Updated …" readout. Per-section
+    /// rather than one shared timestamp: these refresh independently, and a single figure
+    /// would claim the volumes list was as fresh as the containers list when it is not.
+    private(set) var volumesLastRefresh: Date?
     private(set) var volumesState: LoadState = .idle
     private(set) var volumes: [ContainerVolume] = []
 
@@ -570,6 +574,7 @@ final class AppModel {
             let fetched = try await Task.detached { [cli] in try cli.listVolumes() }.value
             volumes = fetched
             volumesState = .loaded
+            volumesLastRefresh = Date()
         } catch {
             volumesState = .failed(String(describing: error))
         }
@@ -600,6 +605,7 @@ final class AppModel {
 
     // MARK: Networks
 
+    private(set) var networksLastRefresh: Date?
     private(set) var networksState: LoadState = .idle
     private(set) var networks: [ContainerNetwork] = []
 
@@ -613,6 +619,7 @@ final class AppModel {
             let fetched = try await Task.detached { [cli] in try cli.listNetworks() }.value
             networks = fetched
             networksState = .loaded
+            networksLastRefresh = Date()
         } catch {
             networksState = .failed(String(describing: error))
         }
@@ -653,6 +660,7 @@ final class AppModel {
 
     // MARK: Images
 
+    private(set) var imagesLastRefresh: Date?
     private(set) var imagesState: LoadState = .idle
     private(set) var images: [ContainerImage] = []
 
@@ -666,6 +674,7 @@ final class AppModel {
             let fetched = try await Task.detached { [cli] in try cli.listImages() }.value
             images = fetched
             imagesState = .loaded
+            imagesLastRefresh = Date()
         } catch {
             imagesState = .failed(String(describing: error))
         }

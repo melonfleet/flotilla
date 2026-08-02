@@ -8,6 +8,10 @@ import FlotillaCore
 struct ImagesView: View {
     let model: AppModel
 
+    /// Free-text filter, matched against the reference and tag. Local to the screen: unlike
+    /// the containers table there is no cross-section state to preserve.
+    @State private var search = ""
+
     @State private var showingPull = false
     @State private var pullReference = ""
     @State private var pendingDelete: ContainerImage?
@@ -75,36 +79,23 @@ struct ImagesView: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
-            Text("Images").font(.title3.bold())
-            Spacer()
-            Button {
-                showingPrune = true
-            } label: {
-                Label("Prune Unused…", systemImage: "trash.slash")
-                    .labelStyle(.iconOnly)
-            }
-            .help("Delete images no container is using")
-            .accessibilityLabel("Prune Unused")
-            Button {
+        SectionToolbar(search: $search,
+                       searchPrompt: "Search images…",
+                       updated: model.imagesLastRefresh) {
+            ToolbarIconButton(systemImage: "arrow.down.circle", label: "Pull an image…") {
                 pullReference = ""
                 showingPull = true
-            } label: {
-                Label("Pull Image…", systemImage: "arrow.down.circle")
-                    .labelStyle(.iconOnly)
             }
-            .help("Pull an image from a registry")
-            .accessibilityLabel("Pull Image")
-            Button {
+            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh images") {
                 Task { await model.refreshImages() }
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-                    .labelStyle(.iconOnly)
             }
-            .help("Refresh images")
-            .accessibilityLabel("Refresh")
+            Divider().frame(height: 14)
+            ToolbarIconButton(systemImage: "trash.slash",
+                              label: "Delete images no container is using",
+                              isDestructive: true) {
+                showingPrune = true
+            }
         }
-        .padding(12)
     }
 
     @ViewBuilder
@@ -142,10 +133,13 @@ struct ImagesView: View {
     /// when EVERY variant is `"unknown"`; a real multi-arch image that happens to carry an
     /// attestation alongside real platforms keeps showing.
     private var displayedImages: [ContainerImage] {
-        model.images.filter { image in
+        let visible = model.images.filter { image in
             guard let variants = image.variants, !variants.isEmpty else { return true }
             return !variants.allSatisfy { $0.platform?.architecture == "unknown" }
         }
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return visible }
+        return visible.filter { $0.reference.lowercased().contains(query) }
     }
 
     /// Extracted for the same reason as in `ContainersView`: inlined, the modifier chain

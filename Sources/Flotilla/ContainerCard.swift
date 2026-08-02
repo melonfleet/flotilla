@@ -179,21 +179,10 @@ struct ContainerCard: View {
     /// are both ISO-8601 *strings* from the CLI, not `Date`, so this parses for display only
     /// and never stores the parsed value.
     private static func startedOrCreatedLabel(for container: Container) -> String {
-        if container.isRunning, let started = container.status.startedDate,
-           let date = parseDate(started) {
-            return "Started \(date.formatted(.relative(presentation: .named)))"
+        if container.isRunning, RelativeDate.parse(container.status.startedDate) != nil {
+            return RelativeDate.relative(container.status.startedDate, prefix: "Started")
         }
-        if let created = container.configuration.creationDate, let date = parseDate(created) {
-            return "Created \(date.formatted(.relative(presentation: .named)))"
-        }
-        return "—"
-    }
-
-    private static func parseDate(_ iso: String) -> Date? {
-        let strict = ISO8601DateFormatter()
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return strict.date(from: iso) ?? fractional.date(from: iso)
+        return RelativeDate.relative(container.configuration.creationDate, prefix: "Created")
     }
 
     private static func cpuLabel(_ percent: Double?) -> String {

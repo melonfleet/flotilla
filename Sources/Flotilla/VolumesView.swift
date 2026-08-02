@@ -8,6 +8,7 @@ import FlotillaCore
 struct VolumesView: View {
     let model: AppModel
 
+    @State private var search = ""
     @State private var showingCreate = false
     @State private var newVolumeName = ""
     @State private var newSize = ""
@@ -49,28 +50,24 @@ struct VolumesView: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
-            Text("Volumes").font(.title3.bold())
-            Spacer()
-            Button {
+        SectionToolbar(search: $search,
+                       searchPrompt: "Search volumes…",
+                       updated: model.volumesLastRefresh) {
+            ToolbarIconButton(systemImage: "plus", label: "Create a volume…") {
                 newVolumeName = ""
                 showingCreate = true
-            } label: {
-                Label("New Volume…", systemImage: "plus")
-                    .labelStyle(.iconOnly)
             }
-            .help("Create a volume")
-            .accessibilityLabel("New Volume")
-            Button {
+            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh volumes") {
                 Task { await model.refreshVolumes() }
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-                    .labelStyle(.iconOnly)
             }
-            .help("Refresh volumes")
-            .accessibilityLabel("Refresh")
         }
-        .padding(12)
+    }
+
+    /// Free-text filter over the volume name.
+    private var displayedVolumes: [ContainerVolume] {
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return model.volumes }
+        return model.volumes.filter { ($0.name ?? "").lowercased().contains(query) }
     }
 
     @ViewBuilder
@@ -96,7 +93,7 @@ struct VolumesView: View {
             )
 
         case .loaded:
-            List(model.volumes) { volume in
+            List(displayedVolumes) { volume in
                 row(for: volume)
             }
         }
@@ -114,7 +111,12 @@ struct VolumesView: View {
                         Text(Self.byteCount(size)).font(.caption).foregroundStyle(.secondary)
                     }
                     if let createdAt = volume.createdAt {
-                        Text(createdAt).font(.caption).foregroundStyle(.secondary)
+                        // Age, not a raw ISO timestamp — see `RelativeDate`. The exact value
+                        // is one hover away.
+                        Text(RelativeDate.relative(createdAt, prefix: "Created"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help(RelativeDate.absolute(createdAt))
                     }
                 }
             }

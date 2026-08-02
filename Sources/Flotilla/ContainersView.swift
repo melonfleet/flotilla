@@ -779,30 +779,10 @@ struct ContainersView: View {
 
     /// `creationDate` is an ISO-8601 string from `container`, not a `Date` — parse it here
     /// for display only; `FlotillaCore` keeps the raw string.
-    private static func createdLabel(_ iso: String?) -> String {
-        guard let iso else { return "—" }
-        let strict = ISO8601DateFormatter()
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = strict.date(from: iso) ?? fractional.date(from: iso) else { return "—" }
-        // Relative, not absolute. "Jul 27, 2026 at 5:56 PM" does not fit the column and
-        // truncated to "Jul 27, 2026 at 5:56 P…" it wastes every character on parts that
-        // never vary. Age is the question you actually ask of a container; the exact
-        // timestamp stays available on hover.
-        return date.formatted(.relative(presentation: .named))
-    }
+    private static func createdLabel(_ iso: String?) -> String { RelativeDate.relative(iso) }
 
     /// The absolute timestamp, for the row's tooltip.
-    private static func createdTooltip(_ iso: String?) -> String {
-        guard let iso else { return "Creation date unknown" }
-        let strict = ISO8601DateFormatter()
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = strict.date(from: iso) ?? fractional.date(from: iso) else {
-            return "Creation date unreadable (\(iso))"
-        }
-        return date.formatted(date: .abbreviated, time: .shortened)
-    }
+    private static func createdTooltip(_ iso: String?) -> String { RelativeDate.absolute(iso) }
 
     /// Shortening lives in `FlotillaCore` (`ContainerImage.shortReference`) so its awkward
     /// cases — digests, registry ports — are covered by tests this target cannot have.

@@ -6,6 +6,7 @@ import FlotillaCore
 struct NetworksView: View {
     let model: AppModel
 
+    @State private var search = ""
     @State private var showingCreate = false
     @State private var pendingDelete: ContainerNetwork?
 
@@ -53,27 +54,23 @@ struct NetworksView: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
-            Text("Networks").font(.title3.bold())
-            Spacer()
-            Button {
+        SectionToolbar(search: $search,
+                       searchPrompt: "Search networks…",
+                       updated: model.networksLastRefresh) {
+            ToolbarIconButton(systemImage: "plus", label: "Create a network…") {
                 showingCreate = true
-            } label: {
-                Label("New Network…", systemImage: "plus")
-                    .labelStyle(.iconOnly)
             }
-            .help("Create a network")
-            .accessibilityLabel("New Network")
-            Button {
+            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh networks") {
                 Task { await model.refreshNetworks() }
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-                    .labelStyle(.iconOnly)
             }
-            .help("Refresh networks")
-            .accessibilityLabel("Refresh")
         }
-        .padding(12)
+    }
+
+    /// Free-text filter over the network name.
+    private var displayedNetworks: [ContainerNetwork] {
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return model.networks }
+        return model.networks.filter { $0.id.lowercased().contains(query) }
     }
 
     @ViewBuilder
@@ -100,7 +97,7 @@ struct NetworksView: View {
             )
 
         case .loaded:
-            List(model.networks) { network in
+            List(displayedNetworks) { network in
                 row(for: network)
             }
         }
