@@ -194,37 +194,49 @@ struct SettingsView: View {
         }
     }
 
-    /// The mockup's tab strip: **icon and label**, side by side.
+    /// The mockup's tab strip, to its own numbers.
     ///
     /// Hand-built rather than a `TabView`, and that is not preference. macOS renders a
     /// `TabView`'s top bar as titles ONLY — it drops the icon whether you pass `systemImage:`
-    /// or supply a `Label` yourself, both of which were tried. The mockup's strip is a row of
-    /// glyph-plus-name chips, so the way to get one is to draw one.
+    /// or supply a `Label` yourself, both of which were tried. So the way to get the mockup's
+    /// strip is to draw it.
     ///
-    /// Keyboard access is kept: these are real `Button`s in a `.horizontal` accessibility
-    /// group, so Tab and VoiceOver reach every pane. The tab bar is the only thing custom
-    /// here — each pane is still a stock grouped `Form`.
+    /// Transcribed from `.settings-tabs` in `assets/mac.css` rather than eyeballed, because
+    /// eyeballing the wordmark is how it came out wrong: the icon sits **above** the label
+    /// (`flex-direction: column`), each chip is a fixed 74pt wide so the strip does not
+    /// re-space itself as titles change length, and the whole strip is centred
+    /// (`margin: 0 auto`) rather than left-aligned.
+    ///
+    /// Keyboard access is kept: these are real `Button`s, so Tab and VoiceOver reach every
+    /// pane. The tab bar is the only thing custom here — each pane is still a stock grouped
+    /// `Form`.
     private var tabBar: some View {
         HStack(spacing: 2) {
+            Spacer(minLength: 0)
             ForEach(Tab.allCases) { candidate in
                 let selected = candidate == tab
                 Button {
                     tab = candidate
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: candidate.systemImage).font(.system(size: 13))
-                        Text(candidate.title).font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    VStack(spacing: 2) {
+                        Image(systemName: candidate.systemImage)
+                            .font(.system(size: 16))
+                            .frame(height: 19)
+                        Text(candidate.title)
+                            .font(.system(size: 10.5, weight: selected ? .semibold : .regular))
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .frame(width: 74)
+                    .padding(.top, 4)
+                    .padding(.bottom, 3)
                     .foregroundStyle(selected ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.secondary))
-                    .background(selected ? Theme.accentTint : .clear, in: RoundedRectangle(cornerRadius: 7))
+                    .background(selected ? Theme.accentTint : .clear,
+                                in: RoundedRectangle(cornerRadius: 7))
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
