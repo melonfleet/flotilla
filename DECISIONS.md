@@ -207,3 +207,75 @@ So: the app icon and menu-bar glyph are **generated** from the brand geometry
 (`Scripts/make-icons.swift`), and the wordmark is **drawn** in SwiftUI
 (`Wordmark.swift`). The menu-bar glyph is a monochrome **template** image — macOS
 inverts it, so one asset serves light and dark and there is no pair to drift.
+
+## Revisited 2026-08-02 — XPC client libraries vs shelling out (integration, Q1)
+
+**Outcome: keep shelling out. Not reopened, but the premise has changed and is recorded
+here so nobody re-derives it from scratch.**
+
+`research/COMPETITORS.md` found that three competitors — Orchard, Davit and Bart Reardon's
+ContainerManager — do not shell out. They link `container`'s own Swift client libraries and
+talk to the running daemon over XPC.
+
+**This is a third option Q1 never considered, and the distinction matters.** "Rejected —
+and why" turns down *linking Apple's Containerization framework directly*, which means
+reimplementing the runtime. `ContainerAPIClient` and `MachineAPIClient` are different
+things: public SwiftPM products of `apple/container` that talk to
+`com.apple.container.apiserver` — the same daemon the CLI talks to, without the CLI in
+between. Verified 2026-08-02 against the repository's `Package.swift` and the running
+launchd services, not inferred.
+
+### What it would genuinely buy
+
+The entire class of bug this project keeps paying for: fabricated fixture shapes, the `--`
+separator, `--size` vs `-s`, flag spellings, unchecked exit codes. All of it is CLI-parsing
+fragility. Typed calls have none of it, plus lower latency and no process spawn per poll.
+
+### Why not now
+
+The cost is not "rewrite the CLI layer". It is that the change invalidates **two**
+load-bearing decisions simultaneously.
+
+1. **`Allowlist` is argv-shaped, and it is the Phase 2 wire boundary** — the thing the review
+   audited and the thing a remote peer will face. Typed calls do not remove the need for a
+   boundary; they change its shape completely, to method-and-parameter capability checks.
+   That is re-deriving the security model, not refactoring.
+2. **`FlotillaCore` must stay Foundation-only**, which is what lets the VM agents verify
+   their own work on Linux. `ContainerAPIClient` is macOS-only and pins
+   `apple/containerization` at an exact version. Putting it in the core breaks the seam the
+   whole fleet arrangement depends on.
+
+Doing that surgery while also building Phase 2 is how you get neither — and Phase 2 is the
+one thing `COMPETITORS.md` says nobody else has.
+
+### The strongest practical argument for XPC evaporated on inspection
+
+Machine/VM management is the market's #1 gap (~13 of ~19 products), and the core owner warned that the
+three XPC products drive machines over XPC specifically — implying the CLI might not expose
+the full surface. **Checked: it does.** `container machine` offers create, delete, inspect,
+list, logs, run, set, set-default and stop, including
+`machine set -n <name> cpus=4 memory=8G home-mount=ro` and an interactive `machine run`.
+That is everything the XPC products do.
+
+So an earlier suggestion — build VM management over XPC as a bounded spike — is **withdrawn**.
+It would have bought a second integration path for a feature the CLI already covers. Build
+machines the way everything else is built, and keep one boundary.
+
+### Revisit if
+
+- a `container` release breaks JSON decoding in a way that costs a day, or
+- a capability appears that the CLI genuinely cannot reach.
+
+Not because competitors do it. Three of twenty-five is not a trend.
+
+### Related, from the same research
+
+- **Name collision.** The market leader is called **Orchard** (Andrew Waters, 715 stars,
+  notarised, `brew install --cask orchard`, "Native GUI for Apple Containers" — verified via
+  Homebrew's own API). melonfleet's mothership is also Orchard. Different domain, same
+  portfolio as its direct competitor. Needs a decision before either name is public;
+  `COMPETITORS.md` notes this market already has two products called "Crane" and two called
+  "Container Desktop".
+- **Sequence the gap list against security cost, not market frequency.** the core owner's ranking is
+  by how often a capability appears. Every new subcommand family is new grammar facing a
+  remote caller in Phase 2, and machine creation with home mounts is a filesystem grant.
