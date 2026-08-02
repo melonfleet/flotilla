@@ -191,19 +191,7 @@ struct ContainerDetailView: View {
                 detailRow("Ports", "None published")
             } else {
                 ForEach(container.publishedPorts, id: \.self) { port in
-                    HStack {
-                        Text(port.displayText).font(.system(size: 12).monospacedDigit())
-                        Spacer()
-                        // Only offered for TCP: a UDP port has nothing a browser can open, and
-                        // a link that goes nowhere is worse than no link.
-                        if port.proto?.lowercased() != "udp" {
-                            Link("Open", destination: URL(string: "http://localhost:\(port.hostPort)")!)
-                                .font(.caption)
-                                // `Link`, like `buttonStyle(.link)`, hardcodes the system blue
-                                // and ignores the scene tint.
-                                .foregroundStyle(Theme.accentText)
-                        }
-                    }
+                    portRow(port)
                 }
             }
             Divider().padding(.vertical, 2)
@@ -225,6 +213,44 @@ struct ContainerDetailView: View {
             }
             if let size = container.configuration.image.descriptor?.size {
                 detailRow("Size", ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+            }
+        }
+    }
+
+    /// One published port, with Copy always and Open only where a browser could plausibly
+    /// help.
+    ///
+    /// the owner clicked Open on a container publishing 8080 and got "empty response". The link was
+    /// working correctly — the container was running `sleep` with nothing listening — but the
+    /// affordance was overpromising, and the mockup overpromises the same way by offering
+    /// "Open in browser" beside Postgres on 5432. **A published port is not necessarily HTTP.**
+    ///
+    /// So Copy is the primary action, because an address is useful whatever is behind it —
+    /// `psql`, `redis-cli`, a browser. Open stays for TCP, since a web server is the common
+    /// case and guessing wrong costs one browser tab, but its tooltip now says plainly what it
+    /// assumes instead of implying every port answers HTTP.
+    @ViewBuilder
+    private func portRow(_ port: Container.Configuration.PublishedPort) -> some View {
+        let address = "localhost:\(port.hostPort)"
+        HStack {
+            Text(port.displayText).font(.system(size: 12).monospacedDigit())
+            Spacer()
+            Button("Copy") { Clipboard.copy(address) }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(Theme.accentText)
+                .help("Copy \(address)")
+            // UDP is excluded outright: a browser has nothing to do with it.
+            if port.proto?.lowercased() != "udp",
+               let url = URL(string: "http://\(address)") {
+                Link("Open", destination: url)
+                    .font(.caption)
+                    // `Link`, like `buttonStyle(.link)`, hardcodes the system blue and ignores
+                    // the scene tint.
+                    .foregroundStyle(Theme.accentText)
+                    .help("Open http://\(address) — assumes this container serves HTTP on "
+                          + "port \(port.containerPort). It will not respond if nothing is "
+                          + "listening there.")
             }
         }
     }
