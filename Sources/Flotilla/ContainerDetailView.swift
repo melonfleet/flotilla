@@ -619,47 +619,164 @@ private struct InspectTab: View {
     @State private var loading = false
     @State private var error: String?
     @State private var search = ""
+    @State private var presentation: Presentation = .json
+
+    enum Presentation: String, CaseIterable, Identifiable {
+        case json = "JSON", table = "Table"
+        var id: Self { self }
+    }
+
+    /// Narrowed on purpose. The standard set is tuned for a support bundle **leaving the
+    /// machine**; this is a panel you read on your own Mac, and applying the strict rules here
+    /// rewrote every image digest as `<redacted:fingerprint>` — a digest is 64 hex characters
+    /// and so is a certificate fingerprint. A digest is a public content hash and one of the
+    /// more useful things in this output, so redacting it removed information and protected
+    /// nothing. Mount paths go the same way: they are the point of inspecting.
+    ///
+    /// Everything that is actually a secret still goes: tokens, certificates, URL credentials
+    /// and `KEY=value` secrets.
+    private static let redactor = Redactor(excluding: [.fingerprint, .homePath,
+                                                       .temporaryPath, .email])
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            summary
-            Divider()
-            HStack {
+            HStack(spacing: 10) {
+                Picker("View", selection: $presentation) {
+                    ForEach(Presentation.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                TextField("Search JSON", text: $search)
+                TextField("Filter keys", text: $search)
                     .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 200)
                 if !search.isEmpty {
                     Text("\(matchCount) match\(matchCount == 1 ? "" : "es")")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+
+                // The mockup shows the command it ran. Worth keeping: it turns an opaque
+                // panel into something you can reproduce in a terminal.
+                Text("container inspect \(container.id)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Button {
+                    // Copies exactly what is displayed — redacted. See `load()`.
+                    if let json { Clipboard.copy(json) }
+                } label: {
+                    Label("Copy JSON", systemImage: "doc.on.doc")
+                }
+                .disabled(json == nil)
+                .help("Copy the inspect output, with secrets redacted")
+
                 Button {
                     Task { await load() }
                 } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
+                    Image(systemName: "arrow.clockwise")
                 }
                 .disabled(loading)
+                .help("Reload")
+                .accessibilityLabel("Reload")
             }
             .padding(12)
             Divider()
-            content
+            if presentation == .table { tableView } else { content }
+            redactionNote
         }
         .task { await load() }
     }
 
-    private var summary: some View {
-        Form {
-            SwiftUI.Section("Summary") {
-                LabeledContent("State", value: container.status.state.capitalized)
-                LabeledContent("Image", value: container.configuration.image.reference)
-                LabeledContent("ID", value: container.id)
+    /// The mockup's Table view: the same payload flattened to one row per leaf, so you can
+    /// scan for a value without reading the nesting. The JSON view stays the default because
+    /// structure is sometimes the thing you need.
+    ///
+    /// Built from the **redacted** text, not a second fetch, so the two views cannot disagree
+    /// about what is hidden.
+    @ViewBuilder
+    private var tableView: some View {
+        let rows = Self.flatten(json).filter {
+            search.isEmpty
+            || $0.path.localizedCaseInsensitiveContains(search)
+            || $0.value.localizedCaseInsensitiveContains(search)
+        }
+        if rows.isEmpty {
+            ContentUnavailableView(
+                json == nil ? "Nothing loaded yet" : "No matching keys",
+                systemImage: "tablecells"
+            )
+        } else {
+            SwiftUI.Table(rows) {
+                TableColumn("Key") { row in
+                    Text(row.path).font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                TableColumn("Value") { row in
+                    Text(row.value).font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                }
             }
         }
-        .formStyle(.grouped)
-        .frame(maxHeight: 150)
     }
+
+    struct InspectRow: Identifiable {
+        let id: Int
+        let path: String
+        let value: String
+    }
+
+    /// Flattens the decoded JSON to `key.path[0] = value` leaves.
+    ///
+    /// Empty objects and arrays are emitted as `{}` / `[]` rather than dropped: `capAdd: []`
+    /// says "no added capabilities", and a row that vanishes says nothing at all.
+    static func flatten(_ json: String?) -> [InspectRow] {
+        guard let json, let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data)
+        else { return [] }
+
+        var leaves: [(String, String)] = []
+        func walk(_ node: Any, _ path: String) {
+            switch node {
+            case let dict as [String: Any] where !dict.isEmpty:
+                for key in dict.keys.sorted() {
+                    walk(dict[key]!, path.isEmpty ? key : "\(path).\(key)")
+                }
+            case let array as [Any] where !array.isEmpty:
+                for (index, element) in array.enumerated() { walk(element, "\(path)[\(index)]") }
+            case is [String: Any]: leaves.append((path, "{}"))
+            case is [Any]: leaves.append((path, "[]"))
+            case is NSNull: leaves.append((path, "null"))
+            default: leaves.append((path, String(describing: node)))
+            }
+        }
+        walk(root, "")
+        return leaves.enumerated().map { InspectRow(id: $0.offset, path: $0.element.0, value: $0.element.1) }
+    }
+
+    /// Says that what you are reading has been filtered. A redaction the user cannot see is
+    /// indistinguishable from a container that had no secrets, and someone debugging a missing
+    /// environment variable deserves to know the difference.
+    private var redactionNote: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "eye.slash").font(.caption2)
+            Text("Secrets are redacted. Values shown as `<redacted:…>` are present in the "
+                 + "container but hidden here and in Copy JSON.")
+                .font(.caption2)
+        }
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Divider() }
+    }
+
 
     @ViewBuilder
     private var content: some View {
@@ -692,7 +809,20 @@ private struct InspectTab: View {
         loading = true
         error = nil
         do {
-            json = try await model.fetchInspectJSON(for: container.id)
+            // Redacted before it is ever assigned, so nothing unredacted reaches the view, the
+            // search index or the clipboard.
+            //
+            // This is not decoration. `container inspect` includes
+            // `configuration.initProcess.environment`, verified against the live CLI — on nginx
+            // that is PATH and version strings, on Postgres it is POSTGRES_PASSWORD, and on an
+            // application container it is whatever API keys were passed at run time. The panel
+            // was rendering all of it in plain text, and the new Copy JSON button would have
+            // put it on the clipboard in one click. The mockup shows the same field as
+            // `POSTGRES_PASSWORD=••••••`, which is the design telling us this mattered.
+            //
+            // `Redactor.standard` is the one already trusted for support bundles, so the rules
+            // are shared with the surface that has tests behind it rather than reinvented here.
+            json = Self.redactor.redact(try await model.fetchInspectJSON(for: container.id))
         } catch {
             self.error = String(describing: error)
         }

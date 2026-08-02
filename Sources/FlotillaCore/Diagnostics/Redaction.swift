@@ -32,6 +32,21 @@ public struct Redactor: Sendable {
         self.rules = Redactor.standardRules
     }
 
+    /// A redactor with some categories switched off.
+    ///
+    /// Exists because "redact everything" is the right answer for a **support bundle leaving
+    /// the machine** and the wrong one for a panel you are reading on your own Mac. The
+    /// container inspect view proved it: the standard set rewrote every image digest as
+    /// `<redacted:fingerprint>`, because a digest is 64 hex characters and so is a certificate
+    /// fingerprint. A digest is a public content hash and one of the more useful things in
+    /// that output, so redacting it removed information and protected nothing.
+    ///
+    /// Narrowing is explicit and per-call rather than a second "lenient" preset, so each
+    /// caller has to say which risks it is accepting and why.
+    public init(excluding categories: Set<Category>) {
+        self.rules = Redactor.standardRules.filter { !categories.contains($0.category) }
+    }
+
     /// Order matters: multi-line PEM blocks first (so the inner base64 isn't nibbled
     /// by narrower rules), then specific token formats, then the generic
     /// `key = value` catch-all, then identifiers and paths.
@@ -61,8 +76,16 @@ public struct Redactor: Sendable {
             rule(.token, "\\bBearer\\s+[A-Za-z0-9._~+/=-]{8,}", "Bearer \(Category.token.placeholder)"),
 
             // Generic `secret-ish key = value`, in JSON, plists, env dumps and prose.
+            //
+            // The `[A-Za-z0-9_]*` prefix is load-bearing and was missing. `\b(pass…)` needs a
+            // word boundary before the keyword, and in `POSTGRES_PASSWORD` the preceding
+            // character is `_` — itself a word character — so there was no boundary and no
+            // match. That silently missed the single most common shape a secret takes:
+            // POSTGRES_PASSWORD, MYSQL_ROOT_PASSWORD, GITHUB_TOKEN, APP_SECRET, MY_API_KEY.
+            // Found by a test written for the container inspect view, not by the support
+            // bundle this redactor was built for.
             rule(.secret,
-                 "(?i)\\b(pass(?:word|wd|phrase)?|secret|token|api[_-]?key|apikey|credential|private[_-]?key|authorization|auth)\\b([\"']?\\s*[:=]\\s*[\"']?)[^\\s\"',;}]+",
+                 "(?i)\\b([A-Za-z0-9_]*(?:pass(?:word|wd|phrase)?|secret|token|api[_-]?key|apikey|credential|private[_-]?key|authorization|auth))\\b([\"']?\\s*[:=]\\s*[\"']?)[^\\s\"',;}]+",
                  "$1$2\(Category.secret.placeholder)"),
 
             // Certificate fingerprints: colon-separated hex, or a bare 64-hex digest.

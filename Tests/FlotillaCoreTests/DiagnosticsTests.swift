@@ -344,3 +344,36 @@ import Testing
     ]
     #expect(fieldNames.isDisjoint(with: forbidden))
 }
+
+// MARK: - Narrowed redaction
+//
+// The inspect view needs secrets gone but digests and mount paths intact. These pin that the
+// exclusion actually excludes, and — more importantly — that it does not quietly weaken
+// anything else.
+
+@Test("Excluding a category leaves that pattern alone")
+func excludingACategorySkipsOnlyThatRule() {
+    let digest = "sha256:9a1f4b2e77c0a1d5c07d9a1f4b2e77c0a1d5c07d9a1f4b2e77c0a1d5c07d1234"
+    #expect(Redactor.standard.redact(digest).contains("<redacted:"))
+    #expect(Redactor(excluding: [.fingerprint]).redact(digest) == digest)
+}
+
+@Test("Excluding fingerprints still redacts real secrets")
+func excludingFingerprintsKeepsSecretsRedacted() {
+    let redactor = Redactor(excluding: [.fingerprint, .homePath, .temporaryPath, .email])
+    let input = """
+    POSTGRES_PASSWORD=hunter2supersecret
+    GH_TOKEN=ghp_1234567890abcdef1234ABCD
+    AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+    """
+    let output = redactor.redact(input)
+    #expect(!output.contains("ghp_1234567890abcdef1234ABCD"))
+    #expect(!output.contains("AKIAIOSFODNN7EXAMPLE"))
+    #expect(!output.contains("hunter2supersecret"))
+}
+
+@Test("The support bundle's redactor is untouched by the narrowed one existing")
+func standardRedactorStillRedactsEverything() {
+    let path = "/Users/someone/secrets"
+    #expect(Redactor.standard.redact(path) == "~/secrets")
+}
