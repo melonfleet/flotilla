@@ -34,6 +34,8 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     case mountSpec
     /// Absolute path, no `.`/`..` components.
     case absolutePath
+    /// One end of a `container copy`: either `name:/path/in/container` or `/path/on/host`.
+    case copyEndpoint
     /// Whole seconds, 0…86400.
     case durationSeconds
     /// `SIGTERM`, `TERM`, or a signal number 1…64.
@@ -81,6 +83,8 @@ extension ValueShape {
             "Expected `source:/destination`, optionally `:ro` or `:rw`, where source is a named volume or an absolute path."
         case .absolutePath:
             "Expected an absolute path with no `.` or `..` components."
+        case .copyEndpoint:
+            "Expected `container:/path` or an absolute path on this Mac."
         case .durationSeconds:
             "Expected whole seconds, 0 to 86400."
         case .signal:
@@ -359,6 +363,11 @@ public enum Allowlist {
             CommandSpec(["exec"], mutates: false, timeoutHint: 15,
                         operands: OperandSpec(shape: .identifier, min: 1, max: 1),
                         trailing: .exact(["ps", "-o", "pid,comm,args"])),
+
+            // Reads and writes the host filesystem, so `mutates` is true and both operands
+            // are `copyEndpoint`, whose host side must satisfy `MountPolicy`.
+            CommandSpec(["copy"], mutates: true, timeoutHint: 120,
+                        operands: OperandSpec(shape: .copyEndpoint, min: 2, max: 2)),
 
             CommandSpec(["logs"], mutates: false,
                         flags: [FlagSpec(short: "n", value: .count), FlagSpec(long: "boot")],
@@ -768,6 +777,8 @@ public enum Allowlist {
             return checkMountSpec(value, context: context, mountPolicy: mountPolicy)
         case .absolutePath:
             return checkAbsolutePath(value, context: context)
+        case .copyEndpoint:
+            return checkCopyEndpoint(value, context: context, mountPolicy: mountPolicy)
         case .durationSeconds:
             return isInteger(value, in: 0...86_400) ? nil : bad
         case .count:
@@ -868,6 +879,42 @@ public enum Allowlist {
               (first.isASCII && first.isLetter) || first == "_" else { return false }
         guard key.allSatisfy({ isASCIIAlphanumeric($0) || $0 == "_" }) else { return false }
         return value[value.index(after: equals)...].utf8.count <= 768
+    }
+
+    /// One end of a `container copy`.
+    ///
+    /// **The host side crosses `MountPolicy`, and that is the whole reason this shape exists.**
+    /// `copy` reads and writes the real filesystem: `container copy web:/etc/passwd /tmp/x`
+    /// pulls a file out, and the reverse direction writes one in. Grammar alone does not make
+    /// that safe — a well-formed path is exactly how you would overwrite something. So the
+    /// host end is checked against the same policy that governs bind mounts, which defaults to
+    /// permitting nothing.
+    ///
+    /// The container end is not policy-checked, deliberately: paths inside a container are the
+    /// container's own filesystem, which the caller may already read with `exec`.
+    private static func checkCopyEndpoint(_ value: String, context: String,
+                                          mountPolicy: MountPolicy) -> AllowlistError? {
+        let bad = AllowlistError.invalidValue(context: context, value: value, shape: .copyEndpoint)
+        guard !value.isEmpty else { return bad }
+
+        // A host path. `/` is refused outright — copying to or from the filesystem root is
+        // never what was meant and is catastrophic if it is.
+        if value.hasPrefix("/") {
+            if let error = checkAbsolutePath(value, context: context) { return error }
+            guard value != "/" else { return bad }
+            guard mountPolicy.allowsHostPath(value) else {
+                return .hostPathNotPermitted(context: context, path: value)
+            }
+            return nil
+        }
+
+        // Otherwise `identifier:/path`. Split once: a container path may itself contain a
+        // colon, and splitting on all of them would reject legitimate names.
+        guard let separator = value.firstIndex(of: ":") else { return bad }
+        let name = String(value[value.startIndex..<separator])
+        let path = String(value[value.index(after: separator)...])
+        guard isIdentifier(name), !path.isEmpty else { return bad }
+        return checkAbsolutePath(path, context: context)
     }
 
     /// `source:/dest[:ro|rw]`. Source is a named volume or an absolute host path.

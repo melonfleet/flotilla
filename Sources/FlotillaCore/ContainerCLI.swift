@@ -55,10 +55,10 @@ public struct ContainerCLI: Sendable {
     // MARK: Raw JSON
 
     public func rawContainersJSON() throws -> String {
-        try succeeding(["ls", "--all", "--format", "json"]).stdout
+        try execute(["ls", "--all", "--format", "json"]).stdout
     }
     public func rawImagesJSON() throws -> String {
-        try succeeding(["image", "list", "--format", "json"]).stdout
+        try execute(["image", "list", "--format", "json"]).stdout
     }
 
     // MARK: Typed reads
@@ -76,14 +76,14 @@ public struct ContainerCLI: Sendable {
     }
     public func systemStatus() throws -> SystemStatus {
         try JSONDecoder.flotilla.decode(SystemStatus.self,
-                                        from: Data(try succeeding(["system", "status", "--format", "json"]).stdout.utf8))
+                                        from: Data(try execute(["system", "status", "--format", "json"]).stdout.utf8))
     }
     public func versions() throws -> [VersionComponent] {
         try JSONDecoder.flotilla.decode([VersionComponent].self,
-                                        from: Data(try succeeding(["system", "version", "--format", "json"]).stdout.utf8))
+                                        from: Data(try execute(["system", "version", "--format", "json"]).stdout.utf8))
     }
     public func rawSystemDiskUsageJSON() throws -> String {
-        try succeeding(["system", "df", "--format", "json"]).stdout
+        try execute(["system", "df", "--format", "json"]).stdout
     }
 
     /// The disk view. Now typed: the payload was captured from a live `container 1.0.0`
@@ -95,11 +95,11 @@ public struct ContainerCLI: Sendable {
     }
     public func listVolumes() throws -> [ContainerVolume] {
         try JSONDecoder.flotilla.decode([ContainerVolume].self,
-                                        from: Data(try succeeding(["volume", "list", "--format", "json"]).stdout.utf8))
+                                        from: Data(try execute(["volume", "list", "--format", "json"]).stdout.utf8))
     }
     public func listNetworks() throws -> [ContainerNetwork] {
         try JSONDecoder.flotilla.decode([ContainerNetwork].self,
-                                        from: Data(try succeeding(["network", "list", "--format", "json"]).stdout.utf8))
+                                        from: Data(try execute(["network", "list", "--format", "json"]).stdout.utf8))
     }
 
     // MARK: Allowlisted execution
@@ -122,6 +122,13 @@ public struct ContainerCLI: Sendable {
     }
 
     /// Runs `args` and **throws unless the CLI exited zero**.
+    ///
+    /// **Never call this directly — call `execute`.** This takes an already-canonicalised argv
+    /// and runs it verbatim: it does not validate, so calling it with a caller-built array
+    /// skips `Allowlist` and `MountPolicy` completely. Two new methods did exactly that when
+    /// the Files tab was added, and the giveaway was the CLI reporting "failed to find target
+    /// executable --" — the grammar separator that `execute` would have stripped went straight
+    /// through to `container`. A security bypass announced itself as a typo.
     ///
     /// Everything goes through here. Without it a non-zero exit was simply returned and
     /// ignored: a duplicate network, a failed start, a refused pull all completed silently.
@@ -230,6 +237,30 @@ public struct ContainerCLI: Sendable {
     /// Returns raw `ps` output; parsing belongs to the caller that renders it.
     public func processes(_ id: String) throws -> String {
         try execute(["exec", id, "--", "ps", "-o", "pid,comm,args"]).stdout
+    }
+
+    /// A `ls -la` of one directory inside a running container.
+    ///
+    /// There is no "list files" subcommand — `container copy` moves files but cannot enumerate
+    /// them — so browsing has to go through `exec`, and therefore needs
+    /// `ExecPolicy.interactiveShell`. A `ContainerCLI` built for a remote peer carries the
+    /// strict default and this throws, which is the correct outcome: letting a remote caller
+    /// walk a container's filesystem is not something to enable by accident.
+    ///
+    /// `--` before the path so a filename beginning with `-` is read as a path and not as an
+    /// `ls` flag. Returns raw output; parsing is the caller's problem because `ls` formatting
+    /// varies between busybox and coreutils and the UI is where that judgement belongs.
+    public func listDirectory(_ id: String, path: String) throws -> String {
+        try execute(["exec", id, "--", "ls", "-la", "--", path]).stdout
+    }
+
+    /// `container copy <source> <destination>`, either direction.
+    ///
+    /// Endpoints are `name:/path/in/container` or an absolute host path. The host end is
+    /// checked against this instance's `MountPolicy` by the allowlist — grammar alone does not
+    /// make writing to the real filesystem safe.
+    public func copy(from source: String, to destination: String) throws {
+        _ = try execute(["copy", source, destination])
     }
 
     /// The CLI's own `inspect` output, verbatim — for the inspect tab's raw JSON view,

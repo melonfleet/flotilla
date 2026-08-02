@@ -254,6 +254,8 @@ private func requireRejected(
 @Test func mutationClassificationMatchesTheSecurityPolicy() {
     let expectedMutating: Set<String> = [
         "start", "stop", "kill", "delete", "rm", "prune", "run",
+        // Writes the host filesystem in one direction and reads it in the other.
+        "copy",
         "image pull", "image delete", "image rm", "image prune", "image tag",
         "volume create", "volume delete", "volume rm", "volume prune",
         "network create", "network delete", "network rm", "network prune",
@@ -326,6 +328,10 @@ private func requireRejected(
         AllowedCase(["image", "prune", "-a"], canonical: ["image", "prune", "--all"],
                     mutates: true, timeout: 120),
         AllowedCase(["image", "tag", "alpine:latest", "alpine:mine"], mutates: true),
+
+        // Host end gated by MountPolicy — see the `container copy` tests below.
+        AllowedCase(["copy", "web:/etc/hostname", "/tmp/flotilla/hostname"],
+                    mutates: true, timeout: 120),
 
         AllowedCase(["volume", "list", "--format", "toml"], mutates: false),
         AllowedCase(["volume", "inspect", "data"], mutates: false),
@@ -611,4 +617,71 @@ func interactiveShellCapsTrailingTokens() {
 @Test("A ContainerCLI defaults to refusing shells")
 func containerCLIDefaultsToStrictExec() {
     #expect(ContainerCLI(host: LocalHost()).execPolicy == .processListOnly)
+}
+
+// MARK: - container copy
+//
+// `copy` touches the real filesystem in both directions, so these pin that the host end is
+// gated by MountPolicy and not merely well-formed. The dangerous direction is a too-loose
+// shape, and in Phase 2 this grammar faces a remote caller.
+
+@Test("copy refuses a host path the mount policy does not permit")
+func copyRefusesUnpermittedHostPaths() {
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["copy", "web:/etc/passwd", "/Users/someone/stolen"],
+                                mountPolicy: .denyHostPaths)
+    }
+}
+
+@Test("copy accepts a host path inside a permitted root")
+func copyAcceptsPermittedHostPaths() throws {
+    let validated = try Allowlist.validated(
+        ["copy", "web:/etc/hostname", "/tmp/flotilla/hostname"],
+        mountPolicy: .roots(["/tmp/flotilla"])
+    )
+    #expect(validated.arguments == ["copy", "web:/etc/hostname", "/tmp/flotilla/hostname"])
+}
+
+@Test("copy works in the upload direction too")
+func copyAcceptsHostToContainer() throws {
+    let validated = try Allowlist.validated(
+        ["copy", "/tmp/flotilla/a.conf", "web:/etc/a.conf"],
+        mountPolicy: .roots(["/tmp/flotilla"])
+    )
+    #expect(validated.arguments.count == 3)
+}
+
+@Test("copy refuses the filesystem root, traversal, and malformed endpoints")
+func copyRefusesDangerousEndpoints() {
+    for argv in [["copy", "web:/etc", "/"],
+                 ["copy", "web:/etc/../../x", "/tmp/flotilla/x"],
+                 ["copy", "web:", "/tmp/flotilla/x"],
+                 ["copy", "not an identifier:/x", "/tmp/flotilla/x"],
+                 ["copy", "web:relative/path", "/tmp/flotilla/x"]] {
+        #expect(throws: (any Error).self) {
+            try Allowlist.validated(argv, mountPolicy: .roots(["/tmp/flotilla"]))
+        }
+    }
+}
+
+@Test("copy needs exactly two endpoints")
+func copyNeedsTwoOperands() {
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["copy", "web:/etc/hostname"], mountPolicy: .unrestricted)
+    }
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["copy", "web:/a", "/tmp/b", "/tmp/c"], mountPolicy: .unrestricted)
+    }
+}
+
+@Test("The Files tab's directory listing is accepted and canonicalises correctly")
+func directoryListingArgvIsAccepted() throws {
+    // What `ContainerCLI.listDirectory` builds. The inner `--` is for `ls`, not for us: it
+    // stops a filename beginning with `-` being read as an ls flag.
+    let validated = try Allowlist.validated(
+        ["exec", "web", "--", "ls", "-la", "--", "/usr/share/nginx/html"],
+        execPolicy: .interactiveShell
+    )
+    // Exactly one separator is consumed as grammar; `exec` receives none at all.
+    #expect(validated.arguments == ["exec", "web", "ls", "-la", "--", "/usr/share/nginx/html"])
 }

@@ -720,6 +720,28 @@ final class AppModel {
         try await Task.detached { [cli] in try cli.logs(id, lines: lines) }.value
     }
 
+    // MARK: Files
+
+    /// Raw `ls -la` for one directory inside a container. Off the main actor: this shells out.
+    func listDirectory(_ path: String, in containerID: String) async throws -> String {
+        try await Task.detached { [cli] in try cli.listDirectory(containerID, path: path) }.value
+    }
+
+    /// Copies a file out of a container to a path the user chose in a save panel.
+    func download(_ containerPath: String, from containerID: String, to hostURL: URL) async throws {
+        try await Task.detached { [cli] in
+            try cli.copy(from: "\(containerID):\(containerPath)", to: hostURL.path)
+        }.value
+    }
+
+    /// Copies a file from this Mac into a container. The same `container copy`, reversed —
+    /// no separate mechanism, and still no network: this is local IPC to the runtime, not scp.
+    func upload(_ hostURL: URL, to containerPath: String, in containerID: String) async throws {
+        try await Task.detached { [cli] in
+            try cli.copy(from: hostURL.path, to: "\(containerID):\(containerPath)")
+        }.value
+    }
+
     /// What we have actually **watched happen** to each container, newest first.
     ///
     /// The mockup's Recent Events card is fed "from local history (SwiftData)". There is no

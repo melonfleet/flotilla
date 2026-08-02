@@ -43,6 +43,7 @@ struct ContainerDetailView: View {
                 case .processes: ProcessesTab(model: model, container: container)
                 case .logs: LogsTab(model: model, containerID: container.id)
                 case .terminal: TerminalTab(model: model, container: container)
+                case .files: FilesTab(model: model, container: container)
                 case .inspect: InspectTab(model: model, container: container)
                 case .configuration: ConfigurationTab(model: model, container: container)
                 }
@@ -1295,6 +1296,8 @@ enum DetailTab: String, CaseIterable, Identifiable {
     case logs = "Logs"
     // Between Logs and Inspect, matching the mockup's tab order.
     case terminal = "Terminal"
+    // Between Terminal and Inspect, as in the mockup.
+    case files = "Files"
     case inspect = "Inspect"
     case configuration = "Configuration"
     var id: Self { self }
@@ -1309,6 +1312,7 @@ enum DetailTab: String, CaseIterable, Identifiable {
         case .processes: "list.bullet.rectangle"
         case .logs: "doc.text"
         case .terminal: "terminal"
+        case .files: "folder"
         case .inspect: "curlybraces"
         case .configuration: "doc.plaintext"
         }
