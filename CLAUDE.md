@@ -28,11 +28,16 @@ questions.
 - The macOS app has a `MenuBarExtra` glance and a main window with Containers
   (sortable, hideable columns, per-row actions, context menus, cards with
   sparklines), Images, Volumes, Networks, Settings, a run sheet with a validated
-  live command preview, and a container detail **modal** with Overview / Processes /
-  Logs / Terminal / Inspect / Configuration. Detail was a real window until 2026-08-01; it is
-  now a sheet in the same `ModalCard` shell as every other pop-up, so it dims the
-  window behind it and closes with the red ×. The cost, accepted deliberately: it is
-  no longer resizable and you cannot keep several open at once.
+  live command preview, and container detail **embedded in the window** with Overview /
+  Processes / Logs / Terminal / Inspect / Configuration, a Back button and a prev/next
+  stepper through the containers as currently filtered and sorted.
+- **Forms are modal, places are navigable.** `ModalCard` (red ×, dim behind) wraps Run,
+  New Volume and New Network — a form is a question you answer and dismiss. Detail is a
+  place you go and come back from, so it is embedded, which is what
+  `research/review/mockups/container-detail.html` specified all along: that mockup has the
+  app sidebar in it. Detail went window → sheet → embedded over 1–2 August; the sheet was a
+  divergence that cost resizability, height for the Terminal tab, and left the sidebar
+  inert. Do not turn it back into a sheet.
 - **216 tests pass on macOS.** `FlotillaCore` also builds and tests on Linux with
   Swift 6.1 via `Package@swift-6.1.swift`. Keep the portable core Foundation-only
   so backend and data work stays independently verifiable.

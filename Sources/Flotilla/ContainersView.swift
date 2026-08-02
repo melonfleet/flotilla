@@ -146,32 +146,142 @@ struct ContainersView: View {
             .onDisappear { model.formDidClose() }
     }
 
-    /// Detail as a modal, in the same `ModalCard` shell as every other pop-up: red ×, no
-    /// traffic lights, and the window behind it dimmed and inert. `formDidOpen`/`formDidClose`
-    /// are what drive that dim — detail was previously a real window and so did neither, which
-    /// is what made it the odd one out.
+    /// Detail **embedded in the window**, not a modal — the arrangement
+    /// `research/review/mockups/container-detail.html` specified all along. That mockup has the
+    /// app sidebar in it; the sheet was my divergence, and it cost three things worth having:
+    /// the pane could not be resized, it was capped at a fixed frame that the Terminal tab in
+    /// particular wants more of, and the sidebar behind it was dimmed and inert.
     ///
-    /// The container is resolved from the model on each pass rather than captured, so the sheet
-    /// tracks the live state and says so plainly if the container is deleted underneath it.
-    private func detailSheet(_ target: DetailTarget) -> some View {
-        ModalCard(title: target.id, onClose: { detailTarget = nil }) {
-            Group {
-                if let container = model.containers.first(where: { $0.id == target.id }) {
-                    ContainerDetailView(model: model, container: container)
-                } else {
-                    ContentUnavailableView(
-                        "Container unavailable",
-                        systemImage: "questionmark.square.dashed",
-                        description: Text("“\(target.id)” is no longer on this Mac. It may have been deleted.")
-                    )
-                }
+    /// The modal treatment is not discarded, it is now applied where it belongs. `ModalCard` —
+    /// red ×, dim behind — still wraps Run, New Volume and New Network. The line is **a form is
+    /// modal, a place is navigable**: a form is a question you answer and dismiss, and detail is
+    /// somewhere you go and come back from.
+    ///
+    /// Going somewhere is why this earns Back and the prev/next stepper. Stepping between
+    /// containers without closing anything is the workflow persistent terminal sessions made
+    /// possible — shells stay alive in `TerminalSessionStore`, so you can leave a build running
+    /// in one container, step to the next, and step back to it still running.
+    @ViewBuilder
+    private func detailScreen(_ target: DetailTarget) -> some View {
+        VStack(spacing: 0) {
+            if let container = model.containers.first(where: { $0.id == target.id }) {
+                detailHeader(for: container)
+                Divider()
+                ContainerDetailView(model: model, container: container)
+            } else {
+                detailHeader(for: nil)
+                Divider()
+                ContentUnavailableView(
+                    "Container unavailable",
+                    systemImage: "questionmark.square.dashed",
+                    description: Text("“\(target.id)” is no longer on this Mac. It may have been deleted.")
+                )
             }
-            // A sheet is not user-resizable, so the size is chosen once and has to suit the
-            // roomiest tab rather than the emptiest — Logs and Inspect, not Overview.
-            .frame(width: 780, height: 620)
         }
-        .onAppear { model.formDidOpen() }
-        .onDisappear { model.formDidClose() }
+    }
+
+    /// Back, identity, the stepper, and the lifecycle actions — the mockup's `toolbar tall`.
+    @ViewBuilder
+    private func detailHeader(for container: Container?) -> some View {
+        HStack(spacing: 10) {
+            Button { detailTarget = nil } label: {
+                Image(systemName: "chevron.left")
+            }
+            .help("Back to Containers")
+            .accessibilityLabel("Back to Containers")
+
+            if let container {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 19))
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(container.id).font(.headline)
+                        HStack(spacing: 4) {
+                            Circle().fill(container.stateColor).frame(width: 6, height: 6)
+                            Text(container.status.state.capitalized).font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    Text(subtitle(for: container))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            } else {
+                Text("Container unavailable").font(.headline)
+            }
+
+            Spacer()
+
+            stepper
+
+            if let container {
+                GlassEffectContainer(spacing: 6) {
+                    HStack(spacing: 6) { rowActions(for: container) }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .glassEffect(in: .rect(cornerRadius: 8))
+                }
+                .fixedSize()
+            }
+        }
+        .padding(12)
+    }
+
+    /// Steps through the containers **as currently shown** — same filter, same search, same
+    /// sort. Stepping into a row the table is hiding would be its own small betrayal.
+    ///
+    /// Deliberately not wrapping at the ends: the buttons disable instead. Wrapping from the
+    /// last container back to the first, silently, is how you lose track of where you are in a
+    /// list you are stepping through one at a time.
+    @ViewBuilder
+    private var stepper: some View {
+        let order = sorted
+        let index = order.firstIndex { $0.id == detailTarget?.id }
+
+        HStack(spacing: 2) {
+            Button {
+                if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) }
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .disabled(index == nil || index == 0)
+            .help("Previous container")
+            .accessibilityLabel("Previous container")
+
+            Button {
+                if let index, index < order.count - 1 {
+                    detailTarget = DetailTarget(id: order[index + 1].id)
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .disabled(index == nil || index == order.count - 1)
+            .help("Next container")
+            .accessibilityLabel("Next container")
+
+            if let index {
+                Text("\(index + 1) of \(order.count)")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
+        }
+    }
+
+    private func subtitle(for container: Container) -> String {
+        var parts = [ContainerImage.shortReference(container.imageReference), model.hostLabel]
+        if AppModel.isRunning(container), let started = container.status.startedDate {
+            parts.append(RelativeDate.relative(started, prefix: "up"))
+        } else {
+            parts.append(RelativeDate.relative(container.configuration.creationDate, prefix: "created"))
+        }
+        if let ip = container.ipv4 { parts.append(ip) }
+        return parts.joined(separator: " · ")
     }
 
     private func openDetail(_ id: String) {
@@ -403,11 +513,17 @@ struct ContainersView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            bulkActionBar
-            Divider()
-            content
+        Group {
+            if let target = detailTarget {
+                detailScreen(target)
+            } else {
+                VStack(spacing: 0) {
+                    toolbar
+                    bulkActionBar
+                    Divider()
+                    content
+                }
+            }
         }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
@@ -425,7 +541,6 @@ struct ContainersView: View {
         .onAppear {
             if model.pendingRunSheet { showingRun = true; model.pendingRunSheet = false }
         }
-        .sheet(item: $detailTarget) { detailSheet($0) }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. One observation covers all three ways the visible set
         // moves out from under the selection — filter change, search change, and the data

@@ -31,8 +31,6 @@ struct ContainerDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
             Picker("Tab", selection: $tab) {
                 ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
             }
@@ -58,27 +56,10 @@ struct ContainerDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        // No frame here: the presenting `ModalCard` sizes the sheet. This carried
-        // `minWidth/minHeight` back when detail was a resizable window, and leaving it would
-        // fight the sheet's fixed frame.
-        //
-        // The header the title bar used to supply is now `ModalCard`'s, so this view no longer
-        // draws a name of its own — see `header`, which keeps only the image reference.
-    }
-
-    /// The image reference only. The container's **name** is the modal's title, and printing it
-    /// again immediately beneath would be the "Flotilla Flotilla" mistake in miniature.
-    private var header: some View {
-        HStack {
-            Text(container.configuration.image.reference)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        // No frame and no header of its own. `ContainersView.detailHeader` supplies the name,
+        // state, image, host and uptime above this, so a second header here would repeat them;
+        // and now that detail is embedded rather than sheeted, it should take whatever height
+        // the window has rather than pin itself to a fixed one.
     }
 
     private var overview: some View {
