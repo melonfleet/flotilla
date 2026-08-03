@@ -19,6 +19,46 @@ docs — `reference/cli-help/` is the authority and docs have been wrong repeate
   over data already fetched. No new CLI surface, no allowlist change, no security cost —
   which is exactly why it goes first.
 
+## Dashboard v2 — matching Orchard's, and it is mostly retention not plumbing
+
+the owner shared a screenshot of Orchard's dashboard (2026-08-02). Assessed against
+`container stats --format json`, which returns **eight fields per container**:
+`cpuUsageUsec`, `memoryUsageBytes`, `memoryLimitBytes`, `networkRxBytes`,
+`networkTxBytes`, `blockReadBytes`, `blockWriteBytes`, `numProcesses`.
+
+`ContainerStats` in `Models.swift` **already decodes all eight**. `StatsSampler.HistoryPoint`
+retains only `cpuPercent` and `memoryUsageBytes` and discards the other six. So this is
+largely a retention-and-charting job, not new integration — no new CLI surface, no allowlist
+grammar, same zero security cost as v1.
+
+Feasible immediately:
+
+- **Stat row with fractions** (`18/19`, `19/30`). `system df` already returns `active` and
+  `total` per category; v1 shows only sizes.
+- **Memory as "used of limit" with a limit line.** `memoryLimitBytes` is decoded and unused.
+- **Network ↓/↑ and Disk R/W rates.** Both counters are cumulative, so rates come from the
+  delta between samples over wall clock — exactly the technique `cpuUsageUsec` already uses,
+  and the same reason a single sample is meaningless.
+- **Per-container utilisation table**, every column including **PIDs** (`numProcesses`).
+- **"N cores reserved"** — sum of `configuration.resources.cpus`.
+- **5m and 15m ranges** — raise `historyLimit`, currently 40 points (~3.3 min at a 5s poll).
+
+Needs a decision — **history depth**:
+
+- 1h at 5s is 720 points per container; fine.
+- **24h is 17,280 points per container** — roughly 17 MB for twenty containers, and **lost on
+  restart**. Options: persist it, downsample (5s for recent, 1-minute averages beyond), or
+  label it honestly as "since launch". Recommendation: downsample and tell the truth on the
+  axis. A 24h button that silently shows forty minutes is the kind of readout this project
+  keeps deleting.
+
+Deliberately **not** copied:
+
+- That CPU tile reads as *host* CPU. `container stats` reports per-container usage only;
+  there is no host-wide figure in it. Ours must stay "CPU, all containers". Summed container
+  CPU presented as machine CPU would be quietly wrong, and quietly wrong is the failure mode
+  this codebase has paid for most often.
+
 ## Wave 1 — the CLI fully backs these, and none of them widen the wire boundary much
 
 1. **⑦ Aggregated multi-container logs.** `logs` is already allowlisted and already fetched
