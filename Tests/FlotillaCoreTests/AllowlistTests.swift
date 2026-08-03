@@ -256,6 +256,10 @@ private func requireRejected(
         "start", "stop", "kill", "delete", "rm", "prune", "run",
         // Writes the host filesystem in one direction and reads it in the other.
         "copy",
+        // A machine IS the VM every container on the host runs inside. `machine delete`
+        // destroys that substrate, so nothing here is a convenience mutation.
+        "machine create", "machine set", "machine stop", "machine delete",
+        "machine set-default",
         "image pull", "image delete", "image rm", "image prune", "image tag",
         "volume create", "volume delete", "volume rm", "volume prune",
         "network create", "network delete", "network rm", "network prune",
@@ -264,6 +268,7 @@ private func requireRejected(
     #expect(actualMutating == expectedMutating)
 
     let expectedReadOnly: Set<String> = [
+        "machine list", "machine inspect", "machine logs",
         "ls", "list", "inspect", "stats", "logs",
         "image list", "image inspect",
         "volume list", "volume inspect",
@@ -328,6 +333,23 @@ private func requireRejected(
         AllowedCase(["image", "prune", "-a"], canonical: ["image", "prune", "--all"],
                     mutates: true, timeout: 120),
         AllowedCase(["image", "tag", "alpine:latest", "alpine:mine"], mutates: true),
+
+        AllowedCase(["machine", "list", "--format", "json"], mutates: false),
+        AllowedCase(["machine", "inspect", "dev"], mutates: false),
+        AllowedCase(["machine", "logs", "-n", "50", "--boot", "dev"], mutates: false),
+        AllowedCase(["machine", "create", "-n", "dev", "--cpus", "4", "--memory", "8G",
+                     "--home-mount", "home-mount=ro", "alpine:3.22"],
+                    canonical: ["machine", "create", "--name", "dev", "--cpus", "4",
+                                "--memory", "8G", "--home-mount", "home-mount=ro",
+                                "alpine:3.22"],
+                    mutates: true, timeout: 600),
+        AllowedCase(["machine", "set", "-n", "dev", "cpus=4", "memory=8G", "home-mount=ro"],
+                    canonical: ["machine", "set", "--name", "dev", "cpus=4", "memory=8G",
+                                "home-mount=ro"],
+                    mutates: true),
+        AllowedCase(["machine", "stop", "dev"], mutates: true, timeout: 120),
+        AllowedCase(["machine", "delete", "dev"], mutates: true, timeout: 120),
+        AllowedCase(["machine", "set-default", "dev"], mutates: true),
 
         // Host end gated by MountPolicy — see the `container copy` tests below.
         AllowedCase(["copy", "web:/etc/hostname", "/tmp/flotilla/hostname"],
@@ -684,4 +706,94 @@ func directoryListingArgvIsAccepted() throws {
     )
     // Exactly one separator is consumed as grammar; `exec` receives none at all.
     #expect(validated.arguments == ["exec", "web", "ls", "-la", "--", "/usr/share/nginx/html"])
+}
+
+// MARK: - container machine
+//
+// A machine is the VM every container on the host runs inside, so these leaves are not ordinary
+// additions. `research/VM-SECURITY-REVIEW.md` requires that unknown `set` keys be refused rather
+// than forwarded, and that each leaf's own calling convention be encoded rather than inferred
+// from the family — the conventions genuinely differ, which is the `volume create --size` trap.
+
+@Test("machine set accepts exactly the three documented keys")
+func machineSetAcceptsOnlyDocumentedKeys() throws {
+    let validated = try Allowlist.validated(
+        ["machine", "set", "-n", "dev", "cpus=4", "memory=8G", "home-mount=ro"])
+    #expect(validated.arguments == ["machine", "set", "--name", "dev",
+                                    "cpus=4", "memory=8G", "home-mount=ro"])
+}
+
+@Test("machine set refuses an unknown key rather than forwarding it")
+func machineSetRefusesUnknownKeys() {
+    // The review's exact concern: "unknown future keys could silently add privilege". A key
+    // this build has never heard of must not be passed through on the hope the CLI checks it.
+    for setting in ["rosetta=true", "kernel=/tmp/vmlinux", "privileged=yes", "cpu=4", "mem=8G"] {
+        #expect(throws: (any Error).self) {
+            try Allowlist.validated(["machine", "set", "-n", "dev", setting])
+        }
+    }
+}
+
+@Test("home-mount accepts only ro, rw and none")
+func homeMountDomainIsClosed() throws {
+    for mode in ["ro", "rw", "none"] {
+        _ = try Allowlist.validated(["machine", "set", "-n", "dev", "home-mount=\(mode)"])
+    }
+    // `home-mount` names a MODE, not a path — there is nothing for MountPolicy to check here.
+    // Whether a remote caller may set it at all is an authorisation question the transport
+    // answers, not a grammar one. See the note on `checkMachineSetting`.
+    for bad in ["home-mount=readwrite", "home-mount=/Users/someone", "home-mount=", "home-mount=RW"] {
+        #expect(throws: (any Error).self) {
+            try Allowlist.validated(["machine", "set", "-n", "dev", bad])
+        }
+    }
+}
+
+@Test("machine set bounds cpus and memory")
+func machineSetBoundsResourceValues() {
+    for setting in ["cpus=0", "cpus=99999", "cpus=-1", "cpus=four", "memory=lots", "memory=8Q"] {
+        #expect(throws: (any Error).self) {
+            try Allowlist.validated(["machine", "set", "-n", "dev", setting])
+        }
+    }
+}
+
+@Test("delete and set-default REQUIRE the machine id; stop, inspect and logs do not")
+func machineOperandRequirementsMatchEachLeaf() throws {
+    // The asymmetry is the CLI's own and this is the right way round: a bare `machine delete`
+    // would silently destroy the DEFAULT machine, so it has to be named.
+    #expect(throws: (any Error).self) { try Allowlist.validated(["machine", "delete"]) }
+    #expect(throws: (any Error).self) { try Allowlist.validated(["machine", "set-default"]) }
+
+    // These three legitimately default to the default machine.
+    _ = try Allowlist.validated(["machine", "stop"])
+    _ = try Allowlist.validated(["machine", "inspect"])
+    _ = try Allowlist.validated(["machine", "logs"])
+}
+
+@Test("machine create validates the image reference and its inline sizing")
+func machineCreateValidatesImageAndSizing() throws {
+    let validated = try Allowlist.validated(
+        ["machine", "create", "-n", "dev", "--cpus", "4", "--memory", "8G", "alpine:3.22"])
+    #expect(validated.arguments.contains("alpine:3.22"))
+    #expect(validated.mutates)
+
+    // An image reference, not a free string — same shape the rest of the allowlist uses.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["machine", "create", "not a valid ref!!"])
+    }
+    // Unicode lookalikes are rejected by `.imageReference` exactly as they are elsewhere.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["machine", "create", "аlpine:3.22"])
+    }
+}
+
+@Test("the machine family does not accept each other's calling conventions")
+func machineLeavesDoNotShareOneConvention() {
+    // `stop` is positional-only: `-n` is not one of its flags.
+    #expect(throws: (any Error).self) { try Allowlist.validated(["machine", "stop", "-n", "dev"]) }
+    // `set` needs its settings; a name alone is not a command.
+    #expect(throws: (any Error).self) { try Allowlist.validated(["machine", "set", "-n", "dev"]) }
+    // `list` takes no operand at all.
+    #expect(throws: (any Error).self) { try Allowlist.validated(["machine", "list", "dev"]) }
 }

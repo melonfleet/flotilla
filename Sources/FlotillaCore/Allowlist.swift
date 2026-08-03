@@ -36,6 +36,9 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     case absolutePath
     /// One end of a `container copy`: either `name:/path/in/container` or `/path/on/host`.
     case copyEndpoint
+    /// One `container machine set` setting: `cpus=<n>`, `memory=<size>` or
+    /// `home-mount=<ro|rw|none>`. **A closed set, not a generic `key=value`.**
+    case machineSetting
     /// Whole seconds, 0…86400.
     case durationSeconds
     /// `SIGTERM`, `TERM`, or a signal number 1…64.
@@ -85,6 +88,8 @@ extension ValueShape {
             "Expected an absolute path with no `.` or `..` components."
         case .copyEndpoint:
             "Expected `container:/path` or an absolute path on this Mac."
+        case .machineSetting:
+            "Expected `cpus=<number>`, `memory=<size>` such as 8G, or `home-mount=ro|rw|none`."
         case .durationSeconds:
             "Expected whole seconds, 0 to 86400."
         case .signal:
@@ -368,6 +373,72 @@ public enum Allowlist {
             // are `copyEndpoint`, whose host side must satisfy `MountPolicy`.
             CommandSpec(["copy"], mutates: true, timeoutHint: 120,
                         operands: OperandSpec(shape: .copyEndpoint, min: 2, max: 2)),
+
+            // MARK: container machine
+            //
+            // Nine leaves, each captured individually from its OWN `--help` — see
+            // `reference/cli-help/container-machine-1.0.0-help.txt`. Parent help was not
+            // enough, and `research/VM-SECURITY-REVIEW.md` says so in as many words. The
+            // calling conventions genuinely differ per leaf and assuming one across the family
+            // is the `volume create --size` trap:
+            //
+            //   `delete`, `set-default`  operand REQUIRED
+            //   `stop`, `inspect`, `logs`  operand OPTIONAL (defaults to the default machine)
+            //   `run`, `set`             machine named via `-n`, not positionally
+            //
+            // A machine is the VM every container on this host runs inside, so these are not
+            // ordinary additions — `machine delete` destroys that substrate. the review's review
+            // requires `delete`, `run` and `set-default` to be flatly unreachable over the
+            // Phase 2 wire and remote `home-mount` refused in both modes. Grammar cannot
+            // express "who is asking", so those denials belong in the transport's policy tier;
+            // what belongs HERE is that the shapes are exact and no unknown setting key can
+            // pass. `mutates` is honest on every one of them.
+
+            CommandSpec(["machine", "list"], mutates: false,
+                        flags: [FlagSpec(long: "format", value: .outputFormat),
+                                FlagSpec(long: "quiet", short: "q")],
+                        operands: .none),
+
+            // Optional operand: bare `machine inspect` inspects the default machine.
+            CommandSpec(["machine", "inspect"], mutates: false,
+                        operands: OperandSpec(shape: .identifier, min: 0, max: 1)),
+
+            CommandSpec(["machine", "logs"], mutates: false,
+                        flags: [FlagSpec(short: "n", value: .count),
+                                FlagSpec(long: "boot"),
+                                FlagSpec(long: "follow", short: "f")],
+                        operands: OperandSpec(shape: .identifier, min: 0, max: 1)),
+
+            // Boots a VM and pulls an image, so `timeoutHint` is generous and `mutates` true.
+            // `--cpus`, `--memory` and `--home-mount` are accepted inline here — confirmed
+            // against the leaf help, which settles whether a follow-up `set` is required.
+            CommandSpec(["machine", "create"], mutates: true, timeoutHint: 600,
+                        flags: [FlagSpec(long: "name", short: "n", value: .identifier),
+                                FlagSpec(long: "cpus", value: .count),
+                                FlagSpec(long: "memory", value: .memorySize),
+                                FlagSpec(long: "home-mount", value: .machineSetting),
+                                FlagSpec(long: "arch", short: "a", value: .identifier),
+                                FlagSpec(long: "os", value: .identifier),
+                                FlagSpec(long: "platform", value: .platform)],
+                        operands: OperandSpec(shape: .imageReference, min: 1, max: 1)),
+
+            // Settings are `.machineSetting`, a CLOSED set — an unknown key is refused rather
+            // than forwarded on the hope the CLI will catch it.
+            CommandSpec(["machine", "set"], mutates: true,
+                        flags: [FlagSpec(long: "name", short: "n", value: .identifier)],
+                        operands: OperandSpec(shape: .machineSetting, min: 1, max: 3)),
+
+            CommandSpec(["machine", "stop"], mutates: true, timeoutHint: 120,
+                        operands: OperandSpec(shape: .identifier, min: 0, max: 1)),
+
+            // Operand REQUIRED, unlike stop/inspect/logs. That asymmetry is the CLI's and it is
+            // the right way round: `machine delete` with no argument would silently destroy the
+            // default machine, so it must be named.
+            CommandSpec(["machine", "delete"], mutates: true, timeoutHint: 120,
+                        operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
+
+            CommandSpec(["machine", "set-default"], mutates: true,
+                        operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
 
             CommandSpec(["logs"], mutates: false,
                         flags: [FlagSpec(short: "n", value: .count), FlagSpec(long: "boot")],
@@ -779,6 +850,8 @@ public enum Allowlist {
             return checkAbsolutePath(value, context: context)
         case .copyEndpoint:
             return checkCopyEndpoint(value, context: context, mountPolicy: mountPolicy)
+        case .machineSetting:
+            return checkMachineSetting(value, context: context)
         case .durationSeconds:
             return isInteger(value, in: 0...86_400) ? nil : bad
         case .count:
@@ -879,6 +952,44 @@ public enum Allowlist {
               (first.isASCII && first.isLetter) || first == "_" else { return false }
         guard key.allSatisfy({ isASCIIAlphanumeric($0) || $0 == "_" }) else { return false }
         return value[value.index(after: equals)...].utf8.count <= 768
+    }
+
+    /// One `container machine set` / `machine create` setting.
+    ///
+    /// **Enumerated, never generic.** `research/VM-SECURITY-REVIEW.md` is explicit: model the
+    /// reviewed keys as typed operations and reject unknown ones, because "unknown future keys
+    /// could silently add privilege" — a key this build has never heard of must not be forwarded
+    /// on the assumption the CLI will sanity-check it.
+    ///
+    /// The three keys and their domains are the CLI's own, captured verbatim in
+    /// `reference/cli-help/container-machine-1.0.0-help.txt`:
+    /// `cpus=<number>`, `memory=<size>`, `home-mount=<ro|rw|none>`.
+    ///
+    /// `home-mount` is **not** validated against `MountPolicy` here and that is deliberate: it
+    /// names a mode, not a path — there is no path to check, because the path is always the
+    /// user's own home. The decision that matters for it is *authorisation*, not grammar, and
+    /// per the review's review it must be refused outright for remote callers. Grammar cannot express
+    /// "who is asking", so that gate belongs with `ExecPolicy`-style policy, not here.
+    private static func checkMachineSetting(_ value: String, context: String) -> AllowlistError? {
+        let bad = AllowlistError.invalidValue(context: context, value: value, shape: .machineSetting)
+        guard let equals = value.firstIndex(of: "=") else { return bad }
+        let key = String(value[value.startIndex..<equals])
+        let setting = String(value[value.index(after: equals)...])
+        guard !setting.isEmpty else { return bad }
+
+        switch key {
+        case "cpus":
+            // Same ceiling as `--cpus` elsewhere. A machine with 10,000 vCPUs is a typo or an
+            // attack, and either way the VM will not boot.
+            return isInteger(setting, in: 1...1024) ? nil : bad
+        case "memory":
+            return isMemorySize(setting) ? nil : bad
+        case "home-mount":
+            return ["ro", "rw", "none"].contains(setting) ? nil : bad
+        default:
+            // Unknown key. Refused, not forwarded.
+            return bad
+        }
     }
 
     /// One end of a `container copy`.

@@ -427,6 +427,102 @@ public struct ContainerNetwork: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+// MARK: - Machine  (`container machine list --format json`, `container machine inspect`)
+
+/// A `container machine` — one of the CLI's own persistent Linux micro-VMs (see
+/// `research/MACHINES-SPEC.md`). Not general-purpose VM management; scope is exactly
+/// the `container machine` subcommand family.
+///
+/// **Deliberately FLAT, unlike `Container`.** Modelling this by analogy to `Container`'s
+/// `configuration`/`status` nesting is the exact mistake that made `ContainerVolume` throw
+/// on every real volume (see that type's history, above). Captured against real
+/// `container 1.0.0` output (`Fixtures/machines.json`, `Fixtures/machine-inspect.json`),
+/// and the top-level keys really are flat: `id`, `status`, `cpus`, `memory`, `diskSize`,
+/// `ipAddress`, `createdDate`, `default`. Also note `status`, not `state` — a different key
+/// than `Container.Status.state` for what is conceptually the same thing.
+///
+/// **One type, not two.** `machine inspect` returns everything `machine list` does, plus
+/// five more fields (`containerId`, `homeMount`, `image`, `platform`, `startedDate`,
+/// `userSetup`). Modelled here as one `Codable` struct with those five optional, rather
+/// than a second `MachineInspect` type — the same choice `Container` already makes for its
+/// own list/inspect pair (`ContainerCLI.inspect` decodes the identical `[Container]` shape
+/// `ls` does). A second type would duplicate every list-shared field and force call sites
+/// to know in advance which shape they are holding; an optional simply reads as "not filled
+/// in yet" until an `inspectMachine` call populates it.
+public struct ContainerMachine: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var status: String
+    public var cpus: Int
+    /// Bytes. `machine list --format table` renders this in human units; the JSON does not.
+    public var memory: Int64
+    /// Bytes, same unit note as `memory`.
+    public var diskSize: Int64
+    public var ipAddress: String?
+    public var createdDate: String?
+    /// Whether `machine set-default` currently points at this machine. Present on
+    /// `machine list` output; **absent** from `machine inspect` (confirmed against
+    /// `Fixtures/machine-inspect.json`, which has no `default` key at all) — nil here
+    /// means "this endpoint doesn't say," not "not the default." `default` is also a
+    /// Swift keyword, hence the rename via `CodingKeys`.
+    public var isDefault: Bool?
+
+    // Inspect-only — nil when decoded from `machine list`.
+    public var containerId: String?
+    /// `ro` or `rw` in the one captured fixture; whether `none`/unset also occurs is not
+    /// yet verified (`research/MACHINES-SPEC.md` §6.4).
+    public var homeMount: String?
+    public var image: MachineImage?
+    public var platform: Platform?
+    public var startedDate: String?
+    public var userSetup: UserSetup?
+
+    public struct MachineImage: Codable, Sendable, Equatable {
+        public var reference: String
+        public var descriptor: Descriptor?
+    }
+
+    /// The host user whose account booted this machine.
+    ///
+    /// `username` is the HOST USER'S NAME — identity, not machine metadata. The committed
+    /// fixture is anonymised to `example` on purpose. **Never log this field, and never let
+    /// it reach a diagnostics snapshot or support bundle unredacted.**
+    public struct UserSetup: Codable, Sendable, Equatable {
+        public var uid: Int
+        public var gid: Int
+        public var username: String
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, status, cpus, memory, diskSize, ipAddress, createdDate
+        case isDefault = "default"
+        case containerId, homeMount, image, platform, startedDate, userSetup
+    }
+
+    public init(
+        id: String, status: String, cpus: Int, memory: Int64, diskSize: Int64,
+        ipAddress: String? = nil, createdDate: String? = nil, isDefault: Bool? = nil,
+        containerId: String? = nil, homeMount: String? = nil, image: MachineImage? = nil,
+        platform: Platform? = nil, startedDate: String? = nil, userSetup: UserSetup? = nil
+    ) {
+        self.id = id
+        self.status = status
+        self.cpus = cpus
+        self.memory = memory
+        self.diskSize = diskSize
+        self.ipAddress = ipAddress
+        self.createdDate = createdDate
+        self.isDefault = isDefault
+        self.containerId = containerId
+        self.homeMount = homeMount
+        self.image = image
+        self.platform = platform
+        self.startedDate = startedDate
+        self.userSetup = userSetup
+    }
+
+    public var isRunning: Bool { status.caseInsensitiveCompare("running") == .orderedSame }
+}
+
 // MARK: - Logs
 
 // `container logs` emits plain text, not JSON, so these are Flotilla's own types

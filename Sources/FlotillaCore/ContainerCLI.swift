@@ -525,4 +525,108 @@ public struct ContainerCLI: Sendable {
         return LogChunk.from(stdout: result.stdout, stderr: result.stderr,
                              containerID: id, requestedLines: lines, isBootLog: bootLog)
     }
+
+    // MARK: Machines
+
+    /// `container machine list --format json` — see `ContainerMachine`'s doc comment for
+    /// why the model is flat rather than nested like `Container`.
+    public func machines() throws -> [ContainerMachine] {
+        try JSONDecoder.flotilla.decode([ContainerMachine].self,
+                                        from: Data(try execute(["machine", "list", "--format", "json"]).stdout.utf8))
+    }
+
+    /// `container machine inspect [<id>]` — `id` is optional on the real CLI, defaulting
+    /// to whichever machine `set-default` currently points at. Same one-element-array
+    /// shape as `container inspect`, verified against `Fixtures/machine-inspect.json`.
+    public func inspectMachine(_ id: String? = nil) throws -> ContainerMachine {
+        var args = ["machine", "inspect"]
+        if let id { args.append(id) }
+        let result = try execute(args)
+        let machines = try JSONDecoder.flotilla.decode([ContainerMachine].self, from: Data(result.stdout.utf8))
+        guard let machine = machines.first else {
+            throw ContainerCLIError.emptyInspectResult(id: id ?? "default")
+        }
+        return machine
+    }
+
+    /// `container machine create <image> [--name] [--cpus] [--memory] [--home-mount]`.
+    ///
+    /// Unlike `container volume`/`network create`, `create` takes sizing and the home-mount
+    /// grant inline — confirmed against `reference/cli-help/container-machine-1.0.0-help.txt`,
+    /// so no follow-up `set` is required before first boot.
+    @discardableResult
+    public func createMachine(
+        image: String, name: String? = nil, cpus: Int? = nil, memory: String? = nil, homeMount: String? = nil
+    ) throws -> CommandResult {
+        var args = ["machine", "create"]
+        if let name { args += ["--name", name] }
+        if let cpus { args += ["--cpus", String(cpus)] }
+        if let memory { args += ["--memory", memory] }
+        if let homeMount { args += ["--home-mount", homeMount] }
+        args.append(image)
+        return try execute(args)
+    }
+
+    /// `container machine set [--name <id>] <key=value> ...`.
+    ///
+    /// The settings are bare `key=value` operands, not flags — `cpus=4`, `memory=8G`,
+    /// `home-mount=ro`, per the captured help text. Takes effect only after the machine is
+    /// next booted; see `research/MACHINES-SPEC.md` §4 for the stop-apply-restart UI this
+    /// implies.
+    @discardableResult
+    public func setMachine(
+        _ id: String? = nil, cpus: Int? = nil, memory: String? = nil, homeMount: String? = nil
+    ) throws -> CommandResult {
+        var args = ["machine", "set"]
+        if let id { args += ["--name", id] }
+        if let cpus { args.append("cpus=\(cpus)") }
+        if let memory { args.append("memory=\(memory)") }
+        if let homeMount { args.append("home-mount=\(homeMount)") }
+        return try execute(args)
+    }
+
+    /// `container machine run --name <id>`, with no trailing command — boots the machine
+    /// (creating no new state; `run` "boots the container machine if necessary" per the
+    /// CLI's own description) without starting a shell inside it. There is no dedicated
+    /// `machine start`; this is the boot-only invocation `research/MACHINES-SPEC.md` §3.2
+    /// calls for.
+    @discardableResult
+    public func startMachine(_ id: String? = nil) throws -> CommandResult {
+        var args = ["machine", "run"]
+        if let id { args += ["--name", id] }
+        return try execute(args)
+    }
+
+    /// `container machine stop [<id>]` — note the id is a **positional operand** here,
+    /// unlike `run`/`set`, which take it via `--name`. Per-leaf asymmetry, confirmed
+    /// against the captured help text; do not "normalise" this to `--name`.
+    @discardableResult
+    public func stopMachine(_ id: String? = nil) throws -> CommandResult {
+        var args = ["machine", "stop"]
+        if let id { args.append(id) }
+        return try execute(args)
+    }
+
+    /// `container machine delete <id>` — unlike `stop`, the id is **required**.
+    @discardableResult
+    public func deleteMachine(_ id: String) throws -> CommandResult {
+        try execute(["machine", "delete", id])
+    }
+
+    /// `container machine set-default <id>` — id is required, same as `delete`.
+    @discardableResult
+    public func setDefaultMachine(_ id: String) throws -> CommandResult {
+        try execute(["machine", "set-default", id])
+    }
+
+    /// `container machine logs [-n <lines>] [--boot] [<id>]` — `id` is optional, defaulting
+    /// to the default machine, same as `inspect`/`stop`.
+    public func machineLogs(_ id: String? = nil, lines: Int = 100, boot: Bool = false) throws -> LogChunk {
+        var args = ["machine", "logs", "-n", String(lines)]
+        if boot { args.append("--boot") }
+        if let id { args.append(id) }
+        let result = try execute(args)
+        return LogChunk.from(stdout: result.stdout, stderr: result.stderr,
+                             containerID: id ?? "default", requestedLines: lines, isBootLog: boot)
+    }
 }
