@@ -407,3 +407,83 @@ derived from the existing container-detail and main-window mockups' *structure*
 fields, which tabs), not from a Flotilla-specific visual design. Worth commissioning one
 before the app owner builds this, the same way the container detail screen had one to transcribe
 element-for-element rather than eyeball.
+
+## Addendum — what the live CLI actually does (3 August)
+
+Written after building the UI against this spec and running it. Four things in here were wrong
+or missing, and all four were the same class of mistake: a grammar built from the help text
+without ever sending the command.
+
+### 1. There is no `machine start`
+
+The nine leaves are `create`, `delete`, `inspect`, `list`, `logs`, `run`, `set`, `set-default`,
+`stop`. Starting a machine means `machine run`, which "boots the container machine if necessary".
+
+### 2. `machine run` with no command needs a PTY, and fails *after* booting
+
+`container machine run --name X` opens a **login shell**. Without a PTY on the calling side it
+exits non-zero with `Operation not supported by device` — the same trap as `container exec` — but
+the VM is left **running**. So a Start button that shells out and checks the exit code reports
+failure on a successful start.
+
+Boot with a trivial command instead: `machine run --name X /bin/true`. Exits 0, needs no
+terminal. The `--` separator is optional here; both forms were run and both work.
+
+### 3. `--home-mount` is spelled differently on `create` and `set`
+
+| Leaf | Form |
+|---|---|
+| `machine create` | `--home-mount ro` — **bare value** |
+| `machine set` | `home-mount=ro` — **`key=value` operand** |
+
+`Allowlist` typed the create flag as `.machineSetting`, which demands the `key=value` form the
+CLI rejects, while the UI sent the bare form the allowlist rejected. Creating a machine with a
+home-mount could not succeed by either route. Now `.homeMountMode`, with a test pinning each
+leaf's form against the other's.
+
+### 4. Almost no image boots as a machine
+
+Tried on this Mac, each pulled successfully and each then failed to boot:
+
+| Image | Result |
+|---|---|
+| `alpine:3.22` | **boots** |
+| `alpine:latest` | **boots** |
+| `ubuntu:24.04` | fails — `no PID data from sync pipe` |
+| `debian:13` | fails — `cannot exec: container is not running` |
+| `fedora:41` | fails — `no PID data from sync pipe` |
+| `busybox:latest` | fails — same |
+
+The failure is not detected at create time: the machine record is created, appears in
+`machine list` as `stopped`, and can never be started. If it was created with `--set-default`
+or was the first machine, **it also holds the default**, which leaves the host with an
+unbootable default machine.
+
+So the create form offers only Alpine as "known good", warns on anything else *before* the pull,
+and the delete dialog says what losing the default costs.
+
+One methodological note: a single probe recorded `alpine:latest` as failing. It had not — the
+boot was still settling. Do not classify an image on one measurement.
+
+### 5. A named machine is not a container's VM
+
+Deleting every machine did **not** disturb four running containers. Each container gets its own
+micro-VM; `container machine` manages separately named VMs you can shell into. The two concepts
+share a word and not much else.
+
+### 6. Volumes and networks do not apply to machines; images do
+
+Checked against the CLI rather than assumed, because the sidebar grouping depended on it.
+
+- `container run` takes `--volume` and `--network`. **`machine create` takes neither.** A
+  machine's storage is its disk image plus `--home-mount`; its address comes from the runtime's
+  own vmnet bridge, not from a `container network` you created. Machines and containers do share
+  that bridge — machines came up on `192.168.64.21`–`.27` while containers held `.5`–`.9` — but
+  it is handed out, not managed.
+- **Images are shared.** `machine create alpine:3.22` pulls into the same image store a
+  container runs from: the machine's inspect reports digest `14358309a308…` and
+  `container image list` shows `alpine 3.22 14358309a308`. The failed Ubuntu/Debian/Fedora
+  machine attempts left their images in that list too.
+
+So in the sidebar, Volumes and Networks sit under **Containers**, and Images sits in the
+ungrouped top block with Dashboard, as something that spans both runtimes.

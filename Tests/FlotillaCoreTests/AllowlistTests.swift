@@ -258,7 +258,7 @@ private func requireRejected(
         "copy",
         // A machine IS the VM every container on the host runs inside. `machine delete`
         // destroys that substrate, so nothing here is a convenience mutation.
-        "machine create", "machine set", "machine stop", "machine delete",
+        "machine create", "machine set", "machine stop", "machine delete", "machine run",
         "machine set-default",
         "image pull", "image delete", "image rm", "image prune", "image tag",
         "volume create", "volume delete", "volume rm", "volume prune",
@@ -338,15 +338,25 @@ private func requireRejected(
         AllowedCase(["machine", "inspect", "dev"], mutates: false),
         AllowedCase(["machine", "logs", "-n", "50", "--boot", "dev"], mutates: false),
         AllowedCase(["machine", "create", "-n", "dev", "--cpus", "4", "--memory", "8G",
-                     "--home-mount", "home-mount=ro", "alpine:3.22"],
+                     "--home-mount", "ro", "alpine:3.22"],
                     canonical: ["machine", "create", "--name", "dev", "--cpus", "4",
-                                "--memory", "8G", "--home-mount", "home-mount=ro",
+                                "--memory", "8G", "--home-mount", "ro",
                                 "alpine:3.22"],
                     mutates: true, timeout: 600),
         AllowedCase(["machine", "set", "-n", "dev", "cpus=4", "memory=8G", "home-mount=ro"],
                     canonical: ["machine", "set", "--name", "dev", "cpus=4", "memory=8G",
                                 "home-mount=ro"],
                     mutates: true),
+        // The boot no-op. `mutates: true` because it starts a VM.
+        //
+        // A `--` in the input is consumed and **not** re-emitted: `.exact` trailing does not
+        // carry the separator the way `.command` does. Both spellings were run against the
+        // live CLI on 3 August and both boot the machine and exit 0, so the canonical form is
+        // simply the shorter one — checked rather than assumed, since the first draft of this
+        // case asserted the opposite and would have been "green" either way.
+        AllowedCase(["machine", "run", "-n", "dev", "--", "/bin/true"],
+                    canonical: ["machine", "run", "--name", "dev", "/bin/true"],
+                    mutates: true, timeout: 300),
         AllowedCase(["machine", "stop", "dev"], mutates: true, timeout: 120),
         AllowedCase(["machine", "delete", "dev"], mutates: true, timeout: 120),
         AllowedCase(["machine", "set-default", "dev"], mutates: true),
@@ -721,6 +731,47 @@ func machineSetAcceptsOnlyDocumentedKeys() throws {
         ["machine", "set", "-n", "dev", "cpus=4", "memory=8G", "home-mount=ro"])
     #expect(validated.arguments == ["machine", "set", "--name", "dev",
                                     "cpus=4", "memory=8G", "home-mount=ro"])
+}
+
+/// `machine create --home-mount` takes a **bare** `ro|rw|none`; `machine set` takes
+/// `home-mount=ro` as an operand. Both spellings were live in the code at once — the allowlist
+/// demanded the `key=value` form on create, which the CLI rejects, while the UI sent the form
+/// the CLI wants, which the allowlist rejected. Creating a machine with a home-mount could not
+/// succeed by either route.
+///
+/// The canonical-shape test passed throughout, because it asserted the same wrong spelling.
+/// This one pins each leaf's form against the other's.
+@Test("create and set spell home-mount differently, and each refuses the other's form")
+func homeMountSpellingIsPerLeaf() throws {
+    for mode in ["ro", "rw", "none"] {
+        let validated = try Allowlist.validated(
+            ["machine", "create", "--home-mount", mode, "alpine:3.22"])
+        #expect(validated.arguments.contains(mode))
+    }
+    // The `set` spelling, on create.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["machine", "create", "--home-mount", "home-mount=ro",
+                                 "alpine:3.22"])
+    }
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["machine", "create", "--home-mount", "readonly",
+                                 "alpine:3.22"])
+    }
+    // The `create` spelling, on set.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["machine", "set", "-n", "dev", "ro"])
+    }
+}
+
+/// `machine run` with no trailing command opens an interactive shell, which needs a PTY on the
+/// calling side. Without one it fails with "Operation not supported by device" *after* booting
+/// the VM, so a Start button reported failure on a successful start. `startMachine` appends
+/// `/bin/true`; this pins that the grammar accepts that form.
+@Test("starting a machine boots it with a command, never a bare interactive shell")
+func startMachinePassesABootCommand() throws {
+    let validated = try Allowlist.validated(["machine", "run", "--name", "dev",
+                                             "--", "/bin/true"])
+    #expect(validated.arguments.contains("/bin/true"))
 }
 
 @Test("machine set refuses an unknown key rather than forwarding it")

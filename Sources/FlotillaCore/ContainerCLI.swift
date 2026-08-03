@@ -538,6 +538,18 @@ public struct ContainerCLI: Sendable {
     /// `container machine inspect [<id>]` — `id` is optional on the real CLI, defaulting
     /// to whichever machine `set-default` currently points at. Same one-element-array
     /// shape as `container inspect`, verified against `Fixtures/machine-inspect.json`.
+    /// The CLI's own `machine inspect` output verbatim, for the Inspect tab — same reason
+    /// `rawInspectJSON` exists: a re-encode of `ContainerMachine` would silently drop every
+    /// field we do not model, which is most of the point of an inspect view.
+    ///
+    /// Note `machine inspect` has **no** `--format` flag and emits JSON by default, unlike
+    /// `container inspect`. Another per-leaf asymmetry.
+    public func rawMachineInspectJSON(_ id: String? = nil) throws -> String {
+        var args = ["machine", "inspect"]
+        if let id { args.append(id) }
+        return try execute(args).stdout
+    }
+
     public func inspectMachine(_ id: String? = nil) throws -> ContainerMachine {
         var args = ["machine", "inspect"]
         if let id { args.append(id) }
@@ -594,6 +606,14 @@ public struct ContainerCLI: Sendable {
     public func startMachine(_ id: String? = nil) throws -> CommandResult {
         var args = ["machine", "run"]
         if let id { args += ["--name", id] }
+        // `machine run` with **no command** opens an interactive shell, which needs a PTY on
+        // the calling side — exactly the `container exec` trap. Without one it fails with
+        // "Operation not supported by device" *after having already booted the VM*, so a Start
+        // button would report failure on a successful start. Verified on this Mac.
+        //
+        // So boot by running something trivial instead. `/bin/true` exists in any POSIX
+        // userland, exits 0 immediately, and needs no terminal.
+        args += ["--", "/bin/true"]
         return try execute(args)
     }
 

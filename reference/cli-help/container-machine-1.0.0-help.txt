@@ -176,3 +176,39 @@ OPTIONS:
   --version               Show the version.
   -h, --help              Show help information.
 
+
+================================================================
+$ container machine run --help
+================================================================
+OVERVIEW: Run a command or interactive shell in a container machine, booting
+the container machine if necessary
+
+USAGE: container machine run [<options>] [<executable>] [<arguments> ...]
+
+ARGUMENTS:
+  <executable>            Command to run (default: login shell)
+  <arguments>             Command arguments
+
+PROCESS OPTIONS:
+  -e, --env <env>         Set environment variables (key=value, or just key to
+                          inherit from host)
+  --env-file <env-file>   Read in a file of environment variables (key=value
+                          format, ignores # comments and blank lines)
+  --gid <gid>             Set the group ID for the process
+  -i, --interactive       Keep the standard input open even if not attached
+  -t, --tty               Open a TTY with the process
+  -u, --user <user>       Set the user for the process (format: name|uid[:gid])
+  --uid <uid>             Set the user ID for the process
+  -w, --workdir, --cwd <dir>
+                          Set the initial working directory inside the container
+  --ulimit <limit>        Set resource limits (format: <type>=<soft>[:<hard>])
+
+OPTIONS:
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  -n, --name <name>       Container machine ID (uses default if not specified)
+  -d, --detach            Run a process in a container machine and detach from
+                          it
+  --root                  Run as root instead of matching host user
+  --version               Show the version.
+  -h, --help              Show help information.
+

@@ -39,6 +39,15 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     /// One `container machine set` setting: `cpus=<n>`, `memory=<size>` or
     /// `home-mount=<ro|rw|none>`. **A closed set, not a generic `key=value`.**
     case machineSetting
+
+    /// A **bare** home-directory mount mode — `ro`, `rw` or `none`.
+    ///
+    /// Distinct from `.machineSetting` on purpose. `machine set` takes `home-mount=ro` as a
+    /// `key=value` operand, but `machine create --home-mount` takes the value **alone**.
+    /// Confirmed against the leaf help, and getting it wrong broke create from both ends at
+    /// once: the allowlist refused the CLI's own spelling, and the spelling the allowlist
+    /// wanted was one the CLI rejects. Per-leaf asymmetry again — do not merge these.
+    case homeMountMode
     /// Whole seconds, 0…86400.
     case durationSeconds
     /// `SIGTERM`, `TERM`, or a signal number 1…64.
@@ -90,6 +99,8 @@ extension ValueShape {
             "Expected `container:/path` or an absolute path on this Mac."
         case .machineSetting:
             "Expected `cpus=<number>`, `memory=<size>` such as 8G, or `home-mount=ro|rw|none`."
+        case .homeMountMode:
+            "Expected `ro`, `rw` or `none`."
         case .durationSeconds:
             "Expected whole seconds, 0 to 86400."
         case .signal:
@@ -416,7 +427,9 @@ public enum Allowlist {
                         flags: [FlagSpec(long: "name", short: "n", value: .identifier),
                                 FlagSpec(long: "cpus", value: .count),
                                 FlagSpec(long: "memory", value: .memorySize),
-                                FlagSpec(long: "home-mount", value: .machineSetting),
+                                FlagSpec(long: "home-mount", value: .homeMountMode),
+                                FlagSpec(long: "no-boot"),
+                                FlagSpec(long: "set-default"),
                                 FlagSpec(long: "arch", short: "a", value: .identifier),
                                 FlagSpec(long: "os", value: .identifier),
                                 FlagSpec(long: "platform", value: .platform)],
@@ -427,6 +440,21 @@ public enum Allowlist {
             CommandSpec(["machine", "set"], mutates: true,
                         flags: [FlagSpec(long: "name", short: "n", value: .identifier)],
                         operands: OperandSpec(shape: .machineSetting, min: 1, max: 3)),
+
+            // `machine run` was **missing entirely** while both `startMachine` and the
+            // machine Shell tab used it — so Start and the shell were refused by our own
+            // allowlist, and neither had ever worked. Found by a test written after the fact.
+            //
+            // Two grammars, exactly as `exec` has two. This is the default one, and it is
+            // narrow on purpose: a shell inside the machine is arbitrary code execution on the
+            // VM that every container on this host runs inside, which is strictly more
+            // dangerous than a shell in one container. So by default the only thing permitted
+            // is the boot no-op, and the interactive form requires `ExecPolicy.interactiveShell`
+            // — a policy a `ContainerCLI` pointed at a remote peer does not carry.
+            CommandSpec(["machine", "run"], mutates: true, timeoutHint: 300,
+                        flags: [FlagSpec(long: "name", short: "n", value: .identifier)],
+                        operands: OperandSpec(shape: .identifier, min: 0, max: 0),
+                        trailing: .exact(["/bin/true"])),
 
             CommandSpec(["machine", "stop"], mutates: true, timeoutHint: 120,
                         operands: OperandSpec(shape: .identifier, min: 0, max: 1)),
@@ -570,9 +598,26 @@ public enum Allowlist {
     /// documentation) still reports the default posture, and a caller has to hold an
     /// `ExecPolicy.interactiveShell` to get anything else.
     private static func substituting(_ policy: ExecPolicy, into spec: CommandSpec) -> CommandSpec {
-        guard policy == .interactiveShell, spec.path == ["exec"] else { return spec }
-        return interactiveExec
+        guard policy == .interactiveShell else { return spec }
+        switch spec.path {
+        case ["exec"]: return interactiveExec
+        case ["machine", "run"]: return interactiveMachineRun
+        default: return spec
+        }
     }
+
+    /// `container machine run [-n <id>] [-i] [-t]` with **no command** — the login shell the
+    /// Shell tab attaches a PTY to.
+    ///
+    /// No trailing tokens at all, which is stricter than `interactiveExec`: the tab exists to
+    /// open a login shell, and the boot no-op is already covered by the default spec. There is
+    /// therefore no form of this that carries caller-supplied argv into the VM.
+    private static let interactiveMachineRun = CommandSpec(
+        ["machine", "run"], mutates: true, timeoutHint: 0,
+        flags: [FlagSpec(long: "name", short: "n", value: .identifier),
+                FlagSpec(long: "interactive", short: "i"), FlagSpec(long: "tty", short: "t")],
+        operands: OperandSpec(shape: .identifier, min: 0, max: 0),
+        trailing: .forbidden)
 
     /// `container exec [-i] [-t] <id> <command…>`.
     ///
@@ -852,6 +897,8 @@ public enum Allowlist {
             return checkCopyEndpoint(value, context: context, mountPolicy: mountPolicy)
         case .machineSetting:
             return checkMachineSetting(value, context: context)
+        case .homeMountMode:
+            return ["ro", "rw", "none"].contains(value) ? nil : bad
         case .durationSeconds:
             return isInteger(value, in: 0...86_400) ? nil : bad
         case .count:
