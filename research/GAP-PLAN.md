@@ -140,6 +140,21 @@ distinguish physical cores from reserved ones, or it repeats their ambiguity.
     Security note: `home-mount` is a filesystem grant and `machine create` is a new grammar
     family. Both face a remote caller in Phase 2. Audit against `reference/cli-help/`.
 
+    **Shipped 2026-08-03**, ahead of the sequencing above, because the owner asked for it directly.
+    A full section: list/cards, state filter, hideable columns, row actions, create form, and an
+    embedded detail with Overview / Shell / Logs / Settings / Inspect.
+
+    The claim above that "the CLI surface is complete" was true of the *leaves* and wrong about
+    the *grammars*. Building against it surfaced four bugs — `machine run` missing from the
+    Allowlist entirely, no `machine start` leaf, a bare `machine run` that fails after booting
+    because it wants a PTY, and `--home-mount` spelled differently on `create` than on `set`.
+    See the addendum in `research/MACHINES-SPEC.md`; do not trust a leaf inventory as evidence
+    that the grammar is known.
+
+    Also learned: **almost no image boots as a machine.** Alpine does; Ubuntu, Debian, Fedora and
+    BusyBox each pull, create a record, and then fail to start — permanently, and holding the
+    default if they were first. That constrains the feature more than any of the above.
+
 ## Standing caveat
 
 Adding subcommand families enlarges the Phase 2 attack surface. the review's verdict in
