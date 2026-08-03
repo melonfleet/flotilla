@@ -17,7 +17,7 @@ struct MainWindowView: View {
     /// search here is what makes them survive a trip to Images and back.
     @State private var containersUI = ContainersUIState()
 
-    @State private var selection: Section? = .containers
+    @State private var selection: Section? = .dashboard
 
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
     ///
@@ -34,6 +34,7 @@ struct MainWindowView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             SwiftUI.Section {
+                row(.dashboard, count: nil)
                 row(.containers, count: model.state == .loaded ? model.containers.count : nil)
                 row(.images, count: model.imagesState == .loaded ? model.images.count : nil)
                 row(.volumes, count: model.volumesState == .loaded ? model.volumes.count : nil)
@@ -163,7 +164,11 @@ struct MainWindowView: View {
             // credit for it in a comment. Removing it is what turns the glass on.
             .scrollContentBackground(.hidden)
         } detail: {
-            switch selection ?? .containers {
+            switch selection ?? .dashboard {
+            case .dashboard:
+                // The tiles drill down, so the dashboard needs to drive the sidebar selection —
+                // a panel that shows you a problem but cannot take you to it is a poster.
+                DashboardView(model: model) { selection = $0 }
             case .containers:
                 ContainersView(model: model, ui: containersUI)
             case .images:

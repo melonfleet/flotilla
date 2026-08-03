@@ -8,12 +8,15 @@ import Foundation
 /// `SwiftUI.Section` explicitly. the CLI owner codes against this enum as-is; do not edit it here
 /// without updating that agreement.
 enum Section: String, CaseIterable, Identifiable, Hashable {
-    case containers, images, volumes, networks, settings
+    // Dashboard first: it is the overview you land on, and every other section is a
+    // drill-down from something it shows.
+    case dashboard, containers, images, volumes, networks, settings
 
     var id: Self { self }
 
     var title: String {
         switch self {
+        case .dashboard: "Dashboard"
         case .containers: "Containers"
         case .images: "Images"
         case .volumes: "Volumes"
@@ -24,6 +27,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .dashboard: "gauge.with.dots.needle.bottom.50percent"
         case .containers: "shippingbox"
         case .images: "square.stack.3d.down.right"
         case .volumes: "cylinder.split.1x2"
