@@ -392,6 +392,11 @@ final class AppModel {
     }
 
     private func sampleStats() async {
+        // The HOST sample is taken unconditionally, before the runtime guard. Machine CPU and
+        // memory are true whether or not `container` is usable, and a dashboard that goes blank
+        // because the runtime is down is least useful exactly when you are diagnosing why.
+        hostMetrics.sample()
+
         guard runtimeUsable else { return }
         do {
             let samples = try await Task.detached { [cli] in try cli.stats() }.value
@@ -792,6 +797,14 @@ final class AppModel {
     /// writes back on change; making it observable would rebuild the detail view every time
     /// you switched tab, to tell it something it already knows.
     @ObservationIgnored var lastDetailTab: [String: DetailTab] = [:]
+
+    /// Machine CPU, memory and network, read from the OS rather than the container runtime.
+    /// See `HostMetricsSampler` — host and container metrics answer different questions and
+    /// the dashboard shows both, labelled distinctly.
+    @ObservationIgnored let hostMetrics = HostMetricsSampler()
+
+    /// Retained history for one container, for the dashboard's charts and the detail sparkline.
+    func statsHistory(for id: String) -> [StatsSampler.HistoryPoint] { sampler.history(for: id) }
 
     /// Live terminal sessions, owned here so they outlive any view.
     ///

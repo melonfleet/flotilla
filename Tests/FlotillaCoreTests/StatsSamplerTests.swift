@@ -166,7 +166,8 @@ private func stat(_ id: String, usec: Int64, memory: Int64? = nil) -> ContainerS
 @Test func historyBufferCapsAtTheLimitAndDropsOldestFirst() {
     let sampler = StatsSampler()
     let t0 = Date(timeIntervalSince1970: 1000)
-    let limit = 40
+    // Read from the sampler, never duplicated here — see the note on `historyLimit`.
+    let limit = StatsSampler.historyLimit
     let overflow = 10
 
     for i in 0..<(limit + overflow) {
@@ -229,4 +230,81 @@ private func stat(_ id: String, usec: Int64, memory: Int64? = nil) -> ContainerS
 
     #expect(sampler.history(for: "web").count == 2)
     #expect(sampler.history(for: "db").count == 2)
+}
+
+// MARK: - Byte-counter rates
+//
+// The four byte counters are cumulative exactly as `cpuUsageUsec` is, so they inherit its
+// traps: a first sample says nothing about rate, and a counter that goes backwards means a
+// restart rather than negative throughput. These pin that the answer is nil in both cases and
+// never a misleading zero.
+
+private func ioStat(_ id: String, usec: Int64 = 0,
+                    rx: Int64? = nil, tx: Int64? = nil,
+                    read: Int64? = nil, write: Int64? = nil,
+                    processes: Int? = nil) -> ContainerStats {
+    ContainerStats(id: id, cpuUsageUsec: usec, memoryUsageBytes: nil, memoryLimitBytes: nil,
+                   networkRxBytes: rx, networkTxBytes: tx, blockReadBytes: read,
+                   blockWriteBytes: write, numProcesses: processes)
+}
+
+@Test func firstSampleHasNoRatesRatherThanZeroRates() {
+    let sampler = StatsSampler()
+    _ = sampler.update(with: [ioStat("web", rx: 1_000, tx: 500)],
+                       at: Date(timeIntervalSince1970: 1000))
+
+    let point = sampler.history(for: "web").last
+    // A zero here would read as "no traffic" when the truth is "not measurable yet".
+    #expect(point?.networkRxBytesPerSecond == nil)
+    #expect(point?.networkTxBytesPerSecond == nil)
+    #expect(point?.blockReadBytesPerSecond == nil)
+    #expect(point?.blockWriteBytesPerSecond == nil)
+}
+
+@Test func ratesAreBytesPerSecondFromTheCounterDelta() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+
+    _ = sampler.update(with: [ioStat("web", rx: 1_000, tx: 200, read: 4_096, write: 0)], at: t0)
+    _ = sampler.update(with: [ioStat("web", rx: 11_000, tx: 700, read: 4_096, write: 2_048)],
+                       at: t0.addingTimeInterval(5))
+
+    let point = sampler.history(for: "web").last
+    #expect(point?.networkRxBytesPerSecond == 2_000)   // 10_000 bytes over 5s
+    #expect(point?.networkTxBytesPerSecond == 100)     //    500 bytes over 5s
+    // Unchanged counter is a real zero — nothing was read — and must not become nil.
+    #expect(point?.blockReadBytesPerSecond == 0)
+    #expect(point?.blockWriteBytesPerSecond == 409.6)
+}
+
+@Test func aCounterGoingBackwardsYieldsNilNotNegativeThroughput() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+
+    _ = sampler.update(with: [ioStat("web", rx: 50_000)], at: t0)
+    // The container restarted, so its counters reset.
+    _ = sampler.update(with: [ioStat("web", rx: 12)], at: t0.addingTimeInterval(5))
+
+    #expect(sampler.history(for: "web").last?.networkRxBytesPerSecond == nil)
+}
+
+@Test func memoryLimitAndProcessCountAreRetainedForTheDashboard() {
+    let sampler = StatsSampler()
+    let stats = ContainerStats(id: "web", cpuUsageUsec: 0, memoryUsageBytes: 100,
+                               memoryLimitBytes: 1_000, networkRxBytes: nil, networkTxBytes: nil,
+                               blockReadBytes: nil, blockWriteBytes: nil, numProcesses: 17)
+    _ = sampler.update(with: [stats], at: Date(timeIntervalSince1970: 1000))
+
+    let point = sampler.history(for: "web").last
+    // Both were decoded by ContainerStats all along and discarded by the sampler.
+    #expect(point?.memoryLimitBytes == 1_000)
+    #expect(point?.processCount == 17)
+}
+
+@Test func everyPointCarriesTheWallClockItWasSampledAt() {
+    let sampler = StatsSampler()
+    let t0 = Date(timeIntervalSince1970: 1000)
+    _ = sampler.update(with: [ioStat("web")], at: t0)
+    // Charts plot against real time, and a late poll must not be drawn as if it were on time.
+    #expect(sampler.history(for: "web").last?.date == t0)
 }

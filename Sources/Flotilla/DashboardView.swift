@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import FlotillaCore
 
 /// The landing screen: everything at a glance, and a way into whatever needs attention.
@@ -21,6 +22,23 @@ struct DashboardView: View {
 
     @State private var diskUsage: SystemDiskUsage?
     @State private var diskFailure: String?
+    @State private var range: Range = .fiveMinutes
+
+    /// The window the charts show. **24h is deliberately absent.** At a 5s poll that is 17,280
+    /// points per container, lost on every restart, and it would need downsampling to
+    /// per-minute averages to be honest — a different design, not a fourth button. Offering it
+    /// now would give a 24h tab that silently showed one hour.
+    enum Range: String, CaseIterable, Identifiable {
+        case fiveMinutes = "5m", fifteenMinutes = "15m", oneHour = "1h"
+        var id: Self { self }
+        var seconds: TimeInterval {
+            switch self {
+            case .fiveMinutes: 300
+            case .fifteenMinutes: 900
+            case .oneHour: 3_600
+            }
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -31,15 +49,10 @@ struct DashboardView: View {
                     runtimeBanner(reason)
                 }
 
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
-                                    GridItem(.flexible(), spacing: 12)],
-                          alignment: .leading, spacing: 12) {
-                    containersTile
-                    resourceTile
-                    storageTile
-                    hostTile
-                }
+                statRow
+                systemSection
                 attentionPanel
+                utilisationPanel
                 activityPanel
             }
             .padding(14)
@@ -152,6 +165,309 @@ struct DashboardView: View {
             row("Mode", "Client")
             // Says what is true now rather than what is planned, matching the sidebar footer.
             row("Paired hosts", "None · Phase 2")
+        }
+    }
+
+    // MARK: Stat row
+
+    /// The four headline figures, each with the active/total fraction the previous version
+    /// omitted — `system df` has been returning `active` and `total` all along.
+    private var statRow: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
+                  spacing: 12) {
+            statCard("Containers", systemImage: "shippingbox", target: .containers,
+                     value: diskUsage.map { byteLabel($0.containers.sizeInBytes) },
+                     detail: diskUsage.map { "\($0.containers.active)/\($0.containers.total)" })
+            statCard("Images", systemImage: "square.stack.3d.up", target: .images,
+                     value: diskUsage.map { byteLabel($0.images.sizeInBytes) },
+                     detail: diskUsage.map { "\($0.images.active)/\($0.images.total)" })
+            statCard("Volumes", systemImage: "cylinder.split.1x2", target: .volumes,
+                     value: diskUsage.map { byteLabel($0.volumes.sizeInBytes) },
+                     detail: diskUsage.map { "\($0.volumes.active)/\($0.volumes.total)" })
+            statCard("Reclaimable", systemImage: "trash", target: .images,
+                     value: diskUsage.map { byteLabel(totalReclaimable($0)) },
+                     detail: "Space",
+                     tint: (diskUsage.map { totalReclaimable($0) } ?? 0) > 0 ? Theme.warning : nil)
+        }
+    }
+
+    private func statCard(_ title: String, systemImage: String, target: Section,
+                         value: String?, detail: String?, tint: Color? = nil) -> some View {
+        Button { go(target) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage).font(.system(size: 17)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 12, weight: .medium))
+                    // An em dash until `system df` has answered, never a zero.
+                    Text(value ?? "—")
+                        .font(.system(size: 15, weight: .medium).monospacedDigit())
+                        .foregroundStyle(tint ?? .primary)
+                    Text(detail ?? "—")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func totalReclaimable(_ usage: SystemDiskUsage) -> Int64 {
+        usage.images.reclaimable + usage.containers.reclaimable + usage.volumes.reclaimable
+    }
+
+    // MARK: System charts
+
+    /// Four time-series charts with one range selector, as in Orchard's.
+    ///
+    /// **CPU and memory here are the MACHINE's**, read from the kernel by `HostMetricsSampler`
+    /// — not summed container usage. That distinction is the whole point of the labels: host
+    /// CPU answers "is my Mac struggling", the utilisation table below answers "which container
+    /// is doing it". Network is likewise whole-machine and says so, because it includes the
+    /// runtime's own vmnet interfaces.
+    private var systemSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("System").font(.headline)
+                Spacer()
+                Picker("Range", selection: $range) {
+                    ForEach(Range.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                GridItem(.flexible(), spacing: 12)],
+                      spacing: 12) {
+                cpuChart
+                memoryChart
+                hostNetworkChart
+                containerDiskChart
+            }
+        }
+    }
+
+    private var hostSamples: [HostMetricsSampler.Sample] {
+        let cutoff = Date().addingTimeInterval(-range.seconds)
+        return model.hostMetrics.history.filter { $0.date >= cutoff }
+    }
+
+    private var cpuChart: some View {
+        chartCard("CPU", headline: model.hostMetrics.latest?.cpuPercent
+                    .map { String(format: "%.0f%%", $0) },
+                  subtitle: "\(model.hostMetrics.coreCount) cores · this Mac",
+                  fraction: (model.hostMetrics.latest?.cpuPercent ?? 0) / 100,
+                  tint: Theme.info) {
+            Chart(hostSamples.filter { $0.cpuPercent != nil }, id: \.date) { sample in
+                LineMark(x: .value("Time", sample.date),
+                         y: .value("CPU %", sample.cpuPercent ?? 0))
+                    .foregroundStyle(Theme.info)
+                    .interpolationMethod(.monotone)
+            }
+            .chartYScale(domain: 0...100)
+        }
+    }
+
+    private var memoryChart: some View {
+        let latest = model.hostMetrics.latest
+        return chartCard("Memory",
+                         headline: latest.map { byteLabel($0.memoryUsedBytes) },
+                         subtitle: latest.map { "of \(byteLabel($0.memoryTotalBytes))" } ?? "—",
+                         fraction: latest.map { $0.memoryTotalBytes > 0
+                             ? Double($0.memoryUsedBytes) / Double($0.memoryTotalBytes) : 0 } ?? 0,
+                         tint: Theme.accent) {
+            Chart {
+                ForEach(hostSamples, id: \.date) { sample in
+                    AreaMark(x: .value("Time", sample.date),
+                             y: .value("Used", Double(sample.memoryUsedBytes) / 1_073_741_824))
+                        .foregroundStyle(Theme.accent.opacity(0.35))
+                        .interpolationMethod(.monotone)
+                }
+                // The machine's total, drawn as the ceiling — the mockup's "Limit" line.
+                if let total = latest?.memoryTotalBytes {
+                    RuleMark(y: .value("Total", Double(total) / 1_073_741_824))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        .foregroundStyle(.tertiary)
+                        .annotation(position: .top, alignment: .trailing) {
+                            Text("installed").font(.system(size: 9)).foregroundStyle(.tertiary)
+                        }
+                }
+            }
+        }
+    }
+
+    private var hostNetworkChart: some View {
+        let latest = model.hostMetrics.latest
+        return chartCard("Network", headline: nil,
+                         subtitle: "whole machine, includes the runtime's own interfaces",
+                         legend: [("↓ " + rateLabel(latest?.networkRxBytesPerSecond), Theme.online),
+                                  ("↑ " + rateLabel(latest?.networkTxBytesPerSecond), Theme.warning)]) {
+            Chart {
+                ForEach(hostSamples.filter { $0.networkRxBytesPerSecond != nil }, id: \.date) { s in
+                    LineMark(x: .value("Time", s.date),
+                             y: .value("KB/s", (s.networkRxBytesPerSecond ?? 0) / 1024),
+                             series: .value("Direction", "down"))
+                        .foregroundStyle(Theme.online)
+                    LineMark(x: .value("Time", s.date),
+                             y: .value("KB/s", (s.networkTxBytesPerSecond ?? 0) / 1024),
+                             series: .value("Direction", "up"))
+                        .foregroundStyle(Theme.warning)
+                }
+            }
+        }
+    }
+
+    /// Container block I/O, summed. Labelled as containers rather than "Disk", because
+    /// whole-machine disk throughput needs IOKit and **was not verified** — claiming it here
+    /// would be a figure with nothing behind it.
+    private var containerDiskChart: some View {
+        let points = aggregatedContainerPoints
+        return chartCard("Container disk I/O", headline: nil,
+                         subtitle: "containers only — host-wide disk needs IOKit, not yet built",
+                         legend: [("R " + rateLabel(points.last?.read), Theme.info),
+                                  ("W " + rateLabel(points.last?.write), Theme.danger)]) {
+            Chart {
+                ForEach(points, id: \.date) { point in
+                    LineMark(x: .value("Time", point.date),
+                             y: .value("KB/s", (point.read ?? 0) / 1024),
+                             series: .value("Direction", "read"))
+                        .foregroundStyle(Theme.info)
+                    LineMark(x: .value("Time", point.date),
+                             y: .value("KB/s", (point.write ?? 0) / 1024),
+                             series: .value("Direction", "write"))
+                        .foregroundStyle(Theme.danger)
+                }
+            }
+        }
+    }
+
+    /// Container rates summed per timestamp. Points where nothing was measurable are dropped
+    /// rather than zeroed — the chart then shows a gap, which is the truth.
+    private var aggregatedContainerPoints: [(date: Date, read: Double?, write: Double?)] {
+        let cutoff = Date().addingTimeInterval(-range.seconds)
+        var byDate: [Date: (read: Double, write: Double, count: Int)] = [:]
+        for container in model.containers {
+            for point in model.statsHistory(for: container.id) where point.date >= cutoff {
+                guard let read = point.blockReadBytesPerSecond,
+                      let write = point.blockWriteBytesPerSecond else { continue }
+                var entry = byDate[point.date] ?? (0, 0, 0)
+                entry.read += read
+                entry.write += write
+                entry.count += 1
+                byDate[point.date] = entry
+            }
+        }
+        return byDate.keys.sorted().map { (date: $0, read: byDate[$0]?.read, write: byDate[$0]?.write) }
+    }
+
+    private func rateLabel(_ bytesPerSecond: Double?) -> String {
+        guard let bytesPerSecond else { return "—" }
+        return String(format: "%.1f KB/s", bytesPerSecond / 1024)
+    }
+
+    /// A chart in a card: headline figure, optional level bar, optional legend, then the plot.
+    private func chartCard<Content: View>(
+        _ title: String, headline: String?, subtitle: String?,
+        fraction: Double? = nil, tint: Color = .accentColor,
+        legend: [(String, Color)] = [],
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 13, weight: .semibold))
+            if let fraction { meter(fraction: fraction, tint: tint) }
+            if let headline {
+                Text(headline).font(.system(size: 15, weight: .medium).monospacedDigit())
+            }
+            if !legend.isEmpty {
+                HStack(spacing: 12) {
+                    ForEach(Array(legend.enumerated()), id: \.offset) { _, item in
+                        HStack(spacing: 4) {
+                            Circle().fill(item.1).frame(width: 6, height: 6)
+                            Text(item.0).font(.system(size: 11).monospacedDigit())
+                        }
+                    }
+                }
+            }
+            if let subtitle {
+                Text(subtitle).font(.system(size: 11)).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            content()
+                .chartXAxis { AxisMarks(preset: .aligned) }
+                .frame(height: 130)
+                .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
+    }
+
+    // MARK: Utilisation
+
+    /// The per-container table from Orchard's dashboard. Every column is backed by a field
+    /// `ContainerStats` was already decoding and `StatsSampler` was throwing away.
+    private var utilisationPanel: some View {
+        panel("Container utilisation", systemImage: "chart.bar") {
+            if model.running.isEmpty {
+                Text("No running containers.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                SwiftUI.Table(model.running) {
+                    TableColumn("Container") { container in
+                        Button(container.id) { go(.containers) }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.accentText)
+                    }
+                    TableColumn("CPU") { container in
+                        Text(model.cpuLabel(for: container.id)).monospacedDigit()
+                    }
+                    TableColumn("Memory") { container in
+                        let point = model.statsHistory(for: container.id).last
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(model.memoryLabel(for: container.id)).monospacedDigit()
+                            if let used = point?.memoryUsageBytes,
+                               let limit = point?.memoryLimitBytes, limit > 0 {
+                                Text(String(format: "%.1f%%", Double(used) / Double(limit) * 100))
+                                    .font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    TableColumn("Network I/O") { container in
+                        let point = model.statsHistory(for: container.id).last
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("↓ " + rateLabel(point?.networkRxBytesPerSecond))
+                                .font(.caption).monospacedDigit()
+                            Text("↑ " + rateLabel(point?.networkTxBytesPerSecond))
+                                .font(.caption).monospacedDigit()
+                        }
+                    }
+                    TableColumn("Block I/O") { container in
+                        let point = model.statsHistory(for: container.id).last
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("R " + rateLabel(point?.blockReadBytesPerSecond))
+                                .font(.caption).monospacedDigit()
+                            Text("W " + rateLabel(point?.blockWriteBytesPerSecond))
+                                .font(.caption).monospacedDigit()
+                        }
+                    }
+                    TableColumn("PIDs") { container in
+                        // `numProcesses`, decoded since day one and never shown until now.
+                        Text(model.statsHistory(for: container.id).last?.processCount
+                                .map(String.init) ?? "—")
+                            .monospacedDigit()
+                    }
+                }
+                .frame(minHeight: 160)
+            }
         }
     }
 
