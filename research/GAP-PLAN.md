@@ -52,12 +52,40 @@ Needs a decision — **history depth**:
   axis. A 24h button that silently shows forty minutes is the kind of readout this project
   keeps deleting.
 
-Deliberately **not** copied:
+### Host metrics — a correction
 
-- That CPU tile reads as *host* CPU. `container stats` reports per-container usage only;
-  there is no host-wide figure in it. Ours must stay "CPU, all containers". Summed container
-  CPU presented as machine CPU would be quietly wrong, and quietly wrong is the failure mode
-  this codebase has paid for most often.
+An earlier version of this section claimed the CPU tile could only ever read "CPU, all
+containers", on the grounds that `container stats` has no host-wide figure. **That was wrong,
+and the owner caught it.** The premise was right and the conclusion did not follow: `container
+stats` indeed has no host figure, but a native Mac app does not need it to — the OS will tell
+you directly, which is where Activity Monitor gets its numbers.
+
+Verified on this Mac 2026-08-02, all four working with **no entitlement and no network**:
+
+| Metric | Source | Measured |
+|---|---|---|
+| Host CPU % | `host_statistics(HOST_CPU_LOAD_INFO)` tick counters, delta over wall clock | 21.0% busy (user 17.1, system 3.8) |
+| Physical cores | `ProcessInfo.processorCount` | 12 |
+| Host memory | `host_statistics64(HOST_VM_INFO64)` + `sysctl hw.memsize` | 65.74 GB of 68.72 GB |
+| Host network ↓↑ | `getifaddrs` → `if_data.ifi_ibytes/ifi_obytes`, delta | 1.3 / 1.1 KB/s |
+
+**Host disk I/O is the one still unverified.** It needs IOKit
+(`IOBlockStorageDriver` statistics) rather than a one-line syscall, and it was not proven —
+so treat it as unverified until it is, rather than assuming it comes free with the rest.
+
+Two consequences:
+
+1. **Show both, labelled distinctly.** Host CPU answers "is my Mac struggling?"; container CPU
+   answers "which container is doing it?". They are different questions and neither substitutes
+   for the other. What must never happen is summed container CPU presented as machine CPU.
+2. **The host sampler lives in the app target, not `FlotillaCore`.** `host_statistics` and
+   `getifaddrs` are Darwin-only, and the core stays Foundation-only so the VM agents can keep
+   verifying their own work on Linux. Same rule that puts `Theme.swift` and the AppKit shims
+   in `Sources/Flotilla`.
+
+Also worth noting from the screenshot: "70 cores reserved" on a machine with far fewer physical
+cores is the sum of container *allocations*, i.e. over-commit — not a core count. Ours should
+distinguish physical cores from reserved ones, or it repeats their ambiguity.
 
 ## Wave 1 — the CLI fully backs these, and none of them widen the wire boundary much
 
