@@ -35,6 +35,9 @@ final class HostMetricsSampler {
         let cpuSystemPercent: Double?
         let memoryUsedBytes: Int64
         let memoryTotalBytes: Int64
+        /// Reclaimable file cache. Reported so the gap between "used" and "installed" is
+        /// accounted for on screen rather than looking like memory that went missing.
+        let memoryCachedBytes: Int64
         let networkRxBytesPerSecond: Double?
         let networkTxBytesPerSecond: Double?
     }
@@ -68,6 +71,7 @@ final class HostMetricsSampler {
                               cpuSystemPercent: cpu?.system,
                               memoryUsedBytes: memory.used,
                               memoryTotalBytes: memory.total,
+                              memoryCachedBytes: memory.cached,
                               networkRxBytesPerSecond: network?.rx,
                               networkTxBytesPerSecond: network?.tx))
         if history.count > Self.historyLimit {
@@ -116,10 +120,28 @@ final class HostMetricsSampler {
 
     // MARK: Memory
 
-    /// "Used" here is active + inactive + wired + compressed, which is what Activity Monitor
-    /// counts as memory in use — free and purgeable pages are excluded. Reporting only `active`
-    /// would understate it badly on a machine under pressure.
-    private func memoryUsage() -> (used: Int64, total: Int64) {
+    /// "Used" is **App Memory + Wired + Compressed**, which is what Activity Monitor means by
+    /// "Memory Used".
+    ///
+    /// The previous version of this comment claimed the same thing and the code did not do it:
+    /// it summed `active + inactive + wired + compressed`, and `inactive_count` is reclaimable
+    /// file-backed cache that Activity Monitor deliberately excludes. On this Mac that put the
+    /// gauge at **97.3% of 64 GB**, permanently, which is what a `total - free` calculation
+    /// would also have shown — a reading that is always alarming is worse than no reading,
+    /// because it tells you nothing and trains you to ignore the panel.
+    ///
+    /// Measured on 3 August with 64 GiB installed: inactive was 26.0 GiB and external
+    /// (file-backed) 19.9 GiB. Counting those as used accounted for the entire discrepancy.
+    /// The honest figure was 45.0 GB / 65.5%.
+    ///
+    /// - App Memory is `internal_page_count - purgeable_count` — anonymous pages a process
+    ///   owns, less what the system may drop at will.
+    /// - Wired is memory the kernel cannot page out.
+    /// - Compressed is what the compressor holds; it is genuinely occupied, and a large value
+    ///   here is the real signal that the machine is under pressure.
+    ///
+    /// `cached` is returned alongside so the UI can say where the remainder went.
+    private func memoryUsage() -> (used: Int64, total: Int64, cached: Int64) {
         var total: UInt64 = 0
         var size = MemoryLayout<UInt64>.size
         sysctlbyname("hw.memsize", &total, &size, nil, 0)
@@ -132,7 +154,7 @@ final class HostMetricsSampler {
                 host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
             }
         }
-        guard result == KERN_SUCCESS else { return (0, Int64(total)) }
+        guard result == KERN_SUCCESS else { return (0, Int64(total), 0) }
 
         // `vm_kernel_page_size` is a mutable global, which Swift 6 rightly refuses to let a
         // concurrent context read. `vm_page_size` via `host_page_size` is the supported way to
@@ -140,9 +162,14 @@ final class HostMetricsSampler {
         var pageSize: vm_size_t = 0
         host_page_size(mach_host_self(), &pageSize)
         let page = UInt64(pageSize)
-        let used = (UInt64(stats.active_count) + UInt64(stats.inactive_count)
-                    + UInt64(stats.wire_count) + UInt64(stats.compressor_page_count)) * page
-        return (Int64(used), Int64(total))
+        // `internal_page_count` can in principle be smaller than `purgeable_count` between
+        // samples; subtracting unsigned would wrap to an enormous number, so clamp.
+        let appPages = UInt64(stats.internal_page_count)
+            .subtractingReportingOverflow(UInt64(stats.purgeable_count))
+        let app = appPages.overflow ? 0 : appPages.partialValue
+        let used = (app + UInt64(stats.wire_count) + UInt64(stats.compressor_page_count)) * page
+        let cached = (UInt64(stats.external_page_count) + UInt64(stats.purgeable_count)) * page
+        return (Int64(used), Int64(total), Int64(cached))
     }
 
     // MARK: Network

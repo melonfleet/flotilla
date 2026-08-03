@@ -276,11 +276,37 @@ struct DashboardView: View {
         }
     }
 
+    /// Installed RAM, and where the rest of it went.
+    ///
+    /// `hw.memsize` on this Mac is 68,719,476,736 bytes, which `ByteCountFormatter`'s `.file`
+    /// style renders as "68.72 GB" — a number that appears nowhere on the machine, in About
+    /// This Mac, or on the box. Apple counts RAM in binary units and calls them GB, so 64 GiB
+    /// is "64 GB". Reporting 68.72 invited exactly the question it got: is that even my Mac?
+    ///
+    /// Only the *memory* readouts use this. Disk sizes elsewhere stay on `.file`, because that
+    /// is what Finder and every drive manufacturer use — the two conventions genuinely differ
+    /// by medium, and matching each is more honest than picking one and being wrong half the
+    /// time.
+    private func ramLabel(_ bytes: Int64) -> String {
+        let gib = Double(bytes) / 1_073_741_824
+        return gib >= 10 ? String(format: "%.0f GB", gib) : String(format: "%.1f GB", gib)
+    }
+
+    /// Names the cache explicitly. Without it, correcting the "used" figure downwards just
+    /// moves the mystery: 45 of 64 leaves 19 GB unaccounted for, and the honest answer is that
+    /// the system is holding it as reclaimable file cache.
+    private var memorySubtitle: String {
+        guard let latest = model.hostMetrics.latest else { return "—" }
+        let cached = latest.memoryCachedBytes
+        guard cached > 0 else { return "of \(ramLabel(latest.memoryTotalBytes))" }
+        return "of \(ramLabel(latest.memoryTotalBytes)) · \(ramLabel(cached)) cached"
+    }
+
     private var memoryChart: some View {
         let latest = model.hostMetrics.latest
         return chartCard("Memory",
-                         headline: latest.map { byteLabel($0.memoryUsedBytes) },
-                         subtitle: latest.map { "of \(byteLabel($0.memoryTotalBytes))" } ?? "—",
+                         headline: latest.map { ramLabel($0.memoryUsedBytes) },
+                         subtitle: memorySubtitle,
                          fraction: latest.map { $0.memoryTotalBytes > 0
                              ? Double($0.memoryUsedBytes) / Double($0.memoryTotalBytes) : 0 } ?? 0,
                          tint: Theme.accent) {

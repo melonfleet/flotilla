@@ -15,6 +15,16 @@ public struct Redactor: Sendable {
     public enum Category: String, Sendable {
         case certificate, token, secret, fingerprint, homePath, temporaryPath, email, credentials
 
+        /// A bare account-name field, such as `"username": "…"`.
+        ///
+        /// Separate from `homePath` because the two are genuinely different shapes and the
+        /// `homePath` rules only ever matched a *path*. `container machine inspect` reports
+        /// `userSetup.username` as a plain field, so the host user's own name went through
+        /// every rule untouched and was displayed — and handed out by Copy JSON — under a
+        /// note promising that secrets were redacted. The pre-push identity scan has the
+        /// same blind spot, and has twice let a real username into a committed fixture.
+        case username
+
         var placeholder: String { "<redacted:\(rawValue)>" }
     }
 
@@ -101,6 +111,15 @@ public struct Redactor: Sendable {
             rule(.homePath, "/home/[^/\\s\"',;)]+", "~", options: []),
 
             rule(.email, "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"),
+
+            // Only `username`/`userName`/`login`, and only as a JSON string value. Bare
+            // `user` is deliberately NOT matched: container configuration uses it for the
+            // runtime user (`root`, `nginx`), which is not PII and is worth reading. The
+            // key is preserved so the reader can see the field exists.
+            rule(.username,
+                 "(\"(?:userName|username|login)\"\\s*:\\s*)\"[^\"]{1,64}\"",
+                 "$1\"<redacted:username>\"",
+                 options: []),
         ]
         return patterns.compactMap(\.self)
     }()
@@ -170,6 +189,7 @@ public enum RedactionAudit {
             (.homePath, "/home/[^/\\s\"',;)]+"),
             (.temporaryPath, "/var/folders/"),
             (.email, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"),
+            (.username, "\"(?:userName|username|login)\"\\s*:\\s*\"(?!<redacted)[^\"]{1,64}\""),
         ]
         return specs.compactMap { category, pattern in
             (try? NSRegularExpression(pattern: pattern)).map { (category, $0) }

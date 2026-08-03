@@ -145,6 +145,34 @@ import Testing
     #expect(RedactionAudit.leaks(in: output).isEmpty)
 }
 
+/// `container machine inspect` reports `userSetup.username` as a plain field. Every existing
+/// rule matched a *path* (`/Users/<name>`), so the host user's own name went through untouched —
+/// displayed in the Inspect panel and handed out verbatim by Copy JSON, under a note promising
+/// that secrets were redacted. That note was the bug: it claimed a protection that did not exist.
+@Test func redactsBareUsernameFields() {
+    let sample = #"{"userSetup":{"gid":20,"uid":501,"username":"someperson"},"user":"root","image":{"reference":"docker.io/library/alpine:3.22"}}"#
+    // The narrowed redactor the Inspect panels use. `username` is not among the exclusions, so
+    // switching off digests and home paths must not switch this off with them.
+    let narrowed = Redactor(excluding: [.fingerprint, .homePath, .temporaryPath, .email])
+    let out = narrowed.redact(sample)
+
+    #expect(!out.contains("someperson"))
+    #expect(out.contains("<redacted:username>"))
+    #expect(out.contains(#""username""#))          // the key survives; the field is visibly there
+    // Bare `user` is deliberately untouched: container config uses it for the runtime user,
+    // which is not PII and is one of the more useful things in the output.
+    #expect(out.contains(#""user":"root""#))
+    #expect(out.contains("alpine:3.22"))
+}
+
+/// The audit must agree with the rules, or a support bundle can pass its own check while
+/// still carrying the name.
+@Test func detectorCoversUsername() {
+    let raw = #"{"username":"someperson"}"#
+    #expect(RedactionAudit.leaks(in: raw).contains { $0.category == .username })
+    #expect(!RedactionAudit.leaks(in: Redactor.standard.redact(raw)).contains { $0.category == .username })
+}
+
 @Test func redactsEmailAddresses() {
     let input = "signed in as exampledev@outlook.com"
     let output = Redactor.standard.redact(input)

@@ -52,6 +52,12 @@ cd "$ROOT"
 BUNDLE_ID="dev.melonfleet.Flotilla"      # DECISIONS.md Q8 — fixed, do not vary by config
 APP="$ROOT/build/Flotilla.app"
 
+# Before anything is built or copied. A packaged app carrying a screenshot scaffold has
+# twice been handed to the owner as a working build and read as a product bug — see
+# Scripts/check-defaults.sh for what it checks and why a comment was not enough.
+echo "▸ checking view defaults…"
+"$ROOT/Scripts/check-defaults.sh"
+
 echo "▸ building ($CONFIG)…"
 if [ "$CONFIG" = "release" ]; then
   swift build -c release --product Flotilla

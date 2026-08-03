@@ -31,6 +31,15 @@ questions.
   live command preview, and container detail **embedded in the window** with Overview /
   Processes / Logs / Terminal / Inspect / Configuration, a Back button and a prev/next
   stepper through the containers as currently filtered and sorted.
+- **Machines** (the Linux micro-VMs containers run inside) is a peer section under a
+  `Virtualisation` sidebar heading, built to the same shapes: list/cards toggle,
+  state filter, hideable columns, row actions, a `ModalCard` create form, and an
+  embedded detail with Overview / Shell / Logs / Settings / Inspect. Its view state
+  lives in `MachinesUIState`, owned by `MainWindowView` — a section view is rebuilt on
+  every sidebar change, so anything held as its own `@State` is lost. Machine
+  terminals use a **second** `TerminalSessionStore`, because the store is keyed by a
+  plain string and a machine named `web` would otherwise collide with a container
+  named `web`. Read the `MACHINES-SPEC.md` addendum before touching the CLI calls.
 - **Forms are modal, places are navigable.** `ModalCard` (red ×, dim behind) wraps Run,
   New Volume and New Network — a form is a question you answer and dismiss. Detail is a
   place you go and come back from, so it is embedded, which is what
@@ -125,6 +134,61 @@ that we *built* the right command; almost nothing checked the command was
   known-good control before believing a fix.
 - **Run the app.** The flicker, the dead Refresh, the useless columns and the
   fabricated fixtures were all found by using it, not by testing it.
+- **Four more of the same family, in the `machine` leaves** (3 August). `machine run`
+  was **absent from the `Allowlist` entirely** while both Start and the Shell tab
+  used it, so neither had ever worked. `machine start` does not exist. `machine run`
+  with no command needs a PTY and fails *after* booting the VM, so Start reported
+  failure on a success. And `--home-mount` takes a bare `ro` on `create` but
+  `home-mount=ro` on `set` — the allowlist demanded one and the UI sent the other, so
+  the path could not succeed either way. The canonical-shape test was green
+  throughout **because it asserted the same wrong spelling**. A test that encodes the
+  grammar you guessed only proves you guessed consistently.
+- **A picker whose options fail is worse than no picker.** The create form offered
+  Ubuntu, Debian and Fedora. None of them boot as a machine; each pulls ~100 MB,
+  creates a record, and dies. `research/MACHINES-SPEC.md` has the table. Offer what
+  you have actually run.
+- **Do not classify on one measurement.** A single probe said `alpine:latest` failed;
+  it had not, the boot was still settling. That one data point would have removed a
+  working option from the form.
+- **`Scripts/make-app.sh` now refuses to package a screenshot scaffold.**
+  `Scripts/check-defaults.sh` asserts the known-good `@State` defaults are present —
+  Overview as the default detail tab, `.dashboard` as the sidebar selection, no
+  pre-populated `detailTarget`, and so on. It asserts the *good* line is there rather
+  than blacklisting bad ones, because a blacklist only catches the mistake already made.
+  It has a negative control: reintroduce a scaffold and the packaging step fails.
+- **A revert is not done until the running instance is replaced.** A temporary
+  `showingCreate = true` scaffold was reverted, the bundle was rebuilt, and the check
+  "binary is newer than every source file" passed — but the app was never relaunched,
+  so the owner spent the next stretch with a create modal opening every time he clicked
+  Machines. Reverting a scaffold means source, artefact **and** process. This is the
+  second time a stale artefact has been mistaken for a code bug.
+- **A note claiming a protection is a promise the code must keep.** The machine Inspect
+  panel printed "Secrets are redacted" under `userSetup.username: example`. Every
+  redaction rule matched a *path* (`/Users/<name>`); nothing matched a bare account
+  field, so the host user's own name was displayed **and handed out by Copy JSON**.
+  The docstring even named that field as the reason redaction mattered there. There is
+  now a `.username` category, a rule, a detector and two tests — and bare `user` is
+  deliberately *not* matched, because container config uses it for the runtime user.
+  This is the third time a real username has escaped: twice into fixtures, once here.
+- **A gauge that always reads full is worse than no gauge.** The dashboard reported
+  memory at 96–98% permanently. The comment said the sum matched Activity Monitor; the
+  code summed `active + inactive + wired + compressed`, and `inactive_count` is
+  reclaimable file cache that Activity Monitor excludes. "Used" is **App Memory
+  (`internal - purgeable`) + Wired + Compressed**. The panel also printed the total as
+  "68.72 GB" because `ByteCountFormatter.file` is decimal and Apple counts RAM in binary
+  units — 64 GiB is "64 GB" everywhere on the machine, so 68.72 invited the obvious
+  question. Evidence in `Scripts/probes/memory-accounting.swift`, cross-checked against
+  `top` at the same instant. Disk sizes stay decimal; the two conventions differ by
+  medium and matching each beats picking one.
+- **Share the mechanism, not the screenshot.** The machine Inspect tab shipped
+  JSON-only because `InspectRow` and the flatten walk were `private` to
+  `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
+  apply to one panel and not the other.
+- **`case A, B where cond:` binds `where` to `B` only.** Written as
+  `case .loaded, .loading where displayed.isEmpty:` the `.loaded` arm matched
+  unconditionally, so the Machines list rendered "No matching machines" with two
+  machines in the model. Swift accepts it without a warning. Repeat the clause on
+  every pattern that needs it.
 
 ### Branding
 
