@@ -476,7 +476,10 @@ final class AppModel {
 
     /// True until preflight says otherwise. Nil means preflight hasn't run yet, in which
     /// case we optimistically try — an unnecessary refresh is cheaper than a blank screen.
-    private var runtimeUsable: Bool {
+    /// `internal`, not `private`, for the reason recorded on `cli`: Swift's same-file rule puts
+    /// a `private` member out of reach of an extension in another file, and the last time that
+    /// bit us the extension built its own `ContainerCLI` rather than sharing this one.
+    var runtimeUsable: Bool {
         guard let preflight else { return true }
         if case .ok = preflight { return true }
         return false
@@ -798,6 +801,34 @@ final class AppModel {
     /// you switched tab, to tell it something it already knows.
     @ObservationIgnored var lastDetailTab: [String: DetailTab] = [:]
 
+    // MARK: Machines
+    //
+    // A machine is the VM containers run inside — see `AppModelMachines.swift`.
+
+    // Written by the `AppModelMachines.swift` extension, so these cannot be `private(set)` —
+    // Swift's access control is per-file, not per-type. Plain `var`: `internal(set)` on an
+    // internal property is redundant and the compiler says so.
+    var machines: [ContainerMachine] = []
+    var machinesState: LoadState = .idle
+    var machinesLastRefresh: Date?
+    var busyMachines: Set<String> = []
+
+    /// **A second store, not a second namespace inside the first.**
+    ///
+    /// the CLI owner spotted this in `research/MACHINES-SPEC.md`: `TerminalSessionStore` is keyed by a
+    /// plain `String`, and machine names and container names are different namespaces in
+    /// `container` itself. A container called `web` and a machine called `web` would have shared
+    /// one entry, so opening a shell in one could show or clobber the other's session state.
+    ///
+    /// Two instances rather than prefixed keys: the type is already generic over "a string key
+    /// with sessions under it", so a second instance is free and cannot be got wrong. Encoding
+    /// a namespace into the key would put the invariant in every call site instead of the type.
+    @ObservationIgnored let machineTerminals = TerminalSessionStore()
+
+    /// Which machine detail tab each machine was last showing, this run only — same rule and
+    /// same reasoning as `lastDetailTab` for containers.
+    @ObservationIgnored var lastMachineTab: [String: MachineDetailTab] = [:]
+
     /// Machine CPU, memory and network, read from the OS rather than the container runtime.
     /// See `HostMetricsSampler` — host and container metrics answer different questions and
     /// the dashboard shows both, labelled distinctly.
@@ -850,7 +881,7 @@ final class AppModel {
     private(set) var busy: Set<Container.ID> = []
     /// Surfaced to the user; an action that fails must say so rather than looking like
     /// nothing happened.
-    private(set) var actionError: String?
+    var actionError: String?
 
     func clearActionError() { actionError = nil }
 

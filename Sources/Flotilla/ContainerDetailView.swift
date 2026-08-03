@@ -660,12 +660,7 @@ private struct InspectTab: View {
     @State private var loading = false
     @State private var error: String?
     @State private var search = ""
-    @State private var presentation: Presentation = .json
-
-    enum Presentation: String, CaseIterable, Identifiable {
-        case json = "JSON", table = "Table"
-        var id: Self { self }
-    }
+    @State private var presentation: InspectPresentation = .json
 
     /// Narrowed on purpose. The standard set is tuned for a support bundle **leaving the
     /// machine**; this is a panel you read on your own Mac, and applying the strict rules here
@@ -683,7 +678,7 @@ private struct InspectTab: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Picker("View", selection: $presentation) {
-                    ForEach(Presentation.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(InspectPresentation.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -735,70 +730,12 @@ private struct InspectTab: View {
         .task { await load() }
     }
 
-    /// The mockup's Table view: the same payload flattened to one row per leaf, so you can
-    /// scan for a value without reading the nesting. The JSON view stays the default because
-    /// structure is sometimes the thing you need.
-    ///
-    /// Built from the **redacted** text, not a second fetch, so the two views cannot disagree
-    /// about what is hidden.
+    /// The mockup's Table view. The flattening and the table itself are in
+    /// `InspectTable.swift` because the machine Inspect tab needs exactly the same thing —
+    /// they used to be private here, which is why that panel shipped JSON-only.
     @ViewBuilder
     private var tableView: some View {
-        let rows = Self.flatten(json).filter {
-            search.isEmpty
-            || $0.path.localizedCaseInsensitiveContains(search)
-            || $0.value.localizedCaseInsensitiveContains(search)
-        }
-        if rows.isEmpty {
-            ContentUnavailableView(
-                json == nil ? "Nothing loaded yet" : "No matching keys",
-                systemImage: "tablecells"
-            )
-        } else {
-            SwiftUI.Table(rows) {
-                TableColumn("Key") { row in
-                    Text(row.path).font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-                TableColumn("Value") { row in
-                    Text(row.value).font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-            }
-        }
-    }
-
-    struct InspectRow: Identifiable {
-        let id: Int
-        let path: String
-        let value: String
-    }
-
-    /// Flattens the decoded JSON to `key.path[0] = value` leaves.
-    ///
-    /// Empty objects and arrays are emitted as `{}` / `[]` rather than dropped: `capAdd: []`
-    /// says "no added capabilities", and a row that vanishes says nothing at all.
-    static func flatten(_ json: String?) -> [InspectRow] {
-        guard let json, let data = json.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data)
-        else { return [] }
-
-        var leaves: [(String, String)] = []
-        func walk(_ node: Any, _ path: String) {
-            switch node {
-            case let dict as [String: Any] where !dict.isEmpty:
-                for key in dict.keys.sorted() {
-                    walk(dict[key]!, path.isEmpty ? key : "\(path).\(key)")
-                }
-            case let array as [Any] where !array.isEmpty:
-                for (index, element) in array.enumerated() { walk(element, "\(path)[\(index)]") }
-            case is [String: Any]: leaves.append((path, "{}"))
-            case is [Any]: leaves.append((path, "[]"))
-            case is NSNull: leaves.append((path, "null"))
-            default: leaves.append((path, String(describing: node)))
-            }
-        }
-        walk(root, "")
-        return leaves.enumerated().map { InspectRow(id: $0.offset, path: $0.element.0, value: $0.element.1) }
+        InspectTableView(json: json, search: search)
     }
 
     /// Says that what you are reading has been filtered. A redaction the user cannot see is

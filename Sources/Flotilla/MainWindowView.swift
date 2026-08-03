@@ -17,6 +17,10 @@ struct MainWindowView: View {
     /// search here is what makes them survive a trip to Images and back.
     @State private var containersUI = ContainersUIState()
 
+    /// Same reasoning as `containersUI`, and owned here for the same reason — `MachinesView`
+    /// is rebuilt from scratch on every sidebar change.
+    @State private var machinesUI = MachinesUIState()
+
     @State private var selection: Section? = .dashboard
 
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
@@ -33,12 +37,33 @@ struct MainWindowView: View {
     @ViewBuilder
     private var sidebar: some View {
         List(selection: $selection) {
+            // The ungrouped top block is what spans **everything** below it.
+            //
+            // Dashboard obviously does. Images does too, and that is not obvious: a machine is
+            // built from an OCI image out of the same store a container runs from — the
+            // machine's `alpine:3.22` and the image list's `alpine:3.22` are the same digest.
+            // Filing Images under "Containers" said otherwise.
             SwiftUI.Section {
                 row(.dashboard, count: nil)
-                row(.containers, count: model.state == .loaded ? model.containers.count : nil)
                 row(.images, count: model.imagesState == .loaded ? model.images.count : nil)
+            }
+
+            // Volumes and Networks, by contrast, really are container-only, and that was worth
+            // checking against the CLI rather than assuming: `container run` takes `--volume`
+            // and `--network`, and `machine create` takes **neither** — a machine's storage is
+            // its disk image plus `--home-mount`, and its address comes from the runtime's own
+            // vmnet bridge rather than from a network you created. So they stay here, under the
+            // thing they actually attach to.
+            SwiftUI.Section("Containers") {
+                row(.containers, count: model.state == .loaded ? model.containers.count : nil)
                 row(.volumes, count: model.volumesState == .loaded ? model.volumes.count : nil)
                 row(.networks, count: model.networksState == .loaded ? model.networks.count : nil)
+            }
+
+            // Its own group: a machine is the VM containers run inside, not another resource
+            // alongside them. Grouping it with images and volumes would imply otherwise.
+            SwiftUI.Section("Virtualisation") {
+                row(.machines, count: model.machinesState == .loaded ? model.machines.count : nil)
             }
 
             // The mockup shows eight hosts here. There is **one**, and inventing the other
@@ -177,6 +202,8 @@ struct MainWindowView: View {
                 VolumesView(model: model)
             case .networks:
                 NetworksView(model: model)
+            case .machines:
+                MachinesView(model: model, ui: machinesUI)
             case .settings:
                 SettingsView(model: model)
             }
