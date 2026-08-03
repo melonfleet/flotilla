@@ -1,31 +1,31 @@
 [
   {
-    "containerId" : "flotilla-probe-93936e",
-    "cpus" : 6,
-    "createdDate" : "2026-08-03T09:16:13Z",
-    "diskSize" : 78692352,
-    "homeMount" : "rw",
-    "id" : "flotilla-probe",
-    "image" : {
-      "descriptor" : {
-        "digest" : "sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce",
-        "mediaType" : "application\/vnd.oci.image.index.v1+json",
-        "size" : 9218
+    "containerId": "flotilla-probe-93936e",
+    "cpus": 6,
+    "createdDate": "2026-08-03T09:16:13Z",
+    "diskSize": 78692352,
+    "homeMount": "rw",
+    "id": "flotilla-probe",
+    "image": {
+      "descriptor": {
+        "digest": "sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce",
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "size": 9218
       },
-      "reference" : "docker.io\/library\/alpine:3.22"
+      "reference": "docker.io/library/alpine:3.22"
     },
-    "ipAddress" : "192.168.64.10",
-    "memory" : 34359738368,
-    "platform" : {
-      "architecture" : "arm64",
-      "os" : "linux"
+    "ipAddress": "192.168.64.10",
+    "memory": 34359738368,
+    "platform": {
+      "architecture": "arm64",
+      "os": "linux"
     },
-    "startedDate" : "2026-08-03T09:16:14Z",
-    "status" : "running",
-    "userSetup" : {
-      "gid" : 20,
-      "uid" : 501,
-      "username" : "example"
+    "startedDate": "2026-08-03T09:16:14Z",
+    "status": "running",
+    "userSetup": {
+      "gid": 20,
+      "uid": 501,
+      "username": "example"
     }
   }
 ]
