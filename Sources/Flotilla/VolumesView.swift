@@ -67,7 +67,10 @@ struct VolumesView: View {
     private var displayedVolumes: [ContainerVolume] {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return model.volumes }
-        return model.volumes.filter { ($0.name ?? "").lowercased().contains(query) }
+        // `name` is non-optional: the real payload nests it under `configuration` where it is
+        // always present. It was optional before commit 9245077 fixed the fabricated fixture,
+        // and this `?? ""` was defensive code left over from that shape.
+        return model.volumes.filter { $0.name.lowercased().contains(query) }
     }
 
     @ViewBuilder
