@@ -11,24 +11,19 @@ struct NetworksView: View {
     @State private var pendingDelete: ContainerNetwork?
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            Divider()
-            content
+        Group {
+            if showingCreate {
+                NewNetworkView(model: model) { showingCreate = false }
+            } else {
+                VStack(spacing: 0) {
+                    toolbar
+                    Divider()
+                    content
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
-        // A real sheet: the system makes it modal and attaches it to this window, which is
-        // the behaviour a free-floating window could only imitate. The dim below is what
-        // supplies the web-modal look the system does not.
-        .sheet(isPresented: $showingCreate) {
-            NewNetworkView(model: model) { showingCreate = false }
-                // Reported to the model rather than dimmed locally: a dim applied here would
-                // only cover the detail pane and leave the sidebar bright. `MainWindowView`
-                // owns the dim so the *whole* interface greys, which is the effect asked for.
-                .onAppear { model.formDidOpen() }
-                .onDisappear { model.formDidClose() }
-        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {
@@ -199,10 +194,14 @@ struct NewNetworkView: View {
     /// split in two: v4 and v6 are independent, a network may be either or both, and mixing
     /// their examples in one column made neither clear.
     var body: some View {
-        ModalCard(title: "New Network", onClose: dismiss) {
+        VStack(spacing: 0) {
+            FormHeader(title: "New Network", systemImage: "network.badge.shield.half.filled",
+                       onBack: dismiss)
+            Divider()
             form
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(minWidth: 460)
     }
 
     private var form: some View {
@@ -212,7 +211,7 @@ struct NewNetworkView: View {
                 TextField("my-network", text: $newNetworkName)
                     .textFieldStyle(.roundedBorder)
                 if let problem = nameProblem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
+                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
                 }
             }
 
@@ -299,7 +298,7 @@ struct NewNetworkView: View {
                 .textFieldStyle(.roundedBorder)
                 .monospaced()
             if let problem {
-                Text(problem).font(.caption).foregroundStyle(.red)
+                Text(problem).font(.caption).foregroundStyle(Theme.danger)
             } else {
                 Text(note + " Cannot be changed later.")
                     .font(.caption2).foregroundStyle(.secondary)

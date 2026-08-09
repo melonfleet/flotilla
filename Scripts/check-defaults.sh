@@ -11,6 +11,15 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+# Deliberate escape hatch for the screenshot loop, because the alternative is worse: without
+# one, verifying a form means hand-assembling a bundle around the guard, which is how the
+# scaffold shipped in the first place. It is loud, it is per-invocation, and it never persists.
+if [ "${ALLOW_SCAFFOLD:-0}" = "1" ]; then
+    echo "  ⚠️  ALLOW_SCAFFOLD=1 — packaging a build that may contain a screenshot scaffold."
+    echo "     Do NOT leave this build installed. Revert, rebuild WITHOUT the flag, relaunch."
+    exit 0
+fi
+
 fail=0
 require() {   # require <file> <exact line, trimmed>
     if ! grep -qF -- "$2" "$1"; then

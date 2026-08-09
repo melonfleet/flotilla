@@ -395,6 +395,33 @@ public struct ContainerCLI: Sendable {
         try execute(["image", "inspect", reference]).stdout
     }
 
+    /// `container build [-f <path>] [-t <ref>] … [<context-dir>]`.
+    ///
+    /// `contextDirectory` and `dockerfile` are host paths the build **reads**, and both cross
+    /// this instance's `MountPolicy` at the allowlist — a context is a whole directory tree,
+    /// so it is a broader read grant than `copy`'s single file. Under the default
+    /// `.denyHostPaths` an explicit path is refused outright; pass `nil` to let the CLI
+    /// default the context to the process's own working directory.
+    ///
+    /// Several of the CLI's flags are deliberately unreachable from here *and* from the
+    /// allowlist — `--secret`, `--output`, `--vsock-port` and the `--dns*` family. See the
+    /// `build` row in `Allowlist` for why each is refused rather than merely unexposed.
+    @discardableResult
+    public func buildImage(contextDirectory: String?, dockerfile: String?, tag: String?,
+                           buildArgs: [String], labels: [String], noCache: Bool,
+                           platform: String?, target: String?) throws -> CommandResult {
+        var args = ["build"]
+        if let dockerfile, !dockerfile.isEmpty { args += ["--file", dockerfile] }
+        if let tag, !tag.isEmpty { args += ["--tag", tag] }
+        for argument in buildArgs where !argument.isEmpty { args += ["--build-arg", argument] }
+        for label in labels where !label.isEmpty { args += ["--label", label] }
+        if noCache { args.append("--no-cache") }
+        if let platform, !platform.isEmpty { args += ["--platform", platform] }
+        if let target, !target.isEmpty { args += ["--target", target] }
+        if let contextDirectory, !contextDirectory.isEmpty { args.append(contextDirectory) }
+        return try execute(args)
+    }
+
     // MARK: Volumes — mutate
 
     /// Everything `container volume create` accepts: a size, labels and driver options.

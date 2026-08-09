@@ -1,0 +1,43 @@
+================================================================
+$ container build --help
+captured 2026-08-09 against container 1.0.0 on macOS 26.6
+================================================================
+OVERVIEW: Build an image from a Dockerfile or Containerfile
+
+USAGE: container build [<options>] [<context-dir>]
+
+ARGUMENTS:
+  <context-dir>           Build directory (default: .)
+
+OPTIONS:
+  -a, --arch <value>      Add the architecture type to the build
+  --build-arg <key=val>   Set build-time variables
+  -c, --cpus <cpus>       Number of CPUs to allocate to the builder container
+  -f, --file <path>       Path to Dockerfile
+  -l, --label <key=val>   Set a label
+  -m, --memory <memory>   Amount of builder container memory (1MiByte
+                          granularity), with optional K, M, G, T, or P suffix
+  --no-cache              Do not use cache
+  -o, --output <value>    Output configuration for the build (format:
+                          type=<oci|tar|local>[,dest=]) (default: type=oci)
+  --os <value>            Add the OS type to the build
+  --platform <platform>   Add the platform to the build (format:
+                          os/arch[/variant], takes precedence over --os and
+                          --arch) [environment: CONTAINER_DEFAULT_PLATFORM]
+  --progress <type>       Progress type (format: auto|plain|tty) (default: auto)
+  -q, --quiet             Suppress build output
+  --secret <id=key,...>   Set build-time secrets (format:
+                          id=<key>[,env=<ENV_VAR>|,src=<local/path>])
+  -t, --tag <name>        Name for the built image (default:
+                          de7030d7-85d3-461b-b80a-9c3eb282870d)
+  --target <stage>        Set the target build stage
+  --vsock-port <port>     Builder shim vsock port (default: 8088)
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --dns <ip>              DNS nameserver IP address
+  --dns-domain <domain>   Default DNS domain
+  --dns-option <option>   DNS options
+  --dns-search <domain>   DNS search domains
+  --pull                  Pull latest image
+  --version               Show the version.
+  -h, --help              Show help information.
+

@@ -76,7 +76,11 @@ struct MachinesView: View {
 
     var body: some View {
         Group {
-            if let target = detailTarget {
+            // Create is a screen now, not a sheet — see `MachineFormView`. Checked before the
+            // detail so "New Machine" from inside a detail still lands somewhere sensible.
+            if showingCreate {
+                MachineFormView(model: model) { showingCreate = false }
+            } else if let target = detailTarget {
                 detailScreen(target)
             } else {
                 VStack(spacing: 0) {
@@ -97,11 +101,6 @@ struct MachinesView: View {
             Button("OK") { model.clearActionError() }
         } message: {
             Text(model.actionError ?? "")
-        }
-        .sheet(isPresented: $showingCreate) {
-            MachineCreateSheet(model: model) { showingCreate = false }
-                .onAppear { model.formDidOpen() }
-                .onDisappear { model.formDidClose() }
         }
         .confirmationDialog(
             "Delete the machine “\(confirmingDelete?.id ?? "")”?",
@@ -528,6 +527,14 @@ struct MachinesView: View {
     @ViewBuilder
     private func machineMenu(for machine: ContainerMachine) -> some View {
         Button("Details…") { detailTarget = DetailTarget(id: machine.id) }
+        // Edit opens the machine's own Settings tab rather than a second copy of the form.
+        // `machine set` only accepts cpus, memory and home-mount — an "edit" that showed the
+        // image and name as though they were changeable would be lying about what the CLI can
+        // do, and the Settings tab already states the restart requirement.
+        Button("Edit Settings…") {
+            model.lastMachineTab[machine.id] = .settings
+            detailTarget = DetailTarget(id: machine.id)
+        }
         Divider()
         if machine.isDefault != true {
             Button("Set as Default") { Task { await model.perform(.setDefault, on: machine) } }

@@ -138,6 +138,43 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     #expect(host.invocations[0] == ["image", "tag", "docker.io/library/alpine:latest", "alpine:mine"])
 }
 
+@Test func buildImageRoutesThroughAllowlistAndCarriesItsMountPolicy() throws {
+    // Two things at once, because the second is the one a green suite has missed before: that
+    // the argv is *accepted*, and that the host receives the allowlist's canonical form rather
+    // than what this method assembled.
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp/flotilla"]))
+
+    try cli.buildImage(contextDirectory: "/tmp/flotilla/src", dockerfile: "/tmp/flotilla/Dockerfile",
+                       tag: "app:latest", buildArgs: ["VERSION=1.2"], labels: ["team=infra"],
+                       noCache: true, platform: "linux/arm64", target: "runtime")
+
+    #expect(host.invocations[0] == ["build", "--file", "/tmp/flotilla/Dockerfile",
+                                    "--tag", "app:latest", "--build-arg", "VERSION=1.2",
+                                    "--label", "team=infra", "--no-cache",
+                                    "--platform", "linux/arm64", "--target", "runtime",
+                                    "/tmp/flotilla/src"])
+
+    // A context outside the policy's roots never reaches the host at all.
+    let denied = ContainerCLI(host: RecordingHost(), mountPolicy: .roots(["/tmp/flotilla"]))
+    #expect(throws: AllowlistError.self) {
+        try denied.buildImage(contextDirectory: "/Users/someone/src", dockerfile: nil, tag: nil,
+                              buildArgs: [], labels: [], noCache: false, platform: nil, target: nil)
+    }
+}
+
+@Test func buildImageOmitsEveryOptionThatWasNotAskedFor() throws {
+    // Nil context means "let the CLI default it to `.`", which is the only build a
+    // `.denyHostPaths` instance can run — no host path is named, so none is granted.
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host, mountPolicy: .denyHostPaths)
+
+    try cli.buildImage(contextDirectory: nil, dockerfile: nil, tag: "app:latest",
+                       buildArgs: [], labels: [], noCache: false, platform: nil, target: nil)
+
+    #expect(host.invocations[0] == ["build", "--tag", "app:latest"])
+}
+
 @Test func inspectDecodesTheSameShapeAsListContainers() throws {
     let host = RecordingHost()
     // `inspect`'s stdout is keyed on args.first here since the id varies; this reuses

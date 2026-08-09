@@ -17,10 +17,16 @@ struct VolumesView: View {
     @State private var pendingDelete: ContainerVolume?
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            Divider()
-            content
+        Group {
+            if showingCreate {
+                createScreen
+            } else {
+                VStack(spacing: 0) {
+                    toolbar
+                    Divider()
+                    content
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
@@ -31,7 +37,6 @@ struct VolumesView: View {
         } message: {
             Text(model.actionError ?? "")
         }
-        .sheet(isPresented: $showingCreate) { createSheet }
         .confirmationDialog(
             "Delete volume “\(pendingDelete?.name ?? "")”?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
@@ -151,13 +156,17 @@ struct VolumesView: View {
             .disabled(model.busy.contains(volume.id))
     }
 
-    private var createSheet: some View {
-        ModalCard(title: "New Volume", onClose: { showingCreate = false }) {
-            createForm.padding(20)
+    /// Embedded, not modal — see `MachineFormView` for the 9 August reversal.
+    private var createScreen: some View {
+        VStack(spacing: 0) {
+            FormHeader(title: "New Volume", systemImage: "externaldrive.badge.plus",
+                       onBack: { showingCreate = false })
+            Divider()
+            createForm
+                .padding(20)
+                .frame(maxWidth: 640, alignment: .leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(width: 440)
-        .onAppear { model.formDidOpen() }
-        .onDisappear { model.formDidClose() }
     }
 
     private var createForm: some View {
@@ -167,7 +176,7 @@ struct VolumesView: View {
                 TextField("my-data", text: $newVolumeName)
                     .textFieldStyle(.roundedBorder)
                 if let problem = nameProblem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
+                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
                 }
             }
 
@@ -177,7 +186,7 @@ struct VolumesView: View {
                     .textFieldStyle(.roundedBorder)
                     .monospaced()
                 if let problem = sizeProblem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
+                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
                 } else {
                     // Worth stating: the default is enormous and sparse, which is why the
                     // Size column in the list looks alarming until you set one yourself.

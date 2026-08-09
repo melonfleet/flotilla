@@ -121,7 +121,7 @@ struct AboutView: View {
         var color: Color {
             switch self {
             case .noConnection: .secondary
-            case .active: .orange
+            case .active: Theme.warning
             case .future: .secondary
             }
         }

@@ -1,9 +1,17 @@
 import SwiftUI
 import FlotillaCore
 
-/// Create a machine. A form, so a modal — `ModalCard` with the red ×, matching Run, New Volume
-/// and New Network. `CLAUDE.md`: a form is a question you answer and dismiss; a place is
-/// navigable.
+/// Create a machine — an **embedded screen**, not a modal.
+///
+/// This reverses the "forms are modal, places are navigable" rule recorded in `CLAUDE.md`, at
+/// the owner's direction on 9 August, and the newer argument is better: once Machines grew an
+/// embedded detail with a Back button and a tab strip, a floating card with its own close
+/// button was the odd one out. Every other full-screen surface in the app is reached and left
+/// the same way, so this is too — Back at the top left, Save at the bottom right.
+///
+/// It also disposes of a real complaint. The modal was a fixed 560×660, chosen by hand, which
+/// meant copy had to be trimmed to fit rather than the container adapting to the content.
+/// Embedded, it takes the window.
 ///
 /// The thing this form has to teach, because it is genuinely surprising: **a machine is built
 /// from a container image, not an installer.** `alpine:3.22`, pulled from the same registry as
@@ -15,7 +23,7 @@ import FlotillaCore
 /// it looks.** In practice only Alpine boots — see `suggestions` for what was tried. The field
 /// still accepts anything, because the constraint is the runtime's and may lift, but the form
 /// says so up front rather than letting a pull succeed and a boot fail.
-struct MachineCreateSheet: View {
+struct MachineFormView: View {
     let model: AppModel
     let dismiss: () -> Void
 
@@ -59,7 +67,9 @@ struct MachineCreateSheet: View {
     ]
 
     var body: some View {
-        ModalCard(title: "New Machine", onClose: dismiss) {
+        VStack(spacing: 0) {
+            header
+            Divider()
             Form {
                 // Image and name in one section rather than two. Five grouped sections did not
                 // fit the sheet, and the command preview — the one part that tells you exactly
@@ -132,20 +142,49 @@ struct MachineCreateSheet: View {
                 }
             }
             .formStyle(.grouped)
+            // The form takes the space it needs and the window scrolls it; no hand-picked
+            // height to trim copy against.
+            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack {
-                Spacer()
-                Button("Cancel", action: dismiss)
-                Button("Create") { Task { await create() } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!previewIsValid || creating)
-            }
-            .padding(12)
+            Divider()
+            footer
         }
-        // 660 rather than 620 so the command preview is on screen without scrolling. The Form
-        // still scrolls if the window is shorter than this, so a small window degrades rather
-        // than breaks.
-        .frame(width: 560, height: 660)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Back, then the title — the same header shape as the machine and container detail
+    /// screens, so leaving a form works exactly like leaving a detail.
+    private var header: some View {
+        HStack(spacing: 10) {
+            Button(action: dismiss) { Image(systemName: "chevron.left") }
+                .help("Back to Machines")
+                .accessibilityLabel("Back to Machines")
+            Image(systemName: "plus.rectangle.on.folder")
+                .font(.system(size: 17)).foregroundStyle(.secondary)
+            Text("New Machine").font(.system(size: 15, weight: .semibold))
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+    }
+
+    /// Save lives bottom-right, where a form's commit belongs on macOS.
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if creating {
+                ProgressView().controlSize(.small)
+                Text("Creating… this pulls the image and boots the VM.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Cancel", action: dismiss)
+            Button("Save") { Task { await create() } }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!previewIsValid || creating)
+        }
+        .padding(12)
     }
 
     // MARK: Preview

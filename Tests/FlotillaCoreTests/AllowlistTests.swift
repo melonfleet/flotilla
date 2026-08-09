@@ -261,6 +261,9 @@ private func requireRejected(
         "machine create", "machine set", "machine stop", "machine delete", "machine run",
         "machine set-default",
         "image pull", "image delete", "image rm", "image prune", "image tag",
+        // Reads a host directory tree and writes a new image. See the `build` tests below
+        // for the flags that are refused outright rather than validated.
+        "build",
         "volume create", "volume delete", "volume rm", "volume prune",
         "network create", "network delete", "network rm", "network prune",
     ]
@@ -333,6 +336,21 @@ private func requireRejected(
         AllowedCase(["image", "prune", "-a"], canonical: ["image", "prune", "--all"],
                     mutates: true, timeout: 120),
         AllowedCase(["image", "tag", "alpine:latest", "alpine:mine"], mutates: true),
+
+        // The context directory is `/tmp/...` because the policy below permits `/tmp` — a
+        // build with an explicit path is authorised by MountPolicy, never by its grammar.
+        AllowedCase(["build", "-f", "/tmp/build/Dockerfile", "-t", "app:latest",
+                     "--build-arg", "VERSION=1.2", "-l", "team=infra", "--no-cache",
+                     "--platform", "linux/arm64", "--target", "runtime", "--progress", "plain",
+                     "-q", "--pull", "-c", "4", "-m", "8G", "--os", "linux", "-a", "arm64",
+                     "/tmp/build"],
+                    canonical: ["build", "--file", "/tmp/build/Dockerfile", "--tag", "app:latest",
+                                "--build-arg", "VERSION=1.2", "--label", "team=infra",
+                                "--no-cache", "--platform", "linux/arm64", "--target", "runtime",
+                                "--progress", "plain", "--quiet", "--pull", "--cpus", "4",
+                                "--memory", "8G", "--os", "linux", "--arch", "arm64",
+                                "/tmp/build"],
+                    mutates: true, timeout: 1800),
 
         AllowedCase(["machine", "list", "--format", "json"], mutates: false),
         AllowedCase(["machine", "inspect", "dev"], mutates: false),
@@ -847,4 +865,161 @@ func machineLeavesDoNotShareOneConvention() {
     #expect(throws: (any Error).self) { try Allowlist.validated(["machine", "set", "-n", "dev"]) }
     // `list` takes no operand at all.
     #expect(throws: (any Error).self) { try Allowlist.validated(["machine", "list", "dev"]) }
+}
+
+// MARK: - container build
+//
+// `build` is the widest grammar in the table, and the risk is in its flags rather than its
+// verb: three of them reach the host filesystem and environment, and in Phase 2 this same
+// grammar faces a REMOTE caller. Every shape below is checked against the captured help
+// (`reference/cli-help/container-build-1.0.0-help.txt`), which is the only authority — the
+// CLI cannot be run from here, so nothing is inferred from what "should" work.
+//
+// The refusal tests matter more than the acceptance ones. Each names a flag the CLI really
+// does offer, which is exactly why leaving it out has to be pinned: a later reader adding
+// "the missing flags" from the help text would otherwise reopen every one of these holes.
+
+/// Every banned flag is asserted to fail as `unknownFlag`, not merely to fail.
+///
+/// The context directory in each case is inside the permitted root on purpose, so the *only*
+/// thing left to object to is the flag. Otherwise these would still be green with `--secret`
+/// fully allowlisted — the mount policy would be refusing the path and the test would be
+/// reporting a protection it never checked. That confound has bitten this project before.
+private func requireUnknownFlag(
+    _ flag: String,
+    in args: [String],
+    sourceLocation: SourceLocation = #_sourceLocation
+) {
+    #expect(Allowlist.validate(args, mountPolicy: .roots(["/tmp"])) == .failure(.unknownFlag(flag)),
+            "\(args) was not refused as an unknown \(flag)",
+            sourceLocation: sourceLocation)
+}
+
+@Test("build refuses --secret: it reads host env vars and host files")
+func buildRefusesSecret() {
+    // `--secret id=<key>[,env=<ENV_VAR>|,src=<local/path>]`. `env=` lifts a host environment
+    // variable and `src=` a host file, both into a build the caller controls — an
+    // exfiltration primitive the moment a remote peer can name it, and one that MountPolicy
+    // would not see because the path is buried inside an opaque `id=…,src=…` blob.
+    requireUnknownFlag("--secret", in: ["build", "--secret", "id=npm,env=NPM_TOKEN", "/tmp/build"])
+    requireUnknownFlag("--secret", in: ["build", "--secret",
+                                        "id=ssh,src=/Users/someone/.ssh/id_ed25519", "/tmp/build"])
+    requireUnknownFlag("--secret", in: ["build", "--secret=id=npm,env=NPM_TOKEN", "/tmp/build"])
+}
+
+@Test("build refuses --output: type=local,dest= writes an arbitrary host path")
+func buildRefusesOutput() {
+    // The default `type=oci` is what we want anyway, so the flag buys nothing and costs a
+    // write primitive. The short spelling is refused too — a refusal that only covers the
+    // long form is not a refusal.
+    requireUnknownFlag("--output", in: ["build", "--output",
+                                        "type=local,dest=/Users/someone/Library", "/tmp/build"])
+    requireUnknownFlag("-o", in: ["build", "-o", "type=tar,dest=/tmp/out.tar", "/tmp/build"])
+    requireUnknownFlag("--output", in: ["build", "--output=type=oci", "/tmp/build"])
+}
+
+@Test("build refuses --vsock-port: internal builder plumbing is not a caller's choice")
+func buildRefusesVsockPort() {
+    requireUnknownFlag("--vsock-port", in: ["build", "--vsock-port", "8088", "/tmp/build"])
+}
+
+@Test("build refuses the whole --dns family, deferred for want of a use case")
+func buildRefusesDNSFlags() {
+    // Default-deny means "no use case yet" is spelled "not in the table". Listed here per
+    // flag so that adding one back is a deliberate act with a failing test attached.
+    for flag in ["--dns", "--dns-domain", "--dns-option", "--dns-search"] {
+        requireUnknownFlag(flag, in: ["build", flag, "10.0.0.1", "/tmp/build"])
+    }
+}
+
+@Test("a build context outside the mount policy's roots is refused")
+func buildRefusesContextOutsidePermittedRoots() {
+    // A context is a whole directory TREE, archived and handed to the builder — a broader
+    // read grant than `copy`'s single file. `/Users` as a context is every SSH key on the
+    // machine, and the grammar alone cannot tell that apart from a project directory.
+    //
+    // Asserted as `hostPathNotPermitted` rather than "throws", because that is the difference
+    // between the policy refusing the path and the shape refusing the string. A path this
+    // well-formed must be stopped by the policy or by nothing.
+    #expect(Allowlist.validate(["build", "/Users/someone/src"], mountPolicy: .roots(["/tmp/flotilla"]))
+            == .failure(.hostPathNotPermitted(context: "<hostBuildPath>", path: "/Users/someone/src")))
+    // The default policy permits nothing, so an explicit path is refused outright.
+    #expect(Allowlist.validate(["build", "/tmp/flotilla"], mountPolicy: .denyHostPaths)
+            == .failure(.hostPathNotPermitted(context: "<hostBuildPath>", path: "/tmp/flotilla")))
+    // `--file` is a host path too, and is checked by the same policy — a permitted context
+    // must not smuggle an unpermitted Dockerfile in beside it.
+    #expect(Allowlist.validate(["build", "-f", "/Users/someone/Dockerfile", "/tmp/flotilla"],
+                               mountPolicy: .roots(["/tmp/flotilla"]))
+            == .failure(.hostPathNotPermitted(context: "--file", path: "/Users/someone/Dockerfile")))
+    // Neither is a relative path, a traversal, nor the filesystem root.
+    for context in [".", "../src", "/tmp/flotilla/../../etc", "/"] {
+        #expect(throws: (any Error).self, "accepted context \(context)") {
+            try Allowlist.validated(["build", context], mountPolicy: .roots(["/tmp/flotilla"]))
+        }
+    }
+}
+
+@Test("a build context inside a permitted root is allowed")
+func buildAcceptsContextInsidePermittedRoots() throws {
+    let validated = try Allowlist.validated(
+        ["build", "-f", "/tmp/flotilla/Dockerfile", "-t", "app:latest", "/tmp/flotilla/src"],
+        mountPolicy: .roots(["/tmp/flotilla"])
+    )
+    #expect(validated.arguments == ["build", "--file", "/tmp/flotilla/Dockerfile",
+                                    "--tag", "app:latest", "/tmp/flotilla/src"])
+    #expect(validated.mutates)
+    // Generous: a build pulls base images and compiles.
+    #expect(validated.timeoutHint == 1800)
+}
+
+@Test("build needs no context at all — the CLI defaults it")
+func buildAcceptsNoContextOperand() throws {
+    // `min: 0`, because `<context-dir>` defaults to `.` per the captured help. This is the
+    // only way to build under `.denyHostPaths`, which is the correct posture: no host path
+    // is named, so none is granted.
+    let validated = try Allowlist.validated(["build", "-t", "app:latest"],
+                                            mountPolicy: .denyHostPaths)
+    #expect(validated.arguments == ["build", "--tag", "app:latest"])
+    // And exactly one context, never two.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["build", "/tmp/flotilla", "/tmp/other"],
+                                mountPolicy: .roots(["/tmp"]))
+    }
+}
+
+@Test("--progress accepts only auto, plain and tty")
+func buildProgressIsAClosedSet() throws {
+    for good in ["auto", "plain", "tty"] {
+        #expect(throws: Never.self, "should accept \(good)") {
+            try Allowlist.validated(["build", "--progress", good], mountPolicy: .denyHostPaths)
+        }
+    }
+    // The capture lists exactly three. Anything else is refused here, where the message names
+    // the rule, rather than forwarded for the CLI to answer with a usage dump.
+    for bad in ["json", "TTY", "Plain", "auto,plain", "", "quiet"] {
+        #expect(throws: (any Error).self, "should reject '\(bad)'") {
+            try Allowlist.validated(["build", "--progress", bad], mountPolicy: .denyHostPaths)
+        }
+    }
+}
+
+@Test("build's remaining values keep the shapes the rest of the table uses")
+func buildValidatesItsOtherFlagValues() {
+    // No special-casing because it is a build: a tag is an image reference, a build-arg is a
+    // KEY=VALUE, a label is a key=value, and a Unicode lookalike is refused as it is anywhere.
+    for argv in [["build", "-t", "not a ref!!"],
+                 ["build", "-t", "аpp:latest"],          // Cyrillic а
+                 ["build", "--build-arg", "novalue"],
+                 ["build", "--build-arg", "9BAD=x"],
+                 ["build", "--label", "novalue"],
+                 ["build", "--platform", "linux"],
+                 ["build", "--target", "../etc"],
+                 ["build", "--cpus", "0"],
+                 ["build", "--memory", "8Q"],
+                 ["build", "--no-cache=true"],
+                 ["build", "--pull", "yes"]] {
+        #expect(throws: (any Error).self, "accepted \(argv)") {
+            try Allowlist.validated(argv, mountPolicy: .denyHostPaths)
+        }
+    }
 }

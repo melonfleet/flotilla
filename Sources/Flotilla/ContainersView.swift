@@ -138,12 +138,9 @@ struct ContainersView: View {
         }
     }
 
-    /// Extracted rather than inlined in the modifier chain: with the chain this long the
-    /// type-checker gives up ("unable to type-check this expression in reasonable time").
-    private var runSheet: some View {
+    /// Embedded, not a sheet, since 9 August — the dimming and the close button went with it.
+    private var runScreen: some View {
         RunSheetView(model: model) { showingRun = false }
-            .onAppear { model.formDidOpen() }
-            .onDisappear { model.formDidClose() }
     }
 
     /// Detail **embedded in the window**, not a modal — the arrangement
@@ -514,7 +511,9 @@ struct ContainersView: View {
 
     var body: some View {
         Group {
-            if let target = detailTarget {
+            if showingRun {
+                runScreen
+            } else if let target = detailTarget {
                 detailScreen(target)
             } else {
                 VStack(spacing: 0) {
@@ -532,7 +531,6 @@ struct ContainersView: View {
         } message: {
             Text(model.actionError ?? "")
         }
-        .sheet(isPresented: $showingRun) { runSheet }
         // "Run…" in the menu-bar popover. One-shot: consumed and cleared, so the sheet does
         // not reopen every time this view is rebuilt.
         .onChange(of: model.pendingRunSheet) { _, requested in

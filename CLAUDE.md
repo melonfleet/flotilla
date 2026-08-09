@@ -40,13 +40,20 @@ questions.
   terminals use a **second** `TerminalSessionStore`, because the store is keyed by a
   plain string and a machine named `web` would otherwise collide with a container
   named `web`. Read the `MACHINES-SPEC.md` addendum before touching the CLI calls.
-- **Forms are modal, places are navigable.** `ModalCard` (red ×, dim behind) wraps Run,
-  New Volume and New Network — a form is a question you answer and dismiss. Detail is a
-  place you go and come back from, so it is embedded, which is what
-  `research/review/mockups/container-detail.html` specified all along: that mockup has the
-  app sidebar in it. Detail went window → sheet → embedded over 1–2 August; the sheet was a
-  divergence that cost resizability, height for the Terminal tab, and left the sidebar
-  inert. Do not turn it back into a sheet.
+- **Everything is embedded now — forms included** (9 August, the owner's call). This
+  **reverses** the old "forms are modal, places are navigable" rule, and the newer
+  argument is better: once Machines grew an embedded detail with Back and a tab strip, a
+  floating card with a red × was the only surface in the app you left a different way.
+  Run, New Machine, New Volume, New Network, Pull Image and Tag Image are all screens with
+  `FormHeader` (Back, icon, title) and Save bottom-right. It also killed a real cost —
+  every modal carried a hand-picked frame (560×680, 560×660, 440 wide) that copy had to be
+  *trimmed to fit*, which is backwards.
+  `ModalCard` survives for **About** and **Support Bundle** only: those are dialogs you
+  acknowledge, not forms you fill in and save.
+  Detail is embedded too, and always should have been —
+  `research/review/mockups/container-detail.html` has the app sidebar in it. Detail went
+  window → sheet → embedded over 1–2 August; the sheet cost resizability, height for the
+  Terminal tab, and left the sidebar inert. Do not turn any of it back into a sheet.
 - **216 tests pass on macOS.** `FlotillaCore` also builds and tests on Linux with
   Swift 6.1 via `Package@swift-6.1.swift`. Keep the portable core Foundation-only
   so backend and data work stays independently verifiable.
@@ -191,6 +198,15 @@ that we *built* the right command; almost nothing checked the command was
   every pattern that needs it.
 
 ### Branding
+
+**`design/brand/BRAND.md` is the source of truth for colour, not the mockups.** `Theme.swift`
+used to be transcribed from `research/review/mockups/assets/mac.css`, whose token block names
+its status colours `--sys-red`/`--sys-orange`/`--sys-blue` — macOS system colours, deliberately.
+Transcribed faithfully, that put a **plain blue** on the dashboard, the one hue with no place in
+a watermelon identity, while `BRAND.md` had a sanctioned teal `#2C7A7B` all along. Nobody had
+reconciled the two documents. Semantic colours now quote `BRAND.md` exactly; dark-mode
+counterparts it does not specify are *derived* and labelled as derived. The content column
+carries a faint honeydew wash so it reads as a decision rather than as absent.
 
 The approved watermelon language; light and dark are both first-class. Icons are
 **generated** from the brand geometry by `Scripts/make-icons.swift`, and the

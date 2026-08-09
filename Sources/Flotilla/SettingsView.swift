@@ -42,7 +42,7 @@ private struct SettingRow<V: SettingRepresentable, Control: View>: View {
                 if key.requiresRestart && !locked {
                     Text("Requires a restart to take effect.")
                         .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.warning)
                 }
             }
             Spacer()

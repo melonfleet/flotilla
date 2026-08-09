@@ -36,6 +36,16 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     case absolutePath
     /// One end of a `container copy`: either `name:/path/in/container` or `/path/on/host`.
     case copyEndpoint
+    /// A host path a **build** reads: the context directory, or a Dockerfile.
+    ///
+    /// Deliberately not `.absolutePath`, which checks shape and nothing else. A build
+    /// context is a whole directory *tree* handed to the builder, so this is a broader read
+    /// grant than `copy`'s single file and must cross `MountPolicy` for the same reason
+    /// `.copyEndpoint`'s host side does — grammar is not authorisation.
+    case hostBuildPath
+    /// `container build --progress`: `auto`, `plain` or `tty`. A closed set, taken from the
+    /// captured help, not a free string.
+    case progressType
     /// One `container machine set` setting: `cpus=<n>`, `memory=<size>` or
     /// `home-mount=<ro|rw|none>`. **A closed set, not a generic `key=value`.**
     case machineSetting
@@ -97,6 +107,10 @@ extension ValueShape {
             "Expected an absolute path with no `.` or `..` components."
         case .copyEndpoint:
             "Expected `container:/path` or an absolute path on this Mac."
+        case .hostBuildPath:
+            "Expected an absolute path on this Mac that the mount policy permits the build to read."
+        case .progressType:
+            "Expected `auto`, `plain` or `tty`."
         case .machineSetting:
             "Expected `cpus=<number>`, `memory=<size>` such as 8G, or `home-mount=ro|rw|none`."
         case .homeMountMode:
@@ -344,8 +358,9 @@ public enum Allowlist {
     /// means adding a row here — that is the point.
     ///
     /// Deliberately absent, with reasons:
-    /// - `exec`, `cp`, `export`, `build`, `push`, `registry login` — not Phase 1, and
-    ///   each is a data-exfiltration or credential surface that deserves its own review.
+    /// - `cp`, `export`, `push`, `registry login` — not Phase 1, and each is a
+    ///   data-exfiltration or credential surface that deserves its own review. (`exec` and
+    ///   `build` have since had theirs; see their rows.)
     /// - `logs --follow`, `stats` streaming — Phase 4 streaming transport; a bounded
     ///   fetch is all Phase 1 offers, so `-f` is not accepted.
     /// - `system start/stop`, `builder …` — fleet-wide destructive or privileged;
@@ -531,6 +546,53 @@ public enum Allowlist {
             CommandSpec(["image", "prune"], mutates: true, timeoutHint: 120, flags: [all]),
             CommandSpec(["image", "tag"], mutates: true,
                         operands: OperandSpec(shape: .imageReference, min: 2, max: 2)),
+
+            // MARK: build
+            //
+            // The most dangerous grammar in the table, and the reason is not the verb but its
+            // arguments: three of `build`'s flags reach the host filesystem and environment.
+            // In Phase 2 this same grammar faces a REMOTE caller, so what is refused here
+            // matters more than what is accepted.
+            //
+            // Refused outright — no spec, so they fail as unknown flags, and there is a test
+            // per flag pinning that:
+            //   `--secret`      reads host env vars and host files (`env=`/`src=`). An
+            //                   exfiltration primitive the moment a remote peer can name it,
+            //                   and one that would launder the value into an image layer.
+            //   `--output`      `type=local,dest=<path>` writes an arbitrary host path. The
+            //                   default `type=oci` is what we want anyway, so the flag buys
+            //                   nothing and costs a lot.
+            //   `--vsock-port`  internal builder plumbing; not a caller's choice.
+            //   `--dns`, `--dns-domain`, `--dns-option`, `--dns-search`
+            //                   deferred — no use case yet, and the table is default-deny, so
+            //                   "no use case" means "not listed".
+            //
+            // `--file` and the context directory are `.hostBuildPath`, so both cross
+            // `MountPolicy` exactly as `copy`'s host end does. The context is a whole
+            // directory TREE, which is a broader read grant than `copy`'s single file — under
+            // `.denyHostPaths` a build naming an explicit path is refused entirely.
+            //
+            // The operand is optional because the CLI defaults it to `.`; there is no way to
+            // spell a *relative* context through this shape, which is deliberate — a relative
+            // path cannot be checked against a policy expressed in absolute roots.
+            CommandSpec(["build"], mutates: true, timeoutHint: 1800,
+                        flags: [FlagSpec(long: "file", short: "f", value: .hostBuildPath),
+                                FlagSpec(long: "tag", short: "t", value: .imageReference),
+                                FlagSpec(long: "build-arg", value: .envAssignment,
+                                         repeatable: true, maxRepeats: 24),
+                                FlagSpec(long: "label", short: "l", value: .keyValue,
+                                         repeatable: true, maxRepeats: 8),
+                                FlagSpec(long: "no-cache"),
+                                FlagSpec(long: "pull"),
+                                FlagSpec(long: "quiet", short: "q"),
+                                FlagSpec(long: "platform", value: .platform),
+                                FlagSpec(long: "os", value: .identifier),
+                                FlagSpec(long: "arch", short: "a", value: .identifier),
+                                FlagSpec(long: "cpus", short: "c", value: .count),
+                                FlagSpec(long: "memory", short: "m", value: .memorySize),
+                                FlagSpec(long: "target", value: .identifier),
+                                FlagSpec(long: "progress", value: .progressType)],
+                        operands: OperandSpec(shape: .hostBuildPath, min: 0, max: 1)),
 
             // MARK: volumes
             CommandSpec(["volume", "list"], mutates: false, flags: [format, quiet]),
@@ -895,6 +957,10 @@ public enum Allowlist {
             return checkAbsolutePath(value, context: context)
         case .copyEndpoint:
             return checkCopyEndpoint(value, context: context, mountPolicy: mountPolicy)
+        case .hostBuildPath:
+            return checkHostBuildPath(value, context: context, mountPolicy: mountPolicy)
+        case .progressType:
+            return ["auto", "plain", "tty"].contains(value) ? nil : bad
         case .machineSetting:
             return checkMachineSetting(value, context: context)
         case .homeMountMode:
@@ -1073,6 +1139,32 @@ public enum Allowlist {
         let path = String(value[value.index(after: separator)...])
         guard isIdentifier(name), !path.isEmpty else { return bad }
         return checkAbsolutePath(path, context: context)
+    }
+
+    /// A host path a `container build` reads — the context directory, or `--file`.
+    ///
+    /// The same shape as `checkCopyEndpoint`'s host branch, and for the same reason: the value
+    /// being well-formed says nothing about whether this caller may read it. What differs is
+    /// the *breadth* of the grant. `copy` names one file; a build context is a directory tree
+    /// that is archived wholesale and handed to the builder, so `/Users` as a context is every
+    /// SSH key on the machine. So it crosses `MountPolicy`, which by default permits nothing —
+    /// a build with an explicit path under `.denyHostPaths` is refused, and the caller must
+    /// either name a permitted root or let the CLI default the context to `.`.
+    ///
+    /// Only absolute paths. A relative one cannot be judged against roots expressed
+    /// absolutely, and resolving it here would mean guessing at a working directory that
+    /// belongs to whoever spawns the process — in Phase 2, the other end of the wire.
+    private static func checkHostBuildPath(_ value: String, context: String,
+                                           mountPolicy: MountPolicy) -> AllowlistError? {
+        let bad = AllowlistError.invalidValue(context: context, value: value, shape: .hostBuildPath)
+        guard !value.isEmpty, value.hasPrefix("/") else { return bad }
+        if let error = checkAbsolutePath(value, context: context) { return error }
+        // Building the filesystem root is never what was meant, and is catastrophic if it is.
+        guard value != "/" else { return bad }
+        guard mountPolicy.allowsHostPath(value) else {
+            return .hostPathNotPermitted(context: context, path: value)
+        }
+        return nil
     }
 
     /// `source:/dest[:ro|rw]`. Source is a named volume or an absolute host path.

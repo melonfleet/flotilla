@@ -23,7 +23,7 @@ struct ModalCloseButton: View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(.red)
+                    .fill(Theme.danger)
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
                     // The glyph appears on hover, as macOS's own close button does; the red

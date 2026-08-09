@@ -28,10 +28,23 @@ struct ImagesView: View {
     @State private var pruneError: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            Divider()
-            content
+        Group {
+            // Embedded form screens, in precedence order — see `FormHeader` for the 9 August
+            // reversal. Prune and About stay modal: they are dialogs you acknowledge, not
+            // forms you fill in and save.
+            if let reference = runImage {
+                RunSheetView(model: model, initialImage: reference) { runImage = nil }
+            } else if showingPull {
+                pullScreen
+            } else if let image = taggingImage {
+                tagScreen(for: image)
+            } else {
+                VStack(spacing: 0) {
+                    toolbar
+                    Divider()
+                    content
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshImages() }
@@ -54,12 +67,6 @@ struct ImagesView: View {
         } message: {
             Text(pruneError ?? "")
         }
-        .sheet(item: Binding(get: { runImage.map(RunTarget.init) },
-                            set: { if $0 == nil { runImage = nil } })) { target in
-            runSheet(for: target.reference)
-        }
-        .sheet(isPresented: $showingPull) { pullSheet }
-        .sheet(item: $taggingImage) { image in tagSheet(for: image) }
         .sheet(isPresented: $showingPrune) { pruneSheet }
         .confirmationDialog(
             "Delete image “\(pendingDelete.map(Self.repository) ?? "")”?",
@@ -140,14 +147,6 @@ struct ImagesView: View {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return visible }
         return visible.filter { $0.reference.lowercased().contains(query) }
-    }
-
-    /// Extracted for the same reason as in `ContainersView`: inlined, the modifier chain
-    /// becomes too much for the type-checker.
-    private func runSheet(for reference: String) -> some View {
-        RunSheetView(model: model, initialImage: reference) { runImage = nil }
-            .onAppear { model.formDidOpen() }
-            .onDisappear { model.formDidClose() }
     }
 
     private var trimmedPull: String {
@@ -233,13 +232,27 @@ struct ImagesView: View {
             .disabled(model.busy.contains(image.id))
     }
 
-    private func tagSheet(for image: ContainerImage) -> some View {
-        ModalCard(title: "Tag Image", onClose: { taggingImage = nil }) {
+    /// Header + body, the embedded counterpart of `ModalCard`. Local to this file because
+    /// only the two image forms need the wrapper shape; the header itself is shared.
+    @ViewBuilder
+    private func embeddedForm<Content: View>(
+        title: String, systemImage: String, onBack: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(spacing: 0) {
+            FormHeader(title: title, systemImage: systemImage, onBack: onBack)
+            Divider()
+            content()
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private func tagScreen(for image: ContainerImage) -> some View {
+        embeddedForm(title: "Tag Image", systemImage: "tag", onBack: { taggingImage = nil }) {
             tagForm(for: image).padding(20)
         }
         .frame(width: 440)
-        .onAppear { model.formDidOpen() }
-        .onDisappear { model.formDidClose() }
     }
 
     private func tagForm(for image: ContainerImage) -> some View {
@@ -251,7 +264,7 @@ struct ImagesView: View {
                 TextField("myregistry/name:tag", text: $tagTarget)
                     .textFieldStyle(.roundedBorder)
                 if let problem = tagProblem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
+                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
                 }
             }
             HStack {
@@ -346,13 +359,12 @@ struct ImagesView: View {
         .frame(width: 420)
     }
 
-    private var pullSheet: some View {
-        ModalCard(title: "Pull Image", onClose: { showingPull = false }) {
+    private var pullScreen: some View {
+        embeddedForm(title: "Pull Image", systemImage: "arrow.down.circle",
+                     onBack: { showingPull = false }) {
             pullForm.padding(20)
         }
         .frame(width: 440)
-        .onAppear { model.formDidOpen() }
-        .onDisappear { model.formDidClose() }
     }
 
     private var pullForm: some View {
@@ -361,7 +373,7 @@ struct ImagesView: View {
                 TextField("docker.io/library/nginx:latest", text: $pullReference)
                     .textFieldStyle(.roundedBorder)
                 if let problem = pullProblem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
+                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
                 }
             }
             HStack {

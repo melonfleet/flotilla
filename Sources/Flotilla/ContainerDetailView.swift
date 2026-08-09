@@ -610,7 +610,7 @@ private struct LogsTab: View {
         guard let chunk else { return [] }
         return chunk.lines.suffix(lineCap).map { line in
             let text = showTimestamps ? "\(Self.timeLabel(line.receivedAt ?? fetchedAt))  \(line.text)" : line.text
-            return DisplayLine(id: line.id, text: text, color: line.stream == .stderr ? .red : .primary)
+            return DisplayLine(id: line.id, text: text, color: line.stream == .stderr ? Theme.danger : .primary)
         }
     }
 

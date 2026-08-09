@@ -208,6 +208,16 @@ struct MainWindowView: View {
                 SettingsView(model: model)
             }
         }
+        // The honeydew wash, on the content column only.
+        //
+        // The mockup specified `--content-bg: #ffffff`, and a flat white panel beside a Liquid
+        // Glass sidebar reads as *absent* rather than as a decision. This is deliberately faint
+        // — a ground for cards to sit on, not a colour anyone should notice — and cards keep
+        // their own opaque surface so data contrast is untouched.
+        //
+        // `ignoresSafeArea` so it reaches under the toolbar; without it the wash stops at the
+        // content inset and draws a visible seam across the top of every section.
+        .background(Theme.contentBackground.ignoresSafeArea())
         // The modal treatment. Dimming *and* disabling: a dim alone would look modal while
         // still accepting clicks, which is worse than no dim at all — it says "you cannot
         // touch this" and then lets you.

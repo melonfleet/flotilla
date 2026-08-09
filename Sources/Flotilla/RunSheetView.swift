@@ -53,13 +53,34 @@ struct RunSheetView: View {
     private enum Field: Equatable { case image, name, ports, env, volumes, command }
 
     var body: some View {
-        ModalCard(title: "Run Container", onClose: dismiss) {
+        VStack(spacing: 0) {
+            header
+            Divider()
             content
         }
-        .frame(width: 560, height: 680)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Suggestions want the local image list; a user opening this sheet without ever
         // visiting Images otherwise sees none.
         .task { await model.refreshImages() }
+    }
+
+    /// Back then title, matching the detail screens and the machine form. Embedded rather than
+    /// modal since 9 August — see `MachineFormView` for the reasoning; the short version is that
+    /// once every other full-screen surface is reached and left the same way, a floating card
+    /// with its own close button is the odd one out, and a hand-picked 560×680 frame meant the
+    /// content had to fit the window rather than the other way round.
+    private var header: some View {
+        HStack(spacing: 10) {
+            Button(action: dismiss) { Image(systemName: "chevron.left") }
+                .help("Back to Containers")
+                .accessibilityLabel("Back to Containers")
+            Image(systemName: "shippingbox")
+                .font(.system(size: 17)).foregroundStyle(.secondary)
+            Text("Run Container").font(.system(size: 15, weight: .semibold))
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 
     private var content: some View {
@@ -91,6 +112,7 @@ struct RunSheetView: View {
     private var footer: some View {
         HStack {
             Spacer()
+            Button("Cancel", action: dismiss)
             Button("Run") {
                 let ranImage = trimmedImage
                 let ranOptions = options
@@ -99,6 +121,7 @@ struct RunSheetView: View {
                 Task { await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand) }
             }
             .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
             .disabled(previewError != nil)
         }
         .padding(12)
@@ -184,7 +207,7 @@ struct RunSheetView: View {
     @ViewBuilder
     private func fieldMessage(_ field: Field) -> some View {
         if let message = message(for: field) {
-            Text(message).font(.caption).foregroundStyle(.red)
+            Text(message).font(.caption).foregroundStyle(Theme.danger)
         }
     }
 
@@ -221,11 +244,11 @@ struct RunSheetView: View {
             case .success:
                 Label("Valid — ready to run.", systemImage: "checkmark.circle")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.success)
             case .failure(let error):
                 Label(error.description, systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.danger)
             }
         }
     }
