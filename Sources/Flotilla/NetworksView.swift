@@ -199,7 +199,6 @@ struct NewNetworkView: View {
                        onBack: dismiss)
             Divider()
             form
-                .frame(maxWidth: 720, alignment: .leading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }

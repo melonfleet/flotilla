@@ -243,7 +243,6 @@ struct ImagesView: View {
             FormHeader(title: title, systemImage: systemImage, onBack: onBack)
             Divider()
             content()
-                .frame(maxWidth: 720, alignment: .leading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }

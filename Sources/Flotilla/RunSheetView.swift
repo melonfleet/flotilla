@@ -240,15 +240,31 @@ struct RunSheetView: View {
                 // Reset on any edit, so the tick always refers to what is on screen now.
                 .onChange(of: previewLine) { copiedCommand = false }
             }
-            switch preview {
-            case .success:
-                Label("Valid — ready to run.", systemImage: "checkmark.circle")
+            if !hasStarted {
+                Label("Enter an image reference to build the command.", systemImage: "info.circle")
                     .font(.caption)
-                    .foregroundStyle(Theme.success)
-            case .failure(let error):
-                Label(error.description, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.danger)
+                    .foregroundStyle(.secondary)
+            } else {
+                switch preview {
+                case .success:
+                    Label("Valid — ready to run.", systemImage: "checkmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(Theme.success)
+                case .failure(let error):
+                    // Only if no field claimed it. Otherwise the identical sentence appeared
+                    // twice — once under the offending field and again here — which reads as
+                    // two separate problems.
+                    if Self.field(for: error) == nil {
+                        Label(error.description, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(Theme.danger)
+                    } else {
+                        Label("Fix the highlighted field to run this.",
+                              systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(Theme.warning)
+                    }
+                }
             }
         }
     }
@@ -271,9 +287,18 @@ struct RunSheetView: View {
     }
 
     private func message(for field: Field) -> String? {
+        // An untouched form is not a broken one. With no image typed yet the validator
+        // legitimately fails, and reporting that as `'' isn't a valid imageReference` greets
+        // you with two red errors for a form you have not filled in — the same "empty is not
+        // an error yet" mistake the machine form's command preview had.
+        guard hasStarted else { return nil }
         guard let error = previewError, Self.field(for: error) == field else { return nil }
         return error.description
     }
+
+    /// True once there is anything to validate. Only the image is required, so it alone decides
+    /// whether the form has been started.
+    private var hasStarted: Bool { !trimmedImage.isEmpty }
 
     /// Routes an `AllowlistError` back to the row that produced it, using the same
     /// context strings `Allowlist` records for each flag/operand (`--name`, `--env`,

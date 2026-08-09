@@ -191,6 +191,17 @@ that we *built* the right command; almost nothing checked the command was
   JSON-only because `InspectRow` and the flatten walk were `private` to
   `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
   apply to one panel and not the other.
+- **An untouched form is not a broken one.** The Run screen opened with two red
+  validation errors — `'' isn't a valid imageReference` under the image field and the
+  same sentence again under Preview — because the validator legitimately fails on an
+  empty image and nothing distinguished "not filled in yet" from "wrong". Errors are
+  now suppressed until the required field has content, and the field-level message and
+  the preview message no longer duplicate each other. Same family as the machine form's
+  red "Enter an image reference."
+- **A default is a recommendation.** The machine create form defaulted to half the host,
+  because `machine create` does — which on this Mac proposed **6 cores and 32 GB** for a
+  scratch VM. Matching the CLI sounded principled and gave bad advice. 2 cores / 4 GB
+  now; the steppers still reach the full host.
 - **`case A, B where cond:` binds `where` to `B` only.** Written as
   `case .loaded, .loading where displayed.isEmpty:` the `.loaded` arm matched
   unconditionally, so the Machines list rendered "No matching machines" with two

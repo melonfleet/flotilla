@@ -37,11 +37,18 @@ struct MachineFormView: View {
     init(model: AppModel, dismiss: @escaping () -> Void) {
         self.model = model
         self.dismiss = dismiss
-        // Half the host, which is the CLI's own default — so the form opens showing what would
-        // happen anyway rather than silently proposing something different.
-        let cores = ProcessInfo.processInfo.processorCount
-        _cpus = State(initialValue: max(1, cores / 2))
-        _memoryGB = State(initialValue: max(1, Self.hostMemoryGB() / 2))
+        // **Not** half the host, which is what `machine create` defaults to.
+        //
+        // Matching the CLI sounded principled and produced 6 cores and 32 GB on this Mac — for
+        // a VM you spin up to try something in. That is most of the machine handed to a
+        // scratch workload, and the person clicking Save has no reason to expect it. A form's
+        // default is a recommendation, and recommending half your Mac is bad advice.
+        //
+        // 2 cores and 4 GB instead: enough to boot Alpine, run a package manager and build
+        // something small, and cheap enough to leave running. Both steppers go up to the full
+        // host, so nothing is taken away — the difference is which end you start from.
+        _cpus = State(initialValue: min(2, ProcessInfo.processInfo.processorCount))
+        _memoryGB = State(initialValue: min(4, max(1, Self.hostMemoryGB())))
     }
 
     /// Suggestions, not a closed list — the field takes any image reference.
@@ -144,7 +151,6 @@ struct MachineFormView: View {
             .formStyle(.grouped)
             // The form takes the space it needs and the window scrolls it; no hand-picked
             // height to trim copy against.
-            .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Divider()

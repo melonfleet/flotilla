@@ -49,8 +49,9 @@ struct DashboardView: View {
                     runtimeBanner(reason)
                 }
 
-                statRow
-                systemSection
+                hostsStrip
+                pressureSection
+                resourceRows
                 attentionPanel
                 utilisationPanel
                 activityPanel
@@ -60,6 +61,7 @@ struct DashboardView: View {
         .navigationTitle("")
         .task {
             await model.refresh()
+            await model.refreshMachines()      // the strip counts them; nothing else fetches here
             await loadDiskUsage()
         }
     }
@@ -86,137 +88,160 @@ struct DashboardView: View {
 
     // MARK: Tiles
 
-    private var containersTile: some View {
-        tile("Containers", systemImage: "shippingbox", target: .containers) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                bigNumber(model.state == .loaded ? "\(model.running.count)" : "—", "running")
-                bigNumber(model.state == .loaded ? "\(model.stopped.count)" : "—", "stopped")
-                Spacer()
-            }
-            if model.state == .loaded {
-                // Proportion of a known total, so a plain bar rather than a ProgressView —
-                // which styles itself as an operation in progress.
-                meter(fraction: model.containers.isEmpty
-                      ? 0 : Double(model.running.count) / Double(model.containers.count),
-                      tint: Theme.online)
-                Text("\(model.containers.count) total on \(model.hostLabel)")
-                    .font(.caption).foregroundStyle(.tertiary)
-            }
-        }
-    }
+    // MARK: Hosts
+    //
+    // The dashboard leads with *hosts* rather than with a grid of resource cards. That is the
+    // one structural thing Flotilla has that a single-machine container GUI does not: it is
+    // built to manage a fleet, and the layout should say so from the first row rather than
+    // reading as a re-skin of somebody else's panel.
 
-    private var resourceTile: some View {
-        tile("Resource use", systemImage: "cpu", target: .containers) {
-            let cpus = model.running.compactMap { model.cpuPercent(for: $0.id) }
-            let bytes = model.running.compactMap { model.memoryBytes(for: $0.id) }
+    private var hostsStrip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Hosts").font(.headline)
 
-            row("CPU, all containers",
-                cpus.isEmpty ? "—" : String(format: "%.0f%%", cpus.reduce(0, +)))
-            row("Memory, all containers",
-                bytes.isEmpty ? "—"
-                : ByteCountFormatter.string(fromByteCount: bytes.reduce(0, +), countStyle: .file))
-            row("Busiest", busiest)
-
-            // Real history only. A flat line at zero reads as a quiet machine rather than an
-            // unmeasured one.
-            let history = aggregateHistory
-            if history.contains(where: { $0 != nil }) {
-                Sparkline(values: history, maximum: nil).frame(height: 30).padding(.top, 2)
-            }
-        }
-    }
-
-    private var storageTile: some View {
-        tile("Storage", systemImage: "internaldrive", target: .images) {
-            if let usage = diskUsage {
-                row("Images", byteLabel(usage.images.sizeInBytes))
-                row("Containers", byteLabel(usage.containers.sizeInBytes))
-                row("Volumes", byteLabel(usage.volumes.sizeInBytes))
-                let reclaimable = usage.images.reclaimable + usage.containers.reclaimable
-                    + usage.volumes.reclaimable
-                // Only offered when there is something to reclaim: a Prune button that would
-                // free nothing is a control that does nothing.
-                if reclaimable > 0 {
-                    Divider().padding(.vertical, 1)
-                    HStack {
-                        Text("Reclaimable").font(.system(size: 12)).foregroundStyle(.secondary)
-                        Spacer()
-                        Text(byteLabel(reclaimable))
-                            .font(.system(size: 12, weight: .medium).monospacedDigit())
-                            .foregroundStyle(Theme.warning)
-                    }
+            VStack(spacing: 0) {
+                thisMacRow
+                Divider().padding(.leading, 34)
+                // Not a disabled "add a host" button. A control that drives nothing is the
+                // failure this project keeps re-learning, and a greyed row invites a click
+                // that cannot succeed. A sentence is honest and costs nothing.
+                HStack(spacing: 10) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 13)).foregroundStyle(.tertiary).frame(width: 24)
+                    Text("Pairing with remote Macs over mTLS arrives in Phase 2.")
+                        .font(.caption).foregroundStyle(.tertiary)
+                    Spacer()
                 }
-            } else if let diskFailure {
-                Text(diskFailure).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Measuring…").font(.caption).foregroundStyle(.tertiary)
+                .padding(.horizontal, 12).padding(.vertical, 9)
             }
+            .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
         }
     }
 
-    private var hostTile: some View {
-        tile("This Mac", systemImage: "laptopcomputer", target: .settings) {
-            HStack(spacing: 6) {
-                Circle().fill(hostDotColor).frame(width: 7, height: 7)
-                Text(hostStateLabel).font(.system(size: 13, weight: .medium))
-            }
-            row("Host", model.hostName)
-            row("Mode", "Client")
-            // Says what is true now rather than what is planned, matching the sidebar footer.
-            row("Paired hosts", "None · Phase 2")
-        }
-    }
-
-    // MARK: Stat row
-
-    /// The four headline figures, each with the active/total fraction the previous version
-    /// omitted — `system df` has been returning `active` and `total` all along.
-    private var statRow: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
-                  spacing: 12) {
-            statCard("Containers", systemImage: "shippingbox", target: .containers,
-                     value: diskUsage.map { byteLabel($0.containers.sizeInBytes) },
-                     detail: diskUsage.map { "\($0.containers.active)/\($0.containers.total)" })
-            statCard("Images", systemImage: "square.stack.3d.up", target: .images,
-                     value: diskUsage.map { byteLabel($0.images.sizeInBytes) },
-                     detail: diskUsage.map { "\($0.images.active)/\($0.images.total)" })
-            statCard("Volumes", systemImage: "cylinder.split.1x2", target: .volumes,
-                     value: diskUsage.map { byteLabel($0.volumes.sizeInBytes) },
-                     detail: diskUsage.map { "\($0.volumes.active)/\($0.volumes.total)" })
-            statCard("Reclaimable", systemImage: "trash", target: .images,
-                     value: diskUsage.map { byteLabel(totalReclaimable($0)) },
-                     detail: "Space",
-                     tint: (diskUsage.map { totalReclaimable($0) } ?? 0) > 0 ? Theme.warning : nil)
-        }
-    }
-
-    private func statCard(_ title: String, systemImage: String, target: Section,
-                         value: String?, detail: String?, tint: Color? = nil) -> some View {
-        Button { go(target) } label: {
+    private var thisMacRow: some View {
+        let latest = model.hostMetrics.latest
+        let memFraction = latest.map { $0.memoryTotalBytes > 0
+            ? Double($0.memoryUsedBytes) / Double($0.memoryTotalBytes) : 0 }
+        return Button { go(.containers) } label: {
             HStack(spacing: 10) {
-                Image(systemName: systemImage).font(.system(size: 17)).foregroundStyle(.secondary)
+                Circle().fill(hostDot).frame(width: 8, height: 8).frame(width: 24)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 12, weight: .medium))
-                    // An em dash until `system df` has answered, never a zero.
-                    Text(value ?? "—")
-                        .font(.system(size: 15, weight: .medium).monospacedDigit())
-                        .foregroundStyle(tint ?? .primary)
-                    Text(detail ?? "—")
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                    Text(model.hostLabel).font(.system(size: 13, weight: .medium))
+                    Text(hostSubtitle).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
+                hostStat("CPU", latest?.cpuPercent.map { String(format: "%.0f%%", $0) } ?? "—")
+                hostStat("Memory", memFraction.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
+                hostStat("Running", "\(model.running.count)")
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
-            .contentShape(.rect)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
+
+    private func hostStat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(value).font(.system(size: 12, weight: .medium)).monospacedDigit()
+            Text(label).font(.system(size: 9)).foregroundStyle(.tertiary)
+        }
+        .frame(minWidth: 54, alignment: .trailing)
+    }
+
+    private var hostDot: Color {
+        switch model.state {
+        case .loaded: Theme.online
+        case .unavailable, .failed: Theme.danger
+        case .idle, .loading: .secondary
+        }
+    }
+
+    private var hostSubtitle: String {
+        switch model.state {
+        case .loaded:
+            let machines = model.machinesState == .loaded
+                ? " · \(model.machines.count) machine\(model.machines.count == 1 ? "" : "s")" : ""
+            return "\(model.containers.count) container\(model.containers.count == 1 ? "" : "s")\(machines)"
+        case .unavailable(let reason), .failed(let reason): return reason
+        case .idle, .loading: return "Checking the container runtime…"
+        }
+    }
+
+    // MARK: Resources
+    //
+    // Rows, not a grid of four big cards. The cards gave equal visual weight to four numbers
+    // that are mostly reference figures, and they had no room for **Machines** — which the
+    // dashboard did not mention at all, despite Machines being a whole section of the app.
+    // A row list scales to five entries without any of them shouting.
+
+    private var resourceRows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Resources").font(.headline)
+            VStack(spacing: 0) {
+                resourceRow("Containers", systemImage: "shippingbox", target: .containers,
+                            detail: model.state == .loaded
+                                ? "\(model.running.count) running of \(model.containers.count)" : nil,
+                            size: diskUsage.map { byteLabel($0.containers.sizeInBytes) })
+                Divider().padding(.leading, 34)
+                resourceRow("Images", systemImage: "square.stack.3d.up", target: .images,
+                            detail: diskUsage.map { "\($0.images.active) in use of \($0.images.total)" },
+                            size: diskUsage.map { byteLabel($0.images.sizeInBytes) })
+                Divider().padding(.leading, 34)
+                resourceRow("Volumes", systemImage: "cylinder.split.1x2", target: .volumes,
+                            detail: diskUsage.map { "\($0.volumes.active) in use of \($0.volumes.total)" },
+                            size: diskUsage.map { byteLabel($0.volumes.sizeInBytes) })
+                Divider().padding(.leading, 34)
+                resourceRow("Machines", systemImage: "server.rack", target: .machines,
+                            detail: machinesDetail, size: nil)
+                Divider().padding(.leading, 34)
+                resourceRow("Reclaimable", systemImage: "trash", target: .images,
+                            detail: "Freed by pruning unused images, volumes and containers",
+                            size: diskUsage.map { byteLabel(totalReclaimable($0)) },
+                            tint: (diskUsage.map { totalReclaimable($0) } ?? 0) > 0
+                                ? Theme.warning : nil)
+            }
+            .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
+        }
+    }
+
+    private var machinesDetail: String? {
+        guard model.machinesState == .loaded else { return nil }
+        let running = model.machines.filter { MachinesView.isRunning($0) }.count
+        return "\(running) running of \(model.machines.count)"
+    }
+
+    private func resourceRow(_ title: String, systemImage: String, target: Section,
+                             detail: String?, size: String?, tint: Color? = nil) -> some View {
+        Button { go(target) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13)).foregroundStyle(.secondary).frame(width: 24)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 13, weight: .medium))
+                    // `nil` renders nothing rather than a zero: an unvisited section and an
+                    // empty one must not look the same. Same rule as the sidebar counts.
+                    if let detail {
+                        Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                if let size {
+                    Text(size)
+                        .font(.system(size: 13, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(tint ?? .primary)
+                }
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Stat row
 
     private func totalReclaimable(_ usage: SystemDiskUsage) -> Int64 {
         usage.images.reclaimable + usage.containers.reclaimable + usage.volumes.reclaimable
@@ -231,10 +256,18 @@ struct DashboardView: View {
     /// CPU answers "is my Mac struggling", the utilisation table below answers "which container
     /// is doing it". Network is likewise whole-machine and says so, because it includes the
     /// runtime's own vmnet interfaces.
-    private var systemSection: some View {
+    /// **One** chart, not a 2×2 grid of four.
+    ///
+    /// CPU and memory share it because they are both genuinely percentages of the same host, so
+    /// one 0–100 axis carries them honestly and you can see the two move against each other —
+    /// which is the actual question ("is this Mac under strain?"). Network and disk are
+    /// *rates*, in bytes per second: laying them on a percentage axis would be a lie, and giving
+    /// each an equal-sized card implies they matter equally. They get compact rate rows beneath
+    /// instead, with their own units.
+    private var pressureSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("System").font(.headline)
+                Text("Pressure").font(.headline)
                 Spacer()
                 Picker("Range", selection: $range) {
                     ForEach(Range.allCases) { Text($0.rawValue).tag($0) }
@@ -244,135 +277,120 @@ struct DashboardView: View {
                 .fixedSize()
             }
 
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12)],
-                      spacing: 12) {
-                cpuChart
-                memoryChart
-                hostNetworkChart
-                containerDiskChart
+            VStack(spacing: 0) {
+                pressureChart
+                Divider()
+                rateRow("Network", systemImage: "arrow.up.arrow.down",
+                        down: model.hostMetrics.latest?.networkRxBytesPerSecond,
+                        up: model.hostMetrics.latest?.networkTxBytesPerSecond,
+                        note: "whole machine, includes the runtime's own interfaces")
+                Divider()
+                rateRow("Container disk", systemImage: "internaldrive",
+                        down: aggregatedContainerPoints.last?.read,
+                        up: aggregatedContainerPoints.last?.write,
+                        downLabel: "R", upLabel: "W",
+                        note: "containers only — host-wide disk needs IOKit, not yet built")
+            }
+            .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
+        }
+    }
+
+    private var pressureChart: some View {
+        let samples = hostSamples
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 14) {
+                legendDot(Theme.rind, "CPU",
+                          model.hostMetrics.latest?.cpuPercent.map { String(format: "%.0f%%", $0) })
+                legendDot(Theme.accent, "Memory", memoryPercentLabel)
+                Spacer()
+                Text("\(ProcessInfo.processInfo.processorCount) cores · \(model.hostLabel)")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            // One flattened array with an explicit series name, not two `ForEach`es each
+            // setting a flat `foregroundStyle`. Swift Charts derives series identity from the
+            // plottable data, so two loops over the same x-values with no series dimension are
+            // liable to be joined into a single path — the legend would say two lines and the
+            // plot would draw one.
+            Chart(pressurePoints, id: \.id) { point in
+                LineMark(x: .value("Time", point.date),
+                         y: .value("Percent", point.percent),
+                         series: .value("Series", point.series))
+                    .foregroundStyle(by: .value("Series", point.series))
+                    .interpolationMethod(.monotone)
+            }
+            .chartForegroundStyleScale(["CPU": Theme.rind, "Memory": Theme.accent])
+            .chartLegend(.hidden)      // the header row above already names both, with values
+            .chartYScale(domain: 0...100)
+            .chartYAxis { AxisMarks(values: [0, 25, 50, 75, 100]) }
+            .frame(height: 150)
+        }
+        .padding(12)
+    }
+
+    /// Both series in one array. `id` is the pair, so two points sharing a timestamp stay
+    /// distinct rows rather than colliding.
+    private struct PressurePoint: Identifiable {
+        let id: String
+        let date: Date
+        let percent: Double
+        let series: String
+    }
+
+    private var pressurePoints: [PressurePoint] {
+        var points: [PressurePoint] = []
+        for sample in hostSamples {
+            if let cpu = sample.cpuPercent {
+                points.append(PressurePoint(id: "cpu-\(sample.date.timeIntervalSince1970)",
+                                            date: sample.date, percent: cpu, series: "CPU"))
+            }
+            if sample.memoryTotalBytes > 0 {
+                let percent = Double(sample.memoryUsedBytes)
+                    / Double(sample.memoryTotalBytes) * 100
+                points.append(PressurePoint(id: "mem-\(sample.date.timeIntervalSince1970)",
+                                            date: sample.date, percent: percent, series: "Memory"))
             }
         }
+        return points
+    }
+
+    private var memoryPercentLabel: String? {
+        guard let latest = model.hostMetrics.latest, latest.memoryTotalBytes > 0 else { return nil }
+        return String(format: "%.0f%%",
+                      Double(latest.memoryUsedBytes) / Double(latest.memoryTotalBytes) * 100)
+    }
+
+    private func legendDot(_ colour: Color, _ label: String, _ value: String?) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(colour).frame(width: 7, height: 7)
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value ?? "—").font(.system(size: 12, weight: .medium)).monospacedDigit()
+        }
+    }
+
+    private func rateRow(_ title: String, systemImage: String,
+                         down: Double?, up: Double?,
+                         downLabel: String = "↓", upLabel: String = "↑",
+                         note: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 12, weight: .medium))
+                Text(note).font(.system(size: 9)).foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Text("\(downLabel) \(rateLabel(down))")
+                .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.info)
+            Text("\(upLabel) \(rateLabel(up))")
+                .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.accentText)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
     private var hostSamples: [HostMetricsSampler.Sample] {
         let cutoff = Date().addingTimeInterval(-range.seconds)
         return model.hostMetrics.history.filter { $0.date >= cutoff }
-    }
-
-    private var cpuChart: some View {
-        chartCard("CPU", headline: model.hostMetrics.latest?.cpuPercent
-                    .map { String(format: "%.0f%%", $0) },
-                  subtitle: "\(model.hostMetrics.coreCount) cores · this Mac",
-                  fraction: (model.hostMetrics.latest?.cpuPercent ?? 0) / 100,
-                  tint: Theme.info) {
-            Chart(hostSamples.filter { $0.cpuPercent != nil }, id: \.date) { sample in
-                LineMark(x: .value("Time", sample.date),
-                         y: .value("CPU %", sample.cpuPercent ?? 0))
-                    .foregroundStyle(Theme.info)
-                    .interpolationMethod(.monotone)
-            }
-            .chartYScale(domain: 0...100)
-        }
-    }
-
-    /// Installed RAM, and where the rest of it went.
-    ///
-    /// `hw.memsize` on this Mac is 68,719,476,736 bytes, which `ByteCountFormatter`'s `.file`
-    /// style renders as "68.72 GB" — a number that appears nowhere on the machine, in About
-    /// This Mac, or on the box. Apple counts RAM in binary units and calls them GB, so 64 GiB
-    /// is "64 GB". Reporting 68.72 invited exactly the question it got: is that even my Mac?
-    ///
-    /// Only the *memory* readouts use this. Disk sizes elsewhere stay on `.file`, because that
-    /// is what Finder and every drive manufacturer use — the two conventions genuinely differ
-    /// by medium, and matching each is more honest than picking one and being wrong half the
-    /// time.
-    private func ramLabel(_ bytes: Int64) -> String {
-        let gib = Double(bytes) / 1_073_741_824
-        return gib >= 10 ? String(format: "%.0f GB", gib) : String(format: "%.1f GB", gib)
-    }
-
-    /// Names the cache explicitly. Without it, correcting the "used" figure downwards just
-    /// moves the mystery: 45 of 64 leaves 19 GB unaccounted for, and the honest answer is that
-    /// the system is holding it as reclaimable file cache.
-    private var memorySubtitle: String {
-        guard let latest = model.hostMetrics.latest else { return "—" }
-        let cached = latest.memoryCachedBytes
-        guard cached > 0 else { return "of \(ramLabel(latest.memoryTotalBytes))" }
-        return "of \(ramLabel(latest.memoryTotalBytes)) · \(ramLabel(cached)) cached"
-    }
-
-    private var memoryChart: some View {
-        let latest = model.hostMetrics.latest
-        return chartCard("Memory",
-                         headline: latest.map { ramLabel($0.memoryUsedBytes) },
-                         subtitle: memorySubtitle,
-                         fraction: latest.map { $0.memoryTotalBytes > 0
-                             ? Double($0.memoryUsedBytes) / Double($0.memoryTotalBytes) : 0 } ?? 0,
-                         tint: Theme.accent) {
-            Chart {
-                ForEach(hostSamples, id: \.date) { sample in
-                    AreaMark(x: .value("Time", sample.date),
-                             y: .value("Used", Double(sample.memoryUsedBytes) / 1_073_741_824))
-                        .foregroundStyle(Theme.accent.opacity(0.35))
-                        .interpolationMethod(.monotone)
-                }
-                // The machine's total, drawn as the ceiling — the mockup's "Limit" line.
-                if let total = latest?.memoryTotalBytes {
-                    RuleMark(y: .value("Total", Double(total) / 1_073_741_824))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .foregroundStyle(.tertiary)
-                        .annotation(position: .top, alignment: .trailing) {
-                            Text("installed").font(.system(size: 9)).foregroundStyle(.tertiary)
-                        }
-                }
-            }
-        }
-    }
-
-    private var hostNetworkChart: some View {
-        let latest = model.hostMetrics.latest
-        return chartCard("Network", headline: nil,
-                         subtitle: "whole machine, includes the runtime's own interfaces",
-                         legend: [("↓ " + rateLabel(latest?.networkRxBytesPerSecond), Theme.online),
-                                  ("↑ " + rateLabel(latest?.networkTxBytesPerSecond), Theme.warning)]) {
-            Chart {
-                ForEach(hostSamples.filter { $0.networkRxBytesPerSecond != nil }, id: \.date) { s in
-                    LineMark(x: .value("Time", s.date),
-                             y: .value("KB/s", (s.networkRxBytesPerSecond ?? 0) / 1024),
-                             series: .value("Direction", "down"))
-                        .foregroundStyle(Theme.online)
-                    LineMark(x: .value("Time", s.date),
-                             y: .value("KB/s", (s.networkTxBytesPerSecond ?? 0) / 1024),
-                             series: .value("Direction", "up"))
-                        .foregroundStyle(Theme.warning)
-                }
-            }
-        }
-    }
-
-    /// Container block I/O, summed. Labelled as containers rather than "Disk", because
-    /// whole-machine disk throughput needs IOKit and **was not verified** — claiming it here
-    /// would be a figure with nothing behind it.
-    private var containerDiskChart: some View {
-        let points = aggregatedContainerPoints
-        return chartCard("Container disk I/O", headline: nil,
-                         subtitle: "containers only — host-wide disk needs IOKit, not yet built",
-                         legend: [("R " + rateLabel(points.last?.read), Theme.info),
-                                  ("W " + rateLabel(points.last?.write), Theme.danger)]) {
-            Chart {
-                ForEach(points, id: \.date) { point in
-                    LineMark(x: .value("Time", point.date),
-                             y: .value("KB/s", (point.read ?? 0) / 1024),
-                             series: .value("Direction", "read"))
-                        .foregroundStyle(Theme.info)
-                    LineMark(x: .value("Time", point.date),
-                             y: .value("KB/s", (point.write ?? 0) / 1024),
-                             series: .value("Direction", "write"))
-                        .foregroundStyle(Theme.danger)
-                }
-            }
-        }
     }
 
     /// Container rates summed per timestamp. Points where nothing was measurable are dropped
@@ -397,45 +415,6 @@ struct DashboardView: View {
     private func rateLabel(_ bytesPerSecond: Double?) -> String {
         guard let bytesPerSecond else { return "—" }
         return String(format: "%.1f KB/s", bytesPerSecond / 1024)
-    }
-
-    /// A chart in a card: headline figure, optional level bar, optional legend, then the plot.
-    private func chartCard<Content: View>(
-        _ title: String, headline: String?, subtitle: String?,
-        fraction: Double? = nil, tint: Color = .accentColor,
-        legend: [(String, Color)] = [],
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 13, weight: .semibold))
-            if let fraction { meter(fraction: fraction, tint: tint) }
-            if let headline {
-                Text(headline).font(.system(size: 15, weight: .medium).monospacedDigit())
-            }
-            if !legend.isEmpty {
-                HStack(spacing: 12) {
-                    ForEach(Array(legend.enumerated()), id: \.offset) { _, item in
-                        HStack(spacing: 4) {
-                            Circle().fill(item.1).frame(width: 6, height: 6)
-                            Text(item.0).font(.system(size: 11).monospacedDigit())
-                        }
-                    }
-                }
-            }
-            if let subtitle {
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            content()
-                .chartXAxis { AxisMarks(preset: .aligned) }
-                .frame(height: 130)
-                .padding(.top, 2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
     }
 
     // MARK: Utilisation
@@ -603,13 +582,6 @@ struct DashboardView: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
     }
 
-    private func bigNumber(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(value).font(.system(size: 26, weight: .light)).monospacedDigit()
-            Text(label).font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
     private func row(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
@@ -619,61 +591,11 @@ struct DashboardView: View {
         }
     }
 
-    private func meter(fraction: Double, tint: Color) -> some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary)
-                Capsule().fill(tint).frame(width: max(0, min(1, fraction)) * geo.size.width)
-            }
-        }
-        .frame(height: 5)
-    }
-
     private func byteLabel(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     // MARK: Derived
-
-    private var busiest: String {
-        let ranked = model.running.compactMap { container -> (String, Double)? in
-            guard let cpu = model.cpuPercent(for: container.id) else { return nil }
-            return (container.id, cpu)
-        }.sorted { $0.1 > $1.1 }
-        guard let top = ranked.first else { return "—" }
-        return String(format: "%@ · %.0f%%", top.0, top.1)
-    }
-
-    /// Summed across containers per sample, so the sparkline shows total load over time rather
-    /// than one arbitrary container's. `nil` where nothing was sampled, which `Sparkline`
-    /// already renders as a gap rather than a zero.
-    private var aggregateHistory: [Double?] {
-        let histories = model.running.map { model.cpuHistory(for: $0.id) }
-        guard let width = histories.map(\.count).max(), width > 0 else { return [] }
-        return (0..<width).map { index in
-            let samples = histories.compactMap { history -> Double? in
-                guard index < history.count else { return nil }
-                return history[index]
-            }
-            return samples.isEmpty ? nil : samples.reduce(0, +)
-        }
-    }
-
-    private var hostDotColor: Color {
-        switch model.state {
-        case .loaded: Theme.online
-        case .unavailable, .failed: Theme.danger
-        case .idle, .loading: .secondary
-        }
-    }
-
-    private var hostStateLabel: String {
-        switch model.state {
-        case .loaded: "Runtime ready"
-        case .unavailable, .failed: "Runtime unavailable"
-        case .idle, .loading: "Checking…"
-        }
-    }
 
     /// Same rule as the menu-bar popover: failure, not idleness. `exited (0)` finished; a clean
     /// stop is not a problem and must not cry wolf.
