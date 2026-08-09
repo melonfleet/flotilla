@@ -198,11 +198,8 @@ struct MachinesView: View {
     }
 
     private var columnsButton: some View {
-        Button { showingColumns.toggle() } label: {
-            Image(systemName: "rectangle.split.3x1")
-        }
-        .help("Show or hide columns")
-        .accessibilityLabel("Columns")
+        IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
+                         help: "Show or hide columns") { showingColumns.toggle() }
         .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Self.columnSpecs, id: \.id) { spec in
@@ -525,7 +522,7 @@ struct MachinesView: View {
             Menu {
                 machineMenu(for: machine)
             } label: {
-                Image(systemName: "ellipsis")
+                Image(systemName: "ellipsis.vertical")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -603,9 +600,8 @@ struct MachinesView: View {
     @ViewBuilder
     private func detailHeader(for machine: ContainerMachine?) -> some View {
         HStack(spacing: 10) {
-            Button { detailTarget = nil } label: { Image(systemName: "chevron.left") }
-                .help("Back to Machines")
-                .accessibilityLabel("Back to Machines")
+            IconActionButton(systemImage: "chevron.left", label: "Back to Machines",
+                             help: "Back to Machines") { detailTarget = nil }
 
             if let machine {
                 Image(systemName: "server.rack")

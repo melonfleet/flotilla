@@ -106,13 +106,8 @@ struct ContainersView: View {
     /// the view switcher rather than relying on people discovering a right-click on the
     /// header. The header menu still works — this just makes it findable.
     private var columnsButton: some View {
-        Button {
-            showingColumns.toggle()
-        } label: {
-            Image(systemName: "rectangle.split.3x1")
-        }
-        .help("Show or hide columns")
-        .accessibilityLabel("Columns")
+        IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
+                         help: "Show or hide columns") { showingColumns.toggle() }
         .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
                 // Checkboxes, not switches. `.checkbox` puts the control leading with the
@@ -181,11 +176,8 @@ struct ContainersView: View {
     @ViewBuilder
     private func detailHeader(for container: Container?) -> some View {
         HStack(spacing: 10) {
-            Button { detailTarget = nil } label: {
-                Image(systemName: "chevron.left")
-            }
-            .help("Back to Containers")
-            .accessibilityLabel("Back to Containers")
+            IconActionButton(systemImage: "chevron.left", label: "Back to Containers",
+                             help: "Back to Containers") { detailTarget = nil }
 
             if let container {
                 Image(systemName: "shippingbox")
@@ -419,7 +411,7 @@ struct ContainersView: View {
                 Divider()
                 copyMenu(for: container)
             } label: {
-                Image(systemName: "ellipsis")
+                Image(systemName: "ellipsis.vertical")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

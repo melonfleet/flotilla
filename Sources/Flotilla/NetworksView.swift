@@ -129,12 +129,17 @@ struct NetworksView: View {
                 }
             }
             Spacer()
-            Button(role: .destructive) {
+            IconActionButton(systemImage: "trash",
+                             label: "Delete \(network.id)",
+                             // A built-in network cannot be deleted, and the tooltip should say
+                             // why rather than leaving a dead-looking button unexplained.
+                             help: network.isBuiltin
+                                 ? "\(network.id) is built in and cannot be deleted"
+                                 : "Delete \(network.id)",
+                             busy: model.busy.contains(network.id) || network.isBuiltin,
+                             destructive: true) {
                 requestDelete(network)
-            } label: {
-                Image(systemName: "trash")
             }
-            .disabled(model.busy.contains(network.id) || network.isBuiltin)
         }
         .padding(.vertical, 4)
         .contextMenu { menu(for: network) }

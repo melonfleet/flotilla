@@ -194,21 +194,24 @@ struct ImagesView: View {
                 }
             }
             Spacer()
-            Button {
+            // `IconActionButton` rather than bare `Button`s: these had a tooltip and nothing
+            // else, so hovering and clicking both looked like nothing. Same fix as the
+            // containers and machines rows — the sections must not differ in how responsive
+            // they feel.
+            IconActionButton(systemImage: "tag",
+                             label: "Tag \(Self.repository(image))",
+                             help: "Tag \(Self.repository(image))",
+                             busy: model.busy.contains(image.id)) {
                 tagTarget = ""
                 taggingImage = image
-            } label: {
-                Image(systemName: "tag")
             }
-            .accessibilityLabel("Tag \(Self.repository(image))")
-            .disabled(model.busy.contains(image.id))
-            Button(role: .destructive) {
+            IconActionButton(systemImage: "trash",
+                             label: "Delete \(Self.repository(image))",
+                             help: "Delete \(Self.repository(image))",
+                             busy: model.busy.contains(image.id),
+                             destructive: true) {
                 requestDelete(image)
-            } label: {
-                Image(systemName: "trash")
             }
-            .accessibilityLabel("Delete \(Self.repository(image))")
-            .disabled(model.busy.contains(image.id))
         }
         .padding(.vertical, 4)
         .contextMenu { menu(for: image) }

@@ -821,6 +821,36 @@ func omittedBuildContextIsRefused() {
     }
 }
 
+/// The policy the app actually ships.
+///
+/// `startMachinePassesABootCommand` validated the boot argv under the **default** policy and
+/// passed, while the same argv failed in the running app: `AppModel` builds its CLI with
+/// `.interactiveShell`, which substituted a spec that forbids trailing commands. Machine Start
+/// and Restart were dead on arrival and the suite was green. Every grammar with a policy-
+/// dependent spec needs a case under the policy production uses, or the test proves nothing.
+@Test("under .interactiveShell, machine run serves BOTH the boot command and the bare shell")
+func bootAndShellBothWorkUnderTheAppsOwnPolicy() throws {
+    // The boot form — what `startMachine` and therefore Restart send.
+    let boot = try Allowlist.validated(["machine", "run", "--name", "dev", "--", "/bin/true"],
+                                       execPolicy: .interactiveShell)
+    #expect(boot.arguments.contains("/bin/true"))
+
+    // The login shell — what the Shell tab opens.
+    let shell = try Allowlist.validated(["machine", "run", "-n", "dev", "-i", "-t"],
+                                        execPolicy: .interactiveShell)
+    #expect(shell.arguments == ["machine", "run", "--name", "dev", "--interactive", "--tty"])
+
+    // And the boot form still works under the strict default.
+    #expect(throws: Never.self) {
+        try Allowlist.validated(["machine", "run", "--name", "dev", "--", "/bin/true"])
+    }
+    // The permissive policy must not have become a way to run anything at all.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["machine", "run", "--name", "dev", "--", "/bin/sh"],
+                                execPolicy: .interactiveShell)
+    }
+}
+
 @Test("machine set refuses an unknown key rather than forwarding it")
 func machineSetRefusesUnknownKeys() {
     // The review's exact concern: "unknown future keys could silently add privilege". A key

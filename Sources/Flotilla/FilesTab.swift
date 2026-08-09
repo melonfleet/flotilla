@@ -63,10 +63,8 @@ struct FilesTab: View {
 
     private var controlBar: some View {
         HStack(spacing: 8) {
-            Button { path = parentPath } label: { Image(systemName: "chevron.left") }
-                .disabled(path == "/")
-                .help("Up one directory")
-                .accessibilityLabel("Up one directory")
+            IconActionButton(systemImage: "chevron.left", label: "Up one directory",
+                             help: "Up one directory", busy: path == "/") { path = parentPath }
 
             breadcrumbs
 
@@ -79,13 +77,16 @@ struct FilesTab: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
 
-            Button { upload() } label: { Image(systemName: "square.and.arrow.up") }
-                .disabled(!AppModel.isRunning(container))
-                .help("Copy a file from this Mac into \(path)")
-                .accessibilityLabel("Upload a file")
+            IconActionButton(systemImage: "square.and.arrow.up", label: "Upload a file",
+                             help: AppModel.isRunning(container)
+                                 ? "Copy a file from this Mac into \(path)"
+                                 : "The container must be running to copy files into it",
+                             busy: !AppModel.isRunning(container)) { upload() }
 
-            Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }
-                .disabled(loading)
+            IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
+                             help: "Reload this directory", busy: loading) {
+                Task { await load() }
+            }
                 .help("Refresh")
                 .accessibilityLabel("Refresh")
         }

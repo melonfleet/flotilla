@@ -191,6 +191,14 @@ that we *built* the right command; almost nothing checked the command was
   JSON-only because `InspectRow` and the flatten walk were `private` to
   `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
   apply to one panel and not the other.
+- **Test the policy production ships.** `machine run` has two shapes — a boot command and
+  a bare login shell — and `substituting(_:into:)` replaced the strict spec *wholesale*
+  when `ExecPolicy.interactiveShell` was in force, destroying the boot form. `AppModel`
+  builds its CLI with `.interactiveShell`, so machine **Start and Restart could never work
+  in the app**, failing with "'--' is not accepted here" — while the suite was green,
+  because the test validated under the *default* policy. A grammar test that does not use
+  production's policy is testing a configuration nothing ships. The substitution is now
+  keyed on whether the argv carries a `--`, so both shapes survive and neither is widened.
 - **An absent operand can still be a grant.** `build`'s context was `min: 0` because the
   CLI defaults it to `.` — reasoning about CLI convenience at a security boundary. The
   validator only shape-checks operands that *exist*, so under `.denyHostPaths` a build

@@ -142,7 +142,7 @@ struct ContainerCard: View {
                 Divider()
                 CopyMenu.forContainer(container)
             } label: {
-                Image(systemName: "ellipsis")
+                Image(systemName: "ellipsis.vertical")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

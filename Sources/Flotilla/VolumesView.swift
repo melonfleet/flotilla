@@ -129,12 +129,13 @@ struct VolumesView: View {
                 }
             }
             Spacer()
-            Button(role: .destructive) {
+            IconActionButton(systemImage: "trash",
+                             label: "Delete \(volume.name)",
+                             help: "Delete \(volume.name)",
+                             busy: model.busy.contains(volume.id),
+                             destructive: true) {
                 requestDelete(volume)
-            } label: {
-                Image(systemName: "trash")
             }
-            .disabled(model.busy.contains(volume.id))
         }
         .padding(.vertical, 4)
         // On the whole row (and after `.padding`, so the hit area covers the padding too),

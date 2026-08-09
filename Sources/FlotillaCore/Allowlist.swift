@@ -670,11 +670,30 @@ public enum Allowlist {
     /// `commands`, so anything that inspects the allowlist (the audit, the Phase 2 wire
     /// documentation) still reports the default posture, and a caller has to hold an
     /// `ExecPolicy.interactiveShell` to get anything else.
-    private static func substituting(_ policy: ExecPolicy, into spec: CommandSpec) -> CommandSpec {
+    private static func substituting(_ policy: ExecPolicy, into spec: CommandSpec,
+                                     args: [String]) -> CommandSpec {
         guard policy == .interactiveShell else { return spec }
         switch spec.path {
         case ["exec"]: return interactiveExec
-        case ["machine", "run"]: return interactiveMachineRun
+
+        case ["machine", "run"]:
+            // `machine run` has **two** legitimate shapes and the substitution used to destroy
+            // one of them. `interactiveMachineRun` forbids a trailing command, because it
+            // exists for the no-command login shell the Shell tab attaches a PTY to. Swapping
+            // it in unconditionally meant `startMachine`'s boot form —
+            // `machine run --name X -- /bin/true` — was refused with "'--' is not accepted
+            // here" for any caller holding `.interactiveShell`.
+            //
+            // Which is every caller that matters: `AppModel` builds its CLI with
+            // `.interactiveShell`. So machine Start and Restart could not work in the app at
+            // all, while both were green in the tests — because the tests validated under the
+            // *default* policy. A grammar test that does not use production's policy is
+            // testing a configuration nothing ships.
+            //
+            // A `--` means "I am passing a command", so keep the strict boot spec for that and
+            // use the interactive one only for the bare shell. Two shapes, neither widened.
+            return args.dropFirst(spec.path.count).contains("--") ? spec : interactiveMachineRun
+
         default: return spec
         }
     }
@@ -731,7 +750,7 @@ public enum Allowlist {
         guard !args.isEmpty else { throw AllowlistError.emptyCommand }
         try screen(args, limits: limits)
 
-        let spec = try substituting(execPolicy, into: try resolve(args))
+        let spec = try substituting(execPolicy, into: try resolve(args), args: args)
         let rest = Array(args.dropFirst(spec.path.count))
 
         // Parsed pieces, kept in encounter order so the canonical argv is stable.
