@@ -164,15 +164,16 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 }
 
 @Test func buildImageOmitsEveryOptionThatWasNotAskedFor() throws {
-    // Nil context means "let the CLI default it to `.`", which is the only build a
-    // `.denyHostPaths` instance can run — no host path is named, so none is granted.
+    // The context is required now — a nil one used to mean "let the CLI default it to `.`",
+    // which quietly granted the process working directory. See `omittedBuildContextIsRefused`
+    // in AllowlistTests.
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host, mountPolicy: .denyHostPaths)
+    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp/flotilla"]))
 
-    try cli.buildImage(contextDirectory: nil, dockerfile: nil, tag: "app:latest",
+    try cli.buildImage(contextDirectory: "/tmp/flotilla", dockerfile: nil, tag: "app:latest",
                        buildArgs: [], labels: [], noCache: false, platform: nil, target: nil)
 
-    #expect(host.invocations[0] == ["build", "--tag", "app:latest"])
+    #expect(host.invocations[0] == ["build", "--tag", "app:latest", "/tmp/flotilla"])
 }
 
 @Test func inspectDecodesTheSameShapeAsListContainers() throws {

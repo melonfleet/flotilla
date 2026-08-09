@@ -67,6 +67,20 @@ struct MenuBarView: View {
             HStack(spacing: 8) {
                 Wordmark(size: 13).fixedSize()
                 Spacer()
+                // Says out loud that the glance is live.
+                //
+                // the owner asked whether the popover was frozen, and the honest answer — that
+                // both poll tasks start in `AppModel.init` and are never cancelled, so it is
+                // not — is not something a user can see. A timestamp is checkable: if it
+                // stops advancing while the popover is open, it really has stalled. That is
+                // worth more than any assurance, and it is the same "Updated …" convention
+                // the section toolbars already use.
+                if let last = model.lastRefresh {
+                    Text(last.formatted(date: .omitted, time: .standard))
+                        .font(.system(size: 10)).monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .help("Last refreshed. This updates while the popover is open.")
+                }
                 if model.state == .loaded {
                     pill("\(model.running.count) running", dot: Theme.online, tint: Theme.online)
                 }
@@ -171,7 +185,7 @@ struct MenuBarView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(MenuRowStyle())
             }
         }
     }
@@ -227,7 +241,7 @@ struct MenuBarView: View {
                     .frame(width: 20, height: 20)
                     .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(MenuRowStyle())
             .foregroundStyle(.secondary)
             .disabled(busy)
             .help(running ? "Stop \(container.id)" : "Start \(container.id)")
@@ -237,8 +251,9 @@ struct MenuBarView: View {
         .padding(.vertical, 5)
         .opacity(running ? 1 : 0.72)
         // The whole row opens the container, matching the mockup's `<a class="pop-row">`.
-        .contentShape(.rect)
-        .onTapGesture { open() }
+        // `menuRowHighlight` rather than a bare `onTapGesture`: the gesture worked and looked
+        // like nothing, which reads as a dead row.
+        .menuRowHighlight { open() }
     }
 
     /// Name plus image and port — never the identifier alone. Falls back to the state word
@@ -351,7 +366,7 @@ struct MenuBarView: View {
             .padding(.vertical, 5)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MenuRowStyle())
         .keyboardShortcut(key, modifiers: .command)
     }
 

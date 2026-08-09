@@ -13,6 +13,7 @@ struct ImagesView: View {
     @State private var search = ""
 
     @State private var showingPull = false
+    @State private var showingBuild = false
     @State private var pullReference = ""
     @State private var pendingDelete: ContainerImage?
     /// Set from the row menu's Run — presents the run sheet with this reference already in
@@ -34,6 +35,8 @@ struct ImagesView: View {
             // forms you fill in and save.
             if let reference = runImage {
                 RunSheetView(model: model, initialImage: reference) { runImage = nil }
+            } else if showingBuild {
+                BuildImageView(model: model) { showingBuild = false }
             } else if showingPull {
                 pullScreen
             } else if let image = taggingImage {
@@ -89,6 +92,9 @@ struct ImagesView: View {
         SectionToolbar(search: $search,
                        searchPrompt: "Search images…",
                        updated: model.imagesLastRefresh) {
+            ToolbarIconButton(systemImage: "hammer", label: "Build an image from a Dockerfile…") {
+                showingBuild = true
+            }
             ToolbarIconButton(systemImage: "arrow.down.circle", label: "Pull an image…") {
                 pullReference = ""
                 showingPull = true

@@ -33,6 +33,9 @@ struct MachineFormView: View {
     @State private var memoryGB: Int
     @State private var homeMount = "rw"
     @State private var creating = false
+    @State private var importedFrom: String?
+    @State private var importProblem: String?
+    @State private var pendingSpecs: [MachineSpec] = []
 
     init(model: AppModel, dismiss: @escaping () -> Void) {
         self.model = model
@@ -82,6 +85,7 @@ struct MachineFormView: View {
                 // fit the sheet, and the command preview — the one part that tells you exactly
                 // what is about to run — was the section that fell off the bottom.
                 SwiftUI.Section("Machine") {
+                    importBanner
                     TextField("Image reference", text: $image, prompt: Text("alpine:3.22"))
                         .textFieldStyle(.roundedBorder)
                     Picker("Known good", selection: $image) {
@@ -170,9 +174,100 @@ struct MachineFormView: View {
                 .font(.system(size: 17)).foregroundStyle(.secondary)
             Text("New Machine").font(.system(size: 15, weight: .semibold))
             Spacer()
+            Button {
+                importFlotillafile()
+            } label: {
+                Label("Import Flotillafile…", systemImage: "doc.badge.arrow.up")
+            }
+            .controlSize(.small)
+            .help("Fill this form from a Flotillafile")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
+    }
+
+    /// Import **fills the form**; it never creates anything on its own.
+    ///
+    /// A Flotillafile is a file on disk that can name several machines, and applying it
+    /// silently would be a one-click way to boot VMs you have not read. So the file is parsed,
+    /// one machine is loaded into these fields, and you still press Save — with the validated
+    /// command preview showing exactly what will run. That is the same rule the Run sheet
+    /// follows, and the reason the preview exists at all.
+    private func importFlotillafile() {
+        importProblem = nil
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose a Flotillafile"
+        // Named `Flotillafile` by convention but the parser takes JSON from anywhere, so the
+        // panel does not insist on an extension it cannot rely on.
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let file = try Flotillafile.parse(data)
+            guard let first = file.machines.first else {
+                importProblem = "That Flotillafile declares no machines."
+                return
+            }
+            apply(first)
+            importedFrom = url.lastPathComponent
+            // Kept so the banner can say what was left behind. Loading several machines into
+            // one form is not possible, and pretending otherwise would lose the rest silently.
+            pendingSpecs = Array(file.machines.dropFirst())
+        } catch let error as FlotillafileError {
+            importProblem = error.description
+        } catch {
+            importProblem = "Could not read that file: \(error.localizedDescription)"
+        }
+    }
+
+    private func apply(_ spec: MachineSpec) {
+        image = spec.image
+        name = spec.name
+        if let specCPUs = spec.cpus { cpus = specCPUs }
+        if let specMemory = spec.memory, let gb = Self.gigabytes(from: specMemory) {
+            memoryGB = gb
+        }
+        if let mount = spec.homeMount { homeMount = mount.rawValue }
+    }
+
+    /// `2G`, `2048M`, `2Gi` → whole gigabytes for the stepper. Returns nil rather than
+    /// guessing when the suffix is unrecognised, so an odd value leaves the stepper alone
+    /// instead of silently becoming something else.
+    static func gigabytes(from memory: String) -> Int? {
+        let trimmed = memory.trimmingCharacters(in: .whitespaces).uppercased()
+        let digits = trimmed.prefix { $0.isNumber }
+        guard let value = Int(digits), value > 0 else { return nil }
+        let suffix = trimmed.dropFirst(digits.count)
+        switch suffix {
+        case "G", "GB", "GI", "GIB": return value
+        case "M", "MB", "MI", "MIB": return max(1, value / 1024)
+        case "": return value                       // bare number is gigabytes, as the CLI reads it
+        default: return nil
+        }
+    }
+
+    @ViewBuilder
+    private var importBanner: some View {
+        if let importProblem {
+            Label(importProblem, systemImage: "exclamationmark.triangle")
+                .font(.caption).foregroundStyle(Theme.danger)
+        } else if let importedFrom {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Filled from \(importedFrom). Review it, then Save.",
+                      systemImage: "checkmark.circle")
+                    .font(.caption).foregroundStyle(Theme.success)
+                if !pendingSpecs.isEmpty {
+                    // Never lose part of a file quietly.
+                    Text("That file also declares "
+                         + pendingSpecs.map(\.name).joined(separator: ", ")
+                         + ". This form creates one machine at a time — import again for the rest.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 
     /// Save lives bottom-right, where a form's commit belongs on macOS.

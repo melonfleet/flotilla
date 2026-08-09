@@ -792,6 +792,35 @@ func startMachinePassesABootCommand() throws {
     #expect(validated.arguments.contains("/bin/true"))
 }
 
+/// the review's high-severity finding, 9 August, and he is right.
+///
+/// The context operand was `min: 0` because the CLI defaults it to `.`. That reasoning was
+/// about CLI convenience and the operand is a **security boundary**: an absent operand is not
+/// "no host path", it is an *implicit* one — the process working directory — and the validator
+/// only runs a shape check on operands that exist, so `MountPolicy` never sees it. Under
+/// `.denyHostPaths` the build would still archive whatever directory the process happened to
+/// be in. On the Phase 2 host peer that directory is an execution detail the remote caller
+/// does not choose and the policy does not authorise.
+///
+/// Appending `.` ourselves would not fix it: a relative path cannot be checked against
+/// absolute policy roots. The context must be named, absolutely.
+@Test("build refuses an omitted context, because the CLI would silently use the cwd")
+func omittedBuildContextIsRefused() {
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["build", "--tag", "app:latest"], mountPolicy: .denyHostPaths)
+    }
+    // Also refused when a Dockerfile *is* authorised — the context is a separate grant.
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["build", "--file", "/tmp/allowed/Dockerfile"],
+                                mountPolicy: .roots(["/tmp/allowed"]))
+    }
+    // A named, permitted context still works.
+    #expect(throws: Never.self) {
+        try Allowlist.validated(["build", "--tag", "app:latest", "/tmp/allowed"],
+                                mountPolicy: .roots(["/tmp/allowed"]))
+    }
+}
+
 @Test("machine set refuses an unknown key rather than forwarding it")
 func machineSetRefusesUnknownKeys() {
     // The review's exact concern: "unknown future keys could silently add privilege". A key
@@ -972,15 +1001,16 @@ func buildAcceptsContextInsidePermittedRoots() throws {
     #expect(validated.timeoutHint == 1800)
 }
 
-@Test("build needs no context at all — the CLI defaults it")
-func buildAcceptsNoContextOperand() throws {
-    // `min: 0`, because `<context-dir>` defaults to `.` per the captured help. This is the
-    // only way to build under `.denyHostPaths`, which is the correct posture: no host path
-    // is named, so none is granted.
-    let validated = try Allowlist.validated(["build", "-t", "app:latest"],
-                                            mountPolicy: .denyHostPaths)
-    #expect(validated.arguments == ["build", "--tag", "app:latest"])
-    // And exactly one context, never two.
+@Test("build takes exactly one context, never two")
+func buildTakesExactlyOneContext() throws {
+    // This test used to assert the opposite — that omitting the context was fine "because the
+    // CLI defaults it to `.`, so no host path is named and none is granted". That was wrong,
+    // and wrong in the dangerous direction: `.` IS a host path, just an implicit one, and the
+    // validator never shape-checks an operand that is not there. See
+    // `omittedBuildContextIsRefused`.
+    let validated = try Allowlist.validated(["build", "-t", "app:latest", "/tmp/flotilla/src"],
+                                            mountPolicy: .roots(["/tmp/flotilla"]))
+    #expect(validated.arguments == ["build", "--tag", "app:latest", "/tmp/flotilla/src"])
     #expect(throws: (any Error).self) {
         try Allowlist.validated(["build", "/tmp/flotilla", "/tmp/other"],
                                 mountPolicy: .roots(["/tmp"]))
@@ -991,14 +1021,16 @@ func buildAcceptsNoContextOperand() throws {
 func buildProgressIsAClosedSet() throws {
     for good in ["auto", "plain", "tty"] {
         #expect(throws: Never.self, "should accept \(good)") {
-            try Allowlist.validated(["build", "--progress", good], mountPolicy: .denyHostPaths)
+            try Allowlist.validated(["build", "--progress", good, "/tmp/flotilla"],
+                                    mountPolicy: .roots(["/tmp/flotilla"]))
         }
     }
     // The capture lists exactly three. Anything else is refused here, where the message names
     // the rule, rather than forwarded for the CLI to answer with a usage dump.
     for bad in ["json", "TTY", "Plain", "auto,plain", "", "quiet"] {
         #expect(throws: (any Error).self, "should reject '\(bad)'") {
-            try Allowlist.validated(["build", "--progress", bad], mountPolicy: .denyHostPaths)
+            try Allowlist.validated(["build", "--progress", bad, "/tmp/flotilla"],
+                                    mountPolicy: .roots(["/tmp/flotilla"]))
         }
     }
 }
@@ -1021,5 +1053,70 @@ func buildValidatesItsOtherFlagValues() {
         #expect(throws: (any Error).self, "accepted \(argv)") {
             try Allowlist.validated(argv, mountPolicy: .denyHostPaths)
         }
+    }
+}
+
+@Test("banned build flags stay unreachable through alternate parser routes")
+func bannedBuildFlagsHaveNoAlternateParserRoute() {
+    let cases: [[String]] = [
+        // Long-option abbreviation is not accepted by the allowlist parser.
+        ["build", "--sec", "id=npm,env=NPM_TOKEN", "/tmp/build"],
+        ["build", "--out", "type=local,dest=/tmp/out", "/tmp/build"],
+        ["build", "--vsock", "8088", "/tmp/build"],
+        ["build", "--dns-dom", "example.test", "/tmp/build"],
+
+        // Inline values still resolve the exact long name before inspecting the value.
+        ["build", "--secret=id=npm,env=NPM_TOKEN", "/tmp/build"],
+        ["build", "--output=type=local,dest=/tmp/out", "/tmp/build"],
+        ["build", "--vsock-port=8088", "/tmp/build"],
+        ["build", "--dns=10.0.0.1", "/tmp/build"],
+        ["build", "--dns-domain=example.test", "/tmp/build"],
+        ["build", "--dns-option=ndots:1", "/tmp/build"],
+        ["build", "--dns-search=example.test", "/tmp/build"],
+
+        // The first occurrence fails; repetition cannot change interpretation.
+        ["build", "--secret", "id=a,env=A", "--secret", "id=b,env=B", "/tmp/build"],
+        ["build", "--dns", "10.0.0.1", "--dns", "10.0.0.2", "/tmp/build"],
+
+        // Options remain options after the context operand, and build forbids `--` trailing.
+        ["build", "/tmp/build", "--secret=id=npm,env=NPM_TOKEN"],
+        ["build", "/tmp/build", "--output=type=local,dest=/tmp/out"],
+        ["build", "/tmp/build", "--", "--secret=id=npm,env=NPM_TOKEN"],
+
+        // The CLI's short spelling for output is absent too.
+        ["build", "-o", "type=local,dest=/tmp/out", "/tmp/build"],
+    ]
+
+    for argv in cases {
+        #expect(throws: (any Error).self, "accepted \(argv)") {
+            try Allowlist.validated(argv, mountPolicy: .roots(["/tmp"]))
+        }
+    }
+}
+
+@Test("both explicit build paths reject an existing symlink escape")
+func explicitBuildPathsRejectExistingSymlinkEscapes() throws {
+    let fileManager = FileManager.default
+    let base = fileManager.temporaryDirectory
+        .appendingPathComponent("FlotillaBuildPolicy-\(UUID().uuidString)")
+    let permitted = base.appendingPathComponent("permitted")
+    let outside = base.appendingPathComponent("outside")
+    let escape = permitted.appendingPathComponent("escape")
+    defer { try? fileManager.removeItem(at: base) }
+
+    try fileManager.createDirectory(at: permitted, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
+    try fileManager.createSymbolicLink(at: escape, withDestinationURL: outside)
+
+    let escapedContext = escape.appendingPathComponent("context").path
+    let escapedFile = escape.appendingPathComponent("Dockerfile").path
+    let policy = MountPolicy.roots([permitted.path])
+
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["build", escapedContext], mountPolicy: policy)
+    }
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["build", "--file", escapedFile, permitted.path],
+                                mountPolicy: policy)
     }
 }

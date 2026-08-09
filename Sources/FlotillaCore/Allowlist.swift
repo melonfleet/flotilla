@@ -592,7 +592,18 @@ public enum Allowlist {
                                 FlagSpec(long: "memory", short: "m", value: .memorySize),
                                 FlagSpec(long: "target", value: .identifier),
                                 FlagSpec(long: "progress", value: .progressType)],
-                        operands: OperandSpec(shape: .hostBuildPath, min: 0, max: 1)),
+                        // `min: 1`, **not** `min: 0`, even though the CLI defaults the context
+                        // to `.`. An absent operand is not "no host path" here — it is an
+                        // *implicit* one, the process working directory, and the validator only
+                        // shape-checks operands that exist, so `MountPolicy` never saw it. Under
+                        // `.denyHostPaths` a build would still have archived whatever directory
+                        // the process happened to be in; on the Phase 2 host peer that directory
+                        // is an execution detail the remote caller does not choose and the policy
+                        // does not authorise. Appending `.` ourselves would not help, because a
+                        // relative path cannot be checked against absolute policy roots.
+                        // Found by the review, 9 August. The original `min: 0` was reasoning about CLI
+                        // convenience at a security boundary.
+                        operands: OperandSpec(shape: .hostBuildPath, min: 1, max: 1)),
 
             // MARK: volumes
             CommandSpec(["volume", "list"], mutates: false, flags: [format, quiet]),

@@ -119,35 +119,28 @@ struct DashboardView: View {
         }
     }
 
+    /// Identity and reachability, and nothing that another panel already says.
+    ///
+    /// The first version carried CPU, Memory and Running on the right — all three duplicated
+    /// from Pressure and Resources directly below, which made the top of the dashboard read
+    /// twice. It also had a chevron that went to Containers while the row itself said
+    /// "4 containers · 2 machines": a link that satisfies half its own sentence is worse than
+    /// no link, so the row is not a button at all now. Same call as the sidebar's host row,
+    /// which is deliberately `selectionDisabled` for the same reason.
+    ///
+    /// What is left is the thing only this row knows: whether the host is reachable, and what
+    /// it is carrying. In Phase 2 that becomes a list, and the per-host split starts earning
+    /// its place — Pressure will only ever describe one host at a time.
     private var thisMacRow: some View {
-        let latest = model.hostMetrics.latest
-        let memFraction = latest.map { $0.memoryTotalBytes > 0
-            ? Double($0.memoryUsedBytes) / Double($0.memoryTotalBytes) : 0 }
-        return Button { go(.containers) } label: {
-            HStack(spacing: 10) {
-                Circle().fill(hostDot).frame(width: 8, height: 8).frame(width: 24)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(model.hostLabel).font(.system(size: 13, weight: .medium))
-                    Text(hostSubtitle).font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-                hostStat("CPU", latest?.cpuPercent.map { String(format: "%.0f%%", $0) } ?? "—")
-                hostStat("Memory", memFraction.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
-                hostStat("Running", "\(model.running.count)")
-                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+        HStack(spacing: 10) {
+            Circle().fill(hostDot).frame(width: 8, height: 8).frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.hostLabel).font(.system(size: 13, weight: .medium))
+                Text(hostSubtitle).font(.caption2).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .contentShape(Rectangle())
+            Spacer()
         }
-        .buttonStyle(.plain)
-    }
-
-    private func hostStat(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .trailing, spacing: 1) {
-            Text(value).font(.system(size: 12, weight: .medium)).monospacedDigit()
-            Text(label).font(.system(size: 9)).foregroundStyle(.tertiary)
-        }
-        .frame(minWidth: 54, alignment: .trailing)
+        .padding(.horizontal, 12).padding(.vertical, 10)
     }
 
     private var hostDot: Color {
@@ -161,15 +154,23 @@ struct DashboardView: View {
     private var hostSubtitle: String {
         switch model.state {
         case .loaded:
-            let machines = model.machinesState == .loaded
-                ? " · \(model.machines.count) machine\(model.machines.count == 1 ? "" : "s")" : ""
-            return "\(model.containers.count) container\(model.containers.count == 1 ? "" : "s")\(machines)"
+            var parts = ["\(model.running.count) of \(model.containers.count) containers running"]
+            if model.machinesState == .loaded {
+                let running = model.machines.filter { MachinesView.isRunning($0) }.count
+                parts.append("\(running) of \(model.machines.count) machines running")
+            }
+            return parts.joined(separator: " · ")
         case .unavailable(let reason), .failed(let reason): return reason
         case .idle, .loading: return "Checking the container runtime…"
         }
     }
 
     // MARK: Resources
+    //
+    // No "Reclaimable" row. It promised "freed by pruning unused images, volumes and
+    // containers" and its chevron went to Images alone — it could only ever deliver a third of
+    // its own sentence. The honest options were a real prune-everything screen or nothing, and
+    // nothing is right until that screen exists: each section already prunes its own kind.
     //
     // Rows, not a grid of four big cards. The cards gave equal visual weight to four numbers
     // that are mostly reference figures, and they had no room for **Machines** — which the
@@ -195,12 +196,6 @@ struct DashboardView: View {
                 Divider().padding(.leading, 34)
                 resourceRow("Machines", systemImage: "server.rack", target: .machines,
                             detail: machinesDetail, size: nil)
-                Divider().padding(.leading, 34)
-                resourceRow("Reclaimable", systemImage: "trash", target: .images,
-                            detail: "Freed by pruning unused images, volumes and containers",
-                            size: diskUsage.map { byteLabel(totalReclaimable($0)) },
-                            tint: (diskUsage.map { totalReclaimable($0) } ?? 0) > 0
-                                ? Theme.warning : nil)
             }
             .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))

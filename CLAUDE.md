@@ -191,6 +191,20 @@ that we *built* the right command; almost nothing checked the command was
   JSON-only because `InspectRow` and the flatten walk were `private` to
   `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
   apply to one panel and not the other.
+- **An absent operand can still be a grant.** `build`'s context was `min: 0` because the
+  CLI defaults it to `.` — reasoning about CLI convenience at a security boundary. The
+  validator only shape-checks operands that *exist*, so under `.denyHostPaths` a build
+  still archived the process working directory, and on the Phase 2 host peer that
+  directory is an execution detail the remote caller never chose. Appending `.` would
+  not fix it either: a relative path cannot be checked against absolute policy roots.
+  Now `min: 1`. Found by the review on 9 August; **two existing tests asserted the wrong
+  behaviour** and had to be corrected with it.
+- **The file panel is the authorisation.** `AppModel.buildImage` builds a `ContainerCLI`
+  scoped to `.roots([chosen directory])` for one command. That is a real widening of the
+  app's `.denyHostPaths` default and is the sanctioned exception to "one instance, one
+  boundary" — because it goes the safe way round: narrow, explicit, per-invocation, and
+  named in the call rather than inherited and forgotten. The alternatives were worse —
+  `.unrestricted` on the shared CLI would have widened bind mounts in Run too.
 - **An untouched form is not a broken one.** The Run screen opened with two red
   validation errors — `'' isn't a valid imageReference` under the image field and the
   same sentence again under Preview — because the validator legitimately fails on an
