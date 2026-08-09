@@ -508,10 +508,18 @@ struct MachinesView: View {
                 iconButton("stop.fill", "Stop \(machine.id)", busy: busy) {
                     Task { await model.perform(.stop, on: machine) }
                 }
+                iconButton("arrow.clockwise", "Restart \(machine.id)", busy: busy) {
+                    Task { await model.perform(.restart, on: machine) }
+                }
             } else {
                 iconButton("play.fill", "Start \(machine.id)", busy: busy) {
                     Task { await model.perform(.start, on: machine) }
                 }
+                // Placeholder so the Actions column keeps one width whichever state the row is
+                // in — the same trick the containers rows use, and for the same reason: buttons
+                // that shift sideways as machines start and stop are hard to hit.
+                iconButton("arrow.clockwise", "Restart", busy: true) {}
+                    .hidden()
             }
 
             Menu {
@@ -551,6 +559,7 @@ struct MachinesView: View {
         }
         if Self.isRunning(machine) {
             Button("Stop") { Task { await model.perform(.stop, on: machine) } }
+            Button("Restart") { Task { await model.perform(.restart, on: machine) } }
         } else {
             Button("Start") { Task { await model.perform(.start, on: machine) } }
         }
@@ -566,15 +575,8 @@ struct MachinesView: View {
 
     private func iconButton(_ symbol: String, _ label: String, busy: Bool,
                             destructive: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).frame(width: 16, height: 16)
-        }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
-        .foregroundStyle(destructive ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
-        .disabled(busy)
-        .help(label)
-        .accessibilityLabel(label)
+        IconActionButton(systemImage: symbol, label: label, help: label,
+                         busy: busy, destructive: destructive, action: action)
     }
 
     // MARK: Detail

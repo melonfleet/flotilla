@@ -162,16 +162,11 @@ struct ContainerCard: View {
         _ symbol: String, _ label: String, help: String,
         destructive: Bool = false, action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .frame(width: 16, height: 16)
-        }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
-        .foregroundStyle(destructive ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
-        .disabled(isBusy)
-        .help(help)
-        .accessibilityLabel(label)
+        // The cards must not offer less feedback than the rows — a presentation toggle that
+        // changes how responsive the app feels is the same trap as one that changes what you
+        // can do. `isBusy` drives the spinner here too.
+        IconActionButton(systemImage: symbol, label: label, help: help,
+                         busy: isBusy, destructive: destructive, action: action)
     }
 
     /// "Started 2 days ago" while running, "Created 2 days ago" once stopped — the single

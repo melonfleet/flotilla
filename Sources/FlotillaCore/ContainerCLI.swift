@@ -644,6 +644,23 @@ public struct ContainerCLI: Sendable {
         return try execute(args)
     }
 
+    /// `machine restart` — synthesised, exactly as `restart(_:)` is for containers, because
+    /// the CLI has no such subcommand. Stop, then boot.
+    ///
+    /// Ordered and short-circuiting: if the stop fails this throws and never calls start, so a
+    /// machine that refused to stop is not then told to boot. The container `restart(_:)` above
+    /// has the same shape for the same reason.
+    ///
+    /// Note this is *not* the same weight as restarting a container. A machine is a VM, so
+    /// anything running inside it — shells, processes started over `machine run` — ends with it.
+    /// It does not disturb containers, though: each container gets its own micro-VM, which was
+    /// verified on 3 August by deleting every named machine while four containers kept running.
+    @discardableResult
+    public func restartMachine(_ id: String) throws -> CommandResult {
+        try stopMachine(id)
+        return try startMachine(id)
+    }
+
     /// `container machine stop [<id>]` — note the id is a **positional operand** here,
     /// unlike `run`/`set`, which take it via `--name`. Per-leaf asymmetry, confirmed
     /// against the captured help text; do not "normalise" this to `--name`.

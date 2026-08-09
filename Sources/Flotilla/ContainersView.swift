@@ -439,16 +439,10 @@ struct ContainersView: View {
         _ symbol: String, _ label: String, help: String,
         busy: Bool, destructive: Bool = false, action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .frame(width: 16, height: 16)          // even taps regardless of glyph width
-        }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
-        .foregroundStyle(destructive ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
-        .disabled(busy)
-        .help(help)
-        .accessibilityLabel(label)
+        // Delegates to the shared button so the containers rows, the machines rows and the
+        // section toolbars all give the same feedback. See `IconActionButton`.
+        IconActionButton(systemImage: symbol, label: label, help: help,
+                         busy: busy, destructive: destructive, action: action)
     }
 
     /// `FEATURES.md` asks for a Copy submenu (id, image, IP, port URL) on the row. The contents

@@ -489,8 +489,10 @@ private struct MachineSettingsTab: View {
                                               homeMount: homeMount) else { return }
         applied = true
         if restart {
-            await model.perform(.stop, on: machine)
-            await model.perform(.start, on: machine)
+            // One implementation. This used to open-code stop-then-start, which meant a failed
+            // stop was still followed by a start, and the row action would have been a second
+            // copy of the same idea.
+            await model.perform(.restart, on: machine)
             applied = false
         }
     }

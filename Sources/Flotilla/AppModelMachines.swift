@@ -37,7 +37,7 @@ extension AppModel {
 
     // MARK: Actions
 
-    enum MachineAction { case start, stop, delete, setDefault }
+    enum MachineAction { case start, stop, restart, delete, setDefault }
 
     /// Runs one action and reloads. `busyMachines` disables the row's controls while it is in
     /// flight, because a second click on Stop is a second VM shutdown.
@@ -51,6 +51,7 @@ extension AppModel {
                 switch action {
                 case .start: try cli.startMachine(machine.id)
                 case .stop: try cli.stopMachine(machine.id)
+                case .restart: try cli.restartMachine(machine.id)
                 case .delete: try cli.deleteMachine(machine.id)
                 case .setDefault: try cli.setDefaultMachine(machine.id)
                 }
@@ -58,7 +59,9 @@ extension AppModel {
 
             // Shells live inside the machine. Stopping or deleting it kills them whether we
             // tidy up or not, so drop them rather than leaving dead terminals on screen.
-            if action == .stop || action == .delete {
+            // `.restart` too: the VM goes down in the middle, so any shell attached to it is
+            // already dead by the time it comes back.
+            if action == .stop || action == .delete || action == .restart {
                 machineTerminals.closeAll(for: machine.id)
             }
             await refreshMachines()

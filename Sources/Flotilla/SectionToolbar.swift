@@ -80,11 +80,11 @@ struct ToolbarIconButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-        }
-        .help(label)
-        .accessibilityLabel(label)
-        .foregroundStyle(isDestructive ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.primary))
+        // Same feedback as the row actions — `IconActionButton` owns the hover and pressed
+        // states, so a toolbar button and a row button react identically. They did not before:
+        // these were a bare `Button` with only a tooltip, so nothing happened on hover and
+        // nothing happened on click either.
+        IconActionButton(systemImage: systemImage, label: label, help: label,
+                         destructive: isDestructive, action: action)
     }
 }

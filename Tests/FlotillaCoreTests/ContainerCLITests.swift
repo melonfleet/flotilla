@@ -73,6 +73,19 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     }
 }
 
+/// `machine restart` does not exist in the CLI either, so `restartMachine` synthesises it the
+/// same way `restart` does for containers — and the boot half must carry a command, or it opens
+/// an interactive shell, needs a PTY, and fails *after* booting. See the MACHINES-SPEC addendum.
+@Test func machineRestartIsStopThenBoot() throws {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host)
+
+    try cli.restartMachine("dev")
+
+    #expect(host.invocations[0] == ["machine", "stop", "dev"])
+    #expect(host.invocations[1] == ["machine", "run", "--name", "dev", "/bin/true"])
+}
+
 @Test func startStopRestartRouteThroughAllowlist() throws {
     let host = RecordingHost()
     let cli = ContainerCLI(host: host)
