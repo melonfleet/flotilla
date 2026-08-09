@@ -737,15 +737,19 @@ struct ContainersView: View {
         VStack(spacing: 0) {
             Table(sorted, selection: $selection, sortOrder: $ui.sortOrder,
                   columnCustomization: $ui.columnCustomization) {
-                TableColumn("State", value: \.sortRank) { c in
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(c.stateColor)
-                            .frame(width: 7, height: 7)
-                        Text(c.status.state.capitalized)
-                    }
+                // Dot only — see the matching column in `MachinesView`. The exact state word
+                // matters more here than for machines, because `stateColor` folds several
+                // states into one colour: "exited (137)" and "dead" are both danger red. So the
+                // tooltip carries the CLI's own string rather than a tidied-up version of it.
+                TableColumn("", value: \.sortRank) { c in
+                    Circle()
+                        .fill(c.stateColor)
+                        .frame(width: 8, height: 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(c.status.state.capitalized)
+                        .accessibilityLabel(c.status.state.capitalized)
                 }
-                .width(min: 76, ideal: 92)
+                .width(min: 26, ideal: 28, max: 34)
                 .customizationID("state")
 
                 TableColumn("Name", value: \.id) { c in

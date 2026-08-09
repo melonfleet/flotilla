@@ -404,13 +404,23 @@ struct MachinesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
-            TableColumn("State", value: \.sortRank) { machine in
-                HStack(spacing: 6) {
-                    Circle().fill(Self.stateColor(machine)).frame(width: 7, height: 7)
-                    Text(machine.status.capitalized)
-                }
+            // The dot alone, and no header text either — "State" is five times wider than the
+            // thing it labels, and the column exists to be scanned, not read.
+            //
+            // The state survives as the tooltip AND the accessibility label on every cell,
+            // because a colour is not readable to everyone and is meaningless to VoiceOver.
+            // The blank header is the one real cost: the sort control has no name. The
+            // columns popover still lists it as "State" (from `columnSpecs`), which is where
+            // anyone hunting for it will look.
+            TableColumn("", value: \.sortRank) { machine in
+                Circle()
+                    .fill(Self.stateColor(machine))
+                    .frame(width: 8, height: 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(machine.status.capitalized)
+                    .accessibilityLabel(machine.status.capitalized)
             }
-            .width(min: 76, ideal: 92)
+            .width(min: 26, ideal: 28, max: 34)
             .customizationID("state")
 
             TableColumn("Name") { machine in
@@ -682,11 +692,23 @@ struct MachinesView: View {
         machine.status.caseInsensitiveCompare("running") == .orderedSame
     }
 
+    /// The dot's colour — and since the State column dropped its text on 9 August, the dot is
+    /// now the *whole* statement, so a wrong colour is a wrong claim rather than a redundant one.
+    ///
+    /// That change immediately exposed a bug the text had been covering: the old rule matched
+    /// `status.contains("stopp")`, which is true of **stopped** as well as *stopping*, so a
+    /// machine sitting quietly at rest was painted amber — "needs attention". Nobody noticed
+    /// while the word "Stopped" sat next to it explaining otherwise.
+    ///
+    /// Amber is for the transitional states only: something is moving and will settle. Stopped
+    /// is a resting state and takes the same neutral grey a stopped container does.
     static func stateColor(_ machine: ContainerMachine) -> Color {
         if isRunning(machine) { return Theme.online }
         let status = machine.status.lowercased()
         if status.contains("error") || status.contains("fail") { return Theme.danger }
-        if status.contains("start") || status.contains("stopp") { return Theme.warning }
+        // `stopping` before `stopped`: the shorter word is a prefix of neither, but the old
+        // `contains("stopp")` collapsed them and that is precisely what went wrong.
+        if status.contains("stopping") || status.contains("starting") { return Theme.warning }
         return .secondary
     }
 
