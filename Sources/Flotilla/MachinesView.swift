@@ -87,6 +87,11 @@ struct MachinesView: View {
                     toolbar
                     Divider()
                     content
+                    ActivityStrip(title: "Recent activity",
+                                  entries: activityEntries,
+                                  isExpanded: Binding(get: { ui.activityExpanded },
+                                                      set: { ui.activityExpanded = $0 }),
+                                  open: { detailTarget = DetailTarget(id: $0) })
                 }
                 // Without this the whole stack centres vertically whenever `content` is a
                 // `ContentUnavailableView` rather than a table, which floated the control band
@@ -276,6 +281,18 @@ struct MachinesView: View {
         }
 
         return machines.sorted(using: ui.sortOrder)
+    }
+
+    /// Machine transitions, newest first. `AppModelMachines.recordMachineTransitions` fills
+    /// this; before it existed a machine restart left no trace anywhere in the app.
+    private var activityEntries: [ActivityStrip.Entry] {
+        model.machines
+            .flatMap { machine in
+                (model.machineEvents[machine.id] ?? []).map {
+                    ActivityStrip.Entry(id: $0.id, subject: machine.id, event: $0)
+                }
+            }
+            .sorted { $0.event.date > $1.event.date }
     }
 
     @ViewBuilder
@@ -522,7 +539,12 @@ struct MachinesView: View {
             Menu {
                 machineMenu(for: machine)
             } label: {
-                Image(systemName: "ellipsis.vertical")
+                // Vertical dots, per the owner. Rotated rather than named: **`ellipsis.vertical` is not a
+                // real SF Symbol.** `NSImage(systemSymbolName:)` returns nil for it, so the
+                // label rendered nothing at all and the overflow menus disappeared from every
+                // row and card. Checked with a probe this time instead of assumed.
+                Image(systemName: "ellipsis")
+                    .rotationEffect(.degrees(90))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

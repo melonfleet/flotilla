@@ -25,13 +25,33 @@ extension AppModel {
             // Same equality guard as `containers`: `@Observable` notifies on every write, so an
             // unconditional assignment invalidates every view on each poll even when nothing
             // moved. That was half of the original flicker.
-            if fetched != machines { machines = fetched }
+            if fetched != machines {
+                recordMachineTransitions(previous: machines, current: fetched)
+                machines = fetched
+            }
             machinesState = .loaded
             machinesLastRefresh = Date()
         } catch {
             machines = []
             machinesState = .failed(describe(error))
             record("Could not list machines: \(error)", subsystem: "machines")
+        }
+    }
+
+    /// Notes state changes so the activity strip has something to show.
+    ///
+    /// Mirrors `recordTransitions` for containers, including its rule that a **first sighting is
+    /// not a transition** — recording "appeared" for every machine present at launch would fill
+    /// the strip with noise about nothing having happened.
+    func recordMachineTransitions(previous: [ContainerMachine], current: [ContainerMachine]) {
+        let before = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0.status) })
+        for machine in current {
+            guard let was = before[machine.id] else { continue }
+            guard was.caseInsensitiveCompare(machine.status) != .orderedSame else { continue }
+            var log = machineEvents[machine.id] ?? []
+            log.insert(ContainerEvent(date: Date(), from: was, to: machine.status), at: 0)
+            if log.count > 50 { log.removeLast(log.count - 50) }
+            machineEvents[machine.id] = log
         }
     }
 

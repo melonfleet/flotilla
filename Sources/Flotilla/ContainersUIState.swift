@@ -25,6 +25,11 @@ final class ContainersUIState {
     var filter: ContainersView.Filter = .all
     var search = ""
 
+    /// Whether the recent-activity band at the bottom of the list is open. Here rather than in
+    /// the view for the same reason everything else is: the section view is rebuilt on every
+    /// sidebar change, so a collapse would silently undo itself.
+    var activityExpanded = true
+
     /// Running-first by default, per `DECISIONS.md` Q2 — the containers you can act on stay
     /// at the top rather than being buried alphabetically.
     var sortOrder = [KeyPathComparator(\Container.sortRank)]

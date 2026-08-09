@@ -18,6 +18,11 @@ final class MachinesUIState {
     var filter: MachinesView.Filter = .all
     var search = ""
 
+    /// Whether the recent-activity band at the bottom of the list is open. Here rather than in
+    /// the view for the same reason everything else is: the section view is rebuilt on every
+    /// sidebar change, so a collapse would silently undo itself.
+    var activityExpanded = true
+
     /// Running-first, matching the containers screen's Q2 rule — the machines you can act on
     /// stay at the top. A stopped machine is usually one you have finished with.
     var sortOrder = [KeyPathComparator(\ContainerMachine.sortRank)]

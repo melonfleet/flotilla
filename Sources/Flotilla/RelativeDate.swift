@@ -47,6 +47,22 @@ enum RelativeDate {
 
     /// The full timestamp, for tooltips. Falls back to the raw string when it cannot be
     /// parsed: showing what the CLI said beats showing nothing when the two disagree.
+    /// A `Date` we already hold, not an ISO string from the CLI — the activity strip's events
+    /// are stamped in-process.
+    static func relativeToNow(_ date: Date) -> String {
+        // Built per call, not `static let`: `RelativeDateTimeFormatter` is not `Sendable`, the
+        // same reason the ISO formatters here are built per call.
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// Wall-clock time only. The strip shows today's changes, so a full date would be noise on
+    /// every row for information that never varies.
+    static func clockTime(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .standard)
+    }
+
     static func absolute(_ iso: String?) -> String {
         guard let iso else { return "Unknown" }
         guard let date = parse(iso) else { return iso }

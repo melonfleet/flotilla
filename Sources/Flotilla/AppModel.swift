@@ -761,7 +761,17 @@ final class AppModel {
     ///
     /// In memory and bounded. Persisting it needs a real store, which is a Phase 4 decision
     /// rather than something to bolt on here.
-    @ObservationIgnored private var events: [String: [ContainerEvent]] = [:]
+    /// Observable, not `@ObservationIgnored`. The dashboard's activity card got away with
+    /// being ignored because it is rebuilt whenever `containers` changes anyway; the activity
+    /// strips at the bottom of Containers and Machines must update on their own. The dictionary
+    /// is only written when a transition is actually detected, so this does not churn.
+    private var events: [String: [ContainerEvent]] = [:]
+
+    /// The same, for machines. `refreshMachines` recorded nothing at all before, so a machine
+    /// restart left no trace anywhere in the app.
+    /// Not `private(set)` — Swift's access control is per-file, and `AppModelMachines.swift`
+    /// writes it. Same reason the machine collections above are plain `var`.
+    var machineEvents: [String: [ContainerEvent]] = [:]
 
     func events(for containerID: String) -> [ContainerEvent] { events[containerID] ?? [] }
 

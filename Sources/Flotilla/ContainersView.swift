@@ -411,7 +411,12 @@ struct ContainersView: View {
                 Divider()
                 copyMenu(for: container)
             } label: {
-                Image(systemName: "ellipsis.vertical")
+                // Vertical dots, per the owner. Rotated rather than named: **`ellipsis.vertical` is not a
+                // real SF Symbol.** `NSImage(systemSymbolName:)` returns nil for it, so the
+                // label rendered nothing at all and the overflow menus disappeared from every
+                // row and card. Checked with a probe this time instead of assumed.
+                Image(systemName: "ellipsis")
+                    .rotationEffect(.degrees(90))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -507,6 +512,11 @@ struct ContainersView: View {
                     bulkActionBar
                     Divider()
                     content
+                    ActivityStrip(title: "Recent activity",
+                                  entries: activityEntries,
+                                  isExpanded: Binding(get: { ui.activityExpanded },
+                                                      set: { ui.activityExpanded = $0 }),
+                                  open: { openDetail($0) })
                 }
             }
         }
@@ -669,6 +679,21 @@ struct ContainersView: View {
         }
     }
 
+    /// Every container's events, newest first, flattened into one list.
+    ///
+    /// Across all containers rather than the visible ones: a filter is about what you are
+    /// looking at, and a container that just died is exactly the thing you want to be told
+    /// about even if the current filter hides it.
+    private var activityEntries: [ActivityStrip.Entry] {
+        model.containers
+            .flatMap { container in
+                model.events(for: container.id).map {
+                    ActivityStrip.Entry(id: $0.id, subject: container.id, event: $0)
+                }
+            }
+            .sorted { $0.event.date > $1.event.date }
+    }
+
     @ViewBuilder
     private var content: some View {
         switch model.state {
@@ -714,11 +739,18 @@ struct ContainersView: View {
         }
     }
 
-    /// A macOS `Table` fills all available vertical space with alternating-background
-    /// placeholder rows past the last real one, which looks broken with just a handful of
-    /// containers. Cap the table to its content height for short lists and let a plain
-    /// `Spacer` take the rest; once the list is long enough to need scrolling, let the
-    /// table fill normally.
+    /// The table fills the pane.
+    ///
+    /// It used to be capped to `count * 28 + 32` for lists under twelve, to avoid the
+    /// alternating placeholder rows macOS draws past the last real row. Two things were wrong
+    /// with that. The constant guessed a 28pt row and the real rows are taller, so the space
+    /// computed for five containers held four and the fifth had to be scrolled to — inside a
+    /// pane with a large empty margin beneath it, which is worse than any placeholder row.
+    /// And the Machines table never had the cap, so the two sections behaved differently.
+    ///
+    /// Any fix that keeps the cap needs the true row height, which depends on the font, the
+    /// control size and whether a cell wraps — a number this file cannot know and would have
+    /// to re-guess every time the row changes. Filling the pane needs no such number.
     private var table: some View {
         VStack(spacing: 0) {
             Table(sorted, selection: $selection, sortOrder: $ui.sortOrder,
@@ -839,14 +871,9 @@ struct ContainersView: View {
                     openDetail(container.id)
                 }
             }
-            .frame(maxHeight: isShortList ? shortListHeight : .infinity)
-
-            if isShortList { Spacer(minLength: 0) }
+            .frame(maxHeight: .infinity)
         }
     }
-
-    private var isShortList: Bool { visible.count < 12 }
-    private var shortListHeight: CGFloat { CGFloat(visible.count) * 28 + 32 }
 
     /// The Cards toggle. Previously a status dot, a name, an image and a host label — no
     /// controls at all, and none of the usage figures the mockup shows, which is exactly what

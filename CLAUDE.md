@@ -191,6 +191,17 @@ that we *built* the right command; almost nothing checked the command was
   JSON-only because `InspectRow` and the flatten walk were `private` to
   `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
   apply to one panel and not the other.
+- **Check an SF Symbol exists before shipping it.** `ellipsis.vertical` is not a real
+  symbol. `Image(systemName:)` renders *nothing* for an unknown name — no placeholder, no
+  warning, no build error — so every overflow menu in the app silently disappeared. Verify
+  with `NSImage(systemSymbolName:accessibilityDescription:) != nil`; the vertical dots are
+  a rotated `ellipsis`.
+- **Do not guess a row height.** The containers table was capped to
+  `count * 28 + 32` for short lists, to hide the placeholder rows macOS draws past the last
+  row. The real rows are taller, so the space computed for five containers held four and the
+  fifth had to be scrolled to — inside a pane with a large empty margin below it. The true
+  row height depends on font, control size and whether a cell wraps, so no constant can be
+  right for long. The table fills the pane now, as the machines table always did.
 - **Test the policy production ships.** `machine run` has two shapes — a boot command and
   a bare login shell — and `substituting(_:into:)` replaced the strict spec *wholesale*
   when `ExecPolicy.interactiveShell` was in force, destroying the boot form. `AppModel`
