@@ -555,12 +555,7 @@ struct MachinesView: View {
             Menu {
                 machineMenu(for: machine)
             } label: {
-                // Vertical dots, per the owner. Rotated rather than named: **`ellipsis.vertical` is not a
-                // real SF Symbol.** `NSImage(systemSymbolName:)` returns nil for it, so the
-                // label rendered nothing at all and the overflow menus disappeared from every
-                // row and card. Checked with a probe this time instead of assumed.
-                Image(systemName: "ellipsis")
-                    .rotationEffect(.degrees(90))
+                RowOverflowLabel()
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

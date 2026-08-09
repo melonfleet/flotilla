@@ -61,6 +61,10 @@ struct IconActionButtonStyle: ButtonStyle {
         let destructive: Bool
         @State private var hovering = false
         @Environment(\.isEnabled) private var isEnabled
+        /// `.increased` inside a **selected** table row, where the accent fill is painted behind
+        /// the cell. Without reading this, the destructive red trash and the secondary glyphs sat
+        /// on a pink background at almost no contrast and looked like they had vanished.
+        @Environment(\.backgroundProminence) private var prominence
 
         var body: some View {
             configuration.label
@@ -78,6 +82,11 @@ struct IconActionButtonStyle: ButtonStyle {
         private var tint: Color { destructive ? Theme.danger : Theme.accent }
 
         private var foreground: AnyShapeStyle {
+            // On a selected row everything goes white, destructive included. A red-on-accent
+            // trash is unreadable, and the row already says "destructive" through the
+            // confirmation it opens — losing the red for the moment the row is selected costs
+            // less than losing the button.
+            if selected { return AnyShapeStyle(isEnabled ? .white : .white.opacity(0.55)) }
             guard isEnabled else { return AnyShapeStyle(.tertiary) }
             if destructive { return AnyShapeStyle(Theme.danger) }
             return AnyShapeStyle(hovering || configuration.isPressed
@@ -86,8 +95,43 @@ struct IconActionButtonStyle: ButtonStyle {
 
         private var fill: Color {
             guard isEnabled else { return .clear }
+            // White washes on the accent fill; the brand tint would be invisible on it.
+            if selected {
+                if configuration.isPressed { return .white.opacity(0.34) }
+                return hovering ? .white.opacity(0.18) : .clear
+            }
             if configuration.isPressed { return tint.opacity(0.28) }
             return hovering ? tint.opacity(0.13) : .clear
         }
+
+        private var selected: Bool { prominence == .increased }
+    }
+}
+
+
+/// The `⋯` label for a row's overflow menu.
+///
+/// A `Menu` is not a `Button`, so it cannot take `IconActionButtonStyle`; without this it kept
+/// the default foreground and disappeared into the accent fill of a selected row — the same
+/// problem the trash had, and the one the owner reported.
+///
+/// Vertical dots by rotation: **`ellipsis.vertical` is not a real SF Symbol.**
+/// `NSImage(systemSymbolName:)` returns nil for it, and `Image(systemName:)` renders nothing at
+/// all for an unknown name, which is how every overflow menu in the app silently vanished once.
+struct RowOverflowLabel: View {
+    @Environment(\.backgroundProminence) private var prominence
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .rotationEffect(.degrees(90))
+            .foregroundStyle(colour)
+    }
+
+    private var colour: AnyShapeStyle {
+        if prominence == .increased {
+            return AnyShapeStyle(isEnabled ? .white : .white.opacity(0.55))
+        }
+        return AnyShapeStyle(isEnabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
     }
 }
