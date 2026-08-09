@@ -92,18 +92,20 @@ struct MachinesView: View {
                 // `ContentUnavailableView` rather than a table, which floats the control band
                 // into the middle of the window. The toolbar is chrome; it stays at the top.
                 .frame(maxHeight: .infinity, alignment: .top)
-
-                // NO ACTIVITY STRIP HERE — YET. The owner asked for one on Machines as well as
-                // Containers, and every arrangement I tried broke this screen outright: the
-                // sidebar scrolled up behind the title bar and the table rendered nothing but
-                // its filler rows. Bisected across five builds — a trivial `Text` bottom bar is
-                // fine, the same `ActivityStrip` is fine in `ContainersView`, and it fails here
-                // as a VStack sibling, without the inner `ScrollView`, and via
-                // `safeAreaInset`. So it is an interaction with something else in this view
-                // that I have not identified, and shipping a broken Machines section to get a
-                // status band is the wrong trade. `activityEntries` and
-                // `recordMachineTransitions` are kept: the events are being recorded, so
-                // whenever the layout question is answered the data is already there.
+                // The strip needed `ActivityStrip`'s **empty** branch bounding before it could
+                // live here. This section had no events at all — `refreshMachines` recorded
+                // none until today — so it always took that branch, which had no height, grew
+                // the stack past the window, and scrolled the sidebar out of sight. Containers
+                // happened to have one event and took the bounded `ScrollView` branch, which is
+                // why only this section broke, and why removing the `ScrollView` then broke
+                // Containers too. One unbounded child explains all three observations.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    ActivityStrip(title: "Recent activity",
+                                  entries: activityEntries,
+                                  isExpanded: Binding(get: { ui.activityExpanded },
+                                                      set: { ui.activityExpanded = $0 }),
+                                  open: { detailTarget = DetailTarget(id: $0) })
+                }
             }
         }
         .task { await model.refreshMachines() }

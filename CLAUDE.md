@@ -191,6 +191,14 @@ that we *built* the right command; almost nothing checked the command was
   JSON-only because `InspectRow` and the flatten walk were `private` to
   `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
   apply to one panel and not the other.
+- **One unbounded child can scroll the whole window.** The activity strip broke Machines
+  outright — sidebar scrolled up behind the title bar, table showing only filler rows —
+  and then broke Containers too once I "simplified" it. Cause: the strip's **empty-state**
+  branch had no height, so the enclosing stack sized to its content and grew past the
+  window. Containers happened to have one event and took the bounded `ScrollView` branch,
+  which is why only Machines failed at first, and why removing that `ScrollView` broke
+  both. Every branch of a bottom band needs an explicit height. It cost five builds of
+  bisection because I kept testing the *populated* path.
 - **Check an SF Symbol exists before shipping it.** `ellipsis.vertical` is not a real
   symbol. `Image(systemName:)` renders *nothing* for an unknown name — no placeholder, no
   warning, no build error — so every overflow menu in the app silently disappeared. Verify

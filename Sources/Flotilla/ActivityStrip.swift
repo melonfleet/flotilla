@@ -84,29 +84,31 @@ struct ActivityStrip: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
+                // Bounded for the same reason the populated branch is: an unbounded child here
+                // grows the enclosing stack past the window.
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: CGFloat(Self.visibleRows) * 26, alignment: .topLeading)
         } else {
-            // The most recent few, in a plain stack — **not** a `ScrollView`.
+            // **The `.frame(height:)` is load-bearing, and so is the `ScrollView`.**
             //
-            // A scrolling band broke the Machines screen outright: the sidebar scrolled up
-            // behind the title bar and the table rendered nothing but filler rows. Bisected to
-            // this view — a trivial bottom bar was fine, and the same strip is fine in
-            // Containers, so it is some interaction between a `ScrollView` and that stack that
-            // I do not fully understand. Not worth understanding: a status band should not
-            // scroll anyway. It shows what just happened; the full history is on the item.
-            VStack(spacing: 0) {
-                ForEach(entries.prefix(Self.visibleRows)) { entry in
-                    row(entry)
-                    Divider().padding(.leading, 12)
-                }
-                if entries.count > Self.visibleRows {
-                    // Says what is not shown rather than silently truncating.
-                    Text("+\(entries.count - Self.visibleRows) earlier")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12).padding(.vertical, 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            // I replaced this with a plain unbounded `VStack` while chasing the Machines bug,
+            // and that broke Containers as well — sidebar scrolled up behind the title bar,
+            // table showing only filler rows. Which finally identified the mechanism: with no
+            // bound, the strip's height is decided by its content, the enclosing stack grows
+            // past the window, and everything scrolls. A `ScrollView` with a fixed height is
+            // what keeps the band a band.
+            //
+            // So the height is not styling. Do not remove it, and do not swap the `ScrollView`
+            // for a stack without giving the result an explicit height.
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(entries) { entry in
+                        row(entry)
+                        Divider().padding(.leading, 12)
+                    }
                 }
             }
+            .frame(height: CGFloat(Self.visibleRows) * 26)
         }
     }
 
