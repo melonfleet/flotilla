@@ -87,16 +87,23 @@ struct MachinesView: View {
                     toolbar
                     Divider()
                     content
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  open: { detailTarget = DetailTarget(id: $0) })
                 }
                 // Without this the whole stack centres vertically whenever `content` is a
-                // `ContentUnavailableView` rather than a table, which floated the control band
+                // `ContentUnavailableView` rather than a table, which floats the control band
                 // into the middle of the window. The toolbar is chrome; it stays at the top.
                 .frame(maxHeight: .infinity, alignment: .top)
+
+                // NO ACTIVITY STRIP HERE — YET. The owner asked for one on Machines as well as
+                // Containers, and every arrangement I tried broke this screen outright: the
+                // sidebar scrolled up behind the title bar and the table rendered nothing but
+                // its filler rows. Bisected across five builds — a trivial `Text` bottom bar is
+                // fine, the same `ActivityStrip` is fine in `ContainersView`, and it fails here
+                // as a VStack sibling, without the inner `ScrollView`, and via
+                // `safeAreaInset`. So it is an interaction with something else in this view
+                // that I have not identified, and shipping a broken Machines section to get a
+                // status band is the wrong trade. `activityEntries` and
+                // `recordMachineTransitions` are kept: the events are being recorded, so
+                // whenever the layout question is answered the data is already there.
             }
         }
         .task { await model.refreshMachines() }
@@ -503,6 +510,13 @@ struct MachinesView: View {
             }
             .width(min: 108, ideal: 120)
         }
+        // Bounds the table so it *fills* the space left over rather than dictating the stack's
+        // height. Without it, adding the activity strip below broke the whole window: a macOS
+        // `Table` reports a very large ideal height, so the VStack grew past the window and
+        // both columns scrolled — the sidebar ended up above the title bar and the table showed
+        // only its empty filler rows. The containers table already had this; the machines one
+        // did not, which is why only this section broke.
+        .frame(maxHeight: .infinity)
         .contextMenu(forSelectionType: ContainerMachine.ID.self) { ids in
             if let machine = model.machines.first(where: { ids.contains($0.id) }) {
                 machineMenu(for: machine)

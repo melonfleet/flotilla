@@ -86,17 +86,27 @@ struct ActivityStrip: View {
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(entries) { entry in
-                        row(entry)
-                        Divider().padding(.leading, 12)
-                    }
+            // The most recent few, in a plain stack — **not** a `ScrollView`.
+            //
+            // A scrolling band broke the Machines screen outright: the sidebar scrolled up
+            // behind the title bar and the table rendered nothing but filler rows. Bisected to
+            // this view — a trivial bottom bar was fine, and the same strip is fine in
+            // Containers, so it is some interaction between a `ScrollView` and that stack that
+            // I do not fully understand. Not worth understanding: a status band should not
+            // scroll anyway. It shows what just happened; the full history is on the item.
+            VStack(spacing: 0) {
+                ForEach(entries.prefix(Self.visibleRows)) { entry in
+                    row(entry)
+                    Divider().padding(.leading, 12)
+                }
+                if entries.count > Self.visibleRows {
+                    // Says what is not shown rather than silently truncating.
+                    Text("+\(entries.count - Self.visibleRows) earlier")
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .padding(.horizontal, 12).padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            // Four rows' worth. A band that grows with its content would push the list around
-            // as things happen, which is the opposite of a calm status area.
-            .frame(height: CGFloat(Self.visibleRows) * 26)
         }
     }
 
