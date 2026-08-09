@@ -128,11 +128,14 @@ struct ActivityStrip: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 // The raw transition, because `summary` folds several states into one word and
-                // "exited (137)" is not the same event as a clean stop.
-                Text("\(entry.event.from) → \(entry.event.to)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                // "exited (137)" is not the same event as a clean stop. Omitted for a performed
+                // action, where it would read "running → running" and mean nothing.
+                if entry.event.action == nil {
+                    Text("\(entry.event.from) → \(entry.event.to)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)

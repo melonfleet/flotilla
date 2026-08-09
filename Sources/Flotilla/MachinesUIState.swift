@@ -23,9 +23,16 @@ final class MachinesUIState {
     /// sidebar change, so a collapse would silently undo itself.
     var activityExpanded = true
 
-    /// Running-first, matching the containers screen's Q2 rule — the machines you can act on
-    /// stay at the top. A stopped machine is usually one you have finished with.
-    var sortOrder = [KeyPathComparator(\ContainerMachine.sortRank)]
+    /// **By name**, not by state.
+    ///
+    /// This was running-first, and running-first has a flaw that only shows up in use: stopping
+    /// a machine makes its row jump to the bottom of the list, so the thing you were working on
+    /// moves the instant you act on it. With a handful of machines that is annoying; with a
+    /// screenful it means chasing rows up and down. The owner called it, and he is right.
+    ///
+    /// Nothing is lost — the state column is still sortable, so running-first is one click away
+    /// for anyone who wants it. A stable default and an available sort beat a clever default.
+    var sortOrder = [KeyPathComparator(\ContainerMachine.id)]
 
     /// Which columns are shown, in what order and at what width.
     ///

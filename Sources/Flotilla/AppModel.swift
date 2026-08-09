@@ -918,6 +918,12 @@ final class AppModel {
                 case .delete:  try cli.remove(id)
                 }
             }.value
+            // The poll loop cannot see this one: a restart of a running container ends running,
+            // so there is no transition between refreshes. Record it here or it is invisible.
+            if action == .restart {
+                append(ContainerEvent(date: Date(), from: "running", to: "running",
+                                      action: "Restarted"), to: id)
+            }
         } catch {
             let message = "\(Self.label(for: action)) failed for \(id): \(error)"
             actionError = message
@@ -956,6 +962,10 @@ final class AppModel {
                     case .delete:  try cli.remove(id)
                     }
                 }.value
+                if action == .restart {
+                    append(ContainerEvent(date: Date(), from: "running", to: "running",
+                                          action: "Restarted"), to: id)
+                }
             } catch {
                 failures.append((id, String(describing: error)))
             }

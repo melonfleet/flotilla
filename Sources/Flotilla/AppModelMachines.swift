@@ -84,6 +84,15 @@ extension AppModel {
             if action == .stop || action == .delete || action == .restart {
                 machineTerminals.closeAll(for: machine.id)
             }
+            // Same blind spot as containers: a restart leaves the machine running, so
+            // `recordMachineTransitions` sees nothing between polls.
+            if action == .restart {
+                var log = machineEvents[machine.id] ?? []
+                log.insert(ContainerEvent(date: Date(), from: "running", to: "running",
+                                          action: "Restarted"), at: 0)
+                if log.count > 50 { log.removeLast(log.count - 50) }
+                machineEvents[machine.id] = log
+            }
             await refreshMachines()
         } catch {
             actionError = describe(error)

@@ -30,9 +30,16 @@ final class ContainersUIState {
     /// sidebar change, so a collapse would silently undo itself.
     var activityExpanded = true
 
-    /// Running-first by default, per `DECISIONS.md` Q2 — the containers you can act on stay
-    /// at the top rather than being buried alphabetically.
-    var sortOrder = [KeyPathComparator(\Container.sortRank)]
+    /// **By name**, not running-first.
+    ///
+    /// This reverses the running-first default from `DECISIONS.md` Q2, at the owner's direction on
+    /// 9 August. Q2's argument was that the containers you can act on should be at the top; the
+    /// argument against it is that acting on one *moves it*, so the row you just clicked leaves
+    /// the place you were looking. With a long list that turns every stop into a hunt.
+    ///
+    /// The state column remains sortable, so running-first is one click away. Q2's ordering of
+    /// the table by relevance was a reasonable guess that using the thing disproved.
+    var sortOrder = [KeyPathComparator(\Container.id)]
 
     /// Which columns are shown, in what order and at what width.
     ///

@@ -191,6 +191,13 @@ that we *built* the right command; almost nothing checked the command was
   JSON-only because `InspectRow` and the flatten walk were `private` to
   `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
   apply to one panel and not the other.
+- **A poll loop cannot see an action with no net state change.** Restarts never appeared in
+  the activity strip: the loop compares one refresh with the next, and a restart of a running
+  thing ends running. Start and stop each leave a lasting state, which is why only those two
+  showed up — and a faster poll would not help, because both halves can land between two
+  refreshes. Verified: a CLI stop-then-start of `cache` produced **no event at all**. Such
+  actions are now recorded by whoever performs them, with `ContainerEvent.action` set so a
+  performed action stays distinguishable from an observed transition.
 - **One unbounded child can scroll the whole window.** The activity strip broke Machines
   outright — sidebar scrolled up behind the title bar, table showing only filler rows —
   and then broke Containers too once I "simplified" it. Cause: the strip's **empty-state**
@@ -329,7 +336,12 @@ must preserve all of the following:
    allowlist and argument schemas. Enforce frame-length, concurrency, and deadline
    limits before spawning. Neither arbitrary command strings nor typed RPCs per
    CLI operation are the design.
-5. **Primary view (Q2):** a running-first table; cards remain an alternate toggle.
+5. **Primary view (Q2):** a table; cards remain an alternate toggle. **The running-first
+   default was reversed on 9 August** — the table now sorts by name. Running-first meant
+   that stopping a container moved its row to the bottom, so the thing you just acted on
+   left the place you were looking; with a screenful of rows that is a hunt every time. The
+   state column is still sortable, so running-first is one click away. Sorting by relevance
+   was a reasonable guess that using the app disproved.
 6. **Managed settings (Q4):** two tiers now—`defaults` seed values users may
    change, and `locked` values that override and disable editing.
 7. **Phase 1 scope (Q5/Q6):** the consolidated `research/FEATURES.md` scope,
