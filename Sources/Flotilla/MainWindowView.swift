@@ -32,6 +32,29 @@ struct MainWindowView: View {
 
     @State private var selection: Section? = .dashboard
 
+    /// Icons-only mode — what collapsing the sidebar means here.
+    ///
+    /// The system sidebar toggle hides the sidebar *outright*, and that is the wrong behaviour
+    /// for this window: with the navigation gone every section is two clicks away behind a
+    /// button that looks like it broke the app. The owner asked for a rail instead, so the intent
+    /// is **reinterpreted** rather than the control removed — see `columnVisibility`.
+    @State private var railed = false
+
+    /// Pinned to `.all`, deliberately.
+    ///
+    /// A request to hide the sidebar can arrive from three places — our toolbar button, the
+    /// View menu, and ⌘⌥S — and only the first is ours. Rather than leave the other two doing
+    /// the old disappearing act, the visibility change is translated into railing and the
+    /// column put straight back, so all three routes agree and there is no way to end up with
+    /// no navigation at all.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+
+    /// Wide enough for an 18pt symbol inside the row's selection capsule, and fixed: `min`,
+    /// `ideal` and `max` are all this in rail mode, because a rail you can drag out to 180pt is
+    /// just a sidebar with the labels missing.
+    private let railWidth: CGFloat = 64
+    private let railIconSize: CGFloat = 18
+
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
     ///
     /// It was a flat five-item `Label` list: no counts, no grouping, no footer. The mockup's
@@ -66,7 +89,7 @@ struct MainWindowView: View {
             // its disk image plus `--home-mount`, and its address comes from the runtime's own
             // vmnet bridge rather than from a network you created. So they stay here, under the
             // thing they actually attach to.
-            SwiftUI.Section("Containers") {
+            group("Containers") {
                 row(.containers, count: model.state == .loaded ? model.containers.count : nil)
                 row(.volumes, count: model.volumesState == .loaded ? model.volumes.count : nil)
                 row(.networks, count: model.networksState == .loaded ? model.networks.count : nil)
@@ -74,26 +97,22 @@ struct MainWindowView: View {
 
             // Its own group: a machine is the VM containers run inside, not another resource
             // alongside them. Grouping it with images and volumes would imply otherwise.
-            SwiftUI.Section("Virtualisation") {
+            group("Virtualisation") {
                 row(.machines, count: model.machinesState == .loaded ? model.machines.count : nil)
             }
 
             // The mockup shows eight hosts here. There is **one**, and inventing the other
             // seven to match a picture would be the fabricated-fixtures mistake in the UI
             // layer. The group is real, its contents are what actually exists.
-            SwiftUI.Section("Hosts") {
+            group("Hosts") {
                 hostRow
             }
 
-            SwiftUI.Section("System") {
+            group("System") {
                 row(.settings, count: nil)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
-        // 214pt, the mockup's own `.sidebar { flex: 0 0 214px }`. Left to SwiftUI's default
-        // the column came up narrow enough to truncate "Containers" to "Contai…" once the
-        // counts were added — a sidebar that cannot show its own labels.
-        .navigationSplitViewColumnWidth(min: 200, ideal: 214, max: 260)
     }
 
     /// This Mac. Deliberately **not** selectable: with a single host, a row that navigated
@@ -101,21 +120,34 @@ struct MainWindowView: View {
     /// nothing is the failure this project keeps re-learning. It is a status readout until
     /// Phase 2 gives it siblings to switch between.
     private var hostRow: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(hostDotColor)
-                .frame(width: 8, height: 8)
-            Text(model.hostLabel)
-            Spacer(minLength: 6)
-            if model.state == .loaded {
-                Text("\(model.running.count)")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+        Group {
+            if railed {
+                // The machine glyph *tinted* by the state, not the bare 8pt dot: alone in a
+                // 64pt column a dot reads as a stray bullet, and it would be the only thing in
+                // the rail that was not an icon.
+                Image(systemName: "desktopcomputer")
+                    .font(.system(size: railIconSize))
+                    .foregroundStyle(hostDotColor)
+                    .frame(maxWidth: .infinity, minHeight: 26)
+                    .help("\(model.hostLabel) — \(hostHelp)")
+            } else {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(hostDotColor)
+                        .frame(width: 8, height: 8)
+                    Text(model.hostLabel)
+                    Spacer(minLength: 6)
+                    if model.state == .loaded {
+                        Text("\(model.running.count)")
+                            .font(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .help(hostHelp)
             }
         }
         .selectionDisabled()
-        .help(hostHelp)
     }
 
     /// Derived from the load state rather than from `AppModel`'s private preflight verdict —
@@ -145,18 +177,47 @@ struct MainWindowView: View {
     /// load lazily when their tab is first opened. Showing `0` for "not fetched yet" would
     /// make an unvisited tab indistinguishable from an empty one — the same
     /// unknown-versus-zero confusion the CPU column already refuses to make.
+    /// In rail mode the title *and* the count move into the tooltip rather than being dropped.
+    /// The count is the sidebar's one piece of at-a-glance information, and there is no room for
+    /// a numeral beside an 18pt glyph without either shrinking the icon the owner asked to enlarge
+    /// or widening the rail back towards a sidebar.
     private func row(_ section: Section, count: Int?) -> some View {
-        HStack(spacing: 7) {
-            Label(section.title, systemImage: section.systemImage)
-            Spacer(minLength: 6)
-            if let count {
-                Text("\(count)")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+        Group {
+            if railed {
+                Image(systemName: section.systemImage)
+                    .font(.system(size: railIconSize))
+                    .frame(maxWidth: .infinity, minHeight: 26)
+                    .help(count.map { "\(section.title) — \($0)" } ?? section.title)
+            } else {
+                HStack(spacing: 7) {
+                    Label(section.title, systemImage: section.systemImage)
+                    Spacer(minLength: 6)
+                    if let count {
+                        Text("\(count)")
+                            .font(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
         }
         .tag(section)
+    }
+
+    /// A sidebar group, with its heading dropped in rail mode.
+    ///
+    /// Not cosmetic: at 64pt the headings render as "Contai…" and "Virtual…" — headings that no
+    /// longer name anything. The **grouping** survives without them, because the sections still
+    /// draw as separated blocks, so the rail keeps the structure and loses only the words.
+    @ViewBuilder
+    private func group<Content: View>(
+        _ title: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        if railed {
+            SwiftUI.Section { content() }
+        } else {
+            SwiftUI.Section(title) { content() }
+        }
     }
 
     /// Mode and security posture, always visible. Both lines say what is true **now** rather
@@ -165,11 +226,24 @@ struct MainWindowView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 3) {
             Divider()
-            // Short enough to sit on one line at the sidebar's width. The first draft wrapped
-            // to three, which turned a quiet status footer into the loudest thing on screen.
-            Label("Client mode", systemImage: "dot.radiowaves.left.and.right")
+            if railed {
+                // Glyphs only, one size up, because `caption2` icons with no words beside them
+                // are too small to identify. The sentence is still in the tooltip below.
+                VStack(spacing: 5) {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                    Image(systemName: "key")
+                }
+                .font(.caption)
                 .padding(.top, 7)
-            Label("No paired hosts", systemImage: "key")
+                .frame(maxWidth: .infinity)
+            } else {
+                // Short enough to sit on one line at the sidebar's width. The first draft
+                // wrapped to three, which turned a quiet status footer into the loudest thing
+                // on screen.
+                Label("Client mode", systemImage: "dot.radiowaves.left.and.right")
+                    .padding(.top, 7)
+                Label("No paired hosts", systemImage: "key")
+            }
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
@@ -181,9 +255,41 @@ struct MainWindowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// The section itself, shared by both shells so there is one switch on the selection rather
+    /// than one per navigation mode — two copies would be free to disagree about which view a
+    /// section maps to.
+    @ViewBuilder
+    private var detailContent: some View {
+        switch selection ?? .dashboard {
+        case .activity:
+            ActivityView(model: model, ui: activityUI) { selection = $0 }
+        case .dashboard:
+            // The tiles drill down, so the dashboard needs to drive the sidebar selection —
+            // a panel that shows you a problem but cannot take you to it is a poster.
+            DashboardView(model: model) { selection = $0 }
+        case .containers:
+            ContainersView(model: model, ui: containersUI)
+        case .images:
+            ImagesView(model: model, ui: imagesUI)
+        case .volumes:
+            VolumesView(model: model, ui: volumesUI)
+        case .networks:
+            NetworksView(model: model, ui: networksUI)
+        case .machines:
+            MachinesView(model: model, ui: machinesUI)
+        case .settings:
+            SettingsView(model: model)
+        }
+    }
+
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
+            // Replaced by ours in the toolbar below. This has to be applied to the **sidebar**,
+            // not to the split view: applied outside, the system button stayed and the title
+            // bar carried two sidebar icons doing different things. The item belongs to the
+            // column that provides it.
+            .toolbar(removing: .sidebarToggle)
             .navigationTitle("")
             .listStyle(.sidebar)
             // Liquid Glass on the **sidebar**, per the placement note in
@@ -200,27 +306,21 @@ struct MainWindowView: View {
             // so that line replaced the system's real glass with a flat blur and then took
             // credit for it in a comment. Removing it is what turns the glass on.
             .scrollContentBackground(.hidden)
+            // 214pt, the mockup's own `.sidebar { flex: 0 0 214px }`.
+            //
+            // **Outermost, and that matters.** This used to sit on the `List` inside `sidebar`,
+            // where it did nothing at all — the 208pt column we had been looking at for weeks
+            // was AppKit's *saved divider position* (`NSSplitView Subview Frames main, …`), not
+            // this modifier. It only became visible when the rail work cleared that key and the
+            // sidebar came back at SwiftUI's ~140pt floor with every label truncated to
+            // "Dashboa…". A persisted value had been standing in for a control that was inert:
+            // the same shape as the settings that drove nothing.
+            .navigationSplitViewColumnWidth(
+                min: railed ? railWidth : 200,
+                ideal: railed ? railWidth : 214,
+                max: railed ? railWidth : 260)
         } detail: {
-            switch selection ?? .dashboard {
-            case .activity:
-                ActivityView(model: model, ui: activityUI) { selection = $0 }
-            case .dashboard:
-                // The tiles drill down, so the dashboard needs to drive the sidebar selection —
-                // a panel that shows you a problem but cannot take you to it is a poster.
-                DashboardView(model: model) { selection = $0 }
-            case .containers:
-                ContainersView(model: model, ui: containersUI)
-            case .images:
-                ImagesView(model: model, ui: imagesUI)
-            case .volumes:
-                VolumesView(model: model, ui: volumesUI)
-            case .networks:
-                NetworksView(model: model, ui: networksUI)
-            case .machines:
-                MachinesView(model: model, ui: machinesUI)
-            case .settings:
-                SettingsView(model: model)
-            }
+            detailContent
         }
         // The honeydew wash, on the content column only.
         //
@@ -245,6 +345,18 @@ struct MainWindowView: View {
         // `.navigation` places it top-leading, just after the sidebar toggle, which is where
         // the title text sat.
         .toolbar {
+            // Ours, in the system button's place. Flipping `railed` directly rather than
+            // letting the system hide the column first means no flash of a vanished sidebar
+            // on the way to the rail.
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    railed.toggle()
+                } label: {
+                    Image(systemName: "sidebar.leading")
+                }
+                .help(railed ? "Show the sidebar labels" : "Collapse the sidebar to icons")
+                .accessibilityLabel(railed ? "Expand sidebar" : "Collapse sidebar to icons")
+            }
             ToolbarItem(placement: .navigation) {
                 Wordmark(size: 14)
                     .fixedSize()          // never wrap — it is a lockup, not a paragraph
@@ -264,6 +376,14 @@ struct MainWindowView: View {
         // the window property lost a race it could not win. `removing: .title` removes that
         // item, which is the thing actually being drawn.
         .toolbar(removing: .title)
+        // The View menu and ⌘⌥S still reach the split view directly, and both ask for the old
+        // behaviour. Translate rather than obey: rail it, and put the column straight back.
+        .onChange(of: columnVisibility) { _, requested in
+            guard requested != .all else { return }
+            railed.toggle()
+            columnVisibility = .all
+        }
+        .animation(.easeInOut(duration: 0.18), value: railed)
         .allowsHitTesting(model.openFormCount == 0)
         .overlay {
             if model.openFormCount > 0 {
