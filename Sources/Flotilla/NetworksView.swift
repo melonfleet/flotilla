@@ -54,21 +54,54 @@ struct NetworksView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search networks…",
-                       updated: model.networksLastRefresh) {
+                       updated: model.networksLastRefresh,
+                       leading: {
+            ResourceListControls<ContainerNetwork>(
+                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+                filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
+                columnCustomization: Binding(get: { ui.columnCustomization },
+                                             set: { ui.columnCustomization = $0 }),
+                columns: Self.columnSpecs,
+                filters: Self.roleFilters)
+        }, trailing: {
             ToolbarIconButton(systemImage: "plus", label: "Create a network…") {
                 showingCreate = true
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh networks") {
                 Task { await model.refreshNetworks() }
             }
-        }
+        })
     }
+
+    private static let columnSpecs: [(id: String, title: String)] = [
+        ("mode", "Mode"), ("subnet", "Subnet"), ("gateway", "Gateway"), ("created", "Created"),
+    ]
+
+    /// Built-in versus your own. Fixed rather than derived, because the distinction is always
+    /// meaningful here — `default` ships with the runtime and cannot be deleted, and separating
+    /// "networks I made" from "the one that was already there" is the question you actually have.
+    private static let roleFilters: [ResourceFilterOption] = [
+        .init(id: "all", title: "All", systemImage: "circle.grid.2x2"),
+        .init(id: "user", title: "User-defined", systemImage: "person"),
+        .init(id: "builtin", title: "Built-in", systemImage: "lock"),
+    ]
 
     /// Free-text filter over the network name.
     private var displayedNetworks: [ContainerNetwork] {
+        var networks = model.networks
+
+        switch ui.filterID {
+        case "user": networks = networks.filter { !$0.isBuiltin }
+        case "builtin": networks = networks.filter(\.isBuiltin)
+        default: break
+        }
+
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return model.networks }
-        return model.networks.filter { $0.id.lowercased().contains(query) }
+        if !query.isEmpty {
+            networks = networks.filter { $0.id.lowercased().contains(query) }
+        }
+
+        return networks.sorted(using: ui.sortOrder)
     }
 
     @ViewBuilder
@@ -95,7 +128,26 @@ struct NetworksView: View {
             )
 
         case .loaded:
-            table
+            if ui.presentation == .list { table } else { cards }
+        }
+    }
+
+    private var cards: some View {
+        ResourceCardGrid {
+            ForEach(displayedNetworks) { network in
+                ResourceCard(
+                    title: network.name,
+                    badge: network.isBuiltin ? "built-in" : nil,
+                    fields: [("Mode", network.mode),
+                             ("Subnet", network.subnet),
+                             ("Gateway", network.gateway),
+                             ("Created", RelativeDate.relative(network.configuration.creationDate))],
+                    onOpen: nil
+                ) {
+                    rowActions(for: network)
+                }
+                .contextMenu { menu(for: network) }
+            }
         }
     }
 

@@ -60,7 +60,16 @@ struct VolumesView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search volumes…",
-                       updated: model.volumesLastRefresh) {
+                       updated: model.volumesLastRefresh,
+                       leading: {
+            ResourceListControls<ContainerVolume>(
+                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+                filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
+                columnCustomization: Binding(get: { ui.columnCustomization },
+                                             set: { ui.columnCustomization = $0 }),
+                columns: Self.columnSpecs,
+                filters: driverFilters)
+        }, trailing: {
             ToolbarIconButton(systemImage: "plus", label: "Create a volume…") {
                 newVolumeName = ""
                 showingCreate = true
@@ -68,17 +77,27 @@ struct VolumesView: View {
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh volumes") {
                 Task { await model.refreshVolumes() }
             }
-        }
+        })
     }
 
     /// Free-text filter over the volume name.
     private var displayedVolumes: [ContainerVolume] {
+        var volumes = model.volumes
+
+        // The driver filter, when there is more than one driver to choose between.
+        if ui.filterID != "all" {
+            volumes = volumes.filter { $0.configuration.driver == ui.filterID }
+        }
+
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return model.volumes }
-        // `name` is non-optional: the real payload nests it under `configuration` where it is
-        // always present. It was optional before commit 9245077 fixed the fabricated fixture,
-        // and this `?? ""` was defensive code left over from that shape.
-        return model.volumes.filter { $0.name.lowercased().contains(query) }
+        if !query.isEmpty {
+            // `name` is non-optional: the real payload nests it under `configuration` where it
+            // is always present. It was optional before commit 9245077 fixed the fabricated
+            // fixture, and a `?? ""` here was leftover defensive code from that shape.
+            volumes = volumes.filter { $0.name.lowercased().contains(query) }
+        }
+
+        return volumes.sorted(using: ui.sortOrder)
     }
 
     @ViewBuilder
@@ -104,7 +123,44 @@ struct VolumesView: View {
             )
 
         case .loaded:
-            table
+            if ui.presentation == .list { table } else { cards }
+        }
+    }
+
+    private static let columnSpecs: [(id: String, title: String)] = [
+        ("format", "Format"), ("driver", "Driver"), ("size", "Size"), ("created", "Created"),
+    ]
+
+    /// One option per driver actually present, plus All.
+    ///
+    /// Derived rather than fixed, and `ResourceListControls` hides the control when this yields
+    /// fewer than two entries — which is the common case here, since every volume on a stock
+    /// install is `local`. A filter whose every setting returns the same rows is worse than no
+    /// filter, and "the other sections have one" is not a reason to ship it.
+    private var driverFilters: [ResourceFilterOption] {
+        let drivers = Set(model.volumes.compactMap { $0.configuration.driver }).sorted()
+        guard drivers.count > 1 else { return [] }
+        return [ResourceFilterOption(id: "all", title: "All", systemImage: "circle.grid.2x2")]
+            + drivers.map {
+                ResourceFilterOption(id: $0, title: $0.capitalized, systemImage: "internaldrive")
+            }
+    }
+
+    private var cards: some View {
+        ResourceCardGrid {
+            ForEach(displayedVolumes) { volume in
+                ResourceCard(
+                    title: volume.name,
+                    fields: [("Format", volume.configuration.format),
+                             ("Driver", volume.configuration.driver),
+                             ("Size", volume.sizeInBytes.map(Self.byteCount)),
+                             ("Created", RelativeDate.relative(volume.configuration.creationDate))],
+                    onOpen: nil
+                ) {
+                    rowActions(for: volume)
+                }
+                .contextMenu { menu(for: volume) }
+            }
         }
     }
 

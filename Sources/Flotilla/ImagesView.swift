@@ -94,7 +94,16 @@ struct ImagesView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search images…",
-                       updated: model.imagesLastRefresh) {
+                       updated: model.imagesLastRefresh,
+                       leading: {
+            ResourceListControls<ContainerImage>(
+                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+                filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
+                columnCustomization: Binding(get: { ui.columnCustomization },
+                                             set: { ui.columnCustomization = $0 }),
+                columns: Self.columnSpecs,
+                filters: platformFilters)
+        }, trailing: {
             ToolbarIconButton(systemImage: "hammer", label: "Build an image from a Dockerfile…") {
                 showingBuild = true
             }
@@ -111,7 +120,29 @@ struct ImagesView: View {
                               isDestructive: true) {
                 showingPrune = true
             }
-        }
+        })
+    }
+
+    private static let columnSpecs: [(id: String, title: String)] = [
+        ("tag", "Tag"), ("platform", "Platform"), ("digest", "Digest"),
+        ("size", "Size"), ("created", "Created"),
+    ]
+
+    /// One option per architecture actually present, plus All.
+    ///
+    /// Derived, not fixed: on an Apple Silicon Mac that has only ever pulled arm64 images this
+    /// yields a single entry and `ResourceListControls` hides the control entirely. It earns its
+    /// place the moment a multi-arch or an amd64 image lands — which is exactly when you want to
+    /// find them, because those are the ones that will run under emulation or not at all.
+    private var platformFilters: [ResourceFilterOption] {
+        let architectures = Set(model.images
+            .flatMap { $0.variants?.compactMap { $0.platform?.architecture } ?? [] }
+            .filter { $0 != "unknown" })
+        guard architectures.count > 1 else { return [] }
+        return [ResourceFilterOption(id: "all", title: "All", systemImage: "circle.grid.2x2")]
+            + architectures.sorted().map {
+                ResourceFilterOption(id: $0, title: $0, systemImage: "cpu")
+            }
     }
 
     @ViewBuilder
@@ -138,7 +169,26 @@ struct ImagesView: View {
             )
 
         case .loaded:
-            table
+            if ui.presentation == .list { table } else { cards }
+        }
+    }
+
+    private var cards: some View {
+        ResourceCardGrid {
+            ForEach(displayedImages) { image in
+                ResourceCard(
+                    title: Self.repository(image),
+                    badge: Self.tag(image),
+                    fields: [("Platform", Self.platformLabel(image)),
+                             ("Digest", Self.shortDigest(image)),
+                             ("Size", image.displaySize.map(Self.byteCount)),
+                             ("Created", RelativeDate.relative(image.configuration.creationDate))],
+                    onOpen: nil
+                ) {
+                    rowActions(for: image)
+                }
+                .contextMenu { menu(for: image) }
+            }
         }
     }
 
@@ -291,9 +341,20 @@ struct ImagesView: View {
             guard let variants = image.variants, !variants.isEmpty else { return true }
             return !variants.allSatisfy { $0.platform?.architecture == "unknown" }
         }
+        var images = visible
+
+        if ui.filterID != "all" {
+            images = images.filter { image in
+                image.variants?.contains { $0.platform?.architecture == ui.filterID } ?? false
+            }
+        }
+
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return visible }
-        return visible.filter { $0.reference.lowercased().contains(query) }
+        if !query.isEmpty {
+            images = images.filter { $0.reference.lowercased().contains(query) }
+        }
+
+        return images.sorted(using: ui.sortOrder)
     }
 
     private var trimmedPull: String {

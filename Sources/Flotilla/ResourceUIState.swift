@@ -18,6 +18,17 @@ final class ResourceUIState<Row: Identifiable> {
     var search = ""
     var sortOrder: [KeyPathComparator<Row>]
     var columnCustomization = TableColumnCustomization<Row>()
+    var presentation: ResourcePresentation = .list
+
+    /// The selected filter, stored as its **id string** rather than a typed enum.
+    ///
+    /// Each section's filter means something different — built-in versus user-defined for
+    /// networks, tagged versus untagged for images, per-driver for volumes — and several are
+    /// derived from the data rather than fixed. Making this generic over a second `Filter` type
+    /// would parameterise every use of the class to express something only the owning view reads
+    /// and writes. A string id is the honest amount of structure: `"all"` is the reset, and the
+    /// view that defines the options is the view that interprets them.
+    var filterID = "all"
 
     /// Name-ascending, per the 9 August decision that a table's default sort should be stable
     /// rather than clever — see `ContainersUIState`.
