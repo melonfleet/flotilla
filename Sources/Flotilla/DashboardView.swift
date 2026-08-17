@@ -54,7 +54,6 @@ struct DashboardView: View {
                 resourceRows
                 attentionPanel
                 utilisationPanel
-                activityPanel
             }
             .padding(14)
         }
@@ -237,10 +236,6 @@ struct DashboardView: View {
     }
 
     // MARK: Stat row
-
-    private func totalReclaimable(_ usage: SystemDiskUsage) -> Int64 {
-        usage.images.reclaimable + usage.containers.reclaimable + usage.volumes.reclaimable
-    }
 
     // MARK: System charts
 
@@ -491,39 +486,6 @@ struct DashboardView: View {
                             .buttonStyle(.plain)
                             .font(.caption)
                             .foregroundStyle(Theme.accentText)
-                    }
-                }
-            }
-        }
-    }
-
-    /// State changes across **every** container, newest first — the same observed-transition
-    /// log the detail view shows per container, aggregated. Says plainly that it starts at
-    /// launch, because a timeline implying completeness would be a lie of omission.
-    private var activityPanel: some View {
-        panel("Recent activity", systemImage: "clock") {
-            let recent = model.containers
-                .flatMap { container in model.events(for: container.id).map { (container.id, $0) } }
-                .sorted { $0.1.date > $1.1.date }
-                .prefix(8)
-
-            if recent.isEmpty {
-                Text("Nothing has changed since Flotilla started. State changes appear here as "
-                     + "they happen; history from before launch is not recorded.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ForEach(Array(recent.enumerated()), id: \.offset) { _, entry in
-                    HStack(spacing: 8) {
-                        Circle().fill(entry.1.isFailure ? Theme.danger : Theme.online)
-                            .frame(width: 6, height: 6)
-                        Text(entry.0).font(.system(size: 12, weight: .medium))
-                        Text(entry.1.summary).font(.system(size: 12))
-                        Text(entry.1.detail).font(.system(size: 12)).foregroundStyle(.tertiary)
-                        Spacer()
-                        Text(entry.1.date.formatted(date: .omitted, time: .shortened))
-                            .font(.system(size: 11).monospacedDigit())
-                            .foregroundStyle(.tertiary)
                     }
                 }
             }

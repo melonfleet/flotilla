@@ -23,6 +23,15 @@ struct NetworksView: View {
                     Divider()
                     content
                 }
+                // Same band as Containers and Machines. See `ResourceUIState.activityExpanded`
+                // for why it is collapsible: on this section it is usually empty.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    ActivityStrip(title: "Recent activity",
+                                  entries: activityEntries,
+                                  isExpanded: Binding(get: { ui.activityExpanded },
+                                                      set: { ui.activityExpanded = $0 }),
+                                  open: { _ in })
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -102,6 +111,14 @@ struct NetworksView: View {
         }
 
         return networks.sorted(using: ui.sortOrder)
+    }
+
+    /// This section's slice of the one activity feed. Rows do not navigate — you are already
+    /// on the section they belong to.
+    private var activityEntries: [ActivityStrip.Entry] {
+        model.events(ofKind: .network).map {
+            ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0)
+        }
     }
 
     @ViewBuilder

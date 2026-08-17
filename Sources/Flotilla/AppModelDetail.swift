@@ -55,6 +55,11 @@ extension AppModel {
     /// `grep "public func" ContainerCLI.swift` as the brief asked, rather than guessed.
     func tagImage(_ source: String, as target: String) async throws {
         _ = try await Task.detached { [cli] in try cli.tag(source, as: target) }.value
+        // Named rather than left to the existence diff, which would report the new reference as
+        // "Created" and say nothing about where it came from.
+        recordActivity(ContainerEvent(date: Date(), from: source, to: target,
+                                      kind: .image, subject: target,
+                                      action: "Tagged from \(source)"))
     }
 
     /// Deletes exactly the references passed in, one `image rm` at a time — deliberately

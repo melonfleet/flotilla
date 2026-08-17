@@ -294,6 +294,7 @@ final class AppModel {
         guard let interval = pollInterval else { pollTask = nil; return }
 
         pollTask = Task { [weak self] in
+            var tick = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled else { return }
@@ -303,6 +304,25 @@ final class AppModel {
                 // the optimistic state the row is showing.
                 guard self.busy.isEmpty else { continue }
                 await self.refresh()
+
+                // Machines, images, volumes and networks on a **slower** cadence.
+                //
+                // They used to be refreshed only by their own section's `.task`, which meant
+                // their create/delete events were recorded only while you happened to be looking
+                // at them — so the Activity feed was inert for four of five kinds. That is a
+                // feature that works exactly when you do not need it.
+                //
+                // Every sixth tick rather than every tick, because these change rarely and each
+                // is a separate CLI invocation. At the default five-second interval that is
+                // roughly every thirty seconds: fast enough that the feed and the sidebar counts
+                // are honest, slow enough not to spawn four processes a second.
+                tick += 1
+                if tick % 6 == 0 {
+                    await self.refreshMachines()
+                    await self.refreshImages()
+                    await self.refreshVolumes()
+                    await self.refreshNetworks()
+                }
             }
         }
     }
@@ -589,6 +609,9 @@ final class AppModel {
         volumesState = .loading
         do {
             let fetched = try await Task.detached { [cli] in try cli.listVolumes() }.value
+            // Appearance and disappearance are a volume's only events — see `recordExistence`.
+            recordExistence(kind: .volume, previous: volumes.map(\.name),
+                            current: fetched.map(\.name))
             volumes = fetched
             volumesState = .loaded
             volumesLastRefresh = Date()
@@ -634,6 +657,8 @@ final class AppModel {
         networksState = .loading
         do {
             let fetched = try await Task.detached { [cli] in try cli.listNetworks() }.value
+            recordExistence(kind: .network, previous: networks.map(\.id),
+                            current: fetched.map(\.id))
             networks = fetched
             networksState = .loaded
             networksLastRefresh = Date()
@@ -689,6 +714,10 @@ final class AppModel {
         imagesState = .loading
         do {
             let fetched = try await Task.detached { [cli] in try cli.listImages() }.value
+            // Keyed on `reference`, not `id`: a retag produces a new reference for the same
+            // digest, and "nginx:mine created" is the event you want to see, not silence.
+            recordExistence(kind: .image, previous: images.map(\.reference),
+                            current: fetched.map(\.reference))
             images = fetched
             imagesState = .loaded
             imagesLastRefresh = Date()
@@ -700,6 +729,10 @@ final class AppModel {
     func pullImage(_ reference: String) async {
         do {
             _ = try await Task.detached { [cli] in try cli.pull(reference) }.value
+            // Named explicitly: the existence diff would say "Created", which is true but loses
+            // the distinction between an image you pulled and one a build produced.
+            recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
+                                          kind: .image, subject: reference, action: "Pulled"))
         } catch {
             actionError = "Pull failed for \(reference): \(error)"
         }
@@ -761,19 +794,65 @@ final class AppModel {
     ///
     /// In memory and bounded. Persisting it needs a real store, which is a Phase 4 decision
     /// rather than something to bolt on here.
-    /// Observable, not `@ObservationIgnored`. The dashboard's activity card got away with
-    /// being ignored because it is rebuilt whenever `containers` changes anyway; the activity
-    /// strips at the bottom of Containers and Machines must update on their own. The dictionary
-    /// is only written when a transition is actually detected, so this does not churn.
-    private var events: [String: [ContainerEvent]] = [:]
-
-    /// The same, for machines. `refreshMachines` recorded nothing at all before, so a machine
-    /// restart left no trace anywhere in the app.
+    /// **One** flat feed, newest first, covering every resource kind.
+    ///
+    /// This replaced two dictionaries — one for containers, one for machines — while images,
+    /// volumes and networks recorded nothing at all. Three more dictionaries would have made the
+    /// question "what has changed on this Mac?" harder to answer, not easier: the Activity
+    /// section needs a single ordered list, and the per-subject lists the detail views want are a
+    /// filter over it. One store, several views.
+    ///
+    /// Observable, not `@ObservationIgnored`. The dashboard card got away with being ignored
+    /// because it rebuilds whenever `containers` changes anyway; the activity strips must update
+    /// on their own. It is only written when something actually happened, so it does not churn.
+    ///
+    /// In memory and bounded. Persisting it needs a real store, which is a Phase 4 decision
+    /// rather than something to bolt on here.
+    ///
     /// Not `private(set)` — Swift's access control is per-file, and `AppModelMachines.swift`
-    /// writes it. Same reason the machine collections above are plain `var`.
-    var machineEvents: [String: [ContainerEvent]] = [:]
+    /// appends to it.
+    var activity: [ContainerEvent] = []
 
-    func events(for containerID: String) -> [ContainerEvent] { events[containerID] ?? [] }
+    /// How many entries the feed keeps. Higher than the old per-subject cap of 50 because this
+    /// is now shared by every subject on the machine, and a busy poll of a dozen containers
+    /// would otherwise push a machine restart off the end within minutes.
+    static let activityLimit = 500
+
+    func events(for subject: String) -> [ContainerEvent] {
+        activity.filter { $0.subject == subject }
+    }
+
+    func events(ofKind kind: ActivityKind) -> [ContainerEvent] {
+        activity.filter { $0.kind == kind }
+    }
+
+    /// Appends to the feed, newest first, and trims.
+    func recordActivity(_ event: ContainerEvent) {
+        activity.insert(event, at: 0)
+        if activity.count > Self.activityLimit {
+            activity.removeLast(activity.count - Self.activityLimit)
+        }
+    }
+
+    /// Notes a resource appearing or disappearing between two polls.
+    ///
+    /// Images, volumes and networks have no lifecycle to transition through — they exist or they
+    /// do not — so appearance and disappearance *are* their events. The first-sighting rule still
+    /// applies in one direction only: `previous.isEmpty` means this is the initial load, and
+    /// announcing every pre-existing image as "created" would fill the feed with noise about
+    /// nothing having happened.
+    func recordExistence(kind: ActivityKind, previous: [String], current: [String]) {
+        guard !previous.isEmpty else { return }
+        let before = Set(previous), after = Set(current)
+        for added in after.subtracting(before).sorted() {
+            recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
+                                          kind: kind, subject: added, action: "Created"))
+        }
+        for removed in before.subtracting(after).sorted() {
+            recordActivity(ContainerEvent(date: Date(), from: "present", to: "absent",
+                                          kind: kind, subject: removed, action: "Deleted"))
+        }
+    }
 
     /// Records the transition and returns nothing — called from the poll loop, which is the
     /// only place that can see a *change* rather than a state.
@@ -787,17 +866,11 @@ final class AppModel {
                 continue
             }
             guard was.caseInsensitiveCompare(now) != .orderedSame else { continue }
-            append(ContainerEvent(date: Date(), from: was, to: now), to: container.id)
+            recordActivity(ContainerEvent(date: Date(), from: was, to: now,
+                                          kind: .container, subject: container.id))
         }
     }
 
-    private func append(_ event: ContainerEvent, to containerID: String) {
-        var log = events[containerID] ?? []
-        log.insert(event, at: 0)
-        // Bounded: this is a glance at what just happened, not an audit trail.
-        if log.count > 50 { log.removeLast(log.count - 50) }
-        events[containerID] = log
-    }
 
     /// Which detail tab each container was last showing, **for this run only**.
     ///
@@ -921,8 +994,8 @@ final class AppModel {
             // The poll loop cannot see this one: a restart of a running container ends running,
             // so there is no transition between refreshes. Record it here or it is invisible.
             if action == .restart {
-                append(ContainerEvent(date: Date(), from: "running", to: "running",
-                                      action: "Restarted"), to: id)
+                recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                              kind: .container, subject: id, action: "Restarted"))
             }
         } catch {
             let message = "\(Self.label(for: action)) failed for \(id): \(error)"
@@ -963,8 +1036,9 @@ final class AppModel {
                     }
                 }.value
                 if action == .restart {
-                    append(ContainerEvent(date: Date(), from: "running", to: "running",
-                                          action: "Restarted"), to: id)
+                    recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                                  kind: .container, subject: id,
+                                                  action: "Restarted"))
                 }
             } catch {
                 failures.append((id, String(describing: error)))

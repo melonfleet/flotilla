@@ -37,6 +37,10 @@ extension AppModel {
                                       buildArgs: buildArgs, labels: labels,
                                       noCache: noCache, platform: platform, target: target)
             }.value
+            recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
+                                          kind: .image,
+                                          subject: tag ?? contextPath,
+                                          action: "Built"))
             await refreshImages()
             return true
         } catch {

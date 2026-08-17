@@ -191,6 +191,13 @@ that we *built* the right command; almost nothing checked the command was
   JSON-only because `InspectRow` and the flatten walk were `private` to
   `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
   apply to one panel and not the other.
+- **A feature that only records while you are looking at it is inert.** The Activity feed
+  worked for containers and not for images, volumes or networks, because
+  `recordExistence` runs inside those sections' `refresh` — and only their own `.task`
+  called it. So create/delete events existed only while you happened to be on that screen.
+  The poll loop now refreshes machines, images, volumes and networks every **sixth** tick
+  (~30s at the default interval): often enough that the feed and the sidebar counts are
+  honest, rarely enough not to spawn four processes a second for state that barely changes.
 - **"Busy" and "unavailable" are different states.** `IconActionButton` draws a spinner when
   `busy` is true, and a sweep passed `busy: network.isBuiltin` to mean "you cannot delete
   this" — so the built-in network's delete button span forever, claiming the app was working

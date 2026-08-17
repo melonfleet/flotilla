@@ -48,10 +48,8 @@ extension AppModel {
         for machine in current {
             guard let was = before[machine.id] else { continue }
             guard was.caseInsensitiveCompare(machine.status) != .orderedSame else { continue }
-            var log = machineEvents[machine.id] ?? []
-            log.insert(ContainerEvent(date: Date(), from: was, to: machine.status), at: 0)
-            if log.count > 50 { log.removeLast(log.count - 50) }
-            machineEvents[machine.id] = log
+            recordActivity(ContainerEvent(date: Date(), from: was, to: machine.status,
+                                          kind: .machine, subject: machine.id))
         }
     }
 
@@ -87,11 +85,9 @@ extension AppModel {
             // Same blind spot as containers: a restart leaves the machine running, so
             // `recordMachineTransitions` sees nothing between polls.
             if action == .restart {
-                var log = machineEvents[machine.id] ?? []
-                log.insert(ContainerEvent(date: Date(), from: "running", to: "running",
-                                          action: "Restarted"), at: 0)
-                if log.count > 50 { log.removeLast(log.count - 50) }
-                machineEvents[machine.id] = log
+                recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                              kind: .machine, subject: machine.id,
+                                              action: "Restarted"))
             }
             await refreshMachines()
         } catch {

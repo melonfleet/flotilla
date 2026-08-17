@@ -20,6 +20,13 @@ final class ResourceUIState<Row: Identifiable> {
     var columnCustomization = TableColumnCustomization<Row>()
     var presentation: ResourcePresentation = .list
 
+    /// Whether the recent-activity band is open.
+    ///
+    /// the owner chose to put the band on these three sections too, for uniformity, having been told
+    /// it will usually be empty: images, volumes and networks change rarely, and the feed only
+    /// covers what has happened since launch. Collapsible for exactly that reason.
+    var activityExpanded = true
+
     /// The selected filter, stored as its **id string** rather than a typed enum.
     ///
     /// Each section's filter means something different — built-in versus user-defined for
