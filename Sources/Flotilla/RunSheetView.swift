@@ -70,17 +70,7 @@ struct RunSheetView: View {
     /// with its own close button is the odd one out, and a hand-picked 560×680 frame meant the
     /// content had to fit the window rather than the other way round.
     private var header: some View {
-        HStack(spacing: 10) {
-            Button(action: dismiss) { Image(systemName: "chevron.left") }
-                .help("Back to Containers")
-                .accessibilityLabel("Back to Containers")
-            Image(systemName: "shippingbox")
-                .font(.system(size: 17)).foregroundStyle(.secondary)
-            Text("Run Container").font(.system(size: 15, weight: .semibold))
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        FormHeader(title: "Run Container", systemImage: "shippingbox", onBack: dismiss)
     }
 
     private var content: some View {

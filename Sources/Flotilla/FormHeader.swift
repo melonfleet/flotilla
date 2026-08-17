@@ -14,29 +14,38 @@ import SwiftUI
 ///
 /// Deliberately the same shape as the detail headers in `ContainersView` and `MachinesView`, so
 /// leaving a form and leaving a detail are the same gesture in the same place.
-struct FormHeader: View {
+struct FormHeader<Trailing: View>: View {
     let title: String
     let systemImage: String
     let onBack: () -> Void
-
-    init(title: String, systemImage: String, onBack: @escaping () -> Void) {
-        self.title = title
-        self.systemImage = systemImage
-        self.onBack = onBack
-    }
+    /// Controls that belong to the whole form rather than to a field — the machine form's
+    /// "Import Flotillafile…" is the only one so far.
+    ///
+    /// This slot is why the type is generic. Without it `MachineFormView` and `RunSheetView` each
+    /// hand-rolled a header that was *nearly* this one, which is how the vertical padding came to
+    /// differ three ways across the app: there were three copies of the number to keep in step
+    /// and nobody kept them. One header, one number.
+    @ViewBuilder var trailing: Trailing
 
     var body: some View {
         HStack(spacing: 10) {
-            Button(action: onBack) { Image(systemName: "chevron.left") }
-                .help("Back")
-                .accessibilityLabel("Back")
+            IconActionButton(systemImage: "chevron.left", label: "Back", help: "Back",
+                             action: onBack)
             Image(systemName: systemImage)
                 .font(.system(size: 17))
                 .foregroundStyle(.secondary)
             Text(title).font(.system(size: 15, weight: .semibold))
             Spacer()
+            trailing
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+}
+
+extension FormHeader where Trailing == EmptyView {
+    init(title: String, systemImage: String, onBack: @escaping () -> Void) {
+        self.init(title: title, systemImage: systemImage, onBack: onBack,
+                  trailing: { EmptyView() })
     }
 }

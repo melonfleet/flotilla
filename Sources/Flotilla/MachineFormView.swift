@@ -165,15 +165,11 @@ struct MachineFormView: View {
 
     /// Back, then the title — the same header shape as the machine and container detail
     /// screens, so leaving a form works exactly like leaving a detail.
+    /// The shared `FormHeader`, with the import button in its trailing slot. This used to be a
+    /// near-copy of that view; see `FormHeader.trailing` for what the copies cost.
     private var header: some View {
-        HStack(spacing: 10) {
-            Button(action: dismiss) { Image(systemName: "chevron.left") }
-                .help("Back to Machines")
-                .accessibilityLabel("Back to Machines")
-            Image(systemName: "plus.rectangle.on.folder")
-                .font(.system(size: 17)).foregroundStyle(.secondary)
-            Text("New Machine").font(.system(size: 15, weight: .semibold))
-            Spacer()
+        FormHeader(title: "New Machine", systemImage: "plus.rectangle.on.folder",
+                   onBack: dismiss) {
             Button {
                 importFlotillafile()
             } label: {
@@ -182,8 +178,6 @@ struct MachineFormView: View {
             .controlSize(.small)
             .help("Fill this form from a Flotillafile")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     /// Import **fills the form**; it never creates anything on its own.
