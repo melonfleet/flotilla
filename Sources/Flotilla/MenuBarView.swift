@@ -22,6 +22,10 @@ import FlotillaCore
 struct MenuBarView: View {
     let model: AppModel
 
+    /// Closes the popover. A `MenuBarExtra` in `.window` style provides this through the
+    /// environment; nothing closes it automatically when a control inside it is used.
+    @Environment(\.dismiss) private var dismiss
+
     /// Which summary box is expanded, if any — see `hovering(_:_:)`.
     @State private var expandedKind: ActivityKind?
     /// Invalidates in-flight hover timers whose intent has been superseded.
@@ -588,9 +592,18 @@ struct MenuBarView: View {
 
     // MARK: Plumbing
 
-    /// The popover holds focus, so the window will not come forward without an explicit
-    /// activate — without it "Open Flotilla" appears to do nothing.
+    /// Hand over to the window: close the popover, activate, then open.
+    ///
+    /// Two things are needed and both are easy to miss. The `activate` is because the popover
+    /// holds focus, so without it the window never comes forward and "Open Flotilla" appears to
+    /// do nothing. The `dismiss` is because a `MenuBarExtra` popover does **not** close when you
+    /// act inside it — so Settings and Open left the popover sitting over the window it had just
+    /// summoned, with both competing for attention. Handing over means letting go.
+    ///
+    /// Dismiss first, so the popover is gone before the window animates in rather than
+    /// disappearing on top of it.
     private func open(section: Section? = nil) {
+        dismiss()
         NSApp.activate(ignoringOtherApps: true)
         if let section { model.requestSection(section) }
         openWindow(id: "main")
