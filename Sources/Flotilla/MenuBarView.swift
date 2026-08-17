@@ -26,6 +26,8 @@ struct MenuBarView: View {
     @State private var expandedKind: ActivityKind?
     /// Invalidates in-flight hover timers whose intent has been superseded.
     @State private var hoverToken = 0
+    /// Which boxes the pointer is inside, most recent last — see `hovering(_:_:)`.
+    @State private var hoverOrder: [ActivityKind] = []
     @Environment(\.openWindow) private var openWindow
 
     /// The mockup's width. Wider than the old 320 because rows now carry two lines and a
@@ -85,9 +87,11 @@ struct MenuBarView: View {
                         .foregroundStyle(.tertiary)
                         .help("Last refreshed. This updates while the popover is open.")
                 }
-                if model.state == .loaded {
-                    pill("\(model.running.count) running", dot: Theme.online, tint: Theme.online)
-                }
+                // No "N running" pill. It counted **containers only**, so it read "4 running"
+                // on a Mac with a running machine as well — a wrong number, not merely a
+                // redundant one. The two boxes below now state running and stopped per kind,
+                // which is both correct and more informative, so the pill had nothing left to
+                // add. The owner spotted it.
             }
 
             // This Mac's own figures, on one line. The two-column "This Mac | Fleet" layout
@@ -147,64 +151,6 @@ struct MenuBarView: View {
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 10)
-    }
-
-    /// One summary box: kind, running/stopped counts, a proportion bar, and a menu.
-    ///
-    /// `loaded` rather than inferring from a zero count: an unvisited section and an empty one
-    /// must not look the same, which is the same unknown-versus-zero rule the sidebar counts
-    /// and the CPU column already follow.
-    @ViewBuilder
-    private func kindBox<Content: View>(
-        _ kind: ActivityKind, running: Int, total: Int, loaded: Bool,
-        @ViewBuilder items: () -> Content
-    ) -> some View {
-        Menu {
-            items()
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 5) {
-                    Image(systemName: kind.systemImage).font(.system(size: 11))
-                    Text(kind.title).font(.caption)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(.secondary)
-
-                if loaded {
-                    HStack(spacing: 8) {
-                        countPip(running, "running", Theme.online)
-                        countPip(total - running, "stopped", .secondary)
-                        Spacer(minLength: 0)
-                    }
-                } else {
-                    Text("—").font(.caption).foregroundStyle(.tertiary)
-                }
-
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.quaternary)
-                        Capsule().fill(Theme.online)
-                            .frame(width: total > 0
-                                   ? CGFloat(running) / CGFloat(total) * geo.size.width : 0)
-                    }
-                }
-                .frame(height: 4)
-            }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 7))
-            .contentShape(.rect)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .help("\(kind.title): \(running) running of \(total)")
-    }
-
-    private func countPip(_ value: Int, _ label: String, _ colour: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(colour).frame(width: 6, height: 6)
-            Text("\(value) \(label)").font(.caption).monospacedDigit()
-        }
     }
 
     /// The container list inside the hover popover.
@@ -325,27 +271,43 @@ struct MenuBarView: View {
                 set: { isOpen in expandedKind = isOpen ? kind : nil })
     }
 
-    /// Debounced hover, with the delays that make it feel deliberate rather than twitchy.
+    /// Debounced hover, driven by **what is currently hovered** rather than by the last event.
     ///
-    /// Opening is immediate when another box is already open — you are switching, and waiting
-    /// 180ms to move between two adjacent boxes reads as lag. Closing waits, so travelling into
-    /// the popover does not dismiss it, and `hoverToken` discards a timer whose intent has since
-    /// been superseded.
+    /// The previous version keyed off the individual event and lost a race: moving from
+    /// Containers to Machines can deliver the machines hover-*in* before the containers
+    /// hover-*out*, and the out-handler then scheduled a clear that wiped the machine popover
+    /// 450ms later. Machines therefore opened and instantly vanished, which looks exactly like
+    /// nothing happening — the owner's report. Bumping `hoverToken` did not save it, because the
+    /// out-event was the *newer* one and so held the valid token.
+    ///
+    /// So the state is now the set of hovered boxes, and every event reconciles against it: if
+    /// anything is hovered, that box should be open; only when nothing is does a close get
+    /// scheduled. Ordering no longer matters, because the decision is made from the world's
+    /// current state and not from the order it was described in.
+    ///
+    /// Kept as an ordered array rather than a `Set` so that with two boxes transiently hovered
+    /// the most recent wins, which is what the pointer is actually over.
     private func hovering(_ kind: ActivityKind, _ inside: Bool) {
+        hoverOrder.removeAll { $0 == kind }
+        if inside { hoverOrder.append(kind) }
+
         hoverToken += 1
         let token = hoverToken
-        if inside {
-            guard expandedKind != kind else { return }
+
+        if let target = hoverOrder.last {
+            // Immediate when switching: waiting 180ms to cross between two adjacent boxes reads
+            // as lag. The delay exists only to stop a pointer sweeping past from opening one.
             let delay: Duration = expandedKind == nil ? .milliseconds(180) : .zero
             Task { @MainActor in
                 try? await Task.sleep(for: delay)
-                guard token == hoverToken else { return }
-                expandedKind = kind
+                guard token == hoverToken, hoverOrder.last == target else { return }
+                expandedKind = target
             }
         } else {
             Task { @MainActor in
+                // Long enough to travel from a box into its popover.
                 try? await Task.sleep(for: .milliseconds(450))
-                guard token == hoverToken else { return }
+                guard token == hoverToken, hoverOrder.isEmpty else { return }
                 expandedKind = nil
             }
         }
