@@ -17,7 +17,15 @@ struct IconActionButton: View {
     let systemImage: String
     let label: String
     let help: String
+    /// Working — shows a spinner in place of the glyph.
     var busy: Bool = false
+    /// Unavailable — dimmed, no spinner.
+    ///
+    /// Separate from `busy` because conflating them produced a real bug: a built-in network's
+    /// delete button was passed `busy: network.isBuiltin`, so it span forever. A permanent
+    /// spinner claims the app is doing something, which is the opposite of what "you cannot do
+    /// this" should look like. `busy` means *in flight*; `disabled` means *not offered*.
+    var disabled: Bool = false
     var destructive: Bool = false
     let action: () -> Void
 
@@ -37,7 +45,7 @@ struct IconActionButton: View {
             .frame(width: 18, height: 18)
         }
         .buttonStyle(IconActionButtonStyle(destructive: destructive))
-        .disabled(busy)
+        .disabled(busy || disabled)
         .help(help)
         .accessibilityLabel(label)
     }

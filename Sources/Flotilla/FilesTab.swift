@@ -64,7 +64,7 @@ struct FilesTab: View {
     private var controlBar: some View {
         HStack(spacing: 8) {
             IconActionButton(systemImage: "chevron.left", label: "Up one directory",
-                             help: "Up one directory", busy: path == "/") { path = parentPath }
+                             help: "Up one directory", disabled: path == "/") { path = parentPath }
 
             breadcrumbs
 
@@ -81,7 +81,7 @@ struct FilesTab: View {
                              help: AppModel.isRunning(container)
                                  ? "Copy a file from this Mac into \(path)"
                                  : "The container must be running to copy files into it",
-                             busy: !AppModel.isRunning(container)) { upload() }
+                             disabled: !AppModel.isRunning(container)) { upload() }
 
             IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
                              help: "Reload this directory", busy: loading) {

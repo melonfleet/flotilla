@@ -191,6 +191,12 @@ that we *built* the right command; almost nothing checked the command was
   JSON-only because `InspectRow` and the flatten walk were `private` to
   `ContainerDetailView`. Both now use `InspectTable.swift`, so a fix to the walk cannot
   apply to one panel and not the other.
+- **"Busy" and "unavailable" are different states.** `IconActionButton` draws a spinner when
+  `busy` is true, and a sweep passed `busy: network.isBuiltin` to mean "you cannot delete
+  this" — so the built-in network's delete button span forever, claiming the app was working
+  when it was refusing. Same mistake on the Files tab's up-one-directory and upload buttons.
+  There is now a separate `disabled:` parameter: `busy` is *in flight*, `disabled` is *not
+  offered*.
 - **A poll loop cannot see an action with no net state change.** Restarts never appeared in
   the activity strip: the loop compares one refresh with the next, and a restart of a running
   thing ends running. Start and stop each leave a lasting state, which is why only those two

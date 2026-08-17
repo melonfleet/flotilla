@@ -40,7 +40,14 @@ struct ActivityStrip: View {
                 content
             }
         }
-        .background(.clear)
+        // Painted explicitly rather than left transparent.
+        //
+        // Transparent, the band took whatever was behind it — and that differs by how it is
+        // attached: as a `VStack` child (Containers) it sat on the honeydew content wash, as a
+        // `safeAreaInset` (Machines) it sat on the window background. Same view, two shades,
+        // which is exactly what the owner spotted. An explicit background makes placement
+        // irrelevant.
+        .background(Theme.contentBackground)
     }
 
     private var header: some View {

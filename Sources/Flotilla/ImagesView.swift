@@ -7,6 +7,9 @@ import FlotillaCore
 /// `ContainerCLI` or an argv directly.
 struct ImagesView: View {
     let model: AppModel
+    let ui: ResourceUIState<ContainerImage>
+
+    @State private var selection = Set<ContainerImage.ID>()
 
     /// Free-text filter, matched against the reference and tag. Local to the screen: unlike
     /// the containers table there is no cross-section state to preserve.
@@ -89,7 +92,7 @@ struct ImagesView: View {
     }
 
     private var toolbar: some View {
-        SectionToolbar(search: $search,
+        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search images…",
                        updated: model.imagesLastRefresh) {
             ToolbarIconButton(systemImage: "hammer", label: "Build an image from a Dockerfile…") {
@@ -135,10 +138,148 @@ struct ImagesView: View {
             )
 
         case .loaded:
-            List(displayedImages) { image in
-                row(for: image)
+            table
+        }
+    }
+
+    /// A `Table`, matching every other section — repository, tag, platform, digest, size, age.
+    ///
+    /// The `List` version put the tag and size in a caption under the repository, which meant
+    /// you could not sort by size (the thing you actually want when reclaiming disk) and could
+    /// not see the platform or digest at all without opening Inspect.
+    ///
+    /// Repository and tag are separate columns rather than one reference string: sorting by
+    /// repository groups an image's tags together, which a combined `nginx:alpine` string does
+    /// only by luck of alphabetisation.
+    private var table: some View {
+        SwiftUI.Table(displayedImages,
+                      selection: $selection,
+                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
+                      columnCustomization: Binding(get: { ui.columnCustomization },
+                                                   set: { ui.columnCustomization = $0 })) {
+            TableColumn("Repository", value: \.reference) { image in
+                Text(Self.repository(image))
+                    .foregroundStyle(Theme.accentText)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(image.reference)
+            }
+            .width(min: 170, ideal: 260)
+
+            TableColumn("Tag") { image in
+                Text(Self.tag(image)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .width(min: 70, ideal: 96)
+            .customizationID("tag")
+
+            TableColumn("Platform") { image in
+                Text(Self.platformLabel(image)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .width(min: 84, ideal: 100)
+            .customizationID("platform")
+
+            TableColumn("Digest") { image in
+                // Short form. A digest is a public content hash, not a secret — see the
+                // `Redactor(excluding:)` note on the Inspect tab — but 71 characters of it in a
+                // table cell is noise, and the full value is one hover away.
+                Text(Self.shortDigest(image))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .help(image.configuration.descriptor?.digest ?? "no digest reported")
+            }
+            .width(min: 96, ideal: 116)
+            .customizationID("digest")
+
+            TableColumn("Size") { image in
+                Text(image.displaySize.map(Self.byteCount) ?? "—")
+                    .monospacedDigit().foregroundStyle(.secondary)
+            }
+            .width(min: 74, ideal: 90)
+            .customizationID("size")
+
+            TableColumn("Created") { image in
+                Text(RelativeDate.relative(image.configuration.creationDate))
+                    .foregroundStyle(.secondary)
+                    .help(RelativeDate.absolute(image.configuration.creationDate))
+            }
+            .width(min: 80, ideal: 104)
+            .customizationID("created")
+
+            TableColumn("Actions") { image in
+                rowActions(for: image)
+            }
+            .width(min: 108, ideal: 118)
+        }
+        .frame(maxHeight: .infinity)
+        .contextMenu(forSelectionType: ContainerImage.ID.self) { ids in
+            if let image = model.images.first(where: { ids.contains($0.id) }) {
+                menu(for: image)
             }
         }
+    }
+
+    /// Run, tag, overflow, then bin — the same order and the same divider before the
+    /// destructive control as the containers and machines rows.
+    @ViewBuilder
+    private func rowActions(for image: ContainerImage) -> some View {
+        let busy = model.busy.contains(image.id)
+        HStack(spacing: 2) {
+            IconActionButton(systemImage: "play.fill",
+                             label: "Run \(Self.repository(image))",
+                             help: "Run a container from \(image.reference)",
+                             busy: busy) {
+                runImage = image.reference
+            }
+            IconActionButton(systemImage: "tag",
+                             label: "Tag \(Self.repository(image))",
+                             help: "Tag \(Self.repository(image))",
+                             busy: busy) {
+                tagTarget = ""
+                taggingImage = image
+            }
+
+            Menu {
+                menu(for: image)
+            } label: {
+                RowOverflowLabel()
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .disabled(busy)
+            .accessibilityLabel("More actions for \(Self.repository(image))")
+
+            Divider().frame(height: 14)
+
+            IconActionButton(systemImage: "trash",
+                             label: "Delete \(Self.repository(image))",
+                             help: "Delete \(Self.repository(image))",
+                             busy: busy, destructive: true) {
+                requestDelete(image)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// The platform that would actually run here.
+    ///
+    /// Taking the *first* variant was wrong on multi-arch images: `nginx:alpine` listed
+    /// `linux/amd64` first, so the table claimed amd64 on an Apple Silicon Mac while the
+    /// container the CLI runs from it is arm64. Prefer the host's architecture, and mark the
+    /// image as multi-arch so the single value does not imply there is only one.
+    private static func platformLabel(_ image: ContainerImage) -> String {
+        let platforms = image.variants?.compactMap(\.platform) ?? []
+        guard !platforms.isEmpty else { return "—" }
+        let native = platforms.first { $0.architecture?.contains("arm64") == true } ?? platforms[0]
+        let label = [native.os, native.architecture].compactMap { $0 }.joined(separator: "/")
+        return platforms.count > 1 ? "\(label) +\(platforms.count - 1)" : label
+    }
+
+    private static func shortDigest(_ image: ContainerImage) -> String {
+        guard let digest = image.configuration.descriptor?.digest else { return "—" }
+        // Drop the `sha256:` prefix and keep the first 12, which is what every registry UI and
+        // the CLI's own `image list` show.
+        let hex = digest.split(separator: ":").last.map(String.init) ?? digest
+        return String(hex.prefix(12))
     }
 
     /// Hides attestation/provenance manifests (`architecture: "unknown"`) — they're noise
@@ -150,7 +291,7 @@ struct ImagesView: View {
             guard let variants = image.variants, !variants.isEmpty else { return true }
             return !variants.allSatisfy { $0.platform?.architecture == "unknown" }
         }
-        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return visible }
         return visible.filter { $0.reference.lowercased().contains(query) }
     }

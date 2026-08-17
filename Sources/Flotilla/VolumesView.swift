@@ -7,8 +7,11 @@ import FlotillaCore
 /// `ContainerCLI` or an argv directly.
 struct VolumesView: View {
     let model: AppModel
+    /// Owned by `MainWindowView` — see `ResourceUIState`. Search, sort and column visibility
+    /// have to outlive a trip to another section.
+    let ui: ResourceUIState<ContainerVolume>
 
-    @State private var search = ""
+    @State private var selection = Set<ContainerVolume.ID>()
     @State private var showingCreate = false
     @State private var newVolumeName = ""
     @State private var newSize = ""
@@ -55,7 +58,7 @@ struct VolumesView: View {
     }
 
     private var toolbar: some View {
-        SectionToolbar(search: $search,
+        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search volumes…",
                        updated: model.volumesLastRefresh) {
             ToolbarIconButton(systemImage: "plus", label: "Create a volume…") {
@@ -70,7 +73,7 @@ struct VolumesView: View {
 
     /// Free-text filter over the volume name.
     private var displayedVolumes: [ContainerVolume] {
-        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return model.volumes }
         // `name` is non-optional: the real payload nests it under `configuration` where it is
         // always present. It was optional before commit 9245077 fixed the fabricated fixture,
@@ -101,9 +104,96 @@ struct VolumesView: View {
             )
 
         case .loaded:
-            List(displayedVolumes) { volume in
-                row(for: volume)
+            table
+        }
+    }
+
+    /// A `Table`, matching Containers and Machines.
+    ///
+    /// This was a `List` of two-line rows with the metadata crammed into a caption line —
+    /// readable for three volumes, useless for thirty, and not sortable by anything. The owner asked
+    /// for the sections to look the same, and the deeper reason is that they *are* the same kind
+    /// of screen: a list of named things with attributes you want to sort and compare.
+    ///
+    /// No state column. A volume has no lifecycle — it exists or it does not — so a dot would be
+    /// a decoration that always said the same thing.
+    private var table: some View {
+        SwiftUI.Table(displayedVolumes,
+                      selection: $selection,
+                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
+                      columnCustomization: Binding(get: { ui.columnCustomization },
+                                                   set: { ui.columnCustomization = $0 })) {
+            TableColumn("Name", value: \.name) { volume in
+                Text(volume.name).foregroundStyle(Theme.accentText).lineLimit(1)
             }
+            .width(min: 160, ideal: 240)
+
+            TableColumn("Format") { volume in
+                Text(volume.configuration.format ?? "—").foregroundStyle(.secondary)
+            }
+            .width(min: 70, ideal: 84)
+            .customizationID("format")
+
+            TableColumn("Driver") { volume in
+                Text(volume.configuration.driver ?? "—").foregroundStyle(.secondary)
+            }
+            .width(min: 70, ideal: 90)
+            .customizationID("driver")
+
+            TableColumn("Size") { volume in
+                Text(volume.sizeInBytes.map(Self.byteCount) ?? "—")
+                    .monospacedDigit().foregroundStyle(.secondary)
+            }
+            .width(min: 74, ideal: 90)
+            .customizationID("size")
+
+            TableColumn("Created") { volume in
+                Text(RelativeDate.relative(volume.configuration.creationDate))
+                    .foregroundStyle(.secondary)
+                    .help(RelativeDate.absolute(volume.configuration.creationDate))
+            }
+            .width(min: 80, ideal: 104)
+            .customizationID("created")
+
+            TableColumn("Actions") { volume in
+                rowActions(for: volume)
+            }
+            .width(min: 78, ideal: 88)
+        }
+        .frame(maxHeight: .infinity)
+        .contextMenu(forSelectionType: ContainerVolume.ID.self) { ids in
+            if let volume = model.volumes.first(where: { ids.contains($0.id) }) {
+                menu(for: volume)
+            }
+        }
+    }
+
+    /// Overflow then bin, in that order and with the same divider — the arrangement every other
+    /// section uses, so the destructive control is always in the same place.
+    @ViewBuilder
+    private func rowActions(for volume: ContainerVolume) -> some View {
+        let busy = model.busy.contains(volume.id)
+        HStack(spacing: 2) {
+            Menu {
+                menu(for: volume)
+            } label: {
+                RowOverflowLabel()
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .disabled(busy)
+            .accessibilityLabel("More actions for \(volume.name)")
+
+            Divider().frame(height: 14)
+
+            IconActionButton(systemImage: "trash",
+                             label: "Delete \(volume.name)",
+                             help: "Delete \(volume.name)",
+                             busy: busy, destructive: true) {
+                requestDelete(volume)
+            }
+            Spacer(minLength: 0)
         }
     }
 

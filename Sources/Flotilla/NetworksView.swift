@@ -5,6 +5,9 @@ import FlotillaCore
 /// The networks section: list, create, delete — same shape as `VolumesView`.
 struct NetworksView: View {
     let model: AppModel
+    let ui: ResourceUIState<ContainerNetwork>
+
+    @State private var selection = Set<ContainerNetwork.ID>()
 
     @State private var search = ""
     @State private var showingCreate = false
@@ -49,7 +52,7 @@ struct NetworksView: View {
     }
 
     private var toolbar: some View {
-        SectionToolbar(search: $search,
+        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search networks…",
                        updated: model.networksLastRefresh) {
             ToolbarIconButton(systemImage: "plus", label: "Create a network…") {
@@ -63,7 +66,7 @@ struct NetworksView: View {
 
     /// Free-text filter over the network name.
     private var displayedNetworks: [ContainerNetwork] {
-        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return model.networks }
         return model.networks.filter { $0.id.lowercased().contains(query) }
     }
@@ -92,57 +95,104 @@ struct NetworksView: View {
             )
 
         case .loaded:
-            List(displayedNetworks) { network in
-                row(for: network)
+            table
+        }
+    }
+
+    /// A `Table`, matching every other section. Was a `List` of two-line rows whose second line
+    /// crammed mode, subnet and gateway into a caption — unsortable, and unreadable past a
+    /// handful of networks.
+    ///
+    /// No state column: a network exists or it does not. The built-in badge stays on the name,
+    /// because "you cannot delete this one" is a property of the row, not a state it is in.
+    private var table: some View {
+        SwiftUI.Table(displayedNetworks,
+                      selection: $selection,
+                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
+                      columnCustomization: Binding(get: { ui.columnCustomization },
+                                                   set: { ui.columnCustomization = $0 })) {
+            TableColumn("Name", value: \.id) { network in
+                HStack(spacing: 6) {
+                    Text(network.name).foregroundStyle(Theme.accentText).lineLimit(1)
+                    if network.isBuiltin {
+                        Text("built-in")
+                            .font(.caption2).fixedSize()
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(.quaternary, in: Capsule())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .width(min: 150, ideal: 210)
+
+            TableColumn("Mode") { network in
+                Text(network.mode ?? "—").foregroundStyle(.secondary)
+            }
+            .width(min: 70, ideal: 88)
+            .customizationID("mode")
+
+            TableColumn("Subnet") { network in
+                Text(network.subnet ?? "—").monospacedDigit().foregroundStyle(.secondary)
+            }
+            .width(min: 110, ideal: 140)
+            .customizationID("subnet")
+
+            TableColumn("Gateway") { network in
+                Text(network.gateway ?? "—").monospacedDigit().foregroundStyle(.secondary)
+            }
+            .width(min: 100, ideal: 130)
+            .customizationID("gateway")
+
+            TableColumn("Created") { network in
+                Text(RelativeDate.relative(network.configuration.creationDate))
+                    .foregroundStyle(.secondary)
+                    .help(RelativeDate.absolute(network.configuration.creationDate))
+            }
+            .width(min: 80, ideal: 104)
+            .customizationID("created")
+
+            TableColumn("Actions") { network in
+                rowActions(for: network)
+            }
+            .width(min: 78, ideal: 88)
+        }
+        .frame(maxHeight: .infinity)
+        .contextMenu(forSelectionType: ContainerNetwork.ID.self) { ids in
+            if let network = model.networks.first(where: { ids.contains($0.id) }) {
+                menu(for: network)
             }
         }
     }
 
-    private func row(for network: ContainerNetwork) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(network.name)
-                    // Apple's own `default` network carries a builtin role label. Worth
-                    // marking: deleting it is not the same kind of act as deleting your own.
-                    if network.isBuiltin {
-                        Text("built-in")
-                            .font(.caption2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(.quaternary, in: Capsule())
-                    }
-                }
-                // Subnet and gateway come from `status`, and are what actually answers "what
-                // is this network for" — the old row could show none of it, because the model
-                // did not match the CLI's real shape.
-                HStack(spacing: 8) {
-                    if let mode = network.mode {
-                        Text(mode).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let subnet = network.subnet {
-                        Text(subnet).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                    }
-                    if let gateway = network.gateway {
-                        Text("gw \(gateway)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                    }
-                }
+    @ViewBuilder
+    private func rowActions(for network: ContainerNetwork) -> some View {
+        let busy = model.busy.contains(network.id)
+        HStack(spacing: 2) {
+            Menu {
+                menu(for: network)
+            } label: {
+                RowOverflowLabel()
             }
-            Spacer()
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .disabled(busy)
+            .accessibilityLabel("More actions for \(network.id)")
+
+            Divider().frame(height: 14)
+
             IconActionButton(systemImage: "trash",
                              label: "Delete \(network.id)",
-                             // A built-in network cannot be deleted, and the tooltip should say
-                             // why rather than leaving a dead-looking button unexplained.
                              help: network.isBuiltin
                                  ? "\(network.id) is built in and cannot be deleted"
                                  : "Delete \(network.id)",
-                             busy: model.busy.contains(network.id) || network.isBuiltin,
+                             busy: busy,
+                             disabled: network.isBuiltin,
                              destructive: true) {
                 requestDelete(network)
             }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
-        .contextMenu { menu(for: network) }
     }
 
     @ViewBuilder

@@ -21,6 +21,14 @@ struct MainWindowView: View {
     /// is rebuilt from scratch on every sidebar change.
     @State private var machinesUI = MachinesUIState()
 
+    /// Volumes, Networks and Images share one generic state type — see `ResourceUIState`.
+    @State private var volumesUI = ResourceUIState<ContainerVolume>(
+        sortOrder: [KeyPathComparator(\ContainerVolume.name)])
+    @State private var networksUI = ResourceUIState<ContainerNetwork>(
+        sortOrder: [KeyPathComparator(\ContainerNetwork.id)])
+    @State private var imagesUI = ResourceUIState<ContainerImage>(
+        sortOrder: [KeyPathComparator(\ContainerImage.reference)])
+
     @State private var selection: Section? = .dashboard
 
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
@@ -197,11 +205,11 @@ struct MainWindowView: View {
             case .containers:
                 ContainersView(model: model, ui: containersUI)
             case .images:
-                ImagesView(model: model)
+                ImagesView(model: model, ui: imagesUI)
             case .volumes:
-                VolumesView(model: model)
+                VolumesView(model: model, ui: volumesUI)
             case .networks:
-                NetworksView(model: model)
+                NetworksView(model: model, ui: networksUI)
             case .machines:
                 MachinesView(model: model, ui: machinesUI)
             case .settings:
