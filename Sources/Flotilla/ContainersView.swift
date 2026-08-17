@@ -524,6 +524,19 @@ struct ContainersView: View {
         } message: {
             Text(model.actionError ?? "")
         }
+        // "Open in Flotilla" from the menu-bar popover names a subject, not just a section.
+        // One-shot: cleared on consumption so a rebuild does not reopen it.
+        .onChange(of: model.pendingDetailSubject) { _, subject in
+            guard let subject else { return }
+            detailTarget = DetailTarget(id: subject)
+            model.pendingDetailSubject = nil
+        }
+        .onAppear {
+            if let subject = model.pendingDetailSubject {
+                detailTarget = DetailTarget(id: subject)
+                model.pendingDetailSubject = nil
+            }
+        }
         // "Run…" in the menu-bar popover. One-shot: consumed and cleared, so the sheet does
         // not reopen every time this view is rebuilt.
         .onChange(of: model.pendingRunSheet) { _, requested in

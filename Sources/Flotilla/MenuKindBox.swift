@@ -25,10 +25,23 @@ struct MenuKindBox<Items: View>: View {
     let detail: String
     /// A CPU-percent series, or nil for a kind Flotilla cannot measure.
     var history: [Double?]?
+
+    /// Whether this box is the expanded one. **Owned by the parent**, not here.
+    ///
+    /// Each box used to keep its own `expanded` flag and its own open/close timers, and the two
+    /// fought: opening the containers popover shifted where the pointer counted as being, the
+    /// containers box's close timer fired, and the machines box claimed the hover — so pointing
+    /// at Containers opened it, closed it, then opened Machines instead. Two independent state
+    /// machines racing over one pointer cannot be fixed by tuning their delays. One owner
+    /// decides which box is open, and switching is then just a change of value.
+    @Binding var expanded: Bool
+    /// Reports hover intent upwards; the parent debounces and decides.
+    let hoverChanged: (Bool) -> Void
+
+    /// Last, so callers can pass it as a trailing closure.
     @ViewBuilder var items: Items
 
     @State private var hovering = false
-    @State private var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -84,39 +97,36 @@ struct MenuKindBox<Items: View>: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(boxFill, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline))
+        .overlay(RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(hovering || expanded ? Theme.accent.opacity(0.55) : Theme.hairline))
         .contentShape(.rect)
         .onHover { inside in
             hovering = inside
-            if inside {
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(180))
-                    if hovering { expanded = true }
-                }
-            } else {
-                Task { @MainActor in
-                    // Long enough to cross the gap into the popover.
-                    try? await Task.sleep(for: .milliseconds(450))
-                    if !hovering { expanded = false }
-                }
-            }
+            hoverChanged(inside)
         }
         .animation(.easeOut(duration: 0.1), value: hovering)
+        .animation(.easeOut(duration: 0.1), value: expanded)
         .popover(isPresented: $expanded, arrowEdge: .leading) {
             VStack(alignment: .leading, spacing: 0) { items }
                 .padding(.vertical, 6)
                 .frame(minWidth: 240)
                 // Hovering the popover counts as hovering the box, so travelling into it does
                 // not start the close timer.
-                .onHover { hovering = $0 }
+                .onHover { inside in
+                    hovering = inside
+                    hoverChanged(inside)
+                }
         }
     }
 
     /// `AnyShapeStyle` because the two branches are different types — a tinted `Color` and the
     /// hierarchical `.quaternary` — and a ternary needs one.
+    /// The hover tint was 0.10, which the owner could barely see. 0.24 while pointing and 0.30 while
+    /// expanded, so the box that owns the open popover stays visibly the one that owns it.
     private var boxFill: AnyShapeStyle {
-        hovering ? AnyShapeStyle(Theme.accent.opacity(0.10))
-                 : AnyShapeStyle(.quaternary.opacity(0.26))
+        if expanded { return AnyShapeStyle(Theme.accent.opacity(0.30)) }
+        if hovering { return AnyShapeStyle(Theme.accent.opacity(0.24)) }
+        return AnyShapeStyle(.quaternary.opacity(0.26))
     }
 
     private func pip(_ value: Int, _ label: String, _ colour: Color) -> some View {

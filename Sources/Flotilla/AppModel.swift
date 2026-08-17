@@ -941,6 +941,19 @@ final class AppModel {
     var pendingRunSheet = false
 
     func requestSection(_ section: Section) { pendingSection = section }
+    /// Ask a section to open one item's detail screen.
+    ///
+    /// Carries the subject as well as the section, because "show me `web`" and "show me
+    /// Containers" are different requests and the popover was only ever able to make the second.
+    /// One-shot, like the other pending flags: consumed and cleared by whichever view honours it,
+    /// so a rebuild does not reopen it.
+    func requestDetail(kind: ActivityKind, subject: String) {
+        pendingSection = kind.section
+        pendingDetailSubject = subject
+    }
+
+    var pendingDetailSubject: String?
+
     /// Ask the Machines section to open its create form. Mirrors `requestRunSheet`.
     func requestMachineForm() {
         pendingSection = .machines

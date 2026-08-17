@@ -21,6 +21,11 @@ import FlotillaCore
 ///   destructive or multi-step escalates to the window.
 struct MenuBarView: View {
     let model: AppModel
+
+    /// Which summary box is expanded, if any — see `hovering(_:_:)`.
+    @State private var expandedKind: ActivityKind?
+    /// Invalidates in-flight hover timers whose intent has been superseded.
+    @State private var hoverToken = 0
     @Environment(\.openWindow) private var openWindow
 
     /// The mockup's width. Wider than the old 320 because rows now carry two lines and a
@@ -112,7 +117,9 @@ struct MenuBarView: View {
                             total: model.containers.count,
                             loaded: model.state == .loaded,
                             detail: containerUsage,
-                            history: aggregateCPUHistory) {
+                            history: aggregateCPUHistory,
+                            expanded: binding(for: .container),
+                            hoverChanged: { hovering(.container, $0) }) {
                     containerMenuItems
                 }
                 MenuKindBox(title: "Machines",
@@ -126,7 +133,9 @@ struct MenuBarView: View {
                             // there is no per-machine sampling anywhere in the runtime. A line
                             // drawn from allocations would look like usage and be fiction, so
                             // the box shows the allocation as text and a running/total bar.
-                            history: nil) {
+                            history: nil,
+                            expanded: binding(for: .machine),
+                            hoverChanged: { hovering(.machine, $0) }) {
                     machineMenuItems
                 }
             }
@@ -239,7 +248,7 @@ struct MenuBarView: View {
                           start: { Task { await model.perform(.start, on: container) } },
                           stop: { Task { await model.perform(.stop, on: container) } },
                           restart: { Task { await model.perform(.restart, on: container) } },
-                          openDetail: { open(section: .containers) })
+                          openDetail: { openDetail(.container, container.id) })
     }
 
     private func machinePopoverRow(_ machine: ContainerMachine) -> some View {
@@ -252,7 +261,17 @@ struct MenuBarView: View {
                           start: { Task { await model.perform(.start, on: machine) } },
                           stop: { Task { await model.perform(.stop, on: machine) } },
                           restart: { Task { await model.perform(.restart, on: machine) } },
-                          openDetail: { open(section: .machines) })
+                          openDetail: { openDetail(.machine, machine.id) })
+    }
+
+    /// Opens the window **on that item's detail**, not merely on its section.
+    ///
+    /// The button looked like it would — a square with an arrow leaving it — and all it did was
+    /// bring the window forward, which the owner reasonably read as broken. An affordance that
+    /// promises a destination and delivers a raise is worse than no affordance.
+    private func openDetail(_ kind: ActivityKind, _ subject: String) {
+        open()
+        model.requestDetail(kind: kind, subject: subject)
     }
 
     private func emptyPopoverNote(_ text: String) -> some View {
@@ -293,6 +312,43 @@ struct MenuBarView: View {
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 5)
+    }
+
+    // MARK: Which box is open
+    //
+    // One owner, so the two boxes cannot race. `expandedKind` is the single truth; a box asks to
+    // open and the parent grants it, which makes switching from one box to the other a change of
+    // value rather than a close-then-open sequence that could interleave with a stale timer.
+
+    private func binding(for kind: ActivityKind) -> Binding<Bool> {
+        Binding(get: { expandedKind == kind },
+                set: { isOpen in expandedKind = isOpen ? kind : nil })
+    }
+
+    /// Debounced hover, with the delays that make it feel deliberate rather than twitchy.
+    ///
+    /// Opening is immediate when another box is already open — you are switching, and waiting
+    /// 180ms to move between two adjacent boxes reads as lag. Closing waits, so travelling into
+    /// the popover does not dismiss it, and `hoverToken` discards a timer whose intent has since
+    /// been superseded.
+    private func hovering(_ kind: ActivityKind, _ inside: Bool) {
+        hoverToken += 1
+        let token = hoverToken
+        if inside {
+            guard expandedKind != kind else { return }
+            let delay: Duration = expandedKind == nil ? .milliseconds(180) : .zero
+            Task { @MainActor in
+                try? await Task.sleep(for: delay)
+                guard token == hoverToken else { return }
+                expandedKind = kind
+            }
+        } else {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(450))
+                guard token == hoverToken else { return }
+                expandedKind = nil
+            }
+        }
     }
 
     /// Measured, summed across running containers. Em dashes when nothing has been sampled yet.

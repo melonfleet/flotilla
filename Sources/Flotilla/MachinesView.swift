@@ -109,6 +109,19 @@ struct MachinesView: View {
             }
         }
         .task { await model.refreshMachines() }
+        // "Open in Flotilla" from the menu-bar popover names a subject, not just a section.
+        // One-shot: cleared on consumption so a rebuild does not reopen it.
+        .onChange(of: model.pendingDetailSubject) { _, subject in
+            guard let subject else { return }
+            detailTarget = DetailTarget(id: subject)
+            model.pendingDetailSubject = nil
+        }
+        .onAppear {
+            if let subject = model.pendingDetailSubject {
+                detailTarget = DetailTarget(id: subject)
+                model.pendingDetailSubject = nil
+            }
+        }
         // "New Machine…" from the menu-bar popover. One-shot: consumed and cleared, so the form
         // does not reopen every time this view is rebuilt — the same shape as `pendingRunSheet`.
         .onChange(of: model.pendingMachineForm) { _, requested in
