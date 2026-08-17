@@ -103,17 +103,30 @@ struct MenuBarView: View {
             // Once open, the per-item submenus *do* reveal on hover, so the second level
             // behaves as asked; the first needs a click, and pretending otherwise would mean
             // hand-rolling menu behaviour that fights the system's own.
-            HStack(spacing: 8) {
-                kindBox(.container,
-                        running: model.running.count,
-                        total: model.containers.count,
-                        loaded: model.state == .loaded) {
+            // Stacked, not side by side: each box carries three lines and a graph, and two of
+            // those squeezed into half a popover's width had nowhere to put any of it.
+            VStack(spacing: 6) {
+                MenuKindBox(title: "Containers",
+                            systemImage: ActivityKind.container.systemImage,
+                            running: model.running.count,
+                            total: model.containers.count,
+                            loaded: model.state == .loaded,
+                            detail: containerUsage,
+                            history: aggregateCPUHistory) {
                     containerMenuItems
                 }
-                kindBox(.machine,
-                        running: model.machines.filter { MachinesView.isRunning($0) }.count,
-                        total: model.machines.count,
-                        loaded: model.machinesState == .loaded) {
+                MenuKindBox(title: "Machines",
+                            systemImage: ActivityKind.machine.systemImage,
+                            running: model.machines.filter { MachinesView.isRunning($0) }.count,
+                            total: model.machines.count,
+                            loaded: model.machinesState == .loaded,
+                            detail: machineAllocation,
+                            // **No graph, deliberately.** `container machine list` reports the
+                            // cpus and memory a machine was *allocated*, not what it is using —
+                            // there is no per-machine sampling anywhere in the runtime. A line
+                            // drawn from allocations would look like usage and be fiction, so
+                            // the box shows the allocation as text and a running/total bar.
+                            history: nil) {
                     machineMenuItems
                 }
             }
@@ -185,52 +198,142 @@ struct MenuBarView: View {
         }
     }
 
-    /// One submenu per container. Nested `Menu`s inside an open menu are real macOS submenus,
-    /// so these *do* open on hover — which is the behaviour that was asked for.
+    /// The container list inside the hover popover.
+    ///
+    /// Plain views, not `Menu` items: the actions sit **on** each row as icon buttons, so
+    /// starting something is one click from pointing at the box rather than three from opening
+    /// nested menus. That is the iStat Menus shape the owner pointed at.
     @ViewBuilder
     private var containerMenuItems: some View {
         if model.containers.isEmpty {
-            Text("No containers")
+            emptyPopoverNote("No containers on this Mac.")
         } else {
-            ForEach(model.containers) { container in
-                Menu(container.id) {
-                    let running = AppModel.isRunning(container)
-                    Button(running ? "Stop" : "Start") {
-                        Task { await model.perform(running ? .stop : .start, on: container) }
-                    }
-                    if running {
-                        Button("Restart") { Task { await model.perform(.restart, on: container) } }
-                    }
-                    Divider()
-                    Button("Details…") { open(section: .containers) }
-                }
+            ForEach(model.running + model.stopped) { container in
+                containerPopoverRow(container)
             }
         }
-        Divider()
-        Button("Run Container…") { open(); model.requestRunSheet() }
     }
 
     @ViewBuilder
     private var machineMenuItems: some View {
         if model.machines.isEmpty {
-            Text("No machines")
+            emptyPopoverNote("No machines. Containers each run in their own VM; a named machine "
+                             + "is one you create and can shell into.")
         } else {
             ForEach(model.machines) { machine in
-                Menu(machine.id) {
-                    let running = MachinesView.isRunning(machine)
-                    Button(running ? "Stop" : "Start") {
-                        Task { await model.perform(running ? .stop : .start, on: machine) }
-                    }
-                    if running {
-                        Button("Restart") { Task { await model.perform(.restart, on: machine) } }
-                    }
-                    Divider()
-                    Button("Details…") { open(section: .machines) }
-                }
+                machinePopoverRow(machine)
             }
         }
-        Divider()
-        Button("New Machine…") { open(); model.requestMachineForm() }
+    }
+
+    /// Extracted from the `ForEach` bodies: the ten-argument call inline inside a `ViewBuilder`
+    /// defeated the type-checker outright ("unable to type-check this expression in reasonable
+    /// time"), which is this project's usual signal that a view body is doing too much at once.
+    private func containerPopoverRow(_ container: Container) -> some View {
+        let running = AppModel.isRunning(container)
+        return popoverRow(name: container.id,
+                          subtitle: ContainerImage.shortReference(container.imageReference),
+                          dot: container.stateColor,
+                          running: running,
+                          busy: model.busy.contains(container.id),
+                          start: { Task { await model.perform(.start, on: container) } },
+                          stop: { Task { await model.perform(.stop, on: container) } },
+                          restart: { Task { await model.perform(.restart, on: container) } },
+                          openDetail: { open(section: .containers) })
+    }
+
+    private func machinePopoverRow(_ machine: ContainerMachine) -> some View {
+        let memory = ByteCountFormatter.string(fromByteCount: machine.memory, countStyle: .memory)
+        return popoverRow(name: machine.id,
+                          subtitle: "\(machine.cpus) vCPU · \(memory)",
+                          dot: MachinesView.stateColor(machine),
+                          running: MachinesView.isRunning(machine),
+                          busy: model.busyMachines.contains(machine.id),
+                          start: { Task { await model.perform(.start, on: machine) } },
+                          stop: { Task { await model.perform(.stop, on: machine) } },
+                          restart: { Task { await model.perform(.restart, on: machine) } },
+                          openDetail: { open(section: .machines) })
+    }
+
+    private func emptyPopoverNote(_ text: String) -> some View {
+        Text(text)
+            .font(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 11).padding(.vertical, 6)
+            .frame(maxWidth: 260, alignment: .leading)
+    }
+
+    /// One row in a box's popover: state, name over detail, then the actions.
+    ///
+    /// Start and Stop swap rather than both showing — offering Stop on a stopped thing is a
+    /// control that does nothing, which is the failure this project keeps re-learning. Restart
+    /// appears only while running, for the same reason.
+    private func popoverRow(
+        name: String, subtitle: String, dot: Color, running: Bool, busy: Bool,
+        start: @escaping () -> Void, stop: @escaping () -> Void,
+        restart: @escaping () -> Void, openDetail: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            Circle().fill(dot).frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text(subtitle).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+            }
+            Spacer(minLength: 10)
+            IconActionButton(systemImage: running ? "stop.fill" : "play.fill",
+                             label: running ? "Stop \(name)" : "Start \(name)",
+                             help: running ? "Stop \(name)" : "Start \(name)",
+                             busy: busy, action: running ? stop : start)
+            IconActionButton(systemImage: "arrow.clockwise",
+                             label: "Restart \(name)", help: "Restart \(name)",
+                             busy: busy, disabled: !running, action: restart)
+            IconActionButton(systemImage: "arrow.up.forward.square",
+                             label: "Open \(name) in Flotilla",
+                             help: "Open in Flotilla", action: openDetail)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 5)
+    }
+
+    /// Measured, summed across running containers. Em dashes when nothing has been sampled yet.
+    private var containerUsage: String {
+        let cpus = model.running.compactMap { model.cpuPercent(for: $0.id) }
+        let bytes = model.running.compactMap { model.memoryBytes(for: $0.id) }
+        guard !cpus.isEmpty || !bytes.isEmpty else { return "CPU — · Memory —" }
+        let cpu = cpus.isEmpty ? "—" : String(format: "%.0f%%", cpus.reduce(0, +))
+        let memory = bytes.isEmpty
+            ? "—"
+            : ByteCountFormatter.string(fromByteCount: bytes.reduce(0, +), countStyle: .file)
+        return "CPU \(cpu) · \(memory)"
+    }
+
+    /// **Allocated**, and the wording says so. This is what the machines were given, not what
+    /// they are consuming — the runtime does not report the latter.
+    private var machineAllocation: String {
+        let running = model.machines.filter { MachinesView.isRunning($0) }
+        guard !running.isEmpty else { return "nothing running" }
+        let cpus = running.reduce(0) { $0 + $1.cpus }
+        let memory = running.reduce(Int64(0)) { $0 + $1.memory }
+        return "\(cpus) vCPU · "
+            + ByteCountFormatter.string(fromByteCount: memory, countStyle: .memory)
+            + " allocated"
+    }
+
+    /// Total container CPU over time, summed per sample.
+    ///
+    /// A sample is `nil` when *no* container reported a figure for it — the first reading has no
+    /// previous sample to diff against — which `Sparkline` renders as a gap rather than a zero.
+    private var aggregateCPUHistory: [Double?] {
+        let histories = model.running.map { model.cpuHistory(for: $0.id) }
+        guard let length = histories.map(\.count).max(), length > 1 else { return [] }
+        return (0..<length).map { index in
+            let sample = histories.compactMap { history -> Double? in
+                let offset = history.count - length + index
+                guard offset >= 0, offset < history.count else { return nil }
+                return history[offset]
+            }
+            return sample.isEmpty ? nil : sample.reduce(0, +)
+        }
     }
 
     private var hostDot: Color {
@@ -384,19 +487,16 @@ struct MenuBarView: View {
     private var actions: some View {
         VStack(alignment: .leading, spacing: 0) {
             actionRow("Open Flotilla", systemImage: "macwindow", key: "o") { open() }
-            // Was "Run…", which only ever created a container — the popover offered no way to
-            // create a machine at all. A menu rather than two rows: they are the same intent
-            // ("make me a new thing"), and two rows would push the shortcut list longer for a
-            // choice you make once.
-            Menu {
-                Button("Run Container…") { open(); model.requestRunSheet() }
-                Button("New Machine…") { open(); model.requestMachineForm() }
-            } label: {
-                actionRowLabel("New…", systemImage: "plus", key: "n")
+            // Two rows, not a menu. The `Menu` version sat further left than its neighbours
+            // because `.menuStyle(.borderlessButton)` discards the row padding — the
+            // misalignment the owner spotted. Two `actionRow`s are aligned by construction, and
+            // each says plainly what it makes; "New…" made you open it to find out.
+            actionRow("Run Container…", systemImage: "plus", key: "n") {
+                open(); model.requestRunSheet()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .buttonStyle(MenuRowStyle())
+            actionRow("New Machine…", systemImage: "server.rack", key: "m") {
+                open(); model.requestMachineForm()
+            }
             actionRow("Settings…", systemImage: "gearshape", key: ",") { open(section: .settings) }
             actionRow("Refresh", systemImage: "arrow.clockwise", key: "r") {
                 Task { await model.reload() }
