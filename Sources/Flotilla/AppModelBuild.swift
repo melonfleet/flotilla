@@ -27,7 +27,11 @@ extension AppModel {
     func buildImage(context: URL, dockerfile: String?, tag: String?,
                     buildArgs: [String], labels: [String],
                     noCache: Bool, platform: String?, target: String?) async -> Bool {
-        let contextPath = context.standardizedFileURL.path
+        // Resolve symlinks before validating, so the policy is granted for — and the CLI is
+        // handed — the path the build will actually read. Choosing the folder in a panel and
+        // having a link in it silently redirect the build elsewhere is the same TOCTOU shape
+        // the review flagged, and resolving here removes the UI's contribution to it.
+        let contextPath = context.resolvingSymlinksInPath().standardizedFileURL.path
         let scoped = ContainerCLI(host: LocalHost(), mountPolicy: .roots([contextPath]))
 
         do {
@@ -60,7 +64,11 @@ extension AppModel {
         guard let context else {
             return .failure(.missingOperand(subcommand: "build", need: 1))
         }
-        let contextPath = context.standardizedFileURL.path
+        // Resolve symlinks before validating, so the policy is granted for — and the CLI is
+        // handed — the path the build will actually read. Choosing the folder in a panel and
+        // having a link in it silently redirect the build elsewhere is the same TOCTOU shape
+        // the review flagged, and resolving here removes the UI's contribution to it.
+        let contextPath = context.resolvingSymlinksInPath().standardizedFileURL.path
         var argv = ["build"]
         if let dockerfile, !dockerfile.isEmpty { argv += ["--file", dockerfile] }
         if let tag, !tag.isEmpty { argv += ["--tag", tag] }

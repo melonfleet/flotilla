@@ -177,6 +177,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 }
 
 @Test func buildImageOmitsEveryOptionThatWasNotAskedFor() throws {
+    makeBuildFixtures()
     // The context is required now — a nil one used to mean "let the CLI default it to `.`",
     // which quietly granted the process working directory. See `omittedBuildContextIsRefused`
     // in AllowlistTests.

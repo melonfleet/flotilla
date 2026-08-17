@@ -1191,7 +1191,28 @@ public enum Allowlist {
         if let error = checkAbsolutePath(value, context: context) { return error }
         // Building the filesystem root is never what was meant, and is catastrophic if it is.
         guard value != "/" else { return bad }
-        guard mountPolicy.allowsHostPath(value) else {
+
+        // **Must exist now**, which is the review's Medium finding (9 August) narrowed.
+        //
+        // `MountPolicy` keeps a nonexistent trailing component lexically, because a *mount*
+        // source legitimately may not exist yet. A build input is different: you cannot build a
+        // context that is not there. Accepting one opened a window — validate
+        // `/tmp/allowed/context` while it does not exist, then `ln -s /Users/someone` into place
+        // before the build spawns, and the CLI follows the link out of the permitted root.
+        //
+        // Requiring existence closes that half: there is nothing to create in the gap, only an
+        // existing object to repoint. The residual race is narrower and is recorded in the
+        // review — fully closing it needs the execution boundary to hold a filesystem handle
+        // rather than a string, which `Process` does not give us.
+        guard FileManager.default.fileExists(atPath: value) else {
+            return .hostPathNotPermitted(context: context, path: value)
+        }
+
+        // Checked *after* resolution, so a symlink cannot name a permitted path and point
+        // elsewhere. `allowsHostPath` resolves internally; this repeats it explicitly so the
+        // containment decision is made about the same string the guard above proved exists.
+        let resolved = URL(fileURLWithPath: value).resolvingSymlinksInPath().path
+        guard mountPolicy.allowsHostPath(resolved), mountPolicy.allowsHostPath(value) else {
             return .hostPathNotPermitted(context: context, path: value)
         }
         return nil

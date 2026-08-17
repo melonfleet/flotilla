@@ -1,5 +1,22 @@
 # Allowlist audit against `container` 1.0.0
 
+> **Currency note — 17 August 2026.** This audit was written against a **35-entry** table.
+> `Allowlist.commands` now holds **46**: the nine `machine` leaves, `copy`, and `build` have been
+> added since. Those eleven are **not covered below** — they were reviewed separately, and the
+> findings that came out of that work are recorded in
+> [`reviews/KYLE-2026-08-09.md`](reviews/KYLE-2026-08-09.md) and in the addendum to
+> [`MACHINES-SPEC.md`](MACHINES-SPEC.md), not here.
+>
+> Of the four defects listed below, all four have been fixed; the paragraph under each row says
+> so. What has **not** changed is the conclusion that matters: 22 plugin-backed specs still have
+> no captured help, so the table is still not trustworthy as the complete Phase 2 wire boundary.
+> Re-running this audit against the current 46 entries is the work that would change that, and it
+> has not been done.
+>
+> Kept as written rather than rewritten in place, because an audit is a record of what was
+> examined on a date. Editing its body to match today's code would destroy the only thing it is
+> for.
+
 ## Scope and result
 
 This audit compares all 35 entries in `Allowlist.commands` with the captured help from `container` CLI 1.0.0, build `ee848e3`. The capture, not the repository's notes or external documentation, is the authority. [Capture version and provenance, lines 1–7](../reference/cli-help/container-1.0.0-help.txt#L1-L7)

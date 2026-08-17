@@ -289,6 +289,7 @@ private func requireRejected(
 }
 
 @Test func everyAllowlistedCommandShapeProducesItsCanonicalCommand() throws {
+    makeBuildFixtures()
     let digest = String(repeating: "a", count: 64)
     let cases: [AllowedCase] = [
         AllowedCase(["ls", "-a", "--format=json", "-q"],
@@ -761,6 +762,7 @@ func machineSetAcceptsOnlyDocumentedKeys() throws {
 /// This one pins each leaf's form against the other's.
 @Test("create and set spell home-mount differently, and each refuses the other's form")
 func homeMountSpellingIsPerLeaf() throws {
+    makeBuildFixtures()
     for mode in ["ro", "rw", "none"] {
         let validated = try Allowlist.validated(
             ["machine", "create", "--home-mount", mode, "alpine:3.22"])
@@ -806,6 +808,7 @@ func startMachinePassesABootCommand() throws {
 /// absolute policy roots. The context must be named, absolutely.
 @Test("build refuses an omitted context, because the CLI would silently use the cwd")
 func omittedBuildContextIsRefused() {
+    makeBuildFixtures()
     #expect(throws: (any Error).self) {
         try Allowlist.validated(["build", "--tag", "app:latest"], mountPolicy: .denyHostPaths)
     }
@@ -848,6 +851,36 @@ func bootAndShellBothWorkUnderTheAppsOwnPolicy() throws {
     #expect(throws: (any Error).self) {
         try Allowlist.validated(["machine", "run", "--name", "dev", "--", "/bin/sh"],
                                 execPolicy: .interactiveShell)
+    }
+}
+
+/// the review's Medium finding (9 August), narrowed to the half that can be closed.
+///
+/// `MountPolicy` keeps a nonexistent trailing component lexically, because a *mount* source
+/// legitimately may not exist yet. For a build input that left a window: validate
+/// `/tmp/allowed/context` while it does not exist, then drop a symlink to somewhere else into
+/// place before `Process.run()`, and the CLI follows it out of the permitted root. Requiring the
+/// path to exist removes the "create something in the gap" half — what remains is repointing an
+/// existing object, which is narrower and needs a filesystem handle at the execution boundary to
+/// close properly. That residue is recorded in the review rather than claimed as fixed.
+@Test("a build input must exist when it is validated")
+func buildInputMustExistAtValidationTime() throws {
+    makeBuildFixtures()
+
+    // The exact reproduction from the review: permitted root, absent context.
+    let absent = "/tmp/allowed/definitely-not-here-\(#line)"
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["build", absent], mountPolicy: .roots(["/tmp/allowed"]))
+    }
+    #expect(throws: (any Error).self) {
+        try Allowlist.validated(["build", "--file", "/tmp/allowed/missing-Dockerfile",
+                                 "/tmp/allowed"],
+                                mountPolicy: .roots(["/tmp/allowed"]))
+    }
+
+    // An existing, permitted context still works — the rule must not be "refuse everything".
+    #expect(throws: Never.self) {
+        try Allowlist.validated(["build", "/tmp/allowed"], mountPolicy: .roots(["/tmp/allowed"]))
     }
 }
 
@@ -1033,6 +1066,7 @@ func buildAcceptsContextInsidePermittedRoots() throws {
 
 @Test("build takes exactly one context, never two")
 func buildTakesExactlyOneContext() throws {
+    makeBuildFixtures()
     // This test used to assert the opposite — that omitting the context was fine "because the
     // CLI defaults it to `.`, so no host path is named and none is granted". That was wrong,
     // and wrong in the dangerous direction: `.` IS a host path, just an implicit one, and the
@@ -1049,6 +1083,7 @@ func buildTakesExactlyOneContext() throws {
 
 @Test("--progress accepts only auto, plain and tty")
 func buildProgressIsAClosedSet() throws {
+    makeBuildFixtures()
     for good in ["auto", "plain", "tty"] {
         #expect(throws: Never.self, "should accept \(good)") {
             try Allowlist.validated(["build", "--progress", good, "/tmp/flotilla"],
@@ -1149,4 +1184,30 @@ func explicitBuildPathsRejectExistingSymlinkEscapes() throws {
         try Allowlist.validated(["build", "--file", escapedFile, permitted.path],
                                 mountPolicy: policy)
     }
+}
+
+// MARK: - Build fixtures on disk
+
+/// Creates the paths the `build` tests validate against.
+///
+/// `.hostBuildPath` now requires the path to **exist**, which is the review's Medium finding narrowed:
+/// a build input that does not exist yet leaves a window in which a symlink can be dropped into
+/// place between validation and `Process.run()`. Tests therefore need real directories rather
+/// than plausible strings — and that is the right way round. A grammar test that passes only
+/// because nothing checks the filesystem is testing a rule the shipping code does not have.
+///
+/// Idempotent, and `/tmp` exists on both macOS and the Linux CI that runs `FlotillaCore`.
+@discardableResult
+func makeBuildFixtures() -> Bool {
+    let manager = FileManager.default
+    for directory in ["/tmp/flotilla", "/tmp/flotilla/src", "/tmp/allowed", "/tmp/build"] {
+        try? manager.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    }
+    for file in ["/tmp/flotilla/Dockerfile", "/tmp/allowed/Dockerfile",
+                 "/tmp/build/Dockerfile"] {
+        if !manager.fileExists(atPath: file) {
+            manager.createFile(atPath: file, contents: Data("FROM alpine:3.22\n".utf8))
+        }
+    }
+    return manager.fileExists(atPath: "/tmp/flotilla/src")
 }
