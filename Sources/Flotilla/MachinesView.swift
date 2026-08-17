@@ -207,11 +207,11 @@ struct MachinesView: View {
                 }
             }
         }
-        // `.padding(12)`, matching `SectionToolbar` and the containers toolbar exactly. This was
-        // `.vertical, 8`, which put the machines control band 4pt closer to the title bar than
-        // every other section — small enough to look like a rendering artefact and obvious once
-        // you switch between sections, which is how the owner caught it.
-        .padding(12)
+        // Horizontal 12, vertical 8 — the pair every toolbar uses. See `SectionToolbar`: the
+        // sections disagreed for a while, this one was the odd 8 out, and 8 turned out to be the
+        // one the owner wanted everywhere.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var columnsButton: some View {
@@ -673,7 +673,9 @@ struct MachinesView: View {
                 .fixedSize()
             }
         }
-        .padding(12)
+        // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     /// Steps through machines as currently shown, same rules as the containers stepper: no

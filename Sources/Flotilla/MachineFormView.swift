@@ -183,7 +183,7 @@ struct MachineFormView: View {
             .help("Fill this form from a Flotillafile")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
     }
 
     /// Import **fills the form**; it never creates anything on its own.

@@ -3,6 +3,11 @@ import SwiftUI
 /// The control band every list screen wears, so Containers, Images, Volumes and Networks stop
 /// being four slightly different screens.
 ///
+/// **Every band directly beneath the window's title bar uses horizontal 12, vertical 8** — this
+/// toolbar, the containers and machines toolbars, the detail headers, and `FormHeader`. They had
+/// drifted to three different values (8, 9 and 12) which is invisible on any one screen and
+/// obvious the moment you switch between them. If you change the number, change all of them.
+///
 /// They had drifted in three ways, all small and all visible side by side: the three secondary
 /// screens printed a large title the Containers screen does not (the sidebar already says where
 /// you are, so the title was a second answer to a question nobody asked, costing a band of
@@ -51,7 +56,13 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
             }
             .fixedSize()
         }
-        .padding(12)
+        // Horizontal 12 so the band lines up with the content edge; vertical **8**, which is
+        // tighter than the 12 this used and gives back a strip of height on every section.
+        // the owner compared the two side by side — Machines was accidentally on 8 for a while —
+        // and preferred the tighter one. Every toolbar in the app uses this pair; changing one
+        // is how they drifted apart in the first place.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 }
 

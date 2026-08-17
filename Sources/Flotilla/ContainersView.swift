@@ -217,7 +217,9 @@ struct ContainersView: View {
                 .fixedSize()
             }
         }
-        .padding(12)
+        // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     /// Steps through the containers **as currently shown** — same filter, same search, same
@@ -636,7 +638,9 @@ struct ContainersView: View {
             }
             .fixedSize()
         }
-        .padding(12)
+        // Horizontal 12, vertical 8 — see `SectionToolbar` for why every toolbar shares the pair.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         // No material here, deliberately. This band sits directly beneath the window's real
         // toolbar, which on macOS 26 is Liquid Glass already; a second translucent strip under
         // it produced two disagreeing translucencies and made the `glassEffect` cluster below

@@ -80,7 +80,7 @@ struct RunSheetView: View {
             Spacer()
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
     }
 
     private var content: some View {
