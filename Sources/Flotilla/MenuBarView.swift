@@ -101,7 +101,7 @@ struct MenuBarView: View {
                 Circle().fill(hostDot).frame(width: 7, height: 7)
                 Text(model.hostLabel).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Text(cpuAndMemory)
+                Text(hostUsage)
                     .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
             }
 
@@ -313,16 +313,41 @@ struct MenuBarView: View {
         }
     }
 
-    /// Measured, summed across running containers. Em dashes when nothing has been sampled yet.
+    /// **This Mac's own** CPU and memory, from `HostMetricsSampler`.
+    ///
+    /// This line used to print the summed *container* figures under the heading "This Mac" — the
+    /// same string the Containers box shows — so it read "CPU 100%" while the host was nowhere
+    /// near it. A host row that quotes container totals is not a rounding problem, it is the
+    /// wrong measurement under the wrong label.
+    private var hostUsage: String {
+        guard let latest = model.hostMetrics.latest else { return "CPU — · Memory —" }
+        let cpu = latest.cpuPercent.map { String(format: "%.0f%%", $0) } ?? "—"
+        let memory = latest.memoryTotalBytes > 0
+            ? String(format: "%.0f%%",
+                     Double(latest.memoryUsedBytes) / Double(latest.memoryTotalBytes) * 100)
+            : "—"
+        return "CPU \(cpu) · Memory \(memory)"
+    }
+
+    /// Container CPU as a share of **the whole machine**, and total container memory.
+    ///
+    /// `container stats` reports CPU the way Docker does: per-core, so a container pinning one
+    /// core reads 100%. Summing those gives cores-used × 100, which is why a single spinning
+    /// container made this say "CPU 100%" on a 12-core Mac — read, reasonably, as the machine
+    /// being pegged. Dividing by the core count gives a figure comparable with the host line
+    /// above it, and naming the core count says what the percentage is of.
     private var containerUsage: String {
         let cpus = model.running.compactMap { model.cpuPercent(for: $0.id) }
         let bytes = model.running.compactMap { model.memoryBytes(for: $0.id) }
         guard !cpus.isEmpty || !bytes.isEmpty else { return "CPU — · Memory —" }
-        let cpu = cpus.isEmpty ? "—" : String(format: "%.0f%%", cpus.reduce(0, +))
+        let cores = ProcessInfo.processInfo.processorCount
+        let cpu = cpus.isEmpty
+            ? "—"
+            : String(format: "%.0f%%", cpus.reduce(0, +) / Double(max(1, cores)))
         let memory = bytes.isEmpty
             ? "—"
             : ByteCountFormatter.string(fromByteCount: bytes.reduce(0, +), countStyle: .file)
-        return "CPU \(cpu) · \(memory)"
+        return "CPU \(cpu) of \(cores) cores · \(memory)"
     }
 
     /// **Allocated**, and the wording says so. This is what the machines were given, not what
@@ -364,16 +389,6 @@ struct MenuBarView: View {
 
     /// Real sampled figures, or an em dash. Never a zero standing in for "not measured yet" —
     /// the same rule the table's CPU column follows.
-    private var cpuAndMemory: String {
-        let cpus = model.running.compactMap { model.cpuPercent(for: $0.id) }
-        let bytes = model.running.compactMap { model.memoryBytes(for: $0.id) }
-        guard !cpus.isEmpty || !bytes.isEmpty else { return "CPU — · Memory —" }
-        let cpu = cpus.isEmpty ? "—" : String(format: "%.0f%%", cpus.reduce(0, +))
-        let mem = bytes.isEmpty
-            ? "—"
-            : ByteCountFormatter.string(fromByteCount: bytes.reduce(0, +), countStyle: .file)
-        return "CPU \(cpu) · \(mem)"
-    }
 
     // MARK: This Mac
 

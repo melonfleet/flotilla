@@ -1,17 +1,19 @@
 import SwiftUI
 
-/// A stacked summary box in the menu-bar popover, which expands on **hover**.
+/// A stacked summary box in the menu-bar popover, which expands **in place** on hover.
 ///
-/// This replaces a `Menu` per kind, which did not work: a `Menu` reduces its label to a simple
-/// title, so the counts, the bar and the graph were all silently dropped and the box rendered as
-/// two words. `.menuStyle(.borderlessButton)` also discarded the row padding, which is why the
-/// "New…" row sat further left than its neighbours.
+/// Third design, and the reason for it matters. A `Menu` per kind reduced its label to a plain
+/// title, so the counts and graph were silently dropped. A `.popover` per kind rendered properly
+/// but could not work either: **macOS presents one popover per window**, so once the containers
+/// popover had been presented the machines one silently failed to appear — which is why Machines
+/// "still does nothing" after two attempts at fixing the hover logic. The hover arbitration was
+/// not the fault the second time; the second popover was never going to open.
 ///
-/// A hover-triggered `popover` gets what a `Menu` could not: the box renders whatever it likes,
-/// and it opens by pointing at it — the iStat Menus behaviour the owner asked for. Two delays make
-/// that usable rather than twitchy: a short one before opening, so sweeping the pointer across
-/// the popover on the way somewhere else does not fire it, and a longer one before closing, so
-/// you can travel from the box into the popover without it vanishing under you.
+/// Expanding inline dissolves that whole class of problem: no second window to present, no
+/// positioning to get wrong, and no beak — which the owner had separately asked to remove. The cost
+/// is that the list is not detached, so the popover grows downwards instead of spilling
+/// sideways. If a true pop-out is wanted later it needs a hand-positioned `NSPanel`, which also
+/// means re-implementing click-outside-to-dismiss and screen-edge flipping.
 struct MenuKindBox<Items: View>: View {
     let title: String
     let systemImage: String
@@ -44,6 +46,31 @@ struct MenuKindBox<Items: View>: View {
     @State private var hovering = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            summary
+            if expanded {
+                Divider().padding(.top, 6)
+                VStack(alignment: .leading, spacing: 0) { items }
+                    .padding(.top, 4)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(boxFill, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(hovering || expanded ? Theme.accent.opacity(0.55) : Theme.hairline))
+        .contentShape(.rect)
+        .onHover { inside in
+            hovering = inside
+            hoverChanged(inside)
+        }
+        .animation(.easeOut(duration: 0.1), value: hovering)
+        .animation(.easeOut(duration: 0.12), value: expanded)
+    }
+
+    private var summary: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 Image(systemName: systemImage).font(.system(size: 12))
@@ -54,10 +81,12 @@ struct MenuKindBox<Items: View>: View {
                         .font(.system(size: 11)).monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
-                // Points the way the popover opens, so the affordance and the behaviour agree.
-                Image(systemName: "chevron.left")
+                // Points down when open, right when closed — a disclosure, because that is now
+                // what it is.
+                Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(expanded ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.tertiary))
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
             }
 
             if loaded {
@@ -73,25 +102,33 @@ struct MenuKindBox<Items: View>: View {
                 Text("—").font(.caption).foregroundStyle(.tertiary)
             }
 
-            if let history, history.contains(where: { $0 != nil }) {
-                // The shared `Sparkline`, not a second implementation. It already enforces the
-                // rules that matter here — a `nil` is a gap rather than a zero, and a single
-                // sample draws nothing instead of implying a trend.
-                Sparkline(values: history, maximum: nil)
-                    .frame(height: 18)
-                    .foregroundStyle(Theme.accent)
-            } else {
-                // A proportion bar, not a flat line pretending to be a graph.
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.quaternary)
-                        Capsule().fill(Theme.online)
-                            .frame(width: total > 0
-                                   ? CGFloat(running) / CGFloat(total) * geo.size.width : 0)
+            // **One fixed height whichever is drawn.**
+            //
+            // The sparkline appeared only once a sample had arrived, and the bar is 4pt against
+            // its 18pt — so the box grew the first time it had data, which happened to coincide
+            // with the first hover and read as the box resizing when pointed at. Reserving the
+            // height means the content can change without the layout moving.
+            ZStack {
+                if let history, history.contains(where: { $0 != nil }) {
+                    // The shared `Sparkline`, not a second implementation. It already enforces
+                    // the rules that matter here — a `nil` is a gap rather than a zero, and a
+                    // single sample draws nothing instead of implying a trend.
+                    Sparkline(values: history, maximum: nil)
+                        .foregroundStyle(Theme.accent)
+                } else {
+                    // A proportion bar, not a flat line pretending to be a graph.
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.quaternary)
+                            Capsule().fill(Theme.online)
+                                .frame(width: total > 0
+                                       ? CGFloat(running) / CGFloat(total) * geo.size.width : 0)
+                        }
                     }
+                    .frame(height: 4)
                 }
-                .frame(height: 4)
             }
+            .frame(height: 18)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
@@ -104,19 +141,12 @@ struct MenuKindBox<Items: View>: View {
             hovering = inside
             hoverChanged(inside)
         }
+        // The list, inline. Reported as hover too, so travelling from the box down into the rows
+        // does not start the close timer.
+        .overlay(alignment: .bottom) { EmptyView() }
         .animation(.easeOut(duration: 0.1), value: hovering)
         .animation(.easeOut(duration: 0.1), value: expanded)
-        .popover(isPresented: $expanded, arrowEdge: .leading) {
-            VStack(alignment: .leading, spacing: 0) { items }
-                .padding(.vertical, 6)
-                .frame(minWidth: 240)
-                // Hovering the popover counts as hovering the box, so travelling into it does
-                // not start the close timer.
-                .onHover { inside in
-                    hovering = inside
-                    hoverChanged(inside)
-                }
-        }
+
     }
 
     /// `AnyShapeStyle` because the two branches are different types — a tinted `Color` and the
