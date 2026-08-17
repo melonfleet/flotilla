@@ -44,7 +44,6 @@ struct MenuBarView: View {
             case .loaded where model.containers.isEmpty:
                 message("No containers on this Mac", systemImage: "tray", tint: .secondary)
             case .loaded:
-                thisMac
                 needsAttention
             }
 
@@ -86,39 +85,160 @@ struct MenuBarView: View {
                 }
             }
 
-            HStack(alignment: .top, spacing: 10) {
-                metric(
-                    title: model.hostLabel,
-                    trailing: model.state == .loaded ? "\(model.running.count) running" : "—",
-                    fraction: runningFraction,
-                    detail: cpuAndMemory
-                )
-
-                Divider().frame(height: 34)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text("Fleet").font(.caption)
-                        Spacer()
-                        Text("not paired").font(.caption).monospacedDigit()
-                    }
-                    .foregroundStyle(.secondary)
-                    Text("Remote hosts arrive in Phase 2")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // This Mac's own figures, on one line. The two-column "This Mac | Fleet" layout
+            // spent half the width saying pairing is a Phase 2 feature; that is one quiet
+            // sentence, not a column.
+            HStack(spacing: 6) {
+                Circle().fill(hostDot).frame(width: 7, height: 7)
+                Text(model.hostLabel).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text(cpuAndMemory)
+                    .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
             }
+
+            // A box per kind, each a menu.
+            //
+            // the owner asked for hover to open them. That is `NSMenu` behaviour and a
+            // window-style `MenuBarExtra` does not get it — SwiftUI's `Menu` opens on click.
+            // Once open, the per-item submenus *do* reveal on hover, so the second level
+            // behaves as asked; the first needs a click, and pretending otherwise would mean
+            // hand-rolling menu behaviour that fights the system's own.
+            HStack(spacing: 8) {
+                kindBox(.container,
+                        running: model.running.count,
+                        total: model.containers.count,
+                        loaded: model.state == .loaded) {
+                    containerMenuItems
+                }
+                kindBox(.machine,
+                        running: model.machines.filter { MachinesView.isRunning($0) }.count,
+                        total: model.machines.count,
+                        loaded: model.machinesState == .loaded) {
+                    machineMenuItems
+                }
+            }
+
+            // The fleet note, as a line rather than a column.
+            Text("Fleet: not paired — remote hosts arrive in Phase 2")
+                .font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 10)
     }
 
-    private var runningFraction: Double {
-        guard !model.containers.isEmpty else { return 0 }
-        return Double(model.running.count) / Double(model.containers.count)
+    /// One summary box: kind, running/stopped counts, a proportion bar, and a menu.
+    ///
+    /// `loaded` rather than inferring from a zero count: an unvisited section and an empty one
+    /// must not look the same, which is the same unknown-versus-zero rule the sidebar counts
+    /// and the CPU column already follow.
+    @ViewBuilder
+    private func kindBox<Content: View>(
+        _ kind: ActivityKind, running: Int, total: Int, loaded: Bool,
+        @ViewBuilder items: () -> Content
+    ) -> some View {
+        Menu {
+            items()
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: kind.systemImage).font(.system(size: 11))
+                    Text(kind.title).font(.caption)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.secondary)
+
+                if loaded {
+                    HStack(spacing: 8) {
+                        countPip(running, "running", Theme.online)
+                        countPip(total - running, "stopped", .secondary)
+                        Spacer(minLength: 0)
+                    }
+                } else {
+                    Text("—").font(.caption).foregroundStyle(.tertiary)
+                }
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.quaternary)
+                        Capsule().fill(Theme.online)
+                            .frame(width: total > 0
+                                   ? CGFloat(running) / CGFloat(total) * geo.size.width : 0)
+                    }
+                }
+                .frame(height: 4)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .help("\(kind.title): \(running) running of \(total)")
+    }
+
+    private func countPip(_ value: Int, _ label: String, _ colour: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(colour).frame(width: 6, height: 6)
+            Text("\(value) \(label)").font(.caption).monospacedDigit()
+        }
+    }
+
+    /// One submenu per container. Nested `Menu`s inside an open menu are real macOS submenus,
+    /// so these *do* open on hover — which is the behaviour that was asked for.
+    @ViewBuilder
+    private var containerMenuItems: some View {
+        if model.containers.isEmpty {
+            Text("No containers")
+        } else {
+            ForEach(model.containers) { container in
+                Menu(container.id) {
+                    let running = AppModel.isRunning(container)
+                    Button(running ? "Stop" : "Start") {
+                        Task { await model.perform(running ? .stop : .start, on: container) }
+                    }
+                    if running {
+                        Button("Restart") { Task { await model.perform(.restart, on: container) } }
+                    }
+                    Divider()
+                    Button("Details…") { open(section: .containers) }
+                }
+            }
+        }
+        Divider()
+        Button("Run Container…") { open(); model.requestRunSheet() }
+    }
+
+    @ViewBuilder
+    private var machineMenuItems: some View {
+        if model.machines.isEmpty {
+            Text("No machines")
+        } else {
+            ForEach(model.machines) { machine in
+                Menu(machine.id) {
+                    let running = MachinesView.isRunning(machine)
+                    Button(running ? "Stop" : "Start") {
+                        Task { await model.perform(running ? .stop : .start, on: machine) }
+                    }
+                    if running {
+                        Button("Restart") { Task { await model.perform(.restart, on: machine) } }
+                    }
+                    Divider()
+                    Button("Details…") { open(section: .machines) }
+                }
+            }
+        }
+        Divider()
+        Button("New Machine…") { open(); model.requestMachineForm() }
+    }
+
+    private var hostDot: Color {
+        switch model.state {
+        case .loaded: Theme.online
+        case .unavailable, .failed: Theme.danger
+        case .idle, .loading: .secondary
+        }
     }
 
     /// Real sampled figures, or an em dash. Never a zero standing in for "not measured yet" —
@@ -134,67 +254,7 @@ struct MenuBarView: View {
         return "CPU \(cpu) · \(mem)"
     }
 
-    private func metric(title: String, trailing: String, fraction: Double, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(title).font(.caption)
-                Spacer()
-                Text(trailing).font(.caption).monospacedDigit()
-            }
-            .foregroundStyle(.secondary)
-
-            // A plain bar, not a `ProgressView`: this is a proportion of a known total, and
-            // the stock indicator styles it as an operation in progress.
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule().fill(Theme.online)
-                        .frame(width: max(0, min(1, fraction)) * geo.size.width)
-                }
-            }
-            .frame(height: 4)
-
-            Text(detail)
-                .font(.caption2)
-                .monospacedDigit()
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     // MARK: This Mac
-
-    private var thisMac: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionHead("This Mac", systemImage: "laptopcomputer", trailing: model.hostName)
-
-            // Running first, then stopped, and capped: the popover is a glance. The overflow
-            // row says how many are hidden rather than silently truncating.
-            ForEach(visible) { container in
-                containerRow(container)
-            }
-            if model.containers.count > Self.maxRows {
-                Button {
-                    open()
-                } label: {
-                    Text("Show all \(model.containers.count) in Flotilla")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(MenuRowStyle())
-            }
-        }
-    }
-
-    private static let maxRows = 6
-
-    private var visible: [Container] {
-        (model.running + model.stopped).prefix(Self.maxRows).map { $0 }
-    }
 
     /// One container: state dot, a glyph that varies by *kind*, name over image-and-port, the
     /// CPU figure, and a one-tap start/stop.
@@ -324,7 +384,19 @@ struct MenuBarView: View {
     private var actions: some View {
         VStack(alignment: .leading, spacing: 0) {
             actionRow("Open Flotilla", systemImage: "macwindow", key: "o") { open() }
-            actionRow("Run…", systemImage: "plus", key: "n") { open(); model.requestRunSheet() }
+            // Was "Run…", which only ever created a container — the popover offered no way to
+            // create a machine at all. A menu rather than two rows: they are the same intent
+            // ("make me a new thing"), and two rows would push the shortcut list longer for a
+            // choice you make once.
+            Menu {
+                Button("Run Container…") { open(); model.requestRunSheet() }
+                Button("New Machine…") { open(); model.requestMachineForm() }
+            } label: {
+                actionRowLabel("New…", systemImage: "plus", key: "n")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .buttonStyle(MenuRowStyle())
             actionRow("Settings…", systemImage: "gearshape", key: ",") { open(section: .settings) }
             actionRow("Refresh", systemImage: "arrow.clockwise", key: "r") {
                 Task { await model.reload() }
@@ -346,28 +418,39 @@ struct MenuBarView: View {
         subtitle: String? = nil, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 13))
-                    if let subtitle {
-                        Text(subtitle).font(.system(size: 11)).foregroundStyle(.tertiary)
-                    }
-                }
-                Spacer(minLength: 6)
-                Text("⌘\(String(key.character).uppercased())")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 5)
-            .contentShape(.rect)
+            actionRowLabel(title, systemImage: systemImage, key: key, subtitle: subtitle)
         }
         .buttonStyle(MenuRowStyle())
         .keyboardShortcut(key, modifiers: .command)
+    }
+
+    /// The row's contents, without the `Button`.
+    ///
+    /// Extracted so the "New…" menu can wear the identical label. A menu that looked slightly
+    /// different from the rows either side of it would read as a different kind of thing, when
+    /// it is the same kind of thing that happens to offer two destinations.
+    private func actionRowLabel(
+        _ title: String, systemImage: String, key: KeyEquivalent, subtitle: String? = nil
+    ) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 13))
+                if let subtitle {
+                    Text(subtitle).font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+            }
+            Spacer(minLength: 6)
+            Text("⌘\(String(key.character).uppercased())")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 5)
+        .contentShape(.rect)
     }
 
     // MARK: Plumbing

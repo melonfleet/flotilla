@@ -109,6 +109,14 @@ struct MachinesView: View {
             }
         }
         .task { await model.refreshMachines() }
+        // "New Machine…" from the menu-bar popover. One-shot: consumed and cleared, so the form
+        // does not reopen every time this view is rebuilt — the same shape as `pendingRunSheet`.
+        .onChange(of: model.pendingMachineForm) { _, requested in
+            if requested { showingCreate = true; model.pendingMachineForm = false }
+        }
+        .onAppear {
+            if model.pendingMachineForm { showingCreate = true; model.pendingMachineForm = false }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {

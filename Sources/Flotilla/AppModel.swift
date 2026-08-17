@@ -941,6 +941,14 @@ final class AppModel {
     var pendingRunSheet = false
 
     func requestSection(_ section: Section) { pendingSection = section }
+    /// Ask the Machines section to open its create form. Mirrors `requestRunSheet`.
+    func requestMachineForm() {
+        pendingSection = .machines
+        pendingMachineForm = true
+    }
+
+    var pendingMachineForm = false
+
     func requestRunSheet() {
         // Run lives on the containers screen, so ask for both — otherwise the sheet would
         // open behind whatever section happened to be selected.
