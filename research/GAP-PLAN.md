@@ -89,7 +89,15 @@ distinguish physical cores from reserved ones, or it repeats their ambiguity.
 
 ## Wave 1 — the CLI fully backs these, and none of them widen the wire boundary much
 
-1. **⑦ Aggregated multi-container logs.** `logs` is already allowlisted and already fetched
+1. **⑦ Aggregated multi-container logs — BUILT 2026-08-18.** A `Logs` section beside Activity:
+   Output/Boot, source kind, line ceiling and free text, grouped by source. Two things it
+   deliberately does **not** do — interleave into one chronological stream (`container logs` has
+   no `--timestamps`, so the only clock is when *we* read the chunk, identical for every line in
+   it, and merging on that would be a convincing lie), and offer stdout-versus-stderr (the CLI's
+   only switch here is `--boot`; `LogLine.stream` records which pipe the *CLI* used, so a filter
+   named for it would imply a split the CLI does not make). No `--follow`: bounded fetches only,
+   which is also what the wire audit asks for. Original note follows.
+   `logs` is already allowlisted and already fetched
    per container; aggregation, interleaving and per-container colour are in-app. **No new
    grammar at all**, which makes it the cheapest real feature on the list.
 2. **⑨ Command palette / keyboard-first navigation.** Pure UI. Zero CLI, zero allowlist.

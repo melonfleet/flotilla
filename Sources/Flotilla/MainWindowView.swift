@@ -21,6 +21,7 @@ struct MainWindowView: View {
     /// is rebuilt from scratch on every sidebar change.
     @State private var machinesUI = MachinesUIState()
     @State private var activityUI = ActivityUIState()
+    @State private var logsUI = LogsUIState()
 
     /// Volumes, Networks and Images share one generic state type — see `ResourceUIState`.
     @State private var volumesUI = ResourceUIState<ContainerVolume>(
@@ -90,6 +91,9 @@ struct MainWindowView: View {
                 // Activity spans every kind below, so it belongs in the ungrouped block with
                 // Dashboard and Images rather than under any one section's heading.
                 row(.activity, count: model.activity.isEmpty ? nil : model.activity.count)
+                // Beside Activity, and above the per-kind groups, because it spans every kind:
+                // Activity is what *changed*, Logs is what things *said*.
+                row(.logs, count: nil)
                 row(.images, count: model.imagesState == .loaded ? model.images.count : nil)
             }
 
@@ -232,6 +236,8 @@ struct MainWindowView: View {
         switch selection ?? .dashboard {
         case .activity:
             ActivityView(model: model, ui: activityUI) { selection = $0 }
+        case .logs:
+            LogsView(model: model, ui: logsUI)
         case .dashboard:
             // The tiles drill down, so the dashboard needs to drive the sidebar selection —
             // a panel that shows you a problem but cannot take you to it is a poster.
