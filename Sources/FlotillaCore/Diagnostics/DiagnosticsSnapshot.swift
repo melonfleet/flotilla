@@ -212,6 +212,8 @@ extension PreflightResult {
         switch self {
         case .ok(let version, let path): .ok(version: version, path: redactor.redact(path))
         case .missing: .missing
+        case .serviceStopped(let version, let path, let status):
+            .serviceStopped(version: version, path: redactor.redact(path), status: status)
         case .tooOld(let found, let required): .tooOld(found: found, required: required)
         case .unusable(let reason): .unusable(reason: redactor.redact(reason))
         }

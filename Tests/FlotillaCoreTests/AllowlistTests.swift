@@ -43,7 +43,11 @@ private func requireRejected(
         ["image"],
         ["image", "push", "alpine"],
         ["system"],
-        ["system", "start"],
+        // `system start` is allowed now (the app starts a stopped service for you), but only in
+        // the shape it is offered in. These stay refused:
+        ["system", "start", "--enable-kernel-install"],   // never install a kernel unasked
+        ["system", "start", "--app-root", "/tmp/x"],      // host paths are not grammar
+        ["system", "stop"],
     ]
 
     for args in rejected {
@@ -266,6 +270,8 @@ private func requireRejected(
         "build",
         "volume create", "volume delete", "volume rm", "volume prune",
         "network create", "network delete", "network rm", "network prune",
+        // The only mutating `system` leaf: it changes machine state (it launches services).
+        "system start",
     ]
     let actualMutating = Set(Allowlist.commands.filter(\.mutates).map(\.name))
     #expect(actualMutating == expectedMutating)
@@ -413,6 +419,11 @@ private func requireRejected(
                     canonical: ["system", "status", "--format", "json"], mutates: false),
         AllowedCase(["system", "version"], mutates: false),
         AllowedCase(["system", "df", "--format", "table"], mutates: false),
+        // The exact argv `ContainerCLI.startSystem` sends, verified accepted by the live CLI.
+        // `--disable-kernel-install` is mandatory in practice: the flag defaults to prompting,
+        // and a windowed app has nowhere to show a prompt.
+        AllowedCase(["system", "start", "--disable-kernel-install", "--timeout", "60"],
+                    mutates: true, timeout: 120),
 
         // The separator is required on input but DROPPED from the canonical argv: the real
         // `container exec` treats `--` as the program name and fails on it. Caught by running

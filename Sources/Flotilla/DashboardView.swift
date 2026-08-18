@@ -70,19 +70,38 @@ struct DashboardView: View {
     /// Shown above everything when the runtime is unusable, because in that state every number
     /// below is stale and a dashboard full of confident figures would be lying.
     private func runtimeBanner(_ reason: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger)
+        // A stopped service is not a fault, so it must not be dressed as one: warning colour,
+        // "not running" wording, and a button that fixes it. The red triangle stays for the
+        // states where something really is wrong.
+        let stopped: Bool = if case .serviceStopped = model.preflight { true } else { false }
+        return HStack(spacing: 10) {
+            Image(systemName: stopped ? "pause.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(stopped ? Theme.warning : Theme.danger)
             VStack(alignment: .leading, spacing: 2) {
-                Text("The container runtime is not available").font(.headline)
+                Text(model.startingRuntime
+                     ? "Starting the container runtime…"
+                     : stopped ? "The container runtime isn't running"
+                               : "The container runtime is not available")
+                    .font(.headline)
                 Text(reason).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
+            if model.startingRuntime {
+                ProgressView().controlSize(.small)
+            } else if stopped {
+                // Named for what it does. `container system start` takes several seconds, which
+                // is why the spinner above exists rather than a button that looks inert.
+                Button("Start") { Task { await model.startRuntime() } }
+                    .buttonStyle(.borderedProminent)
+            }
             Button("Retry") { Task { await model.reload() } }
+                .disabled(model.startingRuntime)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.danger.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+        .background((stopped ? Theme.warning : Theme.danger).opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: Tiles

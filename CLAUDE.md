@@ -263,6 +263,43 @@ that we *built* the right command; almost nothing checked the command was
   because `machine create` does — which on this Mac proposed **6 cores and 32 GB** for a
   scratch VM. Matching the CLI sounded principled and gave bad advice. 2 cores / 4 GB
   now; the steppers still reach the full host.
+- **`Set.first` is not "the one they clicked".** `Table`'s `primaryAction` hands back the
+  *selection* as a `Set`, and this table multi-selects — so `ids.first` is an arbitrary member,
+  and double-clicking one of several selected rows could open a different container. An
+  ambiguous activation should open nothing.
+- **Two presentations of one list must share one order.** The table bound `sorted` and the
+  detail stepper walked `sorted`, but the cards grid used `ForEach(visible)` — unsorted. So in
+  Cards the grid showed model order while Previous/Next walked sort order: the "next" container
+  was not the next card, and "N of M" indexed a list you were not looking at. The stepper's own
+  docstring claims it walks the containers *as currently shown*, which made the docstring the
+  bug report. Both found by **Grok 4.6 in a review eval on 2026-08-18** — in code that had
+  already been through the review and me, which is the argument for a third model family in one line.
+- **A GUI-launched app does not inherit your shell's `PATH`.** Flotilla reported "Apple's
+  `container` CLI isn't installed" on a machine where it was installed *and running*, and no
+  amount of `container system start` could change the verdict. `container` lives in
+  `/usr/local/bin`; the `PATH` LaunchServices hands a bundled app is exactly
+  `/usr/bin:/bin:/usr/sbin:/sbin` — measured with `ps eww` on the running process. So
+  `locateOnPath` could not find it, and `/usr/bin/env container` (the old `LocalHost` launch)
+  could not run it either. It had *always* been broken from the Dock and had never been noticed,
+  because every screenshot I take is of an app launched from a terminal, which inherits my rich
+  `PATH`. A reboot is what made it visible. Detection and execution had to be fixed together —
+  resolve `PATH` then `/usr/local/bin`, and launch the **absolute path** — or preflight would
+  have said "ready" while every command failed. Verify with
+  `env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin build/Flotilla.app/Contents/MacOS/Flotilla`, which
+  reproduces the real launch environment; the same trick applies to any future binary lookup.
+- **The answer is sometimes inside the failure.** `container system status` reports a stopped
+  service by **exiting 1 while printing the status JSON** (`"status":"unregistered"`, empty
+  fields, empty stderr — measured). `ContainerCLI.execute` throws on non-zero, so the decodable
+  answer was discarded and preflight reported "installed but not usable" with the raw JSON pasted
+  into an English sentence — no auto-start, no button, because the app could not tell that state
+  apart from a real fault. There is now one narrowly-scoped `attempting(_:)` path that validates
+  as usual but returns a non-zero exit rather than throwing on it. Before assuming a non-zero
+  exit means "no information", read what the command printed.
+- **The same test mistake, a fifth time.** The scripted host for "service not running" returned
+  the status JSON with **exit 0**, which is not what the CLI does, so the new `.serviceStopped`
+  path was green in the suite and never fired on the real machine. It was caught by stopping the
+  real service and watching the app, not by testing. Fixtures for a *failure* mode need the
+  failure's exit code captured too, not just its output.
 - **`case A, B where cond:` binds `where` to `B` only.** Written as
   `case .loaded, .loading where displayed.isEmpty:` the `.loaded` arm matched
   unconditionally, so the Machines list rendered "No matching machines" with two

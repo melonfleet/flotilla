@@ -24,6 +24,13 @@ private func statusJSON(running: Bool) -> String {
     """
 }
 
+/// Captured from the live CLI with the services stopped — `exit=1`, the status JSON on stdout,
+/// empty stderr. Not hand-written: the first version of this test used a scripted host that
+/// exited **zero**, which is not what the CLI does, so the code passed the test and misreported
+/// the real machine.
+private let stoppedServicePayload =
+    #"{"apiServerAppName":"","apiServerBuild":"","apiServerCommit":"","apiServerVersion":"","appRoot":"","installRoot":"","status":"unregistered"}"#
+
 private func preflight(
     found: String = "/usr/local/bin/container",
     version: String = "1.0.0",
@@ -76,12 +83,61 @@ private func preflight(
     #expect(result == .tooOld(found: "1.0.0-beta.1", required: "1.0.0"))
 }
 
-@Test func unusableWhenTheServiceIsNotRunning() {
-    let result = preflight(version: "1.0.0", running: false).run()
-    guard case .unusable = result else {
-        Issue.record("expected .unusable, got \(result)")
-        return
+@Test func aStoppedServiceIsRecognisedThroughItsNonZeroExit() {
+    // The whole point: `system status` announces a stopped service *by failing*, and the answer
+    // is in the output of the failed command.
+    let host = ScriptedHost { args in
+        if args.first == "system", args.count > 1, args[1] == "version" {
+            return CommandResult(stdout: versionJSON("1.0.0"), stderr: "", exitCode: 0)
+        }
+        return CommandResult(stdout: stoppedServicePayload, stderr: "", exitCode: 1)
     }
+    let result = Preflight(cli: ContainerCLI(host: host),
+                           locate: { _ in "/usr/local/bin/container" }).run()
+    #expect(result == .serviceStopped(version: "1.0.0",
+                                     path: "/usr/local/bin/container",
+                                     status: "unregistered"))
+}
+
+@Test func serviceStoppedIsItsOwnVerdictNotAGenericFailure() {
+    let result = preflight(version: "1.0.0", running: false).run()
+    // Deliberately NOT `.unusable`: the app starts the service for this one, and it cannot do
+    // that if the verdict is a sentence it has to read.
+    #expect(result == .serviceStopped(version: "1.0.0",
+                                     path: "/usr/local/bin/container",
+                                     status: "unregistered"))
+}
+
+// MARK: - Resolution
+//
+// The bug these cover shipped for weeks: a GUI-launched app's PATH is
+// `/usr/bin:/bin:/usr/sbin:/sbin`, `container` lives in `/usr/local/bin`, and the app reported
+// "isn't installed" on a machine where it was installed and running.
+
+@Test func aBinaryOutsidePATHIsStillFoundInTheInstallDirectory() throws {
+    // The install directory is a parameter here so the test is hermetic and runs on Linux CI,
+    // but the PATH is the real one a bundled app is handed: `/usr/bin:/bin:/usr/sbin:/sbin`.
+    let installDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("flotilla-locate-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: installDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: installDirectory) }
+    let binary = installDirectory.appendingPathComponent("container")
+    try Data("#!/bin/sh\n".utf8).write(to: binary)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+
+    let guiPath = "/usr/bin:/bin:/usr/sbin:/sbin"
+    #expect(Preflight.locateOnPath("container", path: guiPath) == nil)
+    #expect(Preflight.locateBinary("container", path: guiPath,
+                                   directories: [installDirectory.path]) == binary.path)
+}
+
+@Test func theSearchedDirectoriesAlwaysIncludeTheInstallDirectory() {
+    // The "not installed" message is built from this list, so it must name every place looked.
+    #expect(Preflight.searchedDirectories(path: "/usr/bin:/bin").contains("/usr/local/bin"))
+    #expect(Preflight.searchedDirectories(path: "").contains("/usr/local/bin"))
+    // And never twice, when PATH already has it.
+    #expect(Preflight.searchedDirectories(path: "/usr/local/bin:/usr/bin")
+                .filter { $0 == "/usr/local/bin" }.count == 1)
 }
 
 @Test func unusableWhenTheVersionCannotBeParsed() {

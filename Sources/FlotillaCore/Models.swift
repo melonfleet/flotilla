@@ -702,7 +702,14 @@ public enum PreflightResult: Codable, Sendable, Equatable {
     /// always user-authorized, never silent or privileged.
     case missing
     case tooOld(found: String, required: String)
-    /// Present but not usable: service down, wrong architecture, unreadable version.
+    /// Installed and new enough, but the API service is not running.
+    ///
+    /// Split out of `.unusable` because the app *acts* on this one: it is the normal state after
+    /// a reboot and one `container system start` from working, so the UI offers to fix it rather
+    /// than reporting a fault. `status` is the CLI's own word for the state.
+    case serviceStopped(version: String, path: String, status: String)
+    /// Present but not usable: wrong architecture, unreadable version, an API that will not
+    /// answer even once started.
     case unusable(reason: String)
 
     public var isOK: Bool { if case .ok = self { true } else { false } }
@@ -711,6 +718,7 @@ public enum PreflightResult: Codable, Sendable, Equatable {
     public var detectedVersion: String? {
         switch self {
         case .ok(let version, _): version
+        case .serviceStopped(let version, _, _): version
         case .tooOld(let found, _): found
         case .missing, .unusable: nil
         }
@@ -721,6 +729,7 @@ public enum PreflightResult: Codable, Sendable, Equatable {
         switch self {
         case .ok(let version, _): "container \(version) ready"
         case .missing: "container is not installed"
+        case .serviceStopped(let version, _, let status): "container \(version) installed, service \(status)"
         case .tooOld(let found, let required): "container \(found) is older than the required \(required)"
         case .unusable(let reason): "container is unusable: \(reason)"
         }

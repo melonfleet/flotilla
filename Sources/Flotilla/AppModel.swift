@@ -464,10 +464,60 @@ final class AppModel {
     /// "no containers" from "no `container` installed", which are very different and
     /// look identical in an empty table.
     func runPreflight() async {
+        await runPreflight(autoStartingService: true)
+    }
+
+    /// - Parameter autoStartingService: whether a stopped service should be started here.
+    ///   False when called *by* `startRuntime`, which would otherwise recurse.
+    func runPreflight(autoStartingService: Bool) async {
         let result = await Task.detached { [cli] in Preflight(cli: cli).run() }.value
         preflight = result
+
+        // the owner's request, and the right default: a stopped service is the normal state after a
+        // reboot, it is one command from working, and making the user find that command is
+        // making them do the app's job. Attempted **once** per launch — an auto-start that fails
+        // must not be retried on every reload, or a machine with a genuinely broken runtime
+        // spawns a process every few seconds forever.
+        if case .serviceStopped = result, autoStartingService, !autoStartAttempted {
+            autoStartAttempted = true
+            await startRuntime()
+            return
+        }
+
         if let reason = Self.unavailableReason(for: result) {
             state = .unavailable(reason)
+        }
+    }
+
+    /// Whether an automatic start has already been tried this launch. The **button** is not
+    /// gated by this: a manual retry is a new decision by the user.
+    private var autoStartAttempted = false
+
+    /// True while `container system start` is running, so the banner can say so. The CLI takes
+    /// several seconds (it launches the API server, then waits for it to answer), which is long
+    /// enough that silence reads as nothing happening.
+    private(set) var startingRuntime = false
+
+    /// Starts the `container` services, then re-checks and reloads.
+    ///
+    /// Recorded in the activity feed on success. An automatic side effect with no trace is
+    /// indistinguishable from a mystery later.
+    func startRuntime() async {
+        guard !startingRuntime else { return }
+        startingRuntime = true
+        state = .loading
+        do {
+            try await Task.detached { [cli] in try cli.startSystem() }.value
+            recordActivity(ContainerEvent(date: Date(), from: "stopped", to: "running",
+                                          kind: .runtime, subject: hostLabel,
+                                          action: "Runtime started"))
+            startingRuntime = false
+            await reload()
+        } catch {
+            startingRuntime = false
+            // The CLI's own words. The likeliest real failure is a missing kernel, which we
+            // deliberately do not install, and its message says exactly that.
+            state = .unavailable("Couldn't start the `container` service — \(error)")
         }
     }
 
@@ -478,7 +528,15 @@ final class AppModel {
         case .ok:
             return nil
         case .missing:
-            return "Apple's `container` CLI isn't installed."
+            // Names where it looked. The previous message asserted "isn't installed" with no
+            // evidence, and was **wrong** on a machine where the CLI was installed and running:
+            // a GUI-launched app's PATH has no `/usr/local/bin`, so the search that backed the
+            // claim could not have found it. A diagnosis the reader can check is worth more than
+            // a shorter one.
+            return "Apple's `container` CLI wasn't found in: "
+                + Preflight.searchedDirectories().joined(separator: ", ")
+        case .serviceStopped(_, _, let status):
+            return "Apple's `container` service isn't running (\(status))."
         case .tooOld(let found, let required):
             return "`container` \(found) is too old — \(required) or newer is required."
         case .unusable(let reason):

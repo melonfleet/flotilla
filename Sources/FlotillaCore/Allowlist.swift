@@ -655,6 +655,23 @@ public enum Allowlist {
             CommandSpec(["system", "status"], mutates: false, flags: [format]),
             CommandSpec(["system", "version"], mutates: false, flags: [format]),
             CommandSpec(["system", "df"], mutates: false, flags: [format]),
+
+            // MARK: system — the one mutation
+            //
+            // `--disable-kernel-install` is not optional decoration. Captured help:
+            // `--enable-kernel-install/--disable-kernel-install  … (default: prompt user)`.
+            // A GUI-launched process has no terminal to answer that prompt on, so an
+            // unqualified `system start` on a machine without the kernel would hang until it
+            // timed out with nothing on screen explaining why. `--enable-kernel-install` is
+            // deliberately **absent**: installing a kernel is exactly the privileged,
+            // user-authorised step `DECISIONS.md` says Flotilla never takes on its own.
+            //
+            // `--app-root`, `--install-root` and `--log-root` are absent for the same reason
+            // build's path flags are constrained: they are host paths, and default-deny means
+            // an unlisted flag is refused without anyone having to remember to refuse it.
+            CommandSpec(["system", "start"], mutates: true, timeoutHint: 120,
+                        flags: [FlagSpec(long: "disable-kernel-install"),
+                                FlagSpec(long: "timeout", value: .count)]),
         ]
     }()
 

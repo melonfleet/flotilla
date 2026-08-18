@@ -15,6 +15,11 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
     /// nothing at all.
     case commandFailed(command: String, exitCode: Int32, message: String)
 
+    /// No `container` binary in any directory we look in. Carries the list so the message can
+    /// say where it looked — "isn't installed" with no evidence is exactly the claim that was
+    /// wrong for three weeks.
+    case runtimeNotFound(searched: [String])
+
     public var description: String {
         switch self {
         case .emptyInspectResult(let id):
@@ -26,6 +31,8 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
             message.isEmpty
                 ? "`container \(command)` failed (exit \(exitCode))."
                 : message
+        case .runtimeNotFound(let searched):
+            "Apple's `container` CLI was not found in: \(searched.joined(separator: ", "))"
         }
     }
 }
@@ -74,9 +81,47 @@ public struct ContainerCLI: Sendable {
         if noStream { args.append("--no-stream") }
         return try JSONDecoder.flotilla.decode([ContainerStats].self, from: Data(try succeeding(args).stdout.utf8))
     }
+    /// Starts the `container` services.
+    ///
+    /// Always with `--disable-kernel-install`: the flag defaults to *prompting*, and there is
+    /// nowhere for a windowed app to show a prompt. If the kernel genuinely is missing this
+    /// fails with the CLI's own message, which is the correct outcome — installing it is the
+    /// user's call, not ours.
+    @discardableResult
+    public func startSystem(timeoutSeconds: Int = 60) throws -> CommandResult {
+        try execute(["system", "start", "--disable-kernel-install",
+                     "--timeout", String(timeoutSeconds)])
+    }
+
+    /// `container system status`, which reports a **stopped** service by exiting non-zero while
+    /// still printing the status JSON on stdout.
+    ///
+    /// Measured, not assumed. With the services stopped:
+    ///
+    /// ```
+    /// exit=1
+    /// stdout={"apiServerAppName":"","…":"","status":"unregistered"}
+    /// stderr=
+    /// ```
+    ///
+    /// So the decodable answer is *in* the failure, and `execute`'s exit-code check threw it
+    /// away — which is why preflight reported "installed but not usable" with the raw JSON
+    /// pasted into a sentence, instead of "the service isn't running" with a button. A decoded
+    /// status is preferred over the exit code whenever one is present; a genuinely broken
+    /// invocation still throws.
     public func systemStatus() throws -> SystemStatus {
-        try JSONDecoder.flotilla.decode(SystemStatus.self,
-                                        from: Data(try execute(["system", "status", "--format", "json"]).stdout.utf8))
+        let result = try attempting(["system", "status", "--format", "json"])
+        if let status = try? JSONDecoder.flotilla.decode(SystemStatus.self,
+                                                        from: Data(result.stdout.utf8)) {
+            return status
+        }
+        guard result.ok else {
+            throw ContainerCLIError.commandFailed(command: "system status",
+                                                  exitCode: result.exitCode,
+                                                  message: Self.failureMessage(result))
+        }
+        // Exited zero and still unreadable: a real decode failure, reported as one.
+        return try JSONDecoder.flotilla.decode(SystemStatus.self, from: Data(result.stdout.utf8))
     }
     public func versions() throws -> [VersionComponent] {
         try JSONDecoder.flotilla.decode([VersionComponent].self,
@@ -119,6 +164,18 @@ public struct ContainerCLI: Sendable {
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
                                                 execPolicy: execPolicy)
         return try succeeding(validated.arguments)
+    }
+
+    /// Validated execution that **returns** a non-zero exit rather than throwing on it.
+    ///
+    /// Still goes through `Allowlist` and `MountPolicy` — that is the invariant, and this is not
+    /// a way around it. It exists because one command reports a legitimate, actionable state
+    /// *by failing*: see `systemStatus`. Keep the caller list to commands whose failure carries
+    /// information; everything else wants `execute`.
+    private func attempting(_ args: [String]) throws -> CommandResult {
+        let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
+                                                execPolicy: execPolicy)
+        return try host.run(validated.arguments)
     }
 
     /// Runs `args` and **throws unless the CLI exited zero**.

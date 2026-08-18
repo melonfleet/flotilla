@@ -22,7 +22,7 @@ public struct Preflight: Sendable {
 
     public init(cli: ContainerCLI,
                 minimumVersion: VersionTriple = Preflight.defaultMinimumVersion,
-                locate: @escaping @Sendable (String) -> String? = Preflight.locateOnPath) {
+                locate: @escaping @Sendable (String) -> String? = { Preflight.locateBinary($0) }) {
         self.cli = cli
         self.minimumVersion = minimumVersion
         self.locate = locate
@@ -59,20 +59,69 @@ public struct Preflight: Sendable {
         } catch {
             return .unusable(reason: "could not read `container system status`: \(error)")
         }
+        // **Its own case, not `.unusable`.** "Installed but the service is stopped" is the
+        // single commonest state after a reboot, it is one command from working, and the app can
+        // fix it without the user typing anything — so the UI has to be able to tell it apart
+        // from "unusable" rather than parse it out of an English sentence.
         guard status.isRunning else {
-            return .unusable(reason: "the container system service is not running (status: \(status.status))")
+            return .serviceStopped(version: component.version, path: path, status: status.status)
         }
 
         return .ok(version: component.version, path: path)
     }
 
+    /// Where `container` is installed, searched after `PATH`.
+    ///
+    /// Not a guess: `container system status` reports `installRoot /usr/local/`, and the binary
+    /// on this machine is `/usr/local/bin/container`.
+    public static let installDirectories = ["/usr/local/bin"]
+
+    /// Resolves `binary` on `PATH` first, then in `installDirectories`.
+    ///
+    /// **The fallback is the whole point, and the old docstring here argued against it on a
+    /// false premise.** It said that if a binary is not on `PATH` then `ContainerHost` could not
+    /// run it either, so reporting it findable would mislead. That was true of the old
+    /// `/usr/bin/env container` launch and is the reason both halves changed together: a
+    /// GUI-launched app does **not** inherit a login shell's `PATH`. Flotilla launched from the
+    /// Dock (or relaunched by macOS after a restart) gets exactly
+    /// `/usr/bin:/bin:/usr/sbin:/sbin` — measured with `ps eww` on the running process — which
+    /// does not contain `/usr/local/bin`. So `container` was reported **not installed** on a
+    /// machine where it was installed and running, and no amount of `container system start`
+    /// could change that verdict. It only ever worked when launched from a terminal, which is
+    /// how every one of my own screenshots had been taken.
+    ///
+    /// - Parameters:
+    ///   - path: the `PATH` to search. `nil` reads the process environment; tests pass one in,
+    ///     because a test that read the ambient `PATH` would carry this bug's own blind spot —
+    ///     it would pass under `swift test` (a terminal's rich `PATH`) and prove nothing about
+    ///     the environment the shipped app actually runs in.
+    ///   - directories: where to look when `path` does not answer.
+    public static func locateBinary(_ binary: String,
+                                   path: String? = nil,
+                                   directories: [String] = installDirectories) -> String? {
+        if let onPath = locateOnPath(binary, path: path) { return onPath }
+        for directory in directories {
+            let candidate = "\(directory)/\(binary)"
+            if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+        }
+        return nil
+    }
+
+    /// Every directory a lookup consults, for the "not installed" message. A diagnosis that names
+    /// where it looked can be checked by the person reading it; "isn't installed" cannot.
+    public static func searchedDirectories(path: String? = nil,
+                                           directories: [String] = installDirectories) -> [String] {
+        let pathVariable = path ?? ProcessInfo.processInfo.environment["PATH"] ?? ""
+        let entries = pathVariable.split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        // Deduplicated, so a `PATH` that already contains the install directory does not print it
+        // twice in the message.
+        return entries + directories.filter { !entries.contains($0) }
+    }
+
     /// Searches `PATH` for an executable named `binary`, the way a shell would.
-    /// Deliberately does not fall back to hardcoded install locations
-    /// (`reference/container-cli.md` names `/usr/local/bin`): if it isn't on `PATH`,
-    /// `ContainerHost` (which shells out via `/usr/bin/env`) couldn't run it either, so
-    /// reporting it findable would be misleading.
-    public static func locateOnPath(_ binary: String) -> String? {
-        guard let pathVariable = ProcessInfo.processInfo.environment["PATH"], !pathVariable.isEmpty else {
+    public static func locateOnPath(_ binary: String, path: String? = nil) -> String? {
+        guard let pathVariable = path ?? ProcessInfo.processInfo.environment["PATH"],
+              !pathVariable.isEmpty else {
             return nil
         }
         for directory in pathVariable.split(separator: ":") {

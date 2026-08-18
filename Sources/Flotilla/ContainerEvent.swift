@@ -6,6 +6,11 @@ import Foundation
 /// entry, and by then there is no `ContainerVolume` left to ask.
 enum ActivityKind: String, CaseIterable, Identifiable, Hashable {
     case container, machine, image, volume, network
+    /// The `container` runtime service itself — started, or found stopped. Not a resource, but
+    /// it belongs in the same feed: it is the answer to "why was everything empty a minute ago",
+    /// and an automatic action Flotilla takes on its own must leave a trace somewhere the user
+    /// can find it.
+    case runtime
     var id: Self { self }
 
     var title: String {
@@ -15,6 +20,7 @@ enum ActivityKind: String, CaseIterable, Identifiable, Hashable {
         case .image: "Images"
         case .volume: "Volumes"
         case .network: "Networks"
+        case .runtime: "Runtime"
         }
     }
 
@@ -27,6 +33,7 @@ enum ActivityKind: String, CaseIterable, Identifiable, Hashable {
         case .image: "square.stack.3d.up"
         case .volume: "cylinder.split.1x2"
         case .network: "network"
+        case .runtime: "gearshape.2"
         }
     }
 
@@ -38,6 +45,8 @@ enum ActivityKind: String, CaseIterable, Identifiable, Hashable {
         case .image: .images
         case .volume: .volumes
         case .network: .networks
+        // The runtime banner lives on the dashboard, so that is where a runtime row leads.
+        case .runtime: .dashboard
         }
     }
 }
