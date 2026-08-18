@@ -108,9 +108,11 @@ struct MainWindowView: View {
                 hostRow
             }
 
-            group("System") {
-                row(.settings, count: nil)
-            }
+            // **No System group.** Settings moved to the gear at the window's trailing edge
+            // (`WindowBar`), on the owner's reasoning that the left nav should list the things you
+            // manage — containers, volumes, machines — and not the application's own
+            // preferences. `.settings` is still a real `Section`: the gear, the menu-bar popover
+            // and the dashboard all reach it through `model.pendingSection`.
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
     }
@@ -283,6 +285,44 @@ struct MainWindowView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            // Full width, above everything — so the sidebar starts below it.
+            WindowBar(model: model, railed: $railed)
+            splitView
+        }
+        // Up into the traffic-light row, so the bar IS the top of the window rather than a
+        // second band under it. `.hiddenTitleBar` stops the title bar being *drawn* but SwiftUI
+        // still insets content by its height, which left the logo one row below the lights and
+        // the window carrying ~88pt of chrome against Docker's ~52. `WindowBar` reserves the
+        // buttons' width at its leading edge, so nothing lands under them.
+        .ignoresSafeArea(.container, edges: .top)
+        // The wash has to reach the top of the window now that the content does.
+        .background(Theme.contentBackground.ignoresSafeArea())
+        .allowsHitTesting(model.openFormCount == 0)
+        .overlay {
+            if model.openFormCount > 0 {
+                Rectangle()
+                    .fill(.black.opacity(0.28))
+                    .ignoresSafeArea()
+                    .accessibilityLabel("Dimmed — a form is open in front")
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: model.openFormCount)
+        .onChange(of: model.pendingSection) { _, requested in
+            guard let requested else { return }
+            selection = requested
+            model.pendingSection = nil
+        }
+        .onAppear {
+            if let requested = model.pendingSection {
+                selection = requested
+                model.pendingSection = nil
+            }
+        }
+    }
+
+    private var splitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
             // Replaced by ours in the toolbar below. This has to be applied to the **sidebar**,
@@ -322,92 +362,15 @@ struct MainWindowView: View {
         } detail: {
             detailContent
         }
-        // The honeydew wash, on the content column only.
-        //
-        // The mockup specified `--content-bg: #ffffff`, and a flat white panel beside a Liquid
-        // Glass sidebar reads as *absent* rather than as a decision. This is deliberately faint
-        // — a ground for cards to sit on, not a colour anyone should notice — and cards keep
-        // their own opaque surface so data contrast is untouched.
-        //
-        // `ignoresSafeArea` so it reaches under the toolbar; without it the wash stops at the
-        // content inset and draws a visible seam across the top of every section.
-        .background(Theme.contentBackground.ignoresSafeArea())
-        // The modal treatment. Dimming *and* disabling: a dim alone would look modal while
-        // still accepting clicks, which is worse than no dim at all — it says "you cannot
-        // touch this" and then lets you.
-        //
-        // `.allowsHitTesting(false)` rather than `.disabled(true)` because `disabled`
-        // recursively greys every control, which fights the dim and makes text unreadable.
-        // The dim already communicates the state; this just makes it true.
-        // The wordmark goes in the title bar, replacing the plain word "Flotilla" — the
-        // sidebar was too narrow for the lockup and wrapped it to "melonfl / eet".
-        //
-        // `.navigation` places it top-leading, just after the sidebar toggle, which is where
-        // the title text sat.
-        .toolbar {
-            // Ours, in the system button's place. Flipping `railed` directly rather than
-            // letting the system hide the column first means no flash of a vanished sidebar
-            // on the way to the rail.
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    railed.toggle()
-                } label: {
-                    Image(systemName: "sidebar.leading")
-                }
-                .help(railed ? "Show the sidebar labels" : "Collapse the sidebar to icons")
-                .accessibilityLabel(railed ? "Expand sidebar" : "Collapse sidebar to icons")
-            }
-            ToolbarItem(placement: .navigation) {
-                Wordmark(size: 14)
-                    .fixedSize()          // never wrap — it is a lockup, not a paragraph
-            }
-            // On macOS 26 every toolbar item is given its own Liquid Glass capsule. That is
-            // right for controls and wrong for a logo: it drew an off-white pill behind the
-            // wordmark that read as a mismatched, non-transparent patch against the title bar.
-            // Hiding the shared background lets the mark sit directly on the glass.
-            .sharedBackgroundVisibility(.hidden)
-        }
-        // Suppress the window's own title text. Without this the title bar reads
-        // "melonfleet | Flotilla   Flotilla" — the name twice.
-        //
-        // This replaces an `NSViewRepresentable` that reached for `view.window` and set
-        // `titleVisibility = .hidden`. It did not work, and the reason is worth keeping: a
-        // `NavigationSplitView` re-asserts the title as a toolbar item of its own, so setting
-        // the window property lost a race it could not win. `removing: .title` removes that
-        // item, which is the thing actually being drawn.
+        // The sidebar toggle moved into `WindowBar`: with `.hiddenTitleBar` there is no title
+        // bar to hang a `ToolbarItem` on, and the control belongs beside the logo anyway — which
+        // is where Docker puts its own.
         .toolbar(removing: .title)
-        // The View menu and ⌘⌥S still reach the split view directly, and both ask for the old
-        // behaviour. Translate rather than obey: rail it, and put the column straight back.
         .onChange(of: columnVisibility) { _, requested in
             guard requested != .all else { return }
             railed.toggle()
             columnVisibility = .all
         }
         .animation(.easeInOut(duration: 0.18), value: railed)
-        .allowsHitTesting(model.openFormCount == 0)
-        .overlay {
-            if model.openFormCount > 0 {
-                Rectangle()
-                    .fill(.black.opacity(0.28))
-                    .ignoresSafeArea()
-                    // Not decorative: it is what tells the user the window is inert.
-                    .accessibilityLabel("Dimmed — a form is open in front")
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.15), value: model.openFormCount)
-        // The popover can ask for a section; the window owns the selection. Consumed and
-        // cleared here so a second click on "Settings…" works as well as the first.
-        .onChange(of: model.pendingSection) { _, requested in
-            guard let requested else { return }
-            selection = requested
-            model.pendingSection = nil
-        }
-        .onAppear {
-            if let requested = model.pendingSection {
-                selection = requested
-                model.pendingSection = nil
-            }
-        }
     }
 }

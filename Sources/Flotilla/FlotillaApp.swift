@@ -189,6 +189,19 @@ struct FlotillaApp: App {
                     OnboardingView(model: model)
                 }
         }
+        // Content to the top of the window, traffic lights floating over it.
+        //
+        // This is what lets `WindowBar` span the full width with the sidebar *below* it — the
+        // arrangement the owner asked for from Docker Desktop. The route matters: an
+        // `NSTitlebarAccessoryViewController` was tried first, on the second reviewer's research, and it cannot
+        // work here. Measured: AppKit laid the accessory out at `(208, …, 972 × 36)` in a 1180pt
+        // window — the content area only — because a full-height sidebar runs up *under* the
+        // title bar, so nothing in the titlebar region can span across it.
+        //
+        // `.hiddenTitleBar` is not `.toolbar(.hidden, for: .windowToolbar)`, which a second reviewer warned
+        // takes the traffic lights, window dragging and the sidebar toggle with it. This keeps
+        // the window's standard buttons; only the title bar's own drawing goes.
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 720)
         // **This is the fix for "it only shows in the menu bar".**
         //
