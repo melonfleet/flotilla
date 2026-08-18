@@ -101,12 +101,17 @@ struct MainWindowView: View {
                 row(.machines, count: model.machinesState == .loaded ? model.machines.count : nil)
             }
 
-            // The mockup shows eight hosts here. There is **one**, and inventing the other
-            // seven to match a picture would be the fabricated-fixtures mistake in the UI
-            // layer. The group is real, its contents are what actually exists.
-            group("Hosts") {
-                hostRow
-            }
+            // **No Hosts group until Phase 2.** The mockup shows eight hosts; there was exactly
+            // one, and a single unselectable row is not navigation — it is a status readout
+            // wearing navigation's clothes, which is the "control that drives nothing" this
+            // project keeps re-learning. `hostRow`'s own docstring conceded as much.
+            //
+            // Nothing is lost: the dashboard's Hosts card carries the same dot with more detail
+            // (containers *and* machines running), the runtime banner explains an unhealthy
+            // runtime where you can act on it, the menu-bar popover shows This Mac with live
+            // CPU and memory, and the sidebar footer states the mode and pairing posture
+            // continuously. Bring the group back when there are peers to switch between and the
+            // row has somewhere to go — the owner's call, 18 August.
 
             // **No System group.** Settings moved to the gear at the window's trailing edge
             // (`WindowBar`), on the owner's reasoning that the left nav should list the things you
@@ -117,68 +122,6 @@ struct MainWindowView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
     }
 
-    /// This Mac. Deliberately **not** selectable: with a single host, a row that navigated
-    /// would either duplicate Containers or do nothing at all, and a control that drives
-    /// nothing is the failure this project keeps re-learning. It is a status readout until
-    /// Phase 2 gives it siblings to switch between.
-    private var hostRow: some View {
-        Group {
-            if railed {
-                // The machine glyph *tinted* by the state, not the bare 8pt dot: alone in a
-                // 64pt column a dot reads as a stray bullet, and it would be the only thing in
-                // the rail that was not an icon.
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: railIconSize))
-                    .foregroundStyle(hostDotColor)
-                    .frame(maxWidth: .infinity, minHeight: 26)
-                    .help("\(model.hostLabel) — \(hostHelp)")
-            } else {
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(hostDotColor)
-                        .frame(width: 8, height: 8)
-                    Text(model.hostLabel)
-                    Spacer(minLength: 6)
-                    if model.state == .loaded {
-                        Text("\(model.running.count)")
-                            .font(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .help(hostHelp)
-            }
-        }
-        .selectionDisabled()
-    }
-
-    /// Derived from the load state rather than from `AppModel`'s private preflight verdict —
-    /// the observable state already says everything the dot needs, and reaching past the
-    /// model's own boundary for it would be the wrong trade for one colour.
-    private var hostDotColor: Color {
-        switch model.state {
-        case .loaded: Theme.online
-        case .unavailable, .failed: Theme.danger
-        // Not yet known. A hollow-looking grey, never green — claiming a host is up before
-        // we have heard from it is the offline-detection bug again.
-        case .idle, .loading: .secondary
-        }
-    }
-
-    private var hostHelp: String {
-        switch model.state {
-        case .loaded: "\(model.running.count) running of \(model.containers.count)"
-        case .unavailable(let reason), .failed(let reason): reason
-        case .idle, .loading: "Checking the container runtime…"
-        }
-    }
-
-    /// A section row: icon, title, and the count trailing.
-    ///
-    /// `count` is optional and `nil` renders nothing, because Images, Volumes and Networks
-    /// load lazily when their tab is first opened. Showing `0` for "not fetched yet" would
-    /// make an unvisited tab indistinguishable from an empty one — the same
-    /// unknown-versus-zero confusion the CPU column already refuses to make.
     /// In rail mode the title *and* the count move into the tooltip rather than being dropped.
     /// The count is the sidebar's one piece of at-a-glance information, and there is no room for
     /// a numeral beside an 18pt glyph without either shrinking the icon the owner asked to enlarge
