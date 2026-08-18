@@ -130,23 +130,17 @@ struct MenuKindBox<Items: View>: View {
             }
             .frame(height: 18)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(boxFill, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8)
-            .strokeBorder(hovering || expanded ? Theme.accent.opacity(0.55) : Theme.hairline))
-        .contentShape(.rect)
-        .onHover { inside in
-            hovering = inside
-            hoverChanged(inside)
-        }
-        // The list, inline. Reported as hover too, so travelling from the box down into the rows
-        // does not start the close timer.
-        .overlay(alignment: .bottom) { EmptyView() }
-        .animation(.easeOut(duration: 0.1), value: hovering)
-        .animation(.easeOut(duration: 0.1), value: expanded)
-
+        // **Content only.** No padding, no fill, no border and above all NO `.onHover` — the
+        // enclosing `body` owns all of that.
+        //
+        // A second `.onHover` here is what made the expanded box unusable. The summary is only
+        // the *top* of the box, so moving the pointer down into the rows leaves the summary's
+        // hit region and fired `hoverChanged(false)` for this kind. The parent keys its state on
+        // the kind, not on which subview reported, so that one event emptied `hoverOrder` and
+        // started the close timer — the box collapsed exactly as the pointer arrived at the
+        // Start/Stop buttons, which is why the menu could not be used to control anything.
+        //
+        // The chrome was duplicated too, so the box was drawing its fill and border twice.
     }
 
     /// `AnyShapeStyle` because the two branches are different types — a tinted `Color` and the
