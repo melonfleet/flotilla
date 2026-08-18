@@ -65,7 +65,7 @@ extension AppModel {
         defer { busyMachines.remove(machine.id) }
 
         do {
-            _ = try await Task.detached { [cli] in
+            let result = try await Task.detached { [cli] in
                 switch action {
                 case .start: try cli.startMachine(machine.id)
                 case .stop: try cli.stopMachine(machine.id)
@@ -90,10 +90,51 @@ extension AppModel {
                                               action: "Restarted"))
             }
             await refreshMachines()
+            verifyOutcome(of: action, on: machine, result: result)
         } catch {
             actionError = describe(error)
             record("Machine \(action) failed for \(machine.id): \(error)", subsystem: "machines")
         }
+    }
+
+    /// Checks the machine actually reached the state the action promised, and says so if it did
+    /// not.
+    ///
+    /// **Because a zero exit is not proof.** The owner pressed Start on a stopped machine and got a
+    /// spinner, then the Play button back, with no message at all — while the same command run by
+    /// hand printed `Error: The operation couldn't be completed. Operation not supported by
+    /// device`. `succeeding(_:)` throws on a non-zero exit, so the most likely explanation is
+    /// that this command printed its error and exited **0**: nothing threw, the refresh found the
+    /// machine still stopped, and the row honestly re-drew Play. Silence is the worst possible
+    /// report of a failure.
+    ///
+    /// I could not reproduce the original failure afterwards — the same machine now boots
+    /// headlessly every time — so this is deliberately not written as a fix for that cause. It is
+    /// a net under the whole class: whatever the runtime does with exit codes, an action that did
+    /// not achieve its state now says so, and quotes the CLI's own words when it left any.
+    private func verifyOutcome(of action: MachineAction, on machine: ContainerMachine,
+                               result: CommandResult) {
+        let expectedRunning: Bool
+        switch action {
+        case .start, .restart: expectedRunning = true
+        case .stop: expectedRunning = false
+        // Delete removes the row; set-default changes a flag, not a state. Nothing to verify.
+        case .delete, .setDefault: return
+        }
+
+        guard let current = machines.first(where: { $0.id == machine.id }) else { return }
+        let isRunning = current.status.caseInsensitiveCompare("running") == .orderedSame
+        guard isRunning != expectedRunning else { return }
+
+        // The CLI's own sentence if it left one on either stream — `container machine run` has
+        // been seen writing `Error:` to stdout — otherwise state the bare fact.
+        let reported = ContainerCLI.failureMessage(result)
+        let verb = expectedRunning ? "start" : "stop"
+        actionError = reported.isEmpty
+            ? "‘\(machine.id)’ did not \(verb) — it is still \(current.status.lowercased()), and the runtime reported no reason."
+            : "‘\(machine.id)’ did not \(verb): \(reported)"
+        record("Machine \(action) reported success but \(machine.id) is \(current.status): "
+               + "stdout=\(result.stdout) stderr=\(result.stderr)", subsystem: "machines")
     }
 
     func createMachine(image: String, name: String?, cpus: Int?, memory: String?,

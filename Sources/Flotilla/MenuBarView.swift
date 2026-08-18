@@ -366,7 +366,14 @@ struct MenuBarView: View {
             + " allocated"
     }
 
-    /// Total container CPU over time, summed per sample.
+    /// Total container CPU over time, **normalised to the whole machine** — the same scale as
+    /// the `detail` line above the graph.
+    ///
+    /// It used to plot the raw sum of per-core percentages while the text beside it divided by
+    /// the core count. Both were defensible in isolation and together they disagreed: measured
+    /// on this Mac with one spinning container, the line drew a peak of ~145 while the label
+    /// under the same title read "CPU 12% of 12 cores". A graph and a number sitting in the same
+    /// box must answer the same question, or the reader has to guess which one to believe.
     ///
     /// A sample is `nil` when *no* container reported a figure for it — the first reading has no
     /// previous sample to diff against — which `Sparkline` renders as a gap rather than a zero.
@@ -379,7 +386,8 @@ struct MenuBarView: View {
                 guard offset >= 0, offset < history.count else { return nil }
                 return history[offset]
             }
-            return sample.isEmpty ? nil : sample.reduce(0, +)
+            guard !sample.isEmpty else { return nil }
+            return sample.reduce(0, +) / Double(max(1, ProcessInfo.processInfo.processorCount))
         }
     }
 

@@ -210,7 +210,9 @@ public struct ContainerCLI: Sendable {
     /// block — valuable in a support bundle, noise in an alert. Prefer the `Error:` line;
     /// fall back to the first non-empty line; fall back again to stdout, because some
     /// failures report there instead.
-    static func failureMessage(_ result: CommandResult) -> String {
+    /// `public` so the app layer can quote the CLI in a *successful-looking* result too — a
+    /// command that prints `Error:` and exits zero leaves its only explanation here.
+    public static func failureMessage(_ result: CommandResult) -> String {
         func lines(_ text: String) -> [String] {
             text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
