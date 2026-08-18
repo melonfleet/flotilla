@@ -4,10 +4,18 @@ import FlotillaCore
 /// The Logs section: one place that answers "what has everything been saying", instead of
 /// visiting each container's detail tab in turn.
 ///
-/// **Grouped by source, never interleaved into one stream** — see `aggregatedLogs`. `container
-/// logs` has no `--timestamps`, so the only clock available is the moment *we* read the chunk,
-/// which is the same for every line in it. A single merged column ordered by that would look
-/// authoritative and mean nothing. Each source keeps its own block, in its own order, labelled.
+/// **One continuous feed, with the source as a field on every line.** It was per-source blocks
+/// first, which read well with two containers and turned into a scrolling exercise with five —
+/// the owner's call, and he is right: the thing you want is usually one stream you can filter, not a
+/// tour of every source in turn.
+///
+/// What has *not* changed is what the data can support. `container logs` has no `--timestamps`
+/// (captured help confirms it), so the only clock available is the moment *we* read a chunk,
+/// which is identical for every line in it. So the feed is **not** chronological across sources
+/// and does not pretend to be: lines keep their source's own order, sources follow a stable
+/// order, and the toolbar says so. Sorting this by a fabricated time would look authoritative
+/// and order lines by nothing at all. The per-source filter is what actually answers "just show
+/// me this one".
 struct LogsView: View {
     let model: AppModel
     /// Owned by `MainWindowView` — see `LogsUIState`.
@@ -58,11 +66,38 @@ struct LogsView: View {
             .fixedSize()
             .help("Process output, or the VM boot log")
 
+            // Kinds, and then individual names — "just this container" is the filter that
+            // actually replaces scrolling past four others.
             Picker("", selection: Binding(get: { ui.sources }, set: { ui.sources = $0 })) {
                 ForEach(LogsUIState.Sources.allCases) { Text($0.rawValue).tag($0) }
             }
             .fixedSize()
             .help("Which kinds of source to read from")
+
+            Menu {
+                Button {
+                    ui.only.removeAll()
+                } label: {
+                    Label("All sources", systemImage: ui.only.isEmpty ? "checkmark" : "")
+                }
+                Divider()
+                // Built from what is actually running, because those are the only sources
+                // `logs` can answer for — a menu offering a stopped container would be a
+                // control that cannot work.
+                ForEach(availableSources, id: \.0) { source, kind in
+                    Button {
+                        if ui.only.contains(source) { ui.only.remove(source) } else { ui.only.insert(source) }
+                    } label: {
+                        Label(source, systemImage: ui.only.contains(source)
+                              ? "checkmark"
+                              : kind.systemImage)
+                    }
+                }
+            } label: {
+                Text(sourceFilterLabel)
+            }
+            .fixedSize()
+            .help("Filter to particular containers or machines")
 
             Picker("", selection: Binding(get: { ui.lineLimit }, set: { ui.lineLimit = $0 })) {
                 ForEach(LogsUIState.lineLimits, id: \.self) { Text("\($0) lines").tag($0) }
@@ -82,81 +117,92 @@ struct LogsView: View {
             ProgressView().controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if !model.runtimeUsable {
-            ContentUnavailableView("The container runtime isn't available",
+            ContentUnavailableView("The container runtime isn\u{2019}t available",
                                    systemImage: "exclamationmark.triangle",
                                    description: Text("Logs come from `container logs`, which needs the runtime."))
         } else if chunks.isEmpty {
-            // Says *why* it is empty. Only running sources can answer `logs`, and "nothing is
-            // running" is a different fact from "nothing has been logged".
             ContentUnavailableView("Nothing to read",
                                    systemImage: "text.alignleft",
                                    description: Text("Only running containers and machines can return logs."))
-        } else if filtered.allSatisfy({ $0.lines.isEmpty && $0.failure == nil }) && !ui.search.isEmpty {
-            ContentUnavailableView.search(text: ui.search)
+        } else if feed.isEmpty && failures.isEmpty {
+            if ui.search.isEmpty {
+                ContentUnavailableView("No output",
+                                       systemImage: "text.alignleft",
+                                       description: Text("The selected sources have not logged anything."))
+            } else {
+                ContentUnavailableView.search(text: ui.search)
+            }
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(filtered) { chunk in
-                        sourceBlock(chunk)
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    // Failures first and compact — a source that cannot be read is a fact worth
+                    // seeing, and it must not be silently absent from a feed that otherwise
+                    // looks complete.
+                    ForEach(failures) { chunk in
+                        HStack(alignment: .top, spacing: 8) {
+                            sourceTag(chunk.source, kind: chunk.kind)
+                            Text(chunk.failure ?? "")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.danger)
+                                .textSelection(.enabled)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    ForEach(feed) { line in
+                        HStack(alignment: .top, spacing: 8) {
+                            sourceTag(line.source, kind: line.kind)
+                            Text(line.text)
+                                .font(.system(size: 11, design: .monospaced))
+                                // `stderr` here is the *CLI's* stderr, not the container's own:
+                                // `container logs` writes program output to stdout, so a line
+                                // arriving on stderr is the runtime complaining. Tinted rather
+                                // than filtered — offering a "stderr" filter would imply a split
+                                // the CLI does not make.
+                                .foregroundStyle(line.stream == .stderr ? Theme.warning : .primary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.vertical, 1)
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
             }
         }
     }
 
-    private func sourceBlock(_ chunk: AggregatedLogChunk) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: chunk.kind.systemImage)
-                    .foregroundStyle(.secondary)
-                Text(chunk.source)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.accentText)
-                if chunk.truncated {
-                    // Per source, not one banner for the screen: which log was clipped matters.
-                    Text("tail of \(ui.lineLimit)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .help("Older lines exist. Raise the line count to read further back.")
-                }
-                Spacer()
-                Text(chunk.kind == .machine ? "machine" : "container")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-
-            if let failure = chunk.failure {
-                // Shown, not dropped. A source that cannot be read is a fact worth seeing, and
-                // silently omitting it makes "quiet" and "broken" identical.
-                Text(failure)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.danger)
-                    .textSelection(.enabled)
-            } else if chunk.lines.isEmpty {
-                Text("No output.")
-                    .font(.system(size: 11)).foregroundStyle(.tertiary)
-            } else {
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(chunk.lines) { line in
-                        Text(line.text)
-                            .font(.system(size: 11, design: .monospaced))
-                            // `stderr` here is the *CLI's* stderr, not the container's own —
-                            // `container logs` writes program output to stdout, so a line
-                            // arriving on stderr is the runtime complaining. Tinted rather than
-                            // filtered, because it is a different kind of information and
-                            // offering it as a "stderr" filter would imply a split the CLI does
-                            // not make.
-                            .foregroundStyle(line.stream == .stderr ? Theme.warning : .primary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(8)
-                .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline))
-            }
+    /// The source name as a field on the line, fixed-width so the text column still lines up.
+    ///
+    /// Truncates from the head rather than the tail: container ids share prefixes far more often
+    /// than suffixes, so keeping the end is what keeps two of them distinguishable.
+    private func sourceTag(_ source: String, kind: ActivityKind) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: kind.systemImage)
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+            Text(source)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.accentText)
+                .lineLimit(1)
+                .truncationMode(.head)
         }
+        .frame(width: 128, alignment: .leading)
+        .help("\(source) \u{2014} \(kind == .machine ? "machine" : "container")")
+    }
+
+    /// Every line from every selected source, in one list.
+    ///
+    /// Order is each source's own order, with sources in the stable order `aggregatedLogs`
+    /// returns — containers alphabetically, then machines. Explicitly **not** time-ordered; see
+    /// the note on this view.
+    private var feed: [AggregatedLogLine] {
+        filtered.flatMap(\.lines)
+    }
+
+    private var failures: [AggregatedLogChunk] {
+        filtered.filter { $0.failure != nil }
     }
 
     /// The free-text filter, applied per source: a chunk survives if its name matches — so you
@@ -176,9 +222,30 @@ struct LogsView: View {
         }
     }
 
+    /// Running containers and machines, in the order the feed uses.
+    private var availableSources: [(String, ActivityKind)] {
+        model.running.map { ($0.id, ActivityKind.container) }
+            + model.machines.filter { MachinesView.isRunning($0) }.map { ($0.id, ActivityKind.machine) }
+    }
+
+    private var sourceFilterLabel: String {
+        switch ui.only.count {
+        case 0: "All sources"
+        case 1: ui.only.first ?? "1 source"
+        default: "\(ui.only.count) sources"
+        }
+    }
+
     private func load() async {
         loading = true
         defer { loading = false }
+
+        // **Load the machine list first if it is empty.** Machines refresh on every *sixth* poll
+        // tick (~30s), so on a cold launch this screen would otherwise ask only the containers
+        // and show no machine lines at all — which is exactly what the owner saw, and it looked like
+        // "machines have no logs" rather than "we have not looked yet". Machine logs do work:
+        // verified against the live CLI, both the stdio log and `--boot`.
+        if model.machines.isEmpty { await model.refreshMachines() }
         chunks = await model.aggregatedLogs(scope: ui.scope, sources: ui.sources,
                                            only: ui.only, lines: ui.lineLimit)
         updated = Date()
