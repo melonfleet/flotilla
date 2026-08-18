@@ -878,10 +878,17 @@ struct ContainersView: View {
             .contextMenu(forSelectionType: Container.ID.self) { ids in
                 tableContextMenu(for: ids)
             } primaryAction: { ids in
-                // Double-click opens the detail sheet, matching the cards.
-                if let id = ids.first, let container = visible.first(where: { $0.id == id }) {
-                    openDetail(container.id)
-                }
+                // Double-click opens the detail, matching the cards — but only when the
+                // activation names exactly ONE row.
+                //
+                // `ids` is a `Set` and this table multi-selects, so with several rows selected
+                // `ids.first` is an arbitrary member: double-clicking one of them could open a
+                // different container than the one under the pointer. Opening nothing is the
+                // honest response to an ambiguous activation. (Found by Grok 4.6 in review,
+                // 2026-08-18, in code that had already been through the review and me.)
+                guard ids.count == 1, let id = ids.first,
+                      let container = visible.first(where: { $0.id == id }) else { return }
+                openDetail(container.id)
             }
             .frame(maxHeight: .infinity)
         }
@@ -897,7 +904,13 @@ struct ContainersView: View {
     private var cards: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
-                ForEach(visible) { container in
+                // `sorted`, not `visible`: the table and the detail stepper both order by
+                // `ui.sortOrder`, and the cards ignoring it meant the grid showed model order
+                // while the stepper walked sort order. That broke the stepper's own stated
+                // invariant — it walks the containers *as currently shown* — so in Cards the
+                // "next" container was not the next card, and "N of M" was a position in a list
+                // you were not looking at.
+                ForEach(sorted) { container in
                     ContainerCard(
                         container: container,
                         cpuPercent: model.cpuPercent(for: container.id),
