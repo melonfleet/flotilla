@@ -55,6 +55,16 @@ struct MainWindowView: View {
     private let railWidth: CGFloat = 64
     private let railIconSize: CGFloat = 18
 
+    /// Drops every section's content to the same line the sidebar's first row sits on.
+    ///
+    /// Measured on the Containers screen: the controls row (view toggles, filter, search) began
+    /// 12pt below the window bar while the sidebar's first row began 37pt below it, so the two
+    /// columns started at visibly different heights and the dashboard's first heading sat tight
+    /// under the bar. Applied once here rather than in six section files — the alignment is a
+    /// property of the window's two columns, not of any one screen, and six copies of a number
+    /// is how the toolbar padding drifted three ways before.
+    private let contentTopInset: CGFloat = 25
+
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
     ///
     /// It was a flat five-item `Label` list: no counts, no grouping, no footer. The mockup's
@@ -304,6 +314,7 @@ struct MainWindowView: View {
                 max: railed ? railWidth : 260)
         } detail: {
             detailContent
+                .padding(.top, contentTopInset)
         }
         // The sidebar toggle moved into `WindowBar`: with `.hiddenTitleBar` there is no title
         // bar to hang a `ToolbarItem` on, and the control belongs beside the logo anyway — which
