@@ -1,0 +1,17 @@
+OVERVIEW: Fetch container logs
+
+USAGE: container logs [--boot] [--follow] [-n <n>] [--debug] <container-id>
+
+ARGUMENTS:
+  <container-id>          Container ID
+
+OPTIONS:
+  --boot                  Display the boot log for the container instead of
+                          stdio
+  -f, --follow            Follow log output
+  -n <n>                  Number of lines to show from the end of the logs. If
+                          not provided this will print all of the logs
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

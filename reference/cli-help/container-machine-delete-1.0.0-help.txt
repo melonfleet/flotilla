@@ -1,0 +1,12 @@
+OVERVIEW: Delete a container machine
+
+USAGE: container machine delete [--debug] <id>
+
+ARGUMENTS:
+  <id>                    Container machine ID
+
+OPTIONS:
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

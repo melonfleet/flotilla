@@ -294,11 +294,25 @@ struct DashboardView: View {
                         up: model.hostMetrics.latest?.networkTxBytesPerSecond,
                         note: "whole machine, includes the runtime's own interfaces")
                 Divider()
-                rateRow("Container disk", systemImage: "internaldrive",
+                // Whole-machine disk, from IOKit's `IOBlockStorageDriver` counters — the row the
+                // caption below used to promise. It sits above the container row for the same
+                // reason Network does: this panel reads top-down from the machine to the
+                // containers, and the host figure is the one that answers "is the disk busy".
+                rateRow("Disk", systemImage: "internaldrive",
+                        down: model.hostMetrics.latest?.diskReadBytesPerSecond,
+                        up: model.hostMetrics.latest?.diskWriteBytesPerSecond,
+                        downLabel: "R", upLabel: "W",
+                        note: "whole machine, includes the runtime's own disk images")
+                Divider()
+                rateRow("Container disk", systemImage: "shippingbox",
                         down: aggregatedContainerPoints.last?.read,
                         up: aggregatedContainerPoints.last?.write,
                         downLabel: "R", upLabel: "W",
-                        note: "containers only — host-wide disk needs IOKit, not yet built")
+                        // Two honest cautions rather than the old "not yet built" note. Buffered
+                        // writes inside a guest do not reach its block layer until they are
+                        // flushed, so a container can be writing hard and still read 0 here —
+                        // measured: a `dd` of 300 MB moved the counter only once `sync` ran.
+                        note: "containers only, and only once the guest flushes to its block device")
             }
             .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))

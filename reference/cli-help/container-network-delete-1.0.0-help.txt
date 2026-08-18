@@ -1,0 +1,13 @@
+OVERVIEW: Delete one or more networks
+
+USAGE: container network delete [--all] [--debug] [<network-names> ...]
+
+ARGUMENTS:
+  <network-names>         Network names
+
+OPTIONS:
+  -a, --all               Delete all networks
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

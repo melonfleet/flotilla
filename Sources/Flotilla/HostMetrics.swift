@@ -1,5 +1,7 @@
 import Foundation
 import Darwin
+import IOKit
+import IOKit.storage
 
 /// The **machine's** CPU, memory and network — read from the OS, not from the container runtime.
 ///
@@ -40,6 +42,8 @@ final class HostMetricsSampler {
         let memoryCachedBytes: Int64
         let networkRxBytesPerSecond: Double?
         let networkTxBytesPerSecond: Double?
+        let diskReadBytesPerSecond: Double?
+        let diskWriteBytesPerSecond: Double?
     }
 
     private(set) var history: [Sample] = []
@@ -57,6 +61,7 @@ final class HostMetricsSampler {
 
     private var previousTicks: CPUTicks?
     private var previousNetwork: (rx: UInt64, tx: UInt64, at: Date)?
+    private var previousDisk: (read: UInt64, written: UInt64, at: Date)?
 
     /// Takes a reading. Called from the same timer that polls container stats, so the two series
     /// share a cadence and can be plotted on one axis.
@@ -64,6 +69,7 @@ final class HostMetricsSampler {
         let cpu = cpuUsage(at: now)
         let memory = memoryUsage()
         let network = networkRates(at: now)
+        let disk = diskRates(at: now)
 
         history.append(Sample(date: now,
                               cpuPercent: cpu?.total,
@@ -73,7 +79,9 @@ final class HostMetricsSampler {
                               memoryTotalBytes: memory.total,
                               memoryCachedBytes: memory.cached,
                               networkRxBytesPerSecond: network?.rx,
-                              networkTxBytesPerSecond: network?.tx))
+                              networkTxBytesPerSecond: network?.tx,
+                              diskReadBytesPerSecond: disk?.read,
+                              diskWriteBytesPerSecond: disk?.write))
         if history.count > Self.historyLimit {
             history.removeFirst(history.count - Self.historyLimit)
         }
@@ -209,5 +217,68 @@ final class HostMetricsSampler {
             cursor = node.pointee.ifa_next
         }
         return (rx, tx)
+    }
+
+    // MARK: Disk
+
+    /// Summed across every physical drive's `IOBlockStorageDriver`, from its `Statistics`
+    /// dictionary's cumulative byte counters.
+    ///
+    /// This is **whole-machine** I/O — every volume on every physical drive, including
+    /// whatever the container runtime's own disk images are doing — not a measure of
+    /// container disk usage and not labelled as one, matching the network rule above.
+    private func diskRates(at now: Date) -> (read: Double, write: Double)? {
+        // A failed registry read is **unknown, not zero** — and the baseline is deliberately left
+        // untouched. Returning (0, 0) here would poison the next sample: the following good read
+        // returns a cumulative since-boot figure, which diffed against zero reports hundreds of
+        // gigabytes per second. Same rule the rest of this file follows, applied to the failure
+        // path rather than only to the first sample.
+        guard let current = readDiskBytes() else { return nil }
+        defer { previousDisk = (current.read, current.written, now) }
+        guard let last = previousDisk else { return nil }
+
+        let elapsed = now.timeIntervalSince(last.at)
+        // Same reasoning as the network counters: a backwards delta is a wrap or a driver
+        // reset, not negative throughput, and is reported as unknown rather than as zero.
+        guard elapsed > 0, current.read >= last.read, current.written >= last.written else {
+            return nil
+        }
+
+        return (Double(current.read - last.read) / elapsed,
+                Double(current.written - last.written) / elapsed)
+    }
+
+    /// Walks the IOService registry for `IOBlockStorageDriver` nodes — one per physical
+    /// drive — and sums each one's reported bytes read/written since boot. Every service and
+    /// the iterator itself are IOKit-owned objects this call must release; `IOIteratorNext`
+    /// hands over a `+1` reference on each call, same as `IOServiceGetMatchingServices` does
+    /// for the iterator.
+    private func readDiskBytes() -> (read: UInt64, written: UInt64)? {
+        var read: UInt64 = 0
+        var written: UInt64 = 0
+
+        var iterator: io_iterator_t = 0
+        let matching = IOServiceMatching(kIOBlockStorageDriverClass)
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS
+        else { return nil }
+        defer { IOObjectRelease(iterator) }
+
+        while case let service = IOIteratorNext(iterator), service != 0 {
+            defer { IOObjectRelease(service) }
+
+            guard let property = IORegistryEntryCreateCFProperty(
+                service, kIOBlockStorageDriverStatisticsKey as CFString, kCFAllocatorDefault, 0
+            ) else { continue }
+            let statistics = property.takeRetainedValue()
+            guard let stats = statistics as? [String: Any] else { continue }
+
+            if let bytesRead = stats[kIOBlockStorageDriverStatisticsBytesReadKey] as? UInt64 {
+                read += bytesRead
+            }
+            if let bytesWritten = stats[kIOBlockStorageDriverStatisticsBytesWrittenKey] as? UInt64 {
+                written += bytesWritten
+            }
+        }
+        return (read, written)
     }
 }

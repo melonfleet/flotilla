@@ -1,0 +1,17 @@
+OVERVIEW: Fetch container machine logs
+
+USAGE: container machine logs [--boot] [--follow] [-n <n>] [--debug] [<id>]
+
+ARGUMENTS:
+  <id>                    Machine VM ID (uses default if not specified)
+
+OPTIONS:
+  --boot                  Display the boot log for the container machine
+                          instead of stdio
+  -f, --follow            Follow log output
+  -n <n>                  Number of lines to show from the end of the logs. If
+                          not provided this will print all of the logs
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

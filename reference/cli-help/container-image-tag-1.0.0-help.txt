@@ -1,0 +1,14 @@
+OVERVIEW: Create a new reference for an existing image
+
+USAGE: container image tag <source> <target> [--debug]
+
+ARGUMENTS:
+  <source>                The existing image reference (format:
+                          image-name[:tag])
+  <target>                The new image reference
+
+OPTIONS:
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+
