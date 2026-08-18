@@ -78,6 +78,13 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     case keyValue
     /// One of the CLI's `--format` values.
     case outputFormat
+    /// `--format` for the **machine** leaves, which take only `json` or `table`.
+    ///
+    /// Separate from `.outputFormat` because the captured help proves the sets differ: every
+    /// other leaf lists `json, table, yaml, toml`, and `container machine list` lists exactly
+    /// `json, table`. Accepting the wider set there let a caller past validation into a CLI
+    /// rejection — grammar drift, and the allowlist must be at least as strict as the CLI.
+    case machineOutputFormat
     /// A token of the command line run *inside* the container. The one deliberately
     /// permissive shape — see `TrailingPolicy.command`.
     case commandToken
@@ -133,6 +140,8 @@ extension ValueShape {
             "Expected `key=value`."
         case .outputFormat:
             "Expected one of the CLI's `--format` values."
+        case .machineOutputFormat:
+            "Expected `json` or `table`."
         case .commandToken:
             "Not a permitted command token."
         }
@@ -421,7 +430,7 @@ public enum Allowlist {
             // pass. `mutates` is honest on every one of them.
 
             CommandSpec(["machine", "list"], mutates: false,
-                        flags: [FlagSpec(long: "format", value: .outputFormat),
+                        flags: [FlagSpec(long: "format", value: .machineOutputFormat),
                                 FlagSpec(long: "quiet", short: "q")],
                         operands: .none),
 
@@ -1030,6 +1039,8 @@ public enum Allowlist {
             return isKeyValue(value) ? nil : bad
         case .outputFormat:
             return ["json", "table", "yaml", "toml"].contains(value) ? nil : bad
+        case .machineOutputFormat:
+            return ["json", "table"].contains(value) ? nil : bad
         case .commandToken:
             // Control characters were already rejected for every argument in `screen`.
             return (1...1024).contains(value.utf8.count) ? nil : bad

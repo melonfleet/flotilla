@@ -58,6 +58,24 @@ private func requireRejected(
     #expect(Allowlist.validate(["image", "push", "alpine"]) == .failure(.unknownSubcommand("image push")))
 }
 
+@Test func machineListRefusesFormatsTheCLIItselfRejects() {
+    // The allowlist must be at least as strict as the CLI. Captured help, container 1.0.0:
+    // every other leaf's `--format` lists `json, table, yaml, toml`, but
+    // `container machine list` lists exactly `json, table`. Accepting yaml there passed
+    // validation and then failed in the CLI — grammar drift, found in the 47-spec audit.
+    requireRejected(["machine", "list", "--format", "yaml"])
+    requireRejected(["machine", "list", "--format", "toml"])
+    for accepted in [["machine", "list", "--format", "json"],
+                     ["machine", "list", "--format", "table"],
+                     // And the wider set is still right everywhere the CLI really allows it.
+                     ["list", "--format", "yaml"]] {
+        guard case .success = Allowlist.validate(accepted) else {
+            Issue.record("expected \(accepted) to be accepted")
+            return
+        }
+    }
+}
+
 @Test func rejectsShellSyntaxInOperands() {
     let payloads = [
         "victim;id",

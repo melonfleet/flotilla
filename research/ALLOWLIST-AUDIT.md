@@ -127,3 +127,69 @@ These domains require either parser-level 1.0.0 documentation generated from the
 ## Security-boundary judgement
 
 **Not trustworthy as the complete Phase 2 wire boundary today.** The verified core subset is mostly faithful and default-deny limits the blast radius, but two proven shapes admit grammar outside the captured CLI (`start` arity and bare-port `--publish`), two documented creation choices are unreachable through incorrect shapes, and 22 of 35 entries lack authoritative leaf-level verification. The capture must be repaired and the four proven defects fixed with tests before the whole table can reasonably receive a security-boundary clean bill of health.
+
+## 2026-08-18 — the full 47-spec audit, against captured help
+
+**Evidence base, which is what was missing before.** `--help` is now captured from the live
+CLI (container 1.0.0) for **all 47 allowlisted command paths** into `reference/cli-help/`.
+The prior verdict on this page — that the table could not be trusted as the Phase 2 wire
+boundary — rested on 22 specs having nothing to audit *against*. That gap is closed. Every
+finding below cites the captured line that proves it.
+
+Audited by a second reviewer (Codex, GPT-5.6 Sol) on the review's brief; a different model family from the one
+that wrote the specs, deliberately.
+
+### A. Verdict — NOT yet trustworthy as the complete Phase 2 wire boundary
+
+**Nothing here is exploitable today.** Phase 2 does not exist: the app is the only caller,
+and it builds its own argv. This is a readiness verdict, not a live vulnerability.
+
+Coverage: **32 OK · 13 TOO LOOSE · 0 TOO STRICT · 2 UNVERIFIABLE.**
+
+### B. The blocking finding is architectural, not a set of loose shapes
+
+Five of the blockers are `machine` leaves — `create`, `set`, `delete`, `set-default`, `run`
+— and **not one of them can be fixed by tightening a value shape**, because the problem is
+not the shape of the argument. `machine delete production` is perfectly well-formed. So is
+`machine set home-mount=rw`, which points the default machine at this user's home directory
+read-write on its next boot, and `machine set-default attacker-chosen`, which silently
+redirects every later bare machine operation — including the local user's.
+
+`Allowlist` is a **grammar** validator. It answers "is this argv well-formed for this
+subcommand", and it answers that well. It has no way to say **"this subcommand is not
+offered to a remote caller at all"**, which is what these five need. `MountPolicy` and
+`ExecPolicy` already establish the pattern: a capability dimension injected per
+`ContainerCLI`, so the same table serves a local owner and a remote peer differently.
+
+**Recommendation: a third dimension of the same kind** — an exposure tier on `CommandSpec`,
+default-deny for anything a remote caller has no business reaching. Machine lifecycle and
+`set-default` are local-only. This is a `DECISIONS.md`-level change and should be made
+deliberately, not smuggled in as a bug fix.
+
+Two more need policy rather than grammar:
+- `run --publish 0.0.0.0:4444:4444` — well-formed, and publishes an attacker-chosen service
+  on every interface of this Mac. Needs a host-owned interface/port policy, not a regex.
+- `volume create --opt device=/Users/alice` and `network create --plugin X --option k=v` —
+  opaque namespaces forwarded to host drivers/plugins. Default-deny cannot be expressed as
+  a shape over a namespace whose keys we have not enumerated.
+
+Unbounded-output findings (`stats` streaming by default, `logs`/`machine logs` returning an
+entire log when `-n` is omitted, `--follow` on both) are real for a wire caller and harmless
+locally — the same exposure dimension answers them, by requiring the bounded form remotely.
+
+### C. Fixed in this pass
+
+- **`machine list --format`** accepted `yaml`/`toml`; captured help proves that leaf takes
+  exactly `json, table` — every *other* leaf really does take all four, which is why one
+  shared `.outputFormat` had hidden it. Now `.machineOutputFormat`, with a test that also
+  pins the wider set where it is genuine. This was the audit's only finding fixable from the
+  captured help alone.
+
+### D. Still unverifiable from help alone, and what would settle it
+
+- `volume create --opt` keys and `network create --plugin/--option` keys: help documents
+  neither namespace. Settling it needs the driver/plugin source or empirical probing.
+- `copy` endpoint pairing: help says each endpoint is "container:path or local path" but not
+  whether exactly one side must be local. Host-to-host is unproven either way.
+- No leaf documents whether a bare `--` is accepted, so the separator behaviour our tests
+  pin came from running the CLI, not from help — keep it that way.
