@@ -232,19 +232,19 @@ struct ImagesView: View {
             }
             .width(min: 170, ideal: 260)
 
-            TableColumn("Tag") { image in
+            TableColumn("Tag", value: \.tagSortKey) { image in
                 Text(Self.tag(image)).foregroundStyle(.secondary).lineLimit(1)
             }
             .width(min: 70, ideal: 96)
             .customizationID("tag")
 
-            TableColumn("Platform") { image in
+            TableColumn("Platform", value: \.platformSortKey) { image in
                 Text(Self.platformLabel(image)).foregroundStyle(.secondary).lineLimit(1)
             }
             .width(min: 84, ideal: 100)
             .customizationID("platform")
 
-            TableColumn("Digest") { image in
+            TableColumn("Digest", value: \.digestSortKey) { image in
                 // Short form. A digest is a public content hash, not a secret — see the
                 // `Redactor(excluding:)` note on the Inspect tab — but 71 characters of it in a
                 // table cell is noise, and the full value is one hover away.
@@ -256,14 +256,14 @@ struct ImagesView: View {
             .width(min: 96, ideal: 116)
             .customizationID("digest")
 
-            TableColumn("Size") { image in
+            TableColumn("Size", value: \.sizeSortKey) { image in
                 Text(image.displaySize.map(Self.byteCount) ?? "—")
                     .monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 74, ideal: 90)
             .customizationID("size")
 
-            TableColumn("Created") { image in
+            TableColumn("Created", value: \.creationSortKey) { image in
                 Text(RelativeDate.relative(image.configuration.creationDate))
                     .foregroundStyle(.secondary)
                     .help(RelativeDate.absolute(image.configuration.creationDate))
@@ -333,7 +333,7 @@ struct ImagesView: View {
     /// `linux/amd64` first, so the table claimed amd64 on an Apple Silicon Mac while the
     /// container the CLI runs from it is arm64. Prefer the host's architecture, and mark the
     /// image as multi-arch so the single value does not imply there is only one.
-    private static func platformLabel(_ image: ContainerImage) -> String {
+    fileprivate nonisolated static func platformLabel(_ image: ContainerImage) -> String {
         let platforms = image.variants?.compactMap(\.platform) ?? []
         guard !platforms.isEmpty else { return "—" }
         let native = platforms.first { $0.architecture?.contains("arm64") == true } ?? platforms[0]
@@ -630,7 +630,7 @@ struct ImagesView: View {
     /// like `docker.io/library/nginx:latest`. Split it here for display only; the last
     /// `:` after the last `/` is the tag (so a registry port, e.g. `host:5000/name`,
     /// isn't mistaken for one).
-    private static func split(_ reference: String) -> (repository: String, tag: String) {
+    fileprivate nonisolated static func split(_ reference: String) -> (repository: String, tag: String) {
         let searchStart = reference.lastIndex(of: "/").map { reference.index(after: $0) } ?? reference.startIndex
         guard let colon = reference[searchStart...].lastIndex(of: ":") else {
             return (reference, "latest")
@@ -638,12 +638,37 @@ struct ImagesView: View {
         return (String(reference[..<colon]), String(reference[reference.index(after: colon)...]))
     }
 
-    private static func repository(_ image: ContainerImage) -> String { split(image.reference).repository }
-    private static func tag(_ image: ContainerImage) -> String { split(image.reference).tag }
+    fileprivate nonisolated static func repository(_ image: ContainerImage) -> String { split(image.reference).repository }
+    fileprivate nonisolated static func tag(_ image: ContainerImage) -> String { split(image.reference).tag }
 
     private static func byteCount(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
+}
+
+extension ContainerImage {
+    /// Reuses `ImagesView.tag`'s own split so the sort agrees with what the Tag column
+    /// actually displays, rather than re-deriving the rule and risking drift.
+    var tagSortKey: String { ImagesView.tag(self) }
+
+    /// Reuses `ImagesView.platformLabel` for the same reason — the displayed label already
+    /// prefers the host architecture and marks multi-arch images, and the sort should match.
+    var platformSortKey: String { ImagesView.platformLabel(self) }
+
+    /// The full digest, not the shortened display form — sorting on 12 truncated hex
+    /// characters would collide constantly. Missing digests sort first as `""`.
+    var digestSortKey: String { configuration.descriptor?.digest ?? "" }
+
+    /// **Unknown is not zero.** An image with no reported size is not a zero-byte image —
+    /// coalescing to 0 would file it among genuinely tiny images, which is a different,
+    /// misleading claim. `-1` sorts clear of every real size (sizes are never negative)
+    /// without pretending to know the answer.
+    var sizeSortKey: Int64 { displaySize ?? -1 }
+
+    /// Sortable form of `creationDate`, which the CLI gives as an ISO-8601 *string* that
+    /// happens to sort correctly lexicographically. Same rule `Container.creationSortKey`
+    /// uses: an absent date sorts last rather than first.
+    var creationSortKey: String { configuration.creationDate ?? "9999" }
 }
 
 /// Wraps a reference so `.sheet(item:)` has something `Identifiable` to key on — a bare

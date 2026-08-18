@@ -470,7 +470,7 @@ struct MachinesView: View {
             .width(min: 26, ideal: 28, max: 34)
             .customizationID("state")
 
-            TableColumn("Name") { machine in
+            TableColumn("Name", value: \.id) { machine in
                 HStack(spacing: 6) {
                     Button(machine.id) { detailTarget = DetailTarget(id: machine.id) }
                         .buttonStyle(.link)
@@ -499,31 +499,31 @@ struct MachinesView: View {
             // No `customizationID` — the name is how you identify and open a row, so it is not
             // something to hide. Same reason the containers table pins its Name column.
 
-            TableColumn("CPUs") { machine in
+            TableColumn("CPUs", value: \.cpus) { machine in
                 Text("\(machine.cpus)").monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 52, ideal: 60)
             .customizationID("cpus")
 
-            TableColumn("Memory") { machine in
+            TableColumn("Memory", value: \.memory) { machine in
                 Text(Self.bytes(machine.memory)).monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 72, ideal: 84)
             .customizationID("memory")
 
-            TableColumn("Disk") { machine in
+            TableColumn("Disk", value: \.diskSize) { machine in
                 Text(Self.bytes(machine.diskSize)).monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 72, ideal: 84)
             .customizationID("disk")
 
-            TableColumn("IP") { machine in
+            TableColumn("IP", value: \.ipSortKey) { machine in
                 Text(machine.ipAddress ?? "—").foregroundStyle(.secondary)
             }
             .width(min: 96, ideal: 120)
             .customizationID("ip")
 
-            TableColumn("Created") { machine in
+            TableColumn("Created", value: \.creationSortKey) { machine in
                 Text(RelativeDate.relative(machine.createdDate))
                     .foregroundStyle(.secondary)
                     .help(RelativeDate.absolute(machine.createdDate))
@@ -772,4 +772,26 @@ struct MachinesView: View {
     static func bytes(_ value: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: value, countStyle: .memory)
     }
+}
+
+extension ContainerMachine {
+    /// `ipAddress` is nil for a stopped machine — no lease, no address. Sorted to the end
+    /// (`"zzzz"` is lexicographically after any dotted-quad), matching `creationSortKey`'s
+    /// rule that "we don't know" is not the same as "first" or "zero".
+    /// Octets zero-padded to three digits, so `192.168.64.9` sorts before `192.168.64.10`.
+    /// A plain string sort puts `.10` first, which reads as a bug to anyone scanning an address
+    /// column — the same key `ContainersView.ContainerRow.ipSortKey` uses, for the same reason.
+    /// An absent address becomes `zzz…` so it sorts last rather than masquerading as `0.0.0.0`.
+    var ipSortKey: String {
+        guard let ipAddress else { return "zzz" }
+        return ipAddress.split(separator: ".")
+            .map { String(format: "%03d", Int($0) ?? 0) }
+            .joined(separator: ".")
+    }
+
+    /// Sortable form of `createdDate`, which the CLI gives as an ISO-8601 *string* that
+    /// happens to sort correctly lexicographically. Same shape as `Container.creationSortKey`
+    /// — an absent date sorts last rather than first, so a machine we couldn't date doesn't
+    /// masquerade as the oldest one on the host.
+    var creationSortKey: String { createdDate ?? "9999" }
 }

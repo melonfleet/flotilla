@@ -39,7 +39,9 @@ final class ContainersUIState {
     ///
     /// The state column remains sortable, so running-first is one click away. Q2's ordering of
     /// the table by relevance was a reasonable guess that using the thing disproved.
-    var sortOrder = [KeyPathComparator(\Container.id)]
+    /// Comparators over `ContainersView.ContainerRow`, not `Container` — the row carries the
+    /// sampled CPU and memory figures, which is what makes those two columns sortable at all.
+    var sortOrder = [KeyPathComparator(\ContainersView.ContainerRow.container.id)]
 
     /// Which columns are shown, in what order and at what width.
     ///
@@ -47,8 +49,8 @@ final class ContainersUIState {
     /// - **Host**, because with a single host it prints "This Mac" on every row, and a column
     ///   identical in every row is pure width. The cross-host dimension stays in the data.
     /// - **Created**, so the identifier and the live figures get the space first.
-    var columnCustomization: TableColumnCustomization<Container> = {
-        var customization = TableColumnCustomization<Container>()
+    var columnCustomization: TableColumnCustomization<ContainersView.ContainerRow> = {
+        var customization = TableColumnCustomization<ContainersView.ContainerRow>()
         customization[visibility: "host"] = .hidden
         customization[visibility: "created"] = .hidden
         return customization

@@ -194,25 +194,25 @@ struct NetworksView: View {
             }
             .width(min: 150, ideal: 210)
 
-            TableColumn("Mode") { network in
+            TableColumn("Mode", value: \.modeSortKey) { network in
                 Text(network.mode ?? "—").foregroundStyle(.secondary)
             }
             .width(min: 70, ideal: 88)
             .customizationID("mode")
 
-            TableColumn("Subnet") { network in
+            TableColumn("Subnet", value: \.subnetSortKey) { network in
                 Text(network.subnet ?? "—").monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 110, ideal: 140)
             .customizationID("subnet")
 
-            TableColumn("Gateway") { network in
+            TableColumn("Gateway", value: \.gatewaySortKey) { network in
                 Text(network.gateway ?? "—").monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 100, ideal: 130)
             .customizationID("gateway")
 
-            TableColumn("Created") { network in
+            TableColumn("Created", value: \.creationSortKey) { network in
                 Text(RelativeDate.relative(network.configuration.creationDate))
                     .foregroundStyle(.secondary)
                     .help(RelativeDate.absolute(network.configuration.creationDate))
@@ -286,6 +286,17 @@ struct NetworksView: View {
             Task { await model.removeNetwork(network) }
         }
     }
+}
+
+extension ContainerNetwork {
+    var modeSortKey: String { mode ?? "" }
+    var subnetSortKey: String { subnet ?? "" }
+    var gatewaySortKey: String { gateway ?? "" }
+
+    /// Sortable form of `creationDate`, which the CLI gives as an ISO-8601 *string* that
+    /// happens to sort correctly lexicographically. Same rule `Container.creationSortKey`
+    /// uses: an absent date sorts last rather than first.
+    var creationSortKey: String { configuration.creationDate ?? "9999" }
 }
 
 /// The New Network form, hosted in its own **window** rather than a sheet.

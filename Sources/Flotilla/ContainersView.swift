@@ -346,7 +346,10 @@ struct ContainersView: View {
     /// binding does **not** reorder its rows for you, it only reports what was clicked.
     /// Binding the header without applying the comparator gives arrows that move and rows
     /// that never do.
-    private var sorted: [Container] { visible.sorted(using: ui.sortOrder) }
+    /// The single order the table, the cards grid and the detail stepper all follow. Derived from
+    /// `sortedRows` rather than sorting `visible` a second time — two sorts of one list is how the
+    /// cards and the stepper disagreed before.
+    private var sorted: [Container] { sortedRows.map(\.container) }
 
     /// Whether anything the user chose is hiding rows. Both the search field and the state
     /// tabs can empty the table, and an empty state that only mentions ui.search would be wrong
@@ -763,15 +766,60 @@ struct ContainersView: View {
     /// Any fix that keeps the cap needs the true row height, which depends on the font, the
     /// control size and whether a cell wraps — a number this file cannot know and would have
     /// to re-guess every time the row changes. Filling the pane needs no such number.
+    /// One table row: the container **plus the sampled figures shown beside it**.
+    ///
+    /// The table used to be built straight from `[Container]`, and that is why clicking CPU or
+    /// Memory did nothing: a `TableColumn` sorts only when given a `value:` key path, and those
+    /// two figures do not live on `Container` — they come from `StatsSampler` via the model, keyed
+    /// by id. SwiftUI has no custom-comparator column either (checked the macOS 26 SDK: there is
+    /// no `sortUsing:` initialiser), so the only way to sort on them is to put them on the row.
+    struct ContainerRow: Identifiable {
+        let container: Container
+        /// **`-1` means unsampled, not idle.** The cell still renders an em dash by asking the
+        /// model, exactly as before; this value exists only to sort with. Coalescing to 0 would
+        /// file "we have not measured this yet" among the genuinely idle containers, which is the
+        /// unknown-versus-zero mistake this column was written to avoid in the first place.
+        let cpu: Double
+        let memory: Int64
+
+        var id: String { container.id }
+
+        /// The lowest published **host** port, or `Int.max` when nothing is published, so the
+        /// containers that publish nothing gather at one end instead of interleaving. Numeric
+        /// rather than the display string, because as text "8080" sorts before "9".
+        var portSortKey: Int { container.publishedPorts.map(\.hostPort).min() ?? .max }
+
+        /// Octets zero-padded to three digits, so `192.168.64.9` sorts before `192.168.64.10`.
+        /// Sorting the display string would put `.10` first, which looks like a bug to anyone
+        /// reading an address list.
+        var ipSortKey: String {
+            guard let ip = container.ipv4 else { return "" }
+            return ip.split(separator: ".")
+                .map { String(format: "%03d", Int($0) ?? 0) }
+                .joined(separator: ".")
+        }
+    }
+
+    /// `visible`, decorated with the sampled figures, then ordered by whatever header was clicked.
+    private var sortedRows: [ContainerRow] {
+        visible.map {
+            ContainerRow(container: $0,
+                         cpu: model.cpuPercent(for: $0.id) ?? -1,
+                         memory: model.memoryBytes(for: $0.id) ?? -1)
+        }
+        .sorted(using: ui.sortOrder)
+    }
+
     private var table: some View {
         VStack(spacing: 0) {
-            Table(sorted, selection: $selection, sortOrder: $ui.sortOrder,
+            Table(sortedRows, selection: $selection, sortOrder: $ui.sortOrder,
                   columnCustomization: $ui.columnCustomization) {
                 // Dot only — see the matching column in `MachinesView`. The exact state word
                 // matters more here than for machines, because `stateColor` folds several
                 // states into one colour: "exited (137)" and "dead" are both danger red. So the
                 // tooltip carries the CLI's own string rather than a tidied-up version of it.
-                TableColumn("", value: \.sortRank) { c in
+                TableColumn("", value: \.container.sortRank) { row in
+                    let c = row.container
                     Circle()
                         .fill(c.stateColor)
                         .frame(width: 8, height: 8)
@@ -782,7 +830,8 @@ struct ContainersView: View {
                 .width(min: 26, ideal: 28, max: 34)
                 .customizationID("state")
 
-                TableColumn("Name", value: \.id) { c in
+                TableColumn("Name", value: \.container.id) { row in
+                    let c = row.container
                     // Clicking the name opens the container, the way Docker Desktop does.
                     // A plain `Button` inside a `Table` row swallows row selection, so this
                     // is a link-styled button with the selection behaviour left intact:
@@ -797,7 +846,8 @@ struct ContainersView: View {
                     .foregroundStyle(Theme.accentText)
                     .help("Open \(c.id)")
                 }
-                TableColumn("Image", value: \.imageReference) { c in
+                TableColumn("Image", value: \.container.imageReference) { row in
+                    let c = row.container
                     Text(Self.imageLabel(c.configuration.image.reference))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -805,7 +855,8 @@ struct ContainersView: View {
                 }
                 .width(min: 90, ideal: 150)
                 .customizationID("image")
-                TableColumn("Created", value: \.creationSortKey) { c in
+                TableColumn("Created", value: \.container.creationSortKey) { row in
+                    let c = row.container
                     Text(Self.createdLabel(c.configuration.creationDate))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -813,7 +864,8 @@ struct ContainersView: View {
                 }
                 .width(min: 80, ideal: 100)
                 .customizationID("created")
-                TableColumn("Ports") { c in
+                TableColumn("Ports", value: \.portSortKey) { row in
+                    let c = row.container
                     // An em dash, not a blank cell: "publishes nothing" and "we couldn't
                     // read this" must not look the same.
                     Text(c.portSummary ?? "—")
@@ -828,7 +880,8 @@ struct ContainersView: View {
                 // this table never did. nil renders as a dash, never 0% — an unsampled
                 // container is not an idle one, and a table that says 0% and then jumps is
                 // lying twice.
-                TableColumn("CPU") { c in
+                TableColumn("CPU", value: \.cpu) { row in
+                    let c = row.container
                     Text(model.cpuLabel(for: c.id))
                         .monospacedDigit()
                         .foregroundStyle(model.cpuPercent(for: c.id) == nil ? .tertiary : .secondary)
@@ -837,7 +890,8 @@ struct ContainersView: View {
                 .width(min: 56, ideal: 68)
                 .customizationID("cpu")
 
-                TableColumn("Memory") { c in
+                TableColumn("Memory", value: \.memory) { row in
+                    let c = row.container
                     Text(model.memoryLabel(for: c.id))
                         .monospacedDigit()
                         .foregroundStyle(model.memoryBytes(for: c.id) == nil ? .tertiary : .secondary)
@@ -846,7 +900,8 @@ struct ContainersView: View {
                 .width(min: 68, ideal: 84)
                 .customizationID("memory")
 
-                TableColumn("IP / Network") { c in
+                TableColumn("IP / Network", value: \.ipSortKey) { row in
+                    let c = row.container
                     Text(Self.ipNetworkLabel(c))
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
@@ -859,14 +914,18 @@ struct ContainersView: View {
                 // width. The cross-host *dimension* stays — the data is on the row and the
                 // column is one header-menu click away — it just stops costing space until
                 // Phase 3 gives it something to say.
+                // **Not sortable, and not an omission.** Every row reads "This Mac" until Phase 2
+                // brings peers, and a column with one distinct value cannot be ordered — a header
+                // that highlights and reorders nothing is worse than one that does not respond.
+                // It gains a `value:` the moment a row carries a real host.
                 TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
                     .width(min: 80, ideal: 100)
                     .customizationID("host")
 
                 // Last. Sized to its content rather than fixed, so it compresses with
                 // everything else instead of forcing the table wider than the window.
-                TableColumn("Actions") { c in
-                    rowActions(for: c)
+                TableColumn("Actions") { row in
+                    rowActions(for: row.container)
                 }
                 .width(min: 118, ideal: 128)
                 .customizationID("actions")

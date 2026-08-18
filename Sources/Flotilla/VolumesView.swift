@@ -201,26 +201,26 @@ struct VolumesView: View {
             }
             .width(min: 160, ideal: 240)
 
-            TableColumn("Format") { volume in
+            TableColumn("Format", value: \.formatSortKey) { volume in
                 Text(volume.configuration.format ?? "—").foregroundStyle(.secondary)
             }
             .width(min: 70, ideal: 84)
             .customizationID("format")
 
-            TableColumn("Driver") { volume in
+            TableColumn("Driver", value: \.driverSortKey) { volume in
                 Text(volume.configuration.driver ?? "—").foregroundStyle(.secondary)
             }
             .width(min: 70, ideal: 90)
             .customizationID("driver")
 
-            TableColumn("Size") { volume in
+            TableColumn("Size", value: \.sizeSortKey) { volume in
                 Text(volume.sizeInBytes.map(Self.byteCount) ?? "—")
                     .monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 74, ideal: 90)
             .customizationID("size")
 
-            TableColumn("Created") { volume in
+            TableColumn("Created", value: \.creationSortKey) { volume in
                 Text(RelativeDate.relative(volume.configuration.creationDate))
                     .foregroundStyle(.secondary)
                     .help(RelativeDate.absolute(volume.configuration.creationDate))
@@ -474,4 +474,20 @@ struct VolumesView: View {
     private static func byteCount(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
+}
+
+extension ContainerVolume {
+    var formatSortKey: String { configuration.format ?? "" }
+    var driverSortKey: String { configuration.driver ?? "" }
+
+    /// **Unknown is not zero.** A volume the CLI reports no size for is not a zero-byte
+    /// volume — coalescing to 0 would file it among genuinely empty volumes, which is a
+    /// different, misleading claim. `-1` sorts clear of every real size (sizes are never
+    /// negative) without pretending to know the answer.
+    var sizeSortKey: Int64 { configuration.sizeInBytes ?? -1 }
+
+    /// Sortable form of `creationDate`, which the CLI gives as an ISO-8601 *string* that
+    /// happens to sort correctly lexicographically. Same rule `Container.creationSortKey`
+    /// uses: an absent date sorts last rather than first.
+    var creationSortKey: String { configuration.creationDate ?? "9999" }
 }
