@@ -63,7 +63,7 @@ struct MainWindowView: View {
     /// under the bar. Applied once here rather than in six section files — the alignment is a
     /// property of the window's two columns, not of any one screen, and six copies of a number
     /// is how the toolbar padding drifted three ways before.
-    private let contentTopInset: CGFloat = 25
+    private let contentTopInset: CGFloat = 35
 
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
     ///
@@ -130,7 +130,21 @@ struct MainWindowView: View {
             // and the dashboard all reach it through `model.pendingSection`.
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        // Space between the sidebar's top border and its first row — without it the selected
+        // row's accent capsule butts straight against the navigation's own edge.
+        //
+        // `safeAreaInset`, matching what the footer below already does, because
+        // `.contentMargins(.top, _, for: .scrollContent)` had **no effect** on a `.sidebar`-styled
+        // `List`: measured, the content column moved down 10pt and this one did not, leaving the
+        // two out of line by exactly the amount that was supposed to keep them level.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear.frame(height: sidebarTopInset)
+        }
     }
+
+    /// Kept equal to the 10pt this adds to `contentTopInset`, so the first row and the section
+    /// controls beside it stay on one line. Change them together or not at all.
+    private let sidebarTopInset: CGFloat = 10
 
     /// In rail mode the title *and* the count move into the tooltip rather than being dropped.
     /// The count is the sidebar's one piece of at-a-glance information, and there is no room for
