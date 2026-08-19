@@ -1,5 +1,9 @@
 import Foundation
 import Observation
+// The appearance preference has to reach AppKit as well as SwiftUI — see
+// `applyAppKitAppearance()`. This is the app target, so AppKit is fair game; `FlotillaCore`
+// stays Foundation-only.
+import AppKit
 import FlotillaCore
 
 /// UI-facing state for the app shell.
@@ -122,6 +126,7 @@ final class AppModel {
     private func reloadAppearance() {
         appearance = settingsStore.effectiveAppearance
         needsAppearanceOnboarding = settingsStore.needsAppearanceOnboarding
+        applyAppKitAppearance()
 
         let newPresentation = settingsStore[SettingsKeys.presentation]
         if newPresentation != presentation {
@@ -134,6 +139,34 @@ final class AppModel {
         restartStatsPolling()
         // Categories may have been toggled.
         notifier.updateCategories(Self.notificationSettings(from: settingsStore))
+    }
+
+    /// Makes the **AppKit** appearance match the preference, which `preferredColorScheme` alone
+    /// does not do.
+    ///
+    /// This is the fix for the owner's "auto gives a grey, mixed background". There were two
+    /// independent authorities on appearance and nothing kept them in step:
+    ///
+    /// - SwiftUI views followed `preferredColorScheme(model.appearance.colorScheme)`.
+    /// - Every `Theme` colour is a **dynamic `NSColor`**, and those resolve against the *AppKit*
+    ///   appearance — `NSApp`'s, or the window's. Nothing set either, so they followed the system
+    ///   no matter what the user had chosen.
+    ///
+    /// So pinning Light on a dark Mac drew light SwiftUI chrome over dark-resolved brand colours,
+    /// and switching back to Auto after Dark left the window's appearance where
+    /// `preferredColorScheme(.dark)` had put it while SwiftUI redrew light — a honeydew wash
+    /// resolved for one appearance sitting on a background for the other, which is exactly what a
+    /// grey mixture looks like.
+    ///
+    /// `nil` for Auto is the load-bearing part: it means "inherit", so the system's own value
+    /// applies and, crucially, any appearance a previous Light/Dark choice pinned is *cleared*.
+    private func applyAppKitAppearance() {
+        let named: NSAppearance.Name? = switch appearance {
+        case .auto: nil
+        case .light: .aqua
+        case .dark: .darkAqua
+        }
+        NSApplication.shared.appearance = named.flatMap(NSAppearance.init(named:))
     }
 
     // MARK: Modal form presentation
