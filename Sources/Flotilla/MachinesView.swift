@@ -179,7 +179,10 @@ struct MachinesView: View {
     /// A section that quietly offers less than its neighbours reads as unfinished rather than
     /// as a deliberate simplification.
     private var toolbar: some View {
-        HStack(spacing: 12) {
+        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
+                       searchPrompt: "Search machines…",
+                       updated: model.machinesLastRefresh,
+                       leading: {
             Picker("View", selection: Binding(get: { ui.presentation },
                                               set: { ui.presentation = $0 })) {
                 ForEach(Presentation.allCases) { option in
@@ -198,41 +201,14 @@ struct MachinesView: View {
                 .disabled(ui.presentation != .list)     // cards have no columns to configure
 
             filterButton
-
-            TextField("Search machines…",
-                      text: Binding(get: { ui.search }, set: { ui.search = $0 }))
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 280)
-
-            Spacer()
-
-            if let last = model.machinesLastRefresh {
-                Text("Updated \(last.formatted(date: .omitted, time: .standard))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        }, trailing: {
+            ToolbarIconButton(systemImage: "plus", label: "Create a machine…") {
+                showingCreate = true
             }
-
-            GlassEffectContainer(spacing: 6) {
-                HStack(spacing: 6) {
-                    Button { showingCreate = true } label: {
-                        Label("New Machine…", systemImage: "plus").labelStyle(.iconOnly)
-                    }
-                    .help("Create a machine…")
-                    .accessibilityLabel("Create a machine")
-
-                    Button { Task { await model.refreshMachines() } } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
-                    }
-                    .help("Refresh machines")
-                    .accessibilityLabel("Refresh machines")
-                }
+            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh machines") {
+                Task { await model.refreshMachines() }
             }
-        }
-        // Horizontal 12, vertical 8 — the pair every toolbar uses. See `SectionToolbar`: the
-        // sections disagreed for a while, this one was the odd 8 out, and 8 turned out to be the
-        // one the owner wanted everywhere.
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        })
     }
 
     private var columnsButton: some View {

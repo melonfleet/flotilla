@@ -77,7 +77,7 @@ struct VolumesView: View {
                 columnCustomization: Binding(get: { ui.columnCustomization },
                                              set: { ui.columnCustomization = $0 }),
                 columns: Self.columnSpecs,
-                filters: driverFilters)
+                filters: volumeFilters)
         }, trailing: {
             ToolbarIconButton(systemImage: "plus", label: "Create a volume…") {
                 newVolumeName = ""
@@ -93,9 +93,21 @@ struct VolumesView: View {
     private var displayedVolumes: [ContainerVolume] {
         var volumes = model.volumes
 
-        // The driver filter, when there is more than one driver to choose between.
-        if ui.filterID != "all" {
-            volumes = volumes.filter { $0.configuration.driver == ui.filterID }
+        // The one filter control covers two independent facets — age and label — because
+        // `ResourceUIState.filterID` is a single selected string, not a set of facets. The id
+        // itself says which facet fired: an age bucket's id round-trips through `VolumeAgeBucket`,
+        // anything else is checked against the `label:` prefix.
+        if let bucket = VolumeSizeBucket.allCases.first(where: { $0.filterID == ui.filterID }) {
+            volumes = volumes.filter { Self.sizeBucket(for: $0) == bucket }
+        } else if let bucket = VolumeAgeBucket.allCases.first(where: { $0.filterID == ui.filterID }) {
+            volumes = volumes.filter { Self.ageBucket(for: $0) == bucket }
+        } else if ui.filterID.hasPrefix(Self.labelFilterPrefix) {
+            let pair = ui.filterID.dropFirst(Self.labelFilterPrefix.count)
+            if let separator = pair.firstIndex(of: "=") {
+                let key = String(pair[..<separator])
+                let value = String(pair[pair.index(after: separator)...])
+                volumes = volumes.filter { $0.configuration.labels?[key] == value }
+            }
         }
 
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -148,19 +160,83 @@ struct VolumesView: View {
         ("format", "Format"), ("driver", "Driver"), ("size", "Size"), ("created", "Created"),
     ]
 
-    /// One option per driver actually present, plus All.
+    /// Prefix for a label filter's id, e.g. `label:team=infra`. Namespaced against
+    /// `VolumeAgeBucket.filterID` so the two facets sharing one `filterID` string can never
+    /// collide, however a label key happens to be spelled.
+    private static let labelFilterPrefix = "label:"
+
+    /// Age and label — the two facets that genuinely vary for volumes created through this
+    /// CLI. There used to be a driver filter here; it is gone, not merely empty. The captured
+    /// help for `volume create` (`reference/cli-help/container-volume-create-1.0.0-help.txt`)
+    /// has no `--driver` and no `--format` flag, so every volume this app can create is
+    /// `local`/`ext4` — a driver filter could never have more than one real option, ever, on
+    /// any Mac. That is a dead control, not a currently-empty one, so it does not belong even
+    /// behind the same "only show it when there is a real choice" guard the other filters use.
     ///
-    /// Derived rather than fixed, and `ResourceListControls` hides the control when this yields
-    /// fewer than two entries — which is the common case here, since every volume on a stock
-    /// install is `local`. A filter whose every setting returns the same rows is worse than no
-    /// filter, and "the other sections have one" is not a reason to ship it.
-    private var driverFilters: [ResourceFilterOption] {
-        let drivers = Set(model.volumes.compactMap { $0.configuration.driver }).sorted()
-        guard drivers.count > 1 else { return [] }
-        return [ResourceFilterOption(id: "all", title: "All", systemImage: "circle.grid.2x2")]
-            + drivers.map {
-                ResourceFilterOption(id: $0, title: $0.capitalized, systemImage: "internaldrive")
+    /// Both facets follow that guard anyway: an option is only offered when it would exclude
+    /// at least one volume `All` would show. Verified in `container volume list --format json`:
+    /// `creationDate`, `labels` (and `sizeInBytes`, unused here) do vary across real volumes.
+    private var volumeFilters: [ResourceFilterOption] {
+        let total = model.volumes.count
+
+        // Age. A volume with no readable `creationDate` is its own (unlabelled) category —
+        // "unknown", never "old" — so it still makes a bucket meaningful even when every dated
+        // volume falls in the same one: selecting that bucket would exclude the undated volumes.
+        // Only when literally everything (dated or not) lands in one category does a bucket
+        // filter nothing, and that is when it is withheld.
+        let presentBuckets = Set(model.volumes.compactMap(Self.ageBucket(for:)))
+        let hasUnknownAge = model.volumes.contains { Self.ageBucket(for: $0) == nil }
+        let ageOptions: [ResourceFilterOption] =
+            presentBuckets.count + (hasUnknownAge ? 1 : 0) > 1
+            ? VolumeAgeBucket.allCases.filter(presentBuckets.contains).map {
+                ResourceFilterOption(id: $0.filterID, title: $0.title, systemImage: $0.systemImage)
             }
+            : []
+
+        // Labels. One option per distinct `key=value` pair actually present, offered only when
+        // it does not match every volume. `--label` is a real `volume create` flag and the
+        // create form's own `newLabels` writes it, so this is populated by ordinary use, not
+        // aspirational.
+        let pairCounts = model.volumes
+            .flatMap { ($0.configuration.labels ?? [:]).map { "\($0.key)=\($0.value)" } }
+            .reduce(into: [String: Int]()) { counts, pair in counts[pair, default: 0] += 1 }
+        let labelOptions = pairCounts.keys.sorted().compactMap { pair -> ResourceFilterOption? in
+            guard pairCounts[pair] ?? 0 < total else { return nil }
+            return ResourceFilterOption(id: Self.labelFilterPrefix + pair, title: pair, systemImage: "tag")
+        }
+
+        // Size. Same rule as age: offered only when the volumes actually straddle the boundary,
+        // so selecting a bucket can never produce an empty list.
+        let presentSizes = Set(model.volumes.compactMap(Self.sizeBucket(for:)))
+        let hasUnknownSize = model.volumes.contains { Self.sizeBucket(for: $0) == nil }
+        let sizeOptions: [ResourceFilterOption] =
+            presentSizes.count + (hasUnknownSize ? 1 : 0) > 1
+            ? VolumeSizeBucket.allCases.filter(presentSizes.contains).map {
+                ResourceFilterOption(id: $0.filterID, title: $0.title, systemImage: $0.systemImage)
+            }
+            : []
+
+        let options = sizeOptions + ageOptions + labelOptions
+        guard !options.isEmpty else { return [] }
+        return [ResourceFilterOption(id: "all", title: "All", systemImage: "circle.grid.2x2")] + options
+    }
+
+    /// Which size bucket, if any — `nil` when the runtime reported no size, which is "unknown"
+    /// rather than "small", the same distinction the age classifier draws.
+    private static func sizeBucket(for volume: ContainerVolume) -> VolumeSizeBucket? {
+        guard let bytes = volume.configuration.sizeInBytes else { return nil }
+        return bytes < VolumeSizeBucket.boundary ? .underGigabyte : .gigabyteAndOver
+    }
+
+    /// Which bucket, if any, a volume's age falls into — `nil` when `creationDate` is absent.
+    /// Absent is "unknown", not "old": the same distinction `ContainerVolume.creationSortKey`
+    /// draws by sorting an absent date last rather than treating it as the oldest.
+    private static func ageBucket(for volume: ContainerVolume) -> VolumeAgeBucket? {
+        guard let created = RelativeDate.parse(volume.configuration.creationDate) else { return nil }
+        let age = Date().timeIntervalSince(created)
+        if age < 86_400 { return .last24Hours }
+        if age < 86_400 * 7 { return .last7Days }
+        return .older
     }
 
     private var cards: some View {
@@ -473,6 +549,78 @@ struct VolumesView: View {
 
     private static func byteCount(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+/// The three buckets `volumeFilters` derives age options from. Mutually exclusive — a volume
+/// with a readable `creationDate` falls into exactly one, matching how the choices read as
+/// "how old", not "at least how old".
+/// Size, the one facet that varies on a real machine today.
+///
+/// Added after measuring: both volumes on this Mac were created on the same day, so the age
+/// facet correctly withheld itself (one bucket is not a filter) and the section still showed no
+/// filter button — which is what the owner actually asked for. Their sizes differ by four orders of
+/// magnitude (64 MB and 512 GB), so this facet has two genuine options on the very data that
+/// defeated the others.
+///
+/// The boundary is 1 GB because `volume create -s` takes a size with K/M/G/T/P suffixes and a
+/// gigabyte is where "scratch" stops and "this holds something" starts. It is a rule of thumb,
+/// not a claim about the runtime.
+private enum VolumeSizeBucket: CaseIterable {
+    case underGigabyte, gigabyteAndOver
+
+    static let boundary: Int64 = 1_073_741_824
+
+    var filterID: String {
+        switch self {
+        case .underGigabyte: "size-under-1g"
+        case .gigabyteAndOver: "size-1g-plus"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .underGigabyte: "Under 1 GB"
+        case .gigabyteAndOver: "1 GB and over"
+        }
+    }
+
+    /// Both verified with `NSImage(systemSymbolName:accessibilityDescription:) != nil`.
+    var systemImage: String {
+        switch self {
+        case .underGigabyte: "shippingbox"
+        case .gigabyteAndOver: "externaldrive"
+        }
+    }
+}
+
+private enum VolumeAgeBucket: CaseIterable {
+    case last24Hours, last7Days, older
+
+    var filterID: String {
+        switch self {
+        case .last24Hours: "age-24h"
+        case .last7Days: "age-7d"
+        case .older: "age-older"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .last24Hours: "Last 24 hours"
+        case .last7Days: "Last 7 days"
+        case .older: "Older"
+        }
+    }
+
+    /// All three verified with `NSImage(systemSymbolName:accessibilityDescription:) != nil`
+    /// before shipping — an unknown name renders nothing, silently.
+    var systemImage: String {
+        switch self {
+        case .last24Hours: "clock"
+        case .last7Days: "calendar"
+        case .older: "archivebox"
+        }
     }
 }
 

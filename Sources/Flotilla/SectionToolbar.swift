@@ -25,6 +25,10 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
     /// When this screen last refreshed, or nil to omit. Rendered exactly as the Containers
     /// screen renders it.
     var updated: Date?
+    /// An arbitrary status string, shown in the same slot as `updated`. Activity counts rows
+    /// rather than timing a refresh; before this it printed that count in a hand-rolled band of
+    /// its own, which is how the search field there ended up 20pt narrower than everywhere else.
+    var status: String?
 
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
@@ -42,6 +46,11 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
             if let updated {
                 Text("Updated \(updated.formatted(date: .omitted, time: .standard))")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let status {
+                Text(status)
+                    .font(.caption)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
 
@@ -71,9 +80,10 @@ extension SectionToolbar where Leading == EmptyView {
         search: Binding<String>,
         searchPrompt: String,
         updated: Date? = nil,
+        status: String? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
-        self.init(search: search, searchPrompt: searchPrompt, updated: updated,
+        self.init(search: search, searchPrompt: searchPrompt, updated: updated, status: status,
                   leading: { EmptyView() }, trailing: trailing)
     }
 }

@@ -29,7 +29,14 @@ struct ActivityView: View {
     // MARK: Controls
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
+        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
+                       searchPrompt: "Search activity…",
+                       // No refresh time to show — this feed is appended to as things happen — so
+                       // the row count takes that slot. It used to be printed in a hand-rolled
+                       // band, which is how this screen's search field ended up 20pt narrower
+                       // than every other one.
+                       status: "\(filtered.count) of \(model.activity.count)",
+                       leading: {
             Picker("Kind", selection: Binding(get: { ui.kind }, set: { ui.kind = $0 })) {
                 Text("All kinds").tag(ActivityKind?.none)
                 ForEach(ActivityKind.allCases) { kind in
@@ -49,31 +56,21 @@ struct ActivityView: View {
             }
             .fixedSize()
             .disabled(subjects.isEmpty)
-
-            TextField("Search activity…",
-                      text: Binding(get: { ui.search }, set: { ui.search = $0 }))
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 260)
-
-            Spacer()
-
-            Text("\(filtered.count) of \(model.activity.count)")
-                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-
-            GlassEffectContainer(spacing: 6) {
-                HStack(spacing: 6) {
-                    ToolbarIconButton(systemImage: "line.3.horizontal.decrease",
-                                      label: "Clear filters") {
-                        ui.kind = nil
-                        ui.subject = nil
-                        ui.search = ""
-                    }
-                }
+        }, trailing: {
+            ToolbarIconButton(systemImage: "line.3.horizontal.decrease",
+                              label: "Clear filters",
+                              active: isFiltered) {
+                ui.kind = nil
+                ui.subject = nil
+                ui.search = ""
             }
-            .fixedSize()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        })
+    }
+
+    /// Whether anything is currently narrowing the feed — drives the accent tint on the clear
+    /// button, so "there is a filter on" reads the same here as everywhere else.
+    private var isFiltered: Bool {
+        ui.kind != nil || ui.subject != nil || !ui.search.isEmpty
     }
 
     /// Every subject the feed mentions, newest first so the list is ordered by relevance rather

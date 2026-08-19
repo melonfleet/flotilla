@@ -591,8 +591,21 @@ struct ContainersView: View {
         }
     }
 
+    /// **The shared band, not a copy of it.** This screen used to hand-roll the same
+    /// arrangement, and three sections doing that independently is exactly why the owner felt the UI
+    /// move as he switched between them. Measured: Activity's search field was 260pt where this
+    /// one was 280, and the trailing clusters on Machines and Activity were missing the
+    /// `h8/v4 + glassEffect` this one applied — so the same controls sat at different sizes and
+    /// different heights on three screens. Worse, Run and Refresh here were raw `Button`s, which
+    /// made them the only action controls in the app with no hover or pressed feedback at all.
+    ///
+    /// One definition owns the padding, the search width, the status slot and the glass cluster
+    /// now; each section supplies only what is genuinely its own.
     private var toolbar: some View {
-        HStack(spacing: 12) {
+        SectionToolbar(search: $ui.search,
+                       searchPrompt: "Search containers…",
+                       updated: model.lastRefresh,
+                       leading: {
             Picker("View", selection: $ui.presentation) {
                 ForEach(Presentation.allCases) { option in
                     Label(option.rawValue, systemImage: option.systemImage)
@@ -612,60 +625,14 @@ struct ContainersView: View {
                 .disabled(ui.presentation != .list)     // cards have no columns to configure
 
             filterButton
-
-            TextField("Search containers…", text: $ui.search)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 280)
-
-            Spacer()
-
-            if let last = model.lastRefresh {
-                Text("Updated \(last.formatted(date: .omitted, time: .standard))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        }, trailing: {
+            ToolbarIconButton(systemImage: "plus", label: "Run a container…") {
+                showingRun = true
             }
-
-            // The mockup's **one** `GlassEffectContainer` — the Run/Pull control cluster.
-            // Kept to a single container deliberately: the placement note says glass belongs
-            // on chrome only, and stacking glass on glass is explicitly ruled out.
-            GlassEffectContainer(spacing: 6) {
-                HStack(spacing: 6) {
-                    Button {
-                        showingRun = true
-                    } label: {
-                        Label("Run…", systemImage: "plus")
-                            .labelStyle(.iconOnly)
-                    }
-                    // Icon only, with the word on hover — the label is still there for
-                    // VoiceOver and the tooltip, so nothing is lost by not printing it.
-                    .help("Run a container…")
-                    .accessibilityLabel("Run a container")
-
-                    Button {
-                        Task { await model.reload() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                            .labelStyle(.iconOnly)
-                    }
-                    .help("Refresh now")
-                    .accessibilityLabel("Refresh")
-                    .disabled(model.state == .loading)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .glassEffect(in: .rect(cornerRadius: 8))
+            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh now") {
+                Task { await model.reload() }
             }
-            .fixedSize()
-        }
-        // Horizontal 12, vertical 8 — see `SectionToolbar` for why every toolbar shares the pair.
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        // No material here, deliberately. This band sits directly beneath the window's real
-        // toolbar, which on macOS 26 is Liquid Glass already; a second translucent strip under
-        // it produced two disagreeing translucencies and made the `glassEffect` cluster below
-        // glass-on-glass — the one thing Apple's guidance rules out. The band is the content
-        // layer's own chrome, so it takes the window background and lets the real glass above
-        // it be the glass.
+        })
     }
 
     /// Shown only while rows are multi-selected — the hook the `selection` state existed
