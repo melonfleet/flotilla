@@ -88,6 +88,8 @@ struct ToolbarIconButton: View {
     let systemImage: String
     let label: String
     var isDestructive = false
+    /// Engaged — see `IconActionButton.active`.
+    var active = false
     let action: () -> Void
 
     var body: some View {
@@ -96,6 +98,6 @@ struct ToolbarIconButton: View {
         // these were a bare `Button` with only a tooltip, so nothing happened on hover and
         // nothing happened on click either.
         IconActionButton(systemImage: systemImage, label: label, help: label,
-                         destructive: isDestructive, action: action)
+                         destructive: isDestructive, active: active, action: action)
     }
 }

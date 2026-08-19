@@ -62,7 +62,7 @@ struct ActivityView: View {
 
             GlassEffectContainer(spacing: 6) {
                 HStack(spacing: 6) {
-                    ToolbarIconButton(systemImage: "line.3.horizontal.decrease.circle",
+                    ToolbarIconButton(systemImage: "line.3.horizontal.decrease",
                                       label: "Clear filters") {
                         ui.kind = nil
                         ui.subject = nil
@@ -114,7 +114,7 @@ struct ActivityView: View {
             }
         } else if filtered.isEmpty {
             ContentUnavailableView {
-                Label("No matching activity", systemImage: "line.3.horizontal.decrease.circle")
+                Label("No matching activity", systemImage: "line.3.horizontal.decrease")
             } description: {
                 Text("\(model.activity.count) entries recorded, none matching the current "
                      + "filters.")

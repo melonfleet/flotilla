@@ -27,6 +27,13 @@ struct IconActionButton: View {
     /// this" should look like. `busy` means *in flight*; `disabled` means *not offered*.
     var disabled: Bool = false
     var destructive: Bool = false
+    /// **On**, as opposed to merely hoverable — a filter that is narrowing, a toggle that is
+    /// engaged. Drawn in the accent colour rather than by swapping in a `.fill` glyph, because the
+    /// circle-less filter symbol the owner asked for has no filled twin: `line.3.horizontal.decrease`
+    /// exists, `line.3.horizontal.decrease.fill` does not. Colour carries the state instead, which
+    /// also keeps the glyph's silhouette stable so the control does not appear to change shape
+    /// when you use it.
+    var active: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -38,6 +45,7 @@ struct IconActionButton: View {
                         .scaleEffect(0.55)
                 } else {
                     Image(systemName: systemImage)
+                        .foregroundStyle(active ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.primary))
                 }
             }
             // Fixed box so the row does not reflow when the glyph swaps for the spinner, and

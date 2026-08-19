@@ -262,9 +262,12 @@ struct MachinesView: View {
 
     private var filterButton: some View {
         Button { showingFilter.toggle() } label: {
-            Image(systemName: ui.filter == .all
-                  ? "line.3.horizontal.decrease.circle"
-                  : "line.3.horizontal.decrease.circle.fill")
+            // The circle-less filter glyph, on the owner's call: its strokes read larger at the same
+            // point size, and there is no `.fill` twin — so "a filter is narrowing" is carried by
+            // the accent colour instead, which also keeps the silhouette stable.
+            Image(systemName: "line.3.horizontal.decrease")
+                .foregroundStyle(ui.filter == .all
+                                 ? AnyShapeStyle(.primary) : AnyShapeStyle(Theme.accent))
         }
         .help(ui.filter == .all ? "Filter by state"
               : "Showing \(ui.filter.rawValue.lowercased()) only")
@@ -367,7 +370,7 @@ struct MachinesView: View {
         // machines" while two machines sat in the model. Swift accepts that silently.
         case .loaded where displayed.isEmpty, .loading where displayed.isEmpty:
             ContentUnavailableView {
-                Label("No matching machines", systemImage: "line.3.horizontal.decrease.circle")
+                Label("No matching machines", systemImage: "line.3.horizontal.decrease")
             } description: {
                 Text(ui.filter == .all
                      ? "No machine matches “\(ui.search)”."

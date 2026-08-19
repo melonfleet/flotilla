@@ -90,15 +90,16 @@ struct LogsView: View {
 
             // Filled when narrowed, hollow when not — the same signal `ResourceListControls`
             // gives, so "a filter is on" reads identically on every screen.
-            IconActionButton(systemImage: isFiltered
-                             ? "line.3.horizontal.decrease.circle.fill"
-                             : "line.3.horizontal.decrease.circle",
-                             label: "Sources", help: sourceFilterHelp) {
+            IconActionButton(systemImage: "line.3.horizontal.decrease",
+                             label: "Sources", help: sourceFilterHelp,
+                             active: isFiltered) {
                 showingSources.toggle()
             }
             .popover(isPresented: $showingSources, arrowEdge: .bottom) { sourcesPopover }
 
-            IconActionButton(systemImage: "number", label: "Lines",
+            // A list, not `#`: the hash reads as "number" in the abstract, and what this control
+            // sets is how many *lines* come back. The owner's call.
+            IconActionButton(systemImage: "list.bullet", label: "Lines",
                              help: "Read the last \(ui.lineLimit) lines from each source") {
                 showingLimit.toggle()
             }

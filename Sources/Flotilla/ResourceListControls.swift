@@ -66,11 +66,10 @@ struct ResourceListControls<Row: Identifiable>: View {
                 .popover(isPresented: $showingColumns, arrowEdge: .bottom) { columnsPopover }
 
             if filters.count > 1 {
-                IconActionButton(systemImage: filterID == "all"
-                                 ? "line.3.horizontal.decrease.circle"
-                                 : "line.3.horizontal.decrease.circle.fill",
+                IconActionButton(systemImage: "line.3.horizontal.decrease",
                                  label: "Filter",
-                                 help: filterHelp) { showingFilter.toggle() }
+                                 help: filterHelp,
+                                 active: filterID != "all") { showingFilter.toggle() }
                     .popover(isPresented: $showingFilter, arrowEdge: .bottom) { filterPopover }
             }
         }

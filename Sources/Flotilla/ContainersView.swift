@@ -290,9 +290,12 @@ struct ContainersView: View {
         Button {
             showingFilter.toggle()
         } label: {
-            Image(systemName: ui.filter == .all
-                  ? "line.3.horizontal.decrease.circle"
-                  : "line.3.horizontal.decrease.circle.fill")
+            // The circle-less filter glyph, on the owner's call: its strokes read larger at the same
+            // point size, and there is no `.fill` twin — so "a filter is narrowing" is carried by
+            // the accent colour instead, which also keeps the silhouette stable.
+            Image(systemName: "line.3.horizontal.decrease")
+                .foregroundStyle(ui.filter == .all
+                                 ? AnyShapeStyle(.primary) : AnyShapeStyle(Theme.accent))
         }
         .help(ui.filter == .all ? "Filter by state" : "Showing \(ui.filter.rawValue.lowercased()) only")
         .accessibilityLabel("Filter by state")
