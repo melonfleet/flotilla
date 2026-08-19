@@ -24,6 +24,8 @@ struct LogsView: View {
     @State private var chunks: [AggregatedLogChunk] = []
     @State private var loading = false
     @State private var updated: Date?
+    @State private var showingSources = false
+    @State private var showingLimit = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,61 +56,110 @@ struct LogsView: View {
             + "|\(ui.only.sorted().joined(separator: ","))|\(sources.joined(separator: ","))"
     }
 
+    /// The same control band every other section wears, and the same *idiom* inside it: an
+    /// icon-only segmented picker, then `IconActionButton`s that open popovers.
+    ///
+    /// It was four worded controls — a segmented Output/Boot, an All/Containers/Machines picker, a
+    /// named-source menu and a "200 lines" picker — which pushed the search field halfway across
+    /// the window while every other section starts it near the left. The owner's standing rule applies
+    /// too: *"we don't want to use a lot of words instead of icons just so that it makes it more
+    /// universal and more easier to read for everyone, especially the people that can't read words
+    /// or English."* The words move to `help` and `accessibilityLabel`, where they still reach
+    /// anyone who needs them.
+    ///
+    /// The two source controls collapsed into **one** filter, which is also what the other
+    /// sections have: kind and name are both "which sources", and splitting them across two
+    /// controls made the reader hold a two-part rule in their head.
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search log lines…",
                        updated: updated,
                        leading: {
-            Picker("", selection: Binding(get: { ui.scope }, set: { ui.scope = $0 })) {
-                ForEach(LogsUIState.Scope.allCases) { Text($0.rawValue).tag($0) }
+            Picker("Log", selection: Binding(get: { ui.scope }, set: { ui.scope = $0 })) {
+                ForEach(LogsUIState.Scope.allCases) { option in
+                    Label(option.rawValue, systemImage: option.systemImage)
+                        .labelStyle(.iconOnly)
+                        .accessibilityLabel(option.accessibilityLabel)
+                        .help(option.accessibilityLabel)
+                        .tag(option)
+                }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .fixedSize()
-            .help("Process output, or the VM boot log")
 
-            // Kinds, and then individual names — "just this container" is the filter that
-            // actually replaces scrolling past four others.
-            Picker("", selection: Binding(get: { ui.sources }, set: { ui.sources = $0 })) {
-                ForEach(LogsUIState.Sources.allCases) { Text($0.rawValue).tag($0) }
+            // Filled when narrowed, hollow when not — the same signal `ResourceListControls`
+            // gives, so "a filter is on" reads identically on every screen.
+            IconActionButton(systemImage: isFiltered
+                             ? "line.3.horizontal.decrease.circle.fill"
+                             : "line.3.horizontal.decrease.circle",
+                             label: "Sources", help: sourceFilterHelp) {
+                showingSources.toggle()
             }
-            .fixedSize()
-            .help("Which kinds of source to read from")
+            .popover(isPresented: $showingSources, arrowEdge: .bottom) { sourcesPopover }
 
-            Menu {
-                Button {
-                    ui.only.removeAll()
-                } label: {
-                    Label("All sources", systemImage: ui.only.isEmpty ? "checkmark" : "")
-                }
-                Divider()
-                // Built from what is actually running, because those are the only sources
-                // `logs` can answer for — a menu offering a stopped container would be a
-                // control that cannot work.
-                ForEach(availableSources, id: \.0) { source, kind in
-                    Button {
-                        if ui.only.contains(source) { ui.only.remove(source) } else { ui.only.insert(source) }
-                    } label: {
-                        Label(source, systemImage: ui.only.contains(source)
-                              ? "checkmark"
-                              : kind.systemImage)
-                    }
-                }
-            } label: {
-                Text(sourceFilterLabel)
+            IconActionButton(systemImage: "number", label: "Lines",
+                             help: "Read the last \(ui.lineLimit) lines from each source") {
+                showingLimit.toggle()
             }
-            .fixedSize()
-            .help("Filter to particular containers or machines")
-
-            Picker("", selection: Binding(get: { ui.lineLimit }, set: { ui.lineLimit = $0 })) {
-                ForEach(LogsUIState.lineLimits, id: \.self) { Text("\($0) lines").tag($0) }
-            }
-            .fixedSize()
-            .help("Lines to read from the end of each source")
+            .popover(isPresented: $showingLimit, arrowEdge: .bottom) { limitPopover }
         }, trailing: {
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh") {
                 Task { await load() }
             }
         })
+    }
+
+    private var isFiltered: Bool { ui.sources != .all || !ui.only.isEmpty }
+
+    private var sourceFilterHelp: String {
+        if !ui.only.isEmpty {
+            return ui.only.count == 1
+                ? "Showing \(ui.only.first ?? "one source") only"
+                : "Showing \(ui.only.count) sources"
+        }
+        return ui.sources == .all ? "All sources" : "\(ui.sources.rawValue) only"
+    }
+
+    /// Kinds first, then the individual sources that are actually running — the only ones `logs`
+    /// can answer for, so a stopped container never appears as a control that cannot work.
+    private var sourcesPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Kind", selection: Binding(get: { ui.sources }, set: { ui.sources = $0 })) {
+                ForEach(LogsUIState.Sources.allCases) { option in
+                    Label(option.rawValue, systemImage: option.systemImage).tag(option)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+
+            if !availableSources.isEmpty {
+                Divider()
+                Toggle("All sources", isOn: Binding(get: { ui.only.isEmpty },
+                                                    set: { if $0 { ui.only.removeAll() } }))
+                ForEach(availableSources, id: \.0) { source, kind in
+                    Toggle(isOn: Binding(
+                        get: { ui.only.contains(source) },
+                        set: { on in
+                            if on { ui.only.insert(source) } else { ui.only.remove(source) }
+                        }
+                    )) {
+                        Label(source, systemImage: kind.systemImage)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(minWidth: 200)
+    }
+
+    private var limitPopover: some View {
+        Picker("Lines", selection: Binding(get: { ui.lineLimit }, set: { ui.lineLimit = $0 })) {
+            ForEach(LogsUIState.lineLimits, id: \.self) { Text("\($0) lines").tag($0) }
+        }
+        .pickerStyle(.radioGroup)
+        .labelsHidden()
+        .padding(14)
     }
 
     @ViewBuilder
@@ -226,14 +277,6 @@ struct LogsView: View {
     private var availableSources: [(String, ActivityKind)] {
         model.running.map { ($0.id, ActivityKind.container) }
             + model.machines.filter { MachinesView.isRunning($0) }.map { ($0.id, ActivityKind.machine) }
-    }
-
-    private var sourceFilterLabel: String {
-        switch ui.only.count {
-        case 0: "All sources"
-        case 1: ui.only.first ?? "1 source"
-        default: "\(ui.only.count) sources"
-        }
     }
 
     private func load() async {

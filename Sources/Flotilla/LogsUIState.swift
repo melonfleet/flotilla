@@ -16,6 +16,12 @@ final class LogsUIState {
         case stdio = "Output", boot = "Boot"
         var id: Self { self }
         var isBoot: Bool { self == .boot }
+
+        /// Verified to exist before use, per the `ellipsis.vertical` incident.
+        var systemImage: String { self == .boot ? "power" : "text.alignleft" }
+        var accessibilityLabel: String {
+            self == .boot ? "Boot log" : "Process output"
+        }
     }
 
     /// Which kinds of source to fetch from. Containers and machines both answer `logs`, through
@@ -23,6 +29,14 @@ final class LogsUIState {
     enum Sources: String, CaseIterable, Identifiable {
         case all = "All", containers = "Containers", machines = "Machines"
         var id: Self { self }
+
+        var systemImage: String {
+            switch self {
+            case .all: "square.stack.3d.up"
+            case .containers: ActivityKind.container.systemImage
+            case .machines: ActivityKind.machine.systemImage
+            }
+        }
     }
 
     var scope: Scope = .stdio
