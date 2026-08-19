@@ -58,6 +58,183 @@ private func requireRejected(
     #expect(Allowlist.validate(["image", "push", "alpine"]) == .failure(.unknownSubcommand("image push")))
 }
 
+// MARK: - The wire-exposure dimension
+//
+// Added 2026-08-19 to close the audit's blocking finding: well-formed commands that no value
+// shape can refuse. Reviewed the same day by the review, whose findings are folded in below — the
+// substitution bypass in particular was a real hole in the first version.
+
+@Test func everySpecStatesItsExposureExplicitly() {
+    // A **partition**, not a list of the interesting half. the review's finding: asserting only the
+    // local-only names lets a newly added spec become remotely reachable because its author
+    // omitted the decision — the test passed and nobody chose anything. Every spec must be named
+    // in exactly one of these two sets, so adding one fails here until someone decides.
+    let localOnly: Set<String> = [
+        "machine create", "machine set", "machine delete", "machine set-default",
+        "machine run", "machine stop", "machine inspect", "machine logs",
+        "system start",
+    ]
+    let exposed: Set<String> = [
+        "ls", "list", "inspect", "stats", "exec", "copy", "logs",
+        "start", "stop", "kill", "delete", "rm", "prune", "run",
+        "image list", "image inspect", "image pull", "image delete", "image rm",
+        "image prune", "image tag", "build",
+        "volume list", "volume inspect", "volume create", "volume delete", "volume rm",
+        "volume prune",
+        "network list", "network inspect", "network create", "network delete", "network rm",
+        "network prune",
+        "machine list",
+        "system status", "system version", "system df",
+    ]
+
+    let actualLocalOnly = Set(
+        Allowlist.commands.filter {
+            if case .localOnly = $0.exposure { return true } else { return false }
+        }.map(\.name)
+    )
+    let actualExposed = Set(Allowlist.commands.map(\.name)).subtracting(actualLocalOnly)
+
+    #expect(actualLocalOnly == localOnly)
+    #expect(actualExposed == exposed)
+    #expect(localOnly.isDisjoint(with: exposed))
+    #expect(localOnly.union(exposed).count == Allowlist.commands.count)
+
+    // And every local-only spec must say WHY, in the spec, where the decision is made.
+    for spec in Allowlist.commands {
+        if case .localOnly(let reason) = spec.exposure {
+            #expect(!reason.isEmpty, "\(spec.name) is local-only with no stated reason")
+        }
+    }
+}
+
+@Test func remoteCallersCannotReachTheLocalOnlySurface() {
+    // Every one of these is VALID GRAMMAR — that is the whole point. Under `.localOwner` they are
+    // accepted; only the capability refuses them.
+    let wellFormed: [[String]] = [
+        ["machine", "delete", "production"],
+        ["machine", "set-default", "attacker-chosen"],
+        ["machine", "set", "home-mount=rw"],
+        ["machine", "create", "--name", "loot", "alpine:3.22"],
+        ["machine", "run", "--name", "loot", "--", "/bin/true"],
+        ["machine", "stop"],
+        ["machine", "inspect"],
+        ["machine", "logs", "-n", "100"],
+        ["system", "start", "--disable-kernel-install", "--timeout", "60"],
+    ]
+    for args in wellFormed {
+        guard case .success = Allowlist.validate(args) else {
+            Issue.record("\(args) should be valid for the local owner")
+            continue
+        }
+        guard case .failure(.notExposedToWire) = Allowlist.validate(args, wirePolicy: .remotePeer) else {
+            // Refused as "not offered", never as "no such subcommand": a peer must not learn that
+            // probing and mistyping look the same.
+            Issue.record("\(args) must be refused over the wire as notExposedToWire")
+            continue
+        }
+    }
+}
+
+@Test func substitutionCannotLaunderExposure() {
+    // the review's BLOCKER. `substituting()` swaps `machine run` for `interactiveMachineRun` under
+    // `.interactiveShell`, and that substitute carried the default exposure — so this exact argv
+    // was ACCEPTED for a remote peer holding an interactive-shell policy, granting a shell inside
+    // the substrate VM. The check now runs on the pre-substitution spec as well.
+    let shellIntoTheVM = ["machine", "run", "-n", "production", "-i", "-t"]
+    guard case .failure(.notExposedToWire) = Allowlist.validate(
+        shellIntoTheVM, execPolicy: .interactiveShell, wirePolicy: .remotePeer) else {
+        Issue.record("interactive machine run must never be reachable over the wire")
+        return
+    }
+    // Still available to the owner, which is the whole reason the substitution exists.
+    guard case .success = Allowlist.validate(
+        shellIntoTheVM, execPolicy: .interactiveShell, wirePolicy: .localOwner) else {
+        Issue.record("the Shell tab's login shell must still work locally")
+        return
+    }
+    // Same for the permissive `exec` grammar.
+    guard case .failure(.notExposedToWire) = Allowlist.validate(
+        ["exec", "-i", "-t", "web", "--", "sh"],
+        execPolicy: .interactiveShell, wirePolicy: .remotePeer) else {
+        Issue.record("interactive exec must never be reachable over the wire")
+        return
+    }
+}
+
+@Test func remoteCallersMustBoundTheirReads() {
+    // `logs` without `-n` reads an entire log, and bare `stats` streams until killed. Both are
+    // fine for the owner and are a denial of service from a peer.
+    guard case .success = Allowlist.validate(["logs", "web"]) else {
+        Issue.record("unbounded logs should be valid locally"); return
+    }
+    guard case .failure(.flagRequiredOverWire(_, let logFlag)) =
+            Allowlist.validate(["logs", "web"], wirePolicy: .remotePeer) else {
+        Issue.record("unbounded logs must be refused over the wire"); return
+    }
+    #expect(logFlag == "n")
+
+    guard case .failure(.flagRequiredOverWire(_, let statsFlag)) =
+            Allowlist.validate(["stats", "--format", "json"], wirePolicy: .remotePeer) else {
+        Issue.record("bare stats must be refused over the wire"); return
+    }
+    #expect(statsFlag == "no-stream")
+
+    // The bounded forms go through — including `-n`, whose short-only spelling the flag parser did
+    // not record until this landed, which would have made the requirement unsatisfiable.
+    for args in [["logs", "-n", "100", "web"], ["stats", "--no-stream", "--format", "json"]] {
+        guard case .success = Allowlist.validate(args, wirePolicy: .remotePeer) else {
+            Issue.record("\(args) should be accepted over the wire")
+            continue
+        }
+    }
+}
+
+@Test func everyRequiredWireFlagIsActuallyDeclaredOnItsSpec() {
+    // the review's finding: `wireRequiredFlags` is stringly typed, so a typo ("no_stream") would make a
+    // command permanently unsatisfiable for peers — a self-inflicted denial of service that no
+    // other test would notice. Also checks the short-only spelling resolves, since `-n` has no
+    // long form.
+    for spec in Allowlist.commands {
+        for required in spec.wireRequiredFlags {
+            let matches = spec.flags.contains { $0.long == required }
+                || (required.count == 1 && spec.flags.contains { $0.short == required.first })
+            #expect(matches, "\(spec.name) requires \(required) over the wire, which it does not declare")
+        }
+    }
+}
+
+@Test func theExposedSurfaceStaysUsableOverTheWire() {
+    // A capability that amputates the half a client actually needs is its own kind of failure.
+    for args in [["ls", "--all", "--format", "json"], ["inspect", "web"], ["image", "list"],
+                 ["volume", "list"], ["network", "list"], ["system", "status"],
+                 ["start", "web"], ["stop", "web"], ["machine", "list"]] {
+        guard case .success = Allowlist.validate(args, wirePolicy: .remotePeer) else {
+            Issue.record("\(args) should still be reachable over the wire")
+            continue
+        }
+    }
+}
+
+@Test func aRefusedRemoteCommandNeverReachesTheHost() {
+    // the review's finding: the other tests prove the *validator* refuses, not that nothing is spawned.
+    // This one records every argv the host is asked to run, so a future refactor that validates
+    // and then executes anyway fails here rather than in production.
+    final class RecordingHost: ContainerHost, @unchecked Sendable {
+        var seen: [[String]] = []
+        func run(_ args: [String]) throws -> CommandResult {
+            seen.append(args)
+            return CommandResult(stdout: "", stderr: "", exitCode: 0)
+        }
+    }
+    let host = RecordingHost()
+    let remote = ContainerCLI(host: host, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
+
+    #expect(throws: (any Error).self) { try remote.deleteMachine("production") }
+    #expect(throws: (any Error).self) { try remote.startMachine("production") }
+    #expect(throws: (any Error).self) { try remote.logs("web", lines: 0) }
+    #expect(host.seen.isEmpty, "a refused command must never reach the host: \(host.seen)")
+}
+
 @Test func machineListRefusesFormatsTheCLIItselfRejects() {
     // The allowlist must be at least as strict as the CLI. Captured help, container 1.0.0:
     // every other leaf's `--format` lists `json, table, yaml, toml`, but
@@ -696,7 +873,7 @@ func interactiveShellCapsTrailingTokens() {
 
 @Test("A ContainerCLI defaults to refusing shells")
 func containerCLIDefaultsToStrictExec() {
-    #expect(ContainerCLI(host: LocalHost()).execPolicy == .processListOnly)
+    #expect(ContainerCLI(host: LocalHost(), wirePolicy: .localOwner).execPolicy == .processListOnly)
 }
 
 // MARK: - container copy

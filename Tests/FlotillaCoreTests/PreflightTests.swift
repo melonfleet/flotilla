@@ -46,12 +46,12 @@ private func preflight(
         }
         return CommandResult(stdout: "", stderr: "unexpected", exitCode: 1)
     }
-    return Preflight(cli: ContainerCLI(host: host), minimumVersion: minimum, locate: { _ in found })
+    return Preflight(cli: ContainerCLI(host: host, wirePolicy: .localOwner), minimumVersion: minimum, locate: { _ in found })
 }
 
 @Test func missingWhenTheBinaryCannotBeLocated() {
     let host = ScriptedHost { _ in CommandResult(stdout: "", stderr: "unexpected", exitCode: 1) }
-    let preflight = Preflight(cli: ContainerCLI(host: host), locate: { _ in nil })
+    let preflight = Preflight(cli: ContainerCLI(host: host, wirePolicy: .localOwner), locate: { _ in nil })
     #expect(preflight.run() == .missing)
 }
 
@@ -92,7 +92,7 @@ private func preflight(
         }
         return CommandResult(stdout: stoppedServicePayload, stderr: "", exitCode: 1)
     }
-    let result = Preflight(cli: ContainerCLI(host: host),
+    let result = Preflight(cli: ContainerCLI(host: host, wirePolicy: .localOwner),
                            locate: { _ in "/usr/local/bin/container" }).run()
     #expect(result == .serviceStopped(version: "1.0.0",
                                      path: "/usr/local/bin/container",
@@ -155,7 +155,7 @@ private func preflight(
         }
         return CommandResult(stdout: "", stderr: "", exitCode: 0)
     }
-    let result = Preflight(cli: ContainerCLI(host: host), locate: { _ in "/usr/local/bin/container" }).run()
+    let result = Preflight(cli: ContainerCLI(host: host, wirePolicy: .localOwner), locate: { _ in "/usr/local/bin/container" }).run()
     guard case .unusable = result else {
         Issue.record("expected .unusable, got \(result)")
         return

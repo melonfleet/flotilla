@@ -51,12 +51,32 @@ public struct ContainerCLI: Sendable {
     /// the same default-deny shape as `MountPolicy`. See `ExecPolicy`.
     public let execPolicy: ExecPolicy
 
+    /// Who this CLI is acting for. `.localOwner` by default, matching `mountPolicy`'s reasoning:
+    /// an instance driving this Mac on behalf of its own owner. **A Phase 2 host peer must pass
+    /// `.remotePeer`**, which refuses the machine-lifecycle family outright and requires the
+    /// bounded form of `logs` and `stats` — see `WirePolicy`.
+    public let wirePolicy: WirePolicy
+
+    /// - Parameter wirePolicy: **no default, on the review's finding.** A defaulted capability is one a
+    ///   remote-serving call site can acquire by forgetting, and this is the executor: the pure
+    ///   validator keeps its `.localOwner` default because previews and tests genuinely *are* the
+    ///   local owner and cannot run anything, but nothing that spawns a process should be able to
+    ///   inherit "trusted" silently.
     public init(host: ContainerHost,
                 mountPolicy: MountPolicy = .unrestricted,
-                execPolicy: ExecPolicy = .processListOnly) {
+                execPolicy: ExecPolicy = .processListOnly,
+                wirePolicy: WirePolicy) {
+        // A remote peer with unrestricted host paths can read or rewrite the owner's files through
+        // `copy` and `run --volume`, whatever the rest of the table says. The two policies are
+        // independent by design; this is the one combination that is never intended.
+        if wirePolicy == .remotePeer {
+            precondition(mountPolicy != .unrestricted,
+                         "a remote-serving ContainerCLI must be given a narrowed MountPolicy")
+        }
         self.host = host
         self.mountPolicy = mountPolicy
         self.execPolicy = execPolicy
+        self.wirePolicy = wirePolicy
     }
 
     // MARK: Raw JSON
@@ -162,7 +182,7 @@ public struct ContainerCLI: Sendable {
     @discardableResult
     private func execute(_ args: [String]) throws -> CommandResult {
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
-                                                execPolicy: execPolicy)
+                                                execPolicy: execPolicy, wirePolicy: wirePolicy)
         return try succeeding(validated.arguments)
     }
 
@@ -174,7 +194,7 @@ public struct ContainerCLI: Sendable {
     /// information; everything else wants `execute`.
     private func attempting(_ args: [String]) throws -> CommandResult {
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
-                                                execPolicy: execPolicy)
+                                                execPolicy: execPolicy, wirePolicy: wirePolicy)
         return try host.run(validated.arguments)
     }
 

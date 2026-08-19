@@ -7,7 +7,7 @@ import FlotillaCore
 // Dumps real `--format json` output and runs the typed decoders so you can confirm
 // FlotillaCore's models still match the installed CLI version.
 
-let cli = ContainerCLI(host: LocalHost())
+let cli = ContainerCLI(host: LocalHost(), wirePolicy: .localOwner)
 
 func dumpRaw(_ title: String, _ args: [String]) {
     print("=== \(title) ===")

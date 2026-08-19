@@ -279,3 +279,71 @@ Not because competitors do it. Three of twenty-five is not a trend.
 - **Sequence the gap list against security cost, not market frequency.** the core owner's ranking is
   by how often a capability appears. Every new subcommand family is new grammar facing a
   remote caller in Phase 2, and machine creation with home mounts is a filesystem grant.
+
+## Q14 — Wire exposure is a capability, not a grammar (settled 2026-08-19)
+
+**Decision.** `CommandSpec` carries an `Exposure`, and `ContainerCLI` carries a `WirePolicy`
+alongside `MountPolicy` and `ExecPolicy`. A Phase 2 host peer constructs its CLI with
+`.remotePeer`, which refuses `.localOnly` subcommands outright and requires the bounded form of
+commands whose default output is unbounded. Local instances keep `.localOwner`, which is the
+permissive default **because there is no wire yet** — flipping the default would refuse the app's
+own machine controls to protect a peer that does not exist.
+
+**Why, and why not a stricter grammar.** The 47-spec audit (`research/ALLOWLIST-AUDIT.md`) found
+five blockers that no value shape can refuse, because the argv is already well-formed:
+`machine delete production`, `machine set home-mount=rw` (which points the default machine at the
+owner's home directory read-write on its next boot), `machine set-default X` (which redirects
+every later bare machine operation, including the owner's own), `machine create`, and
+`machine run`. `Allowlist` answers "is this argv well-formed for this subcommand" and answers it
+well. It had no way to say "this subcommand is not offered to a remote caller at all", and that
+is a capability question, exactly like the two dimensions already injected per CLI.
+
+**Local-only, with the reason recorded on each spec:** the six `machine` mutations plus
+`system start` (starting the host's own runtime services is the owner's decision).
+**Bounded over the wire:** `logs` and `machine logs` require `-n`, `stats` requires
+`--no-stream` — all three are unbounded by CLI default, which is harmless for the owner reading
+their own machine and a denial of service from a peer.
+
+**Rejected alternatives.** (1) A second allowlist table for the wire — parity that lives in two
+files is parity someone has to remember, and this project has already lost that bet. (2) Refusing
+the machine family for everyone — it would remove working local features to protect a peer that
+does not exist. (3) Leaving it to the transport layer to filter — the boundary would then live
+outside the thing that validates, and the audit's whole point is that the boundary must be
+where the decision is made.
+
+**Still open, and NOT closed by this decision:** `run --publish 0.0.0.0:...` needs a host-owned
+interface/port policy, and `volume create --opt` / `network create --plugin|--option` forward
+opaque key-values to host drivers whose accepted keys are undocumented. Both are noted in the
+audit as needing policy rather than grammar; neither is a Phase 1 blocker.
+
+### Q14 amended after independent review (the review, 2026-08-19)
+
+the review reviewed the first implementation and returned "the capability concept is sound, but this
+implementation is not". He was right on every count that mattered, and four things changed:
+
+1. **A substitution bypass, and it was live.** `substituting()` swaps `machine run` for
+   `interactiveMachineRun` under `ExecPolicy.interactiveShell`, and the substitute is a separate
+   `CommandSpec` that carried the *default* exposure — so it laundered the local-only marking on
+   the spec it replaced. `machine run -n prod -i -t` from a `.remotePeer` holding
+   `.interactiveShell` would have granted a shell inside the substrate VM. Exposure is now checked
+   on the **pre-substitution** spec as well as the substituted one, and both substitutes carry
+   their own `.localOnly`. One guard that depends on remembering a second is not a guard.
+2. **The executor no longer defaults.** `ContainerCLI.init` requires `wirePolicy` explicitly: a
+   defaulted capability is one a remote-serving call site acquires by forgetting. The pure
+   validator keeps its `.localOwner` default, because previews and tests genuinely *are* the local
+   owner and cannot spawn anything. A `.remotePeer` CLI also now refuses to be built with an
+   unrestricted `MountPolicy`, which is the one combination never intended.
+3. **`machine logs` and `machine inspect` became local-only.** `--follow` *satisfied*
+   `wireRequiredFlags: ["n"]` while still streaming without bound, and `machine inspect` carries
+   `userSetup.username` — the exact field the redaction lesson exists for. Fail-closed until wire
+   responses are redacted; the alternative was a promise with no code behind it.
+4. **The registry test asserts a partition**, not a list of the interesting half, so a new spec
+   fails the suite until someone states its exposure. Plus a test that every `wireRequiredFlags`
+   entry resolves to a declared flag (a typo there is a self-inflicted denial of service), and one
+   that drives a `.remotePeer` CLI against a recording host to prove refused commands never spawn.
+
+**Explicitly still open, and Phase 2 host-runtime work rather than allowlist work:** byte ceilings
+on responses (a single huge log line defeats a line count), enforced deadlines, concurrency and
+detach requirements for long-running commands, redacted/typed projections for the read commands
+that disclose paths and environment, and the host-owned interface/port and driver/plugin policies
+from finding 3. `timeoutHint` enforces nothing today and says so.

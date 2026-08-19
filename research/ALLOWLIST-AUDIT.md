@@ -193,3 +193,42 @@ locally — the same exposure dimension answers them, by requiring the bounded f
   whether exactly one side must be local. Host-to-host is unproven either way.
 - No leaf documents whether a bare `--` is accepted, so the separator behaviour our tests
   pin came from running the CLI, not from help — keep it that way.
+
+## 2026-08-19 — the blocking finding is closed by mechanism
+
+`WirePolicy` + `CommandSpec.exposure` landed (see `DECISIONS.md` Q14). The five BLOCKERs and the
+`machine stop` HIGH are now refused outright for `.remotePeer`, with the reason recorded on each
+spec; the three unbounded-output HIGHs (`logs`, `machine logs`, `stats`) require their bounding
+flag over the wire. `machine list --format` was already narrowed on 18 August.
+
+Four tests carry it, including an **exhaustive exposure registry** so a new `CommandSpec` cannot
+inherit the permissive default unnoticed — the same guard the mutation registry gives.
+
+One flaw was caught while implementing, worth recording because it would have shipped a
+protection that could not be satisfied: the flag parser recorded only *long* flag names, so
+`logs -n 100` from a peer would have been refused for omitting `-n`. Short-only flags are now
+recorded under their letter.
+
+**Remaining before the table is a complete wire boundary** — neither is grammar, and neither
+blocks Phase 1:
+- `run --publish` accepts any host interface, including `0.0.0.0`. Needs a host-owned
+  interface/port policy.
+- `volume create --opt` and `network create --plugin|--option` forward opaque keys to host
+  drivers. The accepted key sets are undocumented in help; settling them needs the driver source
+  or empirical probing.
+
+### Reviewed the same day, and the first implementation had a live bypass
+
+the review's review (2026-08-19) is folded into `DECISIONS.md` Q14. The headline: exposure was checked
+*after* `substituting()`, so the interactive-shell substitutes laundered it — a `.remotePeer` with
+`.interactiveShell` could have opened a shell in the substrate VM. Fixed by checking the resolved
+spec before substitution and marking both substitutes local-only.
+
+Local-only is now nine specs: the six `machine` mutations, `machine inspect`, `machine logs`, and
+`system start`. 307 tests.
+
+**The table is still not a complete wire boundary on its own**, and this is now a statement about
+the *host runtime* rather than about the allowlist: response byte ceilings, enforced deadlines and
+concurrency, detach for long-running `run`, redacted projections for reads that disclose paths and
+environment, and the interface/port and driver/plugin policies. None of it is Phase 1 work; all of
+it is a Phase 2 launch requirement.

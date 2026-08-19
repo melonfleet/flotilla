@@ -238,6 +238,37 @@ public enum ExecPolicy: Sendable, Equatable {
 }
 
 /// One allowlisted subcommand.
+/// Who is asking, and therefore which subcommands are on offer at all.
+///
+/// **The third capability dimension, alongside `MountPolicy` and `ExecPolicy`, and it exists
+/// because `Allowlist` cannot express this any other way.** The table validates *grammar*: it
+/// answers "is this argv well-formed for this subcommand". The 47-spec audit (2026-08-18,
+/// `research/ALLOWLIST-AUDIT.md`) found five blockers that no value shape can fix, because the
+/// argv is already perfectly well-formed — `machine delete production` is valid grammar, and so
+/// is `machine set home-mount=rw`, which points the default machine at this user's home directory
+/// read-write on its next boot. Tightening a regex cannot refuse an operation; only a capability
+/// can.
+///
+/// Injected per `ContainerCLI` exactly as the other two are, so one table serves a local owner
+/// and a remote peer differently rather than being copied and edited.
+public enum WirePolicy: Sendable, Equatable {
+    /// The machine's own owner, driving their own Mac. Everything the table allows is on offer.
+    case localOwner
+    /// A Phase 2 peer over mTLS. Only specs marked `.exposed` are reachable, and specs that carry
+    /// `wireRequiredFlags` must include them — an unbounded read is a denial-of-service against
+    /// the host peer even when its grammar is impeccable.
+    case remotePeer
+}
+
+/// Whether a subcommand is offered to a remote caller at all.
+public enum Exposure: Sendable, Equatable {
+    /// Reachable by a Phase 2 peer, subject to the rest of the table and to `MountPolicy`.
+    case exposed
+    /// **Local only.** Reachable by the machine's owner; refused outright over the wire, with the
+    /// reason recorded on each spec so the decision is readable where it is made.
+    case localOnly(reason: String)
+}
+
 public struct CommandSpec: Sendable, Equatable {
     /// `["ls"]`, `["image", "pull"]`, …
     public let path: [String]
@@ -250,19 +281,30 @@ public struct CommandSpec: Sendable, Equatable {
     public let flags: [FlagSpec]
     public let operands: OperandSpec
     public let trailing: TrailingPolicy
+    /// Whether a Phase 2 peer may reach this at all. See `WirePolicy`.
+    public let exposure: Exposure
+    /// Long flag names a remote caller **must** supply. Empty for almost everything; it exists
+    /// for the commands whose default is unbounded — `logs` without `-n` "will print all of the
+    /// logs" (its own help), and `stats` streams until killed. Harmless locally, a memory and
+    /// wire hazard from a peer.
+    public let wireRequiredFlags: [String]
 
     public init(_ path: [String],
                 mutates: Bool,
                 timeoutHint: TimeInterval = 30,
                 flags: [FlagSpec] = [],
                 operands: OperandSpec = .none,
-                trailing: TrailingPolicy = .forbidden) {
+                trailing: TrailingPolicy = .forbidden,
+                exposure: Exposure = .exposed,
+                wireRequiredFlags: [String] = []) {
         self.path = path
         self.mutates = mutates
         self.timeoutHint = timeoutHint
         self.flags = flags
         self.operands = operands
         self.trailing = trailing
+        self.exposure = exposure
+        self.wireRequiredFlags = wireRequiredFlags
     }
 
     public var name: String { path.joined(separator: " ") }
@@ -298,6 +340,13 @@ public struct ValidatedCommand: Sendable, Equatable {
 public enum AllowlistError: Error, Equatable, Sendable {
     case emptyCommand
     case unknownSubcommand(String)
+    /// The subcommand exists and the argv is well-formed, and it is **not offered to remote
+    /// callers**. Distinct from `unknownSubcommand` on purpose: "you may not" and "no such thing"
+    /// are different answers, and a host peer that conflated them would teach a caller that
+    /// probing is indistinguishable from a typo.
+    case notExposedToWire(command: String, reason: String)
+    /// A remote caller omitted a flag that bounds the command's output.
+    case flagRequiredOverWire(command: String, flag: String)
     case unknownFlag(String)
     case malformedFlag(String)
     case flagRequiresValue(String)
@@ -323,6 +372,13 @@ extension AllowlistError: CustomStringConvertible {
         switch self {
         case .emptyCommand: "empty command"
         case .unknownSubcommand(let s): "subcommand not allowed: \(s)"
+        case .notExposedToWire(let c, let reason):
+            "`\(c)` is not available to remote callers — \(reason)"
+        case .flagRequiredOverWire(let c, let flag):
+            // Rendered by length, because `-n` is the one required flag with no long spelling and
+            // the message must be copy-pasteable: `logs --n 100 web` is refused by the grammar.
+            "`\(c)` requires `\(flag.count == 1 ? "-" : "--")\(flag)` when called remotely, "
+            + "so its output is bounded"
         case .unknownFlag(let f): "flag not allowed: \(f)"
         case .malformedFlag(let f): "malformed flag: \(f)"
         case .flagRequiresValue(let f): "flag \(f) requires a value"
@@ -390,9 +446,14 @@ public enum Allowlist {
             CommandSpec(["list"], mutates: false, flags: [format, all, quiet]),
             CommandSpec(["inspect"], mutates: false,
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32)),
+            // Bare `stats` **streams** until killed (`--no-stream` "disable streaming stats and
+            // only pull the first result"). One request occupying a process and a response buffer
+            // indefinitely is a denial of service against the host peer, so the bounded form is
+            // the only one offered over the wire. The app already always passes it.
             CommandSpec(["stats"], mutates: false,
                         flags: [format, FlagSpec(long: "no-stream")],
-                        operands: OperandSpec(shape: .identifier, min: 0, max: 32)),
+                        operands: OperandSpec(shape: .identifier, min: 0, max: 32),
+                        wireRequiredFlags: ["no-stream"]),
             // `exec`, deliberately crippled to ONE command: the process list.
             //
             // Not `.command(maxTokens:)`. That would permit `exec <id> sh` — an interactive
@@ -435,14 +496,28 @@ public enum Allowlist {
                         operands: .none),
 
             // Optional operand: bare `machine inspect` inspects the default machine.
+            // Local-only on the review's finding. Its payload carries `userSetup.username` — the very
+            // field the redaction lesson in CLAUDE.md exists for, which escaped into the machine
+            // Inspect panel once already — plus the VM's address and home-mount state. There is no
+            // response redaction on the wire yet, so this is fail-closed until there is; the
+            // alternative is a promise with no code behind it.
             CommandSpec(["machine", "inspect"], mutates: false,
-                        operands: OperandSpec(shape: .identifier, min: 0, max: 1)),
+                        operands: OperandSpec(shape: .identifier, min: 0, max: 1),
+                        exposure: .localOnly(reason: "it discloses the owner's account name, the VM address and home-mount state, and nothing redacts wire responses yet")),
 
+            // Local-only on the review's finding, for two reasons that compound. It discloses the
+            // owner's own data — VM topology, home-mount state, command lines — and `--follow`
+            // *satisfies* `wireRequiredFlags: ["n"]` while still streaming indefinitely, so
+            // `machine logs -n 1 --follow prod` defeated the bounded-output rule from inside it.
+            // `wireRequiredFlags` stays declared: if this is ever exposed with redaction, the
+            // bound is already stated rather than needing to be remembered.
             CommandSpec(["machine", "logs"], mutates: false,
                         flags: [FlagSpec(short: "n", value: .count),
                                 FlagSpec(long: "boot"),
                                 FlagSpec(long: "follow", short: "f")],
-                        operands: OperandSpec(shape: .identifier, min: 0, max: 1)),
+                        operands: OperandSpec(shape: .identifier, min: 0, max: 1),
+                        exposure: .localOnly(reason: "it discloses VM topology and the owner's command lines, and --follow streams without bound"),
+                        wireRequiredFlags: ["n"]),
 
             // Boots a VM and pulls an image, so `timeoutHint` is generous and `mutates` true.
             // `--cpus`, `--memory` and `--home-mount` are accepted inline here — confirmed
@@ -457,13 +532,15 @@ public enum Allowlist {
                                 FlagSpec(long: "arch", short: "a", value: .identifier),
                                 FlagSpec(long: "os", value: .identifier),
                                 FlagSpec(long: "platform", value: .platform)],
-                        operands: OperandSpec(shape: .imageReference, min: 1, max: 1)),
+                        operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
+                        exposure: .localOnly(reason: "creating a VM chooses its image and can mount the owner's home directory")),
 
             // Settings are `.machineSetting`, a CLOSED set — an unknown key is refused rather
             // than forwarded on the hope the CLI will catch it.
             CommandSpec(["machine", "set"], mutates: true,
                         flags: [FlagSpec(long: "name", short: "n", value: .identifier)],
-                        operands: OperandSpec(shape: .machineSetting, min: 1, max: 3)),
+                        operands: OperandSpec(shape: .machineSetting, min: 1, max: 3),
+                        exposure: .localOnly(reason: "it can point the default machine at the owner's home directory read-write")),
 
             // `machine run` was **missing entirely** while both `startMachine` and the
             // machine Shell tab used it — so Start and the shell were refused by our own
@@ -478,23 +555,31 @@ public enum Allowlist {
             CommandSpec(["machine", "run"], mutates: true, timeoutHint: 300,
                         flags: [FlagSpec(long: "name", short: "n", value: .identifier)],
                         operands: OperandSpec(shape: .identifier, min: 0, max: 0),
-                        trailing: .exact(["/bin/true"])),
+                        trailing: .exact(["/bin/true"]),
+                        exposure: .localOnly(reason: "it boots a VM and runs a command inside it")),
 
             CommandSpec(["machine", "stop"], mutates: true, timeoutHint: 120,
-                        operands: OperandSpec(shape: .identifier, min: 0, max: 1)),
+                        operands: OperandSpec(shape: .identifier, min: 0, max: 1),
+                        exposure: .localOnly(reason: "it stops a VM the owner is using, by default whichever is current")),
 
             // Operand REQUIRED, unlike stop/inspect/logs. That asymmetry is the CLI's and it is
             // the right way round: `machine delete` with no argument would silently destroy the
             // default machine, so it must be named.
             CommandSpec(["machine", "delete"], mutates: true, timeoutHint: 120,
-                        operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
+                        operands: OperandSpec(shape: .identifier, min: 1, max: 1),
+                        exposure: .localOnly(reason: "it destroys a VM and its persistent state")),
 
             CommandSpec(["machine", "set-default"], mutates: true,
-                        operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
+                        operands: OperandSpec(shape: .identifier, min: 1, max: 1),
+                        exposure: .localOnly(reason: "it redirects every later bare machine operation, including the owner's")),
 
+            // `-n` is *optional* to the CLI — "if not provided this will print all of the
+            // logs", its own help — which is fine for the owner reading their own log and a
+            // memory-and-wire hazard from a peer. Required over the wire only.
             CommandSpec(["logs"], mutates: false,
                         flags: [FlagSpec(short: "n", value: .count), FlagSpec(long: "boot")],
-                        operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
+                        operands: OperandSpec(shape: .identifier, min: 1, max: 1),
+                        wireRequiredFlags: ["n"]),
 
             // MARK: containers — mutate
             // Exactly one operand. Verified: `container start idle cache` is refused with
@@ -680,7 +765,8 @@ public enum Allowlist {
             // an unlisted flag is refused without anyone having to remember to refuse it.
             CommandSpec(["system", "start"], mutates: true, timeoutHint: 120,
                         flags: [FlagSpec(long: "disable-kernel-install"),
-                                FlagSpec(long: "timeout", value: .count)]),
+                                FlagSpec(long: "timeout", value: .count)],
+                        exposure: .localOnly(reason: "starting the host's own runtime services is the owner's decision")),
         ]
     }()
 
@@ -696,6 +782,11 @@ public enum Allowlist {
     /// `commands`, so anything that inspects the allowlist (the audit, the Phase 2 wire
     /// documentation) still reports the default posture, and a caller has to hold an
     /// `ExecPolicy.interactiveShell` to get anything else.
+    private static func refuseUnexposed(_ spec: CommandSpec, wirePolicy: WirePolicy) throws {
+        guard wirePolicy == .remotePeer, case .localOnly(let reason) = spec.exposure else { return }
+        throw AllowlistError.notExposedToWire(command: spec.name, reason: reason)
+    }
+
     private static func substituting(_ policy: ExecPolicy, into spec: CommandSpec,
                                      args: [String]) -> CommandSpec {
         guard policy == .interactiveShell else { return spec }
@@ -735,7 +826,10 @@ public enum Allowlist {
         flags: [FlagSpec(long: "name", short: "n", value: .identifier),
                 FlagSpec(long: "interactive", short: "i"), FlagSpec(long: "tty", short: "t")],
         operands: OperandSpec(shape: .identifier, min: 0, max: 0),
-        trailing: .forbidden)
+        trailing: .forbidden,
+        // Belt and braces with the pre-substitution check: a login shell in the substrate VM is
+        // the single most dangerous thing in this table.
+        exposure: .localOnly(reason: "it opens a login shell inside the substrate VM"))
 
     /// `container exec [-i] [-t] <id> <command…>`.
     ///
@@ -746,7 +840,11 @@ public enum Allowlist {
         ["exec"], mutates: true, timeoutHint: 0,
         flags: [FlagSpec(long: "interactive", short: "i"), FlagSpec(long: "tty", short: "t")],
         operands: OperandSpec(shape: .identifier, min: 1, max: 1),
-        trailing: .command(maxTokens: 8))
+        trailing: .command(maxTokens: 8),
+        // `ExecPolicy` is what selects this grammar, and a remote-serving CLI is not supposed to
+        // carry `.interactiveShell` — but "not supposed to" is a convention, and this is a shell
+        // in a container. Marked local-only so the capability, not the convention, refuses it.
+        exposure: .localOnly(reason: "it carries caller-supplied argv into a container"))
 
     // MARK: Entry points
 
@@ -761,22 +859,48 @@ public enum Allowlist {
     public static func validate(_ args: [String],
                                 limits: Limits = .default,
                                 mountPolicy: MountPolicy = .denyHostPaths,
-                                execPolicy: ExecPolicy = .processListOnly) -> Result<ValidatedCommand, AllowlistError> {
+                                execPolicy: ExecPolicy = .processListOnly,
+                                wirePolicy: WirePolicy = .localOwner) -> Result<ValidatedCommand, AllowlistError> {
         do { return .success(try validated(args, limits: limits, mountPolicy: mountPolicy,
-                                           execPolicy: execPolicy)) }
+                                           execPolicy: execPolicy, wirePolicy: wirePolicy)) }
         catch let error as AllowlistError { return .failure(error) }
         catch { return .failure(.emptyCommand) } // unreachable: nothing else is thrown
     }
 
     /// Throwing form, for call sites that already propagate errors (`ContainerCLI`).
+    /// - Parameter wirePolicy: defaults to `.localOwner`, which is the only caller that exists
+    ///   today. The default is deliberately the permissive one **because there is no wire yet**:
+    ///   flipping it would refuse the app's own machine controls with no peer to protect. Phase 2's
+    ///   host peer must construct its `ContainerCLI` with `.remotePeer`, and `research/
+    ///   ALLOWLIST-AUDIT.md` records that as a launch requirement rather than a nicety.
     public static func validated(_ args: [String],
                                  limits: Limits = .default,
                                  mountPolicy: MountPolicy = .denyHostPaths,
-                                 execPolicy: ExecPolicy = .processListOnly) throws -> ValidatedCommand {
+                                 execPolicy: ExecPolicy = .processListOnly,
+                                 wirePolicy: WirePolicy = .localOwner) throws -> ValidatedCommand {
         guard !args.isEmpty else { throw AllowlistError.emptyCommand }
         try screen(args, limits: limits)
 
-        let spec = try substituting(execPolicy, into: try resolve(args), args: args)
+        let resolved = try resolve(args)
+
+        // **Checked on the RESOLVED spec, before substitution, and again after it.**
+        //
+        // the review found the bypass this closes (2026-08-19, BLOCKER): `substituting()` swaps
+        // `machine run` for `interactiveMachineRun` under `ExecPolicy.interactiveShell`, and that
+        // substitute is a separate `CommandSpec` — so it carried the *default* exposure and
+        // laundered the local-only marking on the spec it replaced. `machine run -n prod -i -t`
+        // from a `.remotePeer` holding `.interactiveShell` would have granted a shell inside the
+        // substrate VM. Checking the pre-substitution spec makes exposure impossible to launder
+        // no matter what any future substitute declares; the substitutes are *also* marked
+        // local-only, because one guard that depends on remembering a second is not a guard.
+        //
+        // Before any argument is examined, too: exposure is a property of the operation, not of
+        // its arguments, and every blocker it closes was a *well-formed* command.
+        try refuseUnexposed(resolved, wirePolicy: wirePolicy)
+
+        let spec = try substituting(execPolicy, into: resolved, args: args)
+        try refuseUnexposed(spec, wirePolicy: wirePolicy)
+
         let rest = Array(args.dropFirst(spec.path.count))
 
         // Parsed pieces, kept in encounter order so the canonical argv is stable.
@@ -831,7 +955,11 @@ public enum Allowlist {
                 guard let flag = spec.flag(short: short) else { throw AllowlistError.unknownFlag(token) }
                 try record(flag, spelling: token, inlineValue: nil,
                            rest: rest, cursor: &i, tokens: &flagTokens, counts: &seenFlags, mountPolicy: mountPolicy)
-                if let long = flag.long { presentLongFlags.insert(long) }
+                // Short-only flags are recorded under their letter. Without this a flag with no
+                // long spelling — `logs -n` is the only one — was invisible to every check that
+                // reads this set, which would have made `wireRequiredFlags: ["n"]` impossible to
+                // satisfy: a remote caller passing `-n 100` would still have been refused.
+                presentLongFlags.insert(flag.long ?? String(short))
                 continue
             }
 
@@ -848,6 +976,15 @@ public enum Allowlist {
         }
 
         // Operand arity.
+        // Bounded-output flags, checked once the flags are known. A remote caller that omits
+        // `-n` on `logs` is asking the host peer to read an entire log into memory and put it on
+        // the wire; the local owner doing the same is just reading their own log.
+        if wirePolicy == .remotePeer {
+            for required in spec.wireRequiredFlags where !presentLongFlags.contains(required) {
+                throw AllowlistError.flagRequiredOverWire(command: spec.name, flag: required)
+            }
+        }
+
         let minRequired = presentLongFlags.isDisjoint(with: spec.operands.minWaivedBy) ? spec.operands.min : 0
         guard operands.count >= minRequired else {
             throw AllowlistError.missingOperand(subcommand: spec.name, need: minRequired)

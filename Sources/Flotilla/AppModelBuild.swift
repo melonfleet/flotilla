@@ -32,7 +32,7 @@ extension AppModel {
         // having a link in it silently redirect the build elsewhere is the same TOCTOU shape
         // the review flagged, and resolving here removes the UI's contribution to it.
         let contextPath = context.resolvingSymlinksInPath().standardizedFileURL.path
-        let scoped = ContainerCLI(host: LocalHost(), mountPolicy: .roots([contextPath]))
+        let scoped = ContainerCLI(host: LocalHost(), mountPolicy: .roots([contextPath]), wirePolicy: .localOwner)
 
         do {
             _ = try await Task.detached {

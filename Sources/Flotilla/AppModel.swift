@@ -58,7 +58,7 @@ final class AppModel {
     /// remote peer it will pass the strict default, and the terminal must then refuse rather
     /// than carry on because it had the permissive value baked in. The policy travels with the
     /// CLI, exactly as `MountPolicy` does.
-    init(cli: ContainerCLI = ContainerCLI(host: LocalHost(), execPolicy: .interactiveShell),
+    init(cli: ContainerCLI = ContainerCLI(host: LocalHost(), execPolicy: .interactiveShell, wirePolicy: .localOwner),
          settingsStore: SettingsStore? = nil) {
         let resolved: (store: SettingsStore, observation: SettingsObservation?)
         if let settingsStore {

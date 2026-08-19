@@ -78,7 +78,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 /// an interactive shell, needs a PTY, and fails *after* booting. See the MACHINES-SPEC addendum.
 @Test func machineRestartIsStopThenBoot() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.restartMachine("dev")
 
@@ -88,7 +88,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func startStopRestartRouteThroughAllowlist() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.start("web")
     try cli.stop("web", timeout: 5)
@@ -103,7 +103,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func removeUsesForceFlagOnlyWhenAsked() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.remove("web")
     try cli.remove("web", force: true)
@@ -115,7 +115,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func killIsImmediateAndDefaultsToNoExplicitSignal() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.kill("web")
     try cli.kill("web", signal: "TERM")
@@ -127,7 +127,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func pruneOperationsRouteThroughAllowlistWithNoOperands() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.pruneContainers()
     try cli.pruneImages()
@@ -144,7 +144,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func tagRoutesThroughAllowlist() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.tag("docker.io/library/alpine:latest", as: "alpine:mine")
 
@@ -156,7 +156,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     // the argv is *accepted*, and that the host receives the allowlist's canonical form rather
     // than what this method assembled.
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp/flotilla"]))
+    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp/flotilla"]), wirePolicy: .localOwner)
 
     try cli.buildImage(contextDirectory: "/tmp/flotilla/src", dockerfile: "/tmp/flotilla/Dockerfile",
                        tag: "app:latest", buildArgs: ["VERSION=1.2"], labels: ["team=infra"],
@@ -169,7 +169,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
                                     "/tmp/flotilla/src"])
 
     // A context outside the policy's roots never reaches the host at all.
-    let denied = ContainerCLI(host: RecordingHost(), mountPolicy: .roots(["/tmp/flotilla"]))
+    let denied = ContainerCLI(host: RecordingHost(), mountPolicy: .roots(["/tmp/flotilla"]), wirePolicy: .localOwner)
     #expect(throws: AllowlistError.self) {
         try denied.buildImage(contextDirectory: "/Users/someone/src", dockerfile: nil, tag: nil,
                               buildArgs: [], labels: [], noCache: false, platform: nil, target: nil)
@@ -182,7 +182,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     // which quietly granted the process working directory. See `omittedBuildContextIsRefused`
     // in AllowlistTests.
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp/flotilla"]))
+    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp/flotilla"]), wirePolicy: .localOwner)
 
     try cli.buildImage(contextDirectory: "/tmp/flotilla", dockerfile: nil, tag: "app:latest",
                        buildArgs: [], labels: [], noCache: false, platform: nil, target: nil)
@@ -197,7 +197,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     // path works — it does not by itself prove `container inspect` emits an array like
     // `ls` does, which is unverified (see the doc comment on `ContainerCLI.inspect`).
     host.stdoutByPath["inspect"] = String(decoding: try fixture("containers"), as: UTF8.self)
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     let container = try cli.inspect("flotilla-probe-test")
 
@@ -208,7 +208,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 @Test func inspectImageDecodesTheSameShapeAsListImages() throws {
     let host = RecordingHost()
     host.stdoutByPath["image inspect"] = String(decoding: try fixture("images"), as: UTF8.self)
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     let image = try cli.inspectImage("docker.io/library/alpine:latest")
 
@@ -220,7 +220,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     let host = RecordingHost()
     let raw = String(decoding: try fixture("inspect-container"), as: UTF8.self)
     host.stdoutByPath["inspect"] = raw
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     let result = try cli.rawInspectJSON("web-demo")
 
@@ -232,7 +232,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     let host = RecordingHost()
     let raw = String(decoding: try fixture("images"), as: UTF8.self)
     host.stdoutByPath["image inspect"] = raw
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     let result = try cli.rawInspectImageJSON("docker.io/library/alpine:latest")
 
@@ -248,7 +248,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
     for (name, attempt) in attempts {
         let host = RecordingHost()
-        let cli = ContainerCLI(host: host)
+        let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
         #expect(throws: AllowlistError.self, "\(name) accepted an invalid argument") {
             try attempt(cli)
         }
@@ -259,7 +259,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 @Test func inspectThrowsRatherThanCrashingOnAnEmptyResult() throws {
     let host = RecordingHost()
     host.stdoutByPath["inspect"] = "[]"
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     #expect(throws: ContainerCLIError.emptyInspectResult(id: "ghost")) {
         try cli.inspect("ghost")
@@ -268,7 +268,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func startRejectsAnAttemptedInjectionInTheIdentifier() {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     #expect(throws: AllowlistError.self) {
         try cli.start("web; rm -rf /")
@@ -296,7 +296,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
     for (name, attempt) in attempts {
         let host = RecordingHost()
-        let cli = ContainerCLI(host: host)
+        let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
         do {
             try attempt(cli)
             Issue.record("\(name) accepted an invalid argument")
@@ -311,7 +311,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func runBuildsTheCanonicalArgvAndAcceptsAnyHostPathLocally() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     let options = ContainerCLI.RunOptions(
         name: "web",
@@ -345,7 +345,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func runRejectsAnEmptyInContainerCommandToken() {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     #expect(throws: AllowlistError.self) {
         try cli.run(image: "alpine", command: [""])
@@ -355,7 +355,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func runRejectsContradictoryMountModes() {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
     let options = ContainerCLI.RunOptions(volumes: ["/tmp/data:/data:ro,rw"])
 
     #expect(throws: AllowlistError.self) {
@@ -366,7 +366,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func runSeparatesAnInContainerCommandThatLooksLikeAFlag() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.run(image: "alpine", command: ["--version"])
 
@@ -377,7 +377,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func pullAndRemoveImageRouteThroughAllowlist() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.pull("docker.io/library/alpine:latest")
     try cli.removeImage("docker.io/library/alpine:latest", force: true)
@@ -395,7 +395,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     for attempt in attempts {
         let host = RecordingHost()
         #expect(throws: AllowlistError.self) {
-            try attempt(ContainerCLI(host: host))
+            try attempt(ContainerCLI(host: host, wirePolicy: .localOwner))
         }
         #expect(host.invocations.isEmpty)
     }
@@ -403,7 +403,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func volumeAndNetworkMutationsRouteThroughAllowlist() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.createVolume("data")
     try cli.removeVolume("data")
@@ -418,7 +418,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func volumeCreateRejectsAPathTraversalName() {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
     #expect(throws: AllowlistError.self) { try cli.createVolume("../etc") }
 }
 
@@ -427,7 +427,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     // RecordingHost keys canned output on the first two argv tokens; `ContainerCLI.logs`
     // always sends "logs" "-n" first, so key on that pair rather than a literal id.
     host.stdoutByPath["logs -n"] = "booting\nready\n"
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     let chunk = try cli.logs("web", lines: 50)
 
@@ -441,7 +441,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
 
 @Test func logsRejectsALineCountOutsideTheAllowlistedRange() {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
     #expect(throws: AllowlistError.self) { try cli.logs("web", lines: 0) }
 }
 
@@ -517,7 +517,7 @@ private extension Result {
 
 @Test func aContainerCLIBuiltWithTheDefaultAcceptsAHostBindMount() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host) // default mountPolicy: .unrestricted
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner) // default mountPolicy: .unrestricted
 
     try cli.run(image: "alpine", options: .init(volumes: ["/etc/flotilla:/config:ro"]))
 
@@ -526,7 +526,7 @@ private extension Result {
 
 @Test func aContainerCLIBuiltWithDenyHostPathsRejectsTheSameMount() {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host, mountPolicy: .denyHostPaths)
+    let cli = ContainerCLI(host: host, mountPolicy: .denyHostPaths, wirePolicy: .localOwner)
 
     #expect(throws: AllowlistError.self) {
         try cli.run(image: "alpine", options: .init(volumes: ["/etc/flotilla:/config:ro"]))
@@ -536,7 +536,7 @@ private extension Result {
 
 @Test func aContainerCLIBuiltWithARootsPolicyAcceptsOnlyPathsUnderIt() throws {
     let host = RecordingHost()
-    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp"]))
+    let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp"]), wirePolicy: .localOwner)
 
     try cli.run(image: "alpine", options: .init(volumes: ["/tmp/data:/data"]))
     #expect(host.invocations.count == 1)
@@ -574,7 +574,7 @@ private final class FailingHost: ContainerHost, @unchecked Sendable {
 
 @Test func aNonZeroExitBecomesAThrownError() throws {
     let host = FailingHost(stderr: "Error: network test2 already exists")
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     #expect(throws: (any Error).self) {
         try cli.createNetwork("test2")
@@ -586,7 +586,7 @@ private final class FailingHost: ContainerHost, @unchecked Sendable {
 
 @Test func theCLIsOwnWordsReachTheUser() throws {
     let host = FailingHost(stderr: "Error: network test2 already exists")
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     do {
         try cli.createNetwork("test2")
@@ -611,7 +611,7 @@ private final class FailingHost: ContainerHost, @unchecked Sendable {
         """,
         code: 64
     )
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     do {
         try cli.createNetwork("net", options: .init(subnet: "10.0.0.0/24"))
@@ -627,7 +627,7 @@ private final class FailingHost: ContainerHost, @unchecked Sendable {
     // A failed `ls` used to return empty stdout, which then surfaced as a confusing JSON
     // decode error rather than the reason the CLI gave.
     let host = FailingHost(stderr: "Error: the container runtime is not running")
-    let cli = ContainerCLI(host: host)
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     do {
         _ = try cli.listContainers()
@@ -641,6 +641,6 @@ private final class FailingHost: ContainerHost, @unchecked Sendable {
     // The guard must not turn ordinary success into an error.
     let host = RecordingHost()
     #expect(throws: Never.self) {
-        try ContainerCLI(host: host).createNetwork("fine")
+        try ContainerCLI(host: host, wirePolicy: .localOwner).createNetwork("fine")
     }
 }

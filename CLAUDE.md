@@ -115,9 +115,14 @@ that we *built* the right command; almost nothing checked the command was
   A too-loose shape is the dangerous direction, and in Phase 2 that grammar faces a
   remote caller. `reference/cli-help/` holds captured `--help` for 49 subcommands —
   audit against it, not against docs, which have been wrong repeatedly.
-- **the review's verdict stands:** the `Allowlist` is **not** trustworthy as the complete
-  Phase 2 wire boundary yet (22 plugin-backed specs unverified). See
-  `research/ALLOWLIST-AUDIT.md`.
+- **The allowlist audit is done (18–19 August) and its blocker is closed.** All 47 specs are
+  audited against captured `--help` in `reference/cli-help/` — 32 OK, 13 too loose — and the
+  blocking finding turned out to be architectural: five *well-formed* commands that no value
+  shape can refuse. `WirePolicy` + `CommandSpec.exposure` is the third capability dimension
+  alongside `MountPolicy`/`ExecPolicy` (`DECISIONS.md` Q14). **A Phase 2 host peer must build its
+  `ContainerCLI` with `.remotePeer`**; the default is `.localOwner` because there is no wire yet.
+  Two items remain and are policy, not grammar: `run --publish` accepting any host interface, and
+  the opaque `--opt`/`--option` namespaces. See `research/ALLOWLIST-AUDIT.md`.
 - **A setting that drives nothing is worse than a missing one.** Appearance,
   presentation, poll interval and notifications were all inert; and no setting
   persisted at all, because `SettingsStore` is in-memory by design and the app layer
@@ -347,6 +352,7 @@ Flotilla.app / SwiftPM executable
 │   │   └── RemoteHost      → Phase 2 mTLS peer (not built)
 │   ├── Allowlist           → default-deny command/argument schemas
 │   ├── MountPolicy         → host bind-mount boundary
+│   ├── WirePolicy          → which subcommands a remote peer may reach at all
 │   ├── Settings            → typed registry; defaults/user/locked precedence
 │   ├── Diagnostics         → snapshot, error log, redaction
 │   ├── Wire                → Phase 2 framing/messages (not built)
