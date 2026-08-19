@@ -53,6 +53,10 @@ struct WindowBar: View {
                 Spacer(minLength: 12)
 
                 AppLinksMenu()
+                // Beside the gear, because it is the same kind of thing — an app-level control,
+                // not a control for whatever section you happen to be on. It is also *in*
+                // Settings; this is the shortcut, and both write the one stored preference.
+                AppearanceToggleButton(model: model)
                 SettingsToolbarButton {
                     // Through the model, not a captured binding. `pendingSection` already exists
                     // for exactly this — the menu-bar popover drives the window's selection the

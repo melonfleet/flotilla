@@ -244,10 +244,28 @@ struct MenuBarView: View {
     ) -> some View {
         HStack(spacing: 8) {
             Circle().fill(dot).frame(width: 7, height: 7)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                Text(subtitle).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+            // **The name is the way in.** There used to be a third button here — a square with an
+            // arrow leaving it — and the owner's point is that a row about `web` does not need a
+            // separate control to mean "web": clicking the thing itself is what everyone tries
+            // first. It also buys back the width the button was taking, on a popover where every
+            // row was three buttons wide.
+            //
+            // A `.plain` button, so the row does not gain a chrome outline it never had; the
+            // pointer changes to a hand on hover, which is the affordance.
+            Button(action: openDetail) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.accentText)
+                        .lineLimit(1)
+                    Text(subtitle).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
+                }
             }
+            .buttonStyle(.plain)
+            .help("Open \(name) in Flotilla")
+            .accessibilityLabel("Open \(name) in Flotilla")
+            .pointerStyle(.link)
+
             Spacer(minLength: 10)
             IconActionButton(systemImage: running ? "stop.fill" : "play.fill",
                              label: running ? "Stop \(name)" : "Start \(name)",
@@ -256,9 +274,6 @@ struct MenuBarView: View {
             IconActionButton(systemImage: "arrow.clockwise",
                              label: "Restart \(name)", help: "Restart \(name)",
                              busy: busy, disabled: !running, action: restart)
-            IconActionButton(systemImage: "arrow.up.forward.square",
-                             label: "Open \(name) in Flotilla",
-                             help: "Open in Flotilla", action: openDetail)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 5)

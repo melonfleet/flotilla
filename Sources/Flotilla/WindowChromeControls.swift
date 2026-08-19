@@ -1,5 +1,8 @@
 import SwiftUI
 import AppKit
+// `AppearanceMode` lives in the portable core — the appearance preference is part of the settings
+// registry, not a UI detail.
+import FlotillaCore
 
 /// A gear button for the window toolbar.
 ///
@@ -19,6 +22,70 @@ struct SettingsToolbarButton: View {
         .buttonStyle(IconActionButtonStyle())
         .help("Settings")
         .accessibilityLabel("Settings")
+    }
+}
+
+/// Cycles Auto → Light → Dark → Auto, beside the gear.
+///
+/// **Three states, not two, and it drives the same stored setting Settings does.** The preference
+/// has always had three (`AppearanceMode.auto/.light/.dark`), and `auto` is the one this app
+/// treats as first-class — `DECISIONS.md`: onboarding asks, with Auto *pre-selected*, and Auto
+/// means follow the system. A two-way switch would have to either drop Auto, which is the default
+/// most people should stay on, or silently redefine it as "whatever it resolved to last", which is
+/// a lie about what the setting says.
+///
+/// It reads and writes `AppModel.appearance` rather than holding a state of its own, so this and
+/// the Settings pane can never disagree — a second source of truth for one preference is how the
+/// settings that "drove nothing" happened.
+///
+/// **Never accent-tinted, deliberately.** It was, on the reasoning that a pinned appearance is an
+/// "engaged" state — and on screen it just read as one button being permanently pink, which is the
+/// exact noise the links grid was carrying an hour earlier. The accent means *this control is on
+/// right now*; a toggle that reports which of three modes you are in is not that, and the glyph
+/// already says which one (half-circle, sun, moon) without borrowing a colour to do it.
+struct AppearanceToggleButton: View {
+    let model: AppModel
+
+    var body: some View {
+        IconActionButton(systemImage: systemImage,
+                         label: "Appearance: \(title)",
+                         help: "Appearance: \(title). Click for \(nextTitle).") {
+            model.chooseAppearance(next)
+        }
+    }
+
+    private var systemImage: String {
+        switch model.appearance {
+        case .auto: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+
+    private var title: String {
+        switch model.appearance {
+        case .auto: "Auto"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    /// Auto → Light → Dark → Auto. Auto first in the cycle because it is where most people should
+    /// end up, so it is never more than two clicks away.
+    private var next: AppearanceMode {
+        switch model.appearance {
+        case .auto: .light
+        case .light: .dark
+        case .dark: .auto
+        }
+    }
+
+    private var nextTitle: String {
+        switch next {
+        case .auto: "Auto"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
     }
 }
 
