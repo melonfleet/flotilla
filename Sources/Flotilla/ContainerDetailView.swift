@@ -704,23 +704,21 @@ private struct InspectTab: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Button {
+                // `IconActionButton` on both detail panels, icon-only. These two tabs disagreed:
+                // the machine panel drew Copy JSON icon-only and the container panel drew it with
+                // the word, and neither used the shared button, so neither shaded on hover while
+                // the toolbar controls above them did. Same control, same tab, two screens.
+                IconActionButton(systemImage: "doc.on.doc", label: "Copy JSON",
+                                 help: "Copy the inspect output, with secrets redacted",
+                                 disabled: json == nil) {
                     // Copies exactly what is displayed — redacted. See `load()`.
                     if let json { Clipboard.copy(json) }
-                } label: {
-                    Label("Copy JSON", systemImage: "doc.on.doc")
                 }
-                .disabled(json == nil)
-                .help("Copy the inspect output, with secrets redacted")
 
-                Button {
+                IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
+                                 help: "Reload", busy: loading) {
                     Task { await load() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
                 }
-                .disabled(loading)
-                .help("Reload")
-                .accessibilityLabel("Reload")
             }
             .padding(12)
             Divider()

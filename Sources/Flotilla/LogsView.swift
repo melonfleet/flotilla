@@ -88,6 +88,18 @@ struct LogsView: View {
             .labelsHidden()
             .fixedSize()
 
+            // **Order matches every other section: the filter sits closest to the search
+            // field.** The owner's rule, and it is the right one — filter and search are the two
+            // controls that narrow what you are looking at, so they belong together, with the
+            // "how do I want to look at this" controls further left.
+            // A list, not `#`: the hash reads as "number" in the abstract, and what this control
+            // sets is how many *lines* come back. The owner's call.
+            IconActionButton(systemImage: "list.bullet", label: "Lines",
+                             help: "Read the last \(ui.lineLimit) lines from each source") {
+                showingLimit.toggle()
+            }
+            .popover(isPresented: $showingLimit, arrowEdge: .bottom) { limitPopover }
+
             // Filled when narrowed, hollow when not — the same signal `ResourceListControls`
             // gives, so "a filter is on" reads identically on every screen.
             IconActionButton(systemImage: "line.3.horizontal.decrease",
@@ -96,14 +108,6 @@ struct LogsView: View {
                 showingSources.toggle()
             }
             .popover(isPresented: $showingSources, arrowEdge: .bottom) { sourcesPopover }
-
-            // A list, not `#`: the hash reads as "number" in the abstract, and what this control
-            // sets is how many *lines* come back. The owner's call.
-            IconActionButton(systemImage: "list.bullet", label: "Lines",
-                             help: "Read the last \(ui.lineLimit) lines from each source") {
-                showingLimit.toggle()
-            }
-            .popover(isPresented: $showingLimit, arrowEdge: .bottom) { limitPopover }
         }, trailing: {
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh") {
                 Task { await load() }

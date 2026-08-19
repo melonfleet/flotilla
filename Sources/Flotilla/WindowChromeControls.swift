@@ -91,7 +91,12 @@ private struct ToolbarMenuGlyph: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .foregroundStyle(hovering ? Theme.accentText : Color.secondary)
+            // **`.primary` at rest, exactly like every `IconActionButton`.** This was
+            // `secondary`-at-rest and accent-on-hover, its own private colour scheme, which is why
+            // the links grid read pink while the gear beside it did not. A `Menu` cannot take
+            // `IconActionButtonStyle`, so the rule is mirrored here by hand — and it must stay
+            // mirrored: hover speaks through the background fill below, never through the glyph.
+            .foregroundStyle(Color.primary)
             .frame(width: 18, height: 18)
             .padding(3)
             .background(hovering ? Theme.accent.opacity(0.13) : Color.clear,

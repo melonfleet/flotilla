@@ -545,14 +545,19 @@ private struct MachineInspectTab: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Button { if let json { Clipboard.copy(json) } } label: {
-                    Label("Copy JSON", systemImage: "doc.on.doc").labelStyle(.iconOnly)
+                // `IconActionButton` on both detail panels, icon-only. These two tabs disagreed:
+                // the machine panel drew Copy JSON icon-only and the container panel drew it with
+                // the word, and neither used the shared button, so neither shaded on hover while
+                // the toolbar controls above them did. Same control, same tab, two screens.
+                IconActionButton(systemImage: "doc.on.doc", label: "Copy JSON",
+                                 help: "Copy the inspect output, with secrets redacted",
+                                 disabled: json == nil) {
+                    if let json { Clipboard.copy(json) }
                 }
-                .disabled(json == nil)
-                .help("Copy the inspect output, with secrets redacted")
 
-                Button { Task { await load() } } label: {
-                    Image(systemName: "arrow.clockwise")
+                IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
+                                 help: "Reload", busy: loading) {
+                    Task { await load() }
                 }
                 .disabled(loading)
                 .help("Reload")

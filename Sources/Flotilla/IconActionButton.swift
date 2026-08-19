@@ -45,14 +45,13 @@ struct IconActionButton: View {
                         .scaleEffect(0.55)
                 } else {
                     Image(systemName: systemImage)
-                        .foregroundStyle(active ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.primary))
                 }
             }
             // Fixed box so the row does not reflow when the glyph swaps for the spinner, and
             // so every target is the same size whatever the glyph's natural width.
             .frame(width: 18, height: 18)
         }
-        .buttonStyle(IconActionButtonStyle(destructive: destructive))
+        .buttonStyle(IconActionButtonStyle(destructive: destructive, active: active))
         .disabled(busy || disabled)
         .help(help)
         .accessibilityLabel(label)
@@ -67,14 +66,23 @@ struct IconActionButton: View {
 /// easy to miss.
 struct IconActionButtonStyle: ButtonStyle {
     var destructive = false
+    /// Engaged — a filter that is narrowing, a toggle that is on.
+    ///
+    /// **Resolved here, not by tinting the glyph at the call site.** That is how it was written
+    /// first, and setting `.foregroundStyle` on the image inside the label overrode this style
+    /// wholesale: every icon button in the app went from `.secondary` to `.primary`, so the
+    /// filter buttons the owner was comparing were a different colour from their own neighbours on
+    /// the same band. One place owns the colour of these buttons.
+    var active = false
 
     func makeBody(configuration: Configuration) -> some View {
-        Chrome(configuration: configuration, destructive: destructive)
+        Chrome(configuration: configuration, destructive: destructive, active: active)
     }
 
     private struct Chrome: View {
         let configuration: Configuration
         let destructive: Bool
+        let active: Bool
         @State private var hovering = false
         @Environment(\.isEnabled) private var isEnabled
         /// `.increased` inside a **selected** table row, where the accent fill is painted behind
@@ -104,9 +112,19 @@ struct IconActionButtonStyle: ButtonStyle {
             // less than losing the button.
             if selected { return AnyShapeStyle(isEnabled ? .white : .white.opacity(0.55)) }
             guard isEnabled else { return AnyShapeStyle(.tertiary) }
+            // Destructive stays red: that is semantics, not decoration, and a trash can that
+            // matches every other glyph is a trap.
             if destructive { return AnyShapeStyle(Theme.danger) }
-            return AnyShapeStyle(hovering || configuration.isPressed
-                                 ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.secondary))
+            // **the owner's rule, 19 August: the glyph is `.primary` — black in light, white in dark —
+            // and the only colour it ever takes is the accent, and only when the control is ON.**
+            //
+            // It used to go `.secondary` at rest and `accentText` on hover, which meant the glyph
+            // changed colour under the pointer *and* sat a shade lighter than the rest of the row
+            // — two kinds of drift in one control, and across appearances it read as "no
+            // consistency in the colours". Hover and press now speak only through the background
+            // fill below, which is what a highlight is for.
+            if active { return AnyShapeStyle(Theme.accentText) }
+            return AnyShapeStyle(.primary)
         }
 
         private var fill: Color {
@@ -148,6 +166,8 @@ struct RowOverflowLabel: View {
         if prominence == .increased {
             return AnyShapeStyle(isEnabled ? .white : .white.opacity(0.55))
         }
-        return AnyShapeStyle(isEnabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+        // `.primary`, matching every other glyph in a row: black in light, white in dark, and no
+        // third shade of grey for one control. Disabled still drops to tertiary.
+        return AnyShapeStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
     }
 }

@@ -286,19 +286,20 @@ struct ContainersView: View {
     ///
     /// The icon fills when a filter is active, so a hidden state is visible from the toolbar
     /// rather than something you discover by wondering where your containers went.
+    /// `IconActionButton`, like every other icon control in the app — **not** a bare `Button`
+    /// with an `Image`, which is what this was. That is the difference the owner spotted: the shared
+    /// button carries the hover tint and the pressed scale, so a filter button that skipped it had
+    /// no shading while the columns button beside it did, on the same band. Same glyph, same
+    /// accent-when-active rule, same feedback, everywhere.
     private var filterButton: some View {
-        Button {
+        IconActionButton(systemImage: "line.3.horizontal.decrease",
+                         label: "Filter by state",
+                         help: ui.filter == .all
+                             ? "Filter by state"
+                             : "Showing \(ui.filter.rawValue.lowercased()) only",
+                         active: ui.filter != .all) {
             showingFilter.toggle()
-        } label: {
-            // The circle-less filter glyph, on the owner's call: its strokes read larger at the same
-            // point size, and there is no `.fill` twin — so "a filter is narrowing" is carried by
-            // the accent colour instead, which also keeps the silhouette stable.
-            Image(systemName: "line.3.horizontal.decrease")
-                .foregroundStyle(ui.filter == .all
-                                 ? AnyShapeStyle(.primary) : AnyShapeStyle(Theme.accent))
         }
-        .help(ui.filter == .all ? "Filter by state" : "Showing \(ui.filter.rawValue.lowercased()) only")
-        .accessibilityLabel("Filter by state")
         .popover(isPresented: $showingFilter, arrowEdge: .bottom) {
             Picker("Show", selection: $ui.filter) {
                 ForEach(Filter.allCases) { option in
