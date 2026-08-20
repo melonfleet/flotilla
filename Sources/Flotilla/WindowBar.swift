@@ -30,7 +30,11 @@ struct WindowBar: View {
     /// but that needs an `NSWindow` reach-around and this value is fixed by the system's own
     /// button metrics. Docker's strip does the same thing. If the buttons ever move, the symptom
     /// is cosmetic and obvious rather than silent.
-    private let trafficLightInset: CGFloat = 78
+    /// The bar's height, shared with `TrafficLightAligner` so the buttons are centred on the same
+    /// number the content is.
+    static let barHeight: CGFloat = 44
+
+    private let trafficLightInset: CGFloat = 82
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,9 +70,11 @@ struct WindowBar: View {
             }
             .padding(.leading, trafficLightInset)
             .padding(.trailing, 12)
-            .frame(height: 44)
+            .frame(height: Self.barHeight)
             Divider()
         }
+        // Pull the traffic lights down onto the wordmark's line. See `TrafficLightAligner`.
+        .background(TrafficLightAligner(barHeight: Self.barHeight, nudgeRight: 4))
         // The whole bar is a window-drag handle, because with the title bar hidden the strip
         // *looks* like the place you would grab to move the window — and controls inside it keep
         // their own clicks, since a gesture on the container does not swallow a button's hit.
@@ -87,5 +93,80 @@ private struct WindowDragArea: NSViewRepresentable {
 
     private final class DragView: NSView {
         override var mouseDownCanMoveWindow: Bool { true }
+    }
+}
+
+/// Centres the standard window buttons on `WindowBar`'s line, and nudges them right.
+///
+/// **Why this is needed at all.** AppKit centres the traffic lights in the *standard* titlebar —
+/// 28pt tall, so their centre sits 14pt below the window's top edge. Our bar is 44pt, centred at
+/// 22pt, so the buttons rode 8pt high and read as squashed against the top rather than sitting on
+/// the wordmark's line. The owner spotted it against Docker Desktop, where the lights and the logo
+/// share a centre line.
+///
+/// **This overrides AppKit's own layout, and that has a cost worth naming.** The frames are set by
+/// hand, so anything that re-lays the titlebar puts them back: resizing, entering or leaving
+/// full screen, and the window becoming/losing main. Each of those is observed and the offset
+/// re-applied. If a future macOS moves the buttons for its own reasons, the symptom is cosmetic
+/// and obvious — misaligned lights — rather than silent. The alternative was a taller titlebar via
+/// an empty accessory view, which on this window is what `WindowBar`'s own docstring already
+/// records failing: a titlebar accessory here is laid out over the content column only.
+private struct TrafficLightAligner: NSViewRepresentable {
+    let barHeight: CGFloat
+    let nudgeRight: CGFloat
+
+    func makeNSView(context: Context) -> NSView { Aligner(barHeight: barHeight, nudgeRight: nudgeRight) }
+    func updateNSView(_ nsView: NSView, context: Context) { (nsView as? Aligner)?.align() }
+
+    private final class Aligner: NSView {
+        private let barHeight: CGFloat
+        private let nudgeRight: CGFloat
+        /// The x each button started at, captured once. Re-reading it after a nudge would compound
+        /// the offset every time the window resized.
+        private var originalX: [NSWindow.ButtonType: CGFloat] = [:]
+
+        init(barHeight: CGFloat, nudgeRight: CGFloat) {
+            self.barHeight = barHeight
+            self.nudgeRight = nudgeRight
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observe()
+            align()
+        }
+
+        private func observe() {
+            guard let window else { return }
+            let centre = NotificationCenter.default
+            for name: NSNotification.Name in [NSWindow.didResizeNotification,
+                                              NSWindow.didEnterFullScreenNotification,
+                                              NSWindow.didExitFullScreenNotification,
+                                              NSWindow.didBecomeMainNotification] {
+                centre.addObserver(self, selector: #selector(realign),
+                                   name: name, object: window)
+            }
+        }
+
+        @objc private func realign() { align() }
+
+        func align() {
+            guard let window else { return }
+            for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                guard let button = window.standardWindowButton(type),
+                      let frameView = button.superview else { continue }
+                if originalX[type] == nil { originalX[type] = button.frame.origin.x }
+                guard let baseX = originalX[type] else { continue }
+
+                // The buttons live in the window's frame view, whose coordinates run from the
+                // bottom, so centring them `barHeight / 2` below the top is a subtraction.
+                let centredY = frameView.bounds.height - barHeight / 2 - button.frame.height / 2
+                button.setFrameOrigin(NSPoint(x: baseX + nudgeRight, y: centredY))
+            }
+        }
     }
 }
