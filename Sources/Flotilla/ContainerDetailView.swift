@@ -22,10 +22,18 @@ struct ContainerDetailView: View {
 
     /// Seeded from the model so reopening a container returns you to the tab you left it on,
     /// and defaults to Overview the first time you open it this run. See `AppModel.lastDetailTab`.
-    init(model: AppModel, container: Container) {
+    /// A tab the caller asked for explicitly — "Logs" or "Terminal" from the row menu — which
+    /// wins over the remembered one. Nil means "wherever this container was left". Carried as a
+    /// parameter rather than through `lastDetailTab` for the reason `MachinesView.DetailTarget`
+    /// documents: a request routed through a dictionary the view reads once in `init` is dropped
+    /// whenever the view is already installed.
+    let requestedTab: DetailTab?
+
+    init(model: AppModel, container: Container, requestedTab: DetailTab? = nil) {
         self.model = model
         self.container = container
-        _tab = State(initialValue: model.lastDetailTab[container.id] ?? .overview)
+        self.requestedTab = requestedTab
+        _tab = State(initialValue: requestedTab ?? model.lastDetailTab[container.id] ?? .overview)
     }
 
 
@@ -53,6 +61,9 @@ struct ContainerDetailView: View {
         // Remembered for this run only — see `AppModel.lastDetailTab` for why it is not
         // persisted to disk.
         .onChange(of: tab) { _, newTab in model.lastDetailTab[container.id] = newTab }
+        .onChange(of: [container.id, requestedTab?.rawValue ?? ""]) { _, _ in
+            if let requestedTab { tab = requestedTab }
+        }
         // No frame and no header of its own. `ContainersView.detailHeader` supplies the name,
         // state, image, host and uptime above this, so a second header here would repeat them;
         // and now that detail is embedded rather than sheeted, it should take whatever height

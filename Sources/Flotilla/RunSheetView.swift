@@ -11,6 +11,52 @@ import FlotillaCore
 /// for real execution, so what is shown here cannot drift from what `Run` would actually
 /// do. Every field's inline message is just that same `AllowlistError` routed back to the
 /// row that produced it.
+/// A new container's fields, taken from one that already exists.
+///
+/// **There is no `container update`.** The subcommand list has `create`, `run`, `start`, `stop`,
+/// `kill`, `delete`, `exec`, `copy`, `export`, `inspect`, `logs`, `stats` and `prune` — nothing that
+/// changes an existing container's configuration. Docker has `docker update` for a few resource
+/// limits; Apple's `container` has no equivalent. So a container's settings genuinely cannot be
+/// edited, and an "Edit Settings…" item on the containers menu would be a screen that could never
+/// save. The honest equivalent is to make the *next* container easy to get right, which is this.
+///
+/// **What it deliberately does not carry, and why that has to be visible:** environment variables
+/// and volume mounts. `container inspect` returns `initProcess.environment` with the image's own
+/// variables mixed in — nginx:alpine reports seven, none of them set by the user — and there is no
+/// field distinguishing "passed with `--env`" from "baked into the image". Prefilling all of them
+/// would present the image's defaults as the user's choices; prefilling none of them and saying so
+/// is worse UX and better information. Same for mounts: `Container.Configuration` does not model
+/// them, and guessing would be inventing data.
+struct RunPrefill: Equatable {
+    var image: String
+    var name: String
+    var ports: [String]
+    var cpus: Int?
+    var memoryMB: Int?
+    /// True when the source container had env or mounts we could not carry, so the sheet can say
+    /// so rather than letting the user discover it after the container starts.
+    var mayHaveUncarriedSettings: Bool
+
+    /// Built from an inspected container. `name` gets a suffix because the original still exists —
+    /// `container run --name web` fails while `web` is there, and offering a name that cannot be
+    /// used is a form that fails on submit.
+    init(from container: Container, existingNames: Set<String>) {
+        image = container.configuration.image.reference
+        ports = container.publishedPorts.map(\.displayText)
+        cpus = container.configuration.resources?.cpus
+        memoryMB = container.configuration.resources?.memoryInBytes.map { Int($0 / 1_048_576) }
+        mayHaveUncarriedSettings = true
+
+        var candidate = "\(container.configuration.id)-copy"
+        var counter = 2
+        while existingNames.contains(candidate) {
+            candidate = "\(container.configuration.id)-copy-\(counter)"
+            counter += 1
+        }
+        name = candidate
+    }
+}
+
 struct RunSheetView: View {
     let model: AppModel
     /// From the presenter, not `@Environment(\.dismiss)`: the sheet's own `isPresented`
@@ -23,27 +69,40 @@ struct RunSheetView: View {
     /// `initialImage` lets the Images screen's **Run…** open the sheet already pointed at a
     /// reference. It pre-fills, it does not launch — the validated command preview still has
     /// the final say, so nothing starts without the user seeing exactly what will run.
-    init(model: AppModel, initialImage: String = "", dismiss: @escaping () -> Void) {
+    /// Set when the sheet was opened from an existing container, so it can say which settings it
+    /// could not bring across.
+    private let prefilled: Bool
+
+    init(model: AppModel, initialImage: String = "", prefill: RunPrefill? = nil,
+         dismiss: @escaping () -> Void) {
         self.model = model
         self.dismiss = dismiss
-        _image = State(initialValue: initialImage)
+        self.prefilled = prefill?.mayHaveUncarriedSettings ?? false
+        _image = State(initialValue: prefill?.image ?? initialImage)
+        _name = State(initialValue: prefill?.name ?? "")
+        _ports = State(initialValue: (prefill?.ports ?? []).map { Row(value: $0) })
+        _limitResources = State(initialValue: prefill?.cpus != nil || prefill?.memoryMB != nil)
         // Seeded from **Defaults for new containers**. Those two settings had no consumer at all:
         // the registry declared them, Settings offered steppers for them, and the run sheet had no
         // CPU or memory field to apply them to. `RunOptions` already carried `cpus`/`memory` and
         // `Allowlist` already permitted `--cpus`/`--memory` on `run` — the only missing piece was
         // the two controls, so wiring beat annotating.
-        _cpus = State(initialValue: model.settingsStore[SettingsKeys.defaultContainerCPUs])
-        _memoryMB = State(initialValue: model.settingsStore[SettingsKeys.defaultContainerMemoryMB])
+        _cpus = State(initialValue: prefill?.cpus
+                      ?? model.settingsStore[SettingsKeys.defaultContainerCPUs])
+        _memoryMB = State(initialValue: prefill?.memoryMB
+                          ?? model.settingsStore[SettingsKeys.defaultContainerMemoryMB])
     }
-    @State private var name = ""
+    @State private var name: String
     @State private var detach = true
     @State private var cpus: Int
     @State private var memoryMB: Int
     /// Whether to pass the limits at all. Off by default, so the sheet's behaviour does not change
     /// for anyone who never opens this section: `container run` with no `--cpus` inherits the
-    /// machine's own allowance, which is what happened before these fields existed.
-    @State private var limitResources = false
-    @State private var ports: [Row] = []
+    /// machine's own allowance, which is what happened before these fields existed. On when the
+    /// sheet was prefilled from a container that had limits — dropping them silently would quietly
+    /// change what the copy is.
+    @State private var limitResources: Bool
+    @State private var ports: [Row]
     @State private var env: [Row] = []
     @State private var volumes: [Row] = []
     @State private var commandText = ""
@@ -99,6 +158,16 @@ struct RunSheetView: View {
                 }
                 SwiftUI.Section("Volumes") {
                     rows($volumes, placeholder: "data:/data", max: Self.maxVolumes, field: .volumes)
+                }
+                if prefilled {
+                    SwiftUI.Section {
+                        Label("Copied the image, name, ports and resource limits. **Environment "
+                              + "variables and volumes were not copied** — `container inspect` "
+                              + "does not separate the ones you set from the ones the image "
+                              + "defines, so add any you need below.",
+                              systemImage: "exclamationmark.circle")
+                            .font(.caption).foregroundStyle(Theme.warning)
+                    }
                 }
                 SwiftUI.Section("Command") { commandField }
                 SwiftUI.Section("Options") {

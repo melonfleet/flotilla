@@ -44,10 +44,15 @@ struct MachineDetailView: View {
     /// Seeded from the model so returning to a machine returns you to the tab you left it on,
     /// and defaulting to Overview the first time this run — same rule as containers, and stored
     /// in memory only so a restart forgets.
-    init(model: AppModel, machine: ContainerMachine) {
+    /// A tab the caller explicitly asked for — "Edit Settings…" from the row menu — which wins
+    /// over the remembered one. Nil means "wherever this machine was left".
+    let requestedTab: MachineDetailTab?
+
+    init(model: AppModel, machine: ContainerMachine, requestedTab: MachineDetailTab? = nil) {
         self.model = model
         self.machine = machine
-        _tab = State(initialValue: model.lastMachineTab[machine.id] ?? .overview)
+        self.requestedTab = requestedTab
+        _tab = State(initialValue: requestedTab ?? model.lastMachineTab[machine.id] ?? .overview)
     }
 
     var body: some View {
@@ -70,6 +75,13 @@ struct MachineDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .onChange(of: tab) { _, newTab in model.lastMachineTab[machine.id] = newTab }
+        // `init`'s seed only applies when SwiftUI installs the view. Arriving here from a detail
+        // that is already on screen skips it, which is how an explicit "open the Settings tab"
+        // request got dropped. Keyed on both values so asking for the same tab on a different
+        // machine still fires.
+        .onChange(of: [machine.id, requestedTab?.rawValue ?? ""]) { _, _ in
+            if let requestedTab { tab = requestedTab }
+        }
         // Keyed on the id so stepping to the next machine reloads rather than showing the
         // previous machine's image and start time under the new machine's name.
         .task(id: machine.id) {
@@ -474,9 +486,30 @@ private struct MachineSettingsTab: View {
 
             SwiftUI.Section {
                 // The whole point of this tab's design. Says it before you press, not after.
+                //
+                // Note what this does **not** say: that the machine has to be stopped first. It
+                // does not. Verified against the live CLI on a running machine — `container
+                // machine set -n probe-alpine cpus=3` succeeded, printed "Note: Changes will take
+                // effect after stopping and restarting", and `machine ls` reported cpus=3
+                // immediately while the VM kept running on 2. So the honest message is "saved,
+                // not yet in effect", and a dialog demanding a stop first would invent a
+                // restriction the CLI does not have.
                 Label("Changes apply when the machine next starts. `container` has no way to "
                       + "resize a running machine.", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary)
+
+                // The list will show the new numbers the moment this is applied, while the
+                // running machine is still on the old ones — and nothing in the CLI reports the
+                // in-effect values, so the app cannot detect that drift and flag it later. The
+                // only place it can be said is here, before the button is pressed.
+                if MachinesView.isRunning(machine) && changed {
+                    Label("“\(machine.id)” is running. Applying now saves these values and "
+                          + "leaves the machine on its current ones until it restarts — the list "
+                          + "will show the new numbers before they take effect. "
+                          + "Apply and Restart does both.",
+                          systemImage: "exclamationmark.circle")
+                        .font(.caption).foregroundStyle(Theme.warning)
+                }
 
                 if homeMount == "rw" {
                     Label("Read-write means every container in this machine can modify your "
@@ -492,7 +525,12 @@ private struct MachineSettingsTab: View {
                         .disabled(!changed || !MachinesView.isRunning(machine))
                     Spacer()
                     if applied {
-                        Text("Saved — restart to apply")
+                        // Names the state the machine is actually in, not just that a write
+                        // succeeded. "Saved" alone is what makes a running machine look like
+                        // nothing happened.
+                        Text(MachinesView.isRunning(machine)
+                             ? "Saved — still running on the previous values"
+                             : "Saved — applies on next start")
                             .font(.caption).foregroundStyle(Theme.online)
                     }
                 }

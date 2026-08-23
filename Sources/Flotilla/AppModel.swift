@@ -1155,7 +1155,11 @@ final class AppModel {
 
     func clearActionError() { actionError = nil }
 
-    enum Action { case start, stop, restart, delete }
+    /// `kill` is separate from `stop` because they are not the same request. `stop` sends the
+    /// container's own stop signal and waits; `kill` is for the one that ignored it. The CLI has
+    /// backed this since the allowlist was written (`ContainerCLI.kill`) and nothing in the UI
+    /// offered it, so a wedged container could only be deleted.
+    enum Action { case start, stop, restart, kill, delete }
 
     func perform(_ action: Action, on container: Container) async {
         let id = container.id
@@ -1175,6 +1179,9 @@ final class AppModel {
                 case .start:   try cli.start(id)
                 case .stop:    try cli.stop(id)
                 case .restart: try cli.restart(id)
+                // No explicit signal: the CLI's default for `kill` is SIGKILL, and naming it here
+                // would be this layer deciding a policy the CLI already has.
+                case .kill:    try cli.kill(id)
                 case .delete:  try cli.remove(id)
                 }
             }.value
@@ -1219,6 +1226,7 @@ final class AppModel {
                     case .start:   try cli.start(id)
                     case .stop:    try cli.stop(id)
                     case .restart: try cli.restart(id)
+                    case .kill:    try cli.kill(id)
                     case .delete:  try cli.remove(id)
                     }
                 }.value
@@ -1259,6 +1267,7 @@ final class AppModel {
         case .start: "Start"
         case .stop: "Stop"
         case .restart: "Restart"
+        case .kill: "Force kill"
         case .delete: "Delete"
         }
     }

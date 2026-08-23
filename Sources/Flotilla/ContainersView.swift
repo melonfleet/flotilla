@@ -72,8 +72,13 @@ struct ContainersView: View {
 
     /// `sheet(item:)` needs `Identifiable`, and a bare `String` is not. Small enough to live
     /// here rather than becoming a shared type.
+    /// A container to show, and optionally which tab to land on. Same reasoning as the machines
+    /// screen: the tab travels in the navigation value rather than through a dictionary the detail
+    /// view reads once in `init`, because a request that can be silently dropped is a menu item
+    /// that sometimes does nothing.
     private struct DetailTarget: Identifiable, Hashable {
         let id: String
+        var tab: DetailTab?
     }
     @State private var confirmingBulkDelete = false
     /// Non-nil while a single row's trash button is awaiting confirmation. Destructive
@@ -81,6 +86,9 @@ struct ContainersView: View {
     /// which is why this holds the container rather than a bool.
     @State private var confirmingRowDelete: Container?
     @State private var showingRun = false
+    /// Set when Run was opened from an existing container ("Run Again with Changes…"), and cleared
+    /// on dismiss so the next plain Run starts empty.
+    @State private var runPrefill: RunPrefill?
 
 
     @State private var showingColumns = false
@@ -135,7 +143,10 @@ struct ContainersView: View {
 
     /// Embedded, not a sheet, since 9 August — the dimming and the close button went with it.
     private var runScreen: some View {
-        RunSheetView(model: model) { showingRun = false }
+        RunSheetView(model: model, prefill: runPrefill) {
+            showingRun = false
+            runPrefill = nil
+        }
     }
 
     /// Detail **embedded in the window**, not a modal — the arrangement
@@ -159,7 +170,7 @@ struct ContainersView: View {
             if let container = model.containers.first(where: { $0.id == target.id }) {
                 detailHeader(for: container)
                 Divider()
-                ContainerDetailView(model: model, container: container)
+                ContainerDetailView(model: model, container: container, requestedTab: target.tab)
             } else {
                 detailHeader(for: nil)
                 Divider()
@@ -275,8 +286,8 @@ struct ContainersView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func openDetail(_ id: String) {
-        detailTarget = DetailTarget(id: id)
+    private func openDetail(_ id: String, tab: DetailTab? = nil) {
+        detailTarget = DetailTarget(id: id, tab: tab)
     }
 
     /// Same icon-and-popover shape as `columnsButton` — both answer "what am I looking at",
@@ -504,14 +515,54 @@ struct ContainersView: View {
     @ViewBuilder
     private func actions(for container: Container) -> some View {
         let busy = model.busy.contains(container.id)
+        let running = AppModel.isRunning(container)
         Button("Details…") { openDetail(container.id) }
+
+        // Jump straight to the tab you actually wanted. The machines menu has done this since
+        // "Edit Settings…" existed; containers offered Details and left you to find the tab, on
+        // the screen with the most tabs. Logs and Terminal are the two people go looking for.
+        Button("Logs") { openDetail(container.id, tab: .logs) }
+        Button("Terminal") { openDetail(container.id, tab: .terminal) }
+            // A shell needs a running process to attach to.
+            .disabled(!running)
+        Button("Configuration") { openDetail(container.id, tab: .configuration) }
+        Button("Inspect") { openDetail(container.id, tab: .inspect) }
+
         Divider()
-        if AppModel.isRunning(container) {
+        if running {
             Button("Stop") { Task { await model.perform(.stop, on: container) } }.disabled(busy)
             Button("Restart") { Task { await model.perform(.restart, on: container) } }.disabled(busy)
+            // Below Stop and Restart, and named plainly. For the container that ignores its stop
+            // signal, the only alternative used to be deleting it.
+            Button("Force Kill") { Task { await model.perform(.kill, on: container) } }.disabled(busy)
         } else {
             Button("Start") { Task { await model.perform(.start, on: container) } }.disabled(busy)
         }
+
+        // The nearest thing to "Edit Settings…" that the CLI can actually back. There is no
+        // `container update`: a container's configuration is fixed at creation, so the only way to
+        // change one is to create another. This opens Run prefilled from this container — see
+        // `RunPrefill` for what it carries and what it deliberately does not.
+        //
+        // Named for what it does rather than "Edit Settings…", which would promise an edit. It
+        // does not delete the original; that stays a separate, confirmed decision.
+        Button("Run Again with Changes…") {
+            runPrefill = RunPrefill(from: container,
+                                    existingNames: Set(model.containers.map(\.id)))
+            showingRun = true
+        }
+
+        Divider()
+        // Containers were the **only** section without this. Machines, volumes, networks and
+        // images all offer it, and the ids and ports here are the most copied values in the app.
+        CopyMenu([
+            ("Name", container.id),
+            ("Image", container.configuration.image.reference),
+            // The same two labels the table renders, not a second derivation of them —
+            // `portSummary` lives on the model and `ipNetworkLabel` is this view's own.
+            ("Ports", container.portSummary),
+            ("IP / Network", Self.ipNetworkLabel(container)),
+        ])
         Divider()
         // Destructive, and deliberately only in the main window — never the popover.
         //

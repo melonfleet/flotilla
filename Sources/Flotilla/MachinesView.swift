@@ -72,7 +72,19 @@ struct MachinesView: View {
     /// `sheet(item:)` needs `Identifiable` and a bare `String` is not — same small wrapper the
     /// containers screen uses, and keyed by **id** so the screen re-reads live state each pass
     /// rather than showing a frozen copy.
-    private struct DetailTarget: Identifiable, Hashable { let id: String }
+    /// A machine to show, and optionally **which tab to land on**.
+    ///
+    /// The tab used to travel through `model.lastMachineTab`, written by the menu and read by
+    /// `MachineDetailView.init`. That is a write-once side channel, and `@State` seeded in `init`
+    /// only takes effect when SwiftUI *installs* the view — so from a detail that was already on
+    /// screen (stepping between machines, or reopening one) the requested tab was silently
+    /// dropped and you stayed where you were. "Edit Settings…" appearing to do nothing is exactly
+    /// what that looks like. Carrying the intent in the navigation value instead means the
+    /// request cannot be lost between being made and being honoured.
+    private struct DetailTarget: Identifiable, Hashable {
+        let id: String
+        var tab: MachineDetailTab?
+    }
 
     var body: some View {
         Group {
@@ -600,10 +612,7 @@ struct MachinesView: View {
         // `machine set` only accepts cpus, memory and home-mount — an "edit" that showed the
         // image and name as though they were changeable would be lying about what the CLI can
         // do, and the Settings tab already states the restart requirement.
-        Button("Edit Settings…") {
-            model.lastMachineTab[machine.id] = .settings
-            detailTarget = DetailTarget(id: machine.id)
-        }
+        Button("Edit Settings…") { detailTarget = DetailTarget(id: machine.id, tab: .settings) }
         Divider()
         if machine.isDefault != true {
             Button("Set as Default") { Task { await model.perform(.setDefault, on: machine) } }
@@ -638,7 +647,7 @@ struct MachinesView: View {
             if let machine = model.machines.first(where: { $0.id == target.id }) {
                 detailHeader(for: machine)
                 Divider()
-                MachineDetailView(model: model, machine: machine)
+                MachineDetailView(model: model, machine: machine, requestedTab: target.tab)
             } else {
                 detailHeader(for: nil)
                 Divider()

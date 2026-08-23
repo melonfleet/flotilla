@@ -36,9 +36,13 @@ require Sources/Flotilla/MainWindowView.swift    '@State private var railed = fa
 require Sources/Flotilla/MachinesView.swift      '@State private var showingCreate = false'
 require Sources/Flotilla/MachinesUIState.swift   'var presentation: MachinesView.Presentation = .list'
 require Sources/Flotilla/ContainersUIState.swift 'var presentation: ContainersView.Presentation = .list'
-require Sources/Flotilla/MachineDetailView.swift '_tab = State(initialValue: model.lastMachineTab[machine.id] ?? .overview)'
+# A detail view opens on Overview unless the *caller* asked for a specific tab. The pinned
+# substring is the tail of the expression, so it keeps asserting the fallback while allowing the
+# explicit `requestedTab` in front of it — that parameter exists because routing the request
+# through `lastMachineTab` alone silently dropped it whenever the view was already installed.
+require Sources/Flotilla/MachineDetailView.swift 'model.lastMachineTab[machine.id] ?? .overview)'
 require Sources/Flotilla/MachineDetailView.swift '@State private var presentation: InspectPresentation = .json'
-require Sources/Flotilla/ContainerDetailView.swift '_tab = State(initialValue: model.lastDetailTab[container.id] ?? .overview)'
+require Sources/Flotilla/ContainerDetailView.swift 'model.lastDetailTab[container.id] ?? .overview)'
 require Sources/Flotilla/ContainerDetailView.swift '@State private var presentation: InspectPresentation = .json'
 
 # A detail target that opens pre-populated is always a scaffold: both screens navigate to it.
