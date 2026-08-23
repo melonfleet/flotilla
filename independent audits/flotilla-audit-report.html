@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla product audit — melonfleet</title>
+<meta name="description" content="Evidence-based security, architecture, UI, and redundancy audit of Flotilla, 20 August 2026.">
+<style>
+:root {
+  color-scheme: light;
+  --rind: #1B5E20;
+  --rind-deep: #154a19;
+  --stripe: #7CB342;
+  --flesh: #FC4A6B;
+  --flesh-deep: #E63956;
+  --accent: #E93A5F;
+  --accent-text: #C2185B;
+  --seed: #241F1A;
+  --pith: #FFFFFF;
+  --cream: #FBF7F0;
+  --sand: #EDE6DA;
+  --stone: #C7BFB2;
+  --slate: #6E675C;
+  --honeydew: #A7D98C;
+  --cantaloupe: #EE7B4D;
+  --canary: #F2C94C;
+  --success: #1D9E75;
+  --warning: #E5A100;
+  --danger: #C9302C;
+  --info: #2C7A7B;
+  --online: #4C8C2B;
+  --content: #EDF6E4;
+  --raised: #FFFFFF;
+  --hairline: rgba(27, 94, 32, 0.14);
+  --tint-brand: rgba(27, 94, 32, 0.08);
+  --tint-flesh: rgba(252, 74, 107, 0.12);
+  --tint-danger: rgba(201, 48, 44, 0.12);
+  --tint-warning: rgba(229, 161, 0, 0.15);
+  --tint-success: rgba(29, 158, 117, 0.12);
+  --tint-info: rgba(44, 122, 123, 0.12);
+  --overlay: rgba(36, 31, 26, 0.45);
+  --font-heading: Ubuntu, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-body: "Open Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Ubuntu Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --max: 1180px;
+  --nav: 232px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --rind: #7CB342;
+    --rind-deep: #9CCB63;
+    --stripe: #9CCB63;
+    --flesh: #FC4A6B;
+    --accent: #FC4A6B;
+    --accent-text: #FF9BB2;
+    --seed: #FBF7F0;
+    --pith: #1F241C;
+    --cream: #171C14;
+    --sand: #242B1E;
+    --stone: #6E675C;
+    --slate: #C7BFB2;
+    --content: #171C14;
+    --raised: #1F241C;
+    --hairline: rgba(167, 217, 140, 0.16);
+    --tint-brand: rgba(124, 179, 66, 0.14);
+    --tint-flesh: rgba(252, 74, 107, 0.18);
+    --tint-danger: rgba(242, 99, 95, 0.16);
+    --tint-warning: rgba(245, 194, 66, 0.16);
+    --tint-success: rgba(63, 203, 155, 0.14);
+    --tint-info: rgba(89, 179, 176, 0.14);
+    --success: #3FCB9B;
+    --warning: #F5C242;
+    --danger: #F2635F;
+    --info: #59B3B0;
+    --online: #7CB342;
+    --overlay: rgba(0, 0, 0, 0.55);
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--seed);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+}
+a { color: var(--accent-text); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--flesh-deep); }
+code, .mono { font-family: var(--font-mono); font-size: 0.84em; }
+h1, h2, h3, h4, .wordmark, .lockup-name {
+  font-family: var(--font-heading);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+h1 { font-size: 2rem; font-weight: 700; margin: 0 0 0.4rem; }
+h2 { font-size: 1.5rem; margin: 0 0 0.75rem; color: var(--rind); }
+h3 { font-size: 1.15rem; margin: 0 0 0.5rem; }
+p { margin: 0 0 1rem; }
+.skip {
+  position: absolute; left: -999px; top: 0;
+  background: var(--rind); color: var(--pith); padding: 0.5rem 1rem;
+}
+.skip:focus { left: 1rem; top: 1rem; z-index: 20; }
+
+/* Header */
+.mast {
+  background: var(--raised);
+  border-bottom: 1px solid var(--hairline);
+  padding: 1.25rem 1.5rem 1.1rem;
+}
+.mast-inner {
+  max-width: calc(var(--max) + var(--nav) + 2.5rem);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+.lockup { display: flex; align-items: center; gap: 0.85rem; min-width: 0; }
+.lockup svg.icon { width: 48px; height: 48px; flex: 0 0 48px; }
+.lockup-text { min-width: 0; }
+.wordmark { font-size: 1.35rem; color: var(--rind); font-weight: 500; display: flex; align-items: baseline; gap: 0; }
+.wordmark .o { display: inline-flex; width: 0.72em; height: 0.72em; margin: 0 0.02em; vertical-align: -0.05em; }
+.rule { width: 3px; height: 1.15em; background: var(--slate); border-radius: 2px; margin: 0 0.55rem; opacity: 0.85; }
+.lockup-name { color: var(--seed); font-size: 1.35rem; }
+.meta { margin-left: auto; text-align: right; color: var(--slate); font-size: 0.875rem; }
+.meta strong { color: var(--seed); font-weight: 600; display: block; }
+
+/* Layout */
+.shell {
+  max-width: calc(var(--max) + var(--nav) + 2.5rem);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: var(--nav) minmax(0, 1fr);
+  gap: 2rem;
+  padding: 1.75rem 1.5rem 4rem;
+}
+nav.toc {
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+  font-size: 0.84rem;
+}
+nav.toc h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--slate); margin-bottom: 0.65rem; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; }
+nav.toc a {
+  display: block;
+  color: var(--slate);
+  text-decoration: none;
+  padding: 0.28rem 0.5rem;
+  border-radius: 6px;
+  border-left: 2px solid transparent;
+}
+nav.toc a:hover, nav.toc a.active {
+  color: var(--rind);
+  background: var(--tint-brand);
+  border-left-color: var(--rind);
+}
+main { min-width: 0; }
+section.block { margin-bottom: 3.25rem; scroll-margin-top: 1rem; }
+
+.lede { font-size: 1.08rem; color: var(--slate); max-width: 46rem; }
+.kicker {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--stripe);
+  margin-bottom: 0.35rem;
+}
+
+/* Stats */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.25rem 0 1.5rem;
+}
+.stat {
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 1rem 1.05rem 0.9rem;
+}
+.stat .n { font-family: var(--font-heading); font-size: 1.85rem; font-weight: 700; line-height: 1; }
+.stat .l { font-size: 0.8rem; color: var(--slate); margin-top: 0.3rem; }
+.stat.high .n { color: var(--danger); }
+.stat.med .n { color: var(--warning); }
+.stat.low .n { color: var(--info); }
+.stat.total .n { color: var(--rind); }
+
+/* Cards / callouts */
+.callout {
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  margin: 1rem 0;
+  border: 1px solid var(--hairline);
+  background: var(--raised);
+}
+.callout.warn { background: var(--tint-warning); border-color: rgba(229,161,0,0.35); }
+.callout.good { background: var(--tint-success); border-color: rgba(29,158,117,0.28); }
+.callout.info { background: var(--tint-info); border-color: rgba(44,122,123,0.28); }
+.callout.danger { background: var(--tint-danger); border-color: rgba(201,48,44,0.28); }
+.callout h3 { margin-bottom: 0.35rem; }
+.callout ul { margin: 0.4rem 0 0; padding-left: 1.15rem; }
+.callout li { margin: 0.25rem 0; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.panel {
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.15rem 1.2rem;
+}
+.panel h3 { color: var(--rind); font-size: 1rem; }
+.caption { font-size: 0.78rem; color: var(--slate); margin-top: 0.55rem; }
+
+/* Badges */
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.badge.critical, .badge.high { background: var(--tint-danger); color: var(--danger); }
+.badge.medium { background: var(--tint-warning); color: #8a6100; }
+.badge.low { background: var(--tint-info); color: var(--info); }
+.badge.info { background: var(--tint-brand); color: var(--rind); }
+.badge.residual { background: var(--sand); color: var(--slate); }
+.badge.confirmed { background: var(--tint-success); color: var(--success); }
+.badge.cat-security { background: var(--tint-flesh); color: var(--accent-text); }
+.badge.cat-gaps { background: var(--tint-brand); color: var(--rind); }
+.badge.cat-ui { background: var(--tint-info); color: var(--info); }
+.badge.cat-redundancy { background: var(--sand); color: var(--slate); }
+@media (prefers-color-scheme: dark) {
+  .badge.medium { color: var(--warning); }
+}
+
+/* Charts */
+.chart-row { display: grid; grid-template-columns: 280px 1fr; gap: 1.1rem; align-items: stretch; }
+svg.chart { width: 100%; height: auto; display: block; }
+.legend { list-style: none; margin: 0.6rem 0 0; padding: 0; font-size: 0.82rem; }
+.legend li { display: flex; align-items: center; gap: 0.45rem; margin: 0.2rem 0; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 10px; }
+
+/* Heatmap */
+.heat { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.heat th, .heat td { padding: 0.55rem 0.6rem; text-align: center; border: 1px solid var(--hairline); }
+.heat th { font-family: var(--font-heading); font-weight: 500; font-size: 0.78rem; }
+.heat td { font-variant-numeric: tabular-nums; }
+.heat .rowh { text-align: left; font-weight: 600; }
+.c0 { background: var(--raised); }
+.c1 { background: var(--tint-brand); }
+.c2 { background: rgba(242, 201, 76, 0.28); }
+.c3 { background: var(--tint-warning); }
+.c4 { background: var(--tint-danger); color: var(--danger); font-weight: 700; }
+
+/* Architecture */
+.arch { overflow-x: auto; background: var(--content); border-radius: var(--radius); border: 1px solid var(--hairline); padding: 0.75rem; }
+.arch svg { min-width: 720px; width: 100%; }
+
+/* Filters + findings */
+.filters { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.85rem 0 1.1rem; }
+.chip {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--raised);
+  color: var(--seed);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  padding: 0.32rem 0.7rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--stripe); }
+.chip.active { background: var(--rind); color: #fff; border-color: var(--rind); }
+.count-line { font-size: 0.875rem; color: var(--slate); margin-bottom: 0.85rem; }
+
+.finding {
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem 0.95rem;
+  margin: 0 0 0.75rem;
+  border-left: 4px solid var(--stone);
+}
+.finding.high { border-left-color: var(--danger); }
+.finding.medium { border-left-color: var(--warning); }
+.finding.low { border-left-color: var(--info); }
+.finding.info { border-left-color: var(--stripe); }
+.finding-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.55rem; margin-bottom: 0.35rem; }
+.finding h3 { margin: 0; font-size: 1.02rem; flex: 1 1 14rem; }
+.finding .id { font-family: var(--font-mono); font-size: 0.78rem; color: var(--slate); }
+.finding dl { display: grid; grid-template-columns: 7.2rem 1fr; gap: 0.35rem 0.75rem; margin: 0.65rem 0 0; font-size: 0.92rem; }
+.finding dt { color: var(--slate); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 0.15rem; }
+.finding dd { margin: 0; }
+.quote {
+  margin: 0.2rem 0 0;
+  padding: 0.55rem 0.7rem;
+  background: var(--sand);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Recs */
+.recs { counter-reset: rec; list-style: none; margin: 0; padding: 0; }
+.recs li {
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 0.95rem 1.1rem 0.95rem 3.4rem;
+  margin: 0 0 0.65rem;
+  position: relative;
+}
+.recs li::before {
+  counter-increment: rec;
+  content: counter(rec);
+  position: absolute;
+  left: 0.95rem; top: 1rem;
+  width: 1.6rem; height: 1.6rem;
+  border-radius: 50%;
+  background: var(--rind);
+  color: #fff;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.85rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.recs h3 { font-size: 1rem; margin-bottom: 0.2rem; }
+.recs p { margin: 0; color: var(--slate); font-size: 0.92rem; }
+
+table.plain { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+table.plain th, table.plain td { text-align: left; padding: 0.5rem 0.55rem; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+table.plain th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--slate); font-weight: 600; }
+table.plain tr:hover td { background: var(--tint-brand); }
+
+footer.site {
+  max-width: calc(var(--max) + var(--nav) + 2.5rem);
+  margin: 0 auto;
+  padding: 0 1.5rem 2.5rem;
+  color: var(--slate);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 980px) {
+  .shell { grid-template-columns: 1fr; }
+  nav.toc { position: static; }
+  .stats, .grid-2, .grid-3, .chart-row { grid-template-columns: 1fr; }
+  .meta { display: none; }
+}
+@media print {
+  nav.toc, .filters, .skip { display: none; }
+  .shell { display: block; max-width: none; }
+  .finding { break-inside: avoid; }
+  body { background: #fff; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="mast">
+  <div class="mast-inner">
+    <div class="lockup">
+      <svg class="icon" viewBox="0 0 120 120" role="img" aria-label="Flotilla">
+        <defs><clipPath id="sq"><rect x="0" y="0" width="120" height="120" rx="27"/></clipPath></defs>
+        <g clip-path="url(#sq)">
+          <rect width="120" height="120" fill="#FC4A6B"/>
+          <rect y="96" width="120" height="24" fill="#1B5E20"/>
+          <rect y="90" width="120" height="6" fill="#FFFFFF"/>
+          <path d="M40 86 L40 44 L23 86 Z" fill="#FFFFFF"/>
+          <path d="M64 86 L64 26 L43 86 Z" fill="#FFFFFF"/>
+          <path d="M92 86 L92 52 L73 86 Z" fill="#FFFFFF"/>
+          <ellipse cx="32" cy="64" rx="2.2" ry="3.4" fill="#241F1A"/>
+          <ellipse cx="80" cy="60" rx="2.2" ry="3.4" fill="#241F1A"/>
+          <ellipse cx="54" cy="46" rx="2.2" ry="3.4" fill="#241F1A"/>
+        </g>
+      </svg>
+      <div class="lockup-text">
+        <div class="wordmark" aria-label="melonfleet Flotilla">
+          <span>mel</span>
+          <svg class="o" viewBox="0 0 40 40" aria-hidden="true">
+            <circle cx="20" cy="20" r="19" fill="#1B5E20"/>
+            <circle cx="20" cy="20" r="15.5" fill="#FFFFFF"/>
+            <circle cx="20" cy="20" r="13" fill="#FC4A6B"/>
+            <ellipse cx="20" cy="12.5" rx="1.3" ry="2" fill="#241F1A"/>
+            <ellipse cx="13.5" cy="23" rx="1.3" ry="2" fill="#241F1A"/>
+            <ellipse cx="26.5" cy="23" rx="1.3" ry="2" fill="#241F1A"/>
+          </svg>
+          <span>nfleet</span>
+          <span class="rule" aria-hidden="true"></span>
+          <span class="lockup-name">Flotilla</span>
+        </div>
+        <div style="font-size:0.82rem;color:var(--slate);">Product, security, UI, and redundancy audit</div>
+      </div>
+    </div>
+    <div class="meta">
+      <strong>20 August 2026</strong>
+      Code review of Sources/, Tests/, and product docs<br>
+      No application code changed
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#summary">1. Executive summary</a></li>
+    <li><a href="#method">2. Methodology</a></li>
+    <li><a href="#architecture">3. Architecture</a></li>
+    <li><a href="#distribution">4. Finding mix</a></li>
+    <li><a href="#findings">5. Findings</a></li>
+    <li><a href="#security">5a. Security</a></li>
+    <li><a href="#gaps">5b. Gaps</a></li>
+    <li><a href="#ui">5c. UI</a></li>
+    <li><a href="#redundancy">5d. Redundancy</a></li>
+    <li><a href="#themes">6. Cross-cutting themes</a></li>
+    <li><a href="#recs">7. Recommendations</a></li>
+    <li><a href="#working">8. What is working</a></li>
+    <li><a href="#appendix">9. Appendix</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<section class="block" id="summary">
+  <p class="kicker">melonfleet · Flotilla · Phase 1 local MVP</p>
+  <h1>Flotilla is a real local container console with a settings UI that over-promises the fleet.</h1>
+  <p class="lede">The Swift core is substantial: allowlisted CLI execution, mount policy, redaction, and 307 passing FlotillaCore tests. The macOS app already lists, runs, inspects, and mutates containers, images, volumes, networks, and machines. The audit’s main product risk is honesty: editable controls for host mode, Jamf lock, launch-at-login, and Sparkle updates persist values that nothing consumes. Security of the local argv boundary is strong; the remaining issues are PATH fallback in the terminal tab, inconsistent delete confirmation, and Phase 2 residual risk that must not ship with the current executor.</p>
+
+  <div class="stats">
+    <div class="stat total"><div class="n">54</div><div class="l">Findings (53 confirmed + 1 residual cluster)</div></div>
+    <div class="stat high"><div class="n">13</div><div class="l">High · confirmed current issues</div></div>
+    <div class="stat med"><div class="n">28</div><div class="l">Medium</div></div>
+    <div class="stat low"><div class="n">12</div><div class="l">Low 11 · Info 1 · plus 1 High residual</div></div>
+  </div>
+
+  <div class="callout warn">
+    <h3>Top five issues</h3>
+    <ol>
+      <li><strong>Inert security-adjacent settings.</strong> Settings › Network exposes Client/Host/Both, listen port, Bonjour, and a Keychain identity label. There is no listener, no pairing, no Keychain identity. Launch-at-login and update toggles are the same class of defect. <span class="badge cat-gaps">Gaps</span> GAP-01, GAP-02, GAP-04, GAP-05</li>
+      <li><strong>Terminal tab undoes PATH hardening.</strong> <code>LocalHost</code> launches <code>container</code> by absolute path on purpose. <code>TerminalTab</code> falls back to <code>/usr/bin/env</code> if the two hardcoded paths are missing. <span class="badge cat-security">Security</span> SEC-01</li>
+      <li><strong>Delete confirmation is not one policy.</strong> Volumes/images/networks honour <code>confirmDestructiveActions</code>. Container context-menu Delete calls <code>perform(.delete)</code> directly. Bulk confirm is declared and never read. <span class="badge cat-security">Security</span> SEC-02, SEC-06</li>
+      <li><strong>Phase 1 UX contracts still open.</strong> Guided install and kernel remediation are explicitly out of Preflight. Volume/network inspect is allowlisted but has no CLI method or UI. Images/volumes/networks empty states have no primary action. <span class="badge cat-gaps">Gaps</span> GAP-03, GAP-06 · <span class="badge cat-ui">UI</span> UI-03</li>
+      <li><strong>List chrome is forked.</strong> <code>ResourceListControls</code> exists because five copies drifted before. Containers and Machines still hand-roll the toolbar, a second <code>Presentation</code> enum, and embedded detail navigation. Tables show state as a colour-only dot. <span class="badge cat-redundancy">Redundancy</span> RED-01 · <span class="badge cat-ui">UI</span> UI-01</li>
+    </ol>
+  </div>
+
+  <div class="callout info">
+    <h3>Severity policy used here</h3>
+    <p style="margin:0">No <strong>critical</strong> current finding. Phase 2 remote transport is not implemented, which is documented future work — not a live remote attack surface. Settings that <em>imply</em> that surface exists today are scored High (product honesty / enterprise posture), not Critical. Residual Phase 2 host risks are grouped as <strong>SEC-12</strong> and must gate any listener.</p>
+  </div>
+</section>
+
+<section class="block" id="method">
+  <h2>Methodology</h2>
+  <div class="grid-2">
+    <div class="panel">
+      <h3>What was reviewed</h3>
+      <ul>
+        <li>All Swift under <code>Sources/Flotilla</code> (54 files) and <code>Sources/FlotillaCore</code></li>
+        <li><code>Tests/FlotillaCoreTests</code> — 307 <code>@Test</code> functions; no UI test target</li>
+        <li>Product docs: README, PHASE1.md, PLAN.md, DECISIONS.md, FEATURES.md, GAP-PLAN.md, ALLOWLIST-AUDIT.md, VM-SECURITY-REVIEW.md</li>
+        <li>Brand: workspace <code>design/brand/BRAND.md</code>, Trellis <code>tokens.css</code>, Flotilla <code>Theme.swift</code> and <code>Wordmark.swift</code></li>
+        <li>Mockups in <code>research/review/mockups/</code> vs implemented SwiftUI</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>How findings were scored</h3>
+      <ul>
+        <li><strong>Confirmed</strong> — observed in current Sources/ with a file citation</li>
+        <li><strong>Residual</strong> — documented risk that is not live because Phase 2 transport is absent, or a TOCTOU the CLI cannot fully close</li>
+        <li><strong>Planned</strong> FEATURES.md <code>[later]</code> items are gaps only when the UI implies they exist now</li>
+        <li>Security findings describe impact and remediation only. No exploits, payloads, or reproduction procedures</li>
+        <li>Unused-looking code was grepped before being called dead</li>
+      </ul>
+    </div>
+  </div>
+  <p class="caption">Workstreams: security · product/architecture gaps · UI consistency · redundancy. Synthesized into one catalogue. Prior HTML at <code>Flotilla/audit-report-2026-08-20.html</code> was not copied; this report is an independent pass against the tree as of 20 August 2026.</p>
+</section>
+
+<section class="block" id="architecture">
+  <h2>Architecture as built</h2>
+  <p>One shared core, one local executor, SwiftUI on top. RemoteHost is a protocol comment, not a type. The allowlist is already shaped for a future wire; the wire is not there.</p>
+  <div class="arch" aria-label="Flotilla architecture diagram">
+    <svg viewBox="0 0 980 420" xmlns="http://www.w3.org/2000/svg" role="img">
+      <title>Flotilla local architecture and Phase 2 gap</title>
+      <style>
+        .box { fill: #FFFFFF; stroke: #1B5E20; stroke-opacity: 0.25; }
+        .box-ui { fill: #EDF6E4; }
+        .box-core { fill: #FFFFFF; }
+        .box-future { fill: #FBF7F0; stroke-dasharray: 5 4; }
+        .t { font-family: Ubuntu, Helvetica, Arial, sans-serif; fill: #241F1A; }
+        .tl { font-size: 13px; font-weight: 700; }
+        .ts { font-size: 11px; fill: #6E675C; }
+        .arr { stroke: #1B5E20; stroke-width: 1.5; fill: none; marker-end: url(#ah); }
+        .arr-d { stroke: #C9302C; stroke-dasharray: 6 4; }
+      </style>
+      <defs>
+        <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#1B5E20"/></marker>
+      </defs>
+      <rect class="box box-ui" x="20" y="20" width="200" height="70" rx="10"/>
+      <text class="t tl" x="36" y="50">SwiftUI app</text>
+      <text class="t ts" x="36" y="70">Menu bar · window · sheets</text>
+
+      <rect class="box box-ui" x="260" y="20" width="200" height="70" rx="10"/>
+      <text class="t tl" x="276" y="50">AppModel</text>
+      <text class="t ts" x="276" y="70">poll · mutate · events</text>
+
+      <rect class="box" x="500" y="20" width="200" height="70" rx="10"/>
+      <text class="t tl" x="516" y="50">SettingsStore</text>
+      <text class="t ts" x="516" y="70">user tier only today</text>
+
+      <rect class="box box-future" x="740" y="20" width="220" height="70" rx="10"/>
+      <text class="t tl" x="756" y="48">Managed prefs / Jamf</text>
+      <text class="t ts" x="756" y="68">designed · not injected</text>
+
+      <rect class="box box-core" x="140" y="160" width="220" height="78" rx="10"/>
+      <text class="t tl" x="156" y="190">ContainerCLI</text>
+      <text class="t ts" x="156" y="210">every argv validated first</text>
+
+      <rect class="box box-core" x="400" y="148" width="170" height="48" rx="10"/>
+      <text class="t tl" x="416" y="178">Allowlist</text>
+      <rect class="box box-core" x="400" y="204" width="170" height="48" rx="10"/>
+      <text class="t tl" x="416" y="234">MountPolicy</text>
+      <rect class="box box-core" x="590" y="148" width="170" height="48" rx="10"/>
+      <text class="t tl" x="606" y="178">WirePolicy</text>
+      <rect class="box box-core" x="590" y="204" width="170" height="48" rx="10"/>
+      <text class="t tl" x="606" y="234">ExecPolicy</text>
+
+      <rect class="box box-core" x="140" y="300" width="220" height="70" rx="10"/>
+      <text class="t tl" x="156" y="330">LocalHost</text>
+      <text class="t ts" x="156" y="350">absolute path · Process.arguments</text>
+
+      <rect class="box" x="400" y="300" width="220" height="70" rx="10"/>
+      <text class="t tl" x="416" y="330">Apple container CLI</text>
+      <text class="t ts" x="416" y="350">JSON · no /bin/sh</text>
+
+      <rect class="box box-future" x="700" y="300" width="260" height="70" rx="10"/>
+      <text class="t tl" x="716" y="328">RemoteHost + mTLS</text>
+      <text class="t ts" x="716" y="348">Phase 2 · not in Sources/</text>
+
+      <path class="arr" d="M220,90 L260,55"/>
+      <path class="arr" d="M460,55 L500,55"/>
+      <path class="arr arr-d" d="M700,55 L740,55"/>
+      <path class="arr" d="M360,90 L250,160"/>
+      <path class="arr" d="M250,238 L250,300"/>
+      <path class="arr" d="M360,335 L400,335"/>
+      <path class="arr arr-d" d="M620,335 L700,335"/>
+      <path class="arr" d="M360,199 L400,172"/>
+      <path class="arr" d="M360,210 L400,228"/>
+    </svg>
+  </div>
+  <p class="caption">Solid arrows are live. Dashed red arrows are designed but unimplemented. Source: <code>AppModel.swift</code>, <code>ContainerCLI.swift</code>, <code>ContainerHost.swift</code>, <code>SettingsStore.swift</code>. Diagram is a review model, not a generated call graph.</p>
+</section>
+
+<section class="block" id="distribution">
+  <h2>Finding mix</h2>
+  <div class="chart-row">
+    <div class="panel">
+      <h3>Severity distribution</h3>
+      <svg class="chart" viewBox="0 0 240 200" role="img" aria-label="Donut chart of findings by severity">
+        <title>Findings by severity — source: this audit, 20 Aug 2026</title>
+        <!-- 13/54 high, 28/54 med, 11/54 low, 1/54 info, 1/54 residual ≈ 87, 187, 73, 7, 7 deg of 360 -->
+        <circle cx="90" cy="100" r="58" fill="none" stroke="#EDE6DA" stroke-width="28"/>
+        <circle cx="90" cy="100" r="58" fill="none" stroke="#C9302C" stroke-width="28"
+          stroke-dasharray="81.5 364.4" stroke-dashoffset="0" transform="rotate(-90 90 100)"/>
+        <circle cx="90" cy="100" r="58" fill="none" stroke="#E5A100" stroke-width="28"
+          stroke-dasharray="175.5 364.4" stroke-dashoffset="-81.5" transform="rotate(-90 90 100)"/>
+        <circle cx="90" cy="100" r="58" fill="none" stroke="#2C7A7B" stroke-width="28"
+          stroke-dasharray="68.9 364.4" stroke-dashoffset="-257" transform="rotate(-90 90 100)"/>
+        <circle cx="90" cy="100" r="58" fill="none" stroke="#7CB342" stroke-width="28"
+          stroke-dasharray="6.3 364.4" stroke-dashoffset="-325.9" transform="rotate(-90 90 100)"/>
+        <circle cx="90" cy="100" r="58" fill="none" stroke="#6E675C" stroke-width="28"
+          stroke-dasharray="6.3 364.4" stroke-dashoffset="-332.2" transform="rotate(-90 90 100)"/>
+        <text x="90" y="96" text-anchor="middle" font-family="Ubuntu,sans-serif" font-size="22" font-weight="700" fill="currentColor">54</text>
+        <text x="90" y="114" text-anchor="middle" font-family="Open Sans,sans-serif" font-size="10" fill="#6E675C">findings</text>
+      </svg>
+      <ul class="legend">
+        <li><span class="swatch" style="background:#C9302C"></span> High 13 (24%)</li>
+        <li><span class="swatch" style="background:#E5A100"></span> Medium 28 (52%)</li>
+        <li><span class="swatch" style="background:#2C7A7B"></span> Low 11 (20%)</li>
+        <li><span class="swatch" style="background:#7CB342"></span> Info 1</li>
+        <li><span class="swatch" style="background:#6E675C"></span> Residual high 1 (SEC-12)</li>
+      </ul>
+      <p class="caption">Source: this audit catalogue · 20 Aug 2026 · counts are unique findings, not file hits.</p>
+    </div>
+    <div class="panel">
+      <h3>Category mix</h3>
+      <svg class="chart" viewBox="0 0 560 220" role="img" aria-label="Bar chart of findings by category">
+        <title>Findings by category — Gaps 20, Security 12, UI 12, Redundancy 10</title>
+        <text x="0" y="14" font-size="11" fill="#6E675C" font-family="Open Sans,sans-serif">Count of unique findings</text>
+        <g font-family="Ubuntu,sans-serif" font-size="12" fill="currentColor">
+          <text x="0" y="52">Gaps</text>
+          <rect x="110" y="38" width="400" height="22" rx="4" fill="#1B5E20"/>
+          <text x="520" y="54" fill="#1B5E20">20</text>
+          <text x="0" y="92">Security</text>
+          <rect x="110" y="78" width="240" height="22" rx="4" fill="#E63956"/>
+          <text x="360" y="94" fill="#E63956">12</text>
+          <text x="0" y="132">UI</text>
+          <rect x="110" y="118" width="240" height="22" rx="4" fill="#2C7A7B"/>
+          <text x="360" y="134" fill="#2C7A7B">12</text>
+          <text x="0" y="172">Redundancy</text>
+          <rect x="110" y="158" width="200" height="22" rx="4" fill="#6E675C"/>
+          <text x="320" y="174" fill="#6E675C">10</text>
+        </g>
+        <text x="110" y="210" font-size="10" fill="#6E675C" font-family="Open Sans,sans-serif">0</text>
+        <text x="510" y="210" font-size="10" fill="#6E675C" font-family="Open Sans,sans-serif">20</text>
+      </svg>
+      <p class="caption">Source: this audit · each finding has one primary category. Cross-cutting items are tagged in the body, not double-counted.</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:1.4rem">Heatmap — pressure by area</h3>
+  <p>Cell value is the count of findings that primarily touch that intersection. Darker is more pressure, not a CVSS score.</p>
+  <table class="heat">
+    <thead>
+      <tr><th></th><th>Security</th><th>Gaps</th><th>UI</th><th>Redundancy</th></tr>
+    </thead>
+    <tbody>
+      <tr><th class="rowh">CLI / allowlist / process</th><td class="c3">4</td><td class="c1">1</td><td class="c0">0</td><td class="c0">0</td></tr>
+      <tr><th class="rowh">Settings / MDM / updates</th><td class="c2">2</td><td class="c4">5</td><td class="c0">0</td><td class="c0">0</td></tr>
+      <tr><th class="rowh">List chrome / empty states</th><td class="c0">0</td><td class="c2">2</td><td class="c4">5</td><td class="c3">4</td></tr>
+      <tr><th class="rowh">Onboarding / preflight / docs</th><td class="c0">0</td><td class="c4">5</td><td class="c1">1</td><td class="c0">0</td></tr>
+      <tr><th class="rowh">Diagnostics / logging</th><td class="c2">2</td><td class="c1">1</td><td class="c0">0</td><td class="c0">0</td></tr>
+      <tr><th class="rowh">Fleet / Phase 2 transport</th><td class="c3">3</td><td class="c2">2</td><td class="c1">1</td><td class="c0">0</td></tr>
+      <tr><th class="rowh">Tests</th><td class="c0">0</td><td class="c2">2</td><td class="c0">0</td><td class="c1">1</td></tr>
+    </tbody>
+  </table>
+  <p class="caption">Source: synthesised mapping of the 54 findings · 20 Aug 2026. Settings/MDM and list chrome are the two densest clusters.</p>
+</section>
+
+<section class="block" id="findings">
+  <h2>Findings catalogue</h2>
+  <p>Filter by severity or category. Evidence is a file plus a short quote or behaviour — not a generic checklist item.</p>
+  <div class="filters" id="filters"></div>
+  <p class="count-line" id="count-line"></p>
+  <div id="finding-list"></div>
+</section>
+
+<section class="block" id="themes">
+  <h2>Cross-cutting themes</h2>
+  <div class="grid-3">
+    <div class="panel">
+      <h3>1. Controls that drive nothing</h3>
+      <p>This is the failure the codebase already names in comments. <code>confirmBulkActions</code>, host mode, listen port, Bonjour, identity label, launch-at-login, Sparkle toggles, and <code>containerBinaryPath</code> persist without a runtime consumer. The project has lost this bet more than once (<code>presentation</code> used to be inert; <code>ResourceListControls</code> exists because Cards lost Copy).</p>
+    </div>
+    <div class="panel">
+      <h3>2. The wire is designed in the core, absent in the app</h3>
+      <p><code>WirePolicy</code>, <code>Exposure</code>, and Q14 tests are real. <code>RemoteHost</code> is a comment on a protocol. Settings still offer Host mode. Treat that mismatch as a ship blocker for any build that looks like a fleet console, not as “Phase 2 will fix it.”</p>
+    </div>
+    <div class="panel">
+      <h3>3. Parity that lives in five files</h3>
+      <p>Volumes/Images/Networks adopted the shared list shell. Containers/Machines did not. Empty states, confirmation, presentation enums, and detail chrome therefore diverge. UI inconsistency and redundancy are the same root: no single list/detail primitive.</p>
+    </div>
+  </div>
+  <div class="grid-2" style="margin-top:1rem">
+    <div class="panel">
+      <h3>4. Docs lag the tree</h3>
+      <p>README still says “29 tests” and “read-only ContainerCLI”. PHASE1.md repeats the read-only claim. The test suite is 307 and mutations ship. Contributors will build the wrong thing.</p>
+    </div>
+    <div class="panel">
+      <h3>5. Brand tokens are good; surfaces still drift</h3>
+      <p><code>Theme.swift</code> correctly quotes BRAND.md and bans pink-as-error. Cards, detail panels, and sparklines still use <code>.quaternary</code> / <code>.secondary</code> / system separator, so the honeydew wash and the mockups disagree on what a card is.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="recs">
+  <h2>Prioritized recommendations</h2>
+  <ol class="recs">
+    <li>
+      <h3>Honesty pass on Settings — this week</h3>
+      <p>Disable or annotate Host mode, listen port, Bonjour, identity label, launch-at-login, and update checks until each has a runtime consumer. Add a registry test: every user-editable key is read by production code. Wire <code>containerBinaryPath</code> into <code>LocalHost</code> or stop showing it as an override.</p>
+    </li>
+    <li>
+      <h3>Close the two local security seams</h3>
+      <p>Resolve the terminal binary through <code>Preflight.locateBinary</code> and fail closed. Centralize delete/stop/prune confirmation so every entry point reads <code>confirmDestructiveActions</code> / <code>confirmBulkActions</code>. Redact <code>--env</code> / <code>--build-arg</code> in <code>auditDescription</code> before any host log exists.</p>
+    </li>
+    <li>
+      <h3>Finish the Phase 1 UX contract users already paid for</h3>
+      <p>Guided pkg + kernel remediation (or an honest Continue-anyway preflight card). Volume/network inspect API + read-only panes. Empty-state primary actions and filtered-empty “Clear filters” on Images/Volumes/Networks. Status badge (dot + symbol + label) in tables.</p>
+    </li>
+    <li>
+      <h3>Collapse list/detail chrome onto the shared types</h3>
+      <p>Migrate Containers/Machines onto <code>ResourceListControls</code> + <code>ResourcePresentation</code>. Extract embedded detail navigator and inspect toolbar. One <code>ThemedCard</code> modifier. This is both a UI and a redundancy fix.</p>
+    </li>
+    <li>
+      <h3>Gate Phase 2 on the allowlist audit’s remaining policies</h3>
+      <p>Do not open a listener until process timeouts and concurrency are enforced, publish/interface policy exists, opaque driver options are default-deny over the wire, response redaction is real, and managed preferences actually load. Q14 already says <code>timeoutHint</code> enforces nothing today.</p>
+    </li>
+    <li>
+      <h3>Refresh the contract docs and add one UI test target</h3>
+      <p>Rewrite README / PHASE1.md status blocks to match August 2026. Add a small App-level test target that fails if a Settings key has no consumer, and snapshot the destructive-action coordinator.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="block" id="working">
+  <h2>What is working</h2>
+  <div class="callout good">
+    <p>Credit where the tree earned it. A gap list without this section would mis-rank the project.</p>
+    <ul>
+      <li><strong>Argv, not a shell.</strong> <code>LocalHost</code> sets <code>process.arguments</code> and resolves an absolute binary. Metacharacters are not interpreted by <code>/bin/sh</code>.</li>
+      <li><strong>Allowlist is a real boundary.</strong> Default-deny specs, Unicode/control rejection, <code>WirePolicy</code> / <code>Exposure</code>, pre-substitution exposure checks after the prior security review, and a registry test that a new spec must declare exposure.</li>
+      <li><strong>MountPolicy is separate from grammar.</strong> Remote+unrestricted is a precondition failure. Build contexts go through <code>NSOpenPanel</code> + scoped roots.</li>
+      <li><strong>Support bundles fail closed.</strong> Redaction audit can refuse the bundle. Sensitive settings are dropped. No upload path. About/Privacy states no telemetry.</li>
+      <li><strong>Brand Theme is documented and mostly used</strong> for tints, state colours, and dashboard charts. Wordmark is drawn, not fetched — no Google Fonts at launch.</li>
+      <li><strong>307 FlotillaCore tests</strong> including adversarial allowlist and leak-detection support-bundle tests. Linux portable core is a genuine split, not a comment.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="block" id="appendix">
+  <h2>Appendix</h2>
+  <h3>File index cited in findings</h3>
+  <table class="plain">
+    <thead><tr><th>Path</th><th>Why it appears</th></tr></thead>
+    <tbody>
+      <tr><td><code>Sources/Flotilla/TerminalTab.swift</code></td><td>PATH fallback <code>/usr/bin/env</code></td></tr>
+      <tr><td><code>Sources/FlotillaCore/ContainerHost.swift</code></td><td>Absolute-path launch; no timeout</td></tr>
+      <tr><td><code>Sources/FlotillaCore/Allowlist.swift</code></td><td>auditDescription; timeoutHint; exposure</td></tr>
+      <tr><td><code>Sources/FlotillaCore/MountPolicy.swift</code></td><td>TOCTOU documented</td></tr>
+      <tr><td><code>Sources/Flotilla/ContainersView.swift</code></td><td>Delete without confirm; colour-only state; private Presentation</td></tr>
+      <tr><td><code>Sources/Flotilla/SettingsView.swift</code></td><td>Host mode, launch-at-login, updates UI</td></tr>
+      <tr><td><code>Sources/FlotillaCore/Settings/SettingsStore.swift</code></td><td>Default <code>UnmanagedPreferences()</code></td></tr>
+      <tr><td><code>Sources/Flotilla/AppModel.swift</code></td><td>LocalHost-only CLI; unrestricted mount default</td></tr>
+      <tr><td><code>Sources/FlotillaCore/Preflight.swift</code></td><td>Install/kernel explicitly out of scope</td></tr>
+      <tr><td><code>Sources/Flotilla/ResourceListControls.swift</code></td><td>Shared toolbar Containers/Machines skip</td></tr>
+      <tr><td><code>Sources/Flotilla/ContainerCard.swift</code></td><td>Quaternary card surface</td></tr>
+      <tr><td><code>Sources/Flotilla/Theme.swift</code></td><td>Canonical tokens quoted from BRAND.md</td></tr>
+      <tr><td><code>README.md</code>, <code>PHASE1.md</code></td><td>Stale “29 tests” / read-only CLI</td></tr>
+      <tr><td><code>research/ALLOWLIST-AUDIT.md</code></td><td>Publish/driver residual; 47-spec review</td></tr>
+      <tr><td><code>design/brand/BRAND.md</code></td><td>Brand source for this report’s visual system</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:1.5rem">Test counts by file (<code>@Test</code>)</h3>
+  <table class="plain">
+    <thead><tr><th>File</th><th>Tests</th></tr></thead>
+    <tbody>
+      <tr><td>AllowlistTests.swift</td><td>68</td></tr>
+      <tr><td>ContainerCLITests.swift</td><td>41</td></tr>
+      <tr><td>FlotillafileTests.swift</td><td>35</td></tr>
+      <tr><td>DiagnosticsTests.swift</td><td>35</td></tr>
+      <tr><td>SettingsTests.swift</td><td>31</td></tr>
+      <tr><td>SupportBundleTests.swift</td><td>27</td></tr>
+      <tr><td>StatsSamplerTests.swift</td><td>22</td></tr>
+      <tr><td>SmokeTests.swift</td><td>16</td></tr>
+      <tr><td>PreflightTests.swift</td><td>14</td></tr>
+      <tr><td>MountPolicyTests.swift</td><td>10</td></tr>
+      <tr><td>JSONPrettyPrinterTests.swift</td><td>5</td></tr>
+      <tr><td>MachineTests.swift</td><td>3</td></tr>
+      <tr><td><strong>Total</strong></td><td><strong>307</strong></td></tr>
+      <tr><td>UI / AppModel tests</td><td>0</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:1.5rem">Branding sources for this HTML</h3>
+  <p>Palette, typography stack, and lockup geometry come from workspace <code>design/brand/BRAND.md</code> and Trellis <code>tokens.css</code> (no webfont fetch — Ubuntu/Open Sans named with system fallbacks, same rule as Trellis). App icon geometry is inlined from <code>design/brand/icons/flotilla.svg</code> (sails on watermelon slice). Semantic status colours follow BRAND.md, not mockup macOS blue. Flotilla <code>Theme.swift</code> was used to confirm the app’s own light/dark pair, including honeydew content wash and flesh accent. This file does not load Google Fonts or any CDN.</p>
+
+  <h3 style="margin-top:1.5rem">Out of scope</h3>
+  <ul>
+    <li>Live hostile testing, fuzzing, or dependency CVE scanning</li>
+    <li>Notarization / Developer ID material (no Xcode project in-tree)</li>
+    <li>Exploits, proof-of-concept payloads, or attack procedures</li>
+    <li>Changes to Flotilla application code — report files only</li>
+  </ul>
+</section>
+
+</main>
+</div>
+
+<footer class="site">
+  melonfleet · Flotilla audit · 20 August 2026 · Personal, non-commercial product. Pink is brand, never an error colour.
+</footer>
+
+<script>
+const FINDINGS = [
+  {id:"SEC-01", cat:"security", sev:"medium", status:"confirmed", title:"Terminal tab falls back to /usr/bin/env",
+   evidence:"Sources/Flotilla/TerminalTab.swift — candidates /usr/local/bin and /opt/homebrew/bin, then ?? \"/usr/bin/env\". LocalHost.swift documents why PATH lookup was removed.",
+   quote:"return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }\\n    ?? \"/usr/bin/env\"",
+   why:"If neither hardcoded path exists, opening a shell can run a PATH-prepended binary named container under the user session. The rest of the app deliberately refuses that.",
+   fix:"Reuse Preflight.locateBinary(\"container\"). Fail closed with a visible error. Do not exec env."},
+  {id:"SEC-02", cat:"security", sev:"medium", status:"confirmed", title:"Container Delete bypasses confirmDestructiveActions",
+   evidence:"ContainersView.actions(for:) calls perform(.delete) directly. VolumesView.requestDelete and ImagesView honour the setting.",
+   quote:"Button(\"Delete\", role: .destructive) {\\n    Task { await model.perform(.delete, on: container) }\\n}",
+   why:"The setting claims to confirm before deleting a container. Context-menu delete does not. Policy is incoherent across resource types.",
+   fix:"One AppModel.requestDelete coordinator for row trash, context menu, cards, bulk, and keyboard."},
+  {id:"SEC-03", cat:"security", sev:"medium", status:"confirmed", title:"auditDescription records --env and --build-arg verbatim",
+   evidence:"Allowlist.swift ValidatedCommand.auditDescription joins argv. Used as the audit string and in run/build previews.",
+   quote:"public var auditDescription: String { ([\"container\"] + arguments).joined(separator: \" \") }",
+   why:"Credentials in environment or build-args become durable log text the moment host-side auditing ships. Medium today; High on a Phase 2 host log.",
+   fix:"Structural redaction of sensitive flag values at the ValidatedCommand type, not at each logger."},
+  {id:"SEC-04", cat:"security", sev:"medium", status:"confirmed", title:"timeoutHint is not enforced at execution",
+   evidence:"CommandSpec.timeoutHint is documented as unenforced. LocalHost.run waits until exit with no terminate path.",
+   quote:"try process.run()\\n…\\nprocess.waitUntilExit()",
+   why:"A hung container invocation ties a thread indefinitely. Harmless-ish for a local owner; a Phase 2 peer can turn it into host DoS.",
+   fix:"Enforce timeoutHint in LocalHost/RemoteHost (terminate + structured error) before any listener."},
+  {id:"SEC-05", cat:"security", sev:"medium", status:"residual", title:"Mount-path TOCTOU after symlink resolution",
+   evidence:"MountPolicy comments that a link can be repointed between check and mount. Validated string is still passed to Process.",
+   quote:"Allowlist validates the path string; ContainerHost assigns process.arguments = args with no FD handoff.",
+   why:"A writer inside a permitted directory can race the check. Residual because the CLI consumes paths, not FDs.",
+   fix:"Keep roots narrow; require existing inputs (done for build). Document residual; do not claim path policy is race-free."},
+  {id:"SEC-06", cat:"security", sev:"low", status:"confirmed", title:"confirmBulkActions is never read",
+   evidence:"Declared in SettingsRegistry.swift, rendered in SettingsView.swift. No consumer in ContainersView bulk flows.",
+   quote:"summary: \"Confirm before an action that hits more than one container or host.\"",
+   why:"MDM cannot enforce bulk confirmation. Same inert-control class as launch-at-login.",
+   fix:"Wire through the same coordinator as SEC-02."},
+  {id:"SEC-07", cat:"security", sev:"low", status:"confirmed", title:"flotilla-probe invokes the host without Allowlist",
+   evidence:"Sources/flotilla-probe/main.swift dumpRaw calls cli.host.run(args) with raw argv.",
+   quote:"let result = try cli.host.run(args)",
+   why:"Fine as a dev dump tool. Risky if the probe binary is bundled in a user-facing product.",
+   fix:"Keep it out of the release app, or route through ContainerCLI.execute."},
+  {id:"SEC-08", cat:"security", sev:"low", status:"confirmed", title:"Live ErrorLog stores messages unredacted",
+   evidence:"ErrorLog.swift: redacted when entering a snapshot, not when recorded. Intentional for local debugging.",
+   quote:"message is redacted when it enters a snapshot, not when recorded — the live log is in-memory",
+   why:"Support bundles are fail-closed (good). In-memory log on a shared Mac can still hold paths/secrets until eviction.",
+   fix:"Optional pattern redaction on record(), or document that diagnostics stay off on shared accounts."},
+  {id:"SEC-09", cat:"security", sev:"medium", status:"confirmed", title:"Local machine home-mount=rw is a filesystem grant",
+   evidence:"Allowlist accepts home-mount=ro|rw|none on machine create/set. Wire marks machine mutations localOnly (good).",
+   quote:"VM-SECURITY-REVIEW.md: never expose machine delete/run/set-default or rw home-mount remotely.",
+   why:"Correct for an owner on their Mac. A compromised local session can point the substrate VM at $HOME read-write. Remote deny must stay permanent.",
+   fix:"Extra local confirmation for rw. Keep Exposure.localOnly. Do not relax Q14."},
+  {id:"SEC-10", cat:"security", sev:"low", status:"residual", title:"SwiftTerm parses container PTY output",
+   evidence:"Package.swift depends on SwiftTerm 1.2+. TerminalTab hosts it for local exec only.",
+   quote:"No WKWebView. Terminal is the only untrusted-output renderer.",
+   why:"Escape-sequence bugs in the emulator are residual host-UI risk. Not XSS; there is no web surface.",
+   fix:"Pin the version, watch advisories, keep exec on the allowlisted argv path."},
+  {id:"SEC-11", cat:"security", sev:"info", status:"confirmed", title:"No App Sandbox, no entitlements plist in repo",
+   evidence:"DECISIONS.md Q9: no sandbox for v1, still ship notarized with hardened runtime. make-app.sh is ad-hoc.",
+   quote:"We execute an external CLI and listen for network connections; a useful sandbox would need brittle exceptions.",
+   why:"Intentional. Distribution still needs Developer ID, hardened runtime, and a least-entitlements inventory.",
+   fix:"Track in the Phase 5 checklist. Do not treat missing sandbox as an accidental hole."},
+  {id:"SEC-12", cat:"security", sev:"high", status:"residual", title:"Phase 2 residual cluster — do not open a listener yet",
+   evidence:"No RemoteHost, NWListener, Bonjour, or Keychain identity in Sources/. DECISIONS.md Q14: timeoutHint enforces nothing; run --publish and volume --opt / network --plugin need host-owned policy, not grammar.",
+   quote:"Allowlist answers “is this argv well-formed”. It had no way to say “this subcommand is not offered to a remote caller” until Exposure — and transport limits still do not exist.",
+   why:"Not a current remote vulnerability. It is a launch gate. Shipping host mode UI without this cluster is how a later listener inherits an unbounded executor.",
+   fix:"Gate Phase 2 on: timeouts + concurrency, publish/interface policy, default-deny opaque driver options, response redaction, mTLS identity lifecycle, managed prefs actually loaded."},
+
+  {id:"GAP-01", cat:"gaps", sev:"high", status:"confirmed", title:"Host mode settings are editable with no listener",
+   evidence:"SettingsView networkPane: Mode Client/Host/Both, listen port, Bonjour, identity Keychain label. AppModel always constructs LocalHost().",
+   quote:"SwiftUI.Section(\"Host mode\") { SettingRow(… SettingsKeys.mode … hostListenPort … bonjourEnabled … identityKeychainLabel }",
+   why:"A user (or MDM) can believe the Mac is accepting fleet connections. Dashboard copy says pairing is Phase 2; the Network pane does not.",
+   fix:"Disable with “Not in this build” copy, or implement the listener. Do not ship an actionable Host segmented control first."},
+  {id:"GAP-02", cat:"gaps", sev:"high", status:"confirmed", title:"Jamf / managed preference tier is never injected",
+   evidence:"SettingsStore defaults to UnmanagedPreferences(). ManagedPreferences.swift has no macOS reader in the app target. AppModel notes managed source is “wired in once the app reads … for real.”",
+   quote:"managed: any ManagedPreferencesSource = UnmanagedPreferences()",
+   why:"Two-tier defaults+locked is a settled Phase 1 decision (DECISIONS.md Q4). Padlock UI cannot work. Enterprise profiles documented in reference/jamf-config-profile.md do nothing.",
+   fix:"Snapshot /Library/Managed Preferences/dev.melonfleet.Flotilla.plist at launch into StaticManagedPreferences."},
+  {id:"GAP-03", cat:"gaps", sev:"high", status:"confirmed", title:"Guided install and kernel remediation are missing",
+   evidence:"Preflight.swift header: not this file’s job — guided install and kernel-install detection. FEATURES.md §2.2 marks both [core]. OnboardingView is appearance-only.",
+   quote:"**Not this file's job:** the guided install … and kernel-install detection (no CLI operation for it yet).",
+   why:"A fresh Mac fails with text errors. The mockup onboarding rail with per-row fix is the Phase 1 UX steal the research ranked highest.",
+   fix:"Download Apple pkg, hand to installer with user auth; kernel set --recommended button; non-trapping Continue anyway."},
+  {id:"GAP-04", cat:"gaps", sev:"high", status:"confirmed", title:"Launch at login toggle has no SMAppService call",
+   evidence:"SettingsKeys.launchAtLogin summary names SMAppService. Grep of Sources/ finds only the registry string — no import or register().",
+   quote:"summary: \"Register Flotilla as a login item (SMAppService).\"",
+   why:"The toggle persists and lies. make-app.sh already produces a bundle, which is what SMAppService needs.",
+   fix:"SMAppService.mainApp.register()/unregister() on toggle; only enable the control when running from a bundle."},
+  {id:"GAP-05", cat:"gaps", sev:"medium", status:"confirmed", title:"Updates pane has no Sparkle",
+   evidence:"SettingsView updatesPane: automaticUpdateChecks, automaticallyDownloadUpdates, updateChannel. Package.swift has no Sparkle. AboutView marks Sparkle as Phase 5.",
+   quote:"SettingRow(… SettingsKeys.automaticUpdateChecks … Automatically check for updates)",
+   why:"Same inert-control pattern. Users think checks are on.",
+   fix:"Hide until Phase 5, or show a static “Updates are not in this build” row."},
+  {id:"GAP-06", cat:"gaps", sev:"high", status:"confirmed", title:"Volume and network inspect are allowlisted but unwired",
+   evidence:"Allowlist has volume inspect / network inspect. ContainerCLI has no inspectVolume/inspectNetwork. No detail views. PLAN.md still lists them unfinished.",
+   quote:"NetworksView notes inspect exists in the CLI; the UI never calls it.",
+   why:"FEATURES.md lists inspect as core. Users cannot read objects Flotilla can create. Configuration is create/delete only by CLI design — inspect is the remaining read path.",
+   fix:"Add CLI methods + fixtures; read-only detail panes mirroring container inspect."},
+  {id:"GAP-07", cat:"gaps", sev:"medium", status:"confirmed", title:"Search grammar and ⌘K palette are absent",
+   evidence:"ContainersView has free text + Running/Stopped filter, no is:/image:/host: tokens. No command palette in Sources/.",
+   quote:"FEATURES.md [core]: is:running tabs that write into search; ⌘K over containers, images, actions.",
+   why:"Headline Phase 1 UX. Filter is hidden in a popover instead of the mockup segmented control that syncs tokens.",
+   fix:"Token parser + segmented All/Running/Stopped that writes into the field. Palette is pure UI."},
+  {id:"GAP-08", cat:"gaps", sev:"high", status:"confirmed", title:"No UI or AppModel tests",
+   evidence:"Both Package manifests expose only FlotillaCoreTests. 307 core tests, 0 app tests. CLAUDE.md records production-only bugs (ExecPolicy in tests vs app).",
+   quote:"MachineTests.swift: 3 decode tests. No SwiftUI test target.",
+   why:"Green CI does not prove settings wiring, PATH-from-Dock, or confirmation policy. That is how inert toggles survive.",
+   fix:"App test target: settings consumer map, confirmation coordinator, a few view snapshots."},
+  {id:"GAP-09", cat:"gaps", sev:"high", status:"confirmed", title:"README and PHASE1.md describe a much smaller product",
+   evidence:"README: “29 tests pass”, “read-only ContainerCLI operations”. PHASE1.md: ContainerCLI is read-only today. Actual: 307 tests and full mutations in ContainerCLI.swift.",
+   quote:"- **29 tests pass on macOS.**",
+   why:"Misroutes contributors and auditors. The working contract is wrong.",
+   fix:"Rewrite status blocks to August 2026 reality. Keep PHASE1.md as history with a banner, or replace it."},
+  {id:"GAP-10", cat:"gaps", sev:"medium", status:"confirmed", title:"config.toml / system property list is not read",
+   evidence:"DECISIONS.md Q7: read in Phase 1. No system property list call in ContainerCLI. Configuration tab is container inspect only.",
+   quote:"config.toml: read in Phase 1, edit locally in Phase 3",
+   why:"Runtime defaults the user already set in Apple’s file are invisible next to Flotilla’s own CPU/memory defaults.",
+   fix:"Read-only panel from system property list --format json."},
+  {id:"GAP-11", cat:"gaps", sev:"medium", status:"confirmed", title:"Run sheet misses CLI flags the allowlist already discussed",
+   evidence:"RunOptions in ContainerCLI omit --init, --rosetta, --read-only, --label, --shm-size, --tmpfs, --mount. FEATURES.md wanted the full create-time surface because nothing is editable later.",
+   quote:"DECISIONS.md: the create form is the only moment any option can be chosen.",
+   why:"Users hit the CLI for flags the GUI implied it owned.",
+   fix:"Extend RunOptions + RunSheetView per captured container run --help."},
+  {id:"GAP-12", cat:"gaps", sev:"medium", status:"confirmed", title:"Pull and build have no progress sheet",
+   evidence:"ImagesView pull dismisses immediately. BuildImageView is a spinner. FEATURES.md: progress sheet for long ops is [core].",
+   quote:"Progress sheet for long ops — .pkg install, pull, build, export",
+   why:"Long pulls look hung. Cancel/run-in-background is unspecified.",
+   fix:"Collapsible log + cancel, reuse one progress component."},
+  {id:"GAP-13", cat:"gaps", sev:"medium", status:"confirmed", title:"Volume/network/container prune exists in CLI, not in UI",
+   evidence:"ContainerCLI has pruneVolumes/Networks/Containers. Only image prune-with-preview is in the UI. Dashboard explicitly avoids global prune.",
+   quote:"DashboardView comments that it will not offer a global prune from the disk panel.",
+   why:"Disk-full remediation is incomplete. Image prune set a good preview pattern that other sections do not reuse.",
+   fix:"Per-section prune with the same preview-before-destroy pattern."},
+  {id:"GAP-14", cat:"gaps", sev:"medium", status:"confirmed", title:"Activity history is in-memory only",
+   evidence:"AppModel events are a bounded array. FEATURES.md four-store model wanted SwiftData for history. ContainerDetail still mentions a SwiftData mockup.",
+   quote:"No SwiftData model in Sources/.",
+   why:"Restart wipes the audit trail the Activity section presents as a product surface.",
+   fix:"SwiftData or a JSON log, or label the pane “this session”."},
+  {id:"GAP-15", cat:"gaps", sev:"medium", status:"confirmed", title:"Accessibility baseline is labels, not a pass",
+   evidence:"Many controls have accessibilityLabel. PLAN.md still lists Increase Contrast / Reduce Transparency / Reduce Motion / VoiceOver as unfinished. Tables communicate state by colour (UI-01).",
+   quote:"FEATURES.md: keyboard-reachable everything, VoiceOver status in words, no hover-only affordances.",
+   why:"A labelled icon-only toolbar is not the same as a contrast/motion audit.",
+   fix:"Checklist pass against FEATURES.md §2.2; StatusBadge in tables."},
+  {id:"GAP-16", cat:"gaps", sev:"medium", status:"confirmed", title:"Structured Unified Logging is almost unused",
+   evidence:"Logger appears in SettingsPersistence and Notifier. FEATURES.md asked for categories: lifecycle, preflight/exec, transport, pairing, update, managed policy — metadata only.",
+   quote:"No OSLog category map across AppModel actions.",
+   why:"Support bundles help after the fact. Live Console.app diagnosis of poll/preflight is thin.",
+   fix:"OSLog categories on CLI failures and preflight, never env or argv secrets (see SEC-03)."},
+  {id:"GAP-17", cat:"gaps", sev:"medium", status:"confirmed", title:"Machine allowlist coverage is decode-only",
+   evidence:"MachineTests.swift: 3 tests. AllowlistTests is strong for container grammar; machine mutations are the highest-cost filesystem grants.",
+   quote:"3 decode tests vs 68 allowlist tests.",
+   why:"Machines shipped ahead of PLAN sequence. Tests did not.",
+   fix:"Mirror container adversarial tests for machine create/set/delete at production ExecPolicy."},
+  {id:"GAP-18", cat:"gaps", sev:"medium", status:"confirmed", title:"Onboarding is an appearance picker",
+   evidence:"OnboardingView.swift. Mockup onboarding.html is a multi-step preflight rail. DECISIONS.md only settled appearance-on-first-run, not the rest of the mockup.",
+   quote:"Appearance is chosen by the user during first run — DECISIONS.md",
+   why:"Settled for theme; still a gap vs FEATURES.md preflight-as-onboarding.",
+   fix:"Keep appearance step; add preflight card with Continue anyway (GAP-03)."},
+  {id:"GAP-19", cat:"gaps", sev:"low", status:"confirmed", title:"No i18n",
+   evidence:"All user strings are English literals. GAP-PLAN.md defers until UI is stable.",
+   quote:"BRAND.md: sentence case everywhere. No String Catalog.",
+   why:"Acceptable for a personal v1. Expensive to retrofit after copy settles.",
+   fix:"String(localized:) when freezing copy. Not a Phase 1 blocker."},
+  {id:"GAP-20", cat:"gaps", sev:"low", status:"confirmed", title:"Column layout is session-only",
+   evidence:"ContainersUIState: column customization is not persisted. Reset window layout exists; positive persistence does not.",
+   quote:"FEATURES.md: separate window/UI state so reset settings doesn't move your window.",
+   why:"Hideable columns are a Phase 1 table feature that resets every launch.",
+   fix:"Persist column customization + sidebar width in the UI-state store."},
+
+  {id:"UI-01", cat:"ui", sev:"high", status:"confirmed", title:"Table state is a colour-only dot",
+   evidence:"ContainersView table: “Dot only — see the matching column in MachinesView.” design-ux.md requires dot + SF Symbol + text. Cards at least show a caption; the table does not.",
+   quote:"TableColumn(\"\", value: \\.container.sortRank) { row in Circle().fill(container.stateColor)",
+   why:"Colour-blind users and dense tables. Theme already distinguishes exited vs stopped in the colour; the word still lives only in a tooltip.",
+   fix:"Shared StatusBadge: 8pt dot + symbol + capitalized CLI state."},
+  {id:"UI-02", cat:"ui", sev:"high", status:"confirmed", title:"Three incompatible card surfaces",
+   evidence:"ResourceCard: Theme.raisedSurface + hairline, radius 9, padding 11. ContainerCard: .quaternary.opacity(0.4), radius 10, no stroke. MachinesView machineCard: .quaternary.opacity(0.30), radius 9.",
+   quote:".background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))",
+   why:"List/Cards toggle looks like two products. Honeydew wash shows through quaternary cards; mockup cards are opaque.",
+   fix:"ThemedCard modifier from Theme.raisedSurface + Theme.hairline; migrate all three."},
+  {id:"UI-03", cat:"ui", sev:"high", status:"confirmed", title:"Images, volumes, networks empty states have no primary action",
+   evidence:"VolumesView “No volumes” description only. ImagesView “No images”. NetworksView “No networks”. ContainersView has Run a Container…; MachinesView has Create.",
+   quote:"ContentUnavailableView(\"No images\", … \"Pull one to run a container from it.\")  // no actions:",
+   why:"design-ux.md: empty states carry the primary action. Toolbar icons are easy to miss on a blank canvas.",
+   fix:"actions: Pull / Create matching the toolbar CTA."},
+  {id:"UI-04", cat:"ui", sev:"high", status:"confirmed", title:"Filtered-empty Images/Volumes/Networks render a blank table",
+   evidence:"Empty checks use model.images.isEmpty etc., not displayedImages.isEmpty. Containers and Machines handle filtered-empty with Clear filters.",
+   quote:"case .loaded where model.volumes.isEmpty:  // not displayedVolumes",
+   why:"A search that matches nothing looks like the runtime has no data.",
+   fix:"loaded && displayed.isEmpty && !model.isEmpty → “No matches” + Clear filters."},
+  {id:"UI-05", cat:"ui", sev:"medium", status:"confirmed", title:"Filter is a popover, not the mockup segmented control",
+   evidence:"main-window.html: inline All/Running/Stopped writing is:running into search. App: icon popover radio group; search is plain text.",
+   quote:"FEATURES.md: is:running / is:stopped tabs that write into the search field",
+   why:"Active filter is invisible at a glance. Related to GAP-07.",
+   fix:"Segmented control beside search, or show tokens as chips in the field."},
+  {id:"UI-06", cat:"ui", sev:"medium", status:"confirmed", title:"Detail and some dashboard panels use system surfaces",
+   evidence:"ContainerDetailView / MachineDetailView: .background.secondary + .separator. Dashboard tiles mostly use Theme; two panels do not.",
+   quote:".background(.background.secondary, in: RoundedRectangle(cornerRadius: 10)).strokeBorder(.separator)",
+   why:"Neutral grey on a honeydew wash; brand hairline is green-tinted on purpose.",
+   fix:"Same Theme.raisedSurface + Theme.hairline as dashboard tiles."},
+  {id:"UI-07", cat:"ui", sev:"medium", status:"confirmed", title:"Container sparklines are system grey",
+   evidence:"Sparkline.swift strokes with .secondary. Dashboard CPU uses Theme.rind, memory Theme.accent.",
+   quote:"context.stroke(path, with: .color(.secondary), …)",
+   why:"Same metric, two visual languages.",
+   fix:"Sparkline(color: Theme.online) default; allow per-context override."},
+  {id:"UI-08", cat:"ui", sev:"medium", status:"confirmed", title:"Wordmark hardcodes hex instead of Theme",
+   evidence:"Wordmark.swift Color(red:green:blue:) for melonGreen, appInk, rule, flesh, seedInk. Theme.swift claims BRAND.md is source of truth.",
+   quote:"Manual light/dark switching in Wordmark; Theme uses dynamic NSColor.",
+   why:"Two palettes to update. Values match today; they will drift.",
+   fix:"Move ink/rule/cream onto Theme; Wordmark reads tokens."},
+  {id:"UI-09", cat:"ui", sev:"medium", status:"confirmed", title:"Bulk selection bar is not the accent tint",
+   evidence:"ContainersView bulk bar: .quaternary.opacity(0.3). Mockup .selbar uses accent-tint + accent-text.",
+   quote:"Theme.accentTint already exists for selected sidebar rows.",
+   why:"Selection state is the one place pink is allowed. The bulk bar does not use it.",
+   fix:"Theme.accentTint background + Theme.accentText count."},
+  {id:"UI-10", cat:"ui", sev:"medium", status:"confirmed", title:"Ports column is not clickable in the table",
+   evidence:"ContainersView Ports column is Text(c.portSummary). ContainerDetailView.portRow has Copy/Open. FEATURES.md: clickable ports.",
+   quote:"Text(c.portSummary ?? \"—\")",
+   why:"The table is the product. Opening localhost from detail only is a hidden affordance.",
+   fix:"First published port as a Theme.accentText button."},
+  {id:"UI-11", cat:"ui", sev:"low", status:"confirmed", title:"Small token drift: dots, stderr colour, copy",
+   evidence:"Status dots 6/7/8pt. LogsView stderr → Theme.warning; ContainerDetailView stderr → Theme.danger. “Clear Filter” vs “Clear filters”.",
+   quote:"Theme comment: green means running; pink is never error. Stderr is not a failed container.",
+   why:"Polish, not a new design system. Adds up with UI-02.",
+   fix:"Theme.statusDotSize = 8; one stderr colour; sentence-case copy table."},
+  {id:"UI-12", cat:"ui", sev:"low", status:"confirmed", title:"Flotilla/design/branding.md contradicts Theme",
+   evidence:"branding.md still lists success #2E7D32 / online #43A047 (old mac.css). Theme uses BRAND semantic greens.",
+   quote:"Theme.swift: source of truth is design/brand/BRAND.md, not the mockups.",
+   why:"New contributors will copy the stale file.",
+   fix:"Replace the palette table with a pointer to BRAND.md + Theme.swift."},
+
+  {id:"RED-01", cat:"redundancy", sev:"high", status:"confirmed", title:"Containers and Machines skip ResourceListControls",
+   evidence:"ResourceListControls.swift was written so five files would not drift. Volumes/Images/Networks use it. ContainersView and MachinesView still inline columnsButton/filterButton/presentation picker (popover width 200 vs 210 already drifted).",
+   quote:"Shared rather than copied three more times. Parity that lives in five files is parity somebody has to remember, and this project has already lost that bet.",
+   why:"The prior incident (Cards lost Copy) will recur. Highest-impact redundancy.",
+   fix:"Extend ResourceListControls for typed state filters; delete the private copies."},
+  {id:"RED-02", cat:"redundancy", sev:"high", status:"confirmed", title:"Embedded detail navigation is duplicated",
+   evidence:"ContainersView and MachinesView both implement DetailTarget, back button, stepper over filtered list, glass action cluster, unavailable fallback (~120 lines each).",
+   quote:"Parallel structure in ContainersView ~71–265 and MachinesView ~619–710.",
+   why:"Stepper/filter semantics must be kept in sync by hand.",
+   fix:"EmbeddedDetailNavigator<Item, Detail>."},
+  {id:"RED-03", cat:"redundancy", sev:"medium", status:"confirmed", title:"Presentation enum exists three times",
+   evidence:"ResourcePresentation in ResourceListControls.swift. ContainersView.Presentation. MachinesView.Presentation. Identical cases and icons.",
+   quote:"enum Presentation: String, CaseIterable, Identifiable  // ContainersView.swift:24",
+   why:"Icon or label change needs three edits.",
+   fix:"Use ResourcePresentation everywhere."},
+  {id:"RED-04", cat:"redundancy", sev:"medium", status:"confirmed", title:"List shell boilerplate copied across five sections",
+   evidence:"Same .alert(\"Action failed\"), LoadState switch, ActivityStrip inset, confirmationDialog, .task refresh in Containers, Machines, Volumes, Images, Networks.",
+   quote:"Machines already has richer filtered-empty handling than Networks (see UI-04).",
+   why:"40–60 lines × 5. Error and empty behaviour diverges.",
+   fix:"ResourceListShell(state:refresh:toolbar:content:)."},
+  {id:"RED-05", cat:"redundancy", sev:"medium", status:"confirmed", title:"Inspect tab chrome is copy-pasted",
+   evidence:"ContainerDetailView.InspectTab and MachineDetailView.MachineInspectTab share InspectTable/InspectPresentation but duplicate toolbar, filter, Copy/Reload, redactor exclusions.",
+   quote:"Comments in both files note they were unified once and still drift.",
+   why:"Copy-button styling was fixed twice.",
+   fix:"InspectPanel parameterized by command string and loader."},
+  {id:"RED-06", cat:"redundancy", sev:"medium", status:"confirmed", title:"Machine cards reimplement ResourceCard",
+   evidence:"MachinesView.machineCard builds grid/title/badge/fields/actions. ResourceCard already does that for volumes/networks/images. ContainerCard is justified (sparkline/metrics).",
+   quote:"machineCard(_: ) ~383–450 vs ResourceCard.swift",
+   why:"Action parity with the table will break on one surface.",
+   fix:"ResourceCard inside ResourceCardGrid for machines."},
+  {id:"RED-07", cat:"redundancy", sev:"medium", status:"confirmed", title:"AppModel refreshVolumes/Networks/Images are the same function",
+   evidence:"AppModel.swift ~712–830: guard → loading → fetch → recordExistence → loaded/failed, three times. The AppModel*.swift split by concern is otherwise good.",
+   quote:"create*/remove* pairs repeat busy/actionError/refresh.",
+   why:"Error-handling fixes need three edits. File is ~1200 lines.",
+   fix:"Private refreshResource helper; keep public names."},
+  {id:"RED-08", cat:"redundancy", sev:"low", status:"confirmed", title:"Dead @State search in ImagesView and NetworksView",
+   evidence:"Both declare @State private var search = \"\". All reads use ui.search. Grep: the @State is never read.",
+   quote:"@State private var search = \"\"  // ImagesView.swift:16, NetworksView.swift:12",
+   why:"Looks like a second search path. Leftover from the ResourceUIState move.",
+   fix:"Delete both properties."},
+  {id:"RED-09", cat:"redundancy", sev:"low", status:"confirmed", title:"fixture() helper copied in four test files",
+   evidence:"SmokeTests, ContainerCLITests, MachineTests, JSONPrettyPrinterTests. ContainerCLITests inspect test uses the list fixture, overlapping SmokeTests with weaker proof.",
+   quote:"Identical 4-line fixture(_:) loader.",
+   why:"The inspect CLI test can give false confidence.",
+   fix:"TestSupport.swift; point inspect decode at inspect-container.json."},
+  {id:"RED-10", cat:"redundancy", sev:"low", status:"confirmed", title:"WindowChromeControls.swift names no such type",
+   evidence:"File defines SettingsToolbarButton, AppearanceToggleButton, AppLinksMenu. Used by WindowBar.swift.",
+   quote:"No type WindowChromeControls.",
+   why:"Discoverability only.",
+   fix:"Rename to WindowToolbarControls.swift."}
+];
+
+const CAT_LABEL = {security:"Security", gaps:"Gaps", ui:"UI", redundancy:"Redundancy"};
+
+function renderFilters() {
+  const el = document.getElementById("filters");
+  const chips = [
+    ["all","All"],["high","High"],["medium","Medium"],["low","Low"],["info","Info"],["residual","Residual"],
+    ["security","Security"],["gaps","Gaps"],["ui","UI"],["redundancy","Redundancy"]
+  ];
+  el.innerHTML = chips.map(([id,label],i) =>
+    `<button type="button" class="chip${i===0?" active":""}" data-filter="${id}">${label}</button>`
+  ).join("");
+  el.addEventListener("click", (e) => {
+    const b = e.target.closest(".chip");
+    if (!b) return;
+    el.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    b.classList.add("active");
+    renderList(b.dataset.filter);
+  });
+}
+
+function matches(f, filter) {
+  if (filter === "all") return true;
+  if (filter === "residual") return f.status === "residual";
+  if (["high","medium","low","info"].includes(filter)) return f.sev === filter;
+  return f.cat === filter;
+}
+
+function renderList(filter = "all") {
+  const items = FINDINGS.filter(f => matches(f, filter));
+  document.getElementById("count-line").textContent =
+    `Showing ${items.length} of ${FINDINGS.length} · filter: ${filter}`;
+  const root = document.getElementById("finding-list");
+  const groups = [
+    {id:"security", title:"Security", anchor:"security"},
+    {id:"gaps", title:"Product and architecture gaps", anchor:"gaps"},
+    {id:"ui", title:"UI inconsistencies", anchor:"ui"},
+    {id:"redundancy", title:"Redundancy", anchor:"redundancy"}
+  ];
+  root.innerHTML = groups.map(g => {
+    const rows = items.filter(f => f.cat === g.id);
+    if (!rows.length) return "";
+    return `<h3 id="${g.anchor}" style="scroll-margin-top:1rem;margin:1.4rem 0 0.7rem">${g.title} <span class="badge cat-${g.id}">${rows.length}</span></h3>` +
+      rows.map(card).join("");
+  }).join("");
+}
+
+function card(f) {
+  return `<article class="finding ${f.sev}" id="${f.id}">
+    <div class="finding-head">
+      <span class="id">${f.id}</span>
+      <h3>${f.title}</h3>
+      <span class="badge ${f.sev}">${f.sev}</span>
+      <span class="badge ${f.status}">${f.status}</span>
+      <span class="badge cat-${f.cat}">${CAT_LABEL[f.cat]}</span>
+    </div>
+    <dl>
+      <dt>Evidence</dt><dd>${esc(f.evidence)}</dd>
+      <dt>Quote</dt><dd><div class="quote">${esc(f.quote)}</div></dd>
+      <dt>Why it matters</dt><dd>${esc(f.why)}</dd>
+      <dt>Fix</dt><dd>${esc(f.fix)}</dd>
+    </dl>
+  </article>`;
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/\\n/g,"\n");
+}
+
+renderFilters();
+renderList("all");
+
+const tocLinks = [...document.querySelectorAll("nav.toc a")];
+const sections = tocLinks.map(a => document.querySelector(a.getAttribute("href"))).filter(Boolean);
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    tocLinks.forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + e.target.id));
+  });
+}, {rootMargin: "-20% 0px -70% 0px"});
+sections.forEach(s => io.observe(s));
+</script>
+</body>
+</html>

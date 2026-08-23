@@ -320,8 +320,10 @@ struct DashboardView: View {
     }
 
     private var pressureChart: some View {
-        let samples = hostSamples
-        return VStack(alignment: .leading, spacing: 6) {
+        // No `let samples = hostSamples` here: it was left behind when the chart moved to
+        // `pressurePoints`, and the compiler had been warning about it ever since. Harmless, but a
+        // warning nobody clears is a warning nobody reads.
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 14) {
                 legendDot(Theme.rind, "CPU",
                           model.hostMetrics.latest?.cpuPercent.map { String(format: "%.0f%%", $0) })

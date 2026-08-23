@@ -1,40 +1,39 @@
-# Flotilla — laptop setup
+# Flotilla — development workstation setup
 
-Instructions to bring up Flotilla on the **M2 Max laptop** (macOS 26) from scratch.
-Written so Claude Code on the laptop can drive most of it; steps marked **[you]**
-need the GUI and are yours to do.
+Generic instructions to bring up Flotilla on a supported Apple Silicon development
+workstation. Steps marked **[you]** require local GUI interaction.
 
-> Nothing secret is hand-copied. The melonfleet SSH key lives in **1Password
-> (Development vault)** and syncs to the laptop automatically. The repo comes from
-> GitHub. This doc just wires up local config.
+> Keep credentials and signing identities in the organization-approved credential
+> manager. Do not copy keys into the repository or record personal vault, account,
+> device, or filesystem details in this document.
 
 ## Prerequisites
 
-- **macOS 26** (Tahoe), Apple Silicon — already the M2 Max.
+- **macOS 26** (Tahoe) on supported Apple Silicon.
 - **Xcode 26** (App Store) for the Swift 6.x toolchain + macOS 26 SDK. Verify:
   `swift --version` (expect 6.x, target arm64-apple-macosx26).
-- **1Password** desktop app — already installed; sign in so the **Development**
-  and **Personal** vaults sync.
+- The organization-approved credential manager and SSH agent.
 - **gh CLI** — `brew install gh`.
 - **Apple `container`** — install the signed pkg from
   https://github.com/apple/container/releases (needs admin).
 
 ## Steps
 
-1. **[you]** In 1Password → **Settings → Developer → enable "Use the SSH agent."**
-   Confirm the required development vault is available to the agent.
+1. **[you]** Enable the approved credential manager's SSH agent. Confirm that the
+   required organization-managed development key is available without copying key
+   material to disk or recording personal vault names.
 
-2. **Authenticate gh as melonfleet** (needed to clone the private repo):
+2. **Authenticate GitHub CLI** with the approved organization account:
    ```sh
-   gh auth login          # GitHub.com → SSH → skip key upload → web → authorize as melonfleet
-   gh auth switch --user melonfleet
+   gh auth login          # GitHub.com → SSH → web authorization
+   gh auth status
    ```
 
-3. **Get the repo:** if you copied `~/melonfleet/` from the other Mac, it's already
-   at `~/melonfleet/Flotilla` — just `cd` in. Otherwise clone it:
+3. **Get the repository** using its approved organization URL, then enter the
+   Flotilla directory. Do not record a personal home-directory path here:
    ```sh
-   gh repo clone melonfleet/flotilla ~/melonfleet/Flotilla
-   cd ~/melonfleet/Flotilla
+   gh repo clone ORGANIZATION/REPOSITORY /path/to/workspace/Flotilla
+   cd /path/to/workspace/Flotilla
    ```
 
 4. **Configure local repository access and signing.** Follow the settled
@@ -52,7 +51,7 @@ need the GUI and are yours to do.
    ```sh
    swift build && swift test          # core and app compile; 29 tests pass on macOS
    swift run flotilla-probe           # round-trips against local container
-   ssh -T git@github-melonfleet       # → "Hi melonfleet!"  (Touch ID via 1Password)
+   ssh -T APPROVED_GITHUB_SSH_ALIAS   # Verify access through the approved SSH agent
    git commit --allow-empty -m "test signing" && git log -1 --show-signature
    #   → "Good signature"  (Touch ID prompt). Then: git reset --hard HEAD~1
    ```
@@ -68,5 +67,5 @@ need the GUI and are yours to do.
   signing, and distribution require it.
 - Signing config is **repo-local** (in `.git/config`), so it isn't cloned — that's
   why step 4 must be repeated on a new machine.
-- The 1Password agent + key are per-machine state; confirm them after 1Password
-  sync rather than copying key material between Macs.
+- Credential-manager agents and keys are per-machine state; confirm them through
+  the approved manager rather than copying key material between workstations.

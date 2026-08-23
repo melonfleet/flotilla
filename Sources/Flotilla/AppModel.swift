@@ -166,7 +166,24 @@ final class AppModel {
         case .light: .aqua
         case .dark: .darkAqua
         }
-        NSApplication.shared.appearance = named.flatMap(NSAppearance.init(named:))
+        let resolved = named.flatMap(NSAppearance.init(named:))
+        NSApplication.shared.appearance = resolved
+
+        // **And every window, which is the part that was missing.**
+        //
+        // the owner: Light worked, Dark worked, and going back to Auto left the window grey until he
+        // switched to another app and back — at which point it corrected itself. That last detail
+        // is the whole diagnosis. `NSApp.appearance` is only a *fallback*: a window with its own
+        // `appearance` set ignores it. SwiftUI's `preferredColorScheme(.dark)` sets exactly that
+        // window-level override, and clearing the app-level one does not remove it. It got cleared
+        // on the next activation, when SwiftUI re-applied `preferredColorScheme(nil)` — hence "toggle
+        // away and back and it updates".
+        //
+        // `nil` here means *inherit*, so Auto genuinely defers to the app and therefore the system,
+        // rather than keeping whatever the last explicit choice pinned.
+        for window in NSApplication.shared.windows {
+            window.appearance = resolved
+        }
     }
 
     // MARK: Modal form presentation

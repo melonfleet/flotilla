@@ -99,18 +99,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// `AppearanceMode` lives in `FlotillaCore`, which is Foundation-only and so cannot name
-/// SwiftUI's `ColorScheme`. The mapping therefore belongs here, in the one target allowed
-/// to import SwiftUI. `nil` is what makes `.auto` follow the system.
-extension AppearanceMode {
-    var colorScheme: ColorScheme? {
-        switch self {
-        case .auto: nil
-        case .light: .light
-        case .dark: .dark
-        }
-    }
-}
+// `AppearanceMode.colorScheme` used to live here, mapping the preference to SwiftUI's
+// `ColorScheme` for `preferredColorScheme`. Both call sites are gone and so is it: appearance is
+// applied through AppKit now (`AppModel.applyAppKitAppearance()`), because SwiftUI's version sets
+// a window-level override it never clears, which is what made Auto stick on the previous choice
+// until the app was reactivated. Dead code that documents a removed mechanism is worse than no
+// code — the reasoning is recorded where the behaviour lives.
 
 @main
 struct FlotillaApp: App {
@@ -151,7 +145,17 @@ struct FlotillaApp: App {
             MenuBarView(model: model)
                 // The popover needs it too: appearance applied only to the main window
                 // would leave the menu bar disagreeing with the rest of the app.
-                .preferredColorScheme(model.appearance.colorScheme)
+                // **No `preferredColorScheme`.** It was here, and it was the second writer in a
+                // two-writer bug. SwiftUI implements it by setting the *window's* `NSAppearance`
+                // — and it does not clear that override when the value goes back to `nil`, nor
+                // immediately re-apply on change. So Light and Dark worked, Auto left the window
+                // on its last explicit appearance, and switching apps and back fixed it, because
+                // reactivation is when SwiftUI finally re-evaluated. The owner found it exactly that
+                // way.
+                //
+                // `AppModel.applyAppKitAppearance()` now owns appearance for app *and* windows,
+                // and SwiftUI reads `\.colorScheme` from the window it is drawing in, so views
+                // still follow. One authority.
                 .tint(Theme.accent)
         } label: {
             // The brand mark, as a **template** image: macOS inverts it for a light or dark
@@ -176,7 +180,17 @@ struct FlotillaApp: App {
                 .frame(minWidth: 900, minHeight: 520)
                 // Nothing *hardcodes* a scheme — this is the user's own stored choice, and
                 // `.auto` resolves to nil so the system value still wins.
-                .preferredColorScheme(model.appearance.colorScheme)
+                // **No `preferredColorScheme`.** It was here, and it was the second writer in a
+                // two-writer bug. SwiftUI implements it by setting the *window's* `NSAppearance`
+                // — and it does not clear that override when the value goes back to `nil`, nor
+                // immediately re-apply on change. So Light and Dark worked, Auto left the window
+                // on its last explicit appearance, and switching apps and back fixed it, because
+                // reactivation is when SwiftUI finally re-evaluated. The owner found it exactly that
+                // way.
+                //
+                // `AppModel.applyAppKitAppearance()` now owns appearance for app *and* windows,
+                // and SwiftUI reads `\.colorScheme` from the window it is drawing in, so views
+                // still follow. One authority.
                 // The watermelon accent, applied once at the scene root so every stock
                 // control inherits it. Set per-view it would be forgotten somewhere, and
                 // one blue segmented control in a pink app is worse than all-blue.
