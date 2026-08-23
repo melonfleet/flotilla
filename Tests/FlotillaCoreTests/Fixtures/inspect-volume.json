@@ -1,0 +1,19 @@
+[
+  {
+    "configuration" : {
+      "creationDate" : "2026-07-30T23:18:48Z",
+      "driver" : "local",
+      "format" : "ext4",
+      "labels" : {
+
+      },
+      "name" : "probe-shortform",
+      "options" : {
+        "size" : "64M"
+      },
+      "sizeInBytes" : 67108864,
+      "source" : "\/Users\/example\/Library\/Application Support\/com.apple.container\/volumes\/probe-shortform\/volume.img"
+    },
+    "id" : "probe-shortform"
+  }
+]

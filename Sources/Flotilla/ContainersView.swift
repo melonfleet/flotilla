@@ -431,8 +431,20 @@ struct ContainersView: View {
             Divider().frame(height: 14)
 
             iconButton("trash", "Delete", help: "Delete \(container.id)", busy: busy, destructive: true) {
-                confirmingRowDelete = container
+                requestDelete(container)
             }
+        }
+    }
+
+    /// Every single-container delete enters here, and `model.deletePolicy` is the only thing that
+    /// decides whether it stops to ask. Containers previously ignored
+    /// `confirmDestructiveActions` entirely: the trash button confirmed unconditionally, the
+    /// context menu never confirmed at all, and the preference governed neither.
+    private func requestDelete(_ container: Container) {
+        if model.deletePolicy.requiresConfirmation(.single) {
+            confirmingRowDelete = container
+        } else {
+            Task { await model.perform(.delete, on: container) }
         }
     }
 
@@ -477,6 +489,9 @@ struct ContainersView: View {
             Divider()
             Button("Delete \(ids.count)…", role: .destructive) {
                 selection = ids            // so the confirmation counts what was right-clicked
+                // Unconditional, and `DeletePolicy.requiresConfirmation` returns true for `.bulk`
+                // no matter what the preference says. The `confirmBulkActions` setting that used to
+                // suggest otherwise had no consumer and is gone.
                 confirmingBulkDelete = true
             }
             .disabled(busy)
@@ -499,9 +514,14 @@ struct ContainersView: View {
         }
         Divider()
         // Destructive, and deliberately only in the main window — never the popover.
-        Button("Delete", role: .destructive) {
-            Task { await model.perform(.delete, on: container) }
-        }.disabled(busy)
+        //
+        // This used to call `model.perform(.delete, …)` directly, so right-click → Delete destroyed
+        // a container **with no dialog at all** while the row's trash button two lines away always
+        // asked. Not in the audit; found while centralising the decision, which is the argument for
+        // centralising it — the inconsistency was invisible until the five call sites were read
+        // side by side.
+        Button("Delete", role: .destructive) { requestDelete(container) }
+            .disabled(busy)
     }
 
     var body: some View {
@@ -785,8 +805,19 @@ struct ContainersView: View {
         VStack(spacing: 0) {
             Table(sortedRows, selection: $selection, sortOrder: $ui.sortOrder,
                   columnCustomization: $ui.columnCustomization) {
-                // Dot only — see the matching column in `MachinesView`. The exact state word
-                // matters more here than for machines, because `stateColor` folds several
+                // **Dot only, and that is a decision — UI-01, closed as won't-do 2026-08-23.**
+                //
+                // The 2026-08-20 audit raised this as High: `design-ux.md` asks for dot + symbol +
+                // text, and a colour-only indicator is unreadable to anyone who cannot separate the
+                // hues. The owner's call was to keep the dot, and the accessibility objection is
+                // answered without widening the column: `.help` and `.accessibilityLabel` both
+                // carry the CLI's own state string, so the information is available to a
+                // screen reader and on hover — it is not encoded in colour alone.
+                //
+                // Recorded here rather than only in `research/AUDIT-RESPONSE.md` so the next review
+                // finds the reasoning at the code it is about instead of re-raising it.
+                //
+                // The word matters more here than for machines, because `stateColor` folds several
                 // states into one colour: "exited (137)" and "dead" are both danger red. So the
                 // tooltip carries the CLI's own string rather than a tidied-up version of it.
                 TableColumn("", value: \.container.sortRank) { row in
@@ -951,7 +982,7 @@ struct ContainersView: View {
                         onStop: { Task { await model.perform(.stop, on: container) } },
                         onRestart: { Task { await model.perform(.restart, on: container) } },
                         onDetails: { openDetail(container.id) },
-                        onDelete: { confirmingRowDelete = container }
+                        onDelete: { requestDelete(container) }
                     )
                     // Same menu as the table row, so the two presentations offer identical
                     // capabilities — a toggle that changes what you can *do* is a trap.

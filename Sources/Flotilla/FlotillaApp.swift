@@ -50,13 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model?.terminals.closeEverything()
     }
 
-    /// Honours **Show Flotilla in: Menu bar / Dock / Both**, which had been a picker driving
-    /// nothing: this shim previously hardcoded `.regular` regardless of the setting.
+    /// Honours **Show Dock icon**, which is now a toggle rather than a three-way picker.
     ///
-    /// `menuBar` maps to `.accessory` — no Dock icon, no menu bar for the app itself, which
-    /// is the point of a menu-bar app. `dock` and `both` are both `.regular`: macOS has no
-    /// policy for "Dock icon but no menu bar", so the two collapse, and the distinction is
-    /// only meaningful once the menu-bar extra itself can be hidden (Phase 5 territory).
+    /// Off maps to `.accessory` — no Dock tile, no app menu bar, which is what a menu-bar app is.
+    /// On maps to `.regular`. The old `menuBar`/`dock`/`both` picker collapsed to these same two
+    /// states, because macOS has no policy for "Dock icon but no menu bar": `dock` and `both` were
+    /// the same policy under two names, so the control offered a distinction the system does not
+    /// make. The menu-bar item is always present, which is what makes hiding the Dock icon safe —
+    /// there is always a way back to the window.
     ///
     /// **The launch policy decides whether a main window ever exists**, which is the fix here
     /// and was not obvious. Measured, not assumed: with `LSUIElement` true the app starts as
@@ -67,8 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// of this ("I can only see the icon in the menu bar"); the window had to be summoned from
     /// the menu-bar popover every time, which looked like a preference that did nothing.
     ///
-    /// So the bundle now ships `LSUIElement` **false** — matching the shipped default of
-    /// `both` — and menu-bar-only users are dropped to `.accessory` here instead.
+    /// So the bundle now ships `LSUIElement` **false** — matching the shipped default of *shown* —
+    /// and users who hide the Dock icon are dropped to `.accessory` here instead.
     ///
     /// Whether a window opens at launch is *not* decided here — `defaultLaunchBehavior` on the
     /// `Window` scene states it outright, and setting `.accessory` from this method does not
@@ -78,8 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Changing the setting *later* needs no extra machinery: the picker lives in the main
     /// window, so a window necessarily exists by the time anyone can reach it.
     func applyPresentation() {
-        let presentation = model?.presentation ?? .both
-        let policy: NSApplication.ActivationPolicy = presentation == .menuBar ? .accessory : .regular
+        let showsDockIcon = model?.showsDockIcon ?? true
+        let policy: NSApplication.ActivationPolicy = showsDockIcon ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
 
         // The result was discarded before. That is the same shape as the unchecked exit codes
@@ -93,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.activate(ignoringOtherApps: false)
             }
         } else {
-            model?.record("Could not switch the app to \(presentation.rawValue) presentation.",
+            model?.record("Could not \(showsDockIcon ? "show" : "hide") the Dock icon.",
                           subsystem: "presentation")
         }
     }

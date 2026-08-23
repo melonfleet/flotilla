@@ -305,6 +305,40 @@ that we *built* the right command; almost nothing checked the command was
   path was green in the suite and never fired on the real machine. It was caught by stopping the
   real service and watching the app, not by testing. Fixtures for a *failure* mode need the
   failure's exit code captured too, not just its output.
+- **A settings screen is a promise, and 11 of 26 were empty.** `launchAtLogin`'s own summary named
+  `SMAppService` while nothing in the tree called it. The toggle moved, persisted and survived a
+  relaunch, so it was indistinguishable from a working one until you rebooted. The fix that matters
+  is not the wiring, it is `Scripts/check-settings-consumers.sh`: a `.available` key with no consumer
+  now fails the build. **Prove a checker works by breaking something on purpose** — this one was run
+  against a deliberately unwired `launchAtLogin` and did fail, then passed again when restored. A
+  check nobody has seen fail is a check nobody has tested.
+- **Two of three options were the same option.** `presentation` offered `menuBar`/`dock`/`both`, and
+  macOS has no activation policy for "Dock icon but no menu bar" — `dock` and `both` both mapped to
+  `.regular`. Before adding a picker, count the states the *system* actually has.
+- **An in-memory migration is not a migration.** `SettingsStore.init` retired the `presentation` key
+  correctly, and `FlotillaCore` is Foundation-only so it cannot write; the retired key therefore sat
+  in `UserDefaults` indefinitely, re-derived on every launch. Measured, not assumed — this Mac still
+  read `{"presentation":"both"}` after a clean launch. The persistence layer now writes the migration
+  at load.
+- **Escaped slashes defeat the obvious redaction.** `container` emits JSON with `\/Users\/name\/`,
+  so `sed 's|/Users/name/|…|'` matches nothing and *silently* leaves the account name in a tracked
+  fixture. It did exactly that on the first attempt at `inspect-volume.json`. After any redaction
+  pass, grep for the thing you were removing rather than trusting the command that removed it.
+- **`git describe` is not a version.** With no tags it returns a bare commit hash, so `make-app.sh`
+  stamped `CFBundleVersion = e8f29a6-dirty` — Apple's rule for that key is one to three integers.
+  Harmless-looking until something in LaunchServices compares two, which now matters because login
+  items go through `SMAppService`. Use a commit count for the build number, the tag (or `0.0.0`) for
+  the marketing string, and keep the hash in a key of your own.
+- **A confirmation that cannot fire passes review by existing.** The new `home-mount=rw` dialog
+  compared against `machine.homeMount ?? "rw"`, and `machine ls` does not return `homeMount` at all —
+  so the comparison was `"rw" != "rw"` for every machine and the dialog was unreachable. The same nil
+  was making the Configuration tab display "Read-write" for a machine the CLI reports as `ro`. Before
+  trusting a guard that reads a field, check the command that populates it actually returns it.
+- **Centralising a decision is how you find the call site that never made it.** Five `requestDelete`
+  copies across five screens hid one screen's context menu calling `perform(.delete, …)` directly —
+  right-click → Delete with no dialog, two lines from a trash button that always asked. The audit
+  missed it; reading the five sites side by side did not.
+
 - **A deadlock regression test hangs; it does not fail.** `LocalHost` read stdout to EOF before
   touching stderr, which deadlocks any child that fills the stderr pipe buffer (64 KiB on Darwin).
   Three hundred tests were green because every one of them uses a scripted host that never opens a

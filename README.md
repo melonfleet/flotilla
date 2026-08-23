@@ -23,24 +23,45 @@ generic remote shell, or Kubernetes-style orchestrator.
 
 The repository contains working Swift code, not a starter kit.
 
-- `FlotillaCore` is a substantial, Foundation-only library. It includes the
-  `ContainerHost`/`LocalHost` execution spine, real `container` JSON models,
-  read-only `ContainerCLI` operations, the Q1 subcommand `Allowlist`,
-  `MountPolicy`, a typed settings registry with managed `defaults` and `locked`
-  precedence, and diagnostics/redaction components.
-- The macOS SwiftUI executable has a `MenuBarExtra`, main window, and table-first
-  cross-host container view.
-- **29 tests pass on macOS.** Fixtures cover real `container` JSON; the allowlist
-  and mount-policy boundary have adversarial coverage.
+- `FlotillaCore` is a substantial, Foundation-only library: the
+  `ContainerHost`/`LocalHost` execution spine (concurrent pipe drain, per-stream
+  byte ceilings, enforced per-command deadlines), real `container` JSON models,
+  the 47-spec `Allowlist` with `MountPolicy`, `ExecPolicy` and `WirePolicy`
+  injected per executor, a typed settings registry with managed `defaults` and
+  `locked` precedence, and diagnostics/redaction components.
+- The macOS SwiftUI app has a `MenuBarExtra` and a main window covering
+  containers, images, volumes, networks, machines, an aggregated log feed, and a
+  live host dashboard. Container and machine shells run in an embedded terminal.
+  Mutations — run, start/stop/restart, delete, prune, build, pull, and machine
+  create/set/delete — go through the allowlist like everything else.
+- **332 tests pass on macOS** as of 2026-08-23; run `swift test` for the current
+  number rather than trusting this one. Fixtures are captured from the real
+  `container` CLI, never hand-written, and the allowlist and mount-policy
+  boundaries have adversarial coverage.
 - The portable core also builds and tests on Linux with Swift 6.1 via
   `Package@swift-6.1.swift`. The SwiftUI app is intentionally absent from that
   manifest.
 
-Phase 1 is not complete. Still unfinished are the remaining `ContainerCLI`
-operations (mutations, volumes, networks, and bounded logs), preflight, settings
-tests, and the complete diagnostics/support-bundle flow. The Phase 2 wire
-transport, mTLS host/client runtime, and persisted host policy store are also
-future work.
+**What is not built**, stated here because a settings screen is a poor place to
+discover it — and because an independent audit found several preferences that
+persisted and changed nothing:
+
+- **Phase 2 remote access.** No wire transport, no mTLS runtime, no listener, no
+  Bonjour. The `mode`, `hostListenPort`, `bonjourEnabled` and
+  `identityKeychainLabel` settings are marked not-yet-available and their
+  controls are disabled; they are also withheld from the MDM payload, so an
+  administrator cannot push a key the app ignores.
+- **Updates.** There is no updater. The four `SU…` settings are disabled for the
+  same reason.
+- **Streaming.** `logs --follow` and live `stats` need an async streaming API;
+  today every read is one bounded invocation.
+- **App-layer tests.** The only test target covers `FlotillaCore`. Decisions that
+  matter are pushed down into it for that reason — `DeletePolicy` is there rather
+  than in the views — and two invariants the compiler cannot check are enforced by
+  `Scripts/check-defaults.sh` and `Scripts/check-settings-consumers.sh`, both run
+  by `make-app.sh`.
+- **Packaging.** `make-app.sh` assembles a bundle but does not yet stamp versions
+  or sign properly, so login-item registration can be refused on a fresh build.
 
 The current build contract and ownership live in `PHASE1.md`. Settled product and
 security choices live in `DECISIONS.md`; the phase-ordered scope is consolidated

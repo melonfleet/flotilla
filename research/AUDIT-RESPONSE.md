@@ -31,49 +31,104 @@ Full rationale in DECISIONS.md Q15; lessons in CLAUDE.md.
 its deadline rather than never, but cooperative cancellation needs the async API (Phase 4). The
 ceiling is per stream per invocation, not a budget across the `aggregatedLogs` fan-out.
 
-## Wave 1 — destructive-action integrity
+## Wave 1 — destructive-action integrity. **Done, 2026-08-23.** (DECISIONS.md Q17)
 
-- One delete coordinator. Containers and machines never read `confirmDestructiveActions` today.
-- **Delete `confirmBulkActions` and make bulk confirmation mandatory** (my recommendation, taken):
-  a preference whose "off" position means "destroy several things without asking" is a setting for
-  a mistake, and it multiplies the paths a delete can take.
-- SEC-03 structural redaction of `auditDescription` — it joins the whole argv, `--env` values
-  included. Wave 0 has already established the pattern (`LocalHost.summarise`); this replaces it
-  with a structural projection rather than a prefix rule.
-- Extra confirmation for `machine set home-mount=rw`.
+- **One coordinator.** `DeletePolicy` in `FlotillaCore` — pure, tested, and in Core precisely because
+  the app target has no test target. All five screens defer to it; the three private copies of
+  `requestDelete` are gone and the two screens with none now have one.
+- **`confirmBulkActions` deleted**, bulk confirmation mandatory. It had no consumer, so mandatory is
+  what already shipped.
+- **Found while doing it, and not in the audit:** `ContainersView`'s context menu deleted a container
+  with **no confirmation at all**. Fixed.
+- **Correction to the audit's framing:** Containers and Machines ignoring `confirmDestructiveActions`
+  meant they confirmed *unconditionally* — a setting that was a no-op on two of five screens, not a
+  path that skipped confirmation. Both now honour it, and the Settings summary names all five kinds.
+- **SEC-03 structural redaction.** `auditDescription` is now built by the validator from the argv
+  **and the spec**, so a value is identified by its position in a grammar rather than by looking
+  secret. Flag and operand *names* survive; `envAssignment`, `keyValue`, the four host-path shapes and
+  the whole trailing command do not. `ValueShape.carriesFreeFormData` is an exhaustive switch, so a
+  new shape must be classified before it compiles. The full argv is still available as
+  `localPreview` for the build and machine forms — a preview that renders the `--build-arg` you just
+  typed as `<keyValue>` is useless, and distinguishing the two by **audience** is the only way both
+  are right. Stated cost: an audit line no longer says *which* path was mounted.
+- **`machine set home-mount=rw` confirms on escalation only.** See Q17 for why "whenever rw is
+  selected" would have been the wrong trigger, and for the two bugs building it exposed.
 
-## Wave 2 — honesty about settings that do nothing
+## Wave 2 — honesty about settings. **Done, 2026-08-23.** (DECISIONS.md Q16)
 
-The audit's strongest theme, and it was right: several user-editable settings have no production
-consumer. Each either gets wired or gets disabled with a visible reason — no third option.
+11 of 26 keys were read by nothing. Four were wired (`launchAtLogin` via `SMAppService`,
+`autoStartContainerService`, `containerBinaryPath`, and the two container defaults, which needed CPU
+and memory fields the run sheet never had). Eight are marked `.notBuilt(reason:)`: their controls are
+disabled, state what is missing, and are **withheld from the MDM payload** — an administrator
+pushing `hostListenPort` to a fleet would otherwise believe they had configured a listener.
 
-- **`SMAppService` for launch at login: wire it now** (decided).
-- **Replace the Dock/menu-bar picker with a "Show Dock icon" toggle, default on; the menu bar is
-  always shown** (decided).
-- Disable or annotate: Host mode, listen port, Bonjour, Keychain label, `containerBinaryPath`,
-  Sparkle. Note `containerBinaryPath` now has a natural consumer in
-  `AppModel.containerExecutable` — wiring it is a real option, not just disabling it.
-- Jamf/managed-prefs honesty.
-- A registry test asserting every user-editable setting has a production consumer, so this class
-  of drift fails the suite instead of an audit.
+`Scripts/check-settings-consumers.sh` now fails the build if an `.available` key has no consumer, or
+if a `.notBuilt` key acquires one. It was verified by deliberately unwiring `launchAtLogin` and
+watching it fail. Its one exception is declared and narrow: the diagnostics snapshot may read `mode`,
+because reporting a preference back to whoever set it is a mirror, not a consumer.
 
-## Wave 3 — docs and empty states
+Decisions taken as instructed: `SMAppService` wired now; the Dock/menu-bar picker replaced by a
+**Show Dock icon** toggle defaulting to on, with the menu bar always shown.
 
-- README says "29 tests" and describes a read-only CLI. Both stale.
-- UI-03 / UI-04 empty states; volume and network inspect.
-- **UI-01: won't-do** — the dot-only status indicator stays (decided). Recorded so it is not
-  re-raised by the next audit.
+## Wave 3 — docs and empty states. **Done, 2026-08-23.**
 
-## Wave 4 — deferred until app-layer tests exist
+- **README** "Current status" rewritten. It claimed 29 tests (335) and a read-only `ContainerCLI`
+  (mutations, volumes, networks, machines and bounded logs all shipped), and listed as unfinished
+  several things that exist. It now also carries an explicit **what is not built** section, because a
+  Settings screen is a poor place to discover that.
+- **PHASE1.md dated** rather than rewritten. It is the original work contract and its value is the
+  record of who was asked to build what; a status note at the top says the inventory is historical.
+- **UI-03 / UI-04 fixed** in Images, Volumes and Networks. All three tested `model.<collection>
+  .isEmpty` rather than the *displayed* list, so narrowing a filter to nothing rendered an empty table
+  with no message and no way to see which control had hidden the rows. They now match the Containers
+  pattern, with a primary action when genuinely empty and Clear Filter when not.
+- **GAP-06 wired.** `volume inspect` and `network inspect` were allowlisted from the start with no
+  method able to call them. `inspectVolume`/`inspectNetwork` decode into the **existing** models —
+  verified against the live CLI, both subcommands return the same shape as their `ls` — plus a shared
+  `InspectSheet` reusing the container and machine inspector rather than a third dialect of it. No new
+  grammar; fixtures captured from the real CLI.
+- **UI-01 closed as won't-do**, per instruction, and recorded **at the code** as well as here so the
+  next review finds the reasoning where it applies. The accessibility objection is answered without
+  widening the column: `.help` and `.accessibilityLabel` both carry the CLI's state string, so the
+  state is not encoded in colour alone.
+
+## Wave 4 — deferred, deliberately
 
 `ResourceListControls` for Containers/Machines, `EmbeddedDetailNavigator`, card surfaces. These are
-refactors of the least-tested layer in the project; doing them before there are app tests trades a
-working UI for a tidier one. Wave 0 is the argument: the one boundary with no tests is where the
-deadlock lived.
+refactors of the least-tested layer in the project. Wave 0 is the argument for waiting: the one
+boundary with no tests is where the deadlock lived. The prerequisite is an app-layer test target, not
+more resolve.
 
-## Wave 5 — packaging
+Two invariants that would otherwise need those tests are enforced by script instead —
+`Scripts/check-defaults.sh` and `Scripts/check-settings-consumers.sh`, both run by `make-app.sh`.
 
-`make-app.sh` version stamping, `actool`, signing.
+## Wave 5 — packaging. **Done, 2026-08-23.**
+
+Version stamping and `actool` were already in `make-app.sh` from an earlier session; the remaining
+bug was real and only visible in a repo with **no tags**. `git describe --tags --always` falls back to
+a bare commit hash, so the bundle carried `CFBundleShortVersionString = e8f29a6` and
+`CFBundleVersion = e8f29a6-dirty` — and Apple's rule for the latter is one to three period-separated
+integers. Now: the tag (or `0.0.0`) for the marketing string, `git rev-list --count HEAD` for the
+build number, and the git description in its own `FLGitDescribe` key, which the diagnostics snapshot
+appends so a support bundle still names the exact commit. This stopped being cosmetic the moment
+login items started going through `SMAppService`, which is LaunchServices' opinion of the bundle.
+
+Signing is still **ad-hoc**, and `make-app.sh` now says so on every build: no Team ID, fine locally,
+not distributable, and a reason `SMAppService` registration can be refused after a rebuild. Real
+signing needs a Developer ID and is the user's call, not a script's.
+
+## Not verified by me, and why
+
+Synthetic clicks require Accessibility trust this process does not have (`AXIsProcessTrusted()` is
+false), so nothing below could be driven from here. Everything else in these waves was verified by
+`swift test` (335 passing), by the real `container` CLI, or by launching the built bundle and reading
+its state from disk.
+
+- The container terminal and machine console opening a shell (Wave 0's `containerExecutable` change).
+- The `home-mount=rw` confirmation dialog appearing on escalation.
+- The Settings rows: the disabled not-yet-available controls, the login-item status caption, and the
+  binary-path explanation.
+- The new empty states and the volume/network Inspect sheet.
 
 ## Standing refusals
 

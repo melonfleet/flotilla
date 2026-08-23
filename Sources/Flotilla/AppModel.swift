@@ -77,10 +77,14 @@ final class AppModel {
         self.persistence = resolved.observation
         self.appearance = resolved.store.effectiveAppearance
         self.needsAppearanceOnboarding = resolved.store.needsAppearanceOnboarding
-        self.presentation = resolved.store[SettingsKeys.presentation]
+        self.showsDockIcon = resolved.store[SettingsKeys.showDockIcon]
         self.notifier = Notifier(categories: Self.notificationSettings(from: resolved.store))
         self.errorLog = ErrorLog(settings: resolved.store)
         observeSettings()
+        // At launch, not only on change: the preference and the system state can already disagree
+        // before the app runs — a fresh install with `launchAtLogin` seeded by a managed profile,
+        // or a user who removed Flotilla in System Settings ▸ Login Items since last time.
+        syncLoginItem()
     }
 
     // MARK: Appearance
@@ -116,9 +120,34 @@ final class AppModel {
         ))
     }
 
-    /// **Show Flotilla in: Menu bar / Dock / Both.** Read by `AppDelegate`, which is the only
-    /// place that can act on it — activation policy is an `NSApplication` concern.
-    private(set) var presentation: AppPresentation
+    /// **Show Dock icon.** Read by `AppDelegate`, which is the only place that can act on it —
+    /// activation policy is an `NSApplication` concern.
+    private(set) var showsDockIcon: Bool
+
+    /// What macOS actually thinks about opening Flotilla at login, and why it might disagree with
+    /// the toggle. Shown in Settings rather than assumed: `SMAppService` can accept a registration
+    /// and still park it in `.requiresApproval` until the user approves it in System Settings.
+    private(set) var loginItemStatus: LoginItem.Status = .notRegistered
+    /// The last failure from registering or unregistering, or nil. Surfaced, never swallowed.
+    private(set) var loginItemFailure: String?
+
+    /// Brings the login-item registration into line with `launchAtLogin`.
+    ///
+    /// Called at launch and after any settings change. The preference is the intent and the system
+    /// is the state, and they drift for a legitimate reason: the user can remove Flotilla in System
+    /// Settings ▸ Login Items without touching this app. Reconciling toward the preference is right,
+    /// but only when they actually differ — `LoginItem.reconcile` checks first, so this is a status
+    /// read on the overwhelming majority of calls rather than a registration attempt.
+    private func syncLoginItem() {
+        let wanted = settingsStore[SettingsKeys.launchAtLogin]
+        let (status, failure) = LoginItem.reconcile(preference: wanted)
+        loginItemStatus = status
+        loginItemFailure = failure
+        if let failure {
+            record("Could not \(wanted ? "enable" : "disable") launch at login: \(failure)",
+                   subsystem: "startup")
+        }
+    }
 
     /// Called after any settings change, so a preference edit takes effect without relaunch.
     var onPresentationChange: (() -> Void)?
@@ -128,11 +157,15 @@ final class AppModel {
         needsAppearanceOnboarding = settingsStore.needsAppearanceOnboarding
         applyAppKitAppearance()
 
-        let newPresentation = settingsStore[SettingsKeys.presentation]
-        if newPresentation != presentation {
-            presentation = newPresentation
+        let newShowsDockIcon = settingsStore[SettingsKeys.showDockIcon]
+        if newShowsDockIcon != showsDockIcon {
+            showsDockIcon = newShowsDockIcon
             onPresentationChange?()
         }
+
+        // `launchAtLogin` may have been what changed. This used to be the setting with no code
+        // behind it at all — see `LoginItem`.
+        syncLoginItem()
 
         // The interval may have been what changed; restart the timers against the new values.
         restartPolling()
@@ -232,11 +265,30 @@ final class AppModel {
         DiagnosticsSnapshot.AppInfo(
             name: "Flotilla",
             version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
-            build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+            // `CFBundleVersion` is now a plain commit count, because Apple's rule for that key is
+            // one to three integers and `make-app.sh` used to put a git hash there. The hash is the
+            // part a support bundle actually needs, so it moved to `FLGitDescribe` and is appended
+            // here — "136 (e8f29a6-dirty)" identifies the build exactly and stays a valid version
+            // where the plist requires one.
+            build: Self.buildDescription,
             bundleIdentifier: Bundle.main.bundleIdentifier ?? "dev.melonfleet.Flotilla",
             mode: settingsStore[SettingsKeys.mode],
             isManaged: !settingsStore.lockedKeyNames().isEmpty
         )
+    }
+
+    /// The build number, with the exact commit when the bundle carries one.
+    private static var buildDescription: String? {
+        let number = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let describe = Bundle.main.object(forInfoDictionaryKey: "FLGitDescribe") as? String
+        switch (number, describe) {
+        case (let number?, let describe?): return "\(number) (\(describe))"
+        case (let number?, nil):           return number
+        // `swift run` has no bundle keys at all; naming that is better than a blank field that
+        // reads as missing data.
+        case (nil, let describe?):         return describe
+        case (nil, nil):                   return nil
+        }
     }
 
     /// Model identifier, never the serial or hardware UUID — those identify the machine and
@@ -528,7 +580,13 @@ final class AppModel {
         // making them do the app's job. Attempted **once** per launch — an auto-start that fails
         // must not be retried on every reload, or a machine with a genuinely broken runtime
         // spawns a process every few seconds forever.
-        if case .serviceStopped = result, autoStartingService, !autoStartAttempted {
+        // The **policy** decides now. This used to be unconditional, so the `ask`/`always`/`never`
+        // picker in Settings governed nothing: someone who set `never` still got an automatic
+        // `container system start`. `ask` and `never` both decline here and leave the banner — which
+        // already carries a Start button — to be the asking.
+        let policy = settingsStore[SettingsKeys.autoStartContainerService]
+        if case .serviceStopped = result, autoStartingService, !autoStartAttempted,
+           policy == .always {
             autoStartAttempted = true
             await startRuntime()
             return

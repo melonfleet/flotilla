@@ -23,6 +23,31 @@ public enum ManagedPolicy: String, Codable, Sendable {
 /// A single setting, declared exactly once. The Settings UI, the export format, the
 /// Jamf key list and the diagnostics dump are all generated from these declarations —
 /// there is no second copy of "the list of settings" anywhere.
+/// Whether the app behind a setting exists yet.
+///
+/// The 2026-08-20 audit's strongest finding was a category, not a bug: several settings persisted,
+/// survived a relaunch and changed nothing, because the feature they configure has not been built.
+/// A stored preference with no consumer is worse than a missing feature — it is a *claim* that the
+/// feature is there, and the only way to discover otherwise is to depend on it.
+///
+/// So availability is declared on the key, in the registry, next to the summary. The control is
+/// disabled and states the reason; `Scripts/check-settings-consumers.sh` requires every `.available`
+/// key to have a real consumer in the app; and a key cannot quietly become inert, because making it
+/// inert means deleting its consumer, which fails that check.
+public enum SettingAvailability: Sendable, Equatable, Codable {
+    /// Wired to something that reads it.
+    case available
+    /// Declared, persisted, and not yet acted on. `reason` is shown to the user verbatim, so it
+    /// must say what is missing rather than apologise.
+    case notBuilt(reason: String)
+
+    public var isAvailable: Bool { self == .available }
+    public var unbuiltReason: String? {
+        if case .notBuilt(let reason) = self { return reason }
+        return nil
+    }
+}
+
 public struct SettingsKey<Value: SettingRepresentable>: Sendable {
     public let name: String
     public let defaultValue: Value
@@ -33,6 +58,8 @@ public struct SettingsKey<Value: SettingRepresentable>: Sendable {
     public let requiresRestart: Bool
     /// Never exported and never written into a diagnostics bundle.
     public let isSensitive: Bool
+    /// Whether anything reads this yet. See `SettingAvailability`.
+    public let availability: SettingAvailability
     public let summary: String
 
     public init(
@@ -42,6 +69,7 @@ public struct SettingsKey<Value: SettingRepresentable>: Sendable {
         managed: ManagedPolicy = .manageable,
         requiresRestart: Bool = false,
         isSensitive: Bool = false,
+        availability: SettingAvailability = .available,
         summary: String
     ) {
         self.name = name
@@ -50,6 +78,7 @@ public struct SettingsKey<Value: SettingRepresentable>: Sendable {
         self.managed = managed
         self.requiresRestart = requiresRestart
         self.isSensitive = isSensitive
+        self.availability = availability
         self.summary = summary
     }
 
@@ -64,6 +93,7 @@ public struct SettingsKey<Value: SettingRepresentable>: Sendable {
             managed: managed,
             requiresRestart: requiresRestart,
             isSensitive: isSensitive,
+            availability: availability,
             summary: summary
         )
     }
@@ -80,6 +110,7 @@ public struct SettingDescriptor: Codable, Sendable, Equatable, Identifiable {
     public let managed: ManagedPolicy
     public let requiresRestart: Bool
     public let isSensitive: Bool
+    public let availability: SettingAvailability
     public let summary: String
 
     public var id: String { name }

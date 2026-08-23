@@ -480,6 +480,40 @@ public struct ContainerCLI: Sendable {
     /// Same reuse rationale as `inspect(_:)`: `image inspect` is documented as emitting
     /// the same detailed JSON as `image list`, so this decodes into `[ContainerImage]`
     /// rather than a parallel type. Unverified against a live capture — see that note.
+    /// One volume's full record.
+    ///
+    /// `volume inspect` and `volume ls` return the *same* shape — configuration plus id — so this
+    /// decodes into `ContainerVolume` rather than a new type. Verified against the live CLI, and
+    /// worth stating because "inspect returns more than list" is true for containers and machines
+    /// and **not** here; inventing a richer model to match the pattern would have produced fields
+    /// that never populate.
+    ///
+    /// Allowlisted since the 47-spec table was written and unreachable until now — GAP-06 in the
+    /// 2026-08-20 audit. No new grammar: this calls the spec that already existed.
+    public func inspectVolume(_ name: String) throws -> ContainerVolume {
+        let result = try execute(["volume", "inspect", name])
+        let volumes = try JSONDecoder.flotilla.decode([ContainerVolume].self, from: Data(result.stdout.utf8))
+        guard let volume = volumes.first else { throw ContainerCLIError.emptyInspectResult(id: name) }
+        return volume
+    }
+
+    public func rawInspectVolumeJSON(_ name: String) throws -> String {
+        try execute(["volume", "inspect", name]).stdout
+    }
+
+    /// One network's full record, including the `status` block — the gateway and subnets the
+    /// runtime actually assigned, which `network ls` does not always carry.
+    public func inspectNetwork(_ id: String) throws -> ContainerNetwork {
+        let result = try execute(["network", "inspect", id])
+        let networks = try JSONDecoder.flotilla.decode([ContainerNetwork].self, from: Data(result.stdout.utf8))
+        guard let network = networks.first else { throw ContainerCLIError.emptyInspectResult(id: id) }
+        return network
+    }
+
+    public func rawInspectNetworkJSON(_ id: String) throws -> String {
+        try execute(["network", "inspect", id]).stdout
+    }
+
     public func inspectImage(_ reference: String) throws -> ContainerImage {
         let result = try execute(["image", "inspect", reference])
         let images = try JSONDecoder.flotilla.decode([ContainerImage].self, from: Data(result.stdout.utf8))

@@ -381,8 +381,14 @@ struct ContainerDetailView: View {
 }
 
 /// One already-tagged, already-coloured line ready for display — shared by the Logs and
-/// Inspect tabs so both get the same search/highlight/wrap behaviour from one place.
-private struct DisplayLine: Identifiable {
+/// Inspect tabs, and by `InspectSheet`, so all of them get the same search/highlight/wrap
+/// behaviour from one place.
+///
+/// Internal rather than private for that third caller. `LineListView` below is the reason it has to
+/// be: the alternative was a second line type for the volume/network inspector, which is exactly
+/// how the container and machine Inspect tabs drifted apart before `InspectTable.swift` pulled the
+/// flattening out of here.
+struct DisplayLine: Identifiable {
     let id: Int
     let text: String
     let color: Color
@@ -392,7 +398,7 @@ private struct DisplayLine: Identifiable {
 /// on the container is what stands in for a bespoke "copy selection" — native drag-select
 /// plus Cmd-C — rather than hand-rolling row selection state; that assumption is called out
 /// in the report since it can't be verified without a macOS build.
-private struct LineListView: View {
+struct LineListView: View {
     let lines: [DisplayLine]
     let search: String
     let wrap: Bool

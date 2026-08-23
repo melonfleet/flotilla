@@ -25,21 +25,39 @@ private struct SettingRow<V: SettingRepresentable, Control: View>: View {
 
     private var locked: Bool { store.isLocked(key) }
 
+    /// Why this control does nothing yet, or nil when it works. See `SettingAvailability` — the
+    /// audit's largest finding was a whole class of settings that persisted and changed nothing, and
+    /// the fix is that the row itself has to say so.
+    private var unbuiltReason: String? { key.availability.unbuiltReason }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(title)
+                        .foregroundStyle(unbuiltReason == nil ? .primary : .secondary)
                     if locked {
                         Image(systemName: "lock.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
+                    if unbuiltReason != nil {
+                        Text("Not yet available")
+                            .font(.caption2)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(.quaternary))
+                    }
                 }
                 Text(locked ? "Managed by your organization." : key.summary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if key.requiresRestart && !locked {
+                if let unbuiltReason {
+                    Text(unbuiltReason)
+                        .font(.caption2)
+                        .foregroundStyle(Theme.warning)
+                }
+                // Only meaningful for a setting that takes effect at all.
+                if key.requiresRestart && !locked && unbuiltReason == nil {
                     Text("Requires a restart to take effect.")
                         .font(.caption2)
                         .foregroundStyle(Theme.warning)
@@ -53,7 +71,73 @@ private struct SettingRow<V: SettingRepresentable, Control: View>: View {
                     try? store.set(newValue, for: key)
                 }
             ))
-            .disabled(locked)
+            // Disabled when it is managed **or** when nothing reads it. A live control over an
+            // unbuilt feature is the exact shape the audit objected to.
+            .disabled(locked || unbuiltReason != nil)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Launch at login, showing what macOS actually did rather than only what was asked.
+///
+/// Its own view rather than a `SettingRow` for the same reason `AppearanceRow` is: the caption has
+/// to be live. `SettingRow` prints `key.summary`, a fixed sentence from the registry — fine for a
+/// preference the app fully controls, wrong for one the system can park in
+/// `.requiresApproval` or refuse outright. A toggle that reads "on" while macOS has the
+/// registration switched off in System Settings is the same lie this setting used to tell by
+/// having no code behind it at all.
+private struct LaunchAtLoginRow: View {
+    let store: SettingsStore
+    let model: AppModel
+
+    @State private var enabled: Bool
+
+    init(store: SettingsStore, model: AppModel) {
+        self.store = store
+        self.model = model
+        _enabled = State(initialValue: store[SettingsKeys.launchAtLogin])
+    }
+
+    private var locked: Bool { store.isLocked(SettingsKeys.launchAtLogin) }
+
+    /// The system's word, unless it is unavailable — in which case say so, because on an
+    /// unsigned local build this is the expected answer and reads as a bug otherwise.
+    private var caption: String {
+        if locked { return "Managed by your organization." }
+        if let failure = model.loginItemFailure { return failure }
+        return model.loginItemStatus.summary
+    }
+
+    private var captionStyle: HierarchicalShapeStyle { .secondary }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text("Launch at login")
+                    if locked {
+                        Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(model.loginItemFailure == nil ? AnyShapeStyle(captionStyle)
+                                                                  : AnyShapeStyle(Theme.warning))
+                if model.loginItemStatus == .awaitingApproval {
+                    Text("Open System Settings ▸ General ▸ Login Items to approve it.")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.warning)
+                }
+            }
+            Spacer()
+            Toggle("", isOn: Binding(get: { enabled },
+                                     set: { newValue in
+                                         enabled = newValue
+                                         try? store.set(newValue, for: SettingsKeys.launchAtLogin)
+                                     }))
+                .labelsHidden()
+                .disabled(locked || model.loginItemStatus == .unavailable)
         }
         .padding(.vertical, 4)
     }
@@ -264,24 +348,12 @@ struct SettingsView: View {
     @ViewBuilder
     private var generalPane: some View {
             SwiftUI.Section("Startup & Appearance") {
-                SettingRow(store: store, key: SettingsKeys.launchAtLogin, title: "Launch at login") { binding in
+                LaunchAtLoginRow(store: store, model: model)
+                SettingRow(store: store, key: SettingsKeys.showDockIcon, title: "Show Dock icon") { binding in
                     Toggle("", isOn: binding).labelsHidden()
-                }
-                SettingRow(store: store, key: SettingsKeys.presentation, title: "Show Flotilla in") { binding in
-                    Picker("", selection: binding) {
-                        ForEach(Array(AppPresentation.allCases), id: \.rawValue) { presentation in
-                            Text(Self.title(for: presentation)).tag(presentation)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
                 }
                 AppearanceRow(store: store)
                 SettingRow(store: store, key: SettingsKeys.confirmDestructiveActions, title: "Confirm destructive actions") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                SettingRow(store: store, key: SettingsKeys.confirmBulkActions, title: "Confirm bulk actions") { binding in
                     Toggle("", isOn: binding).labelsHidden()
                 }
             }
@@ -333,7 +405,15 @@ struct SettingsView: View {
     private var advancedPane: some View {
             SwiftUI.Section("The container CLI") {
                 SettingRow(store: store, key: SettingsKeys.containerBinaryPath, title: "Binary path") { binding in
-                    TextField("", text: binding).textFieldStyle(.roundedBorder).frame(minWidth: 220)
+                    TextField("Detect automatically", text: binding)
+                        .textFieldStyle(.roundedBorder).frame(minWidth: 220)
+                }
+                // Says which path is actually in force. An override that silently fell back to
+                // detection would look accepted, which is the failure mode this whole wave is about.
+                HStack {
+                    Text(model.containerExecutableExplanation)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
                 }
                 SettingRow(store: store, key: SettingsKeys.autoStartContainerService, title: "If the API service isn't running") { binding in
                     Picker("", selection: binding) {
@@ -611,13 +691,6 @@ struct SettingsView: View {
         }
     }
 
-    private static func title(for presentation: AppPresentation) -> String {
-        switch presentation {
-        case .menuBar: "Menu Bar"
-        case .dock: "Dock"
-        case .both: "Both"
-        }
-    }
 
     private static func title(for policy: ServiceAutostartPolicy) -> String {
         switch policy {

@@ -11,6 +11,7 @@ struct NetworksView: View {
 
     @State private var search = ""
     @State private var showingCreate = false
+    @State private var inspecting: String?
     @State private var pendingDelete: ContainerNetwork?
 
     var body: some View {
@@ -36,6 +37,15 @@ struct NetworksView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
+        .sheet(isPresented: Binding(get: { inspecting != nil },
+                                    set: { if !$0 { inspecting = nil } })) {
+            if let id = inspecting {
+                InspectSheet(title: id,
+                             command: "container network inspect \(id)",
+                             load: { try await model.fetchNetworkInspectJSON(for: id) },
+                             dismiss: { inspecting = nil })
+            }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {
@@ -96,6 +106,11 @@ struct NetworksView: View {
     ]
 
     /// Free-text filter over the network name.
+    /// Whether anything is currently narrowing the list. Drives the empty state's wording and
+    /// its action: "no matches, clear the filter" and "none exist, make one" are different
+    /// situations and only one of them is the user's mistake.
+    private var isFiltered: Bool { !ui.search.trimmingCharacters(in: .whitespaces).isEmpty || ui.filterID != "all" }
+
     private var displayedNetworks: [ContainerNetwork] {
         var networks = model.networks
 
@@ -137,12 +152,27 @@ struct NetworksView: View {
                 description: Text(reason)
             )
 
-        case .loaded where model.networks.isEmpty:
-            ContentUnavailableView(
-                "No networks",
-                systemImage: "network",
-                description: Text("Create one to give containers an isolated network.")
-            )
+        case .loaded where displayedNetworks.isEmpty:
+            // Filtered-empty and genuinely-empty are different states, and this used to test
+            // only the second (`model.networks.isEmpty`) — so narrowing the filter to nothing
+            // rendered an empty table with no message at all, and no way to see which control had
+            // hidden the rows. UI-03/UI-04 in the 2026-08-20 audit, and the Containers screen had
+            // already solved both; this is that pattern, not a new one.
+            ContentUnavailableView {
+                Label(isFiltered ? "No matches" : "No networks",
+                      systemImage: isFiltered ? "line.3.horizontal.decrease" : "network")
+            } description: {
+                Text(isFiltered
+                     ? "No network matches the current filter."
+                     : "Create one to give containers an isolated network.")
+            } actions: {
+                if isFiltered {
+                    Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
+                } else {
+                    Button("New Network…") { showingCreate = true }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
 
         case .loaded:
             if ui.presentation == .list { table } else { cards }
@@ -266,6 +296,11 @@ struct NetworksView: View {
 
     @ViewBuilder
     private func menu(for network: ContainerNetwork) -> some View {
+        // GAP-06, same as Volumes. Worth more here than there: `network inspect` carries the
+        // `status` block — the gateway and both subnets the runtime actually assigned — which
+        // `network ls` does not always return.
+        Button("Inspect…") { inspecting = network.id }
+        Divider()
         CopyMenu([
             ("Name", network.id),
             ("Subnet", network.subnet),
@@ -278,9 +313,11 @@ struct NetworksView: View {
 
 
 
-    /// Honours `confirmDestructiveActions` — the whole point of that registry key.
+    /// Defers to `model.deletePolicy`, the one authority. This used to read the setting key
+    /// directly, which is how three screens ended up with three copies of the rule and two more
+    /// screens with none.
     private func requestDelete(_ network: ContainerNetwork) {
-        if model.settingsStore[SettingsKeys.confirmDestructiveActions] {
+        if model.deletePolicy.requiresConfirmation(.single) {
             pendingDelete = network
         } else {
             Task { await model.removeNetwork(network) }

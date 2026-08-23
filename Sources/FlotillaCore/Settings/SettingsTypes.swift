@@ -53,14 +53,20 @@ public enum RunMode: String, SettingEnum, Codable {
     case client, host, both
 }
 
-/// Menu-bar apps need this: `MenuBarExtra` alone leaves no Dock presence.
+/// **Retired.** Kept only so `SettingsStore.migrateLegacyKeys` can recognise a stored
+/// `presentation` value written by an earlier build and carry the one distinction that was real
+/// (`menuBar` meant "no Dock icon") over to `showDockIcon`.
+///
+/// Do not add a control for this. See `SettingsKeys.showDockIcon` for why three options were two
+/// too many.
 public enum AppPresentation: String, SettingEnum, Codable {
     case menuBar, dock, both
 }
 
-/// What to do when the `container` API service isn't running. Default is `ask` —
-/// starting a launchd service behind the user's back is the same class of thing as
-/// the silent privileged install `DECISIONS.md` rejects.
+/// What to do when the `container` API service isn't running.
+///
+/// The default is **`.always`**, not `.ask`; the reasoning is on
+/// `SettingsKeys.autoStartContainerService`, which is also the only place that reads this.
 public enum ServiceAutostartPolicy: String, SettingEnum, Codable {
     case ask, always, never
 }

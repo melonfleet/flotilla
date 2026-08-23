@@ -154,13 +154,29 @@ enum SettingsPersistence {
     /// The observation token must be retained by the caller — dropping it silently stops
     /// persistence, which would look exactly like the bug this type exists to fix.
     static func makeStore() -> (store: SettingsStore, observation: SettingsObservation) {
-        let store = SettingsStore(userValues: load())
+        let loaded = load()
+        let store = SettingsStore(userValues: loaded)
         let observation = store.observeChanges { _ in
             // Whole snapshot rather than a delta: `reset`/`resetAll` remove keys, and a
             // key-by-key write would leave a removed key still on disk to be reloaded next
             // launch.
             save(store.userValuesSnapshot())
         }
+
+        // Persist a migration immediately, rather than waiting for the user's next edit.
+        //
+        // `SettingsStore.init` retires old keys in memory, and `SettingsStore` is Foundation-only
+        // so it cannot write anything. Without this the retired key stays on disk indefinitely and
+        // the migration re-runs on every launch — which was measured, not assumed: after the
+        // `presentation` → `showDockIcon` change this Mac still had `{"presentation":"both"}` in
+        // its preferences after a clean launch. Correct behaviour, indefinitely derived from a key
+        // nothing else understands any more.
+        let migrated = store.userValuesSnapshot()
+        if migrated.keys != loaded.keys {
+            save(migrated)
+            log.info("Migrated retired preference keys.")
+        }
+
         return (store, observation)
     }
 }

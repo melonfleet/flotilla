@@ -57,6 +57,10 @@ APP="$ROOT/build/Flotilla.app"
 # Scripts/check-defaults.sh for what it checks and why a comment was not enough.
 echo "▸ checking view defaults…"
 "$ROOT/Scripts/check-defaults.sh"
+# Same reason, one level up: a setting whose consumer was deleted, or which was never wired at all,
+# must not reach a build. Cheap (a few greps) and it runs before assembly, so a failure stops the
+# bundle rather than shipping a Settings screen full of controls that do nothing.
+"$ROOT/Scripts/check-settings-consumers.sh"
 
 echo "▸ building ($CONFIG)…"
 if [ "$CONFIG" = "release" ]; then
@@ -67,11 +71,33 @@ fi
 BINARY="$(swift build -c "$CONFIG" --product Flotilla --show-bin-path)/Flotilla"
 [ -x "$BINARY" ] || { echo "no binary at $BINARY" >&2; exit 1; }
 
-# Version comes from the git description so a support bundle can name the exact build it
-# came from. A dirty tree is marked as such rather than silently claiming a clean tag.
-VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev")"
-SHORT_VERSION="$(printf '%s' "$VERSION" | sed 's/^v//; s/-.*//')"
-[ -n "$SHORT_VERSION" ] || SHORT_VERSION="0.0.0"
+# Versions, and the two plist keys have different rules — which the first version of this got
+# wrong in a way only a build with **no tags** exposed.
+#
+# `git describe --tags --always` falls back to a bare commit hash when no tag exists, and this repo
+# has no tags. So the bundle was stamped `CFBundleShortVersionString = e8f29a6` and
+# `CFBundleVersion = e8f29a6-dirty`. Apple's rule for `CFBundleVersion` is one to three
+# period-separated integers; a hash is not a version at all. It reads as harmless right up until
+# something in LaunchServices compares two of them — and Flotilla now registers a login item
+# through `SMAppService`, which is LaunchServices' opinion of this bundle.
+#
+# So: a dotted version for the marketing string, a monotonic **integer** for the build number, and
+# the git description kept in its own key where a support bundle can still name the exact commit.
+DESCRIBE="$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")"
+
+# The tag, when there is one (`v1.2.3` → `1.2.3`); `0.0.0` when there is not. Never a hash.
+if git describe --tags --abbrev=0 >/dev/null 2>&1; then
+    SHORT_VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
+else
+    SHORT_VERSION="0.0.0"
+fi
+case "$SHORT_VERSION" in
+    *[!0-9.]*|"") SHORT_VERSION="0.0.0" ;;   # a non-numeric tag is not a version either
+esac
+
+# Commit count: monotonic, integer, and meaningful without tags.
+BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+[ -n "$BUILD_NUMBER" ] || BUILD_NUMBER=0
 
 # Icons are generated from the brand geometry, not rasterised from the SVG — see
 # Scripts/make-icons.swift for why (the wordmark SVGs fetch a webfont, which an app promising
@@ -128,7 +154,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key>             <string>Flotilla</string>
     <key>CFBundlePackageType</key>          <string>APPL</string>
     <key>CFBundleShortVersionString</key>   <string>$SHORT_VERSION</string>
-    <key>CFBundleVersion</key>              <string>$VERSION</string>
+    <key>CFBundleVersion</key>              <string>$BUILD_NUMBER</string>
+    <!-- Not an Apple key. The exact commit, dirty flag included, so a support bundle can name the
+         build it came from without CFBundleVersion having to carry something it may not. -->
+    <key>FLGitDescribe</key>                <string>$DESCRIBE</string>
     <key>LSMinimumSystemVersion</key>       <string>26.0</string>
     <!-- False by default, matching the shipped "both" preference. This decides whether a
          main window is ever created, not merely how the app looks at launch — AppDelegate
@@ -156,6 +185,15 @@ codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>&1
 echo "▸ verifying…"
 codesign --verify --verbose=1 "$APP" 2>&1 | sed 's/^/   /'
 /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist" | sed 's/^/   bundle id: /'
+echo "   version:   $SHORT_VERSION ($BUILD_NUMBER) — $DESCRIBE"
+
+# Ad-hoc, and said out loud rather than left to be discovered. `--sign -` produces a signature with
+# no Team ID, which is enough to launch locally and **not** enough for notarisation or for a
+# Gatekeeper-clean install on another Mac. It is also why `SMAppService` registration can be
+# refused on a fresh build: the login item is keyed to the bundle's signing identity, and an ad-hoc
+# identity changes when the binary does.
+echo "   signing:   ad-hoc (no Team ID) — fine locally, not distributable, and login-item"
+echo "              registration may be refused after a rebuild"
 /usr/libexec/PlistBuddy -c "Print :LSUIElement" "$APP/Contents/Info.plist" | sed 's/^/   LSUIElement: /'
 
 echo "✓ $APP"

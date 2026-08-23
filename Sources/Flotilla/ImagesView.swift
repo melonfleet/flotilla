@@ -178,12 +178,27 @@ struct ImagesView: View {
                 description: Text(reason)
             )
 
-        case .loaded where model.images.isEmpty:
-            ContentUnavailableView(
-                "No images",
-                systemImage: "square.stack.3d.up",
-                description: Text("Pull one to run a container from it.")
-            )
+        case .loaded where displayedImages.isEmpty:
+            // Filtered-empty and genuinely-empty are different states, and this used to test
+            // only the second (`model.images.isEmpty`) — so narrowing the filter to nothing
+            // rendered an empty table with no message at all, and no way to see which control had
+            // hidden the rows. UI-03/UI-04 in the 2026-08-20 audit, and the Containers screen had
+            // already solved both; this is that pattern, not a new one.
+            ContentUnavailableView {
+                Label(isFiltered ? "No matches" : "No images",
+                      systemImage: isFiltered ? "line.3.horizontal.decrease" : "square.stack.3d.up")
+            } description: {
+                Text(isFiltered
+                     ? "No image matches the current filter."
+                     : "Pull one to run a container from it.")
+            } actions: {
+                if isFiltered {
+                    Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
+                } else {
+                    Button("Pull an Image…") { showingPull = true }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
 
         case .loaded:
             if ui.presentation == .list { table } else { cards }
@@ -353,6 +368,11 @@ struct ImagesView: View {
     /// in a list meant to show pullable, runnable images, not build metadata. Only hidden
     /// when EVERY variant is `"unknown"`; a real multi-arch image that happens to carry an
     /// attestation alongside real platforms keeps showing.
+    /// Whether anything is currently narrowing the list. Drives the empty state's wording and
+    /// its action: "no matches, clear the filter" and "none exist, make one" are different
+    /// situations and only one of them is the user's mistake.
+    private var isFiltered: Bool { !ui.search.trimmingCharacters(in: .whitespaces).isEmpty || ui.filterID != "all" }
+
     private var displayedImages: [ContainerImage] {
         let visible = model.images.filter { image in
             guard let variants = image.variants, !variants.isEmpty else { return true }
@@ -617,9 +637,11 @@ struct ImagesView: View {
         }
     }
 
-    /// Honours `confirmDestructiveActions` — the whole point of that registry key.
+    /// Defers to `model.deletePolicy`, the one authority. This used to read the setting key
+    /// directly, which is how three screens ended up with three copies of the rule and two more
+    /// screens with none.
     private func requestDelete(_ image: ContainerImage) {
-        if model.settingsStore[SettingsKeys.confirmDestructiveActions] {
+        if model.deletePolicy.requiresConfirmation(.single) {
             pendingDelete = image
         } else {
             Task { await model.removeImage(image) }

@@ -28,34 +28,39 @@ public enum SettingsKeys {
         summary: "Register Flotilla as a login item (SMAppService)."
     )
 
-    /// Default **`.both`**, not `.menuBar`.
+    /// **Default on, and a toggle rather than a three-way picker.**
     ///
-    /// This setting was inert until 2026-07-30 — the app delegate hardcoded `.regular`
-    /// regardless. Honouring it exposed the default as hostile: `.menuBar` maps to
-    /// `NSApplication.ActivationPolicy.accessory`, which removes Flotilla from the Dock **and
-    /// from ⌘-Tab**, so once you switched to another app the only way back was the menu-bar
-    /// icon. For an app whose *main window is the product* (`DECISIONS.md` Q2 — the popover
-    /// is a glance), being unreachable by ⌘-Tab is a defect, not a preference.
+    /// Hiding the Dock icon maps to `NSApplication.ActivationPolicy.accessory`, which also removes
+    /// Flotilla from ⌘-Tab — so the menu-bar item becomes the only way back to a window. For an app
+    /// whose *main window is the product* (`DECISIONS.md` Q2 — the popover is a glance), that is a
+    /// deliberate choice to offer, not a default to hand someone.
     ///
-    /// `.menuBar` stays available for anyone who wants a true accessory app; it is simply not
-    /// what a new user should be given without asking.
+    /// `requiresRestart` is false because it is not: `AppDelegate.applyPresentation` switches the
+    /// activation policy live.
     ///
-    /// `requiresRestart` is false because it no longer does: `AppDelegate.applyPresentation`
-    /// switches activation policy live when the setting changes.
-    public static let presentation = SettingsKey<AppPresentation>(
-        "presentation", default: .both,
-        requiresRestart: false,
-        summary: "Show Flotilla in the menu bar, the Dock, or both."
+    /// It replaced `presentation`
+    /// (`menuBar`/`dock`/`both`), which offered a choice macOS cannot make: the activation policy
+    /// has two states, so `dock` and `both` both mapped to `.regular` and were indistinguishable
+    /// in every observable way. Two of the three options did the same thing.
+    ///
+    /// The menu-bar item is always shown, which is why there is no setting for it: it is how you
+    /// reach the app when the Dock icon is hidden, and a preference that can remove the only
+    /// remaining way in is a preference for locking yourself out.
+    public static let showDockIcon = SettingsKey<Bool>(
+        "showDockIcon", default: true,
+        summary: "Show Flotilla in the Dock. The menu bar item is always shown."
     )
 
+    /// Applies to **single** deletes. Deleting more than one thing at a time always asks, and no
+    /// setting turns that off — see `DeletePolicy`.
+    ///
+    /// The summary names all five kinds because it now governs all five. It previously listed four
+    /// and was read by three: Containers and Machines ignored it and confirmed unconditionally, so
+    /// switching it off silently did nothing on those screens.
     public static let confirmDestructiveActions = SettingsKey<Bool>(
         "confirmDestructiveActions", default: true,
-        summary: "Confirm before deleting a container, image, volume or network."
-    )
-
-    public static let confirmBulkActions = SettingsKey<Bool>(
-        "confirmBulkActions", default: true,
-        summary: "Confirm before an action that hits more than one container or host."
+        summary: "Confirm before deleting one container, image, volume, network or machine. "
+            + "Deleting several at once always asks."
     )
 
     // MARK: Polling
@@ -76,13 +81,35 @@ public enum SettingsKeys {
 
     // MARK: `container` CLI integration
 
+    /// Read by `AppModel.containerExecutable`, which is what the container terminal and the machine
+    /// console launch. An **override**: when it names an executable file, that file is used; when it
+    /// does not, `Preflight.locateBinary` decides. So a wrong value degrades to detection rather
+    /// than breaking the app, and the Settings row says which one is in force.
+    ///
+    /// This is not the audit's SEC-01 hole in another costume. That was `/usr/bin/env`, a `PATH`
+    /// lookup the *environment* controlled; this is an absolute path the **user** typed into their
+    /// own copy of the app, and someone who can edit these preferences can already replace the
+    /// binary the default path points at.
     public static let containerBinaryPath = SettingsKey<String>(
-        "containerBinaryPath", default: "/usr/local/bin/container",
-        summary: "Path to the `container` binary. Preflight records what it detected here."
+        "containerBinaryPath", default: "",
+        summary: "Where the `container` binary is. Leave empty to detect it automatically."
     )
 
+    /// **Default `.always`, changed from `.ask` on 2026-08-23.**
+    ///
+    /// `ServiceAutostartPolicy` documents `.ask` as the safe default, on the grounds that starting a
+    /// launchd service unasked is the same class of thing as the silent privileged install
+    /// `DECISIONS.md` rejects. That reasoning does not survive contact with what this actually does:
+    /// `container system start` starts a **user-level** service the user installed themselves, it
+    /// needs no authorisation, and the owner asked for exactly this after a macOS update left the
+    /// service stopped and the app claiming the CLI was not installed.
+    ///
+    /// The setting was inert either way — the app auto-started unconditionally and never read this
+    /// key — so `.ask` was documentation of an intention, not a description of behaviour. It is now
+    /// read, and the default matches what already shipped rather than silently changing it.
+    /// Auto-starts are attempted **once per launch** and recorded in the activity feed.
     public static let autoStartContainerService = SettingsKey<ServiceAutostartPolicy>(
-        "autoStartContainerService", default: .ask,
+        "autoStartContainerService", default: .always,
         summary: "Whether to run `container system start` when the API service is down."
     )
 
@@ -131,23 +158,33 @@ public enum SettingsKeys {
     // `reference/jamf-config-profile.md` requires these keys to be managed-readable
     // from the start.
 
+    /// **Not built.** Its only reader is the diagnostics snapshot, which reports the setting back
+    /// to whoever set it — a mirror, not a consumer. Selecting `host` or `both` opens no listener,
+    /// because Phase 2 has not been written and is explicitly out of scope.
     public static let mode = SettingsKey<RunMode>(
         "mode", default: .client, scope: .host, requiresRestart: true,
+        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
         summary: "Run as a client, as a host peer, or both."
     )
 
     public static let hostListenPort = SettingsKey<Int>(
         "hostListenPort", default: 7443, scope: .host, requiresRestart: true,
+        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
         summary: "TCP port host mode listens on for mTLS peers."
     )
 
     public static let bonjourEnabled = SettingsKey<Bool>(
         "bonjourEnabled", default: true, scope: .host, requiresRestart: true,
+        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
         summary: "Advertise this host over Bonjour. Manual host-add works regardless."
     )
 
+    /// **Not built**, and worth being explicit about why the wording matters: there is no TLS
+    /// identity in the Keychain, so this labels nothing. A summary describing how key material is
+    /// protected, attached to a feature that does not exist, reads as a security guarantee.
     public static let identityKeychainLabel = SettingsKey<String>(
         "identityKeychainLabel", default: "Flotilla Identity", scope: .host,
+        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
         summary: "Keychain label of the TLS identity. The key material itself never leaves the Keychain."
     )
 
@@ -170,23 +207,31 @@ public enum SettingsKeys {
     // and become lockable by the Phase 6 profile for free (Docker's `disableUpdate`
     // equivalent), instead of us wrapping them in custom keys Sparkle ignores.
 
+    /// **Not built.** The four update keys use Sparkle's own `SU…` names, which was forward
+    /// planning; Sparkle is not a dependency and `DECISIONS.md` keeps it out for now. Defaulting
+    /// this to `true` while nothing checks is the most misleading combination available, so the row
+    /// is disabled and says so.
     public static let automaticUpdateChecks = SettingsKey<Bool>(
         "SUEnableAutomaticChecks", default: true,
+        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater yet, so nothing checks for updates."),
         summary: "Let Sparkle check for Flotilla updates automatically."
     )
 
     public static let automaticallyDownloadUpdates = SettingsKey<Bool>(
         "SUAutomaticallyUpdate", default: false,
+        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater yet, so nothing checks for updates."),
         summary: "Download updates in the background without asking."
     )
 
     public static let updateCheckIntervalSeconds = SettingsKey<Int>(
         "SUScheduledCheckInterval", default: 86_400,
+        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater yet, so nothing checks for updates."),
         summary: "Seconds between Sparkle update checks."
     )
 
     public static let updateChannel = SettingsKey<UpdateChannel>(
         "updateChannel", default: .stable,
+        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater yet, so nothing checks for updates."),
         summary: "Which appcast to follow."
     )
 
@@ -227,9 +272,8 @@ public enum SettingsRegistry {
     public static let all: [SettingDescriptor] = [
         SettingsKeys.appearance.descriptor,
         SettingsKeys.launchAtLogin.descriptor,
-        SettingsKeys.presentation.descriptor,
+        SettingsKeys.showDockIcon.descriptor,
         SettingsKeys.confirmDestructiveActions.descriptor,
-        SettingsKeys.confirmBulkActions.descriptor,
         SettingsKeys.pollIntervalSeconds.descriptor,
         SettingsKeys.statsPollIntervalSeconds.descriptor,
         SettingsKeys.containerBinaryPath.descriptor,
@@ -260,7 +304,25 @@ public enum SettingsRegistry {
     public static func descriptor(named name: String) -> SettingDescriptor? { byName[name] }
 
     /// Descriptors an MDM profile may carry, for generating the Jamf payload docs.
-    public static var manageable: [SettingDescriptor] { all.filter(\.isManageable) }
+    ///
+    /// **Excludes settings nothing reads yet.** Handing an administrator a key they can push to a
+    /// fleet, which the app then ignores, is the same dishonesty as the toggle that did nothing —
+    /// and worse in one respect: the person deceived is not the person at the keyboard, so there is
+    /// nobody positioned to notice. `hostListenPort` in a profile would have looked like it hardened
+    /// a fleet's listener; there is no listener.
+    ///
+    /// A managed value for an unbuilt key is still *accepted* rather than rejected, because failing
+    /// a profile is worse than ignoring one entry — and the Settings row shows both "Managed by your
+    /// organization" and the not-yet-available reason, so it is visible where someone can act on it.
+    public static var manageable: [SettingDescriptor] {
+        all.filter { $0.isManageable && $0.availability.isAvailable }
+    }
+
+    /// Declared but not yet acted on. Exists so documentation can list them deliberately rather
+    /// than an audit rediscovering them.
+    public static var notBuilt: [SettingDescriptor] {
+        all.filter { !$0.availability.isAvailable }
+    }
 
     public static func inScope(_ scope: SettingScope) -> [SettingDescriptor] {
         all.filter { $0.scope == scope }

@@ -155,6 +155,22 @@ struct MachinesView: View {
         }
     }
 
+    /// Every machine delete enters here. Machines ignored `confirmDestructiveActions` and always
+    /// confirmed, so switching the preference off did nothing on this screen.
+    ///
+    /// Worth stating what honouring it now means: with confirmations off, deleting a machine
+    /// destroys a VM and everything in it without a dialog. That is what the preference says it
+    /// does, on by default, and respecting a switch the user deliberately turned off is the point
+    /// of having one — but it is a real consequence, and the Settings summary now spells out that
+    /// machines are included rather than listing four kinds and covering three.
+    private func requestDelete(_ machine: ContainerMachine) {
+        if model.deletePolicy.requiresConfirmation(.single) {
+            confirmingDelete = machine
+        } else {
+            Task { await model.perform(.delete, on: machine) }
+        }
+    }
+
     /// Names what is actually at stake — "are you sure?" makes you go back and check which row
     /// you clicked. Extracted from the dialog because inlined it defeated the type-checker.
     private var deleteWarning: String {
@@ -571,7 +587,7 @@ struct MachinesView: View {
             Divider().frame(height: 14)
 
             iconButton("trash", "Delete \(machine.id)", busy: busy, destructive: true) {
-                confirmingDelete = machine
+                requestDelete(machine)
             }
             Spacer()
         }
@@ -605,7 +621,7 @@ struct MachinesView: View {
             ("Image", machine.image?.reference),
         ])
         Divider()
-        Button("Delete…", role: .destructive) { confirmingDelete = machine }
+        Button("Delete…", role: .destructive) { requestDelete(machine) }
     }
 
     private func iconButton(_ symbol: String, _ label: String, busy: Bool,

@@ -58,7 +58,12 @@ struct MachineDetailView: View {
                 case .overview: overview
                 case .shell: MachineShellTab(model: model, machine: machine)
                 case .logs: MachineLogsTab(model: model, machine: machine)
-                case .settings: MachineSettingsTab(model: model, machine: machine)
+                // `detail`, not `machine`. The list row has no `homeMount` at all — verified
+                // against `machine ls --format json`, which returns eight fields and not that one —
+                // so this tab was seeding its picker from nil and defaulting the display to
+                // "Read-write" on a machine this Mac reports as `ro`. It showed a setting the
+                // machine did not have, on the one control here that grants filesystem access.
+                case .settings: MachineSettingsTab(model: model, machine: detail)
                 case .inspect: MachineInspectTab(model: model, machine: machine)
                 }
             }
@@ -421,6 +426,9 @@ private struct MachineSettingsTab: View {
     @State private var memoryGB: Int
     @State private var homeMount: String
     @State private var applied = false
+    /// Set when Apply would escalate the home mount to read-write. Carries the restart intent so
+    /// the confirmation can complete the action the user actually pressed.
+    @State private var confirmingHomeMountEscalation: Bool?
 
     init(model: AppModel, machine: ContainerMachine) {
         self.model = model
@@ -428,6 +436,18 @@ private struct MachineSettingsTab: View {
         _cpus = State(initialValue: machine.cpus)
         _memoryGB = State(initialValue: max(1, Int(machine.memory / 1_073_741_824)))
         _homeMount = State(initialValue: machine.homeMount ?? "rw")
+    }
+
+    /// Re-seeds the picker when `machine inspect` lands.
+    ///
+    /// `@State` seeded in `init` does not update when the parent passes a new value — the struct is
+    /// recreated, the state is not. So without this the tab would keep whatever it read on first
+    /// build, which for the first moment of a fresh detail view is the incomplete list row. Skipped
+    /// once the user has touched anything, because overwriting an edit in progress with freshly
+    /// arrived server state is worse than showing it a moment late.
+    private func reseedFromInspect() {
+        guard !changed, let known = machine.homeMount else { return }
+        homeMount = known
     }
 
     private var changed: Bool {
@@ -465,9 +485,9 @@ private struct MachineSettingsTab: View {
                 }
 
                 HStack {
-                    Button("Apply") { Task { await apply(restart: false) } }
+                    Button("Apply") { request(restart: false) }
                         .disabled(!changed)
-                    Button("Apply and Restart") { Task { await apply(restart: true) } }
+                    Button("Apply and Restart") { request(restart: true) }
                         .buttonStyle(.borderedProminent)
                         .disabled(!changed || !MachinesView.isRunning(machine))
                     Spacer()
@@ -479,6 +499,57 @@ private struct MachineSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .task(id: machine.homeMount) { reseedFromInspect() }
+        .confirmationDialog(
+            "Give every container in “\(machine.id)” write access to your home directory?",
+            isPresented: Binding(get: { confirmingHomeMountEscalation != nil },
+                                 set: { if !$0 { confirmingHomeMountEscalation = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Mount Home Read-Write", role: .destructive) {
+                let restart = confirmingHomeMountEscalation ?? false
+                confirmingHomeMountEscalation = nil
+                Task { await apply(restart: restart) }
+            }
+            Button("Cancel", role: .cancel) { confirmingHomeMountEscalation = nil }
+        } message: {
+            Text("Anything running in this machine will be able to read and change every file in "
+                 + "your home directory, including SSH keys, credentials and browser data. It "
+                 + "applies from the machine's next start and stays until you change it back.")
+        }
+    }
+
+    /// Confirms first **only when this Apply escalates the home mount to read-write**.
+    ///
+    /// The audit asked for a confirmation on `home-mount=rw`, and the shape of it matters. Two
+    /// wrong versions were easy to reach for:
+    ///
+    /// * Confirming whenever `rw` is *selected* would nag on every CPU or memory change made on a
+    ///   machine that already mounts home read-write — which is the default. A dialog that appears
+    ///   when nothing dangerous is changing is a dialog people learn to dismiss unread, and it
+    ///   would train that habit on the one dialog here that matters.
+    /// * Confirming on any change to the home mount would ask when *tightening* it to `ro` or
+    ///   `none`, which needs no permission from anyone.
+    ///
+    /// So the trigger is the escalation itself: currently not read-write, about to be. The inline
+    /// warning stays regardless, because it describes a standing state rather than a change.
+    ///
+    /// Note this is not routed through `DeletePolicy`. It is not a delete, and it must not be
+    /// switchable off by a preference about deleting things — granting write access to a home
+    /// directory is a capability grant, and the audit put it in the same bracket as
+    /// `machine set-default` for that reason.
+    private func request(restart: Bool) {
+        // `machine.homeMount` nil means inspect has not answered yet, and the answer is unknown
+        // rather than "rw" — so an unknown current state **confirms**. Defaulting the comparison to
+        // "rw" the way the picker's initial value does would have made this dialog unreachable:
+        // `"rw" != "rw"` is false for every machine, so the confirmation the audit asked for would
+        // have been dead code that passed review by existing.
+        let escalating = homeMount == "rw" && machine.homeMount != "rw"
+        if escalating {
+            confirmingHomeMountEscalation = restart
+        } else {
+            Task { await apply(restart: restart) }
+        }
     }
 
     private func apply(restart: Bool) async {

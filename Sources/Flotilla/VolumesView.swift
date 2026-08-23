@@ -13,6 +13,9 @@ struct VolumesView: View {
 
     @State private var selection = Set<ContainerVolume.ID>()
     @State private var showingCreate = false
+    /// Name of the volume whose inspect record is on screen, or nil. A name rather than the value:
+    /// the sheet refetches, so holding a stale struct would show old data next to a live command.
+    @State private var inspecting: String?
     @State private var newVolumeName = ""
     @State private var newSize = ""
     @State private var newLabels: [String] = []
@@ -42,6 +45,15 @@ struct VolumesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
+        .sheet(isPresented: Binding(get: { inspecting != nil },
+                                    set: { if !$0 { inspecting = nil } })) {
+            if let name = inspecting {
+                InspectSheet(title: name,
+                             command: "container volume inspect \(name)",
+                             load: { try await model.fetchVolumeInspectJSON(for: name) },
+                             dismiss: { inspecting = nil })
+            }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {
@@ -90,6 +102,11 @@ struct VolumesView: View {
     }
 
     /// Free-text filter over the volume name.
+    /// Whether anything is currently narrowing the list. Drives the empty state's wording and
+    /// its action: "no matches, clear the filter" and "none exist, make one" are different
+    /// situations and only one of them is the user's mistake.
+    private var isFiltered: Bool { !ui.search.trimmingCharacters(in: .whitespaces).isEmpty || ui.filterID != "all" }
+
     private var displayedVolumes: [ContainerVolume] {
         var volumes = model.volumes
 
@@ -144,12 +161,27 @@ struct VolumesView: View {
                 description: Text(reason)
             )
 
-        case .loaded where model.volumes.isEmpty:
-            ContentUnavailableView(
-                "No volumes",
-                systemImage: "cylinder.split.1x2",
-                description: Text("Create one to persist data across container runs.")
-            )
+        case .loaded where displayedVolumes.isEmpty:
+            // Filtered-empty and genuinely-empty are different states, and this used to test
+            // only the second (`model.volumes.isEmpty`) — so narrowing the filter to nothing
+            // rendered an empty table with no message at all, and no way to see which control had
+            // hidden the rows. UI-03/UI-04 in the 2026-08-20 audit, and the Containers screen had
+            // already solved both; this is that pattern, not a new one.
+            ContentUnavailableView {
+                Label(isFiltered ? "No matches" : "No volumes",
+                      systemImage: isFiltered ? "line.3.horizontal.decrease" : "cylinder.split.1x2")
+            } description: {
+                Text(isFiltered
+                     ? "No volume matches the current filter."
+                     : "Create one to persist data across container runs.")
+            } actions: {
+                if isFiltered {
+                    Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
+                } else {
+                    Button("New Volume…") { showingCreate = true }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
 
         case .loaded:
             if ui.presentation == .list { table } else { cards }
@@ -386,6 +418,11 @@ struct VolumesView: View {
 
     @ViewBuilder
     private func menu(for volume: ContainerVolume) -> some View {
+        // First, above Copy: `volume inspect` was allowlisted from the start with nothing able to
+        // call it (GAP-06). This is the authoritative record — `options`, `labels`, the on-disk
+        // source — rather than the columns this table chose to show.
+        Button("Inspect…") { inspecting = volume.name }
+        Divider()
         CopyMenu([
             ("Name", volume.name),
             ("Source Path", volume.source),
@@ -538,9 +575,11 @@ struct VolumesView: View {
         return problem(in: ContainerCLI.createVolumeArguments(trimmedName))
     }
 
-    /// Honours `confirmDestructiveActions` — the whole point of that registry key.
+    /// Defers to `model.deletePolicy`, the one authority. This used to read the setting key
+    /// directly, which is how three screens ended up with three copies of the rule and two more
+    /// screens with none.
     private func requestDelete(_ volume: ContainerVolume) {
-        if model.settingsStore[SettingsKeys.confirmDestructiveActions] {
+        if model.deletePolicy.requiresConfirmation(.single) {
             pendingDelete = volume
         } else {
             Task { await model.removeVolume(volume) }

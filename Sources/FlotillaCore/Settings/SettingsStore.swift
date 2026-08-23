@@ -59,7 +59,29 @@ public final class SettingsStore: @unchecked Sendable {
         userValues: [String: SettingValue] = [:]
     ) {
         self.managed = managed
-        self.userValues = userValues
+        self.userValues = Self.migratingLegacyKeys(in: userValues)
+    }
+
+    /// Carries values written under a retired key over to the key that replaced it, then drops
+    /// the old entry so it cannot be resurrected.
+    ///
+    /// Runs at load, on the user tier only — a managed profile that still names a retired key is
+    /// the organisation's to fix, and silently rewriting a managed value would hide that.
+    ///
+    /// The one migration so far: `presentation` (`menuBar`/`dock`/`both`) became `showDockIcon`.
+    /// Only `menuBar` carried information, because `dock` and `both` mapped to the same activation
+    /// policy. Someone running menu-bar-only would otherwise have had a Dock icon reappear after
+    /// an update, with the setting that removed it gone from the window — which reads as the app
+    /// ignoring a preference rather than replacing one.
+    private static func migratingLegacyKeys(in values: [String: SettingValue]) -> [String: SettingValue] {
+        var migrated = values
+        if let legacy = migrated.removeValue(forKey: "presentation") {
+            if case .string(let raw) = legacy,
+               migrated[SettingsKeys.showDockIcon.name] == nil {
+                migrated[SettingsKeys.showDockIcon.name] = .bool(raw != AppPresentation.menuBar.rawValue)
+            }
+        }
+        return migrated
     }
 
     // MARK: - Reading

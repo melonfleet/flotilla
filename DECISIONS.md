@@ -404,3 +404,88 @@ pulls; it was verified spec by spec first.
 the task that called `run` leaves the process running until its deadline — better than the previous
 "until forever", but cooperative cancellation needs the async API, so it stays Phase 4 work. The
 ceiling is also per stream and per invocation, not a budget across the fan-out in `aggregatedLogs`.
+
+## Q16 — A setting must be read by something, and the app must say when it is not (settled 2026-08-23)
+
+**Decision.** `SettingsKey` carries a `SettingAvailability`. A key is either `.available` — something
+reads it — or `.notBuilt(reason:)`, in which case the Settings row is **disabled**, shows the reason,
+and the key is withheld from the MDM payload. `Scripts/check-settings-consumers.sh` enforces the
+first half at build time and `make-app.sh` runs it, so a setting cannot silently lose its consumer.
+
+**Why.** The audit's largest finding was a category rather than a bug: of 26 keys, **11 were read by
+nothing**. `launchAtLogin` was the clearest — its own summary named `SMAppService` and no file in the
+tree called it, so the toggle moved, persisted, survived a relaunch, and did nothing. That is worse
+than a missing feature: it is a claim the feature exists, and the way you find out otherwise is by
+depending on it and rebooting.
+
+**What was wired rather than annotated.** Four of the eleven turned out to be a few lines from
+working, and wiring beats confessing when it is honestly cheap:
+
+* **`launchAtLogin`** → `LoginItem`, using `SMAppService`. The status is shown, not assumed: macOS
+  can accept a registration and park it in `.requiresApproval` until the user approves it in System
+  Settings, and a toggle that reads "on" in that state is the same lie in smaller print.
+* **`autoStartContainerService`** → the auto-start now consults the policy. It was unconditional, so
+  someone who set `never` got an automatic `container system start` anyway. **The default changed
+  from `.ask` to `.always`**, which is a deliberate reversal of the reasoning on
+  `ServiceAutostartPolicy`: that comment equates this with a silent privileged install, and it is
+  not one — it starts a user-level service the user installed, needs no authorisation, and was
+  explicitly requested after a macOS update left the service stopped. The setting was inert either
+  way, so `.ask` documented an intention rather than describing behaviour.
+* **`containerBinaryPath`** → an override consumed by `AppModel.containerExecutable`, defaulting to
+  empty (detect). A configured-but-missing path degrades to detection and the row says so.
+* **`defaultContainerCPUs` / `defaultContainerMemoryMB`** → the run sheet had no CPU or memory field
+  for them to prefill. `RunOptions` already carried `cpus`/`memory` and `Allowlist` already permitted
+  `--cpus`/`--memory` on `run`; only the two controls were missing.
+
+**Eight are marked `.notBuilt`,** and the wording of one is worth calling out: the summary for
+`identityKeychainLabel` describes how TLS key material is protected by the Keychain. There is no TLS
+identity. A security guarantee attached to a feature that does not exist is the most damaging kind of
+inert setting, and it was **on by default** in the same way `SUEnableAutomaticChecks` was.
+
+**Withheld from MDM, which is the half with no witness.** An administrator pushing `hostListenPort`
+to a fleet would believe they had configured a listener. There is none. The person deceived is not at
+the keyboard, so nobody is positioned to notice — so `SettingsRegistry.manageable` now excludes
+unbuilt keys. A managed value for one is still *accepted* rather than rejected, because failing a
+whole profile over one ignored entry is worse; the row shows both "Managed by your organization" and
+the not-yet-available reason.
+
+**`presentation` became `showDockIcon`.** Three options (`menuBar`/`dock`/`both`) over two states:
+macOS has no activation policy for "Dock icon but no menu bar", so `dock` and `both` were the same
+policy under two names. A toggle is the honest control. `SettingsStore.migrateLegacyKeys` carries the
+one distinction that was real — `menuBar` meant no Dock icon — and `SettingsPersistence` writes the
+migration immediately rather than waiting for the user's next edit. Verified end to end: this Mac's
+stored `{"presentation":"both"}` became `{"showDockIcon":true}` on disk after one launch.
+
+## Q17 — Confirmation is one decision, in one place (settled 2026-08-23)
+
+**Decision.** `DeletePolicy` in `FlotillaCore` decides whether a destructive action confirms.
+Single deletes follow `confirmDestructiveActions`; **bulk always confirms and no setting can change
+that**, so `confirmBulkActions` is deleted rather than wired.
+
+**Why bulk is mandatory.** A preference whose "off" position means *destroy several things without
+asking* is a preference for a mistake, and a multi-selection is exactly where the gap between what
+you think is selected and what is selected does the damage — `ContainersView` already documents that
+a filter change leaves rows selected that are no longer visible. The setting had no consumer, so
+mandatory confirmation is what has always actually shipped.
+
+**Why it lives in Core.** The app target has no test target. A decision this consequential should not
+sit in the untested half, so the rule is a pure type in `FlotillaCore` with tests, and the views keep
+only their own wording and dialog state. What must not differ per screen is the rule; what should
+differ is the sentence.
+
+**What centralising it found.** The audit said Containers and Machines never read
+`confirmDestructiveActions`, which was true, and the consequence is the opposite of how it reads:
+both confirmed *unconditionally*, so the preference was a no-op on two of five screens rather than a
+hole. The actual hole was next door and unreported: `ContainersView`'s **context menu** called
+`model.perform(.delete, …)` directly, so right-click → Delete destroyed a container with **no dialog
+at all**, two lines from a trash button that always asked. Five call sites read side by side is what
+made that visible.
+
+**Also:** `machine set home-mount=rw` now confirms, but **only when it escalates** — currently not
+read-write, about to be. Confirming whenever `rw` is merely *selected* would fire on every CPU change
+on a machine that already mounts home read-write, which is the default, and a dialog that appears
+when nothing dangerous is happening trains people to dismiss the one that matters. Building that
+check exposed two real bugs: the Configuration tab was handed the thin `machine ls` row, which has no
+`homeMount` field at all, so it displayed "Read-write" for a machine this Mac reports as `ro` — and
+the escalation test inherited that nil, making the new confirmation unreachable. It now takes the
+inspected record and treats unknown as *confirm*.

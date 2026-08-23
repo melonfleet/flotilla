@@ -30,6 +30,25 @@ extension AppModel {
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
+    /// Same for a volume and a network. GAP-06: both subcommands were allowlisted from the start
+    /// and had no method to call them, so the capability existed and was unreachable.
+    ///
+    /// No detail *view* for either, deliberately. `volume inspect` returns the same fields as
+    /// `volume ls`, so a pane would mostly re-present the table it was opened from; what the CLI
+    /// adds is the authoritative record — `options`, `labels`, the on-disk source, and for a
+    /// network the assigned gateway and subnets. A sheet showing that record is the whole value,
+    /// and it reuses the inspector the container and machine panels already use rather than
+    /// inventing a third one.
+    func fetchVolumeInspectJSON(for name: String) async throws -> String {
+        let raw = try await Task.detached { [cli] in try cli.rawInspectVolumeJSON(name) }.value
+        return JSONPrettyPrinter.prettyPrint(raw)
+    }
+
+    func fetchNetworkInspectJSON(for id: String) async throws -> String {
+        let raw = try await Task.detached { [cli] in try cli.rawInspectNetworkJSON(id) }.value
+        return JSONPrettyPrinter.prettyPrint(raw)
+    }
+
     // MARK: Processes
 
     /// `ContainerCLI.processes(_:)` returns only `stdout` — `execute(_:)` inside

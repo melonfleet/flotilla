@@ -22,12 +22,20 @@ they are not coding blind. the app owner owns everything macOS-only.
 `import SwiftUI`, `AppKit`, `Network`, or anything Apple-only — it breaks the Linux build
 that lets you verify your own work.
 
+> **Status note added 2026-08-23.** This file is the *original* work contract, kept as the record
+> of who was asked to build what and why. The inventory below describes the tree as it was when the
+> work was handed out and is now well out of date — most of what it lists as missing exists. For
+> what is actually built and what is not, read `README.md` → "Current status"; for decisions,
+> `DECISIONS.md`. An independent audit flagged documentation drift, and the honest fix for a
+> historical brief is to date it rather than quietly rewrite what people were asked to do.
+
 ## What already exists (extend, don't duplicate)
 - `Models.swift` — `Container`, `ContainerImage`, `ContainerStats`, `SystemStatus`,
   `VersionComponent`, `Descriptor`, `Platform`. These decode **real `container` 1.0.0 JSON**,
   pinned by fixtures in `Tests/FlotillaCoreTests/Fixtures/*.json`. Don't break them.
-- `ContainerCLI.swift` — **read-only** today: `listContainers`, `listImages`, `stats`,
-  `systemStatus`, `versions`.
+- `ContainerCLI.swift` — **read-only *at the time this was written***: `listContainers`,
+  `listImages`, `stats`, `systemStatus`, `versions`. It now also covers the mutations, volumes,
+  networks, machines and bounded logs this contract went on to commission.
 - `ContainerHost.swift` — the `ContainerHost` protocol + `LocalHost` (runs args via Process),
   and `CommandResult`. This is the spine; the UI never cares if a host is local or remote.
 - `reference/container-cli.md` — the full `container` command surface. **Read it before

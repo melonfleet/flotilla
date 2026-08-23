@@ -27,9 +27,22 @@ struct RunSheetView: View {
         self.model = model
         self.dismiss = dismiss
         _image = State(initialValue: initialImage)
+        // Seeded from **Defaults for new containers**. Those two settings had no consumer at all:
+        // the registry declared them, Settings offered steppers for them, and the run sheet had no
+        // CPU or memory field to apply them to. `RunOptions` already carried `cpus`/`memory` and
+        // `Allowlist` already permitted `--cpus`/`--memory` on `run` — the only missing piece was
+        // the two controls, so wiring beat annotating.
+        _cpus = State(initialValue: model.settingsStore[SettingsKeys.defaultContainerCPUs])
+        _memoryMB = State(initialValue: model.settingsStore[SettingsKeys.defaultContainerMemoryMB])
     }
     @State private var name = ""
     @State private var detach = true
+    @State private var cpus: Int
+    @State private var memoryMB: Int
+    /// Whether to pass the limits at all. Off by default, so the sheet's behaviour does not change
+    /// for anyone who never opens this section: `container run` with no `--cpus` inherits the
+    /// machine's own allowance, which is what happened before these fields existed.
+    @State private var limitResources = false
     @State private var ports: [Row] = []
     @State private var env: [Row] = []
     @State private var volumes: [Row] = []
@@ -90,6 +103,17 @@ struct RunSheetView: View {
                 SwiftUI.Section("Command") { commandField }
                 SwiftUI.Section("Options") {
                     Toggle("Detach (run in background)", isOn: $detach)
+                    Toggle("Limit CPU and memory", isOn: $limitResources)
+                    if limitResources {
+                        Stepper(value: $cpus, in: 1...ProcessInfo.processInfo.processorCount) {
+                            LabeledContent("CPUs", value: "\(cpus)")
+                        }
+                        Stepper(value: $memoryMB, in: 128...131_072, step: 128) {
+                            LabeledContent("Memory", value: "\(memoryMB) MB")
+                        }
+                        Text("Defaults come from Settings ▸ Resources.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 SwiftUI.Section("Preview") { previewSection }
             }
@@ -333,7 +357,11 @@ struct RunSheetView: View {
             ports: ports.map(\.value).filter { !$0.isEmpty },
             env: env.map(\.value).filter { !$0.isEmpty },
             volumes: volumes.map(\.value).filter { !$0.isEmpty },
-            detach: detach
+            detach: detach,
+            cpus: limitResources ? cpus : nil,
+            // `.memorySize` shape — digits plus an optional K/M/G suffix. The stepper is in MB, so
+            // the suffix is fixed and cannot drift into something the allowlist would refuse.
+            memory: limitResources ? "\(memoryMB)M" : nil
         )
     }
 
