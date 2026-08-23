@@ -20,6 +20,11 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
     /// wrong for three weeks.
     case runtimeNotFound(searched: [String])
 
+    /// The child exceeded its deadline and was terminated. Distinct from `commandFailed`: the
+    /// command did not fail, it was *stopped*, and the UI should say so rather than reporting a
+    /// non-zero exit it never actually saw.
+    case timedOut(command: String, seconds: TimeInterval)
+
     public var description: String {
         switch self {
         case .emptyInspectResult(let id):
@@ -31,6 +36,8 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
             message.isEmpty
                 ? "`container \(command)` failed (exit \(exitCode))."
                 : message
+        case .timedOut(let command, let seconds):
+            "`container \(command)` was still running after \(Int(seconds))s and was stopped."
         case .runtimeNotFound(let searched):
             "Apple's `container` CLI was not found in: \(searched.joined(separator: ", "))"
         }
@@ -96,9 +103,19 @@ public struct ContainerCLI: Sendable {
     public func listImages() throws -> [ContainerImage] {
         try JSONDecoder.flotilla.decode([ContainerImage].self, from: Data(try rawImagesJSON().utf8))
     }
-    public func stats(noStream: Bool = true) throws -> [ContainerStats] {
-        var args = ["stats", "--format", "json"]
-        if noStream { args.append("--no-stream") }
+    /// One sample of every running container's resource use.
+    ///
+    /// **Always `--no-stream`, and there is no longer a parameter to say otherwise.** There used
+    /// to be a `noStream: Bool = true`, and no caller ever passed `false` — which was just as
+    /// well, because a streaming `stats` never closes its pipe. Under the old runner that was an
+    /// unbounded read that never returned; under the new one the deadline kills it. Either way
+    /// the flag's only reachable outcome was failure, so it was a knob that could not work.
+    /// Streaming needs the async/streaming API that Phase 4 adds, not a Bool here.
+    ///
+    /// Note the CPU figure this returns is per-core and covers the container's whole VM — a
+    /// single spin loop reads about 145%.
+    public func stats() throws -> [ContainerStats] {
+        let args = ["stats", "--format", "json", "--no-stream"]
         return try JSONDecoder.flotilla.decode([ContainerStats].self, from: Data(try succeeding(args).stdout.utf8))
     }
     /// Starts the `container` services.
@@ -183,7 +200,10 @@ public struct ContainerCLI: Sendable {
     private func execute(_ args: [String]) throws -> CommandResult {
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
                                                 execPolicy: execPolicy, wirePolicy: wirePolicy)
-        return try succeeding(validated.arguments)
+        // The deadline finally reaches the process. `timeoutHint` sat on the spec unused for
+        // weeks — DECISIONS.md Q14 admitted it "enforces nothing today" — which meant a wedged
+        // child held its pipes for the life of the app.
+        return try succeeding(validated.arguments, timeout: validated.timeoutHint)
     }
 
     /// Validated execution that **returns** a non-zero exit rather than throwing on it.
@@ -195,7 +215,7 @@ public struct ContainerCLI: Sendable {
     private func attempting(_ args: [String]) throws -> CommandResult {
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
                                                 execPolicy: execPolicy, wirePolicy: wirePolicy)
-        return try host.run(validated.arguments)
+        return try host.run(validated.arguments, timeout: validated.timeoutHint)
     }
 
     /// Runs `args` and **throws unless the CLI exited zero**.
@@ -212,8 +232,8 @@ public struct ContainerCLI: Sendable {
     /// The one prior symptom users did see — an invalid name — came from `Allowlist`
     /// throwing *before* execution, which is why validation errors surfaced and real CLI
     /// errors did not.
-    private func succeeding(_ args: [String]) throws -> CommandResult {
-        let result = try host.run(args)
+    private func succeeding(_ args: [String], timeout: TimeInterval = 0) throws -> CommandResult {
+        let result = try host.run(args, timeout: timeout)
         guard result.ok else {
             throw ContainerCLIError.commandFailed(
                 command: args.joined(separator: " "),

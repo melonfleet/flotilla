@@ -355,8 +355,12 @@ struct TerminalTab: View {
                 ["exec", "-i", "-t", container.id, "--", Self.shell],
                 execPolicy: model.cli.execPolicy
             )
+            guard let executable = model.containerExecutable else {
+                failure = model.containerExecutableMissingReason
+                return
+            }
             model.terminals.open(containerID: container.id,
-                                 executable: Self.containerBinary,
+                                 executable: executable,
                                  argv: validated.arguments) { reason in
                 if let reason { failure = reason }
             }
@@ -370,14 +374,6 @@ struct TerminalTab: View {
     /// `sh`, not `bash`. Alpine and most minimal images have no bash, and a terminal that
     /// fails on the commonest base image is worse than one that offers a plainer shell.
     private static let shell = "sh"
-
-    /// Matches `LocalHost`'s resolution order. Hardcoding `/usr/local/bin/container` here
-    /// would work on this Mac and break on one where the CLI lives elsewhere.
-    private static var containerBinary: String {
-        let candidates = ["/usr/local/bin/container", "/opt/homebrew/bin/container"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-            ?? "/usr/bin/env"
-    }
 }
 
 /// Puts the store's long-lived terminal view on screen.

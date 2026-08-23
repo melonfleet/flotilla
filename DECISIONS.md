@@ -346,4 +346,61 @@ implementation is not". He was right on every count that mattered, and four thin
 on responses (a single huge log line defeats a line count), enforced deadlines, concurrency and
 detach requirements for long-running commands, redacted/typed projections for the read commands
 that disclose paths and environment, and the host-owned interface/port and driver/plugin policies
-from finding 3. `timeoutHint` enforces nothing today and says so.
+from finding 3. `timeoutHint` enforces nothing today and says so. *(Superseded 2026-08-23: see
+Q15 — concurrent drain, byte ceilings and enforced deadlines are in. Redacted projections and the
+host-owned interface/port policy remain open.)*
+
+## Q15 — The process boundary gets ceilings and a deadline (settled 2026-08-23)
+
+**Decision.** `LocalHost` drains stdout and stderr **concurrently**, keeps at most
+`maxBytesPerStream` (4 MiB, per stream) and reads-and-discards the rest, and enforces a hard
+deadline carried from `ValidatedCommand.timeoutHint` with terminate → grace → `SIGKILL`. Truncation
+is reported on `CommandResult`; exceeding the deadline throws `ContainerCLIError.timedOut`. This
+closes three of the five items Q14 left open, and Q14's last sentence — "`timeoutHint` enforces
+nothing today and says so" — is no longer true.
+
+**Why now.** An independent audit raised all three, and each was confirmed in the tree before
+anything changed. The drain order was not a slow path, it was a **deadlock**: stdout was read to
+EOF before stderr was read at all, so a child that fills the stderr pipe buffer (64 KiB on Darwin)
+blocks writing while we block reading, and neither side ever moves. The Logs screen asking five
+sources for a thousand lines each is precisely that shape. It never fired in testing because every
+fixture-backed test uses a scripted host that never touches a pipe.
+
+**What the tests had to be.** A regression test for a deadlock **hangs** rather than fails, which
+is why a green 300-test suite proved nothing here. `LocalHostRunnerTests` drives `/bin/sh` through
+an injected resolver — not a widening of the allowlist, since `LocalHost` is constructed directly
+and nothing crosses `Allowlist` — because no `container` subcommand lets us dictate how much goes
+to which stream and how long the child lives. Ceilings are injected small so the suite stays fast.
+
+**A second bug, found by the fix's own test.** The first version asserted that waiting on the
+readers "cannot outlive the process, because the child's exit guarantees EOF". It does not.
+`sh -c 'trap "" TERM; sleep 30'` cannot exec, so it forks `sleep`; `SIGKILL` reaps `sh` and `sleep`
+inherits the write end of the pipe. The test failed at **30.36s against a 0.3s deadline** — the
+deadline fired and then we sat anyway, an unbounded wait wearing a bounded one's clothes. Hence
+`drainGrace` and `Sink.abandon()`: after the child is gone the readers get a grace period, then we
+take what arrived and let them finish into a sink nobody reads. Abandoned output reports as
+truncated, because it is.
+
+**Two things deliberately removed rather than documented.**
+
+* `stats(noStream:)`. No caller ever passed `false`, and a streaming `stats` never closes its pipe
+  — an unbounded read before, a guaranteed timeout after. Its only reachable outcome was failure,
+  so it was a knob that could not work. Streaming needs Phase 4's streaming API, not a `Bool`.
+* The two `?? "/usr/bin/env"` fallbacks behind the container terminal and the machine console,
+  each with its own hardcoded candidate list. Both are the faults this project keeps relearning:
+  two authorities for one property, and a PATH lookup by another route in an app that otherwise
+  launches only absolute paths (a GUI-launched app's PATH has no `/usr/local/bin`, so the
+  "fallback" resolved to nothing on the exact machines it was meant to rescue). There is now one
+  `AppModel.containerExecutable` calling `Preflight.locateBinary`, returning `nil`, and callers
+  that say so.
+
+**Timeout values were already sane, which is the only reason enforcing them was safe.** `image
+pull` and `build` carry 1800s, `run` and `machine create` 600s, `machine run` 300s, the default
+30s, and the two interactive substitutes carry **0** — no deadline, correctly, since a shell
+session is meant to last. Enforcing a hint nobody had ever checked could easily have killed image
+pulls; it was verified spec by spec first.
+
+**Still not done, and not claimed:** Swift `Task` cancellation does not reach the child. Cancelling
+the task that called `run` leaves the process running until its deadline — better than the previous
+"until forever", but cooperative cancellation needs the async API, so it stays Phase 4 work. The
+ceiling is also per stream and per invocation, not a budget across the fan-out in `aggregatedLogs`.

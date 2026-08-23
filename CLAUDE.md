@@ -305,6 +305,35 @@ that we *built* the right command; almost nothing checked the command was
   path was green in the suite and never fired on the real machine. It was caught by stopping the
   real service and watching the app, not by testing. Fixtures for a *failure* mode need the
   failure's exit code captured too, not just its output.
+- **A deadlock regression test hangs; it does not fail.** `LocalHost` read stdout to EOF before
+  touching stderr, which deadlocks any child that fills the stderr pipe buffer (64 KiB on Darwin).
+  Three hundred tests were green because every one of them uses a scripted host that never opens a
+  pipe — the bug lived at the one boundary no test crossed. When the fix's own test finally ran, a
+  *second* bug surfaced the same way: it sat for **30.36s against a 0.3s deadline** because
+  `sh -c 'trap "" TERM; sleep 30'` forks `sleep`, so `SIGKILL` reaps the shell while the grandchild
+  inherits the pipe and holds it open. The source comment asserting the drain "cannot outlive the
+  process, which the child's exit guarantees" was simply wrong. **A child's exit does not guarantee
+  EOF on its pipes.** Any wait on a reader needs its own bound, and abandoned output must report as
+  truncated rather than complete. If a test for a hang can only hang, give it a wall-clock
+  assertion so the failure is legible.
+- **Enforcing a value that was never enforced is a behaviour change, not a bug fix.**
+  `timeoutHint` sat on every `CommandSpec` unread for weeks, so its numbers had never been
+  load-bearing and nothing would have caught a wrong one. Wiring it up without checking spec by
+  spec would have killed `image pull` and `build` at whatever the default happened to be. They
+  carry 1800s and the interactive substitutes carry 0; that was verified before the switch was
+  thrown, not after. Treat "this field is currently ignored" as "these values are unverified".
+- **A knob whose only reachable outcome is failure should be deleted, not documented.**
+  `stats(noStream: false)` asked a streaming command for output through a runner that reads to EOF
+  — an infinite read before the deadline existed, a guaranteed timeout after. No caller ever passed
+  it. This is the same family as a setting with no production consumer: the honest fix is to remove
+  the option and name what would actually be needed (Phase 4's streaming API).
+- **A user-facing error message is a disclosure surface.** The first version of
+  `ContainerCLIError.timedOut` interpolated the whole argv into a sentence bound for an alert —
+  which is exactly SEC-03's fault in `auditDescription`, reproduced on a *more* exposed surface
+  while in the middle of fixing it. Only the leading non-flag tokens are named now; everything from
+  the first `-` onward is dropped, because argv is where `--env TOKEN=…` and home-directory mount
+  paths live.
+
 - **`case A, B where cond:` binds `where` to `B` only.** Written as
   `case .loaded, .loading where displayed.isEmpty:` the `.loaded` arm matched
   unconditionally, so the Machines list rendered "No matching machines" with two

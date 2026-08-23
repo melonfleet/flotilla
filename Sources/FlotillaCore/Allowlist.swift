@@ -275,8 +275,14 @@ public struct CommandSpec: Sendable, Equatable {
     /// Whether the operation changes host state. The transport layer (Phase 2) uses
     /// this to decide what needs confirmation and what is safe to retry.
     public let mutates: Bool
-    /// Hint for the Phase 2 per-request deadline. Not enforced here — validation is
-    /// synchronous and pure; the timeout belongs to whoever spawns the process.
+    /// The per-invocation deadline, in seconds. **Enforced** — `LocalHost` terminates, waits out
+    /// a grace period, then `SIGKILL`s a child that outlives it (DECISIONS.md Q15). Not enforced
+    /// *here*: validation stays synchronous and pure, and the timeout belongs to whoever spawns
+    /// the process.
+    ///
+    /// `0` means no deadline, which is right for the interactive substitutes and wrong for
+    /// everything else. These numbers went unread for weeks, so treat any change to one as a
+    /// behaviour change: `image pull` and `build` need 1800, not the 30s default.
     public let timeoutHint: TimeInterval
     public let flags: [FlagSpec]
     public let operands: OperandSpec

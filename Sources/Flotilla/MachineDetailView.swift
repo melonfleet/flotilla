@@ -301,8 +301,12 @@ private struct MachineShellTab: View {
                 ["machine", "run", "-n", machine.id, "-i", "-t"],
                 execPolicy: model.cli.execPolicy
             )
+            guard let executable = model.containerExecutable else {
+                failure = model.containerExecutableMissingReason
+                return
+            }
             model.machineTerminals.open(containerID: machine.id,
-                                        executable: Self.containerBinary,
+                                        executable: executable,
                                         argv: validated.arguments) { reason in
                 if let reason { failure = reason }
             }
@@ -311,12 +315,6 @@ private struct MachineShellTab: View {
             model.record("Refused to open a machine shell in \(machine.id): \(error)",
                          subsystem: "machines")
         }
-    }
-
-    private static var containerBinary: String {
-        let candidates = ["/usr/local/bin/container", "/opt/homebrew/bin/container"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-            ?? "/usr/bin/env"
     }
 }
 
