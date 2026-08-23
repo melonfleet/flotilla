@@ -641,7 +641,11 @@ private func requireRejected(
         #expect(command.arguments == testCase.canonical)
         #expect(command.mutates == testCase.mutates)
         #expect(command.timeoutHint == testCase.timeout)
-        #expect(command.auditDescription == (["container"] + testCase.canonical).joined(separator: " "))
+        // `localPreview`, not `auditDescription`. This case is about canonicalisation — that two
+        // spellings of one request produce one argv — and the preview is the property that still
+        // shows the argv whole. The audit string deliberately shapes values away, and asserting
+        // canonicalisation through it would test two things badly instead of one thing well.
+        #expect(command.localPreview == (["container"] + testCase.canonical).joined(separator: " "))
     }
 }
 

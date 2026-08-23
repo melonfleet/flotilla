@@ -321,7 +321,7 @@ struct MachineFormView: View {
     private var preview: String {
         guard !trimmedImage.isEmpty else { return "Enter an image reference." }
         switch validated {
-        case .success(let command): return command.auditDescription
+        case .success(let command): return command.localPreview
         case .failure(let error): return String(describing: error)
         }
     }

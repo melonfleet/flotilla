@@ -91,6 +91,37 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
 }
 
 extension ValueShape {
+    /// Whether a value of this shape is **data supplied by the caller** rather than a name or a
+    /// choice from a closed set. Drives audit redaction — see `Allowlist.redact`.
+    ///
+    /// Written as an exhaustive `switch` with no `default` on purpose: a new shape must be
+    /// classified before it compiles, so the failure mode is a build error rather than a value
+    /// quietly defaulting into an audit log. The partition is the same discipline the exposure
+    /// registry test enforces for `Exposure`.
+    var carriesFreeFormData: Bool {
+        switch self {
+        // Arbitrary caller data. `envAssignment` is the SEC-03 case verbatim: `--env
+        // DATABASE_PASSWORD=…`. `keyValue` backs `--label`/`--opt`/`--option`, which are just as
+        // open, and `commandToken` is a token of a shell command line.
+        case .envAssignment, .keyValue, .commandToken:
+            true
+        // Host paths. These carry the account name, and often the sensitive part *is* the path —
+        // `--volume /Users/someone/.ssh:/keys` says more than it looks like it does.
+        case .mountSpec, .absolutePath, .copyEndpoint, .hostBuildPath:
+            true
+        // Names, and closed sets. These have to survive: an audit line that hides *which*
+        // container was deleted, *which* image was pulled, or *which* `machine set` setting was
+        // changed records that something happened and withholds the only interesting part.
+        case .identifier, .imageReference, .machineSetting, .homeMountMode,
+             .progressType, .signal, .platform, .outputFormat, .machineOutputFormat:
+            false
+        // Numbers, sizes and network shapes. Configuration rather than content. A port mapping
+        // can carry a bind address, which is precisely what an auditor wants to see.
+        case .portMapping, .durationSeconds, .memorySize, .count, .cidr, .cidrV6:
+            false
+        }
+    }
+
     /// What the shape actually permits, in words a user can act on.
     ///
     /// Added because the message read `'Test 1' is not a valid identifier`, which states the
@@ -332,15 +363,40 @@ public struct ValidatedCommand: Sendable, Equatable {
     public let mutates: Bool
     public let timeoutHint: TimeInterval
 
-    public init(subcommand: [String], arguments: [String], mutates: Bool, timeoutHint: TimeInterval) {
+    /// The audit record: what a host peer logs as having been asked to run, **with free-form
+    /// values shaped away**. `container run --env <envAssignment> --volume <mountSpec> alpine`.
+    ///
+    /// Stored rather than computed, and computed by the validator, because that is the only place
+    /// the *spec* is known — and without the spec you cannot tell a flag's value from an operand.
+    /// It is stored rather than derivable-on-demand so there is no unredacted form to reach for by
+    /// mistake: see `localPreview` for the one case that legitimately wants the whole argv.
+    public let auditDescription: String
+
+    public init(subcommand: [String], arguments: [String], mutates: Bool,
+                timeoutHint: TimeInterval, auditDescription: String? = nil) {
         self.subcommand = subcommand
         self.arguments = arguments
         self.mutates = mutates
         self.timeoutHint = timeoutHint
+        // The fallback is for the handful of direct constructions in tests. It shapes nothing,
+        // because with no spec there is nothing to shape *by* — so it redacts every value.
+        self.auditDescription = auditDescription
+            ?? (["container"] + subcommand
+                + arguments.dropFirst(subcommand.count).map { $0.hasPrefix("-") ? $0 : "<value>" })
+                .joined(separator: " ")
     }
 
-    /// The audit record: what a host peer logs as having been asked to run.
-    public var auditDescription: String { (["container"] + arguments).joined(separator: " ") }
+    /// The full argv, for showing a person the command **they just typed** before they run it.
+    ///
+    /// Deliberately a different property with a different name from `auditDescription`, because
+    /// the two have opposite requirements and one string cannot serve both. A build form's preview
+    /// is useless if it renders the `--build-arg` the user just entered as `<keyValue>`; an audit
+    /// line that carries that same value is the SEC-03 finding. Distinguishing them by *audience*
+    /// is the only way both can be right.
+    ///
+    /// **Never log this, never put it on a wire, never put it in an alert.** The audience is the
+    /// person at the keyboard who supplied the values, and nobody else.
+    public var localPreview: String { (["container"] + arguments).joined(separator: " ") }
 }
 
 public enum AllowlistError: Error, Equatable, Sendable {
@@ -1053,7 +1109,114 @@ public enum Allowlist {
         return ValidatedCommand(subcommand: spec.path,
                                 arguments: argv,
                                 mutates: spec.mutates,
-                                timeoutHint: spec.timeoutHint)
+                                timeoutHint: spec.timeoutHint,
+                                auditDescription: redact(argv, against: spec))
+    }
+
+    // MARK: Audit redaction
+
+    /// Builds the audit string: **flag and operand *names* survive, free-form *values* do not.**
+    ///
+    /// SEC-03 in the 2026-08-20 audit: `auditDescription` joined the whole canonical argv, so a
+    /// record of `container run --env DATABASE_PASSWORD=… ` carried the password into whatever read
+    /// it. The fix has to be structural, not a pattern match on likely-secret-looking text — a
+    /// denylist of key names is a guess, and the one that gets missed is the one that mattered.
+    ///
+    /// It is structural because it walks the **canonical** argv against the **spec**: the argv is
+    /// already normalised to `subcommand, flags, operands, [--], trailing`, and the spec says which
+    /// flags take values and what shape each value is. So a value is identified by its position in
+    /// a grammar, not by how it looks.
+    ///
+    /// What survives, and why it must: the subcommand, every flag name, and values whose shape is
+    /// a **closed set or a resource name** — `identifier`, `imageReference`, `machineSetting`,
+    /// `homeMountMode`, `signal`, `platform`, `cidr`, counts and formats. An audit line reading
+    /// `machine set home-mount=<machineSetting> prod` would be worthless: *which* setting was
+    /// changed is the entire security interest of that command.
+    ///
+    /// What does not survive: `envAssignment` and `keyValue` (arbitrary data, the SEC-03 case), the
+    /// four host-path shapes (`mountSpec`, `absolutePath`, `copyEndpoint`, `hostBuildPath` — these
+    /// carry the account name and often the point of the operation), and the entire trailing
+    /// in-container command, which is free text and can hold a credential in a `curl` header.
+    ///
+    /// **The cost, stated plainly:** an audit line no longer says *which* path was mounted, only
+    /// that a mount was requested. That is a real loss for the most security-relevant flag on the
+    /// list. It is accepted because `MountPolicy` is what actually decides a path, and that
+    /// decision — not this string — is the auditable event; a Phase 2 peer that needs path-level
+    /// records must carry them in a channel with handling to match, rather than in a description
+    /// that ends up in log files and alerts.
+    static func redact(_ argv: [String], against spec: CommandSpec) -> String {
+        var out: [String] = ["container"]
+        var index = 0
+        var operandsSeen = 0
+        var inTrailing = false
+        var trailingCount = 0
+
+        // The subcommand path, verbatim.
+        while index < argv.count, index < spec.path.count {
+            out.append(argv[index])
+            index += 1
+        }
+
+        while index < argv.count {
+            let token = argv[index]
+
+            if inTrailing {
+                trailingCount += 1
+                index += 1
+                continue
+            }
+
+            if token == "--" {
+                out.append("--")
+                inTrailing = true
+                index += 1
+                continue
+            }
+
+            if token.hasPrefix("-"), token != "-" {
+                let flag: FlagSpec? = token.hasPrefix("--")
+                    ? spec.flag(long: String(token.dropFirst(2)))
+                    : token.dropFirst().first.flatMap { spec.flag(short: $0) }
+                // Fail closed. A token shaped like a flag that the spec does not know cannot
+                // happen for a canonical argv, so if it ever does, something is wrong upstream and
+                // this is not the place to guess which token is a value.
+                guard let flag else {
+                    out.append("<flag>")
+                    index += 1
+                    continue
+                }
+                out.append(token)
+                index += 1
+                if let shape = flag.value, index < argv.count {
+                    out.append(render(argv[index], as: shape))
+                    index += 1
+                }
+                continue
+            }
+
+            // A bare token: an operand while the spec has room, otherwise the start of the
+            // in-container command for the subcommands that take one without a separator.
+            if operandsSeen < spec.operands.max {
+                out.append(render(token, as: spec.operands.shape))
+                operandsSeen += 1
+            } else {
+                inTrailing = true
+                trailingCount += 1
+            }
+            index += 1
+        }
+
+        if trailingCount > 0 {
+            // Counted, not quoted. The count is the useful part — "it ran a 9-token command in
+            // there" — and every token of it is free text.
+            out.append("<command: \(trailingCount) token\(trailingCount == 1 ? "" : "s")>")
+        }
+        return out.joined(separator: " ")
+    }
+
+    /// A single value: itself when its shape is a name or a closed set, its shape otherwise.
+    private static func render(_ value: String, as shape: ValueShape) -> String {
+        shape.carriesFreeFormData ? "<\(shape.rawValue)>" : value
     }
 
     // MARK: Parsing helpers

@@ -121,7 +121,7 @@ struct BuildImageView: View {
     private var previewText: String {
         guard context != nil else { return "Choose a context folder to build the command." }
         switch preview {
-        case .success(let command): return command.auditDescription
+        case .success(let command): return command.localPreview
         case .failure(let error): return error.description
         }
     }
