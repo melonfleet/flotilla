@@ -60,8 +60,11 @@ persisted and changed nothing:
   than in the views — and two invariants the compiler cannot check are enforced by
   `Scripts/check-defaults.sh` and `Scripts/check-settings-consumers.sh`, both run
   by `make-app.sh`.
-- **Packaging.** `make-app.sh` assembles a bundle but does not yet stamp versions
-  or sign properly, so login-item registration can be refused on a fresh build.
+- **Distribution.** `Scripts/release.sh` signs with Developer ID, notarises and
+  staples; see `RELEASING.md`. It needs a Developer ID Application certificate and
+  a stored `notarytool` credential, neither of which is set up on a fresh machine.
+  `make-app.sh` still signs ad-hoc for the dev loop, which is why login-item
+  registration can be refused there.
 
 The current build contract and ownership live in `PHASE1.md`. Settled product and
 security choices live in `DECISIONS.md`; the phase-ordered scope is consolidated

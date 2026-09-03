@@ -17,6 +17,11 @@ xcuserdata/
 # Secrets — never commit signing/update keys
 *.p12
 *.cer
+# App Store Connect API keys, which is what notarisation authenticates with. Apple lets you
+# download an AuthKey_XXXXXXXX.p8 exactly once and it is a signing credential, so the likeliest
+# accident is one sitting in the repo root after a release. See RELEASING.md step 2.
+*.p8
+AuthKey_*
 sparkle_private_key*
 dsa_priv.pem
 ed25519_priv*
@@ -24,3 +29,7 @@ ed25519_priv*
 # Assembled app bundle from Scripts/make-app.sh — a build product, not source.
 build/
 build/icons/
+
+# Release artefacts: signed zips and notarisation logs. Never committed — a notarised build is
+# reproducible from a tag, and the logs name submission ids tied to an Apple account.
+dist/

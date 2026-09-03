@@ -61,6 +61,9 @@ echo "▸ checking view defaults…"
 # must not reach a build. Cheap (a few greps) and it runs before assembly, so a failure stops the
 # bundle rather than shipping a Settings screen full of controls that do nothing.
 "$ROOT/Scripts/check-settings-consumers.sh"
+# Identity, credentials and key files. Cheap, and the release path is exactly when someone has a
+# freshly downloaded .p8 sitting in the repo root.
+"$ROOT/Scripts/check-hygiene.sh"
 
 echo "▸ building ($CONFIG)…"
 if [ "$CONFIG" = "release" ]; then
@@ -85,8 +88,13 @@ BINARY="$(swift build -c "$CONFIG" --product Flotilla --show-bin-path)/Flotilla"
 # the git description kept in its own key where a support bundle can still name the exact commit.
 DESCRIBE="$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")"
 
+# An explicit version wins over anything derived. `Scripts/release.sh` sets this: a release is
+# named deliberately, and a release build that quietly took its version from whatever tag happened
+# to be reachable would let two different builds claim the same number.
+if [ -n "${FLOTILLA_RELEASE_VERSION:-}" ]; then
+    SHORT_VERSION="$FLOTILLA_RELEASE_VERSION"
 # The tag, when there is one (`v1.2.3` → `1.2.3`); `0.0.0` when there is not. Never a hash.
-if git describe --tags --abbrev=0 >/dev/null 2>&1; then
+elif git describe --tags --abbrev=0 >/dev/null 2>&1; then
     SHORT_VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
 else
     SHORT_VERSION="0.0.0"
@@ -175,25 +183,53 @@ echo "</plist>" >> "$APP/Contents/Info.plist"
 
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-# Ad-hoc signature. Not distribution signing — that is Developer ID + notarization in
-# Phase 5 — but an unsigned bundle gets an unstable identity, and notification
-# authorization is remembered per identity, so without this the permission prompt can
-# reappear on every rebuild.
-echo "▸ signing (ad-hoc)…"
-codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>&1 | sed 's/^/   /'
+# Signing. Two modes, and the difference is one environment variable.
+#
+# Default is **ad-hoc**, which is right for the dev loop: no network, no credentials, no waiting.
+# An unsigned bundle gets an unstable identity, and notification authorization is remembered per
+# identity, so even ad-hoc is worth doing — without it the permission prompt reappears on every
+# rebuild.
+#
+# `FLOTILLA_SIGN_IDENTITY` switches to real signing: a Developer ID Application certificate, the
+# **hardened runtime** and a **secure timestamp**. Both of those are notarisation requirements
+# rather than preferences — `notarytool` rejects a bundle without them — so they are attached here
+# at signing time and not bolted on by the release script. `Scripts/release.sh` sets the variable;
+# nothing else needs to.
+if [ -n "${FLOTILLA_SIGN_IDENTITY:-}" ]; then
+    echo "▸ signing (Developer ID, hardened runtime)…"
+    # No `--deep`. Apple's own guidance is to sign inside-out, and this bundle has nothing inside:
+    # one flat executable, no frameworks, no helpers, SwiftTerm statically linked. Verified with
+    # `otool -L` — nothing outside /usr/lib and /System. `--deep` on a bundle like this does
+    # nothing except make a future nested binary silently inherit the wrong options.
+    codesign --force --options runtime --timestamp \
+             --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$APP" 2>&1 | sed 's/^/   /'
+    SIGN_MODE="Developer ID"
+else
+    echo "▸ signing (ad-hoc)…"
+    codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>&1 | sed 's/^/   /'
+    SIGN_MODE="ad-hoc"
+fi
 
 echo "▸ verifying…"
-codesign --verify --verbose=1 "$APP" 2>&1 | sed 's/^/   /'
+# `--strict` and `--deep` on *verification* (unlike signing): they check what is actually in the
+# bundle rather than what we believe is in it.
+codesign --verify --deep --strict --verbose=1 "$APP" 2>&1 | sed 's/^/   /'
 /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist" | sed 's/^/   bundle id: /'
 echo "   version:   $SHORT_VERSION ($BUILD_NUMBER) — $DESCRIBE"
 
-# Ad-hoc, and said out loud rather than left to be discovered. `--sign -` produces a signature with
-# no Team ID, which is enough to launch locally and **not** enough for notarisation or for a
-# Gatekeeper-clean install on another Mac. It is also why `SMAppService` registration can be
-# refused on a fresh build: the login item is keyed to the bundle's signing identity, and an ad-hoc
-# identity changes when the binary does.
-echo "   signing:   ad-hoc (no Team ID) — fine locally, not distributable, and login-item"
-echo "              registration may be refused after a rebuild"
+if [ "$SIGN_MODE" = "Developer ID" ]; then
+    TEAM="$(codesign -dv "$APP" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+    echo "   signing:   Developer ID, hardened runtime, timestamped — team ${TEAM:-unknown}"
+    echo "              not notarised yet; Gatekeeper on another Mac needs Scripts/release.sh"
+else
+    # Said out loud rather than left to be discovered. `--sign -` produces a signature with no Team
+    # ID: enough to launch locally, not enough for notarisation or for a Gatekeeper-clean install on
+    # another Mac. It is also why `SMAppService` registration can be refused on a fresh build — a
+    # login item is keyed to the bundle's signing identity, and an ad-hoc identity changes when the
+    # binary does.
+    echo "   signing:   ad-hoc (no Team ID) — fine locally, not distributable, and login-item"
+    echo "              registration may be refused after a rebuild"
+fi
 /usr/libexec/PlistBuddy -c "Print :LSUIElement" "$APP/Contents/Info.plist" | sed 's/^/   LSUIElement: /'
 
 echo "✓ $APP"
