@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     container: swift:6.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # SwiftPM picks `Package@swift-6.1.swift` automatically when the toolchain matches, which
       # drops the SwiftUI app and builds only the Foundation-only core plus its tests. Asserted
@@ -51,7 +51,7 @@ jobs:
     name: Invariant scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Two things the compiler cannot check, both of which have shipped as real bugs:
       #
@@ -86,7 +86,7 @@ jobs:
     name: Repository hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A script, not inline YAML, for the same reason the other two checks are scripts: it can be
       # run locally, tested by breaking it on purpose, and called from `make-app.sh`. Inline CI
@@ -124,6 +124,6 @@ jobs:
   #   name: Flotilla.app (macOS 26)
   #   runs-on: macos-26          # does not exist yet
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
   #     - run: swift build
   #     - run: bash Scripts/make-app.sh
