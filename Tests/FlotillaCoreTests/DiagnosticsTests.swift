@@ -113,10 +113,10 @@ import Testing
 }
 
 @Test func redactsAbsoluteHomeDirectoryPathsAndTheUsernameWithin() {
-    let macPath = "/Users/example/Projects/flotilla/config.toml"
+    let macPath = "/Users/someone/Projects/flotilla/config.toml"
     let macOutput = Redactor.standard.redact(macPath)
-    #expect(!macOutput.contains("/Users/example"))
-    #expect(!macOutput.contains("example"))
+    #expect(!macOutput.contains("/Users/someone"))
+    #expect(!macOutput.contains("someone"))
     #expect(macOutput.contains("~"))
     #expect(macOutput.hasSuffix("/Projects/flotilla/config.toml"))
     #expect(RedactionAudit.leaks(in: macOutput).isEmpty)
@@ -132,9 +132,9 @@ import Testing
 @Test func redactsDataVolumeMountedHomePaths() {
     // `/System/Volumes/Data/Users/...` is the real on-disk path on modern macOS;
     // `/Users/...` is a synthetic firmlink over it. Both identify a person.
-    let input = "/System/Volumes/Data/Users/example/Library/Application Support/Flotilla"
+    let input = "/System/Volumes/Data/Users/someone/Library/Application Support/Flotilla"
     let output = Redactor.standard.redact(input)
-    #expect(!output.contains("example"))
+    #expect(!output.contains("someone"))
     #expect(!output.contains("/System/Volumes/Data/Users"))
 }
 
@@ -174,9 +174,9 @@ import Testing
 }
 
 @Test func redactsEmailAddresses() {
-    let input = "signed in as exampledev@outlook.com"
+    let input = "signed in as someonedev@outlook.com"
     let output = Redactor.standard.redact(input)
-    #expect(!output.contains("exampledev@outlook.com"))
+    #expect(!output.contains("someonedev@outlook.com"))
     #expect(RedactionAudit.leaks(in: output).isEmpty)
 }
 
@@ -188,7 +188,7 @@ import Testing
 // MARK: - RedactionAudit: the belt-and-braces check must actually fire
 
 @Test func auditFindsLeaksInUnredactedTextButNotInRedactedText() {
-    let secret = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE and lives at /Users/example/creds"
+    let secret = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE and lives at /Users/someone/creds"
     #expect(!RedactionAudit.leaks(in: secret).isEmpty)
 
     let cleaned = Redactor.standard.redact(secret)
@@ -209,12 +209,12 @@ import Testing
 }
 
 @Test func redactsEveryElementOfAStringArraySettingValue() {
-    let value = SettingValue.stringArray(["/Users/example/a", "plain", "/home/dave/b"])
+    let value = SettingValue.stringArray(["/Users/someone/a", "plain", "/home/dave/b"])
     guard case .stringArray(let redacted) = Redactor.standard.redact(value) else {
         Issue.record("expected .stringArray back")
         return
     }
-    #expect(redacted.allSatisfy { !$0.contains("example") && !$0.contains("dave") })
+    #expect(redacted.allSatisfy { !$0.contains("someone") && !$0.contains("dave") })
     #expect(redacted[1] == "plain")
 }
 
@@ -222,7 +222,7 @@ import Testing
     let store = SettingsStore()
     try store.set(["deadbeef-fingerprint"], for: SettingsKeys.peerAllowlist)
     try store.set(["another-fingerprint"], for: SettingsKeys.trustAnchorFingerprints)
-    try store.set("/Users/example/bin/container", for: SettingsKeys.containerBinaryPath)
+    try store.set("/Users/someone/bin/container", for: SettingsKeys.containerBinaryPath)
 
     let redacted = Redactor.standard.redactSettings(store.effectiveValues())
 
@@ -286,12 +286,12 @@ import Testing
 @Test func captureRedactsSettingsErrorsAndPreflightTogether() throws {
     let managed = StaticManagedPreferences(locked: [SettingsKeys.hostListenPort.name: .int(9443)])
     let store = SettingsStore(managed: managed)
-    try store.set("/Users/example/bin/container", for: SettingsKeys.containerBinaryPath)
+    try store.set("/Users/someone/bin/container", for: SettingsKeys.containerBinaryPath)
     try store.set(["fingerprint-should-never-appear"], for: SettingsKeys.peerAllowlist)
 
     let errorLog = ErrorLog(capacity: 10)
     errorLog.record(
-        .error, subsystem: "/Users/example/Library/Logs/flotilla.log",
+        .error, subsystem: "/Users/someone/Library/Logs/flotilla.log",
         message: "pull failed: Authorization: Bearer abcdefgh12345678"
     )
 
@@ -300,8 +300,8 @@ import Testing
         app: .init(version: "1.0.0", mode: .client, isManaged: true),
         system: .init(osName: "macOS", osVersion: "26.0", architecture: "arm64"),
         settings: store,
-        runtime: .init(cliVersion: "1.0.0 (/Users/example/bin/container)"),
-        preflight: .ok(version: "1.0.0", path: "/Users/example/bin/container"),
+        runtime: .init(cliVersion: "1.0.0 (/Users/someone/bin/container)"),
+        preflight: .ok(version: "1.0.0", path: "/Users/someone/bin/container"),
         errorLog: errorLog
     )
 
@@ -314,20 +314,20 @@ import Testing
     // Every string-shaped field that could carry a path/token is clean.
     #expect(snapshot.settings[SettingsKeys.containerBinaryPath.name] == .string("~/bin/container"))
     #expect(!snapshot.recentErrors[0].message.contains("abcdefgh12345678"))
-    #expect(!snapshot.recentErrors[0].subsystem.contains("example"))
+    #expect(!snapshot.recentErrors[0].subsystem.contains("someone"))
     if case .ok(_, let path) = try #require(snapshot.preflight) {
-        #expect(!path.contains("example"))
+        #expect(!path.contains("someone"))
     } else {
         Issue.record("expected .ok preflight result")
     }
     let cliVersion = snapshot.runtime?.cliVersion ?? ""
-    #expect(!cliVersion.contains("example"))
+    #expect(!cliVersion.contains("someone"))
 
     // Whole-snapshot audit: encode it and re-scan every byte, the way a support
     // bundle would before it is handed to someone else.
     //
     // `.withoutEscapingSlashes` is load-bearing, not tidiness. Foundation writes `/`
-    // as `\/` by default, so `/Users/example` becomes `\/Users\/example` and the audit's
+    // as `\/` by default, so `/Users/someone` becomes `\/Users\/someone` and the audit's
     // `/Users/…` and `/var/folders/…` detectors match nothing — the path half of this
     // assertion passed vacuously until `SupportBundleBuilder` was written and the
     // escaping was noticed. `SupportBundleBuilder.encoder` sets the same option.
@@ -336,24 +336,24 @@ import Testing
     encoder.dateEncodingStrategy = .iso8601
     let data = try encoder.encode(snapshot)
     #expect(RedactionAudit.leaks(in: data).isEmpty)
-    #expect(!String(decoding: data, as: UTF8.self).contains("example"))
+    #expect(!String(decoding: data, as: UTF8.self).contains("someone"))
 }
 
 @Test func captureRedactsPreflightForEveryCaseThatCarriesAPathOrReason() {
     let redactor = Redactor.standard
-    let okResult = PreflightResult.ok(version: "1.0.0", path: "/Users/example/bin/container")
+    let okResult = PreflightResult.ok(version: "1.0.0", path: "/Users/someone/bin/container")
     guard case .ok(_, let okPath) = okResult.redacted(with: redactor) else {
         Issue.record("expected .ok")
         return
     }
-    #expect(!okPath.contains("example"))
+    #expect(!okPath.contains("someone"))
 
-    let unusable = PreflightResult.unusable(reason: "service socket at /Users/example/.container/api.sock unreachable")
+    let unusable = PreflightResult.unusable(reason: "service socket at /Users/someone/.container/api.sock unreachable")
     guard case .unusable(let reason) = unusable.redacted(with: redactor) else {
         Issue.record("expected .unusable")
         return
     }
-    #expect(!reason.contains("example"))
+    #expect(!reason.contains("someone"))
 
     // These carry no path/reason payload, so redaction is a pure pass-through.
     #expect(PreflightResult.missing.redacted(with: redactor) == .missing)

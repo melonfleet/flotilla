@@ -175,7 +175,7 @@ that we *built* the right command; almost nothing checked the command was
   Machines. Reverting a scaffold means source, artefact **and** process. This is the
   second time a stale artefact has been mistaken for a code bug.
 - **A note claiming a protection is a promise the code must keep.** The machine Inspect
-  panel printed "Secrets are redacted" under `userSetup.username: example`. Every
+  panel printed "Secrets are redacted" under `userSetup.username: <the account name>`. Every
   redaction rule matched a *path* (`/Users/<name>`); nothing matched a bare account
   field, so the host user's own name was displayed **and handed out by Copy JSON**.
   The docstring even named that field as the reason redaction mattered there. There is

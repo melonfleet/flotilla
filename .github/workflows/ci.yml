@@ -1,0 +1,123 @@
+name: CI
+
+# The Test stage of the AI-native SDLC, made deterministic. Before this existed, 335 tests and two
+# invariant scripts ran only when someone remembered — and the scripts only ran inside
+# `make-app.sh`, so a commit that broke one was not caught until the next packaging run.
+#
+# Runs on Linux, which is not a compromise: `Package@swift-6.1.swift` exists precisely so the
+# portable half of Flotilla builds and tests without macOS. See the `macos-app` job at the bottom
+# for what Linux cannot cover and why that is currently unavoidable.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # One run per ref. A force-push or a quick follow-up commit cancels the older run rather than
+  # queueing behind it.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: FlotillaCore (Linux, Swift 6.1)
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@v4
+
+      # SwiftPM picks `Package@swift-6.1.swift` automatically when the toolchain matches, which
+      # drops the SwiftUI app and builds only the Foundation-only core plus its tests. Asserted
+      # rather than assumed: if that manifest is ever deleted or renamed, this job would silently
+      # start trying to build the macOS app and fail confusingly instead of clearly.
+      - name: Confirm the portable manifest is in play
+        run: test -f Package@swift-6.1.swift
+
+      - name: Build
+        run: swift build
+
+      # 334 of 335 on Linux: one runner test is `#if os(macOS)`, because `Process` on Linux does
+      # not report a child's termination until the pipe's last writer closes. That difference is
+      # documented on `LocalHost` itself.
+      - name: Test
+        run: swift test
+
+  invariants:
+    name: Invariant scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Two things the compiler cannot check, both of which have shipped as real bugs:
+      #
+      #   check-defaults.sh          — a screenshot scaffold left in a view's @State default. Handed
+      #                                over twice as a working build and read as a product bug.
+      #   check-settings-consumers.sh — a setting offered to the user that nothing reads. An
+      #                                independent audit found 11 of 26 in that state.
+      #
+      # They run inside `make-app.sh` too. Here they run on every push, which is the point: a
+      # broken invariant should fail on the commit that broke it, not on the next packaging run.
+      - name: View defaults
+        run: bash Scripts/check-defaults.sh
+
+      - name: Settings have consumers
+        run: bash Scripts/check-settings-consumers.sh
+
+      # Shell scripts that gate a build deserve the same treatment as the code they gate.
+      - name: Shell syntax
+        run: |
+          for f in Scripts/*.sh; do
+            bash -n "$f" || exit 1
+          done
+          echo "  shell syntax OK"
+
+  hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A script, not inline YAML, for the same reason the other two checks are scripts: it can be
+      # run locally, tested by breaking it on purpose, and called from `make-app.sh`. Inline CI
+      # shell is the one kind of code nobody can run before pushing.
+      - name: No real identity, credentials or key files
+        run: bash Scripts/check-hygiene.sh
+
+      # Fixtures must be captured from the real CLI, never hand-written — the lesson behind nine
+      # bugs a green suite never saw. This cannot prove provenance, but a fixture that does not
+      # parse never came from the CLI.
+      - name: Fixtures parse
+        run: |
+          for f in Tests/FlotillaCoreTests/Fixtures/*.json; do
+            python3 -c "import json,sys; json.load(open('$f'))" || { echo "✗ $f is not valid JSON"; exit 1; }
+          done
+          echo "  fixtures parse OK"
+
+  # ---------------------------------------------------------------------------
+  # NOT RUN, and this is the honest reason rather than an oversight.
+  #
+  # The Flotilla app target needs macOS 26 and Swift 6.3 (`Package.swift` declares
+  # `.macOS(.v26)`). GitHub's hosted macOS runners do not offer that yet, so there is no runner
+  # that can compile the SwiftUI half — `swift build` there would fail on the platform
+  # requirement, not on anything wrong with the code.
+  #
+  # Until a macOS 26 runner exists, the app target is covered by:
+  #   * `Scripts/make-app.sh`, which runs both invariant scripts before it packages, and
+  #   * launching the built bundle by hand.
+  #
+  # Neither is CI. The gap is real and named here so it is not mistaken for coverage. The fix is
+  # either a hosted macOS 26 image or a self-hosted runner on the dev Mac; do not paper over it by
+  # lowering the platform requirement.
+  #
+  # macos-app:
+  #   name: Flotilla.app (macOS 26)
+  #   runs-on: macos-26          # does not exist yet
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: swift build
+  #     - run: bash Scripts/make-app.sh

@@ -58,6 +58,19 @@ public extension ContainerHost {
 /// Launching an absolute path from a known directory is also the stricter choice: there is no
 /// `PATH` entry an attacker can prepend to have something else answer to the name `container`.
 ///
+/// ## Portability, measured (2026-09-02)
+///
+/// This file compiles and its tests run on Linux, and one behaviour there is different enough to
+/// record. **`Process` on Linux does not report a child's termination until the pipe's last writer
+/// closes.** So if the child forks something that outlives it, the exit notification — and
+/// therefore the deadline below — is deferred until the grandchild goes too. On Darwin the child's
+/// exit is reported immediately and the grandchild only delays the *readers*, which is what
+/// `drainGrace` exists to bound.
+///
+/// `LocalHost` spawns exactly one binary, `container`, which is macOS-only, so Darwin is the only
+/// platform where any of this is load-bearing today. Anyone porting it should know the deadline is
+/// weaker on Linux than it looks here.
+///
 /// ## The runner contract (2026-08-23)
 ///
 /// Three things were wrong at this boundary, all found by an independent audit and all confirmed
@@ -145,6 +158,17 @@ public struct LocalHost: ContainerHost {
 
         let out = Sink(limit: limits.maxBytesPerStream)
         let err = Sink(limit: limits.maxBytesPerStream)
+        // Two dedicated threads, **not** `DispatchQueue.global().async`.
+        //
+        // Each drain blocks in `read(2)` for as long as the child is alive, and parking a blocked
+        // read on a cooperative thread pool is the thing you are told not to do: the pool decides
+        // when — or whether — to grow, and this code needs both reads running *now*. Darwin's pool
+        // happens to be forgiving, so the dispatch version passed on macOS for a whole session.
+        // On Linux it did not: the first Linux run of this suite returned **empty stdout and stderr
+        // both marked truncated**, which is the signature of the grace period expiring before
+        // either drain had managed a single read. The pipes were fine — a standalone probe on the
+        // same VM read them correctly both sequentially and concurrently. The scheduler was the
+        // variable, so the fix is to stop asking a scheduler.
         let draining = DispatchGroup()
         // Signalled by `terminationHandler` rather than by `waitUntilExit()`, so the deadline can
         // be a *wait with a timeout* instead of an unbounded block.
@@ -152,11 +176,19 @@ public struct LocalHost: ContainerHost {
         process.terminationHandler = { _ in exited.signal() }
 
         try process.run()
-        DispatchQueue.global(qos: .userInitiated).async(group: draining) {
-            out.drain(outPipe.fileHandleForReading)
-        }
-        DispatchQueue.global(qos: .userInitiated).async(group: draining) {
-            err.drain(errPipe.fileHandleForReading)
+        for (sink, handle, name) in [(out, outPipe.fileHandleForReading, "stdout"),
+                                     (err, errPipe.fileHandleForReading, "stderr")] {
+            draining.enter()
+            let thread = Thread {
+                sink.drain(handle)
+                draining.leave()
+            }
+            thread.name = "flotilla.drain.\(name)"
+            // 512 KiB. The default is 512 KiB on Darwin anyway; stated explicitly because this
+            // thread does nothing but read into a bounded buffer and a future default change
+            // should not silently give it more.
+            thread.stackSize = 512 * 1024
+            thread.start()
         }
 
         var timedOut = false

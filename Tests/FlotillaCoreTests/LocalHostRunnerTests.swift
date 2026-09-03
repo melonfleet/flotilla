@@ -131,6 +131,19 @@ private func runner(limitBytes: Int = 64 * 1024,
     #expect(Date().timeIntervalSince(start) < 6)
 }
 
+/// **macOS only, and the reason is a measured platform difference rather than a shrug.**
+///
+/// This case needs the child to exit while a grandchild still holds the pipe open. On Linux that
+/// is unobservable: `Process` does not report the child's termination until the pipe's last writer
+/// closes, so `exited.wait` sat for the grandchild's full 8 seconds and the drain grace was never
+/// reached — the run took 8.03s and returned complete, untruncated output. The pipes themselves are
+/// fine there (a standalone probe read them correctly), and `/bin/sh` being dash rather than bash
+/// turned out not to be the cause.
+///
+/// Gated rather than rewritten because `LocalHost` spawns exactly one binary — `container`, which
+/// is macOS-only — so Darwin is the only platform where its process semantics are load-bearing.
+/// `LocalHost`'s own docs now carry the same caveat for anyone who ports it.
+#if os(macOS)
 @Test func abandonedOutputIsReportedAsTruncatedRatherThanComplete() throws {
     // A grandchild that holds the pipe open past the drain grace: the child exits at once, but
     // its forked writer lingers. What we return is a prefix, and it must not claim otherwise.
@@ -140,6 +153,7 @@ private func runner(limitBytes: Int = 64 * 1024,
     #expect(result.stdout.contains("kept"))
     #expect(result.stdoutTruncated)   // honest: the reader was cut loose, not finished
 }
+#endif
 
 @Test func aNonZeroExitStillReturnsRatherThanThrowing() throws {
     // The runner reports; deciding what a failure *means* belongs to ContainerCLI, which has one

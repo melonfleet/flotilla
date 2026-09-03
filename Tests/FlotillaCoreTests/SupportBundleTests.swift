@@ -24,7 +24,7 @@ private enum Planted {
         -----END RSA PRIVATE KEY-----
         """
     static let fingerprint = String(repeating: "ab", count: 32)  // 64 hex
-    static let email = "exampledev@outlook.com"
+    static let email = "someonedev@outlook.com"
     static let homePath = "/Users/mallory/Projects/flotilla"
     static let linuxHomePath = "/home/mallory/.ssh"
     static let temporaryPath = "/private/var/folders/zz/abcdef1234/T/flotilla-tmp.json"
