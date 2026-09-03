@@ -64,6 +64,7 @@ echo "▸ checking view defaults…"
 # Identity, credentials and key files. Cheap, and the release path is exactly when someone has a
 # freshly downloaded .p8 sitting in the repo root.
 "$ROOT/Scripts/check-hygiene.sh"
+"$ROOT/Scripts/check-test-isolation.sh"
 
 echo "▸ building ($CONFIG)…"
 if [ "$CONFIG" = "release" ]; then

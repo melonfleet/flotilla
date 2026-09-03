@@ -896,6 +896,7 @@ func copyRefusesUnpermittedHostPaths() {
 
 @Test("copy accepts a host path inside a permitted root")
 func copyAcceptsPermittedHostPaths() throws {
+    makeBuildFixtures()
     let validated = try Allowlist.validated(
         ["copy", "web:/etc/hostname", "/tmp/flotilla/hostname"],
         mountPolicy: .roots(["/tmp/flotilla"])
@@ -905,6 +906,7 @@ func copyAcceptsPermittedHostPaths() throws {
 
 @Test("copy works in the upload direction too")
 func copyAcceptsHostToContainer() throws {
+    makeBuildFixtures()
     let validated = try Allowlist.validated(
         ["copy", "/tmp/flotilla/a.conf", "web:/etc/a.conf"],
         mountPolicy: .roots(["/tmp/flotilla"])
@@ -914,6 +916,7 @@ func copyAcceptsHostToContainer() throws {
 
 @Test("copy refuses the filesystem root, traversal, and malformed endpoints")
 func copyRefusesDangerousEndpoints() {
+    makeBuildFixtures()
     for argv in [["copy", "web:/etc", "/"],
                  ["copy", "web:/etc/../../x", "/tmp/flotilla/x"],
                  ["copy", "web:", "/tmp/flotilla/x"],
@@ -1043,6 +1046,7 @@ func omittedBuildContextIsRefused() {
 /// dependent spec needs a case under the policy production uses, or the test proves nothing.
 @Test("under .interactiveShell, machine run serves BOTH the boot command and the bare shell")
 func bootAndShellBothWorkUnderTheAppsOwnPolicy() throws {
+    makeBuildFixtures()
     // The boot form — what `startMachine` and therefore Restart send.
     let boot = try Allowlist.validated(["machine", "run", "--name", "dev", "--", "/bin/true"],
                                        execPolicy: .interactiveShell)
@@ -1199,6 +1203,7 @@ private func requireUnknownFlag(
 
 @Test("build refuses --secret: it reads host env vars and host files")
 func buildRefusesSecret() {
+    makeBuildFixtures()
     // `--secret id=<key>[,env=<ENV_VAR>|,src=<local/path>]`. `env=` lifts a host environment
     // variable and `src=` a host file, both into a build the caller controls — an
     // exfiltration primitive the moment a remote peer can name it, and one that MountPolicy
@@ -1211,6 +1216,7 @@ func buildRefusesSecret() {
 
 @Test("build refuses --output: type=local,dest= writes an arbitrary host path")
 func buildRefusesOutput() {
+    makeBuildFixtures()
     // The default `type=oci` is what we want anyway, so the flag buys nothing and costs a
     // write primitive. The short spelling is refused too — a refusal that only covers the
     // long form is not a refusal.
@@ -1222,11 +1228,13 @@ func buildRefusesOutput() {
 
 @Test("build refuses --vsock-port: internal builder plumbing is not a caller's choice")
 func buildRefusesVsockPort() {
+    makeBuildFixtures()
     requireUnknownFlag("--vsock-port", in: ["build", "--vsock-port", "8088", "/tmp/build"])
 }
 
 @Test("build refuses the whole --dns family, deferred for want of a use case")
 func buildRefusesDNSFlags() {
+    makeBuildFixtures()
     // Default-deny means "no use case yet" is spelled "not in the table". Listed here per
     // flag so that adding one back is a deliberate act with a failing test attached.
     for flag in ["--dns", "--dns-domain", "--dns-option", "--dns-search"] {
@@ -1236,6 +1244,7 @@ func buildRefusesDNSFlags() {
 
 @Test("a build context outside the mount policy's roots is refused")
 func buildRefusesContextOutsidePermittedRoots() {
+    makeBuildFixtures()
     // A context is a whole directory TREE, archived and handed to the builder — a broader
     // read grant than `copy`'s single file. `/Users` as a context is every SSH key on the
     // machine, and the grammar alone cannot tell that apart from a project directory.
@@ -1263,6 +1272,7 @@ func buildRefusesContextOutsidePermittedRoots() {
 
 @Test("a build context inside a permitted root is allowed")
 func buildAcceptsContextInsidePermittedRoots() throws {
+    makeBuildFixtures()
     let validated = try Allowlist.validated(
         ["build", "-f", "/tmp/flotilla/Dockerfile", "-t", "app:latest", "/tmp/flotilla/src"],
         mountPolicy: .roots(["/tmp/flotilla"])
@@ -1333,6 +1343,7 @@ func buildValidatesItsOtherFlagValues() {
 
 @Test("banned build flags stay unreachable through alternate parser routes")
 func bannedBuildFlagsHaveNoAlternateParserRoute() {
+    makeBuildFixtures()
     let cases: [[String]] = [
         // Long-option abbreviation is not accepted by the allowlist parser.
         ["build", "--sec", "id=npm,env=NPM_TOKEN", "/tmp/build"],

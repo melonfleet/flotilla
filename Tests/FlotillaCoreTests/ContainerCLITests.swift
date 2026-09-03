@@ -155,6 +155,19 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     // Two things at once, because the second is the one a green suite has missed before: that
     // the argv is *accepted*, and that the host receives the allowlist's canonical form rather
     // than what this method assembled.
+    //
+    // **This call is not optional, and its absence was invisible for weeks.** `hostBuildPath`
+    // requires the path to *exist* — the review's symlink-swap finding — so this test needs
+    // `/tmp/flotilla/Dockerfile` on disk. It never created it; six tests in `AllowlistTests` and
+    // one below do, and on a developer's Mac `/tmp/flotilla` then survives between runs forever,
+    // so the dependency could not be observed locally. In a fresh CI container it became a pure
+    // test-ordering coin flip, and the first CI run ever executed lost it:
+    // "--file: host path '/tmp/flotilla/Dockerfile' is not permitted by the mount policy".
+    //
+    // The helper is idempotent, so every test that needs the fixtures should call it rather than
+    // relying on a sibling having gone first.
+    makeBuildFixtures()
+
     let host = RecordingHost()
     let cli = ContainerCLI(host: host, mountPolicy: .roots(["/tmp/flotilla"]), wirePolicy: .localOwner)
 

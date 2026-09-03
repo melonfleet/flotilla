@@ -68,6 +68,12 @@ jobs:
       - name: Settings have consumers
         run: bash Scripts/check-settings-consumers.sh
 
+      # A test that needs a file on disk must create it. See the script: the first CI run ever
+      # executed failed on a test that inherited `/tmp/flotilla/Dockerfile` from a sibling, which is
+      # invisible on a dev machine because /tmp persists between runs.
+      - name: Tests create their own fixtures
+        run: bash Scripts/check-test-isolation.sh
+
       # Shell scripts that gate a build deserve the same treatment as the code they gate.
       - name: Shell syntax
         run: |
