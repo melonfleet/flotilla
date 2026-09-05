@@ -134,3 +134,54 @@ identity changes whenever the binary does, which is why "Launch at login" can be
 forgotten on a dev build. A Developer ID signature is stable across rebuilds, so the login item
 registration survives — the first user-visible improvement from this whole exercise, and a reason to
 test "Launch at login" on a `release.sh` build rather than a `make-app.sh` one.
+
+---
+
+## Test builds: naming and versioning
+
+`Scripts/make-pkg.sh --version 1.0.0-beta.1` produces a signed, notarised, stapled `.pkg`.
+This is what goes to a test Mac. Zips are not distributed.
+
+| Label | Means |
+|---|---|
+| `1.0.0-alpha.N` | early test build; expect breakage |
+| `1.0.0-beta.N` | feature complete, hunting bugs |
+| `1.0.0-rc.N` | release candidate — ship it if nothing turns up |
+| `1.0.0` | the release |
+
+**One label, two versions**, because they answer different questions:
+
+- **The label** — `1.0.0-beta.1` — is the filename, the About panel, and what a tester quotes back
+  to you.
+- **The package version** is the **commit count**, and it is what Apple's `installer` compares.
+
+The label cannot serve as the package version. `installer` orders packages numerically, and
+`1.0.0-beta.2` is not numerically anything — worse, every beta would compare equal, so the
+installer could not tell an older build from a newer one. The commit count only ever increases and
+keeps the ordering right across alpha → beta → rc → release.
+
+### Two certificates, not one
+
+A `.pkg` needs **both**, and they are different things people routinely conflate:
+
+- **Developer ID Application** signs the `.app`
+- **Developer ID Installer** signs the `.pkg`
+
+A package signed with the Application certificate is not valid, and the error says almost nothing.
+
+### What the package does beyond copying an app
+
+It declares a minimum OS of **26.0**, so it refuses to install where Apple's container runtime
+cannot run. An installer that succeeds on macOS 15 and leaves a permanently broken app is worse
+than one that declines with a reason.
+
+### Verify before sending it anywhere
+
+```sh
+spctl --assess --type install --verbose=4 dist/Flotilla-<label>.pkg   # accepted / Notarized Developer ID
+pkgutil --check-signature dist/Flotilla-<label>.pkg                   # Developer ID Installer chain
+```
+
+`--type install` is the package equivalent of `--type execute` for an app. Asking the wrong one
+passes on a package Gatekeeper would still refuse.
+

@@ -100,8 +100,22 @@ elif git describe --tags --abbrev=0 >/dev/null 2>&1; then
 else
     SHORT_VERSION="0.0.0"
 fi
+# `CFBundleShortVersionString` is a *display* string, so a pre-release label belongs in it —
+# 1.0.0-beta.1 is what a tester should see in About and in the installer. What must stay numeric is
+# `CFBundleVersion`, which LaunchServices compares, and that is the commit count below.
+#
+# The guard still rejects a bare commit hash, which is the case it was written for: with no tags,
+# `git describe --always` returns one and it is not a version. It just no longer rejects the
+# pre-release labels along with it.
+# Matched positively against the shapes that ARE versions, rather than negatively against
+# characters that are not. The old negative test accepted `5135510` — an all-digit commit hash is
+# still a hash, and stamping one as the version is the exact bug that already shipped once.
 case "$SHORT_VERSION" in
-    *[!0-9.]*|"") SHORT_VERSION="0.0.0" ;;   # a non-numeric tag is not a version either
+    [0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*|\
+    [0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
+    [0-9]*.[0-9]*.[0-9]*-rc.[0-9]*|\
+    [0-9]*.[0-9]*.[0-9]*) : ;;               # X.Y.Z, optionally pre-release
+    *) SHORT_VERSION="0.0.0" ;;
 esac
 
 # Commit count: monotonic, integer, and meaningful without tags.
