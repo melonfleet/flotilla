@@ -8,17 +8,17 @@ authority if anything here conflicts.
 
 `FlotillaCore` imports **only `Foundation`** — no SwiftUI/AppKit/Network.framework — so it
 **builds and tests on Linux**. `Package@swift-6.1.swift` exists for exactly this. That means
-the core owner and the CLI owner write core code **and verify it themselves** (`swift build`, `swift test`);
-they are not coding blind. the app owner owns everything macOS-only.
+The core and CLI owners write core code **and verify it themselves** (`swift build`, `swift test`);
+they are not coding blind. The app owner owns everything macOS-only.
 
 | Owner | Area | Verifiable by them? |
 |---|---|---|
-| **the core owner** | Settings registry, new models, diagnostics/support-bundle | ✅ Linux |
-| **the CLI owner** | CLI surface (mutations, volumes, networks, logs), the allowlist, preflight | ✅ Linux |
-| **the app owner** | SwiftUI shell, Xcode project, MenuBarExtra, table UI, signing | macOS only |
-| **the review** | Review + tests | review is platform-free |
+| **Core owner** | Settings registry, new models, diagnostics/support-bundle | ✅ Linux |
+| **CLI owner** | CLI surface (mutations, volumes, networks, logs), the allowlist, preflight | ✅ Linux |
+| **App owner** | SwiftUI shell, Xcode project, MenuBarExtra, table UI, signing | macOS only |
+| **Review** | Review + tests | review is platform-free |
 
-**Hard rule for the core owner and the CLI owner: `FlotillaCore` stays UI-free and Foundation-only.** Do not
+**Hard rule for the core and CLI owners: `FlotillaCore` stays UI-free and Foundation-only.** Do not
 `import SwiftUI`, `AppKit`, `Network`, or anything Apple-only — it breaks the Linux build
 that lets you verify your own work.
 
@@ -43,7 +43,7 @@ that lets you verify your own work.
 
 ---
 
-## the CLI owner — CLI surface, allowlist, preflight
+## CLI owner — CLI surface, allowlist, preflight
 
 ### 1. `Allowlist.swift` — the Q1 security boundary (do this FIRST)
 `DECISIONS.md` Q1: the middle path. The host accepts **args passthrough constrained by a
@@ -82,7 +82,7 @@ authorisation and the system installer; see `DECISIONS.md`: never silent/privile
 
 ---
 
-## the core owner — settings registry, models, diagnostics
+## Core owner — settings registry, models, diagnostics
 
 ### 1. `Settings/` — the typed registry with two-tier precedence (do this FIRST)
 `DECISIONS.md` Q4: **two-tier `defaults` + `locked`**, adopted now because retrofitting
@@ -123,8 +123,8 @@ state), and a `PreflightResult` type the CLI owner can return. Add fixtures wher
 - Keep `FlotillaCore` Foundation-only (see hard rule above).
 - Match the existing code's idioms; keep types `Sendable`.
 - **Do NOT run git** — the app owner reviews, commits and pushes.
-- Don't edit each other's files. the core owner: `Settings/`, `Models.swift`, `Diagnostics/`.
-  the CLI owner: `Allowlist.swift`, `ContainerCLI.swift`, `Preflight.swift`. Shared files
+- Don't edit each other's files. Core owner: `Settings/`, `Models.swift`, `Diagnostics/`.
+  CLI owner: `Allowlist.swift`, `ContainerCLI.swift`, `Preflight.swift`. Shared files
   (`ContainerHost.swift`, `Package*.swift`) are the app owner's.
 - Report what you built, what your tests cover, and anything in this contract that turned out
   to be wrong or under-specified.

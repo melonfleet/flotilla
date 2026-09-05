@@ -471,10 +471,10 @@ private extension JSONDecoder {
     }
 }
 
-// MARK: - the app owner's independent check of the refusal
+// MARK: - An independent check of the refusal
 //
 // The whole value of this builder is that a redaction gap becomes a thrown error rather than a
-// file someone emails. the core owner's tests assert it; this asserts it a second way, by defeating
+// file someone emails. The core owner's tests assert it; this asserts it a second way, by defeating
 // `capture`'s redaction the way a future careless field addition would — hand-constructing a
 // snapshot, which the doc comment explicitly permits.
 

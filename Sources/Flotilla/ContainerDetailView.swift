@@ -1160,7 +1160,7 @@ private struct ConfigurationTab: View {
     /// kill, delete. An editable configuration pane would therefore let someone type changes
     /// that could never be applied, which is worse than not offering the field.
     ///
-    /// The real "edit" is to recreate: the review's portability review recommends a `Duplicate…`
+    /// The real "edit" is to recreate: the portability review recommends a `Duplicate…`
     /// action that pre-fills the run sheet from this container's configuration, which is the
     /// honest shape of the same intent. See `research/DOCKER-PORTABILITY.md`.
     private var caption: some View {

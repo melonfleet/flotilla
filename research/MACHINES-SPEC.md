@@ -1,7 +1,7 @@
 # Machines section — spec
 
 Scope: **`container machine` only** — the CLI's own persistent Linux micro-VMs. Not
-general-purpose VM management (the core owner's question, separate doc). This is the #1 gap in
+general-purpose VM management (a separate question, separate doc). This is the #1 gap in
 `research/COMPETITORS.md` (~13 of ~19 competitors ship it), and `DECISIONS.md`'s
 2026-08-02 XPC-vs-CLI entry already settled *how* to build it: **shell out and decode,
 same as everything else.** The CLI exposes the full surface — create, delete, inspect,
@@ -113,7 +113,7 @@ Two things elevate machine support above "one more resource tab":
    treatment, gated the same way, and **must never be the default a remote Phase 2 peer
    receives.** `DECISIONS.md`'s own note on this document's source material says it
    outright: "machine creation with home mounts is a filesystem grant" and sequencing
-   should follow security cost, not market-frequency ranking. the review's standing verdict
+   should follow security cost, not market-frequency ranking. The review's standing verdict
    (`research/ALLOWLIST-AUDIT.md`) that the `Allowlist` isn't yet the fully-audited Phase 2
    boundary applies with extra force to a brand new subcommand family.
 
@@ -397,7 +397,7 @@ Foundation-only per `PHASE1.md`:
    a boot-vs-process distinction?** Affects whether the Logs tab needs a toggle at all.
 6. **What should `ExecPolicy` look like for `machine run`'s interactive form?** A security
    design question, not a UI one, but it blocks §3.4 — flagged for whoever owns that
-   review (`research/ALLOWLIST-AUDIT.md`'s the review, per the standing verdict that the
+   review (`research/ALLOWLIST-AUDIT.md`'s review, per the standing verdict that the
    Allowlist isn't yet the complete Phase 2 boundary).
 
 No design mockup exists for a Machines screen — unlike Containers, Main Window and

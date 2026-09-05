@@ -113,7 +113,7 @@ that we *built* the right command; almost nothing checked the command was
 - **The `Allowlist` must be at least as strict as the CLI.** `--publish` accepted a
   bare port the CLI refuses; `start` accepted 32 operands when the CLI takes one.
   A too-loose shape is the dangerous direction, and in Phase 2 that grammar faces a
-  remote caller. `reference/cli-help/` holds captured `--help` for 49 subcommands —
+  remote caller. `reference/cli-help/` holds captured `--help` for every subcommand — 51 files —
   audit against it, not against docs, which have been wrong repeatedly.
 - **The allowlist audit is done (18–19 August) and its blocker is closed.** All 47 specs are
   audited against captured `--help` in `reference/cli-help/` — 32 OK, 13 too loose — and the
@@ -249,7 +249,7 @@ that we *built* the right command; almost nothing checked the command was
   still archived the process working directory, and on the Phase 2 host peer that
   directory is an execution detail the remote caller never chose. Appending `.` would
   not fix it either: a relative path cannot be checked against absolute policy roots.
-  Now `min: 1`. Found by the review on 9 August; **two existing tests asserted the wrong
+  Now `min: 1`. Found in review on 9 August; **two existing tests asserted the wrong
   behaviour** and had to be corrected with it.
 - **The file panel is the authorisation.** `AppModel.buildImage` builds a `ContainerCLI`
   scoped to `.roots([chosen directory])` for one command. That is a real widening of the
@@ -278,7 +278,7 @@ that we *built* the right command; almost nothing checked the command was
   was not the next card, and "N of M" indexed a list you were not looking at. The stepper's own
   docstring claims it walks the containers *as currently shown*, which made the docstring the
   bug report. Both found by **Grok 4.6 in a review eval on 2026-08-18** — in code that had
-  already been through the review and me, which is the argument for a third model family in one line.
+  already been through review and me, which is the argument for a third model family in one line.
 - **A GUI-launched app does not inherit your shell's `PATH`.** Flotilla reported "Apple's
   `container` CLI isn't installed" on a machine where it was installed *and running*, and no
   amount of `container system start` could change the verdict. `container` lives in

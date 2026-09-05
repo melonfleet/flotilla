@@ -157,7 +157,7 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     // than what this method assembled.
     //
     // **This call is not optional, and its absence was invisible for weeks.** `hostBuildPath`
-    // requires the path to *exist* — the review's symlink-swap finding — so this test needs
+    // requires the path to *exist* — the symlink-swap finding — so this test needs
     // `/tmp/flotilla/Dockerfile` on disk. It never created it; six tests in `AllowlistTests` and
     // one below do, and on a developer's Mac `/tmp/flotilla` then survives between runs forever,
     // so the dependency could not be observed locally. In a fresh CI container it became a pure

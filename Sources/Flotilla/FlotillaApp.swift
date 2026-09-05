@@ -3,7 +3,7 @@ import FlotillaCore
 
 /// The macOS app shell.
 ///
-/// the app owner owns this target because it is the one part of Flotilla that cannot be built or
+/// The app owner owns this target because it is the one part of Flotilla that cannot be built or
 /// verified anywhere but a Mac with Xcode — `FlotillaCore` is deliberately Foundation-only
 /// so the data/backend agents can compile and test their own work on Linux. Nothing in
 /// this target may leak back into `FlotillaCore`.
@@ -213,7 +213,7 @@ struct FlotillaApp: App {
         // window — the content area only — because a full-height sidebar runs up *under* the
         // title bar, so nothing in the titlebar region can span across it.
         //
-        // `.hiddenTitleBar` is not `.toolbar(.hidden, for: .windowToolbar)`, which a second reviewer warned
+        // `.hiddenTitleBar` is not `.toolbar(.hidden, for: .windowToolbar)`, which the second reviewer warned
         // takes the traffic lights, window dragging and the sidebar toggle with it. This keeps
         // the window's standard buttons; only the title bar's own drawing goes.
         .windowStyle(.hiddenTitleBar)

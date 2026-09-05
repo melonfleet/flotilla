@@ -102,7 +102,7 @@ they are not relitigated.
   before anything is spawned. Within that boundary we keep the args-passthrough benefit —
   Phase-1 features become fleet features in Phase 2 at low marginal cost, and the command
   string still serves as the audit record. Rejected: unbounded passthrough (the CLI owner's
-  position) and fully typed per-operation RPCs (the review's position).
+  position) and fully typed per-operation RPCs (the reviewer's position).
 - **Container list defaults to a TABLE, with a card/tile toggle (Q2).** Cards stop
   scaling past ~20 rows; the table is running-first, sortable and multi-select. The card
   grid survives as a toggle, not the default.
@@ -254,7 +254,7 @@ one thing `COMPETITORS.md` says nobody else has.
 
 ### The strongest practical argument for XPC evaporated on inspection
 
-Machine/VM management is the market's #1 gap (~13 of ~19 products), and the core owner warned that the
+Machine/VM management is the market's #1 gap (~13 of ~19 products), and the survey warned that the
 three XPC products drive machines over XPC specifically — implying the CLI might not expose
 the full surface. **Checked: it does.** `container machine` offers create, delete, inspect,
 list, logs, run, set, set-default and stop, including
@@ -280,7 +280,7 @@ Not because competitors do it. Three of twenty-five is not a trend.
   portfolio as its direct competitor. Needs a decision before either name is public;
   `COMPETITORS.md` notes this market already has two products called "Crane" and two called
   "Container Desktop".
-- **Sequence the gap list against security cost, not market frequency.** the core owner's ranking is
+- **Sequence the gap list against security cost, not market frequency.** the survey's ranking is
   by how often a capability appears. Every new subcommand family is new grammar facing a
   remote caller in Phase 2, and machine creation with home mounts is a filesystem grant.
 
@@ -320,9 +320,9 @@ interface/port policy, and `volume create --opt` / `network create --plugin|--op
 opaque key-values to host drivers whose accepted keys are undocumented. Both are noted in the
 audit as needing policy rather than grammar; neither is a Phase 1 blocker.
 
-### Q14 amended after independent review (the review, 2026-08-19)
+### Q14 amended after independent review (2026-08-19)
 
-the review reviewed the first implementation and returned "the capability concept is sound, but this
+An independent review examined the first implementation and returned "the capability concept is sound, but this
 implementation is not". He was right on every count that mattered, and four things changed:
 
 1. **A substitution bypass, and it was live.** `substituting()` swaps `machine run` for

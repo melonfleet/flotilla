@@ -32,10 +32,10 @@ removeVolume createNetwork removeNetwork logs`.
 
 ## Navigation contract — BOTH of you code against this
 
-the core owner creates it; the CLI owner codes against it without editing it.
+The core owner creates it; the CLI owner codes against it without editing it.
 
 ```swift
-// Sources/Flotilla/Navigation.swift  (the core owner)
+// Sources/Flotilla/Navigation.swift  (core owner)
 enum Section: String, CaseIterable, Identifiable, Hashable {
     case containers, images, volumes, networks, settings
     var id: Self { self }

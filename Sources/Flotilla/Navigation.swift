@@ -5,7 +5,7 @@ import Foundation
 /// Deliberately named `Section` per the contract even though `SwiftUI` also exports a
 /// `Section` view builder — a top-level type in this module shadows the imported one,
 /// so any file that needs the SwiftUI grouping type inside a `Form`/`List` must spell it
-/// `SwiftUI.Section` explicitly. the CLI owner codes against this enum as-is; do not edit it here
+/// `SwiftUI.Section` explicitly. The CLI owner codes against this enum as-is; do not edit it here
 /// without updating that agreement.
 enum Section: String, CaseIterable, Identifiable, Hashable {
     // Dashboard first: it is the overview you land on, and every other section is a

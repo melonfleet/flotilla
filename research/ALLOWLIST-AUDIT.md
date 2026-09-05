@@ -4,7 +4,7 @@
 > `Allowlist.commands` now holds **46**: the nine `machine` leaves, `copy`, and `build` have been
 > added since. Those eleven are **not covered below** — they were reviewed separately, and the
 > findings that came out of that work are recorded in
-> [`reviews/KYLE-2026-08-09.md`](reviews/KYLE-2026-08-09.md) and in the addendum to
+> [`reviews/independent-review-2026-08-09.md`](reviews/independent-review-2026-08-09.md) and in the addendum to
 > [`MACHINES-SPEC.md`](MACHINES-SPEC.md), not here.
 >
 > Of the four defects listed below, all four have been fixed; the paragraph under each row says
@@ -136,7 +136,7 @@ The prior verdict on this page — that the table could not be trusted as the Ph
 boundary — rested on 22 specs having nothing to audit *against*. That gap is closed. Every
 finding below cites the captured line that proves it.
 
-Audited by a second reviewer (Codex, GPT-5.6 Sol) on the review's brief; a different model family from the one
+Audited by a second reviewer (Codex, GPT-5.6 Sol) on the review brief; a different model family from the one
 that wrote the specs, deliberately.
 
 ### A. Verdict — NOT yet trustworthy as the complete Phase 2 wire boundary
@@ -219,7 +219,7 @@ blocks Phase 1:
 
 ### Reviewed the same day, and the first implementation had a live bypass
 
-the review's review (2026-08-19) is folded into `DECISIONS.md` Q14. The headline: exposure was checked
+the review (2026-08-19) is folded into `DECISIONS.md` Q14. The headline: exposure was checked
 *after* `substituting()`, so the interactive-shell substitutes laundered it — a `.remotePeer` with
 `.interactiveShell` could have opened a shell in the substrate VM. Fixed by checking the resolved
 spec before substitution and marking both substitutes local-only.

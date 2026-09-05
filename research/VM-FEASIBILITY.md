@@ -7,7 +7,7 @@ This document is **not** about `container machine`, the Apple CLI's own headless
 micro-VMs that host containers; that is [MACHINES-SPEC.md](MACHINES-SPEC.md).
 
 This document establishes facts only. It makes **no product recommendation** — that is
-the owner's and the core owner's call. The security posture of the same proposal is reviewed separately
+the owner's call. The security posture of the same proposal is reviewed separately
 in [VM-SECURITY-REVIEW.md](VM-SECURITY-REVIEW.md), and the two agree on the one decisive
 point (bridged networking needs an entitlement Apple does not hand out on request).
 

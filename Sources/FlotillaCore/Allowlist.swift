@@ -545,7 +545,7 @@ public enum Allowlist {
             //   `run`, `set`             machine named via `-n`, not positionally
             //
             // A machine is the VM every container on this host runs inside, so these are not
-            // ordinary additions — `machine delete` destroys that substrate. the review's review
+            // ordinary additions — `machine delete` destroys that substrate. The review
             // requires `delete`, `run` and `set-default` to be flatly unreachable over the
             // Phase 2 wire and remote `home-mount` refused in both modes. Grammar cannot
             // express "who is asking", so those denials belong in the transport's policy tier;
@@ -647,7 +647,7 @@ public enum Allowlist {
             // Exactly one operand. Verified: `container start idle cache` is refused with
             // "Unexpected argument 'cache'" and the usage line is singular — unlike `stop`,
             // `rm` and `inspect`, which really are plural. Accepting 32 here let the allowlist
-            // canonicalise a command the CLI would reject. (the review's audit, High.)
+            // canonicalise a command the CLI would reject. (the independent audit, High.)
             CommandSpec(["start"], mutates: true, timeoutHint: 120,
                         operands: OperandSpec(shape: .identifier, min: 1, max: 1)),
             CommandSpec(["stop"], mutates: true, timeoutHint: 120,
@@ -757,7 +757,7 @@ public enum Allowlist {
                         // is an execution detail the remote caller does not choose and the policy
                         // does not authorise. Appending `.` ourselves would not help, because a
                         // relative path cannot be checked against absolute policy roots.
-                        // Found by the review, 9 August. The original `min: 0` was reasoning about CLI
+                        // Found in review, 9 August. The original `min: 0` was reasoning about CLI
                         // convenience at a security boundary.
                         operands: OperandSpec(shape: .hostBuildPath, min: 1, max: 1)),
 
@@ -787,7 +787,7 @@ public enum Allowlist {
             CommandSpec(["network", "list"], mutates: false, flags: [format, quiet]),
             CommandSpec(["network", "inspect"], mutates: false,
                         operands: OperandSpec(shape: .identifier, min: 1, max: 32)),
-            // `--subnet-v6` and `--plugin` were missing here — found by the core owner's CLI study and
+            // `--subnet-v6` and `--plugin` were missing here — found by the CLI study and
             // confirmed against `container network create --help`. A network's addressing can
             // only be set at creation, so an unreachable flag is a permanently unreachable
             // choice.
@@ -947,7 +947,7 @@ public enum Allowlist {
 
         // **Checked on the RESOLVED spec, before substitution, and again after it.**
         //
-        // the review found the bypass this closes (2026-08-19, BLOCKER): `substituting()` swaps
+        // The review found the bypass this closes (2026-08-19, BLOCKER): `substituting()` swaps
         // `machine run` for `interactiveMachineRun` under `ExecPolicy.interactiveShell`, and that
         // substitute is a separate `CommandSpec` — so it carried the *default* exposure and
         // laundered the local-only marking on the spec it replaced. `machine run -n prod -i -t`
@@ -1415,7 +1415,7 @@ public enum Allowlist {
         // `invalid publish value: 9998` (verified). Accepting it here made this shape looser
         // than the CLI's, which is the one direction that matters — a too-loose shape lets
         // invalid input cross the boundary to be rejected less clearly downstream, and in
-        // Phase 2 that boundary faces a remote caller. (the review's audit, High.)
+        // Phase 2 that boundary faces a remote caller. (the independent audit, High.)
         case 2: return isPort(parts[0]) && isPort(parts[1])
         case 3: return isIPv4(String(parts[0])) && isPort(parts[1]) && isPort(parts[2])
         default: return false
@@ -1445,7 +1445,7 @@ public enum Allowlist {
     /// `home-mount` is **not** validated against `MountPolicy` here and that is deliberate: it
     /// names a mode, not a path — there is no path to check, because the path is always the
     /// user's own home. The decision that matters for it is *authorisation*, not grammar, and
-    /// per the review's review it must be refused outright for remote callers. Grammar cannot express
+    /// per the review it must be refused outright for remote callers. Grammar cannot express
     /// "who is asking", so that gate belongs with `ExecPolicy`-style policy, not here.
     private static func checkMachineSetting(_ value: String, context: String) -> AllowlistError? {
         let bad = AllowlistError.invalidValue(context: context, value: value, shape: .machineSetting)

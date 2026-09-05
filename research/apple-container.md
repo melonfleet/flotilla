@@ -338,7 +338,7 @@ and [`containers.json`](../Tests/FlotillaCoreTests/Fixtures/containers.json):
   [1.0.0 release notes](https://github.com/apple/container/releases/tag/1.0.0) (citing
   [#1656](https://github.com/apple/container/pull/1656)). **Trust the fixtures over the
   how-to.md prose example** — the fixtures are real 1.0.0 captures; the how-to snippet may be
-  stale relative to that same release. Flag to the app owner: `how-to.md`'s JSON example is not
+  stale relative to that same release. Flag for the app owner: `how-to.md`'s JSON example is not
   reliable for schema purposes.
 
 ### `container image list` / `image inspect`

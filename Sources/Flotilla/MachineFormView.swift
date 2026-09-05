@@ -132,7 +132,7 @@ struct MachineFormView: View {
                     }
                     .pickerStyle(.radioGroup)
                     // The CLI defaults this to `rw`, so it is on unless you change it. That is
-                    // a filesystem grant to every container in the machine, and the review's review
+                    // a filesystem grant to every container in the machine, and the review
                     // treats it as more dangerous than a bind mount for exactly that reason.
                     if homeMount == "rw" {
                         Label("Writable from inside the machine, and so from every container "

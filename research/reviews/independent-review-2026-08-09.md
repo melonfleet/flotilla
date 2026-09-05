@@ -1,4 +1,4 @@
-# the review quality review — 2026-08-09
+# Independent quality review — 2026-08-09
 
 Scope: independent review of `0818c59`, `955f50c`, `9489f37`, plus the `.username`
 redaction introduced in `484dbc7`. I did not invoke Git and did not edit
@@ -203,10 +203,10 @@ The complete suite then passed on the same Linux target: 292 tests, 0 failures.
 
 ---
 
-## Disposition — 17 August 2026 (the app owner)
+## Disposition — 17 August 2026
 
 - **High** (omitted context reads `.` without consulting `MountPolicy`) — **fixed.** The context
-  operand is `min: 1`. the review's reproduction is now a test, and two existing tests that asserted the
+  operand is `min: 1`. The review's reproduction is now a test, and two existing tests that asserted the
   old behaviour were corrected with it.
 - **Medium** (symlink resolution not bound to execution) — **narrowed, not closed.** A build input
   must now exist when it is validated, which removes the "create something in the validation gap"

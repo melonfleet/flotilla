@@ -45,7 +45,7 @@ private func audit(_ argv: [String],
     #expect(!mount.contains("/tmp/data"))
     #expect(mount.contains("--volume <mountSpec>"))
 
-    // `hostBuildPath` requires the path to **exist** — the review's symlink-swap finding — so this one
+    // `hostBuildPath` requires the path to **exist** — the symlink-swap finding — so this one
     // needs real files rather than a plausible string, and a root that is already symlink-resolved
     // (on macOS `/tmp` is a link to `/private/tmp`, and the check compares both forms).
     let fm = FileManager.default

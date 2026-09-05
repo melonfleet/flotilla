@@ -459,7 +459,7 @@ are flagged **⚠**.
 - **[skip] Accounts / sign-in / upsell banners** (Docker). Personal app; and it's the most
   complained-about thing in the whole survey.
 - **[skip] Telemetry opt-in dialog** (Podman step 1). No telemetry → one fewer onboarding step.
-  (the review owns the decision; the UX consequence is ours.)
+  (The operations study owns the decision; the UX consequence is ours.)
 - **[skip] Image vulnerability scanning UI** (Rancher/Trivy) — no runtime support, large surface.
 - **[skip] Extensions/marketplace** (Docker) — inconceivable for an 8-node personal fleet.
 - **[skip] Kubernetes views** — already rejected in DECISIONS.md.

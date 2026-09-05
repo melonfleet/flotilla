@@ -61,11 +61,11 @@ private func requireRejected(
 // MARK: - The wire-exposure dimension
 //
 // Added 2026-08-19 to close the audit's blocking finding: well-formed commands that no value
-// shape can refuse. Reviewed the same day by the review, whose findings are folded in below — the
+// shape can refuse. Reviewed independently the same day, and those findings are folded in below — the
 // substitution bypass in particular was a real hole in the first version.
 
 @Test func everySpecStatesItsExposureExplicitly() {
-    // A **partition**, not a list of the interesting half. the review's finding: asserting only the
+    // A **partition**, not a list of the interesting half. The review's finding: asserting only the
     // local-only names lets a newly added spec become remotely reachable because its author
     // omitted the decision — the test passed and nobody chose anything. Every spec must be named
     // in exactly one of these two sets, so adding one fails here until someone decides.
@@ -136,7 +136,7 @@ private func requireRejected(
 }
 
 @Test func substitutionCannotLaunderExposure() {
-    // the review's BLOCKER. `substituting()` swaps `machine run` for `interactiveMachineRun` under
+    // The review's BLOCKER. `substituting()` swaps `machine run` for `interactiveMachineRun` under
     // `.interactiveShell`, and that substitute carried the default exposure — so this exact argv
     // was ACCEPTED for a remote peer holding an interactive-shell policy, granting a shell inside
     // the substrate VM. The check now runs on the pre-substitution spec as well.
@@ -777,7 +777,7 @@ private func requireRejected(
     }
 }
 
-// MARK: - the review's allowlist audit, applied
+// MARK: - The independent allowlist audit, applied
 //
 // All three verified against the live CLI before being fixed, not taken on the help text alone.
 
@@ -1007,7 +1007,7 @@ func startMachinePassesABootCommand() throws {
     #expect(validated.arguments.contains("/bin/true"))
 }
 
-/// the review's high-severity finding, 9 August, and he is right.
+/// the review's high-severity finding, 9 August, and it is right.
 ///
 /// The context operand was `min: 0` because the CLI defaults it to `.`. That reasoning was
 /// about CLI convenience and the operand is a **security boundary**: an absent operand is not

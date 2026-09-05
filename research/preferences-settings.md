@@ -570,7 +570,7 @@ nothing later.
 **Telemetry — [core] (as a stated non-feature)**
 - No analytics, no crash upload, no phone-home. Put a line in the Settings UI saying
   so. Costs nothing, and it's the correct answer for a personal non-commercial app.
-  *(Coordinate with the review's `deployment-ops.md` — if Sparkle's optional anonymous
+  *(Coordinate with the `deployment-ops.md` review — if Sparkle's optional anonymous
   system-profile reporting is ever enabled, it must be opt-in and disclosed here.)*
 
 **Reset — [core]**
@@ -652,7 +652,7 @@ Proposed model, in priority order:
   `SUAutomaticallyUpdate`, `SUScheduledCheckInterval`, `SUFeedURL`) rather than
   wrapping them in custom keys — they then sit in our preference domain and become
   **lockable by the Phase 6 profile for free** (Docker's `disableUpdate` equivalent).
-  *Coordinate with `reference/sparkle-updates.md` and the review's `deployment-ops.md`.*
+  *Coordinate with `reference/sparkle-updates.md` and the `deployment-ops.md` review.*
 - **[skip]** update settings for the `container` CLI itself beyond the version check
   from §4.1 — the pkg install is user-authorized per `DECISIONS.md`, and a silent
   runtime updater is out of scope.

@@ -46,21 +46,21 @@ Be concrete, cite the product, and prefer specifics ("OrbStack exposes X in Sett
 generalities. If you're unsure something is current, mark it "(verify)". No PII.
 
 ## Area assignments
-- **the UX study → `design-ux.md`** — UI/UX: menu-bar interaction patterns, popover vs window, main window
+- **UX study → `design-ux.md`** — UI/UX: menu-bar interaction patterns, popover vs window, main window
   layout, list/detail/card views, status indicators, iconography, onboarding/first-run, empty
   states, notifications/alerts, dark mode, accessibility, and the "feel" of a native Mac app
   (incl. what `liquid-glass.md` implies). How do these apps present containers/images/logs?
-- **the core owner → `preferences-settings.md`** — every user-facing **preference and setting** these apps
+- **Settings study → `preferences-settings.md`** — every user-facing **preference and setting** these apps
   expose (walk their Settings/Preferences panes and docs): general, resources (CPU/RAM/disk),
   file sharing/mounts, network/proxy/DNS, updates, notifications, startup/login-item, theme,
   telemetry/privacy, advanced/experimental. Also: config **file formats** (where stored, schema,
   defaults, precedence, import/export/reset) — this is the data-layer view.
-- **the CLI owner → `features-runtime.md`** — the functional feature set: container lifecycle (create/
+- **Runtime study → `features-runtime.md`** — the functional feature set: container lifecycle (create/
   start/stop/delete/restart), images (pull/build/prune/registry auth), volumes/bind mounts,
   networking/port mapping, **logs / exec / shell / file browser / stats & resource graphs**,
   search/filter, bulk actions, compose-like multi-container handling, CLI↔GUI parity, and what a
   **remote/fleet** view needs on top (per-host vs aggregate).
-- **the review → `deployment-ops.md`** — distribution and operations: install/uninstall, **auto-update**
+- **Operations study → `deployment-ops.md`** — distribution and operations: install/uninstall, **auto-update**
   (Sparkle and how others do it), code signing/notarization/hardened runtime, sandboxing +
   entitlements, **MDM/Jamf configuration profiles** and managed preferences, licensing/activation,
   crash reporting + telemetry (and privacy/opt-out), logging/diagnostics/support bundles, security

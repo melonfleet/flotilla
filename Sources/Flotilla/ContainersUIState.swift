@@ -8,7 +8,7 @@ import FlotillaCore
 /// resets — which silently threw away the user's column choices, sort order, filter tab and
 /// search text every time they looked at another section.
 ///
-/// the CLI owner's Docker Desktop study is what surfaced this: Docker shipped the same class of bug
+/// The Docker Desktop study is what surfaced this: Docker shipped the same class of bug
 /// (hidden columns re-enabling themselves, `docker/for-mac#6391`) and he flagged our surface
 /// as overlapping directly. Checking found we had it too. Owning this state above the
 /// navigation switch is the fix — `MainWindowView` is the window's root and is created once.

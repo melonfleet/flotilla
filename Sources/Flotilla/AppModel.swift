@@ -1064,7 +1064,7 @@ final class AppModel {
 
     /// **A second store, not a second namespace inside the first.**
     ///
-    /// the CLI owner spotted this in `research/MACHINES-SPEC.md`: `TerminalSessionStore` is keyed by a
+    /// The CLI owner spotted this in `research/MACHINES-SPEC.md`: `TerminalSessionStore` is keyed by a
     /// plain `String`, and machine names and container names are different namespaces in
     /// `container` itself. A container called `web` and a machine called `web` would have shared
     /// one entry, so opening a shell in one could show or clobber the other's session state.

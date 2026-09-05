@@ -3,7 +3,7 @@
 Ordered from `research/COMPETITORS.md`'s twelve ranked gaps, re-sequenced on the owner's
 instruction: **containers and Docker-adjacent work first, virtual machines last.**
 
-the core owner's ranking is by *market frequency*. This one is by frequency × feasibility × security
+the survey's ranking is by *market frequency*. This one is by frequency × feasibility × security
 cost, because every new subcommand family is new grammar facing a remote caller in Phase 2.
 Every feasibility claim below was checked against the live CLI on 2026-08-02, not against
 docs — `reference/cli-help/` is the authority and docs have been wrong repeatedly.
@@ -15,7 +15,7 @@ docs — `reference/cli-help/` is the authority and docs have been wrong repeate
 
 ## Now
 
-- **Dashboard** (not in the core owner's list; the owner saw Orchard's and wants one). Pure presentation
+- **Dashboard** (not in the survey's list; the owner saw Orchard's and wants one). Pure presentation
   over data already fetched. No new CLI surface, no allowlist change, no security cost —
   which is exactly why it goes first.
 
@@ -139,7 +139,7 @@ distinguish physical cores from reserved ones, or it repeats their ambiguity.
 
 ## Wave 4 — virtual machines
 
-11. **① Machine / VM management.** the core owner's #1 by market frequency (~13 of ~19 products) and
+11. **① Machine / VM management.** the survey's #1 by market frequency (~13 of ~19 products) and
     deliberately last here on the owner's sequencing.
     **The CLI surface is complete** — `container machine create|delete|inspect|list|logs|run|
     set|set-default|stop`, including `machine set -n <name> cpus=4 memory=8G home-mount=ro`
@@ -165,6 +165,6 @@ distinguish physical cores from reserved ones, or it repeats their ambiguity.
 
 ## Standing caveat
 
-Adding subcommand families enlarges the Phase 2 attack surface. the review's verdict in
+Adding subcommand families enlarges the Phase 2 attack surface. The review's verdict in
 `research/ALLOWLIST-AUDIT.md` still stands: the `Allowlist` is not yet trustworthy as the
 complete wire boundary. Sequence against that audit, not against market frequency.

@@ -997,7 +997,7 @@ struct ContainersView: View {
                 // `ids.first` is an arbitrary member: double-clicking one of them could open a
                 // different container than the one under the pointer. Opening nothing is the
                 // honest response to an ambiguous activation. (Found by Grok 4.6 in review,
-                // 2026-08-18, in code that had already been through the review and me.)
+                // 2026-08-18, in code that had already been through review and me.)
                 guard ids.count == 1, let id = ids.first,
                       let container = visible.first(where: { $0.id == id }) else { return }
                 openDetail(container.id)

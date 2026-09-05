@@ -14,7 +14,7 @@ should stay out.
 `research/docker-desktop.md` and `research/apple-container.md` did **not** exist when this
 review was written, so this is an independent review using Docker's product documentation,
 Apple's current `container` documentation, `research/FEATURES.md`, and `PLAN.md`. Revisit
-the Docker Desktop coverage and the Apple-support column when the CLI owner's and the core owner's studies
+the Docker Desktop coverage and the Apple-support column when the CLI and core owners' studies
 land; in particular, cross-check whether they found a supported volume data-transfer API
 or a stable machine-readable service-log format.
 
@@ -162,4 +162,4 @@ pretending to be a declarative reconciler.
    container and `export` requires a stopped one. Verify there is no newer read-only mount
    or copy primitive before finalizing the Phase 4 browser limitations.
 7. **Companion-study coverage.** Reconcile the candidate inventory and evidence with
-   the CLI owner's `docker-desktop.md` and the core owner's `apple-container.md` when those files appear.
+   the `docker-desktop.md` and `apple-container.md` studies when those files appear.
