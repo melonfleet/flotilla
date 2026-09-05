@@ -170,13 +170,13 @@ public enum SettingsKeys {
     public static let hostListenPort = SettingsKey<Int>(
         "hostListenPort", default: 7443, scope: .host, requiresRestart: true,
         availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
-        summary: "TCP port host mode listens on for mTLS peers."
+        summary: "The port host mode listens on."
     )
 
     public static let bonjourEnabled = SettingsKey<Bool>(
         "bonjourEnabled", default: true, scope: .host, requiresRestart: true,
         availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
-        summary: "Advertise this host over Bonjour. Manual host-add works regardless."
+        summary: "Let other Macs on this network find this host. Adding one by address works regardless."
     )
 
     /// **Not built**, and worth being explicit about why the wording matters: there is no TLS

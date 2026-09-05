@@ -480,10 +480,10 @@ struct SettingsView: View {
                     .labelsHidden()
                     .fixedSize()
                 }
-                SettingRow(store: store, key: SettingsKeys.hostListenPort, title: "Listen port") { binding in
+                SettingRow(store: store, key: SettingsKeys.hostListenPort, title: "Port") { binding in
                     Stepper(value: binding, in: 1...65_535) { Text("\(binding.wrappedValue)") }
                 }
-                SettingRow(store: store, key: SettingsKeys.bonjourEnabled, title: "Advertise via Bonjour") { binding in
+                SettingRow(store: store, key: SettingsKeys.bonjourEnabled, title: "Discoverable on this network") { binding in
                     Toggle("", isOn: binding).labelsHidden()
                 }
                 SettingRow(store: store, key: SettingsKeys.identityKeychainLabel, title: "Identity Keychain label") { binding in
