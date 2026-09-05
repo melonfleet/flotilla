@@ -130,7 +130,7 @@ struct VolumesView: View {
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
             // `name` is non-optional: the real payload nests it under `configuration` where it
-            // is always present. It was optional before commit 9245077 fixed the fabricated
+            // is always present. It was optional before commit dc56da0 fixed the fabricated
             // fixture, and a `?? ""` here was leftover defensive code from that shape.
             volumes = volumes.filter { $0.name.lowercased().contains(query) }
         }

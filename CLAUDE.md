@@ -325,7 +325,7 @@ that we *built* the right command; almost nothing checked the command was
   fixture. It did exactly that on the first attempt at `inspect-volume.json`. After any redaction
   pass, grep for the thing you were removing rather than trusting the command that removed it.
 - **`git describe` is not a version.** With no tags it returns a bare commit hash, so `make-app.sh`
-  stamped `CFBundleVersion = e8f29a6-dirty` — Apple's rule for that key is one to three integers.
+  stamped `CFBundleVersion = be83e91-dirty` — Apple's rule for that key is one to three integers.
   Harmless-looking until something in LaunchServices compares two, which now matters because login
   items go through `SMAppService`. Use a commit count for the build number, the tag (or `0.0.0`) for
   the marketing string, and keep the hash in a key of your own.
