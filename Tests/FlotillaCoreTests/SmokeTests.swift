@@ -109,7 +109,7 @@ private func fixture(_ name: String) throws -> Data {
 
 @Test func shortReferenceKeepsThePartThatDistinguishesOneImageFromAnother() throws {
     #expect(ContainerImage.shortReference("docker.io/library/alpine:latest") == "alpine:latest")
-    #expect(ContainerImage.shortReference("ghcr.io/melonfleet/inkwarden:1.4.2") == "inkwarden:1.4.2")
+    #expect(ContainerImage.shortReference("ghcr.io/example/webapp:1.4.2") == "webapp:1.4.2")
     // No registry or namespace at all.
     #expect(ContainerImage.shortReference("alpine") == "alpine")
     #expect(ContainerImage.shortReference("alpine:3.24") == "alpine:3.24")
@@ -117,10 +117,10 @@ private func fixture(_ name: String) throws -> Data {
 
 @Test func shortReferenceAbbreviatesADigestInsteadOfBeingSwallowedByIt() throws {
     let digest = "sha256:" + String(repeating: "a", count: 64)
-    let short = ContainerImage.shortReference("ghcr.io/melonfleet/inkwarden@\(digest)")
+    let short = ContainerImage.shortReference("ghcr.io/example/webapp@\(digest)")
 
     // Recognisable, but not 71 characters of it.
-    #expect(short.hasPrefix("inkwarden@sha256:"))
+    #expect(short.hasPrefix("webapp@sha256:"))
     #expect(short.count < 32)
     // A registry port must not be mistaken for a tag, and the digest must not be dropped
     // silently — showing a bare name for a digest-pinned image would hide the pinning.

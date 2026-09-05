@@ -79,7 +79,7 @@ struct MenuBarView: View {
                 Spacer()
                 // Says out loud that the glance is live.
                 //
-                // the owner asked whether the popover was frozen, and the honest answer — that
+                // The owner asked whether the popover was frozen, and the honest answer — that
                 // both poll tasks start in `AppModel.init` and are never cancelled, so it is
                 // not — is not something a user can see. A timestamp is checkable: if it
                 // stops advancing while the popover is open, it really has stalled. That is
@@ -111,7 +111,7 @@ struct MenuBarView: View {
 
             // A box per kind, each a menu.
             //
-            // the owner asked for hover to open them. That is `NSMenu` behaviour and a
+            // The owner asked for hover to open them. That is `NSMenu` behaviour and a
             // window-style `MenuBarExtra` does not get it — SwiftUI's `Menu` opens on click.
             // Once open, the per-item submenus *do* reveal on hover, so the second level
             // behaves as asked; the first needs a click, and pretending otherwise would mean

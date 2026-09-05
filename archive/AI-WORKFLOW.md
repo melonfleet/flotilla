@@ -1,4 +1,7 @@
-# Flotilla — AI workflow (Claude Code + ChatGPT Codex)
+# Flotilla — AI workflow (two assistants)
+
+> **Archived 2026-07-27, and redacted before publication.** Superseded; see `archive/README.md`.
+> Credential-manager specifics have been generalised on purpose — this file is tracked.
 
 Two assistants work this repo. Their roles are split by what each can actually do
 in *this* project, not by generic preference.
@@ -6,7 +9,7 @@ in *this* project, not by generic preference.
 ## The environment reality (drives everything)
 
 - **Claude Code** runs **locally on the Mac** → full access: builds with Swift/Xcode,
-  runs Apple `container`, uses 1Password signing, sees the real macOS 26 environment
+  runs Apple `container`, signs commits through the credential manager, sees the real macOS 26 environment
   and the project memory/context.
 - **ChatGPT Codex** comes in two forms:
   - **Codex cloud** (web/async agent) runs in a **Linux sandbox** → **cannot** build
@@ -24,7 +27,7 @@ Owns the things that need judgment, the real environment, or cross-cutting reach
 - Architecture, the plan, and scoping tasks for Codex.
 - macOS/Apple-framework code: `Network.framework` mTLS transport, Bonjour, the
   SwiftUI app (MenuBarExtra, Liquid Glass), `container` integration.
-- Security/signing/infra (1Password, keys, releases).
+- Security, signing and release infrastructure.
 - Final review and merge; anything requiring real hardware or the project memory.
 
 ### ChatGPT Codex — implementation workhorse & second reviewer
@@ -52,10 +55,10 @@ files. Assign one owner per area at a time.
 
 - **Don't give Codex cloud** UI/transport/`container` tasks it can't compile — it'll
   produce plausible-but-unverified code. Those go to Claude or Codex CLI (local).
-- **Signing:** Codex *cloud* commits can't reach 1Password, so they'll be unsigned/
+- **Signing:** the sandboxed agent's commits cannot reach the credential manager, so they'll be unsigned/
   unverified. Prefer Codex **CLI locally** for anything that commits, or have Claude/
-  you sign on merge (squash-merge re-signs via the local 1Password key).
-- Every merged commit on `main` should end up **Verified** (1Password-signed).
+  you sign on merge (squash-merge re-signs with the local key).
+- Every merged commit on `main` should end up **Verified** (signed through the credential manager).
 
 ## Quick split (cheat sheet)
 

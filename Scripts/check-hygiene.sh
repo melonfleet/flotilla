@@ -22,17 +22,23 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-# The **account** name — what appears in paths, `userSetup.username`, and captured fixtures. This
-# is the thing that actually leaks, and both real incidents were exactly this: a fixture that kept
-# it because the escaped-slash `sed` missed, and a doc quoting an unredacted `userSetup.username`.
-IDENTITIES='example|example'
+# The identifiers themselves come from Scripts/lib/identities.sh, derived from the host so that
+# this file names nobody. Both real incidents were exactly an account name: a fixture that kept it
+# because the escaped-slash `sed` missed, and a doc quoting an unredacted `userSetup.username`.
+. "$(dirname "$0")/lib/identities.sh"
+IDENTITIES="$FL_IDENTITIES"
+
+if [ -z "$IDENTITIES" ]; then
+    echo "note: identity check skipped — no personal account name on this host (CI runner or"
+    echo "      generic account). Run it on a development machine to check for real names."
+fi
 
 # The **first name** is a separate question and deliberately not a failure. It appears ~89 times
-# across ~38 files as design attribution — "the owner's call", "the owner spotted" — which is provenance for
-# a decision, not an identifier in data. Sweeping it would flatten the reasoning in every docstring
-# it appears in, and that is the owner's call to make, not a script's. Reported as a count so the
-# open question stays visible instead of being buried or silently enforced.
-ATTRIBUTION='the owner'
+# across ~38 files as design attribution — "<name>'s call", "<name> spotted" — which is provenance
+# for a decision, not an identifier in data. Sweeping it would flatten the reasoning in every
+# docstring it appears in, and that is the owner's call to make, not a script's. Reported as a count
+# so the open question stays visible instead of being buried or silently enforced.
+ATTRIBUTION="$FL_FIRST_NAME"
 
 # Files that exist in order to contain realistic fake secrets. Named individually rather than
 # matched by pattern, so adding one is a deliberate act that shows up in a diff.
@@ -44,7 +50,10 @@ REDACTOR_CORPORA=(
 fail=0
 self=':(exclude)Scripts/check-hygiene.sh'
 
-hits="$(git grep -inE "$IDENTITIES" -- . "$self" 2>/dev/null || true)"
+# Guarded: an empty pattern makes `grep -E ""` match every line in the repository, so a host that
+# yields no derivable identity would "find" everything rather than nothing.
+hits=""
+[ -n "$IDENTITIES" ] && hits="$(git grep -inE "$IDENTITIES" -- . "$self" 2>/dev/null || true)"
 if [ -n "$hits" ]; then
     echo "✗ a real identity appears in tracked files:"
     printf '%s\n' "$hits" | sed 's/^/    /'
@@ -71,7 +80,8 @@ if [ -n "$hits" ]; then
 fi
 
 # Advisory, never fatal. See ATTRIBUTION above.
-attrib="$(git grep -icE "$ATTRIBUTION" -- . "$self" 2>/dev/null | awk -F: '{n+=$2; f++} END {printf "%d mention(s) across %d file(s)", n, f}')"
+attrib="0 mention(s) across 0 file(s)"
+[ -n "$ATTRIBUTION" ] && attrib="$(git grep -icE "$ATTRIBUTION" -- . "$self" 2>/dev/null | awk -F: '{n+=$2; f++} END {printf "%d mention(s) across %d file(s)", n, f}')"
 case "$attrib" in
     "0 mention(s)"*) ;;
     *) echo "  note: first-name attribution present — $attrib (decision deferred, not a failure)" ;;

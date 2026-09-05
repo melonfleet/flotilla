@@ -67,7 +67,7 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
         }
         // Horizontal 12 so the band lines up with the content edge; vertical **8**, which is
         // tighter than the 12 this used and gives back a strip of height on every section.
-        // the owner compared the two side by side — Machines was accidentally on 8 for a while —
+        // The owner compared the two side by side — Machines was accidentally on 8 for a while —
         // and preferred the tighter one. Every toolbar in the app uses this pair; changing one
         // is how they drifted apart in the first place.
         .padding(.horizontal, 12)
@@ -90,7 +90,7 @@ extension SectionToolbar where Leading == EmptyView {
 
 /// An icon-only toolbar button, with the word kept as tooltip and accessibility label.
 ///
-/// the owner's rule, and the reason it is a rule: *"we don't want to use a lot of words instead of
+/// The owner's rule, and the reason it is a rule: *"we don't want to use a lot of words instead of
 /// icons just so that it makes it more universal and more easier to read for everyone,
 /// especially the people that can't read words or English."* The word is not deleted — it moves
 /// to `help` and `accessibilityLabel`, where it still reaches anyone who needs it.

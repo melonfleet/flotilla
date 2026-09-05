@@ -204,7 +204,7 @@ final class AppModel {
 
         // **And every window, which is the part that was missing.**
         //
-        // the owner: Light worked, Dark worked, and going back to Auto left the window grey until he
+        // The owner: Light worked, Dark worked, and going back to Auto left the window grey until he
         // switched to another app and back — at which point it corrected itself. That last detail
         // is the whole diagnosis. `NSApp.appearance` is only a *fallback*: a window with its own
         // `appearance` set ignores it. SwiftUI's `preferredColorScheme(.dark)` sets exactly that
@@ -221,7 +221,7 @@ final class AppModel {
 
     // MARK: Modal form presentation
     //
-    // the owner wants the web-modal feel — the interface behind dims and stops responding while
+    // The owner wants the web-modal feel — the interface behind dims and stops responding while
     // the form sits in front — AND macOS's own red close button. Stock presentations force a
     // choice: a sheet is modal but has no title bar and therefore no traffic lights, while a
     // window has traffic lights but floats free.
@@ -575,7 +575,7 @@ final class AppModel {
         let result = await Task.detached { [cli] in Preflight(cli: cli).run() }.value
         preflight = result
 
-        // the owner's request, and the right default: a stopped service is the normal state after a
+        // The owner's request, and the right default: a stopped service is the normal state after a
         // reboot, it is one command from working, and making the user find that command is
         // making them do the app's job. Attempted **once** per launch — an auto-start that fails
         // must not be retried on every reload, or a machine with a genuinely broken runtime
@@ -1040,7 +1040,7 @@ final class AppModel {
 
     /// Which detail tab each container was last showing, **for this run only**.
     ///
-    /// the owner's rule, and it is a good one: reopening a container should return you to the tab
+    /// The owner's rule, and it is a good one: reopening a container should return you to the tab
     /// you were on, but a restart should forget. So this is in memory and deliberately not in
     /// `SettingsStore` — a preference that survives a relaunch would make Flotilla open on
     /// Logs weeks later because of something you did once.

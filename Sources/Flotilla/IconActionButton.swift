@@ -115,7 +115,7 @@ struct IconActionButtonStyle: ButtonStyle {
             // Destructive stays red: that is semantics, not decoration, and a trash can that
             // matches every other glyph is a trap.
             if destructive { return AnyShapeStyle(Theme.danger) }
-            // **the owner's rule, 19 August: the glyph is `.primary` — black in light, white in dark —
+            // **The owner's rule, 19 August: the glyph is `.primary` — black in light, white in dark —
             // and the only colour it ever takes is the accent, and only when the control is ON.**
             //
             // It used to go `.secondary` at rest and `accentText` on hover, which meant the glyph

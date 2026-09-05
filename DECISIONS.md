@@ -49,14 +49,18 @@ second-guess settled choices mid-project.
 - **No PII in the repo or commits:** author identity is `melonfleet` +
   `…@users.noreply.github.com`; no real name, handle, gmail, or local user paths in
   tracked files. Keep it that way.
-- **SSH key in 1Password, not on disk:** the melonfleet ed25519 key lives only in
-  1Password (Development vault), served via the 1Password SSH agent (Touch ID).
+- **SSH key in the credential manager, not on disk:** the melonfleet ed25519 key
+  lives only in the password manager, served through its SSH agent behind Touch ID.
   Rejected leaving an unencrypted key on disk.
-- **Commit signing via 1Password** (`op-ssh-sign`, SSH-format) → commits show
+- **Commit signing through the same agent** (SSH-format signatures) → commits show
   Verified. Rejected GPG (heavier) and unsigned commits.
-- **Two-account separation:** SSH host alias `github-melonfleet` + per-host
-  `IdentityFile <pub>` + `IdentitiesOnly`, and `agent.toml` whitelisting both the
-  Personal (other account) and Development (melonfleet) vaults.
+- **Two-account separation:** a per-account SSH host alias with `IdentityFile` and
+  `IdentitiesOnly`, plus agent configuration scoping each account to its own vault,
+  so a push can only ever use the identity intended for that remote.
+
+  Deliberately no vault names, agent socket paths, aliases or public keys here: this
+  file is tracked, the specifics are per-machine, and the credential manager's own
+  documentation is the place to follow them.
 
 ## Identity / namespace (settled 2026-07-27)
 

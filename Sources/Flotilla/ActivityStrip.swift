@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// The dashboard already has an activity card and each container and machine has its own event
 /// list, but neither answers the question you actually have while looking at a list: *what just
-/// happened here?* the owner asked for it on both Containers and Machines, and it earns its place
+/// happened here?* The owner asked for it on both Containers and Machines, and it earns its place
 /// because a restart is otherwise invisible — the row starts running and ends running, so the
 /// list looks identical before and after.
 ///

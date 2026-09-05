@@ -21,7 +21,7 @@ docs — `reference/cli-help/` is the authority and docs have been wrong repeate
 
 ## Dashboard v2 — matching Orchard's, and it is mostly retention not plumbing
 
-the owner shared a screenshot of Orchard's dashboard (2026-08-02). Assessed against
+The owner shared a screenshot of Orchard's dashboard (2026-08-02). Assessed against
 `container stats --format json`, which returns **eight fields per container**:
 `cpuUsageUsec`, `memoryUsageBytes`, `memoryLimitBytes`, `networkRxBytes`,
 `networkTxBytes`, `blockReadBytes`, `blockWriteBytes`, `numProcesses`.

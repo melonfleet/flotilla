@@ -33,3 +33,7 @@ build/icons/
 # Release artefacts: signed zips and notarisation logs. Never committed — a notarised build is
 # reproducible from a tag, and the logs name submission ids tied to an Apple account.
 dist/
+
+# Raw screen captures used to produce the website's shots. Full-screen, unredacted, and 21 MB —
+# the curated 1440x940 window crops live in the melonfleet.github.io repo instead.
+ui-screenshots/

@@ -231,7 +231,7 @@ struct ContainerDetailView: View {
     /// One published port, with Copy always and Open only where a browser could plausibly
     /// help.
     ///
-    /// the owner clicked Open on a container publishing 8080 and got "empty response". The link was
+    /// The owner clicked Open on a container publishing 8080 and got "empty response". The link was
     /// working correctly — the container was running `sleep` with nothing listening — but the
     /// affordance was overpromising, and the mockup overpromises the same way by offering
     /// "Open in browser" beside Postgres on 5432. **A published port is not necessarily HTTP.**

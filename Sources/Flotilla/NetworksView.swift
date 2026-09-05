@@ -338,7 +338,7 @@ extension ContainerNetwork {
 
 /// The New Network form, hosted in its own **window** rather than a sheet.
 ///
-/// the owner's rule, stated generally: any window that comes up should carry macOS's own traffic
+/// The owner's rule, stated generally: any window that comes up should carry macOS's own traffic
 /// lights. A sheet has no title bar, so it cannot — which is why this is a `WindowGroup`
 /// (see `FlotillaApp`). Confirmations and error alerts stay as alerts: those are modal
 /// decisions, and traffic lights on a "delete this?" prompt would be wrong.
