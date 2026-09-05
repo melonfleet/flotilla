@@ -188,13 +188,13 @@ execution; see `research/DOCKER-PORTABILITY.md`).
 
 ### Phase 2 — Stateful host mode + client mode over mTLS
 
-- Add length-prefixed protocol framing, handshake/version/capability negotiation,
+- Add the protocol framing, handshake and capability negotiation (design not published),
   and explicit request lifecycle.
 - Carry CLI argument arrays only inside the Q1 allowlisted boundary. Validate on
   both sides and enforce frame, argument, concurrency, and deadline limits.
 - Design client-to-host stdin/resize frames and binary frames now so Phase 4 exec
   and future transfer work do not break deployed protocol versions.
-- Build `NWListener`/`NWConnection` mTLS transport, unique Keychain identities,
+- Build the mutually-authenticated transport and per-device identities,
   two-sided pairing, peer allowlist, immediate revocation, Bonjour discovery, and
   manual host entry.
 - Add `RemoteHost` while keeping `ContainerCLI` semantics shared with `LocalHost`.

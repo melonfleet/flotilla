@@ -491,7 +491,7 @@ Four stores, each with one job:
 | Store | Holds | Why |
 |---|---|---|
 | `UserDefaults` (`~/Library/Preferences/dev.melonfleet.Flotilla.plist`) | scalar prefs: mode, port, theme, intervals, toggles | free MDM override path; `defaults read/write` works for support |
-| **Keychain** | TLS identity (by label), peer fingerprint allowlist, any registry creds | already settled in `DECISIONS.md` / `PLAN.md`; keeps secrets out of exports |
+| **Keychain** | the device identity, the peer authorisation records, any registry credentials | already settled in `DECISIONS.md` / `PLAN.md`; keeps secrets out of exports |
 | **SwiftData** | host inventory, per-host overrides, history/stats | already in the stack; hosts are records with relationships, not a plist blob |
 | **Window/UI state** | sidebar width, selected tab, column layout | separate from preferences — so "reset settings" doesn't move your window (fixes anti-pattern #8) |
 

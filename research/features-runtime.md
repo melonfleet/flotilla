@@ -401,20 +401,20 @@ Legend: **[core]** = v1, **[later]**, **[skip]**. Phase numbers refer to `PLAN.m
 Five things in the list above cannot be built without amending a settled spec. Flagging
 them now rather than discovering them mid-Phase-4:
 
-1. **`exec -i -t` needs bidirectional streaming; `wire-protocol.md` is one-way.**
-   `WireRequest` carries args once, and `WireResponse` only flows host→client. An
-   interactive shell needs client→host `.stdin(String)` frames on a live request id,
-   plus a `.resize(rows:cols:)` frame for the PTY. This is an **extension** to
-   `Wire.swift`, not a contradiction — but it must be designed in Phase 2 so Phase 4
-   doesn't require a protocol break across an already-deployed fleet.
+1. **An interactive shell needs bidirectional streaming; the first protocol design is
+   request/response only.** Carrying arguments once and streaming output back does not
+   cover a live PTY, which needs input flowing the other way and a resize signal. This is
+   an **extension**, not a contradiction — but it has to be designed before anything is
+   deployed, or a later phase becomes a protocol break across a live fleet. Specifics are
+   not published.
 2. **`registry login --password-stdin` also needs client→host stdin**, and the
    credential lands in the *remote* Mac's keychain. Same frame type solves it; the
    trust/UX question ("this sends a registry password to that Mac") is worth an
    explicit confirmation dialog.
 3. **`cp`, `save`/`load`, `export` move binary blobs.** The wire format is
    JSON-encoded messages — binary needs base64 (simple, ~33% overhead, fine for
-   config files; bad for a 400MB image tar) or a separate length-prefixed binary
-   frame type. Decide before promising fleet image transfer.
+   config files, bad for a 400 MB image tar) or a dedicated binary shape. Decide before
+   promising fleet image transfer.
 4. **Bind mounts, `-v` paths, and `--publish` ports are *host-relative*.** On a remote
    host, a file picker on the laptop selects a path that does not exist on the target
    Mac, and a published port is reachable at the *host's* address, not `localhost`.
