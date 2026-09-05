@@ -4,7 +4,8 @@ You are helping build **Flotilla**, a native macOS app that manages Apple's
 `container` CLI on the local machine and across a fleet of remote Apple Silicon
 Macs.
 
-This is a **personal, non-commercial** project. Read `DECISIONS.md` before changing
+This is a **personal project**, free to use and licensed Apache-2.0 — see `NOTICE` for the
+marks, which are reserved separately. Read `DECISIONS.md` before changing
 product or security direction, `PHASE1.md` for the current build contract and
 ownership, `research/FEATURES.md` for the consolidated phase-ordered scope, and
 `PLAN.md` for the six-phase roadmap. Settled decisions are not open design
