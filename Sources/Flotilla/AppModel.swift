@@ -268,7 +268,7 @@ final class AppModel {
             // `CFBundleVersion` is now a plain commit count, because Apple's rule for that key is
             // one to three integers and `make-app.sh` used to put a git hash there. The hash is the
             // part a support bundle actually needs, so it moved to `FLGitDescribe` and is appended
-            // here — "136 (be83e91-dirty)" identifies the build exactly and stays a valid version
+            // here — "136 (5135510-dirty)" identifies the build exactly and stays a valid version
             // where the plist requires one.
             build: Self.buildDescription,
             bundleIdentifier: Bundle.main.bundleIdentifier ?? "dev.melonfleet.Flotilla",

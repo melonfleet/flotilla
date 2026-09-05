@@ -106,8 +106,8 @@ Two invariants that would otherwise need those tests are enforced by script inst
 
 Version stamping and `actool` were already in `make-app.sh` from an earlier session; the remaining
 bug was real and only visible in a repo with **no tags**. `git describe --tags --always` falls back to
-a bare commit hash, so the bundle carried `CFBundleShortVersionString = be83e91` and
-`CFBundleVersion = be83e91-dirty` — and Apple's rule for the latter is one to three period-separated
+a bare commit hash, so the bundle carried `CFBundleShortVersionString = 5135510` and
+`CFBundleVersion = 5135510-dirty` — and Apple's rule for the latter is one to three period-separated
 integers. Now: the tag (or `0.0.0`) for the marketing string, `git rev-list --count HEAD` for the
 build number, and the git description in its own `FLGitDescribe` key, which the diagnostics snapshot
 appends so a support bundle still names the exact commit. This stopped being cosmetic the moment

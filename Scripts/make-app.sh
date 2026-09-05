@@ -79,8 +79,8 @@ BINARY="$(swift build -c "$CONFIG" --product Flotilla --show-bin-path)/Flotilla"
 # wrong in a way only a build with **no tags** exposed.
 #
 # `git describe --tags --always` falls back to a bare commit hash when no tag exists, and this repo
-# has no tags. So the bundle was stamped `CFBundleShortVersionString = be83e91` and
-# `CFBundleVersion = be83e91-dirty`. Apple's rule for `CFBundleVersion` is one to three
+# has no tags. So the bundle was stamped `CFBundleShortVersionString = 5135510` and
+# `CFBundleVersion = 5135510-dirty`. Apple's rule for `CFBundleVersion` is one to three
 # period-separated integers; a hash is not a version at all. It reads as harmless right up until
 # something in LaunchServices compares two of them — and Flotilla now registers a login item
 # through `SMAppService`, which is LaunchServices' opinion of this bundle.

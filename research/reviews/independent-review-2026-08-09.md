@@ -1,7 +1,7 @@
 # Independent quality review — 2026-08-09
 
-Scope: independent review of `0818c59`, `955f50c`, `9489f37`, plus the `.username`
-redaction introduced in `484dbc7`. I did not invoke Git and did not edit
+Scope: independent review of `f0ec702`, `af7f4da`, `e7b3953`, plus the `.username`
+redaction introduced in `2cb3f65`. I did not invoke Git and did not edit
 `Sources/Flotilla/`.
 
 Ground truth for `container build` is
