@@ -185,3 +185,32 @@ pkgutil --check-signature dist/Flotilla-<label>.pkg                   # Develope
 `--type install` is the package equivalent of `--type execute` for an app. Asking the wrong one
 passes on a package Gatekeeper would still refuse.
 
+### Putting a test machine back
+
+```sh
+Scripts/uninstall-test-build.sh --list      # what is on the machine
+Scripts/uninstall-test-build.sh --dry-run   # what would go
+Scripts/uninstall-test-build.sh             # remove it, asking first
+```
+
+It removes the app, the preference plist and its cache, the caches, saved application state, the
+installer receipt, saved support bundles and the downloaded package — then verifies each one is
+actually gone rather than reporting success for having tried.
+
+**It does not touch your containers, images, volumes, machines or the CLI.** Those belong to
+Apple's runtime, and a cleanup script that quietly removed a tester's work would be the worst
+possible bug to ship in a cleanup script. Test containers can be removed, but only ones you name:
+
+```sh
+Scripts/uninstall-test-build.sh --containers web,cache --machines testvm
+```
+
+There is no wildcard. The script cannot tell a container made during testing from one that was
+already there, so it does not guess.
+
+One thing it cannot do for you: the **login item**. macOS keys `SMAppService` registration to the
+bundle, so once the app is deleted there is nothing left to unregister, and the only tool that
+clears a stale entry resets every background item on the machine. Turn *Launch at login* off in
+Flotilla before removing it, or clear it afterwards in System Settings ▸ General ▸ Login Items.
+The script says so at the point it matters.
+
