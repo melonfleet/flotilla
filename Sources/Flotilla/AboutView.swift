@@ -160,10 +160,17 @@ struct AboutView: View {
 
     // MARK: - Licence
 
+    /// Apache-2.0 obliges a distributed work to carry its notices, and an About panel is where a
+    /// user looks for them. SwiftTerm is named because it is the one third-party component in the
+    /// app and its MIT licence asks for attribution.
     private var licence: some View {
-        Text("Flotilla is a personal, non-commercial project.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.vertical, 4)
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Flotilla is a personal project, licensed under Apache-2.0.")
+            Text("Terminal emulation by SwiftTerm (MIT).")
+            Text("Drives Apple\u{2019}s container CLI, which is not bundled.")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 4)
     }
 }

@@ -1,0 +1,29 @@
+Flotilla
+Copyright 2026 melonfleet
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file.
+
+
+TRADEMARKS
+
+The Apache License covers the code. It does not grant any right to use the
+names or marks below, which are reserved:
+
+  - "Flotilla" and "melonfleet" as product and project names
+  - the melonfleet wordmark, and the watermelon device within it
+  - the Flotilla application icon
+
+You are free to fork this code under the terms of the licence. Please give the
+fork its own name and its own icon, so that nobody is left guessing which build
+they are running or who is answerable for it.
+
+
+THIRD-PARTY COMPONENTS
+
+SwiftTerm — the PTY and VT100 terminal emulation behind the Terminal tab.
+  Copyright (c) Miguel de Icaza. MIT licence.
+  https://github.com/migueldeicaza/SwiftTerm
+
+Apple's `container` CLI is a separate program, licensed Apache-2.0 by Apple, and
+is not distributed with Flotilla. Flotilla executes it if it is installed.
+  https://github.com/apple/container

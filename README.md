@@ -19,6 +19,7 @@
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white" alt="Swift 6.2">
   <img src="https://img.shields.io/badge/telemetry-none-1D9E75" alt="No telemetry">
   <img src="https://img.shields.io/badge/account-not%20required-1D9E73" alt="No account required">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-Apache--2.0-E63956" alt="Apache-2.0 licence"></a>
 </p>
 
 <p align="center">
@@ -169,8 +170,13 @@ app. In the repository:
 
 ## Licence
 
-Personal, non-commercial project. **No licence is granted at this time** — see
-[`LICENSE`](LICENSE). The code is here to be read; if you want to use it, ask.
+**Apache-2.0** — see [`LICENSE`](LICENSE). The same licence Apple uses for
+[`container`](https://github.com/apple/container) itself, so there is no compatibility question
+either way.
+
+The names and marks are reserved separately and are **not** covered by it: *Flotilla*,
+*melonfleet*, the wordmark and the app icon. Fork the code freely; give the fork its own name, so
+nobody is left guessing which build they are running. Details in [`NOTICE`](NOTICE).
 
 ---
 
