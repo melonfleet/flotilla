@@ -208,7 +208,6 @@ struct SettingsView: View {
 
     private var store: SettingsStore { model.settingsStore }
     @State private var pendingReset: ResetAction?
-    @State private var showingSupportBundle = false
     @State private var showingAbout = false
 
     /// Which pane is showing. The mockup's own six, in its order.
@@ -254,8 +253,11 @@ struct SettingsView: View {
             pane(for: tab)
         }
         .navigationTitle("Settings")
-        .sheet(isPresented: $showingSupportBundle) {
-            SupportBundleView(model: model) { showingSupportBundle = false }
+        .sheet(isPresented: Binding(
+            get: { model.showingSupportBundle },
+            set: { model.showingSupportBundle = $0 }
+        )) {
+            SupportBundleView(model: model) { model.showingSupportBundle = false }
         }
         .sheet(isPresented: $showingAbout) {
             AboutView(model: model) { showingAbout = false }
@@ -541,7 +543,9 @@ struct SettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    Button("Create…") { showingSupportBundle = true }
+                    // The Help menu and this button share model-owned presentation state, so
+                    // both routes open the same audited preview-and-save flow.
+                    Button("Create…") { model.requestSupportBundle() }
                 }
                 .padding(.vertical, 2)
 

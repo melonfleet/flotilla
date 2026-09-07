@@ -1093,13 +1093,12 @@ final class AppModel {
     /// property, which never changes.
     @ObservationIgnored let terminals = TerminalSessionStore()
 
-    // MARK: Requests from the menu bar
+    // MARK: Requests from menus
     //
-    // The popover can *ask* for a screen; it cannot reach into the window's `@State` to set
-    // one. These are one-shot requests the window consumes and clears, which keeps the
-    // window's selection owned by the window while still letting "Settings…" and "Run…" in
-    // the popover land somewhere real. Without them those rows would open a blank window and
-    // look broken.
+    // The popover and app menus can *ask* for a screen; they cannot reach into the window's
+    // `@State` to set one. These are one-shot requests the window consumes and clears, which
+    // keeps the window's selection owned by the window while still letting commands land
+    // somewhere real. Without them those commands would open a blank window and look broken.
 
     /// A section the popover asked the window to show. Cleared by `MainWindowView`.
     var pendingSection: Section?
@@ -1139,6 +1138,55 @@ final class AppModel {
     }
 
     var pendingMachineForm = false
+
+    /// Ask the Images section to open its pull form. Mirrors `requestRunSheet`.
+    ///
+    /// These exist so a menu command drives the *same* state the toolbar button sets, rather
+    /// than presenting a second copy of the form from the app scene — two code paths to one
+    /// screen is how they drift apart.
+    func requestPullForm() {
+        pendingSection = .images
+        pendingPullForm = true
+    }
+
+    var pendingPullForm = false
+
+    /// Ask the Images section to open its build form.
+    func requestBuildForm() {
+        pendingSection = .images
+        pendingBuildForm = true
+    }
+
+    var pendingBuildForm = false
+
+    /// Ask the Volumes section to open its create form.
+    func requestVolumeForm() {
+        pendingSection = .volumes
+        pendingVolumeForm = true
+    }
+
+    var pendingVolumeForm = false
+
+    /// Ask the Networks section to open its create form.
+    func requestNetworkForm() {
+        pendingSection = .networks
+        pendingNetworkForm = true
+    }
+
+    var pendingNetworkForm = false
+
+    /// Presentation state lives here because Help commands outlive the Settings view.
+    ///
+    /// Keeping this as `@State` in `SettingsView` made the only working route the button inside
+    /// that view: a Help-menu command cannot bind to state in a view that may not exist yet. The
+    /// request selects Settings first, and the shared flag remains set until that view presents
+    /// and dismisses the same `SupportBundleView` its Diagnostics button uses.
+    var showingSupportBundle = false
+
+    func requestSupportBundle() {
+        pendingSection = .settings
+        showingSupportBundle = true
+    }
 
     func requestRunSheet() {
         // Run lives on the containers screen, so ask for both — otherwise the sheet would

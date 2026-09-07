@@ -63,6 +63,20 @@ struct ImagesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshImages() }
+        // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
+        .onChange(of: model.pendingPullForm) { _, requested in
+            if requested { pullReference = ""; showingPull = true; model.pendingPullForm = false }
+        }
+        .onAppear {
+            if model.pendingPullForm { pullReference = ""; showingPull = true; model.pendingPullForm = false }
+        }
+        // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
+        .onChange(of: model.pendingBuildForm) { _, requested in
+            if requested { showingBuild = true; model.pendingBuildForm = false }
+        }
+        .onAppear {
+            if model.pendingBuildForm { showingBuild = true; model.pendingBuildForm = false }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {

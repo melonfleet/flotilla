@@ -100,6 +100,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// App-menu commands route through `AppModel`'s one-shot requests, exactly like the menu-bar
+/// popover. Presenting forms here would duplicate section-owned state and let the toolbar and
+/// menu drift into different behaviour.
+private struct FlotillaCommands: Commands {
+    let model: AppModel
+
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        // `.newItem` is the File-menu placement. These are creation actions rather than a new
+        // top-level menu: a tester looking for New/Run follows the platform's File convention.
+        // Control-Command plus each action's initial is deliberate: bare Command-M and Command-P
+        // are the system Minimize and Print commands, while bare Command-N belongs to File's
+        // generic New action. One consistent modifier pair keeps all six mnemonic without
+        // stealing those established shortcuts.
+        CommandGroup(after: .newItem) {
+            Button("Run Container…") { present(model.requestRunSheet) }
+                .keyboardShortcut("r", modifiers: [.command, .control])
+                .disabled(!model.runtimeUsable)
+
+            Button("New Machine…") { present(model.requestMachineForm) }
+                .keyboardShortcut("m", modifiers: [.command, .control])
+                .disabled(!model.runtimeUsable)
+
+            Divider()
+
+            Button("Pull Image…") { present(model.requestPullForm) }
+                .keyboardShortcut("p", modifiers: [.command, .control])
+                .disabled(!model.runtimeUsable)
+
+            Button("Build Image from Dockerfile…") { present(model.requestBuildForm) }
+                .keyboardShortcut("b", modifiers: [.command, .control])
+                .disabled(!model.runtimeUsable)
+
+            Divider()
+
+            Button("New Volume…") { present(model.requestVolumeForm) }
+                .keyboardShortcut("v", modifiers: [.command, .control])
+                .disabled(!model.runtimeUsable)
+
+            Button("New Network…") { present(model.requestNetworkForm) }
+                .keyboardShortcut("n", modifiers: [.command, .control])
+                .disabled(!model.runtimeUsable)
+        }
+
+        // Diagnostics belongs in Help because it is needed when the runtime is unavailable;
+        // unlike the File actions, this remains useful and enabled in that state.
+        CommandGroup(before: .help) {
+            Button("Create Support Bundle…") { present(model.requestSupportBundle) }
+        }
+    }
+
+    /// A command can be invoked after the last window was closed. Set the one-shot request
+    /// before opening so `MainWindowView.onAppear` can consume it on its first pass; activation
+    /// then makes that reopened window visible rather than leaving it behind another app.
+    private func present(_ request: () -> Void) {
+        request()
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "main")
+    }
+}
+
 // `AppearanceMode.colorScheme` used to live here, mapping the preference to SwiftUI's
 // `ColorScheme` for `preferredColorScheme`. Both call sites are gone and so is it: appearance is
 // applied through AppKit now (`AppModel.applyAppKitAppearance()`), because SwiftUI's version sets
@@ -235,6 +297,9 @@ struct FlotillaApp: App {
         // Shipping `.presented` for everyone beats shipping machinery that does not work:
         // the previous behaviour was no window in ANY mode, for everyone.
         .defaultLaunchBehavior(.presented)
+        .commands {
+            FlotillaCommands(model: model)
+        }
 
         // Container detail used to be a `WindowGroup` here. It is now a modal sheet presented
         // by `ContainersView`, for the reason the owner gave: a real window brought its own traffic

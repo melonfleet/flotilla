@@ -54,6 +54,13 @@ struct VolumesView: View {
                              dismiss: { inspecting = nil })
             }
         }
+        // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
+        .onChange(of: model.pendingVolumeForm) { _, requested in
+            if requested { showingCreate = true; model.pendingVolumeForm = false }
+        }
+        .onAppear {
+            if model.pendingVolumeForm { showingCreate = true; model.pendingVolumeForm = false }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {

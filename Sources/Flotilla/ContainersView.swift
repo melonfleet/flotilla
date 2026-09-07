@@ -384,6 +384,32 @@ struct ContainersView: View {
     /// path therefore acts on this, never on `selection`.
     private var actionable: Set<Container.ID> { selection.intersection(visibleIDs) }
 
+    /// One row's selection checkbox.
+    ///
+    /// Extracted rather than written inline in the `TableColumn`. Inline, the binding's two
+    /// closures pushed this already-large view past the type-checker's budget and the build
+    /// failed with "unable to type-check this expression in reasonable time" — which names the
+    /// symptom and not the cause. A small function with explicit types costs nothing and the
+    /// error does not come back.
+    private func selectionToggle(for id: Container.ID) -> some View {
+        let isOn = Binding<Bool>(
+            get: { selection.contains(id) },
+            set: { on in
+                if on { selection.insert(id) } else { selection.remove(id) }
+            })
+        return Toggle("", isOn: isOn)
+            .labelsHidden()
+            .accessibilityLabel("Select \(id)")
+            .help("Select \(id)")
+    }
+
+    /// True when every visible row is selected. Compares against what is *visible*, not the whole
+    /// model, so select-all under a filter means "all of these" rather than silently reaching rows
+    /// the filter is hiding — the same reasoning `actionable` already uses.
+    private var allVisibleSelected: Bool {
+        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
+    }
+
     /// True while any actionable id has an action in flight — disables the bulk bar so a
     /// second click can't fire a duplicate operation on top of the first.
     private var selectionBusy: Bool { !actionable.isDisjoint(with: model.busy) }
@@ -700,6 +726,18 @@ struct ContainersView: View {
                        searchPrompt: "Search containers…",
                        updated: model.lastRefresh,
                        leading: {
+            // Head of the leading cluster, so it sits above the table's checkbox column. Only
+            // meaningful in list view — cards have no checkbox column to select from.
+            Toggle("", isOn: Binding(get: { allVisibleSelected },
+                                     set: { on in
+                                         if on { selection.formUnion(visibleIDs) }
+                                         else { selection.subtract(visibleIDs) }
+                                     }))
+                .labelsHidden()
+                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
+                .accessibilityLabel(allVisibleSelected ? "Deselect all containers" : "Select all containers")
+                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+
             Picker("View", selection: $ui.presentation) {
                 ForEach(Presentation.allCases) { option in
                     Label(option.rawValue, systemImage: option.systemImage)
@@ -743,14 +781,29 @@ struct ContainersView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Start") { Task { await model.performBulk(.start, on: actionable) } }
-                    .disabled(selectionBusy)
-                Button("Stop") { Task { await model.performBulk(.stop, on: actionable) } }
-                    .disabled(selectionBusy)
-                Button("Restart") { Task { await model.performBulk(.restart, on: actionable) } }
-                    .disabled(selectionBusy)
-                Button("Delete", role: .destructive) { confirmingBulkDelete = true }
-                    .disabled(selectionBusy)
+                // The same `iconButton` and the same glyphs as the rows, not words. The rows
+                // carry `play.fill` / `stop.fill` / `arrow.clockwise` / `trash`; this bar used
+                // text, so the identical four actions looked like different controls depending
+                // on whether you acted on one container or five. Icons in dense chrome with the
+                // word kept as tooltip and accessibility label is the rule everywhere else in
+                // the app, and this band was the exception.
+                iconButton("play.fill", "Start",
+                           help: "Start \(actionable.count) containers", busy: selectionBusy) {
+                    Task { await model.performBulk(.start, on: actionable) }
+                }
+                iconButton("stop.fill", "Stop",
+                           help: "Stop \(actionable.count) containers", busy: selectionBusy) {
+                    Task { await model.performBulk(.stop, on: actionable) }
+                }
+                iconButton("arrow.clockwise", "Restart",
+                           help: "Restart \(actionable.count) containers", busy: selectionBusy) {
+                    Task { await model.performBulk(.restart, on: actionable) }
+                }
+                iconButton("trash", "Delete",
+                           help: "Delete \(actionable.count) containers",
+                           busy: selectionBusy, destructive: true) {
+                    confirmingBulkDelete = true
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -900,16 +953,33 @@ struct ContainersView: View {
                 // The word matters more here than for machines, because `stateColor` folds several
                 // states into one colour: "exited (137)" and "dead" are both danger red. So the
                 // tooltip carries the CLI's own string rather than a tidied-up version of it.
-                TableColumn("", value: \.container.sortRank) { row in
-                    let c = row.container
-                    Circle()
-                        .fill(c.stateColor)
-                        .frame(width: 8, height: 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .help(c.status.state.capitalized)
-                        .accessibilityLabel(c.status.state.capitalized)
+                // **Column one carries the selection checkbox and the state dot together.**
+                //
+                // A checkbox is here because plain `Table` selection hides multi-select: picking
+                // several rows needs ⌘- or ⇧-click and nothing on screen says so. A tester asked
+                // for it directly after a bulk delete — "add a first column with a checkbox to
+                // select. And a select all checkbox at the top of the column."
+                //
+                // Two things it is not. It is not its own column, because
+                // `TableColumnBuilder` accepts at most **ten** and this table already had ten; an
+                // eleventh fails with "extra argument in call", and wrapping in a `Group` to nest
+                // past the limit then breaks the builder's type inference for every column inside
+                // it. And the select-all is not in this column's header, because **no
+                // `TableColumn` initialiser takes a view for its header** — only a string or a
+                // `Text` — so a control cannot go in a header cell at all. It sits at the head of
+                // the toolbar's leading cluster instead, directly above this column.
+                TableColumn("", value: \.container.sortRank) { (row: ContainerRow) in
+                    HStack(spacing: 6) {
+                        selectionToggle(for: row.container.id)
+                        Circle()
+                            .fill(row.container.stateColor)
+                            .frame(width: 8, height: 8)
+                            .help(row.container.status.state.capitalized)
+                            .accessibilityLabel(row.container.status.state.capitalized)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .width(min: 26, ideal: 28, max: 34)
+                .width(min: 52, ideal: 56, max: 64)
                 .customizationID("state")
 
                 TableColumn("Name", value: \.container.id) { row in

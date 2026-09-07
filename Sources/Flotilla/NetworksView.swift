@@ -46,6 +46,13 @@ struct NetworksView: View {
                              dismiss: { inspecting = nil })
             }
         }
+        // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
+        .onChange(of: model.pendingNetworkForm) { _, requested in
+            if requested { showingCreate = true; model.pendingNetworkForm = false }
+        }
+        .onAppear {
+            if model.pendingNetworkForm { showingCreate = true; model.pendingNetworkForm = false }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {
