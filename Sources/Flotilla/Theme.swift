@@ -47,6 +47,25 @@ enum Theme {
     /// does not carry enough contrast as small type on either background.
     static let accentText = dynamic(light: 0xC2185B, dark: 0xFF9BB2)
 
+    /// The colour for a clickable row name, given whether that row is selected.
+    ///
+    /// `.buttonStyle(.link)` hardcodes the system blue and ignores the scene tint, so a row name
+    /// has to be coloured explicitly — but a *selected* row in a `Table` is filled with the tint
+    /// itself, and accent text on an accent fill is what a tester reported as "you do not see it
+    /// anymore because of their exact same color".
+    ///
+    /// A selected row uses `.primary` rather than white, which is what was asked for literally.
+    /// White on the brand pink measures **3.1:1**; near-black measures **6.8:1** — the darker
+    /// choice is the more visible one here, and it is also correct against the grey macOS paints
+    /// for a selection in an unfocused window, where white would be worse still. The request
+    /// allowed "white, or a different colour that will be visible"; this is the second.
+    ///
+    /// One function rather than the same ternary in five list views, because five copies of a
+    /// rule is how the rule ends up applied in four places.
+    static func rowName(selected: Bool) -> AnyShapeStyle {
+        selected ? AnyShapeStyle(.primary) : AnyShapeStyle(accentText)
+    }
+
     /// The wash behind a selected sidebar row. Alpha differs by appearance: the same
     /// translucency that reads as a tint on white disappears against a dark sidebar.
     static let accentTint = dynamic(light: 0xFC4A6B, dark: 0xFC4A6B,

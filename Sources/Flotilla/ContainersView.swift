@@ -547,8 +547,15 @@ struct ContainersView: View {
         // Named for what it does rather than "Edit Settings…", which would promise an edit. It
         // does not delete the original; that stays a separate, confirmed decision.
         Button("Run Again with Changes…") {
+            // Host ports every *other* container already publishes. The source's own ports count
+            // too while it is still running, which is the whole point: copying them verbatim
+            // produced a container that could not bind and died immediately.
+            let taken = Set(model.containers
+                                 .filter { $0.isRunning }
+                                 .flatMap { $0.publishedPorts.map(\.hostPort) })
             runPrefill = RunPrefill(from: container,
-                                    existingNames: Set(model.containers.map(\.id)))
+                                    existingNames: Set(model.containers.map(\.id)),
+                                    usedHostPorts: taken)
             showingRun = true
         }
 
@@ -605,14 +612,17 @@ struct ContainersView: View {
         // "Open in Flotilla" from the menu-bar popover names a subject, not just a section.
         // One-shot: cleared on consumption so a rebuild does not reopen it.
         .onChange(of: model.pendingDetailSubject) { _, subject in
-            guard let subject else { return }
+            // Only this section's own requests. See `AppModel.requestDetail`.
+            guard let subject, model.pendingDetailKind == .container else { return }
             detailTarget = DetailTarget(id: subject)
             model.pendingDetailSubject = nil
+            model.pendingDetailKind = nil
         }
         .onAppear {
-            if let subject = model.pendingDetailSubject {
+            if let subject = model.pendingDetailSubject, model.pendingDetailKind == .container {
                 detailTarget = DetailTarget(id: subject)
                 model.pendingDetailSubject = nil
+                model.pendingDetailKind = nil
             }
         }
         // "Run…" in the menu-bar popover. One-shot: consumed and cleared, so the sheet does
@@ -647,7 +657,9 @@ struct ContainersView: View {
             }
             Button("Cancel", role: .cancel) { confirmingRowDelete = nil }
         } message: {
-            Text("This cannot be undone.")
+            Text(confirmingRowDelete?.isRunning == true
+                 ? "It is running and will be stopped first. This cannot be undone."
+                 : "This cannot be undone.")
         }
         .confirmationDialog(
             "Delete \(actionable.count) container\(actionable.count == 1 ? "" : "s")?",
@@ -659,8 +671,18 @@ struct ContainersView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This cannot be undone.")
+            // Naming the running count matters: the CLI refuses a running container, so the
+            // delete escalates to `--force` and that should be stated before it happens, not
+            // discovered from an error afterwards.
+            Text(runningInSelection > 0
+                 ? "\(runningInSelection) of them \(runningInSelection == 1 ? "is" : "are") running and will be stopped first. This cannot be undone."
+                 : "This cannot be undone.")
         }
+    }
+
+    /// How many of the containers about to be deleted are running.
+    private var runningInSelection: Int {
+        actionable.compactMap { id in model.containers.first { $0.id == id } }.count { $0.isRunning }
     }
 
     /// **The shared band, not a copy of it.** This screen used to hand-roll the same
@@ -790,6 +812,13 @@ struct ContainersView: View {
                         .buttonStyle(.borderedProminent)
                 }
             }
+            // Fills the pane, the same way the loading branch above and the table below do.
+            // Without it `content` sizes to this view's intrinsic height, the enclosing VStack
+            // shrinks to less than the pane, and SwiftUI centres it — which put a large blank
+            // band *above the toolbar* and another below the activity strip. A tester reported
+            // it as "a huge gap on the top of the screen between the controls and the toolbar",
+            // and noticed it only here because the other sections were not empty at the time.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded:
             if ui.presentation == .list { table } else { cards }
@@ -895,8 +924,9 @@ struct ContainersView: View {
                         Text(c.id).lineLimit(1)
                     }
                     .buttonStyle(.link)
-                    // `.link` hardcodes the system blue and ignores the scene tint.
-                    .foregroundStyle(Theme.accentText)
+                    // `.link` hardcodes the system blue and ignores the scene tint — and a
+                    // selected row is filled with that tint, so the colour has to know.
+                    .foregroundStyle(Theme.rowName(selected: selection.contains(c.id)))
                     .help("Open \(c.id)")
                 }
                 TableColumn("Image", value: \.container.imageReference) { row in

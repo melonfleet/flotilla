@@ -37,15 +37,37 @@ struct RunPrefill: Equatable {
     /// so rather than letting the user discover it after the container starts.
     var mayHaveUncarriedSettings: Bool
 
+    /// Host ports the source published that were left out because something else already holds
+    /// them — almost always the original container, which is still running.
+    var portsInUse: [Int]
+
     /// Built from an inspected container. `name` gets a suffix because the original still exists —
     /// `container run --name web` fails while `web` is there, and offering a name that cannot be
     /// used is a form that fails on submit.
-    init(from container: Container, existingNames: Set<String>) {
+    ///
+    /// **The same reasoning applies to the host port, and it did not used to.** Copying
+    /// `8080:80` verbatim while the original still publishes 8080 produces a container that
+    /// cannot start: the runtime refuses with `bind(...): Address already in use (errno: 48)`.
+    /// A tester hit exactly this and reported it as "container keeps stopping, won't stay
+    /// running". So a host port already taken is dropped rather than prefilled, and named in
+    /// `portsInUse` so the sheet says which and why instead of leaving a silent gap.
+    init(from container: Container, existingNames: Set<String>, usedHostPorts: Set<Int> = []) {
         image = container.configuration.image.reference
-        ports = container.publishedPorts.map(\.displayText)
         cpus = container.configuration.resources?.cpus
         memoryMB = container.configuration.resources?.memoryInBytes.map { Int($0 / 1_048_576) }
         mayHaveUncarriedSettings = true
+
+        var carried: [String] = []
+        var conflicts: [Int] = []
+        for port in container.publishedPorts {
+            if usedHostPorts.contains(port.hostPort) {
+                conflicts.append(port.hostPort)
+            } else {
+                carried.append(port.displayText)
+            }
+        }
+        ports = carried
+        portsInUse = conflicts
 
         var candidate = "\(container.configuration.id)-copy"
         var counter = 2
@@ -73,11 +95,16 @@ struct RunSheetView: View {
     /// could not bring across.
     private let prefilled: Bool
 
+    /// Host ports the source published that were deliberately not carried, because something
+    /// already holds them. Named in the notice rather than silently missing.
+    private let portsInUse: [Int]
+
     init(model: AppModel, initialImage: String = "", prefill: RunPrefill? = nil,
          dismiss: @escaping () -> Void) {
         self.model = model
         self.dismiss = dismiss
         self.prefilled = prefill?.mayHaveUncarriedSettings ?? false
+        self.portsInUse = prefill?.portsInUse ?? []
         _image = State(initialValue: prefill?.image ?? initialImage)
         _name = State(initialValue: prefill?.name ?? "")
         _ports = State(initialValue: (prefill?.ports ?? []).map { Row(value: $0) })
@@ -106,8 +133,6 @@ struct RunSheetView: View {
     @State private var env: [Row] = []
     @State private var volumes: [Row] = []
     @State private var commandText = ""
-    /// Transient tick on the Copy button; reset whenever the command changes.
-    @State private var copiedCommand = false
 
     /// Gives each list row a stable identity across add/remove — `Allowlist`'s own
     /// per-flag maxima (`maxPorts`/`maxEnv`/`maxVolumes` below) are just this view's
@@ -167,6 +192,19 @@ struct RunSheetView: View {
                               + "defines, so add any you need below.",
                               systemImage: "exclamationmark.circle")
                             .font(.caption).foregroundStyle(Theme.warning)
+                        if !portsInUse.isEmpty {
+                            // Stated, not silently dropped. Copying a host port that is already
+                            // bound gives a container that cannot start —
+                            // `bind(...): Address already in use` — and the failure looks like
+                            // the container "not staying running" rather than a port clash.
+                            Label("Host port\(portsInUse.count == 1 ? "" : "s") "
+                                  + portsInUse.map(String.init).joined(separator: ", ")
+                                  + " \(portsInUse.count == 1 ? "is" : "are") already published by "
+                                  + "a running container, so \(portsInUse.count == 1 ? "it was" : "they were") "
+                                  + "left out. Pick a different host port, or stop the original first.",
+                                  systemImage: "network.slash")
+                                .font(.caption).foregroundStyle(Theme.warning)
+                        }
                     }
                 }
                 SwiftUI.Section("Command") { commandField }
@@ -305,23 +343,8 @@ struct RunSheetView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                // `FEATURES.md` wants "Copy `container` command" wherever a command is shown:
-                // it teaches the CLI, and it doubles as the audit string you can paste into a
-                // change record. Deliberately enabled even when the command is invalid —
-                // copying it into a terminal to see the real error is a legitimate thing to
-                // want, and the validation message is right underneath either way.
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(previewLine, forType: .string)
-                    copiedCommand = true
-                } label: {
-                    Label(copiedCommand ? "Copied" : "Copy",
-                          systemImage: copiedCommand ? "checkmark" : "doc.on.doc")
-                }
-                .controlSize(.small)
-                .help("Copy the container command to the clipboard")
-                // Reset on any edit, so the tick always refers to what is on screen now.
-                .onChange(of: previewLine) { copiedCommand = false }
+                CommandPreviewCopyButton(command: previewLine,
+                                         help: "Copy the container command to the clipboard")
             }
             if !hasStarted {
                 Label("Enter an image reference to build the command.", systemImage: "info.circle")

@@ -9,7 +9,7 @@ import FlotillaCore
 /// controls with nothing behind them. `Settings` replaces them because `machine set` is real.
 enum MachineDetailTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
-    case shell = "Shell"
+    case shell = "Terminal"
     case logs = "Logs"
     case settings = "Settings"
     case inspect = "Inspect"
@@ -222,7 +222,7 @@ struct MachineDetailView: View {
     }
 }
 
-// MARK: - Shell
+// MARK: - Terminal
 
 /// A shell inside the machine, via `machine run`.
 ///
@@ -258,7 +258,7 @@ private struct MachineShellTab: View {
                 }
             } else {
                 ContentUnavailableView {
-                    Label("Shell", systemImage: "terminal")
+                    Label("Terminal", systemImage: "terminal")
                 } description: {
                     Text(MachinesView.isRunning(machine)
                          ? "Opens a login shell inside the machine “\(machine.id)”. This is the "

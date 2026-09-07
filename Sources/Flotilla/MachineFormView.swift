@@ -145,11 +145,17 @@ struct MachineFormView: View {
                 SwiftUI.Section("Command") {
                     // The Run sheet's validated live preview, same convention: what will run,
                     // built through the allowlist, before you press anything.
-                    Text(preview)
-                        .font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                        .foregroundStyle(previewStyle)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(preview)
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                            .foregroundStyle(previewStyle)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        CommandPreviewCopyButton(command: preview,
+                                                 help: "Copy the machine command to the clipboard")
+                    }
                 }
             }
             .formStyle(.grouped)

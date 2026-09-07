@@ -37,21 +37,9 @@ struct MachinesView: View {
         }
     }
 
-    /// A machine is running or it is not — there is no `paused`/`exited`/`created` spread the
-    /// way containers have, so three cases is the whole vocabulary.
-    enum Filter: String, CaseIterable, Identifiable, Hashable {
-        case all = "All"
-        case running = "Running"
-        case stopped = "Stopped"
-        var id: Self { self }
-        var systemImage: String {
-            switch self {
-            case .all: "circle.grid.2x2"
-            case .running: "play.circle"
-            case .stopped: "stop.circle"
-            }
-        }
-    }
+    /// The tester compared these menus directly, so Machines uses the Containers vocabulary
+    /// rather than keeping an identical second list that can drift unnoticed.
+    typealias Filter = ContainersView.Filter
 
     private static let columnSpecs: [(id: String, title: String)] = [
         ("state", "State"),
@@ -124,14 +112,17 @@ struct MachinesView: View {
         // "Open in Flotilla" from the menu-bar popover names a subject, not just a section.
         // One-shot: cleared on consumption so a rebuild does not reopen it.
         .onChange(of: model.pendingDetailSubject) { _, subject in
-            guard let subject else { return }
+            // Only this section's own requests. See `AppModel.requestDetail`.
+            guard let subject, model.pendingDetailKind == .machine else { return }
             detailTarget = DetailTarget(id: subject)
             model.pendingDetailSubject = nil
+            model.pendingDetailKind = nil
         }
         .onAppear {
-            if let subject = model.pendingDetailSubject {
+            if let subject = model.pendingDetailSubject, model.pendingDetailKind == .machine {
                 detailTarget = DetailTarget(id: subject)
                 model.pendingDetailSubject = nil
+                model.pendingDetailKind = nil
             }
         }
         // "New Machine…" from the menu-bar popover. One-shot: consumed and cleared, so the form

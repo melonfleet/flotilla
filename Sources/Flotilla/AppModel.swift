@@ -1113,12 +1113,24 @@ final class AppModel {
     /// Containers" are different requests and the popover was only ever able to make the second.
     /// One-shot, like the other pending flags: consumed and cleared by whichever view honours it,
     /// so a rebuild does not reopen it.
+    /// **The kind travels with the subject.** It used not to, and the consequence was that
+    /// whichever section view happened to be alive consumed the request — including the wrong
+    /// one. `MachinesView` and `ContainersView` both observe `pendingDetailSubject`, so asking
+    /// for a container while Machines was on screen had Machines take the id, clear it, and
+    /// leave nothing for Containers to open. A tester reported it precisely: clicking a name in
+    /// the menu bar "will open the correct machine" only when that section was already showing,
+    /// and otherwise just switched section.
     func requestDetail(kind: ActivityKind, subject: String) {
         pendingSection = kind.section
+        pendingDetailKind = kind
         pendingDetailSubject = subject
     }
 
     var pendingDetailSubject: String?
+
+    /// Which section the pending subject belongs to, so a section can ignore a request that is
+    /// not its own instead of swallowing it.
+    var pendingDetailKind: ActivityKind?
 
     /// Ask the Machines section to open its create form. Mirrors `requestRunSheet`.
     func requestMachineForm() {
@@ -1182,7 +1194,15 @@ final class AppModel {
                 // No explicit signal: the CLI's default for `kill` is SIGKILL, and naming it here
                 // would be this layer deciding a policy the CLI already has.
                 case .kill:    try cli.kill(id)
-                case .delete:  try cli.remove(id)
+                // `force` because the CLI refuses to delete a running container, and reporting
+                // its refusal verbatim is not a feature. A tester selected two running
+                // containers, confirmed the delete, and got
+                // `internalError: "failed to delete container" (cause: "invalidState: …is
+                // running and can not be deleted")` — then had to stop each one by hand and try
+                // again. `container delete --force` exists for exactly this ("Delete containers
+                // even if they are running"), and the confirmation says a running container will
+                // be stopped first, so the escalation is stated rather than silent.
+                case .delete:  try cli.remove(id, force: true)
                 }
             }.value
             // The poll loop cannot see this one: a restart of a running container ends running,
@@ -1227,7 +1247,8 @@ final class AppModel {
                     case .stop:    try cli.stop(id)
                     case .restart: try cli.restart(id)
                     case .kill:    try cli.kill(id)
-                    case .delete:  try cli.remove(id)
+                    // See the single-container path above for why `force`.
+                    case .delete:  try cli.remove(id, force: true)
                     }
                 }.value
                 if action == .restart {

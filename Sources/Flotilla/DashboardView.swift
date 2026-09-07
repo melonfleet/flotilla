@@ -329,7 +329,11 @@ struct DashboardView: View {
                           model.hostMetrics.latest?.cpuPercent.map { String(format: "%.0f%%", $0) })
                 legendDot(Theme.accent, "Memory", memoryPercentLabel)
                 Spacer()
-                Text("\(ProcessInfo.processInfo.processorCount) cores · \(model.hostLabel)")
+                // Pinning the domain means a 1h view can be mostly empty, which on its own looks
+                // like a broken chart. Naming how much has actually been collected turns that
+                // into a fact about the app's uptime instead.
+                Text(collectedNote.map { "\($0) · \(ProcessInfo.processInfo.processorCount) cores · \(model.hostLabel)" }
+                     ?? "\(ProcessInfo.processInfo.processorCount) cores · \(model.hostLabel)")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             // One flattened array with an explicit series name, not two `ForEach`es each
@@ -348,6 +352,13 @@ struct DashboardView: View {
             .chartLegend(.hidden)      // the header row above already names both, with values
             .chartYScale(domain: 0...100)
             .chartYAxis { AxisMarks(values: [0, 25, 50, 75, 100]) }
+            // **The x domain has to be the selected range, not the data.** Without this, Swift
+            // Charts infers the domain from whatever samples exist — so a freshly launched app
+            // labelled a 5-second span across the full width, and 15m and 1h drew *identical*
+            // axes because both were showing the same few minutes of history. A tester reported
+            // it as "there is no change in timeline when switching between 5m, 15m, and 1h",
+            // which is exactly what an inferred domain looks like from the outside.
+            .chartXScale(domain: rangeStart...rangeEnd)
             .frame(height: 150)
         }
         .padding(12)
@@ -414,8 +425,23 @@ struct DashboardView: View {
     }
 
     private var hostSamples: [HostMetricsSampler.Sample] {
-        let cutoff = Date().addingTimeInterval(-range.seconds)
-        return model.hostMetrics.history.filter { $0.date >= cutoff }
+        model.hostMetrics.history.filter { $0.date >= rangeStart }
+    }
+
+    /// The chart's x domain: always the full selected range, so switching range visibly changes
+    /// the axis even when there is little data to draw in it.
+    private var rangeEnd: Date { model.hostMetrics.latest?.date ?? Date() }
+    private var rangeStart: Date { rangeEnd.addingTimeInterval(-range.seconds) }
+
+    /// How much history exists, when that is less than the range asked for. `nil` once the app
+    /// has been up long enough to fill the window, so the note disappears rather than becoming
+    /// permanent furniture.
+    private var collectedNote: String? {
+        guard let first = model.hostMetrics.history.first?.date else { return nil }
+        let collected = rangeEnd.timeIntervalSince(first)
+        guard collected < range.seconds - 30 else { return nil }
+        let minutes = Int(collected / 60)
+        return minutes >= 1 ? "\(minutes)m collected" : "\(Int(collected))s collected"
     }
 
     /// Container rates summed per timestamp. Points where nothing was measurable are dropped
