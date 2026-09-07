@@ -48,6 +48,15 @@ struct ImagesView: View {
                 VStack(spacing: 0) {
                     toolbar
                     Divider()
+                    // A pull outlives its form, so the list has to be able to say so. Without
+                    // this, pressing Back during a 40-second pull looks exactly like the pull
+                    // having been cancelled.
+                    if let pull = model.activePull {
+                        pullStatus(pull, compact: true)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                        Divider()
+                    }
                     content
                 }
                 // Same band as Containers and Machines. See `ResourceUIState.activityExpanded`
@@ -635,25 +644,129 @@ struct ImagesView: View {
         .frame(width: 440)
     }
 
+    @ViewBuilder
     private var pullForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // The form is the progress screen while a pull runs. Dismissing on submit — which is
+        // what this did — reported a 40-second network operation by showing nothing at all,
+        // then eventually growing a row.
+        if let pull = model.activePull {
+            pullStatus(pull, compact: false)
+        } else {
+            pullEntry
+        }
+    }
+
+    private var pullEntry: some View {
+        VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                TextField("docker.io/library/nginx:latest", text: $pullReference)
+                TextField("nginx:alpine", text: $pullReference)
                     .textFieldStyle(.roundedBorder)
+                    .onSubmit(startPull)
                 if let problem = pullProblem {
                     Text(problem).font(.caption).foregroundStyle(Theme.danger)
+                } else {
+                    Text("Registry and tag are optional.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
+
+            // Concrete forms rather than a description of the grammar. Every one of these is
+            // accepted by both the allowlist's `imageReference` shape and the CLI itself —
+            // checked against `container image pull`, not inferred from the placeholder.
+            VStack(alignment: .leading, spacing: 6) {
+                pullExample("nginx", "docker.io/library/nginx:latest")
+                pullExample("nginx:alpine", "a specific tag")
+                pullExample("ghcr.io/owner/app:1.2.3", "another registry")
+                pullExample("alpine@sha256:…", "pinned to a digest")
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+
             HStack {
-                Spacer()
-                Button("Pull") {
-                    let reference = pullReference.trimmingCharacters(in: .whitespacesAndNewlines)
-                    showingPull = false
-                    guard !reference.isEmpty else { return }
-                    Task { await model.pullImage(reference) }
+                // Static destination on purpose: sending what someone has typed to a registry's
+                // search as they type would leak the name of a private image they had not
+                // pulled yet.
+                Link(destination: URL(string: "https://hub.docker.com/search?image_filter=official")!) {
+                    Label("Browse Docker Hub", systemImage: "arrow.up.right.square")
+                        .font(.callout)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(trimmedPull.isEmpty || pullProblem != nil)
+                Spacer()
+                Button("Pull", action: startPull)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(trimmedPull.isEmpty || pullProblem != nil)
+            }
+        }
+    }
+
+    private func pullExample(_ reference: String, _ meaning: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(reference)
+                .font(.system(.caption, design: .monospaced))
+            Text(meaning)
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    /// Live progress, in the form and — `compact` — in the band above the list.
+    ///
+    /// The percentage is the CLI's own and is **not** monotonic: it discovers the blob count as
+    /// it walks the manifest, so 99% of 17 blobs becomes 8% of 96. The bar therefore goes
+    /// backwards sometimes, which is the CLI telling the truth about what it just learned;
+    /// smoothing it here would only invent a number nothing measured.
+    @ViewBuilder
+    private func pullStatus(_ pull: AppModel.ImagePull, compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 4 : 10) {
+            HStack(spacing: 8) {
+                Text(pull.reference)
+                    .font(.system(compact ? .caption : .body, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                if let elapsed = pull.progress?.elapsed {
+                    Text("\(Int(elapsed))s")
+                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
+
+            // Linear in both states, so the shape does not jump when the first percentage
+            // arrives — the early lines carry no percentage at all.
+            Group {
+                if let fraction = pull.progress?.fraction {
+                    ProgressView(value: fraction) { Text(phaseLabel(pull.progress)) }
+                } else {
+                    ProgressView { Text(phaseLabel(pull.progress)) }
+                }
+            }
+            .progressViewStyle(.linear)
+            .font(.caption)
+
+            if let detail = pull.progress?.detail, !compact {
+                // The CLI's own wording, passed through. See `ImagePullProgress.detail`.
+                Text(detail)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func phaseLabel(_ progress: ImagePullProgress?) -> String {
+        guard let progress else { return "Contacting registry…" }
+        var label = progress.phase == .fetching ? "Fetching" : "Unpacking"
+        if let platform = progress.platform { label += " \(platform)" }
+        return "\(label) · step \(progress.step) of \(progress.stepCount)"
+    }
+
+    /// Returns to the list only on success, and only after `pullImage` has refreshed it — so the
+    /// image that was just pulled is present the moment the list appears. On failure the form
+    /// stays put with the reference intact: the likeliest cause is a typo in it.
+    private func startPull() {
+        let reference = trimmedPull
+        guard !reference.isEmpty, pullProblem == nil, model.activePull == nil else { return }
+        Task {
+            if await model.pullImage(reference) {
+                pullReference = ""
+                showingPull = false
             }
         }
     }

@@ -657,3 +657,95 @@ private final class FailingHost: ContainerHost, @unchecked Sendable {
         try ContainerCLI(host: host, wirePolicy: .localOwner).createNetwork("fine")
     }
 }
+
+// MARK: - Pull with progress
+
+/// Emits scripted output lines through the observer, then returns a canned result. The one
+/// thing `RecordingHost` cannot do: it implements only `run(_:)`, so it inherits the protocol
+/// default that *drops* the observer — which is the right default for a double with nothing to
+/// report, and useless for testing the observer itself.
+private final class StreamingHost: ContainerHost, @unchecked Sendable {
+    var lines: [String] = []
+    var exitCode: Int32 = 0
+    var stderr = ""
+    private(set) var invocations: [[String]] = []
+
+    func run(_ args: [String]) throws -> CommandResult {
+        try run(args, timeout: 0, onLine: nil)
+    }
+
+    func run(_ args: [String], timeout: TimeInterval,
+             onLine: (@Sendable (String) -> Void)?) throws -> CommandResult {
+        invocations.append(args)
+        for line in lines { onLine?(line) }
+        return CommandResult(stdout: "", stderr: stderr, exitCode: exitCode)
+    }
+}
+
+private final class ProgressBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: [ImagePullProgress] = []
+    func append(_ progress: ImagePullProgress) { lock.lock(); seen.append(progress); lock.unlock() }
+    var all: [ImagePullProgress] { lock.lock(); defer { lock.unlock() }; return seen }
+}
+
+@Test func pullReportsProgressAndDropsEverythingThatIsNotProgress() throws {
+    let host = StreamingHost()
+    // Real lines, from the transcript in Fixtures/pull-progress.txt, interleaved with the kinds
+    // of output a CLI is entitled to emit alongside them. Anything unparseable is dropped rather
+    // than guessed at — a half-understood line shown as progress would be worse than no line.
+    host.lines = [
+        "[1/2] Fetching image [0s]",
+        "unexpected chatter from the runtime",
+        "[1/2] Fetching image 20% (28 of 96 blobs, 9.2/45.0 MB, 1.1 MB/s) [11s]",
+        "",
+        "[2/2] Unpacking image for platform linux/arm64/v8 [33s]",
+    ]
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
+    let box = ProgressBox()
+
+    try cli.pull("docker.io/library/alpine:latest") { box.append($0) }
+
+    // Still the validated argv, not a second path around it.
+    #expect(host.invocations == [["image", "pull", "docker.io/library/alpine:latest"]])
+
+    let seen = box.all
+    #expect(seen.count == 3)
+    #expect(seen[0].fraction == nil)        // the CLI has no percentage yet on its first line
+    #expect(seen[1].fraction == 0.2)
+    #expect(seen[1].detail == "28 of 96 blobs, 9.2/45.0 MB, 1.1 MB/s")
+    #expect(seen[2].phase == .unpacking)
+    #expect(seen[2].platform == "linux/arm64/v8")
+}
+
+@Test func aRejectedReferenceReachesNeitherTheHostNorTheObserver() throws {
+    // The observer is not a way round the allowlist: validation happens first, so a reference
+    // the allowlist refuses produces no execution and no progress.
+    let host = StreamingHost()
+    host.lines = ["[1/2] Fetching image [0s]"]
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
+    let box = ProgressBox()
+
+    #expect(throws: (any Error).self) {
+        try cli.pull("alpine latest") { box.append($0) }
+    }
+    #expect(host.invocations.isEmpty)
+    #expect(box.all.isEmpty)
+}
+
+@Test func progressDeliveredBeforeAFailureIsNotUnsaid() throws {
+    // A pull that gets 20% in and then fails did get 20% in. The throw reports the failure; it
+    // does not retract what was already true.
+    let host = StreamingHost()
+    host.lines = ["[1/2] Fetching image 20% (28 of 96 blobs, 9.2/45.0 MB, 1.1 MB/s) [11s]"]
+    host.exitCode = 1
+    host.stderr = "unauthorized: authentication required"
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
+    let box = ProgressBox()
+
+    #expect(throws: ContainerCLIError.self) {
+        try cli.pull("docker.io/library/private:latest") { box.append($0) }
+    }
+    #expect(box.all.count == 1)
+    #expect(box.all[0].fraction == 0.2)
+}

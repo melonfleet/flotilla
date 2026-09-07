@@ -38,11 +38,32 @@ public protocol ContainerHost: Sendable {
     /// implement only `run(_:)` keep working and inherit "no deadline" — which is what a
     /// scripted host that returns instantly wants anyway.
     func run(_ args: [String], timeout: TimeInterval) throws -> CommandResult
+    /// Run with a deadline, reporting each complete output line as it arrives.
+    ///
+    /// `onLine` is called once per complete line, from **either** stream. Which stream carries
+    /// progress is the CLI's choice and not something a caller can see: `container image pull`
+    /// writes every progress line to stderr and leaves stdout empty. A signature that made the
+    /// caller name a stream would be asking it to encode that.
+    ///
+    /// This is for the *bounded* long commands, where a result arriving forty seconds later is
+    /// not the same product as one arriving as it happens — `image pull`, `build`. It is not the
+    /// Phase 4 streaming API for `logs --follow` / `stats`: those never end, and this still
+    /// returns one `CommandResult` when the child exits.
+    func run(_ args: [String], timeout: TimeInterval,
+             onLine: (@Sendable (String) -> Void)?) throws -> CommandResult
 }
 
 public extension ContainerHost {
     func run(_ args: [String], timeout: TimeInterval) throws -> CommandResult {
         try run(args)
+    }
+
+    /// Default: drop the observer. A double that implements only `run(_:)` keeps working and
+    /// simply reports no progress, which is the honest degradation — a scripted host that
+    /// returns instantly has none to report.
+    func run(_ args: [String], timeout: TimeInterval,
+             onLine: (@Sendable (String) -> Void)?) throws -> CommandResult {
+        try run(args, timeout: timeout)
     }
 }
 
@@ -144,6 +165,11 @@ public struct LocalHost: ContainerHost {
     }
 
     public func run(_ args: [String], timeout: TimeInterval) throws -> CommandResult {
+        try run(args, timeout: timeout, onLine: nil)
+    }
+
+    public func run(_ args: [String], timeout: TimeInterval,
+                    onLine: (@Sendable (String) -> Void)?) throws -> CommandResult {
         guard let executable = resolve() else {
             throw ContainerCLIError.runtimeNotFound(searched: Preflight.searchedDirectories())
         }
@@ -156,8 +182,8 @@ public struct LocalHost: ContainerHost {
         process.standardOutput = outPipe
         process.standardError = errPipe
 
-        let out = Sink(limit: limits.maxBytesPerStream)
-        let err = Sink(limit: limits.maxBytesPerStream)
+        let out = Sink(limit: limits.maxBytesPerStream, onLine: onLine)
+        let err = Sink(limit: limits.maxBytesPerStream, onLine: onLine)
         // Two dedicated threads, **not** `DispatchQueue.global().async`.
         //
         // Each drain blocks in `read(2)` for as long as the child is alive, and parking a blocked
@@ -235,12 +261,24 @@ public struct LocalHost: ContainerHost {
 /// exists precisely because sometimes it does not. Contention is one lock per pipe read.
 private final class Sink: @unchecked Sendable {
     private let limit: Int
+    private let onLine: (@Sendable (String) -> Void)?
     private let lock = NSLock()
     private var data = Data()
+    /// The tail of the last read that had no newline in it yet.
+    private var pending = Data()
     private var truncated = false
     private var abandoned = false
 
-    init(limit: Int) { self.limit = limit }
+    /// A child that never writes a newline must not turn `pending` into the unbounded buffer
+    /// this file exists to remove, so the partial line has its own ceiling and is handed over
+    /// as a line on reaching it. 64 KiB is far past any real progress line — `container`'s run
+    /// under a hundred bytes — and the point is only that the growth has an end.
+    private static let maxPendingLine = 64 * 1024
+
+    init(limit: Int, onLine: (@Sendable (String) -> Void)? = nil) {
+        self.limit = limit
+        self.onLine = onLine
+    }
 
     /// What arrived, and whether anything was dropped — from the ceiling or from being abandoned.
     func snapshot() -> (String, Bool) {
@@ -263,7 +301,7 @@ private final class Sink: @unchecked Sendable {
     func drain(_ handle: FileHandle) {
         while true {
             let chunk = handle.availableData
-            if chunk.isEmpty { return }          // EOF
+            if chunk.isEmpty { break }           // EOF
             lock.lock()
             if abandoned {
                 lock.unlock()
@@ -274,17 +312,64 @@ private final class Sink: @unchecked Sendable {
             }
             if data.count >= limit {
                 truncated = true
-                lock.unlock()
-                continue
-            }
-            let room = limit - data.count
-            if chunk.count > room {
-                data.append(chunk.prefix(room))
-                truncated = true
             } else {
-                data.append(chunk)
+                let room = limit - data.count
+                if chunk.count > room {
+                    data.append(chunk.prefix(room))
+                    truncated = true
+                } else {
+                    data.append(chunk)
+                }
             }
+            // Lines keep flowing past the byte ceiling, unlike the accumulator. The ceiling is
+            // there to bound what we *retain*, and a line handed to an observer is not retained
+            // — while progress is the one thing whose value is all in the tail.
+            let lines = onLine == nil ? [] : takeLines(chunk)
             lock.unlock()
+            // Outside the lock, deliberately: an observer that blocks — or hops to the main
+            // actor to update a view — must not hold the lock that `snapshot()` and `abandon()`
+            // need, and must not sit between this read and the next one.
+            for line in lines { onLine?(line) }
         }
+        flushPendingLine()
+    }
+
+    /// Complete lines from `chunk`, carrying any partial line into the next read.
+    ///
+    /// Called with the lock held because it mutates `pending`. `drain` delivers the result
+    /// after unlocking.
+    private func takeLines(_ chunk: Data) -> [String] {
+        pending.append(chunk)
+        var lines: [String] = []
+        while let newline = pending.firstIndex(of: 0x0A) {
+            lines.append(Self.text(pending[pending.startIndex..<newline]))
+            // Rebuilt rather than kept as a slice: a `Data` slice keeps its parent's indices,
+            // so `startIndex` would drift from zero and the next `firstIndex(of:)` result would
+            // be an index into the original buffer, not this one.
+            pending = Data(pending[pending.index(after: newline)...])
+        }
+        if pending.count > Self.maxPendingLine {
+            lines.append(Self.text(pending))
+            pending = Data()
+        }
+        return lines
+    }
+
+    /// A child can exit without a trailing newline. The last line is still a line.
+    private func flushPendingLine() {
+        guard onLine != nil else { return }
+        lock.lock()
+        let leftover = abandoned ? Data() : pending
+        pending = Data()
+        lock.unlock()
+        if !leftover.isEmpty { onLine?(Self.text(leftover)) }
+    }
+
+    /// Decoded, with a trailing CR removed so a CRLF stream does not deliver every line with an
+    /// invisible character on the end. `container` uses bare LF; this costs one comparison.
+    private static func text(_ bytes: Data) -> String {
+        var line = bytes
+        if line.last == 0x0D { line.removeLast() }
+        return String(decoding: line, as: UTF8.self)
     }
 }

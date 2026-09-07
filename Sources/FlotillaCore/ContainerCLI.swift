@@ -197,13 +197,17 @@ public struct ContainerCLI: Sendable {
     /// its own `MountPolicy.roots(...)` at `init`, or a client could mount
     /// `/Users:/host:ro` on someone else's Mac. See `MountPolicy`.
     @discardableResult
-    private func execute(_ args: [String]) throws -> CommandResult {
+    /// - Parameter onLine: notified for each complete output line as it arrives, for the long
+    ///   commands whose progress is worth showing. Passing it changes what the caller *sees*,
+    ///   never what runs: validation happens first and identically either way.
+    private func execute(_ args: [String],
+                         onLine: (@Sendable (String) -> Void)? = nil) throws -> CommandResult {
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
                                                 execPolicy: execPolicy, wirePolicy: wirePolicy)
         // The deadline finally reaches the process. `timeoutHint` sat on the spec unused for
         // weeks — DECISIONS.md Q14 admitted it "enforces nothing today" — which meant a wedged
         // child held its pipes for the life of the app.
-        return try succeeding(validated.arguments, timeout: validated.timeoutHint)
+        return try succeeding(validated.arguments, timeout: validated.timeoutHint, onLine: onLine)
     }
 
     /// Validated execution that **returns** a non-zero exit rather than throwing on it.
@@ -232,8 +236,9 @@ public struct ContainerCLI: Sendable {
     /// The one prior symptom users did see — an invalid name — came from `Allowlist`
     /// throwing *before* execution, which is why validation errors surfaced and real CLI
     /// errors did not.
-    private func succeeding(_ args: [String], timeout: TimeInterval = 0) throws -> CommandResult {
-        let result = try host.run(args, timeout: timeout)
+    private func succeeding(_ args: [String], timeout: TimeInterval = 0,
+                            onLine: (@Sendable (String) -> Void)? = nil) throws -> CommandResult {
+        let result = try host.run(args, timeout: timeout, onLine: onLine)
         guard result.ok else {
             throw ContainerCLIError.commandFailed(
                 command: args.joined(separator: " "),
@@ -454,6 +459,20 @@ public struct ContainerCLI: Sendable {
 
     @discardableResult public func pull(_ reference: String) throws -> CommandResult {
         try execute(["image", "pull", reference])
+    }
+
+    /// Pull, reporting progress as the CLI emits it.
+    ///
+    /// The same validated path as `pull` — an observer changes what the caller sees, not what
+    /// runs. Progress lines go to stderr, which the runner does not make the caller's problem;
+    /// lines that are not progress are dropped rather than guessed at, so an error line reaches
+    /// the caller as a thrown `commandFailed` with the CLI's own text, exactly as before.
+    @discardableResult
+    public func pull(_ reference: String,
+                     onProgress: @escaping @Sendable (ImagePullProgress) -> Void) throws -> CommandResult {
+        try execute(["image", "pull", reference]) { line in
+            if let progress = ImagePullProgress(line: line) { onProgress(progress) }
+        }
     }
 
     @discardableResult public func removeImage(_ reference: String, force: Bool = false) throws -> CommandResult {

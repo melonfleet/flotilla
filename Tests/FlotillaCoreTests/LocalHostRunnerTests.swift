@@ -168,3 +168,95 @@ private func runner(limitBytes: Int = 64 * 1024,
     let host = LocalHost(resolve: { nil })
     #expect(throws: ContainerCLIError.self) { try host.run(["ls"]) }
 }
+
+// MARK: - The line observer
+//
+// `run(_:timeout:onLine:)` exists so a bounded-but-slow command can report progress while it
+// runs. The observer is called from the drain threads, so the collector below is locked: a test
+// that read an unsynchronised array here would be testing the same race it is meant to catch.
+
+private final class LineBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+
+    func append(_ line: String) {
+        lock.lock(); lines.append(line); lock.unlock()
+    }
+
+    var all: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return lines
+    }
+}
+
+@Test func everyLineArrivesOnceAndInOrder() throws {
+    let box = LineBox()
+    let result = try runner().run(["-c", "printf 'one\\ntwo\\nthree\\n'"], timeout: 0) {
+        box.append($0)
+    }
+    #expect(result.exitCode == 0)
+    #expect(box.all == ["one", "two", "three"])
+}
+
+@Test func aLineSplitAcrossTwoReadsIsDeliveredWhole() throws {
+    // The reason `pending` exists. `availableData` returns whatever has arrived, which has no
+    // relationship to where the newlines are: a progress line written in two writes must not
+    // reach the observer as two lines, and half a UTF-8 sequence must not be decoded early.
+    let box = LineBox()
+    _ = try runner().run(["-c", "printf 'first ha'; sleep 0.3; printf 'lf\\nsecond\\n'"],
+                         timeout: 0) { box.append($0) }
+    #expect(box.all == ["first half", "second"])
+}
+
+@Test func aFinalLineWithNoTrailingNewlineIsStillDelivered() throws {
+    // `container image pull` does terminate its last line, but a command that does not must not
+    // have its final — and most interesting — line silently dropped at EOF.
+    let box = LineBox()
+    _ = try runner().run(["-c", "printf 'done\\nno newline here'"], timeout: 0) { box.append($0) }
+    #expect(box.all == ["done", "no newline here"])
+}
+
+@Test func carriageReturnsAreNotLeftOnTheEndOfEveryLine() throws {
+    let box = LineBox()
+    _ = try runner().run(["-c", "printf 'crlf\\r\\nplain\\n'"], timeout: 0) { box.append($0) }
+    #expect(box.all == ["crlf", "plain"])
+}
+
+@Test func progressOnStderrReachesTheObserver() throws {
+    // Not an arbitrary choice of stream: `container image pull` writes **every** progress line
+    // to stderr and leaves stdout empty. Measured, not assumed — a pull with stdout discarded
+    // still prints all of it, and with stderr discarded prints none. An observer wired only to
+    // stdout would have reported nothing for the one command this was built for.
+    let box = LineBox()
+    let result = try runner().run(["-c", "printf '[1/2] Fetching image [0s]\\n' 1>&2"],
+                                  timeout: 0) { box.append($0) }
+    #expect(result.stdout.isEmpty)
+    #expect(box.all == ["[1/2] Fetching image [0s]"])
+}
+
+@Test func theObserverKeepsSeeingLinesPastTheByteCeiling() throws {
+    // A deliberate asymmetry, pinned here so it is not "fixed" later. The ceiling bounds what
+    // the runner *retains*; a line handed to an observer is not retained. Progress whose value
+    // is entirely in its tail must not stop arriving because the head filled a buffer.
+    let box = LineBox()
+    let script = "i=0; while [ $i -lt 200 ]; do printf 'line %d\\n' $i; i=$((i+1)); done"
+    let result = try runner(limitBytes: 128).run(["-c", script], timeout: 0) { box.append($0) }
+    #expect(result.stdoutTruncated)
+    #expect(result.stdout.utf8.count <= 128)
+    #expect(box.all.count == 200)
+    #expect(box.all.first == "line 0")
+    #expect(box.all.last == "line 199")
+}
+
+@Test func linesDeliveredBeforeADeadlineSurviveTheTimeoutError() throws {
+    // The failure path that matters for a pull: the command is killed at its deadline and throws,
+    // but the progress already reported is not unsaid. A UI that showed 40% and then a timeout
+    // is telling the truth about both.
+    let box = LineBox()
+    #expect(throws: ContainerCLIError.self) {
+        _ = try runner().run(["-c", "printf 'before\\n'; sleep 5"], timeout: 0.4) {
+            box.append($0)
+        }
+    }
+    #expect(box.all == ["before"])
+}

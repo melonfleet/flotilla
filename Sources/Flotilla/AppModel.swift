@@ -892,17 +892,54 @@ final class AppModel {
         }
     }
 
-    func pullImage(_ reference: String) async {
+    /// The pull in flight, and the last progress line the CLI emitted for it.
+    ///
+    /// Model-owned rather than `@State` in the form, so the pull and its progress survive the
+    /// form being left or the window being closed. A pull of a multi-platform image is a
+    /// 40-second operation on a fast connection — long enough that trapping the user on one
+    /// screen to watch it would be its own complaint.
+    var activePull: ImagePull?
+
+    struct ImagePull: Sendable, Equatable {
+        let reference: String
+        let startedAt: Date
+        var progress: ImagePullProgress?
+    }
+
+    /// - Returns: whether the pull succeeded, so the form can return to the list on success and
+    ///   stay put — reference intact, ready to correct — on failure. Same contract as
+    ///   `buildImage`.
+    @discardableResult
+    func pullImage(_ reference: String) async -> Bool {
+        activePull = ImagePull(reference: reference, startedAt: Date())
+        defer { activePull = nil }
         do {
-            _ = try await Task.detached { [cli] in try cli.pull(reference) }.value
+            _ = try await Task.detached { [cli] in
+                try cli.pull(reference) { progress in
+                    Task { @MainActor in self.notePullProgress(progress, for: reference) }
+                }
+            }.value
             // Named explicitly: the existence diff would say "Created", which is true but loses
             // the distinction between an image you pulled and one a build produced.
             recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
                                           kind: .image, subject: reference, action: "Pulled"))
+            await refreshImages()
+            return true
         } catch {
             actionError = "Pull failed for \(reference): \(error)"
+            await refreshImages()
+            return false
         }
-        await refreshImages()
+    }
+
+    /// Progress arrives on the runner's drain thread, one line at a time, and hops here.
+    ///
+    /// Guarded on the reference rather than trusting arrival order: the drain thread can still
+    /// deliver a line after the pull it belongs to has ended, and an unguarded write would
+    /// reattach it to whichever pull started next.
+    private func notePullProgress(_ progress: ImagePullProgress, for reference: String) {
+        guard activePull?.reference == reference else { return }
+        activePull?.progress = progress
     }
 
     func removeImage(_ image: ContainerImage) async {
