@@ -25,52 +25,97 @@ struct BuildImageView: View {
         VStack(spacing: 0) {
             FormHeader(title: "Build Image", systemImage: "hammer", onBack: dismiss)
             Divider()
-            Form {
-                SwiftUI.Section("Context") {
-                    HStack(spacing: 8) {
-                        Text(context?.path ?? "No folder chosen")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(context == nil ? .tertiary : .primary)
-                            .lineLimit(1).truncationMode(.head)
-                        Spacer()
-                        Button("Choose…") { chooseContext() }
+            // Left-aligned label, control, guidance — the shape `FormField` documents, and the
+            // one the other create screens use. The grouped `Form` this replaced pushed every
+            // control to the far right of the window.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        FormSectionHeader(title: "Context")
+
+                        FormField("Folder",
+                                  help: "Everything in it is sent to the builder, and the build "
+                                      + "may read all of it. Choosing it here is what grants "
+                                      + "access — Flotilla denies host paths otherwise.") {
+                            HStack(spacing: 8) {
+                                Text(context?.path ?? "No folder chosen")
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(context == nil ? .tertiary : .primary)
+                                    .lineLimit(1).truncationMode(.head)
+                                Spacer()
+                                Button("Choose…") { chooseContext() }
+                            }
+                        }
+
+                        FormField("Dockerfile",
+                                  help: "Left empty, the Dockerfile in the context folder is "
+                                      + "used. A path here must also sit inside that folder.",
+                                  optional: true) {
+                            TextField("<context>/Dockerfile", text: $dockerfile)
+                                .textFieldStyle(.roundedBorder)
+                                .monospaced()
+                        }
                     }
-                    Label("Everything in this folder is sent to the builder, and the build may "
-                          + "read all of it. Choosing it here is what grants access — Flotilla "
-                          + "denies host paths otherwise.",
-                          systemImage: "info.circle")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
 
-                SwiftUI.Section("Dockerfile") {
-                    TextField("Dockerfile", text: $dockerfile,
-                              prompt: Text("<context>/Dockerfile"))
-                        .textFieldStyle(.roundedBorder)
-                    Text("Leave blank to use the Dockerfile in the context folder. A path here "
-                         + "must also sit inside that folder.")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
+                    VStack(alignment: .leading, spacing: 14) {
+                        FormSectionHeader(title: "Image")
 
-                SwiftUI.Section("Image") {
-                    TextField("Tag", text: $tag, prompt: Text("myapp:latest"))
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Target stage", text: $target, prompt: Text("optional"))
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Platform", text: $platform, prompt: Text("linux/arm64"))
-                        .textFieldStyle(.roundedBorder)
-                    Toggle("Ignore the build cache", isOn: $noCache)
-                }
+                        // The default is worth stating precisely: `container build -t` documents
+                        // it as a UUID, so an untagged build does not produce `<none>` you can
+                        // find later — it produces a random name.
+                        FormField("Tag",
+                                  help: "Name for the built image. Left empty, `container` names "
+                                      + "it with a random UUID.",
+                                  optional: true) {
+                            TextField("myapp:latest", text: $tag)
+                                .textFieldStyle(.roundedBorder)
+                                .monospaced()
+                        }
 
-                SwiftUI.Section("Command") {
-                    Text(previewText)
-                        .font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                        .foregroundStyle(previewStyle)
-                        .fixedSize(horizontal: false, vertical: true)
+                        FormField("Target stage",
+                                  help: "The stage to stop at in a multi-stage Dockerfile — the "
+                                      + "name after `FROM … AS`. Left empty, the last stage is "
+                                      + "built.",
+                                  optional: true) {
+                            TextField("build", text: $target)
+                                .textFieldStyle(.roundedBorder)
+                                .monospaced()
+                        }
+
+                        FormField("Platform",
+                                  help: "os/arch, optionally /variant. This Mac builds "
+                                      + "linux/arm64 unless you say otherwise.",
+                                  optional: true) {
+                            TextField("linux/arm64", text: $platform)
+                                .textFieldStyle(.roundedBorder)
+                                .monospaced()
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Toggle("Ignore the build cache", isOn: $noCache)
+                            Text("Re-runs every layer instead of reusing what has not changed.")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        FormSectionHeader(title: "Command",
+                                          note: "Built through the allowlist, so it cannot say "
+                                              + "one thing while Build does another.")
+                        Text(previewText)
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                            .foregroundStyle(previewStyle)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    }
                 }
+                .formColumn()
+                .padding(20)
             }
-            .formStyle(.grouped)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             Divider()
             HStack(spacing: 8) {

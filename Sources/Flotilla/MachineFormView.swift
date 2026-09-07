@@ -80,93 +80,158 @@ struct MachineFormView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            Form {
-                // Image and name in one section rather than two. Five grouped sections did not
-                // fit the sheet, and the command preview — the one part that tells you exactly
-                // what is about to run — was the section that fell off the bottom.
-                SwiftUI.Section("Machine") {
-                    importBanner
-                    TextField("Image reference", text: $image, prompt: Text("alpine:3.22"))
-                        .textFieldStyle(.roundedBorder)
-                    Picker("Known good", selection: $image) {
-                        Text("Choose…").tag("")
-                        ForEach(Self.suggestions, id: \.reference) { suggestion in
-                            Text("\(suggestion.reference) — \(suggestion.note)")
-                                .tag(suggestion.reference)
-                        }
-                    }
-                    // Kept to two lines. The first draft ran to four and pushed the home-mount
-                    // warning and the command preview below the fold — the two things in this
-                    // form most worth reading before pressing Create.
-                    Label("Built from a container image, not an installer. The image supplies the "
-                          + "userland; `container` supplies the kernel.",
-                          systemImage: "info.circle")
-                        .font(.caption).foregroundStyle(.secondary)
-                    // Said before the pull, not after. Ubuntu, Debian, Fedora and BusyBox all
-                    // pull happily, create a machine, and then fail to boot; without this the
-                    // user spends a minute waiting to find that out.
-                    if !trimmedImage.isEmpty && !Self.isKnownGood(trimmedImage) {
-                        Label("Most images do not boot as a machine — Ubuntu, Debian, Fedora and "
-                              + "BusyBox were each tried and each failed after pulling.",
-                              systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(Theme.warning)
-                    }
-                    TextField("Name", text: $name, prompt: Text("optional"))
-                        .textFieldStyle(.roundedBorder)
+            // Explicit `ScrollView`: the grouped `Form` this replaced brought its own, and
+            // `Scripts/check-form-bounds.sh` enforces that every `FormHeader` screen has one —
+            // without it the content grows the split view instead of scrolling, which is the
+            // fault that blanked the Volumes and Networks forms.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    machineSection
+                    resourcesSection
+                    homeSection
+                    commandSection
                 }
-
-                SwiftUI.Section("Resources") {
-                    Stepper(value: $cpus, in: 1...ProcessInfo.processInfo.processorCount) {
-                        LabeledContent("CPUs", value: "\(cpus)")
-                    }
-                    Stepper(value: $memoryGB, in: 1...max(1, Self.hostMemoryGB())) {
-                        LabeledContent("Memory", value: "\(memoryGB) GB")
-                    }
-                }
-
-                SwiftUI.Section("Home directory") {
-                    Picker("Mount", selection: $homeMount) {
-                        Text("Read-write").tag("rw")
-                        Text("Read-only").tag("ro")
-                        Text("Not mounted").tag("none")
-                    }
-                    .pickerStyle(.radioGroup)
-                    // The CLI defaults this to `rw`, so it is on unless you change it. That is
-                    // a filesystem grant to every container in the machine, and the review
-                    // treats it as more dangerous than a bind mount for exactly that reason.
-                    if homeMount == "rw" {
-                        Label("Writable from inside the machine, and so from every container "
-                              + "running in it.",
-                              systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(Theme.warning)
-                    }
-                }
-
-                SwiftUI.Section("Command") {
-                    // The Run sheet's validated live preview, same convention: what will run,
-                    // built through the allowlist, before you press anything.
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(preview)
-                            .font(.system(size: 11, design: .monospaced))
-                            .textSelection(.enabled)
-                            .foregroundStyle(previewStyle)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        CommandPreviewCopyButton(command: preview,
-                                                 help: "Copy the machine command to the clipboard")
-                    }
-                }
+                .formColumn()
+                .padding(20)
             }
-            .formStyle(.grouped)
-            // The form takes the space it needs and the window scrolls it; no hand-picked
-            // height to trim copy against.
-            .frame(maxWidth: .infinity, alignment: .leading)
 
             Divider()
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var machineSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // The surprise a machine form has to get out of the way first. Someone expecting a
+            // Vagrant box will otherwise draw the wrong conclusion from a familiar-looking
+            // field, and find out only after a pull and a failed boot.
+            FormSectionHeader(title: "Machine",
+                              note: "Built from a container image, not an installer. The image "
+                                  + "supplies the userland; `container` supplies the kernel.")
+            importBanner
+
+            FormField("Image reference",
+                      help: "Any image reference, pulled from the same registries as any other "
+                          + "image — for example alpine:3.22 or alpine:latest.") {
+                TextField("alpine:3.22", text: $image)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+
+            // Said before the pull, not after. Ubuntu, Debian, Fedora and BusyBox all pull
+            // happily, create a machine, and then fail to boot; without this the user spends a
+            // minute waiting to find that out.
+            if !trimmedImage.isEmpty && !Self.isKnownGood(trimmedImage) {
+                Label("Most images do not boot as a machine — Ubuntu, Debian, Fedora and "
+                      + "BusyBox were each tried and each failed after pulling.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            FormField("Verified images",
+                      help: "Fills the field above. Short because reality is short: only Alpine "
+                          + "boots as a machine today.") {
+                Picker("", selection: $image) {
+                    Text("Choose…").tag("")
+                    ForEach(Self.suggestions, id: \.reference) { suggestion in
+                        Text("\(suggestion.reference) — \(suggestion.note)")
+                            .tag(suggestion.reference)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            FormField("Name",
+                      help: "Letters, numbers, dots, dashes or underscores, starting with a "
+                          + "letter or number. No spaces.",
+                      optional: true) {
+                TextField("dev", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+        }
+    }
+
+    private var resourcesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Resources",
+                              note: "This Mac has \(ProcessInfo.processInfo.processorCount) cores "
+                                  + "and \(Self.hostMemoryGB()) GB.")
+
+            FormField("CPUs",
+                      help: "1 to \(ProcessInfo.processInfo.processorCount). Two is enough to "
+                          + "boot Alpine, run a package manager and build something small.") {
+                Stepper(value: $cpus, in: 1...ProcessInfo.processInfo.processorCount) {
+                    Text("\(cpus)").monospacedDigit()
+                }
+                .fixedSize()
+            }
+
+            FormField("Memory",
+                      help: "1 to \(Self.hostMemoryGB()) GB. `container` itself defaults this to "
+                          + "half of system memory, which is most of your Mac handed to a "
+                          + "scratch workload; this form starts at 4 GB instead.") {
+                Stepper(value: $memoryGB, in: 1...max(1, Self.hostMemoryGB())) {
+                    Text("\(memoryGB) GB").monospacedDigit()
+                }
+                .fixedSize()
+            }
+        }
+    }
+
+    private var homeSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Home directory",
+                              note: "Your Mac's home directory, mounted inside the machine.")
+
+            FormField("Mount",
+                      help: "`container` defaults this to read-write.") {
+                Picker("", selection: $homeMount) {
+                    Text("Read-write").tag("rw")
+                    Text("Read-only").tag("ro")
+                    Text("Not mounted").tag("none")
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+            }
+
+            // The CLI defaults this to `rw`, so it is on unless you change it. That is a
+            // filesystem grant to every container in the machine, and the review treats it as
+            // more dangerous than a bind mount for exactly that reason.
+            if homeMount == "rw" {
+                Label("Writable from inside the machine, and so from every container "
+                      + "running in it.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var commandSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Command",
+                              note: "Built through the allowlist, so it cannot say one thing "
+                                  + "while Save does another.")
+            // The Run sheet's validated live preview, same convention: what will run, before
+            // you press anything.
+            HStack(alignment: .top, spacing: 8) {
+                Text(preview)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .foregroundStyle(previewStyle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                CommandPreviewCopyButton(command: preview,
+                                         help: "Copy the machine command to the clipboard")
+            }
+            .padding(10)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+        }
     }
 
     /// Back, then the title — the same header shape as the machine and container detail

@@ -172,61 +172,192 @@ struct RunSheetView: View {
 
     private var content: some View {
         VStack(spacing: 0) {
-            Form {
-                SwiftUI.Section("Image") { imageField }
-                SwiftUI.Section("Name") { nameField }
-                SwiftUI.Section("Ports") {
-                    rows($ports, placeholder: "8080:80", max: Self.maxPorts, field: .ports)
+            // Explicit `ScrollView` in place of the grouped `Form`'s own. See
+            // `Scripts/check-form-bounds.sh`: a `FormHeader` screen without one grows the split
+            // view instead of scrolling.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    prefillBanner
+                    imageSection
+                    networkingSection
+                    storageSection
+                    commandSection
+                    optionsSection
+                    previewGroup
                 }
-                SwiftUI.Section("Environment") {
-                    rows($env, placeholder: "KEY=VALUE", max: Self.maxEnv, field: .env)
-                }
-                SwiftUI.Section("Volumes") {
-                    rows($volumes, placeholder: "data:/data", max: Self.maxVolumes, field: .volumes)
-                }
-                if prefilled {
-                    SwiftUI.Section {
-                        Label("Copied the image, name, ports and resource limits. **Environment "
-                              + "variables and volumes were not copied** — `container inspect` "
-                              + "does not separate the ones you set from the ones the image "
-                              + "defines, so add any you need below.",
-                              systemImage: "exclamationmark.circle")
-                            .font(.caption).foregroundStyle(Theme.warning)
-                        if !portsInUse.isEmpty {
-                            // Stated, not silently dropped. Copying a host port that is already
-                            // bound gives a container that cannot start —
-                            // `bind(...): Address already in use` — and the failure looks like
-                            // the container "not staying running" rather than a port clash.
-                            Label("Host port\(portsInUse.count == 1 ? "" : "s") "
-                                  + portsInUse.map(String.init).joined(separator: ", ")
-                                  + " \(portsInUse.count == 1 ? "is" : "are") already published by "
-                                  + "a running container, so \(portsInUse.count == 1 ? "it was" : "they were") "
-                                  + "left out. Pick a different host port, or stop the original first.",
-                                  systemImage: "network.slash")
-                                .font(.caption).foregroundStyle(Theme.warning)
-                        }
-                    }
-                }
-                SwiftUI.Section("Command") { commandField }
-                SwiftUI.Section("Options") {
-                    Toggle("Detach (run in background)", isOn: $detach)
-                    Toggle("Limit CPU and memory", isOn: $limitResources)
-                    if limitResources {
-                        Stepper(value: $cpus, in: 1...ProcessInfo.processInfo.processorCount) {
-                            LabeledContent("CPUs", value: "\(cpus)")
-                        }
-                        Stepper(value: $memoryMB, in: 128...131_072, step: 128) {
-                            LabeledContent("Memory", value: "\(memoryMB) MB")
-                        }
-                        Text("Defaults come from Settings ▸ Resources.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                SwiftUI.Section("Preview") { previewSection }
+                .formColumn()
+                .padding(20)
             }
-            .formStyle(.grouped)
             Divider()
             footer
+        }
+    }
+
+    /// What a prefill copied and what it deliberately did not. At the top, because it describes
+    /// the state of every field below it rather than any one of them.
+    @ViewBuilder
+    private var prefillBanner: some View {
+        if prefilled {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Copied the image, name, ports and resource limits. **Environment "
+                      + "variables and volumes were not copied** — `container inspect` "
+                      + "does not separate the ones you set from the ones the image "
+                      + "defines, so add any you need below.",
+                      systemImage: "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !portsInUse.isEmpty {
+                    // Stated, not silently dropped. Copying a host port that is already
+                    // bound gives a container that cannot start —
+                    // `bind(...): Address already in use` — and the failure looks like
+                    // the container "not staying running" rather than a port clash.
+                    Label("Host port\(portsInUse.count == 1 ? "" : "s") "
+                          + portsInUse.map(String.init).joined(separator: ", ")
+                          + " \(portsInUse.count == 1 ? "is" : "are") already published by "
+                          + "a running container, so \(portsInUse.count == 1 ? "it was" : "they were") "
+                          + "left out. Pick a different host port, or stop the original first.",
+                          systemImage: "network.slash")
+                        .font(.caption).foregroundStyle(Theme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var imageSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Image")
+
+            FormField("Image reference",
+                      help: "Pulled if this Mac does not have it. Registry and tag are "
+                          + "optional: nginx means docker.io/library/nginx:latest.",
+                      problem: message(for: .image)) {
+                TextField("nginx:alpine", text: $image)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+                if !imageSuggestions.isEmpty {
+                    // Already on this Mac — a convenience list, not a restriction.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(imageSuggestions, id: \.self) { reference in
+                                Button(ContainerImage.shortReference(reference)) { image = reference }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .help(reference)
+                            }
+                        }
+                    }
+                }
+            }
+
+            FormField("Name",
+                      help: "Used as the container ID. Letters, numbers, dots, dashes or "
+                          + "underscores, starting with a letter or number.",
+                      problem: message(for: .name),
+                      optional: true) {
+                TextField("web", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+        }
+    }
+
+    private var networkingSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Networking")
+
+            // The three-part form is worth naming: it is the difference between a port
+            // reachable from the whole network and one reachable only from this Mac, and the
+            // allowlist accepts it (`isPortMapping`, case 3).
+            FormField("Ports",
+                      help: "host-port:container-port, optionally /tcp or /udp — 8080:80. "
+                          + "Prefix a host IP to publish on one interface only: "
+                          + "127.0.0.1:8080:80.",
+                      problem: message(for: .ports),
+                      optional: true) {
+                rows($ports, placeholder: "8080:80", max: Self.maxPorts)
+            }
+        }
+    }
+
+    private var storageSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Environment and storage")
+
+            FormField("Environment variables",
+                      help: "KEY=VALUE, one per row.",
+                      problem: message(for: .env),
+                      optional: true) {
+                rows($env, placeholder: "KEY=VALUE", max: Self.maxEnv)
+            }
+
+            FormField("Volumes",
+                      help: "source:/destination, optionally :ro or :rw. Source is a named "
+                          + "volume or an absolute path on this Mac.",
+                      problem: message(for: .volumes),
+                      optional: true) {
+                rows($volumes, placeholder: "data:/data", max: Self.maxVolumes)
+            }
+        }
+    }
+
+    private var commandSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Command")
+
+            FormField("Command",
+                      help: "Splits on whitespace into up to \(Self.maxCommandTokens) tokens. "
+                          + "Left empty, the image runs its own entrypoint.",
+                      problem: message(for: .command),
+                      optional: true) {
+                TextField("echo hello", text: $commandText)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+        }
+    }
+
+    private var optionsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Options")
+
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("Detach (run in background)", isOn: $detach)
+                Text("Returns as soon as the container starts. Without it the run waits for "
+                     + "the container to exit.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Toggle("Limit CPU and memory", isOn: $limitResources)
+
+            if limitResources {
+                FormField("CPUs",
+                          help: "1 to \(ProcessInfo.processInfo.processorCount) on this Mac. "
+                              + "The default comes from Settings ▸ Resources.") {
+                    Stepper(value: $cpus, in: 1...ProcessInfo.processInfo.processorCount) {
+                        Text("\(cpus)").monospacedDigit()
+                    }
+                    .fixedSize()
+                }
+
+                FormField("Memory",
+                          help: "In 128 MB steps. The default comes from Settings ▸ Resources.") {
+                    Stepper(value: $memoryMB, in: 128...131_072, step: 128) {
+                        Text("\(memoryMB) MB").monospacedDigit()
+                    }
+                    .fixedSize()
+                }
+            }
+        }
+    }
+
+    private var previewGroup: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FormSectionHeader(title: "Preview",
+                              note: "Built through the allowlist, so it cannot say one thing "
+                                  + "while Run does another.")
+            previewSection
         }
     }
 
@@ -250,26 +381,6 @@ struct RunSheetView: View {
 
     // MARK: Fields
 
-    private var imageField: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextField("Image reference, e.g. docker.io/library/nginx:latest", text: $image)
-                .textFieldStyle(.roundedBorder)
-            if !imageSuggestions.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(imageSuggestions, id: \.self) { reference in
-                            Button(ContainerImage.shortReference(reference)) { image = reference }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .help(reference)
-                        }
-                    }
-                }
-            }
-            fieldMessage(.image)
-        }
-    }
-
     /// Local, pulled images — a convenience list, not a restriction; the field still
     /// accepts any reference the user types, pulled or not.
     private var imageSuggestions: [String] {
@@ -277,27 +388,8 @@ struct RunSheetView: View {
         return model.images.map(\.reference).filter { seen.insert($0).inserted }
     }
 
-    private var nameField: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField("Optional", text: $name)
-                .textFieldStyle(.roundedBorder)
-            fieldMessage(.name)
-        }
-    }
-
-    private var commandField: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField("Optional, space-separated — e.g. echo hello", text: $commandText)
-                .textFieldStyle(.roundedBorder)
-            Text("Splits on whitespace into up to \(Self.maxCommandTokens) tokens.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            fieldMessage(.command)
-        }
-    }
-
     @ViewBuilder
-    private func rows(_ list: Binding<[Row]>, placeholder: String, max: Int, field: Field) -> some View {
+    private func rows(_ list: Binding<[Row]>, placeholder: String, max: Int) -> some View {
         ForEach(list) { $row in
             HStack {
                 TextField(placeholder, text: $row.value)
@@ -321,14 +413,6 @@ struct RunSheetView: View {
             Text("\(list.wrappedValue.count)/\(max)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-        }
-        fieldMessage(field)
-    }
-
-    @ViewBuilder
-    private func fieldMessage(_ field: Field) -> some View {
-        if let message = message(for: field) {
-            Text(message).font(.caption).foregroundStyle(Theme.danger)
         }
     }
 
