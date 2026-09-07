@@ -22,10 +22,9 @@ import ServiceManagement
 /// ## The signing caveat, stated rather than discovered later
 ///
 /// `SMAppService.mainApp` addresses the running app **bundle**. Run as a bare SwiftPM executable
-/// (`swift run Flotilla`) there is no bundle, and registration fails — correctly. It also depends on
-/// the bundle's signature being stable: an ad-hoc signed local build can register, and re-registering
-/// after a rebuild is normal. `Scripts/make-app.sh` does not yet do real signing (Wave 5), so
-/// treat a `.notFound` on a fresh build as expected rather than as a bug in this file.
+/// (`swift run Flotilla`) there is no bundle identifier, so there is nothing Service Management can
+/// register. A bundled build must still be allowed to try: signature or policy failures come back
+/// from `register()` and belong in the Settings caption, not behind a disabled control.
 @MainActor
 enum LoginItem {
 
@@ -35,7 +34,7 @@ enum LoginItem {
         case notRegistered
         /// Registered, but the user has to approve it in System Settings before it takes effect.
         case awaitingApproval
-        /// The app is not a bundle, or the bundle is not one `SMAppService` will accept.
+        /// The process has no identifiable app bundle for `SMAppService` to register.
         case unavailable
 
         var summary: String {
@@ -43,7 +42,7 @@ enum LoginItem {
             case .registered:       "Flotilla will open when you log in."
             case .notRegistered:    "Flotilla will not open at login."
             case .awaitingApproval: "Waiting for approval in System Settings ▸ General ▸ Login Items."
-            case .unavailable:      "Login items are unavailable for this build of Flotilla."
+            case .unavailable:      "Launch at login requires Flotilla to run from an app bundle."
             }
         }
 
@@ -53,12 +52,20 @@ enum LoginItem {
     }
 
     static var status: Status {
-        switch SMAppService.mainApp.status {
+        // Bundle identifier is the same app-vs-bare-executable test used by `Notifier`. Without
+        // one, `SMAppService.mainApp` has no stable application identity and can never work.
+        guard Bundle.main.bundleIdentifier != nil else { return .unavailable }
+
+        return switch SMAppService.mainApp.status {
         case .enabled:          .registered
         case .requiresApproval: .awaitingApproval
         case .notRegistered:    .notRegistered
-        case .notFound:         .unavailable
-        @unknown default:       .unavailable
+        // `notFound` says the lookup found no service. A never-registered, correctly signed app can
+        // start here, so absence is not evidence that registration is permanently unavailable.
+        case .notFound:         .notRegistered
+        // A future status is not evidence that this identifiable bundle can never be registered
+        // either. Let the requested operation run; any refusal is surfaced by `reconcile`.
+        @unknown default:       .notRegistered
         }
     }
 

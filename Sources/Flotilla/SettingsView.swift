@@ -101,8 +101,8 @@ private struct LaunchAtLoginRow: View {
 
     private var locked: Bool { store.isLocked(SettingsKeys.launchAtLogin) }
 
-    /// The system's word, unless it is unavailable — in which case say so, because on an
-    /// unsigned local build this is the expected answer and reads as a bug otherwise.
+    /// The system's word, unless there is no app bundle to register — in which case say so because
+    /// this row is also visible when Flotilla is run as a bare SwiftPM executable.
     private var caption: String {
         if locked { return "Managed by your organization." }
         if let failure = model.loginItemFailure { return failure }

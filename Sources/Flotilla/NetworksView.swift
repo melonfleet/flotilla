@@ -365,13 +365,19 @@ struct NewNetworkView: View {
     /// changed. That is why every flag the CLI accepts is offered, and why the addressing is
     /// split in two: v4 and v6 are independent, a network may be either or both, and mixing
     /// their examples in one column made neither clear.
+    /// The `ScrollView` is load-bearing — see `VolumesView.createScreen` for the measurement.
+    /// Without it, `maxHeight: .infinity` inside an unbounded parent let this form grow the
+    /// window's split view to 2020pt and pushed every control off-screen, leaving a blank window
+    /// with no way back.
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Network", systemImage: "network.badge.shield.half.filled",
                        onBack: dismiss)
             Divider()
-            form
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            ScrollView {
+                form
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 

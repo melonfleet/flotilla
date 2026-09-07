@@ -490,8 +490,15 @@ struct ImagesView: View {
         VStack(spacing: 0) {
             FormHeader(title: title, systemImage: systemImage, onBack: onBack)
             Divider()
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // The ScrollView bounds the height. `maxHeight: .infinity` inside a parent that is
+            // itself unbounded means "as tall as you like", not "fill the window" — which grew
+            // the window's split view to 2020pt on a 720pt window in Volumes and Networks and
+            // pushed every control, Back included, off the top. This helper's own screens are
+            // short enough that it never showed, which is exactly what latent means.
+            ScrollView {
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 

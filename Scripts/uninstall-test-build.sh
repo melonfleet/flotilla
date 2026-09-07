@@ -24,8 +24,8 @@
 #   Scripts/uninstall-test-build.sh --list             # what is on this machine right now
 #   Scripts/uninstall-test-build.sh --containers a,b   # also remove these, by name
 #
-# Run it on the TEST machine. It needs sudo only to forget the installer receipt, and says so
-# before asking.
+# Run it on the TEST machine. It needs your password for two things, and says so before asking:
+# removing the app itself (a pkg installs it root-owned) and forgetting the installer receipt.
 
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 set -uo pipefail
@@ -154,9 +154,34 @@ fi
 # --------------------------------------------------------------- remove
 echo
 echo "▸ removing"
+
+# A pkg-installed app in /Applications is owned by root, so `rm -rf` as the user fails with
+# nothing but a permission error. The first version of this script tried plain rm and reported
+# FAILED, leaving the app in place — and its own test passed, because the test used a fake home
+# where the app was user-owned. The test proved the wrong thing.
+#
+# So: try as the user, and fall back to sudo only for what actually needs it, saying why before
+# asking for a password.
+needs_root=()
 for p in "${found[@]+"${found[@]}"}"; do
-    if rm -rf "$p" 2>/dev/null; then echo "  removed  $p"; else echo "  FAILED   $p"; fi
+    if rm -rf "$p" 2>/dev/null; then
+        echo "  removed  $p"
+    elif [ -e "$p" ]; then
+        needs_root+=("$p")
+        echo "  needs root  $p"
+    else
+        echo "  FAILED   $p"
+    fi
 done
+
+if [ "${#needs_root[@]}" -gt 0 ]; then
+    echo
+    echo "▸ these are owned by root because the installer put them there"
+    echo "  Asking for your password to remove them:"
+    for p in "${needs_root[@]}"; do
+        if sudo rm -rf "$p"; then echo "  removed  $p"; else echo "  FAILED   $p"; fi
+    done
+fi
 for p in "${bundles[@]+"${bundles[@]}"}" "${pkgs[@]+"${pkgs[@]}"}"; do
     if rm -rf "$p" 2>/dev/null; then echo "  removed  $p"; else echo "  FAILED   $p"; fi
 done
@@ -177,11 +202,8 @@ fi
 if [ -n "$receipt" ]; then
     echo
     echo "▸ installer receipt (needs sudo)"
-    if sudo -n true 2>/dev/null || [ "$YES" -eq 0 ]; then
-        sudo pkgutil --forget "$PKG_ID" 2>&1 | sed 's/^/  /'
-    else
-        echo "  skipped — run: sudo pkgutil --forget $PKG_ID"
-    fi
+    sudo pkgutil --forget "$PKG_ID" 2>&1 | sed 's/^/  /' \
+        || echo "  not forgotten — run: sudo pkgutil --forget $PKG_ID"
 fi
 
 # --------------------------------------------------------------- named containers only

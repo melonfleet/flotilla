@@ -434,15 +434,32 @@ struct VolumesView: View {
     }
 
     /// Embedded, not modal — see `MachineFormView` for the 9 August reversal.
+    ///
+    /// **The `ScrollView` is load-bearing, and its absence blanked the whole window.**
+    /// `maxHeight: .infinity` inside a parent that is itself unbounded does not mean "fill the
+    /// window", it means "as tall as you like". This form's own content asks for a lot: two
+    /// `.fixedSize(horizontal: false, vertical: true)` texts and a `DisclosureGroup`. Measured on
+    /// a 720pt window, the enclosing `NavigationSplitView` grew to **2020pt** and dragged
+    /// everything — sidebar, toolbar, form — off the top of the window at y=-90. The result is a
+    /// blank window you cannot navigate out of, because the Back button is off-screen too, and
+    /// the only way out is quitting the app. A tester lost three phases to it.
+    ///
+    /// The three create screens that never showed this — `MachineFormView`, `RunSheetView`,
+    /// `BuildImageView` — all wrap their fields in a `Form`, which bounds its content the same
+    /// way. Volumes and Networks were the only two with neither, and were the only two that
+    /// broke. Anything with a `FormHeader` needs one or the other; `Scripts/check-form-bounds.sh`
+    /// now enforces that.
     private var createScreen: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Volume", systemImage: "externaldrive.badge.plus",
                        onBack: { showingCreate = false })
             Divider()
-            createForm
-                .padding(20)
-                .frame(maxWidth: 640, alignment: .leading)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            ScrollView {
+                createForm
+                    .padding(20)
+                    .frame(maxWidth: 640, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
