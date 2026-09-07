@@ -164,7 +164,14 @@ struct NetworksView: View {
 
     /// Search and role filters can hide selected rows without clearing their ids; bulk delete is
     /// therefore constrained to what remains on screen.
-    private var actionable: Set<ContainerNetwork.ID> { selection.intersection(visibleIDs) }
+    ///
+    /// Built-in networks are excluded here rather than refused later. The row's own delete button
+    /// is already `disabled: network.isBuiltin`, so leaving `default` in the batch would have the
+    /// bar count it, ask to delete it, and then report a failure the row had already ruled out —
+    /// the bulk path claiming not to know something the per-row path does.
+    private var actionable: Set<ContainerNetwork.ID> {
+        Set(displayedNetworks.lazy.filter { selection.contains($0.id) && !$0.isBuiltin }.map(\.id))
+    }
 
     private func selectionToggle(for id: ContainerNetwork.ID) -> some View {
         let isOn = Binding<Bool>(
