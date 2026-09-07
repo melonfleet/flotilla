@@ -1246,6 +1246,18 @@ final class AppModel {
     /// Ids with an action in flight, so the UI can disable their controls rather than
     /// letting an impatient second click fire a duplicate stop.
     private(set) var busy: Set<Container.ID> = []
+
+    /// Mark and clear, and nothing else. `busy`'s setter is file-private so the set has one
+    /// owner; bulk operations live in `AppModelBulk.swift` and need exactly these two verbs, not
+    /// the ability to replace the set.
+    ///
+    /// The per-type split is deliberate. Machines keep their own `busyMachines`, because a
+    /// machine named `web` and a container named `web` are different things — the same collision
+    /// `TerminalSessionStore` keeps two stores to avoid. Volumes, networks and images share this
+    /// set because their single-row paths already do, and bulk must mark whatever the row's own
+    /// controls read or a row offers a delete button while a batch is deleting it.
+    func markBusy(_ id: String) { busy.insert(id) }
+    func clearBusy(_ id: String) { busy.remove(id) }
     /// Surfaced to the user; an action that fails must say so rather than looking like
     /// nothing happened.
     var actionError: String?

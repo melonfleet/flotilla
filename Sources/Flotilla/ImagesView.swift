@@ -30,6 +30,7 @@ struct ImagesView: View {
     @State private var showingPrune = false
     @State private var pruning = false
     @State private var pruneError: String?
+    @State private var confirmingBulkDelete = false
 
     var body: some View {
         Group {
@@ -47,6 +48,7 @@ struct ImagesView: View {
             } else {
                 VStack(spacing: 0) {
                     toolbar
+                    bulkActionBar
                     Divider()
                     // A pull outlives its form, so the list has to be able to say so. Without
                     // this, pressing Back during a 40-second pull looks exactly like the pull
@@ -121,6 +123,19 @@ struct ImagesView: View {
         } message: {
             Text("This cannot be undone.")
         }
+        .confirmationDialog(
+            "Delete \(actionable.count) image\(actionable.count == 1 ? "" : "s")?",
+            isPresented: $confirmingBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(actionable.count) Image\(actionable.count == 1 ? "" : "s")",
+                   role: .destructive) {
+                Task { await model.deleteImages(actionable) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This cannot be undone.")
+        }
     }
 
     private var toolbar: some View {
@@ -128,6 +143,16 @@ struct ImagesView: View {
                        searchPrompt: "Search images…",
                        updated: model.imagesLastRefresh,
                        leading: {
+            Toggle("", isOn: Binding(get: { allVisibleSelected },
+                                     set: { on in
+                                         if on { selection.formUnion(visibleIDs) }
+                                         else { selection.subtract(visibleIDs) }
+                                     }))
+                .labelsHidden()
+                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
+                .accessibilityLabel(allVisibleSelected ? "Deselect all images" : "Select all images")
+                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+
             ResourceListControls<ContainerImage>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
@@ -262,6 +287,11 @@ struct ImagesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
+            TableColumn("") { image in
+                selectionToggle(for: image.id)
+            }
+            .width(min: 28, ideal: 30, max: 34)
+
             TableColumn("Repository", value: \.reference) { image in
                 Text(Self.repository(image))
                     .foregroundStyle(Theme.accentText)
@@ -415,6 +445,53 @@ struct ImagesView: View {
         }
 
         return images.sorted(using: ui.sortOrder)
+    }
+
+    private var visibleIDs: Set<ContainerImage.ID> { Set(displayedImages.map(\.id)) }
+
+    /// Image ids remain selected when a platform or search filter hides their rows, so the batch
+    /// target is always the visible intersection rather than the retained selection itself.
+    private var actionable: Set<ContainerImage.ID> { selection.intersection(visibleIDs) }
+
+    private func selectionToggle(for id: ContainerImage.ID) -> some View {
+        let isOn = Binding<Bool>(
+            get: { selection.contains(id) },
+            set: { on in
+                if on { selection.insert(id) } else { selection.remove(id) }
+            })
+        return Toggle("", isOn: isOn)
+            .labelsHidden()
+            .accessibilityLabel("Select \(id)")
+            .help("Select \(id)")
+    }
+
+    private var allVisibleSelected: Bool {
+        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
+    }
+
+    private var selectionBusy: Bool { actionable.contains { model.busy.contains($0) } }
+
+    @ViewBuilder
+    private var bulkActionBar: some View {
+        // Tag, Run and Prune have deliberately different scopes; multi-selection adds only the
+        // row's existing delete action.
+        if actionable.count > 1 {
+            HStack(spacing: 12) {
+                Text("\(actionable.count) selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                IconActionButton(systemImage: "trash",
+                                 label: "Delete \(actionable.count) images",
+                                 help: "Delete \(actionable.count) images",
+                                 busy: selectionBusy, destructive: true) {
+                    confirmingBulkDelete = true
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.3))
+        }
     }
 
     private var trimmedPull: String {

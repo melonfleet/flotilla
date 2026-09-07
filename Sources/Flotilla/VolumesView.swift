@@ -21,6 +21,7 @@ struct VolumesView: View {
     @State private var newLabels: [String] = []
     @State private var newDriverOptions: [String] = []
     @State private var pendingDelete: ContainerVolume?
+    @State private var confirmingBulkDelete = false
 
     var body: some View {
         Group {
@@ -29,6 +30,7 @@ struct VolumesView: View {
             } else {
                 VStack(spacing: 0) {
                     toolbar
+                    bulkActionBar
                     Divider()
                     content
                 }
@@ -83,6 +85,19 @@ struct VolumesView: View {
         } message: {
             Text("This cannot be undone.")
         }
+        .confirmationDialog(
+            "Delete \(actionable.count) volume\(actionable.count == 1 ? "" : "s")?",
+            isPresented: $confirmingBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(actionable.count) Volume\(actionable.count == 1 ? "" : "s")",
+                   role: .destructive) {
+                Task { await model.deleteVolumes(actionable) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This cannot be undone.")
+        }
     }
 
     private var toolbar: some View {
@@ -90,6 +105,16 @@ struct VolumesView: View {
                        searchPrompt: "Search volumes…",
                        updated: model.volumesLastRefresh,
                        leading: {
+            Toggle("", isOn: Binding(get: { allVisibleSelected },
+                                     set: { on in
+                                         if on { selection.formUnion(visibleIDs) }
+                                         else { selection.subtract(visibleIDs) }
+                                     }))
+                .labelsHidden()
+                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
+                .accessibilityLabel(allVisibleSelected ? "Deselect all volumes" : "Select all volumes")
+                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+
             ResourceListControls<ContainerVolume>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
@@ -143,6 +168,53 @@ struct VolumesView: View {
         }
 
         return volumes.sorted(using: ui.sortOrder)
+    }
+
+    private var visibleIDs: Set<ContainerVolume.ID> { Set(displayedVolumes.map(\.id)) }
+
+    /// Filtering does not clear table selection, so destructive batches must never include a
+    /// row that disappeared before the user confirmed the action.
+    private var actionable: Set<ContainerVolume.ID> { selection.intersection(visibleIDs) }
+
+    private func selectionToggle(for id: ContainerVolume.ID) -> some View {
+        let isOn = Binding<Bool>(
+            get: { selection.contains(id) },
+            set: { on in
+                if on { selection.insert(id) } else { selection.remove(id) }
+            })
+        return Toggle("", isOn: isOn)
+            .labelsHidden()
+            .accessibilityLabel("Select \(id)")
+            .help("Select \(id)")
+    }
+
+    private var allVisibleSelected: Bool {
+        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
+    }
+
+    private var selectionBusy: Bool { actionable.contains { model.busy.contains($0) } }
+
+    @ViewBuilder
+    private var bulkActionBar: some View {
+        // The row already owns a delete button; this band appears only when it can delete more
+        // than one row in a single action.
+        if actionable.count > 1 {
+            HStack(spacing: 12) {
+                Text("\(actionable.count) selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                IconActionButton(systemImage: "trash",
+                                 label: "Delete \(actionable.count) volumes",
+                                 help: "Delete \(actionable.count) volumes",
+                                 busy: selectionBusy, destructive: true) {
+                    confirmingBulkDelete = true
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.3))
+        }
     }
 
     /// This section's slice of the one activity feed. Rows do not navigate — you are already
@@ -311,6 +383,11 @@ struct VolumesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
+            TableColumn("") { volume in
+                selectionToggle(for: volume.id)
+            }
+            .width(min: 28, ideal: 30, max: 34)
+
             TableColumn("Name", value: \.name) { volume in
                 Text(volume.name).foregroundStyle(Theme.accentText).lineLimit(1)
             }

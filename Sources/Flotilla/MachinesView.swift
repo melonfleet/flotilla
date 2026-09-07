@@ -56,6 +56,7 @@ struct MachinesView: View {
     @State private var detailTarget: DetailTarget?
     @State private var showingCreate = false
     @State private var confirmingDelete: ContainerMachine?
+    @State private var confirmingBulkDelete = false
 
     /// `sheet(item:)` needs `Identifiable` and a bare `String` is not — same small wrapper the
     /// containers screen uses, and keyed by **id** so the screen re-reads live state each pass
@@ -85,6 +86,7 @@ struct MachinesView: View {
             } else {
                 VStack(spacing: 0) {
                     toolbar
+                    bulkActionBar
                     Divider()
                     content
                 }
@@ -156,6 +158,19 @@ struct MachinesView: View {
         } message: {
             Text(deleteWarning)
         }
+        .confirmationDialog(
+            "Delete \(actionable.count) machine\(actionable.count == 1 ? "" : "s")?",
+            isPresented: $confirmingBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(actionable.count) Machine\(actionable.count == 1 ? "" : "s")",
+                   role: .destructive) {
+                Task { await model.performMachineBulk(.delete, on: actionable) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Deleting these virtual machines destroys anything stored in them. This cannot be undone.")
+        }
     }
 
     /// Every machine delete enters here. Machines ignored `confirmDestructiveActions` and always
@@ -202,6 +217,16 @@ struct MachinesView: View {
                        searchPrompt: "Search machines…",
                        updated: model.machinesLastRefresh,
                        leading: {
+            Toggle("", isOn: Binding(get: { allVisibleSelected },
+                                     set: { on in
+                                         if on { selection.formUnion(visibleIDs) }
+                                         else { selection.subtract(visibleIDs) }
+                                     }))
+                .labelsHidden()
+                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
+                .accessibilityLabel(allVisibleSelected ? "Deselect all machines" : "Select all machines")
+                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+
             Picker("View", selection: Binding(get: { ui.presentation },
                                               set: { ui.presentation = $0 })) {
                 ForEach(Presentation.allCases) { option in
@@ -314,6 +339,57 @@ struct MachinesView: View {
         }
 
         return machines.sorted(using: ui.sortOrder)
+    }
+
+    private var visibleIDs: Set<ContainerMachine.ID> { Set(displayed.map(\.id)) }
+
+    /// A retained table selection can include rows hidden by a later filter change, so bulk
+    /// actions only touch ids the user can still see when they press the button.
+    private var actionable: Set<ContainerMachine.ID> { selection.intersection(visibleIDs) }
+
+    private func selectionToggle(for id: ContainerMachine.ID) -> some View {
+        let isOn = Binding<Bool>(
+            get: { selection.contains(id) },
+            set: { on in
+                if on { selection.insert(id) } else { selection.remove(id) }
+            })
+        return Toggle("", isOn: isOn)
+            .labelsHidden()
+            .accessibilityLabel("Select \(id)")
+            .help("Select \(id)")
+    }
+
+    private var allVisibleSelected: Bool {
+        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
+    }
+
+    private var selectionBusy: Bool { actionable.contains { model.busyMachines.contains($0) } }
+
+    @ViewBuilder
+    private var bulkActionBar: some View {
+        // One selected row already has the same controls in its Actions column; this band earns
+        // the extra space only when it can do something a row control cannot.
+        if actionable.count > 1 {
+            HStack(spacing: 12) {
+                Text("\(actionable.count) selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                iconButton("play.fill", "Start \(actionable.count) machines", busy: selectionBusy) {
+                    Task { await model.performMachineBulk(.start, on: actionable) }
+                }
+                iconButton("stop.fill", "Stop \(actionable.count) machines", busy: selectionBusy) {
+                    Task { await model.performMachineBulk(.stop, on: actionable) }
+                }
+                iconButton("trash", "Delete \(actionable.count) machines",
+                           busy: selectionBusy, destructive: true) {
+                    confirmingBulkDelete = true
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.3))
+        }
     }
 
     /// Machine transitions, newest first. `AppModelMachines.recordMachineTransitions` fills
@@ -451,6 +527,11 @@ struct MachinesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
+            TableColumn("") { machine in
+                selectionToggle(for: machine.id)
+            }
+            .width(min: 28, ideal: 30, max: 34)
+
             // The dot alone, and no header text either — "State" is five times wider than the
             // thing it labels, and the column exists to be scanned, not read.
             //
