@@ -798,9 +798,9 @@ final class AppModel {
     }
 
     func removeVolume(_ volume: ContainerVolume) async {
-        guard !busy.contains(volume.id) else { return }
-        busy.insert(volume.id)
-        defer { busy.remove(volume.id) }
+        guard !busy.contains(volume.id, kind: .volume) else { return }
+        busy.mark(volume.id, kind: .volume)
+        defer { busy.clear(volume.id, kind: .volume) }
         do {
             _ = try await Task.detached { [cli] in try cli.removeVolume(volume.name) }.value
         } catch {
@@ -845,9 +845,9 @@ final class AppModel {
     }
 
     func removeNetwork(_ network: ContainerNetwork) async {
-        guard !busy.contains(network.id) else { return }
-        busy.insert(network.id)
-        defer { busy.remove(network.id) }
+        guard !busy.contains(network.id, kind: .network) else { return }
+        busy.mark(network.id, kind: .network)
+        defer { busy.clear(network.id, kind: .network) }
         do {
             _ = try await Task.detached { [cli] in try cli.removeNetwork(network.id) }.value
         } catch {
@@ -943,9 +943,9 @@ final class AppModel {
     }
 
     func removeImage(_ image: ContainerImage) async {
-        guard !busy.contains(image.id) else { return }
-        busy.insert(image.id)
-        defer { busy.remove(image.id) }
+        guard !busy.contains(image.id, kind: .image) else { return }
+        busy.mark(image.id, kind: .image)
+        defer { busy.clear(image.id, kind: .image) }
         do {
             _ = try await Task.detached { [cli] in try cli.removeImage(image.reference) }.value
         } catch {
@@ -1097,7 +1097,6 @@ final class AppModel {
     var machines: [ContainerMachine] = []
     var machinesState: LoadState = .idle
     var machinesLastRefresh: Date?
-    var busyMachines: Set<String> = []
 
     /// **A second store, not a second namespace inside the first.**
     ///
@@ -1243,21 +1242,34 @@ final class AppModel {
 
     // MARK: Lifecycle actions
 
-    /// Ids with an action in flight, so the UI can disable their controls rather than
-    /// letting an impatient second click fire a duplicate stop.
-    private(set) var busy: Set<Container.ID> = []
-
-    /// Mark and clear, and nothing else. `busy`'s setter is file-private so the set has one
-    /// owner; bulk operations live in `AppModelBulk.swift` and need exactly these two verbs, not
-    /// the ability to replace the set.
+    /// Everything with an action in flight, keyed by kind *and* id, so the UI can disable a row's
+    /// controls rather than letting an impatient second click fire a duplicate stop.
     ///
-    /// The per-type split is deliberate. Machines keep their own `busyMachines`, because a
-    /// machine named `web` and a container named `web` are different things — the same collision
-    /// `TerminalSessionStore` keeps two stores to avoid. Volumes, networks and images share this
-    /// set because their single-row paths already do, and bulk must mark whatever the row's own
-    /// controls read or a row offers a delete button while a batch is deleting it.
-    func markBusy(_ id: String) { busy.insert(id) }
-    func clearBusy(_ id: String) { busy.remove(id) }
+    /// **Keyed by kind because a bare id is ambiguous.** This was a `Set<String>` shared by
+    /// containers, images, volumes and networks, with machines holding a second set of their own
+    /// to escape exactly that sharing. So a slow `container stop web` disabled the delete button
+    /// on volume `web`: cosmetic, but the same namespace collision `TerminalSessionStore` keeps
+    /// two stores to avoid, and it would have been inherited by every bulk path added after it.
+    /// `BusySet` cannot answer the unqualified question, which is the point — see its docstring
+    /// for why it is in `FlotillaCore` rather than here.
+    private(set) var busy = BusySet()
+
+    /// Mark, clear, and ask — and nothing else. `busy`'s setter is file-private so the set has one
+    /// owner; the extensions in `AppModelBulk.swift` and `AppModelMachines.swift` need exactly
+    /// these verbs, not the ability to replace it.
+    ///
+    /// A batch must mark the same key the row's own controls read, or a row offers a delete button
+    /// while a batch is deleting it.
+    func markBusy(_ id: String, kind: ActivityKind) { busy.mark(id, kind: kind) }
+    func clearBusy(_ id: String, kind: ActivityKind) { busy.clear(id, kind: kind) }
+
+    /// The two reads the views want. Both take the kind, because there is no correct way to ask
+    /// without it.
+    func isBusy(_ id: String, kind: ActivityKind) -> Bool { busy.contains(id, kind: kind) }
+    func isAnyBusy(_ ids: some Sequence<String>, kind: ActivityKind) -> Bool {
+        busy.containsAny(of: ids, kind: kind)
+    }
+
     /// Surfaced to the user; an action that fails must say so rather than looking like
     /// nothing happened.
     var actionError: String?
@@ -1272,12 +1284,12 @@ final class AppModel {
 
     func perform(_ action: Action, on container: Container) async {
         let id = container.id
-        guard !busy.contains(id) else { return }
-        busy.insert(id)
+        guard !busy.contains(id, kind: .container) else { return }
+        busy.mark(id, kind: .container)
         // Held past `busy` being released, so the refresh that follows this action does not
         // report an intentional stop as an unexpected exit.
         recentlyActed.insert(id)
-        defer { busy.remove(id) }
+        defer { busy.clear(id, kind: .container) }
 
         do {
             // Off the main actor: each of these spawns `container` and waits on it.
@@ -1335,8 +1347,8 @@ final class AppModel {
         // job was done. A bulk operation has to report its true blast radius.
         var failures: [(id: Container.ID, error: String)] = []
 
-        for id in ids.sorted() where !busy.contains(id) {
-            busy.insert(id)
+        for id in ids.sorted() where !busy.contains(id, kind: .container) {
+            busy.mark(id, kind: .container)
             do {
                 try await Task.detached { [cli] () -> Void in
                     switch action {
@@ -1356,7 +1368,7 @@ final class AppModel {
             } catch {
                 failures.append((id, String(describing: error)))
             }
-            busy.remove(id)
+            busy.clear(id, kind: .container)
         }
 
         if let first = failures.first {

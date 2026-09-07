@@ -3,56 +3,35 @@ import FlotillaCore
 
 @MainActor
 extension AppModel {
-    /// Which in-flight set a batch marks.
-    ///
-    /// A batch must mark the same set that type's single-row path marks, or the row's own
-    /// controls stay enabled while the batch is acting on it. Machines have their own set;
-    /// everything else shares `busy`. Routing every type through one set instead would make a
-    /// bulk image delete disable a machine that merely shares its name.
-    private enum BusyScope {
-        case shared
-        case machines
-    }
-
-    private func isBusy(_ id: String, in scope: BusyScope) -> Bool {
-        switch scope {
-        case .shared: busy.contains(id)
-        case .machines: busyMachines.contains(id)
-        }
-    }
-
-    private func setBusy(_ id: String, _ inFlight: Bool, in scope: BusyScope) {
-        switch scope {
-        case .shared:
-            if inFlight { markBusy(id) } else { clearBusy(id) }
-        case .machines:
-            if inFlight { busyMachines.insert(id) } else { busyMachines.remove(id) }
-        }
-    }
-
     /// Runs a batch sequentially so each id has one well-defined busy interval, but collects every
     /// failure before surfacing one bounded summary. Refreshing here, after the loop, also avoids
     /// replacing the list under the remaining operations.
+    ///
+    /// `kind` is what the batch marks busy, and it must be the kind that type's single-row path
+    /// marks or the row's own controls stay enabled while the batch is acting on it. It used to be
+    /// a private `BusyScope` enum with two cases — machines, and *everything else sharing one
+    /// namespace* — which is gone now that `BusySet` keys by kind: passing the resource's own kind
+    /// is both the right answer and the only one available.
     private func performResourceBulk(
         _ ids: Set<String>,
         pluralNoun: String,
         verb: String,
-        busyScope: BusyScope,
+        kind: ActivityKind,
         operation: (String) async throws -> Void,
         refresh: () async -> Void
     ) async {
         var failures: [(id: String, error: String)] = []
 
         for id in ids.sorted() {
-            guard !isBusy(id, in: busyScope) else { continue }
+            guard !isBusy(id, kind: kind) else { continue }
 
-            setBusy(id, true, in: busyScope)
+            markBusy(id, kind: kind)
             do {
                 try await operation(id)
             } catch {
                 failures.append((id, String(describing: error)))
             }
-            setBusy(id, false, in: busyScope)
+            clearBusy(id, kind: kind)
         }
 
         if let first = failures.first {
@@ -89,7 +68,7 @@ extension AppModel {
             ids,
             pluralNoun: "machines",
             verb: verb,
-            busyScope: .machines,
+            kind: .machine,
             operation: { [cli] id in
                 _ = try await Task.detached { () -> CommandResult in
                     switch action {
@@ -122,7 +101,7 @@ extension AppModel {
             ids,
             pluralNoun: "volumes",
             verb: "Delete",
-            busyScope: .shared,
+            kind: .volume,
             operation: { [cli] id in
                 guard let name = names[id] else { throw BulkActionError.resourceDisappeared(id) }
                 _ = try await Task.detached { try cli.removeVolume(name) }.value
@@ -136,7 +115,7 @@ extension AppModel {
             ids,
             pluralNoun: "networks",
             verb: "Delete",
-            busyScope: .shared,
+            kind: .network,
             operation: { [cli] id in
                 _ = try await Task.detached { try cli.removeNetwork(id) }.value
             },
@@ -150,7 +129,7 @@ extension AppModel {
             ids,
             pluralNoun: "images",
             verb: "Delete",
-            busyScope: .shared,
+            kind: .image,
             operation: { [cli] id in
                 guard let reference = references[id] else { throw BulkActionError.resourceDisappeared(id) }
                 _ = try await Task.detached { try cli.removeImage(reference) }.value

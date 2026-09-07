@@ -1,18 +1,11 @@
 import Foundation
+import FlotillaCore
 
-/// The resource a feed entry belongs to.
-///
-/// Deliberately not derived from the model types: a volume that has been *deleted* still needs an
-/// entry, and by then there is no `ContainerVolume` left to ask.
-enum ActivityKind: String, CaseIterable, Identifiable, Hashable {
-    case container, machine, image, volume, network
-    /// The `container` runtime service itself — started, or found stopped. Not a resource, but
-    /// it belongs in the same feed: it is the answer to "why was everything empty a minute ago",
-    /// and an automatic action Flotilla takes on its own must leave a trace somewhere the user
-    /// can find it.
-    case runtime
-    var id: Self { self }
-
+/// How a kind is drawn. The kind itself is `FlotillaCore.ActivityKind` — moved there so
+/// `BusySet` could key on it and still be testable; see its docstring. These three members
+/// stayed behind because they are presentation: `section` names an app-only type, and SF Symbol
+/// names have no place in a Foundation-only core.
+extension ActivityKind {
     var title: String {
         switch self {
         case .container: "Containers"

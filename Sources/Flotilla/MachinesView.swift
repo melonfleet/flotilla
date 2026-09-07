@@ -363,7 +363,7 @@ struct MachinesView: View {
         !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
     }
 
-    private var selectionBusy: Bool { actionable.contains { model.busyMachines.contains($0) } }
+    private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .machine) }
 
     @ViewBuilder
     private var bulkActionBar: some View {
@@ -637,7 +637,7 @@ struct MachinesView: View {
     /// divider — icon-only with the word kept as tooltip and accessibility label.
     @ViewBuilder
     private func rowActions(for machine: ContainerMachine) -> some View {
-        let busy = model.busyMachines.contains(machine.id)
+        let busy = model.isBusy(machine.id, kind: .machine)
         HStack(spacing: 2) {
             if Self.isRunning(machine) {
                 iconButton("stop.fill", "Stop \(machine.id)", busy: busy) {

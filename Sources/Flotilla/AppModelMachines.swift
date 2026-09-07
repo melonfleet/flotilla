@@ -57,12 +57,16 @@ extension AppModel {
 
     enum MachineAction { case start, stop, restart, delete, setDefault }
 
-    /// Runs one action and reloads. `busyMachines` disables the row's controls while it is in
-    /// flight, because a second click on Stop is a second VM shutdown.
+    /// Runs one action and reloads. Marking the machine busy disables the row's controls while it
+    /// is in flight, because a second click on Stop is a second VM shutdown.
+    ///
+    /// `kind: .machine` is what used to be a whole second set. Machines needed one because the old
+    /// `busy` was keyed by bare id and a machine named `web` is not the container named `web`;
+    /// `BusySet` keys by kind, so the distinction is in the type and every kind gets it.
     func perform(_ action: MachineAction, on machine: ContainerMachine) async {
-        guard !busyMachines.contains(machine.id) else { return }
-        busyMachines.insert(machine.id)
-        defer { busyMachines.remove(machine.id) }
+        guard !isBusy(machine.id, kind: .machine) else { return }
+        markBusy(machine.id, kind: .machine)
+        defer { clearBusy(machine.id, kind: .machine) }
 
         do {
             let result = try await Task.detached { [cli] in

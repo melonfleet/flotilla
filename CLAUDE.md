@@ -374,6 +374,17 @@ that we *built* the right command; almost nothing checked the command was
   unconditionally, so the Machines list rendered "No matching machines" with two
   machines in the model. Swift accepts it without a warning. Repeat the clause on
   every pattern that needs it.
+- **Fixing a namespace collision for one of five kinds is not fixing it.** `TerminalSessionStore`
+  keeps two instances because a machine named `web` and a container named `web` are different
+  things, and `busyMachines` was added for the same reason — while containers, images, volumes and
+  networks went on sharing one `Set<String>`. So a slow `container stop web` disabled the delete
+  button on volume `web`, in the *same* property whose docstring explained why machines could not
+  share it. Cosmetic here (the wrong row greyed out; no wrong command ran), but the reasoning that
+  justified the second set was an argument for keying by kind, not for one exception to a broken
+  key. Both are now one `BusySet` in `FlotillaCore`, keyed by `(kind, id)`, which cannot answer the
+  unqualified question — the guarantee is in the type rather than in every call site. Two
+  mechanisms where only one is safe is worse than either: the four bulk paths added later inherited
+  the unsafe one because it was the one that looked general.
 
 ### Branding
 

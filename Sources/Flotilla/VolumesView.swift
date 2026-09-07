@@ -192,7 +192,7 @@ struct VolumesView: View {
         !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
     }
 
-    private var selectionBusy: Bool { actionable.contains { model.busy.contains($0) } }
+    private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .volume) }
 
     @ViewBuilder
     private var bulkActionBar: some View {
@@ -437,7 +437,7 @@ struct VolumesView: View {
     /// section uses, so the destructive control is always in the same place.
     @ViewBuilder
     private func rowActions(for volume: ContainerVolume) -> some View {
-        let busy = model.busy.contains(volume.id)
+        let busy = model.isBusy(volume.id, kind: .volume)
         HStack(spacing: 2) {
             Menu {
                 menu(for: volume)
@@ -487,7 +487,7 @@ struct VolumesView: View {
             IconActionButton(systemImage: "trash",
                              label: "Delete \(volume.name)",
                              help: "Delete \(volume.name)",
-                             busy: model.busy.contains(volume.id),
+                             busy: model.isBusy(volume.id, kind: .volume),
                              destructive: true) {
                 requestDelete(volume)
             }
@@ -514,7 +514,7 @@ struct VolumesView: View {
         ])
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(volume) }
-            .disabled(model.busy.contains(volume.id))
+            .disabled(model.isBusy(volume.id, kind: .volume))
     }
 
     /// Embedded, not modal — see `MachineFormView` for the 9 August reversal.

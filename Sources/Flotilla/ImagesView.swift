@@ -356,7 +356,7 @@ struct ImagesView: View {
     /// destructive control as the containers and machines rows.
     @ViewBuilder
     private func rowActions(for image: ContainerImage) -> some View {
-        let busy = model.busy.contains(image.id)
+        let busy = model.isBusy(image.id, kind: .image)
         HStack(spacing: 2) {
             IconActionButton(systemImage: "play.fill",
                              label: "Run \(Self.repository(image))",
@@ -469,7 +469,7 @@ struct ImagesView: View {
         !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
     }
 
-    private var selectionBusy: Bool { actionable.contains { model.busy.contains($0) } }
+    private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .image) }
 
     @ViewBuilder
     private var bulkActionBar: some View {
@@ -540,14 +540,14 @@ struct ImagesView: View {
             IconActionButton(systemImage: "tag",
                              label: "Tag \(Self.repository(image))",
                              help: "Tag \(Self.repository(image))",
-                             busy: model.busy.contains(image.id)) {
+                             busy: model.isBusy(image.id, kind: .image)) {
                 tagTarget = ""
                 taggingImage = image
             }
             IconActionButton(systemImage: "trash",
                              label: "Delete \(Self.repository(image))",
                              help: "Delete \(Self.repository(image))",
-                             busy: model.busy.contains(image.id),
+                             busy: model.isBusy(image.id, kind: .image),
                              destructive: true) {
                 requestDelete(image)
             }
@@ -568,7 +568,7 @@ struct ImagesView: View {
             tagTarget = ""
             taggingImage = image
         }
-        .disabled(model.busy.contains(image.id))
+        .disabled(model.isBusy(image.id, kind: .image))
         CopyMenu([
             ("Reference", image.reference),
             ("Repository", Self.repository(image)),
@@ -577,7 +577,7 @@ struct ImagesView: View {
         ])
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(image) }
-            .disabled(model.busy.contains(image.id))
+            .disabled(model.isBusy(image.id, kind: .image))
     }
 
     /// Header + body, the embedded counterpart of `ModalCard`. Local to this file because

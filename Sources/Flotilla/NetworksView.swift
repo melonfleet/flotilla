@@ -182,7 +182,7 @@ struct NetworksView: View {
         !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
     }
 
-    private var selectionBusy: Bool { actionable.contains { model.busy.contains($0) } }
+    private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .network) }
 
     @ViewBuilder
     private var bulkActionBar: some View {
@@ -348,7 +348,7 @@ struct NetworksView: View {
 
     @ViewBuilder
     private func rowActions(for network: ContainerNetwork) -> some View {
-        let busy = model.busy.contains(network.id)
+        let busy = model.isBusy(network.id, kind: .network)
         HStack(spacing: 2) {
             Menu {
                 menu(for: network)
@@ -391,7 +391,7 @@ struct NetworksView: View {
         ])
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(network) }
-            .disabled(model.busy.contains(network.id))
+            .disabled(model.isBusy(network.id, kind: .network))
     }
 
 

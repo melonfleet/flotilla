@@ -412,7 +412,7 @@ struct ContainersView: View {
 
     /// True while any actionable id has an action in flight — disables the bulk bar so a
     /// second click can't fire a duplicate operation on top of the first.
-    private var selectionBusy: Bool { !actionable.isDisjoint(with: model.busy) }
+    private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .container) }
 
     /// Per-row action buttons, in an **Actions** column — the pattern Docker Desktop uses and
     /// the one the owner asked for: small, always-visible, icon-only controls on the row they
@@ -430,7 +430,7 @@ struct ContainersView: View {
     ///   about.
     @ViewBuilder
     private func rowActions(for container: Container) -> some View {
-        let busy = model.busy.contains(container.id)
+        let busy = model.isBusy(container.id, kind: .container)
         let running = AppModel.isRunning(container)
 
         HStack(spacing: 2) {
@@ -516,7 +516,7 @@ struct ContainersView: View {
                   let container = visible.first(where: { $0.id == ids.first }) {
             actions(for: container)
         } else {
-            let busy = !ids.isDisjoint(with: model.busy)
+            let busy = model.isAnyBusy(ids, kind: .container)
             Button("Start \(ids.count)") { Task { await model.performBulk(.start, on: ids) } }
                 .disabled(busy)
             Button("Stop \(ids.count)") { Task { await model.performBulk(.stop, on: ids) } }
@@ -540,7 +540,7 @@ struct ContainersView: View {
     /// you can *do*, not just how it looks, is a trap.
     @ViewBuilder
     private func actions(for container: Container) -> some View {
-        let busy = model.busy.contains(container.id)
+        let busy = model.isBusy(container.id, kind: .container)
         let running = AppModel.isRunning(container)
         Button("Details…") { openDetail(container.id) }
 
@@ -1128,7 +1128,7 @@ struct ContainersView: View {
                         cpuPercent: model.cpuPercent(for: container.id),
                         memoryBytes: model.memoryBytes(for: container.id),
                         history: model.cpuHistory(for: container.id),
-                        isBusy: model.busy.contains(container.id),
+                        isBusy: model.isBusy(container.id, kind: .container),
                         onStart: { Task { await model.perform(.start, on: container) } },
                         onStop: { Task { await model.perform(.stop, on: container) } },
                         onRestart: { Task { await model.perform(.restart, on: container) } },

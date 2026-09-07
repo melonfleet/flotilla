@@ -194,7 +194,7 @@ struct MenuBarView: View {
                           subtitle: ContainerImage.shortReference(container.imageReference),
                           dot: container.stateColor,
                           running: running,
-                          busy: model.busy.contains(container.id),
+                          busy: model.isBusy(container.id, kind: .container),
                           start: { Task { await model.perform(.start, on: container) } },
                           stop: { Task { await model.perform(.stop, on: container) } },
                           restart: { Task { await model.perform(.restart, on: container) } },
@@ -207,7 +207,7 @@ struct MenuBarView: View {
                           subtitle: "\(machine.cpus) vCPU · \(memory)",
                           dot: MachinesView.stateColor(machine),
                           running: MachinesView.isRunning(machine),
-                          busy: model.busyMachines.contains(machine.id),
+                          busy: model.isBusy(machine.id, kind: .machine),
                           start: { Task { await model.perform(.start, on: machine) } },
                           stop: { Task { await model.perform(.stop, on: machine) } },
                           restart: { Task { await model.perform(.restart, on: machine) } },
@@ -423,7 +423,7 @@ struct MenuBarView: View {
     /// CPU figure, and a one-tap start/stop.
     private func containerRow(_ container: Container) -> some View {
         let running = AppModel.isRunning(container)
-        let busy = model.busy.contains(container.id)
+        let busy = model.isBusy(container.id, kind: .container)
 
         return HStack(spacing: 8) {
             Circle().fill(container.stateColor).frame(width: 8, height: 8)

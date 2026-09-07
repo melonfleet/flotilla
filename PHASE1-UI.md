@@ -92,7 +92,9 @@ empty list for a failed load.
   something from it that is missing, say so in your report rather than adding it.
 - Every action goes through `AppModel` → `ContainerCLI`. A view must **never** build an argv
   or call a host directly; that is what keeps the Allowlist meaningful.
-- Reuse `AppModel.busy` and `actionError` for in-flight and failure states.
+- Reuse `AppModel.busy` and `actionError` for in-flight and failure states. Read it with
+  `model.isBusy(id, kind:)` / `model.isAnyBusy(ids, kind:)` — the kind is not optional,
+  because a bare id matches five different things.
 - Nothing may hardcode `preferredColorScheme` — appearance is the user's choice.
 - Run `swift build && swift test` to confirm the core still passes (114 tests).
 - Do **not** run git. Report what you built, and anything you had to guess.
