@@ -670,9 +670,12 @@ private struct ContainerUtilisationPanel: View, Equatable {
             TableColumn("CPU") { container in
                 Text(model.cpuLabel(for: container.id)).monospacedDigit()
             }
+            // One line per row, everywhere. These three columns each stacked two values, which
+            // made every row three lines tall and the whole dashboard scroll — while the columns
+            // themselves had width going spare. The pairs read perfectly well side by side.
             TableColumn("Memory") { container in
                 let point = model.statsHistory(for: container.id).last
-                VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
                     Text(model.memoryLabel(for: container.id)).monospacedDigit()
                     if let used = point?.memoryUsageBytes,
                        let limit = point?.memoryLimitBytes, limit > 0 {
@@ -683,7 +686,7 @@ private struct ContainerUtilisationPanel: View, Equatable {
             }
             TableColumn("Network I/O") { container in
                 let point = model.statsHistory(for: container.id).last
-                VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 10) {
                     Text("↓ " + rateLabel(point?.networkRxBytesPerSecond))
                         .font(.caption).monospacedDigit()
                     Text("↑ " + rateLabel(point?.networkTxBytesPerSecond))
@@ -692,7 +695,7 @@ private struct ContainerUtilisationPanel: View, Equatable {
             }
             TableColumn("Block I/O") { container in
                 let point = model.statsHistory(for: container.id).last
-                VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 10) {
                     Text("R " + rateLabel(point?.blockReadBytesPerSecond))
                         .font(.caption).monospacedDigit()
                     Text("W " + rateLabel(point?.blockWriteBytesPerSecond))
@@ -716,9 +719,12 @@ private struct ContainerUtilisationPanel: View, Equatable {
     /// both — a list you have to scroll and a dashboard with nothing in the space. Eight is the
     /// cap because past that the table should scroll rather than push everything else off the
     /// screen, and three is the floor so a one-container fleet still looks like a table.
+    ///
+    /// 24 a row plus the header, measured off the rendered table since the rows became one line
+    /// each; it was 44 a row when three of the columns stacked a pair of values.
     private var utilisationHeight: CGFloat {
         let rows = min(max(model.running.count, 3), 8)
-        return 34 + 44 * CGFloat(rows)
+        return 34 + 24 * CGFloat(rows)
     }
 }
 
