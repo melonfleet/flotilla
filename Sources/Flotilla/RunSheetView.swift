@@ -120,6 +120,10 @@ struct RunSheetView: View {
                           ?? model.settingsStore[SettingsKeys.defaultContainerMemoryMB])
     }
     @State private var name: String
+    /// Empty means "leave it unset and let `container` decide". A network can only be chosen
+    /// when the container is created — neither the CLI nor Flotilla can move an existing one.
+    @State private var network = ""
+
     @State private var detach = true
     @State private var cpus: Int
     @State private var memoryMB: Int
@@ -159,6 +163,9 @@ struct RunSheetView: View {
         // Suggestions want the local image list; a user opening this sheet without ever
         // visiting Images otherwise sees none.
         .task { await model.refreshImages() }
+        // Networks are refreshed by their own section and by every sixth poll tick, so a run
+        // sheet opened from the File menu on a fresh launch would otherwise offer an empty list.
+        .task { await model.refreshNetworks() }
     }
 
     /// Back then title, matching the detail screens and the machine form. Embedded rather than
@@ -277,6 +284,27 @@ struct RunSheetView: View {
                       optional: true) {
                 rows($ports, placeholder: "8080:80", max: Self.maxPorts)
             }
+
+            // Until this existed the Networks section was write-only: you could create a network,
+            // inspect it and delete it, and nothing in the app could ever join one. `RunOptions`
+            // has carried a `network` field the whole time; no screen ever set it.
+            FormField("Network",
+                      help: model.networks.isEmpty
+                          ? "No networks yet. Create one in the Networks section and it will "
+                              + "appear here."
+                          : "Containers on the same network reach each other by name. Left as "
+                              + "Default, `container` chooses.",
+                      optional: true) {
+                Picker("", selection: $network) {
+                    Text("Default").tag("")
+                    ForEach(model.networks, id: \.id) { available in
+                        Text(available.name).tag(available.name)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .disabled(model.networks.isEmpty)
+            }
         }
     }
 
@@ -297,6 +325,7 @@ struct RunSheetView: View {
                       problem: message(for: .volumes),
                       optional: true) {
                 rows($volumes, placeholder: "data:/data", max: Self.maxVolumes)
+                existingVolumeMenu
             }
         }
     }
@@ -386,6 +415,28 @@ struct RunSheetView: View {
     private var imageSuggestions: [String] {
         var seen = Set<String>()
         return model.images.map(\.reference).filter { seen.insert($0).inserted }
+    }
+
+    /// The volumes you have already created, offered instead of remembered.
+    ///
+    /// It fills in the half the app can know — the source — and leaves the destination to you,
+    /// because the CLI needs `source:/destination` and only the source exists as a list. The free
+    /// text row stays, because a source may equally be an absolute path on this Mac, and no
+    /// picker can enumerate your filesystem.
+    @ViewBuilder
+    private var existingVolumeMenu: some View {
+        if !model.volumes.isEmpty {
+            Menu {
+                ForEach(model.volumes, id: \.id) { volume in
+                    Button(volume.name) { volumes.append(Row(value: "\(volume.name):/")) }
+                }
+            } label: {
+                Label("Use an existing volume", systemImage: "externaldrive")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(volumes.count >= Self.maxVolumes)
+        }
     }
 
     @ViewBuilder
@@ -537,7 +588,8 @@ struct RunSheetView: View {
             cpus: limitResources ? cpus : nil,
             // `.memorySize` shape — digits plus an optional K/M/G suffix. The stepper is in MB, so
             // the suffix is fixed and cannot drift into something the allowlist would refuse.
-            memory: limitResources ? "\(memoryMB)M" : nil
+            memory: limitResources ? "\(memoryMB)M" : nil,
+            network: network.isEmpty ? nil : network
         )
     }
 
