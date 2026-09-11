@@ -501,20 +501,32 @@ struct DashboardView: View {
     private var attentionPanel: some View {
         let troubled = model.containers.filter(Self.needsAttention)
         if !troubled.isEmpty {
-            panel("Needs attention", systemImage: "exclamationmark.triangle") {
-                ForEach(troubled) { container in
-                    HStack(spacing: 8) {
-                        Circle().fill(container.stateColor).frame(width: 7, height: 7)
-                        Text(container.id).font(.system(size: 12, weight: .medium))
-                        Text(container.status.state.lowercased())
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Open") { go(.containers) }
-                            .buttonStyle(.plain)
-                            .font(.caption)
-                            .foregroundStyle(Theme.accentText)
+            // The same shape as every other section now: one headline, one raised card. It was
+            // the last user of a second panel style — small caps inside a box, on a different
+            // surface with a different border — which is two ways of drawing a panel on one
+            // screen.
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Needs attention").font(.headline)
+                VStack(spacing: 0) {
+                    ForEach(troubled) { container in
+                        HStack(spacing: 8) {
+                            Circle().fill(container.stateColor).frame(width: 7, height: 7)
+                            Text(container.id).font(.system(size: 12, weight: .medium))
+                            Text(container.status.state.lowercased())
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Open") { go(.containers) }
+                                .buttonStyle(.plain)
+                                .font(.caption)
+                                .foregroundStyle(Theme.accentText)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        if container.id != troubled.last?.id { Divider().padding(.leading, 12) }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
             }
         }
     }
@@ -548,23 +560,6 @@ struct DashboardView: View {
         .accessibilityHint("Opens \(title)")
     }
 
-    private func panel<Content: View>(_ title: String, systemImage: String,
-                                      @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage).font(.system(size: 11))
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .semibold)).kerning(0.5)
-            }
-            .foregroundStyle(.tertiary)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
-    }
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
@@ -627,19 +622,21 @@ private struct ContainerUtilisationPanel: View, Equatable {
                                 rhs: ContainerUtilisationPanel) -> Bool { true }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Image(systemName: "chart.bar").font(.system(size: 11))
-                Text("CONTAINER UTILISATION")
-                    .font(.system(size: 11, weight: .semibold)).kerning(0.5)
-            }
-            .foregroundStyle(.tertiary)
+        // Heading above the card, in the same weight as Pressure, Throughput and Resources —
+        // this was the one panel wearing its title inside the box, in small caps, with an icon.
+        // "Container" went with it: everything in this table is a container, and the three
+        // headings beside it are one word each.
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Utilisation").font(.headline)
             content
+                // 6, not 12. The table draws its own column header and row insets, so padding
+                // here is only the gap to the card's border — and the cards beside this one give
+                // their rows no outer padding at all.
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
     }
 
     @ViewBuilder
