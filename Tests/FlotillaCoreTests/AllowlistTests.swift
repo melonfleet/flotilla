@@ -163,6 +163,49 @@ private func requireRejected(
     }
 }
 
+@Test func plaintextPullsAreAllowedLocallyAndNeverOverTheWire() throws {
+    // `container` 1.4.1 removed `--scheme auto`, which used to downgrade to plaintext by itself;
+    // the installed help now reads `One of (http, https) (default: https)`. So a development
+    // registry with no TLS needs the flag, and somebody has to choose it.
+    guard case .success = Allowlist.validate(["image", "pull", "--scheme", "http", "localhost:5000/app:dev"]) else {
+        Issue.record("an explicit plaintext pull must be allowed locally"); return
+    }
+    guard case .success = Allowlist.validate(["image", "pull", "--scheme", "https", "nginx:alpine"]) else {
+        Issue.record("https must be accepted explicitly too"); return
+    }
+
+    // A closed set of two. `auto` is refused because it is not a value on 1.4.1 and because it
+    // is the one that decides for you.
+    for bad in ["auto", "HTTP", "ftp", "http://", ""] {
+        guard case .failure = Allowlist.validate(["image", "pull", "--scheme", bad, "nginx"]) else {
+            Issue.record("`--scheme \(bad)` should be refused"); return
+        }
+    }
+
+    // Never from a peer: choosing plaintext for your own pull is your decision about your own
+    // network, and the credentials on the wire would not be the peer's.
+    guard case .failure(.flagForbiddenOverWire(_, let flag)) =
+            Allowlist.validate(["image", "pull", "--scheme", "http", "nginx"], wirePolicy: .remotePeer) else {
+        Issue.record("a remote caller must not choose the registry scheme"); return
+    }
+    #expect(flag == "scheme")
+
+    // And the flag exists on `image pull` alone. `machine create` accepts it too, but a machine
+    // image comes from a public registry, so there is no case for plaintext there.
+    guard case .failure(.unknownFlag) =
+            Allowlist.validate(["machine", "create", "--scheme", "http", "alpine:3.22"]) else {
+        Issue.record("`machine create --scheme` should not be allowlisted"); return
+    }
+}
+
+@Test func theDefaultSchemeIsNotSpelledOutInArgv() {
+    // An argv that names the default is an argv that looks like a decision, and `--scheme https`
+    // in an audit line would read as "somebody thought about this" when nobody did.
+    #expect(ContainerCLI.pullArguments("nginx", scheme: .https) == ["image", "pull", "nginx"])
+    #expect(ContainerCLI.pullArguments("localhost:5000/app", scheme: .http)
+            == ["image", "pull", "--scheme", "http", "localhost:5000/app"])
+}
+
 @Test func aFollowIsLocalOnlyEvenWhenItCarriesABound() {
     // `--follow` satisfies `wireRequiredFlags: ["n"]` and then never stops, which is a denial of
     // service wearing a bounded read's clothes. The owner tailing their own log is fine; a peer

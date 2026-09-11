@@ -483,8 +483,30 @@ public struct ContainerCLI: Sendable {
 
     // MARK: Images
 
-    @discardableResult public func pull(_ reference: String) throws -> CommandResult {
-        try execute(["image", "pull", reference])
+    /// How to reach the registry.
+    ///
+    /// `https` unless you say otherwise, and the flag is only sent when you *have* said
+    /// otherwise — an argv that names the default is an argv that looks like a decision.
+    ///
+    /// Exists because 1.4.1 removed `auto`. Until then the CLI would quietly fall back to
+    /// plaintext for a registry that refused TLS; now it refuses, so a plain-HTTP development
+    /// registry is unreachable unless something asks for HTTP explicitly. Asking is the
+    /// difference this type is here to preserve.
+    ///
+    /// **`http` does not unlock an authenticated registry**, and the UI says so. Measured
+    /// 2026-09-12 against 1.4.1: `image pull --scheme http localhost:5000/x` reaches the
+    /// registry and then fails with *"refusing insecure credential exchange: registry localhost
+    /// requested authentication over an insecure connection"*. So the flag covers an anonymous
+    /// registry over plaintext and nothing more — which is a good place for the line to be, and
+    /// not ours to move.
+    public enum RegistryScheme: String, Sendable, CaseIterable {
+        case https, http
+        public static let `default` = RegistryScheme.https
+    }
+
+    @discardableResult public func pull(_ reference: String,
+                                        scheme: RegistryScheme = .default) throws -> CommandResult {
+        try execute(Self.pullArguments(reference, scheme: scheme))
     }
 
     /// Pull, reporting progress as the CLI emits it.
@@ -495,10 +517,18 @@ public struct ContainerCLI: Sendable {
     /// the caller as a thrown `commandFailed` with the CLI's own text, exactly as before.
     @discardableResult
     public func pull(_ reference: String,
+                     scheme: RegistryScheme = .default,
                      onProgress: @escaping @Sendable (ImagePullProgress) -> Void) throws -> CommandResult {
-        try execute(["image", "pull", reference]) { line in
+        try execute(Self.pullArguments(reference, scheme: scheme)) { line in
             if let progress = ImagePullProgress(line: line) { onProgress(progress) }
         }
+    }
+
+    static func pullArguments(_ reference: String, scheme: RegistryScheme) -> [String] {
+        var args = ["image", "pull"]
+        if scheme != .default { args += ["--scheme", scheme.rawValue] }
+        args.append(reference)
+        return args
     }
 
     @discardableResult public func removeImage(_ reference: String, force: Bool = false) throws -> CommandResult {

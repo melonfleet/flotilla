@@ -49,6 +49,16 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     /// One `container machine set` setting: `cpus=<n>`, `memory=<size>` or
     /// `home-mount=<ro|rw|none>`. **A closed set, not a generic `key=value`.**
     case machineSetting
+    /// `container image pull --scheme`: `http` or `https`. Two values, and the difference
+    /// between them is whether image layers and registry credentials cross the network in
+    /// plaintext — so it is a closed set taken from the captured leaf help, never a free string.
+    ///
+    /// 1.4.1 dropped the third value. 1.0.0 documented `http, https, auto` with `auto` as the
+    /// default, which silently downgraded a registry that refused TLS; the installed 1.4.1 says
+    /// `One of (http, https) (default: https)`. That removal is the whole reason this shape
+    /// exists: `auto` used to make plaintext happen without anyone choosing it, and now somebody
+    /// has to choose it.
+    case registryScheme
 
     /// A **bare** home-directory mount mode — `ro`, `rw` or `none`.
     ///
@@ -113,7 +123,8 @@ extension ValueShape {
         // container was deleted, *which* image was pulled, or *which* `machine set` setting was
         // changed records that something happened and withholds the only interesting part.
         case .identifier, .imageReference, .machineSetting, .homeMountMode,
-             .progressType, .signal, .platform, .outputFormat, .machineOutputFormat:
+             .progressType, .registryScheme, .signal, .platform, .outputFormat,
+             .machineOutputFormat:
             false
         // Numbers, sizes and network shapes. Configuration rather than content. A port mapping
         // can carry a bind address, which is precisely what an auditor wants to see.
@@ -149,6 +160,8 @@ extension ValueShape {
             "Expected an absolute path on this Mac that the mount policy permits the build to read."
         case .progressType:
             "Expected `auto`, `plain` or `tty`."
+        case .registryScheme:
+            "Expected `http` or `https`."
         case .machineSetting:
             "Expected `cpus=<number>`, `memory=<size>` such as 8G, or `home-mount=ro|rw|none`."
         case .homeMountMode:
@@ -719,9 +732,20 @@ public enum Allowlist {
             CommandSpec(["image", "list"], mutates: false, flags: [format, quiet]),
             CommandSpec(["image", "inspect"], mutates: false,
                         operands: OperandSpec(shape: .imageReference, min: 1, max: 32)),
+            // `--scheme http` is how you pull from a registry that has no TLS — a loopback or
+            // LAN development registry, which is the only place it belongs. It is allowed here
+            // and **nowhere else**: `machine create` also accepts it, and a machine image is
+            // Apple's own from a public registry, so there is no case for plaintext there.
+            //
+            // Local-only, on the same reasoning as the mount family. Choosing plaintext for
+            // *your own* pull is a decision you are entitled to make about your own network; a
+            // remote peer choosing it for you would be downgrading somebody else's transport,
+            // and the credentials on the wire would not be the peer's.
             CommandSpec(["image", "pull"], mutates: true, timeoutHint: 1800,
-                        flags: [FlagSpec(long: "platform", value: .platform)],
-                        operands: OperandSpec(shape: .imageReference, min: 1, max: 1)),
+                        flags: [FlagSpec(long: "platform", value: .platform),
+                                FlagSpec(long: "scheme", value: .registryScheme)],
+                        operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
+                        wireForbiddenFlags: ["scheme"]),
             CommandSpec(["image", "delete"], mutates: true,
                         flags: [all, force],
                         operands: OperandSpec(shape: .imageReference, min: 1, max: 32, minWaivedBy: ["all"])),
@@ -1366,6 +1390,10 @@ public enum Allowlist {
             return checkHostBuildPath(value, context: context, mountPolicy: mountPolicy)
         case .progressType:
             return ["auto", "plain", "tty"].contains(value) ? nil : bad
+        case .registryScheme:
+            // `auto` is deliberately absent even though 1.0.0 accepted it: it is the value that
+            // decided for you, and on 1.4.1 it is not a value at all.
+            return ["http", "https"].contains(value) ? nil : bad
         case .machineSetting:
             return checkMachineSetting(value, context: context)
         case .homeMountMode:

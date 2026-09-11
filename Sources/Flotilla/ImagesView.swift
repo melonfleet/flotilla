@@ -18,6 +18,10 @@ struct ImagesView: View {
     @State private var showingPull = false
     @State private var showingBuild = false
     @State private var pullReference = ""
+    /// HTTPS unless someone changes it, every time the form opens. Deliberately **not**
+    /// remembered: a persisted "use plaintext" would apply to the next pull from a public
+    /// registry too, and the one thing worse than no HTTP support is HTTP nobody asked for.
+    @State private var pullScheme = ContainerCLI.RegistryScheme.default
     @State private var pendingDelete: ContainerImage?
     /// Set from the row menu's Run — presents the run sheet with this reference already in
     /// place. Nothing is launched from here; the sheet's validated preview still gates it.
@@ -76,10 +80,10 @@ struct ImagesView: View {
         .task { await model.refreshImages() }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingPullForm) { _, requested in
-            if requested { pullReference = ""; showingPull = true; model.pendingPullForm = false }
+            if requested { pullReference = ""; pullScheme = .default; showingPull = true; model.pendingPullForm = false }
         }
         .onAppear {
-            if model.pendingPullForm { pullReference = ""; showingPull = true; model.pendingPullForm = false }
+            if model.pendingPullForm { pullReference = ""; pullScheme = .default; showingPull = true; model.pendingPullForm = false }
         }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingBuildForm) { _, requested in
@@ -166,6 +170,7 @@ struct ImagesView: View {
             }
             ToolbarIconButton(systemImage: "arrow.down.circle", label: "Pull an image…") {
                 pullReference = ""
+                pullScheme = .default
                 showingPull = true
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh images") {
@@ -765,6 +770,8 @@ struct ImagesView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
 
+            schemeChoice
+
             HStack {
                 // Static destination on purpose: sending what someone has typed to a registry's
                 // search as they type would leak the name of a private image they had not
@@ -773,10 +780,52 @@ struct ImagesView: View {
                     Label("Browse Docker Hub", systemImage: "arrow.up.right.square")
                         .font(.callout)
                 }
+                // `Link` draws in the system accent, which made this the one blue thing in an
+                // app whose links are all brand pink. Same reason `Theme.rowName` exists.
+                .foregroundStyle(Theme.accentText)
                 Spacer()
                 Button("Pull", action: startPull)
                     .buttonStyle(.borderedProminent)
                     .disabled(trimmedPull.isEmpty || pullProblem != nil)
+            }
+        }
+    }
+
+    /// HTTPS or HTTP, and what choosing HTTP actually means.
+    ///
+    /// Here rather than in Settings on purpose. A registry scheme reads like a preference and
+    /// behaves like a per-pull decision: `container` used to accept `--scheme auto` and fall back
+    /// to plaintext on its own, 1.4.1 removed it, and a *stored* "use HTTP" would put that
+    /// silent downgrade straight back — applying to the next pull from Docker Hub as much as to
+    /// the LAN registry it was set for. So it resets to HTTPS every time this form opens.
+    ///
+    /// The warning names the two things that actually cross the wire, because "insecure" on its
+    /// own does not tell anyone what they are risking.
+    private var schemeChoice: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Connect using", selection: $pullScheme) {
+                Text("HTTPS").tag(ContainerCLI.RegistryScheme.https)
+                Text("HTTP").tag(ContainerCLI.RegistryScheme.http)
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+
+            if pullScheme == .http {
+                Label("Image layers cross the network unencrypted, so this is only for a "
+                      + "registry on this Mac or your own network. An **anonymous** one: "
+                      + "`container` refuses to send credentials over HTTP even when you ask "
+                      + "for it.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                // Says why the control is there at all, which is otherwise a mystery until it
+                // fails: `container` 1.4.1 stopped falling back on its own.
+                Text("HTTP is for a development registry with no TLS — `container` no longer "
+                     + "falls back to it on its own.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -846,8 +895,9 @@ struct ImagesView: View {
         let reference = trimmedPull
         guard !reference.isEmpty, pullProblem == nil, model.activePull == nil else { return }
         Task {
-            if await model.pullImage(reference) {
+            if await model.pullImage(reference, scheme: pullScheme) {
                 pullReference = ""
+                pullScheme = .default
                 showingPull = false
             }
         }

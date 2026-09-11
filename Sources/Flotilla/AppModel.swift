@@ -940,19 +940,24 @@ final class AppModel {
     ///   stay put — reference intact, ready to correct — on failure. Same contract as
     ///   `buildImage`.
     @discardableResult
-    func pullImage(_ reference: String) async -> Bool {
+    func pullImage(_ reference: String,
+                   scheme: ContainerCLI.RegistryScheme = .default) async -> Bool {
         activePull = ImagePull(reference: reference, startedAt: Date())
         defer { activePull = nil }
         do {
             _ = try await Task.detached { [cli] in
-                try cli.pull(reference) { progress in
+                try cli.pull(reference, scheme: scheme) { progress in
                     Task { @MainActor in self.notePullProgress(progress, for: reference) }
                 }
             }.value
             // Named explicitly: the existence diff would say "Created", which is true but loses
             // the distinction between an image you pulled and one a build produced.
+            // The scheme is part of the record when it was not the default: "pulled over
+            // plaintext" is a different fact from "pulled", and the activity feed is where
+            // someone would look to find out which one happened.
             recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
-                                          kind: .image, subject: reference, action: "Pulled"))
+                                          kind: .image, subject: reference,
+                                          action: scheme == .default ? "Pulled" : "Pulled over HTTP"))
             await refreshImages()
             return true
         } catch {

@@ -326,13 +326,28 @@ the one the report could not establish.
    So the release note was right and the tagged reference is stale — which is the whole argument
    for capturing leaf help from the binary rather than reading the repository's documentation.
 
-   **Consequence, and it is a real one.** Flotilla emits no `--scheme`, so the allowlist needed no
-   rename; but that also means Flotilla can no longer pull from a plain-HTTP registry *at all*,
-   where 1.0.0 would silently downgrade. Anyone running a loopback or private HTTP registry loses
-   image pulls through the app with no way to ask for HTTP. Adding `--scheme` to the `image pull`
-   spec as a closed `http|https` set would restore it; that is a decision, not an oversight, and
-   it should be taken deliberately — sending credentials or image layers over plaintext is
-   exactly the kind of thing a default-deny table exists to make somebody choose.
+   **Consequence, and it is a real one.** Flotilla emitted no `--scheme`, so the allowlist needed
+   no rename; but that also meant Flotilla could no longer pull from a plain-HTTP registry *at
+   all*, where 1.0.0 would silently downgrade.
+
+   **Resolved 2026-09-12: the flag is allowlisted for `image pull` only.** A `.registryScheme`
+   value shape with a closed `http|https` set — `auto` deliberately absent, because it is not a
+   value on 1.4.1 and because it is the one that decides for you. `wireForbiddenFlags: ["scheme"]`
+   keeps it off the wire: choosing plaintext for your own pull is a decision about your own
+   network, and a peer choosing it would be downgrading someone else's transport with credentials
+   that are not theirs. Not added to `machine create`, which also accepts it — a machine image
+   comes from a public registry, so there is no case for plaintext there.
+
+   The choice lives in the Pull form and **resets to HTTPS every time it opens**, rather than
+   being a setting. A stored "use HTTP" would reinstate exactly the silent downgrade 1.4.1
+   removed, and would apply to the next pull from Docker Hub as much as to the LAN registry it
+   was set for.
+
+   One limit, measured rather than assumed: `--scheme http` does **not** unlock an authenticated
+   registry. `image pull --scheme http localhost:5000/x` reaches the registry and fails with
+   *"refusing insecure credential exchange: registry localhost requested authentication over an
+   insecure connection"*. So it covers an anonymous registry over plaintext and nothing more.
+   The form says so, because otherwise that error looks like Flotilla's fault.
 
 ### The `system status` redesign is real, and it breaks nothing here
 
