@@ -282,9 +282,32 @@ struct LogViewer: View {
         }
     }
 
+    /// `Sep 12 00:00:54` — the shape a log timestamp has had since syslog.
+    ///
+    /// A **fixed** format, not a localised one, and deliberately so. This is data in a document
+    /// you read, grep, copy and paste into a bug report, not chrome: it has to sort, it has to
+    /// line up in a monospaced column, and it has to mean the same thing in the report as it did
+    /// on screen. The localised `.standard` time it used to print was `12:00:23 AM` here and
+    /// something else on a machine set to 24-hour — and with no date at all, a line from
+    /// yesterday was indistinguishable from one a minute ago.
+    ///
+    /// `en_US_POSIX` because that is the only way to stop a fixed `dateFormat` being rewritten by
+    /// the reader's own region and 12/24-hour preference. The **time zone is this Mac's**, not
+    /// UTC: the stamp says when Flotilla received the line, and the clock the reader is looking
+    /// at is the one that makes that useful.
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        // Zero-padded day rather than syslog's space-padded one: every line is then exactly as
+        // wide as every other, and the log text starts on the same column all the way down.
+        formatter.dateFormat = "MMM dd HH:mm:ss"
+        return formatter
+    }()
+
     private static func timeLabel(_ date: Date?) -> String {
-        guard let date else { return "--:--:--" }
-        return date.formatted(date: .omitted, time: .standard)
+        // Same width as a real stamp, so a line without one does not shift the text beside it.
+        guard let date else { return "--- -- --:--:--" }
+        return timeFormatter.string(from: date)
     }
 
     // MARK: Loading
