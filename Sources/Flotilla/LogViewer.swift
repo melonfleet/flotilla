@@ -92,6 +92,7 @@ struct LogViewer: View {
     @State private var showTimestamps: Bool
     @State private var wrap = true
     @State private var live = false
+    @State private var showingOptions = false
     @State private var liveTask: Task<Void, Never>?
 
     init(model: AppModel, source: LogViewerSource) {
@@ -131,15 +132,22 @@ struct LogViewer: View {
     // MARK: Chrome
 
     /// One band, laid out like the Inspect tab's: what you are reading and what you can do with
-    /// it on the left, how it is displayed on the right.
+    /// it on the left, and nothing competing with it on the right.
     ///
-    /// It was two rows of labelled buttons. The words went because every other action in the app
-    /// is a glyph and these were the exception; the second row went with them, because three icon
-    /// buttons and a 200pt field do not need a row of their own, and the space they were using is
-    /// space the log itself now gets.
+    /// It was two rows of labelled buttons and a strip of four checkboxes. The words went because
+    /// every other action in the app is a glyph and these were the exception; the checkboxes went
+    /// into a popover behind one icon, the same control the lists use for their columns and their
+    /// filter. What is left is one row, and the row it gave up is row the log itself now gets.
     private var controls: some View {
         HStack(spacing: 10) {
-            Toggle("Boot Log", isOn: $bootLog)
+            // Active when the boot log is showing: the one option in here that changes *what you
+            // are reading* rather than how it is drawn, so it is the one worth signalling from
+            // the outside. The status bar says it in words as well.
+            IconActionButton(systemImage: "line.3.horizontal.decrease", label: "Options",
+                             help: optionsHelp, active: bootLog) {
+                showingOptions.toggle()
+            }
+            .popover(isPresented: $showingOptions, arrowEdge: .bottom) { optionsPopover }
 
             IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
                              help: live ? "Not needed while Live is on" : "Fetch the most recent lines again",
@@ -157,6 +165,17 @@ struct LogViewer: View {
                 save()
             }
 
+            // **Not in the popover with the rest.** Live is the only one of these that changes
+            // what the app is *doing* rather than what the panel shows, it has to be visible
+            // while it is on, and turning it off has to be one click rather than one click to
+            // open a menu and another to find the switch. Console keeps its equivalent on the
+            // toolbar for the same reason.
+            IconActionButton(systemImage: "dot.radiowaves.left.and.right", label: "Live",
+                             help: live ? "Stop streaming" : "Stream new lines as they are written",
+                             active: live) {
+                live.toggle()
+            }
+
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             TextField("Search", text: $search)
@@ -172,13 +191,27 @@ struct LogViewer: View {
             }
 
             Spacer(minLength: 12)
-
-            Toggle("Timestamps", isOn: $showTimestamps)
-            Toggle("Wrap", isOn: $wrap)
-            Toggle("Live", isOn: $live)
-                .help("Stream new lines as they are written")
         }
         .padding(12)
+    }
+
+    private var optionsHelp: String {
+        bootLog ? "Showing the boot log" : "What to show, and how"
+    }
+
+    /// Checkboxes in a popover, laid out like the lists' Columns popover — same width, same
+    /// spacing, same control — so the two read as the same mechanism in different places.
+    private var optionsPopover: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle("Boot Log", isOn: $bootLog)
+            Divider().padding(.vertical, 6)
+            Toggle("Timestamps", isOn: $showTimestamps)
+            Toggle("Wrap", isOn: $wrap)
+        }
+        .toggleStyle(.checkbox)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(width: 190)
     }
 
     @ViewBuilder
