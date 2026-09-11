@@ -591,7 +591,22 @@ private struct MachineInspectTab: View {
         // `ScrollView` sized to its content — so a payload narrower than the pane was centred in
         // it, reading as a floating block of text rather than as a document.
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            // Member for member, and now in the same order as the container panel and the Logs
+            // band: actions in the cluster, the view switch, then the field.
+            HStack(spacing: 12) {
+                ActionCluster {
+                    IconActionButton(systemImage: "doc.on.doc", label: "Copy JSON",
+                                     help: "Copy the inspect output, with secrets redacted",
+                                     disabled: json == nil) {
+                        if let json { Clipboard.copy(json) }
+                    }
+                    Divider().frame(height: 14)
+                    IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
+                                     help: "Reload", busy: loading) {
+                        Task { await load() }
+                    }
+                }
+
                 Picker("View", selection: $presentation) {
                     ForEach(InspectPresentation.allCases) {
                         // The word survives as the accessibility label and the tooltip; only the
@@ -606,11 +621,6 @@ private struct MachineInspectTab: View {
                 .labelsHidden()
                 .fixedSize()
 
-                // Magnifier, placeholder and match count all match the container panel. This
-                // one had none of them, which is the same drift the Table view was missing for:
-                // two screens that are meant to be one screen, differing wherever nobody looked.
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
                 TextField("Filter keys", text: $search)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 200)
@@ -620,7 +630,7 @@ private struct MachineInspectTab: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Spacer()
+                Spacer(minLength: 12)
 
                 // The command it ran, so the panel is reproducible in a terminal.
                 Text("container machine inspect \(machine.id)")
@@ -628,26 +638,9 @@ private struct MachineInspectTab: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-
-                // `IconActionButton` on both detail panels, icon-only. These two tabs disagreed:
-                // the machine panel drew Copy JSON icon-only and the container panel drew it with
-                // the word, and neither used the shared button, so neither shaded on hover while
-                // the toolbar controls above them did. Same control, same tab, two screens.
-                IconActionButton(systemImage: "doc.on.doc", label: "Copy JSON",
-                                 help: "Copy the inspect output, with secrets redacted",
-                                 disabled: json == nil) {
-                    if let json { Clipboard.copy(json) }
-                }
-
-                IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
-                                 help: "Reload", busy: loading) {
-                    Task { await load() }
-                }
-                .disabled(loading)
-                .help("Reload")
-                .accessibilityLabel("Reload")
             }
-            .padding(12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             Divider()
 
             content

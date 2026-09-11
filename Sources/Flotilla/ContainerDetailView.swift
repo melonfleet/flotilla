@@ -425,7 +425,25 @@ private struct InspectTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            // The same order as the Logs band next door: actions in the cluster, then the
+            // control that changes what you are looking at, then the field you search it with.
+            // These two tabs sit one click apart and used to read left-to-right in opposite
+            // directions.
+            HStack(spacing: 12) {
+                ActionCluster {
+                    IconActionButton(systemImage: "doc.on.doc", label: "Copy JSON",
+                                     help: "Copy the inspect output, with secrets redacted",
+                                     disabled: json == nil) {
+                        // Copies exactly what is displayed — redacted. See `load()`.
+                        if let json { Clipboard.copy(json) }
+                    }
+                    Divider().frame(height: 14)
+                    IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
+                                     help: "Reload", busy: loading) {
+                        Task { await load() }
+                    }
+                }
+
                 Picker("View", selection: $presentation) {
                     ForEach(InspectPresentation.allCases) {
                         // The word survives as the accessibility label and the tooltip; only the
@@ -440,8 +458,6 @@ private struct InspectTab: View {
                 .labelsHidden()
                 .fixedSize()
 
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
                 TextField("Filter keys", text: $search)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 200)
@@ -450,7 +466,8 @@ private struct InspectTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
+
+                Spacer(minLength: 12)
 
                 // The mockup shows the command it ran. Worth keeping: it turns an opaque
                 // panel into something you can reproduce in a terminal.
@@ -459,24 +476,9 @@ private struct InspectTab: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-
-                // `IconActionButton` on both detail panels, icon-only. These two tabs disagreed:
-                // the machine panel drew Copy JSON icon-only and the container panel drew it with
-                // the word, and neither used the shared button, so neither shaded on hover while
-                // the toolbar controls above them did. Same control, same tab, two screens.
-                IconActionButton(systemImage: "doc.on.doc", label: "Copy JSON",
-                                 help: "Copy the inspect output, with secrets redacted",
-                                 disabled: json == nil) {
-                    // Copies exactly what is displayed — redacted. See `load()`.
-                    if let json { Clipboard.copy(json) }
-                }
-
-                IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
-                                 help: "Reload", busy: loading) {
-                    Task { await load() }
-                }
             }
-            .padding(12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             Divider()
             if presentation == .table { tableView } else { content }
             redactionNote
@@ -720,7 +722,7 @@ private struct ProcessesTab: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.top, 12)
-                LineListView(lines: Self.rawLines(rawOutput), search: "", wrap: true)
+                LineListView(lines: Self.rawLines(rawOutput), search: "")
             }
         }
     }

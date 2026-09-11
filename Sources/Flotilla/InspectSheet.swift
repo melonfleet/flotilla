@@ -79,7 +79,7 @@ struct InspectSheet: View {
         } else if presentation == .table {
             InspectTableView(json: json, search: search)
         } else if let json {
-            LineListView(lines: Self.displayLines(json), search: search, wrap: true)
+            LineListView(lines: Self.displayLines(json), search: search)
         }
     }
 

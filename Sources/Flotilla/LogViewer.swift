@@ -90,7 +90,6 @@ struct LogViewer: View {
     @State private var bootLog = false
     @State private var search = ""
     @State private var showTimestamps: Bool
-    @State private var wrap = true
     @State private var live = false
     @State private var showingOptions = false
     @State private var liveTask: Task<Void, Never>?
@@ -131,53 +130,56 @@ struct LogViewer: View {
 
     // MARK: Chrome
 
-    /// One band, laid out like the Inspect tab's: what you are reading and what you can do with
-    /// it on the left, and nothing competing with it on the right.
+    /// One band, ordered the way the list toolbars are ordered: the actions in a glass cluster,
+    /// then the control that changes what you are looking at, then the field you search it with.
     ///
-    /// It was two rows of labelled buttons and a strip of four checkboxes. The words went because
-    /// every other action in the app is a glyph and these were the exception; the checkboxes went
-    /// into a popover behind one icon, the same control the lists use for their columns and their
-    /// filter. What is left is one row, and the row it gave up is row the log itself now gets.
+    /// The cluster is the same `ActionCluster` the Containers and Machines toolbars use, so these
+    /// buttons sit on the same surface and react the same way as every other action group in the
+    /// app — they were bare glyphs on the band, which is why they looked like a different kind of
+    /// control from the ones two bands above them.
+    ///
+    /// Within the cluster: **Copy, Save, Reload, Live**. Copy and Save do the same thing to the
+    /// same text and belong together; Reload and Live are the same axis — once, or continuously —
+    /// and sit at the end, where the lists put Refresh. The Inspect band next door is Copy then
+    /// Reload, the same relative order minus the two it has no use for.
     private var controls: some View {
-        HStack(spacing: 10) {
-            // Active when the boot log is showing: the one option in here that changes *what you
-            // are reading* rather than how it is drawn, so it is the one worth signalling from
-            // the outside. The status bar says it in words as well.
+        HStack(spacing: 12) {
+            ActionCluster {
+                IconActionButton(systemImage: "doc.on.doc", label: "Copy",
+                                 help: "Copy every line shown",
+                                 disabled: displayLines.isEmpty) {
+                    copyAll()
+                }
+                IconActionButton(systemImage: "square.and.arrow.down", label: "Save…",
+                                 help: "Save every line shown to a file",
+                                 disabled: displayLines.isEmpty) {
+                    save()
+                }
+                Divider().frame(height: 14)
+                IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
+                                 help: live ? "Not needed while Live is on" : "Fetch the most recent lines again",
+                                 busy: loading && !live, disabled: live) {
+                    Task { await load() }
+                }
+                // **Not in the popover with the other options.** Live is the only one that changes
+                // what the app is *doing* rather than what the panel shows, it has to be visible
+                // while it is running, and stopping it has to be one click rather than one to open
+                // a popover and another to find the switch. Console keeps its equivalent on the
+                // toolbar for the same reason.
+                IconActionButton(systemImage: "dot.radiowaves.left.and.right", label: "Live",
+                                 help: live ? "Stop streaming" : "Stream new lines as they are written",
+                                 active: live) {
+                    live.toggle()
+                }
+            }
+
+            // Beside the search field, where every list puts its filter.
             IconActionButton(systemImage: "line.3.horizontal.decrease", label: "Options",
                              help: optionsHelp, active: bootLog) {
                 showingOptions.toggle()
             }
             .popover(isPresented: $showingOptions, arrowEdge: .bottom) { optionsPopover }
 
-            IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
-                             help: live ? "Not needed while Live is on" : "Fetch the most recent lines again",
-                             busy: loading && !live, disabled: live) {
-                Task { await load() }
-            }
-            IconActionButton(systemImage: "doc.on.doc", label: "Copy",
-                             help: "Copy every line shown",
-                             disabled: displayLines.isEmpty) {
-                copyAll()
-            }
-            IconActionButton(systemImage: "square.and.arrow.down", label: "Save…",
-                             help: "Save every line shown to a file",
-                             disabled: displayLines.isEmpty) {
-                save()
-            }
-
-            // **Not in the popover with the rest.** Live is the only one of these that changes
-            // what the app is *doing* rather than what the panel shows, it has to be visible
-            // while it is on, and turning it off has to be one click rather than one click to
-            // open a menu and another to find the switch. Console keeps its equivalent on the
-            // toolbar for the same reason.
-            IconActionButton(systemImage: "dot.radiowaves.left.and.right", label: "Live",
-                             help: live ? "Stop streaming" : "Stream new lines as they are written",
-                             active: live) {
-                live.toggle()
-            }
-
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                .accessibilityHidden(true)
             TextField("Search", text: $search)
                 .textFieldStyle(.roundedBorder)
                 // The same 200 as the Inspect tab's filter. It used to take every point left over,
@@ -192,11 +194,12 @@ struct LogViewer: View {
 
             Spacer(minLength: 12)
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var optionsHelp: String {
-        bootLog ? "Showing the boot log" : "What to show, and how"
+        bootLog ? "Showing the boot log" : "What to show"
     }
 
     /// Checkboxes in a popover, laid out like the lists' Columns popover — same width, same
@@ -206,7 +209,6 @@ struct LogViewer: View {
             Toggle("Boot Log", isOn: $bootLog)
             Divider().padding(.vertical, 6)
             Toggle("Timestamps", isOn: $showTimestamps)
-            Toggle("Wrap", isOn: $wrap)
         }
         .toggleStyle(.checkbox)
         .padding(.horizontal, 12)
@@ -255,7 +257,7 @@ struct LogViewer: View {
                                    systemImage: "exclamationmark.triangle",
                                    description: Text(error))
         } else if !displayLines.isEmpty {
-            LineListView(lines: displayLines, search: search, wrap: wrap, followTail: live)
+            LineListView(lines: displayLines, search: search, followTail: live)
         } else {
             ContentUnavailableView("No log output",
                                    systemImage: "doc.text",
@@ -424,20 +426,25 @@ struct DisplayLine: Identifiable {
 struct LineListView: View {
     let lines: [DisplayLine]
     let search: String
-    let wrap: Bool
     /// Keep the newest line in view as lines arrive. Off for a static document, where yanking
     /// the scroll position to the bottom would fight the reader.
     var followTail: Bool = false
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView(wrap ? .vertical : [.vertical, .horizontal]) {
+            // **Always wrapped, always left-aligned.** There used to be a Wrap toggle, and with
+            // it off the text was *centred* and looked shrunken — a two-axis `ScrollView` centres
+            // content narrower than its viewport, the same fault the JSON view had. That is
+            // fixable, but nobody wanted the mode: the other two callers both passed `wrap: true`,
+            // and a log reads like Console's, down the left edge. So the mode went rather than
+            // being repaired into something no one asked for.
+            ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(lines) { line in
                         highlighted(line.text, color: line.color)
                             .font(.system(.caption, design: .monospaced))
-                            .fixedSize(horizontal: !wrap, vertical: false)
-                            .frame(maxWidth: wrap ? .infinity : nil, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding(12)

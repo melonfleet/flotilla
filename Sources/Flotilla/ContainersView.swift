@@ -219,13 +219,7 @@ struct ContainersView: View {
             stepper
 
             if let container {
-                GlassEffectContainer(spacing: 6) {
-                    HStack(spacing: 6) { rowActions(for: container) }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .glassEffect(in: .rect(cornerRadius: 8))
-                }
-                .fixedSize()
+                ActionCluster { rowActions(for: container) }
             }
         }
         // Horizontal 12, vertical 8 — the pair every band under the title bar uses.

@@ -54,16 +54,7 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
                     .foregroundStyle(.secondary)
             }
 
-            // The mockup's one `GlassEffectContainer`, matching the Run/Refresh cluster on the
-            // Containers screen. Kept to a single container per screen: the placement note puts
-            // glass on chrome only, and glass on glass is explicitly ruled out.
-            GlassEffectContainer(spacing: 6) {
-                HStack(spacing: 6) { trailing }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .glassEffect(in: .rect(cornerRadius: 8))
-            }
-            .fixedSize()
+            ActionCluster { trailing }
         }
         // Horizontal 12 so the band lines up with the content edge; vertical **8**, which is
         // tighter than the 12 this used and gives back a strip of height on every section.
@@ -109,5 +100,28 @@ struct ToolbarIconButton: View {
         // nothing happened on click either.
         IconActionButton(systemImage: systemImage, label: label, help: label,
                          destructive: isDestructive, active: active, action: action)
+    }
+}
+
+/// The glass capsule a group of actions sits in.
+///
+/// The mockup's `GlassEffectContainer`, and the reason it is shared: it was written out four
+/// times — this toolbar, the containers detail header, the machines detail header, and nearly a
+/// fifth time for the log band — with the spacing and the corner radius retyped each time. The
+/// log band is what made it worth extracting: its buttons were bare glyphs on the band, so the
+/// same control looked like two different kinds of thing depending on which band you found it on.
+///
+/// Glass goes on chrome only and never on glass, so this wraps a row of buttons and nothing else.
+struct ActionCluster<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GlassEffectContainer(spacing: 6) {
+            HStack(spacing: 6) { content }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .glassEffect(in: .rect(cornerRadius: 8))
+        }
+        .fixedSize()
     }
 }

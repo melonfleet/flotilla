@@ -769,12 +769,7 @@ struct MachinesView: View {
             Spacer()
             stepper
             if let machine {
-                GlassEffectContainer(spacing: 6) {
-                    HStack(spacing: 6) { rowActions(for: machine) }
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .glassEffect(in: .rect(cornerRadius: 8))
-                }
-                .fixedSize()
+                ActionCluster { rowActions(for: machine) }
             }
         }
         // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
