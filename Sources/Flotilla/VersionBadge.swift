@@ -15,6 +15,8 @@ import FlotillaCore
 /// of them false, which is a worse trade than one click. See `UpdateCheck` for the three rules
 /// that keep it honest.
 struct VersionBadge: View {
+    let model: AppModel
+
     @State private var outcome: UpdateCheck.Outcome?
     @State private var checking = false
     @Environment(\.openURL) private var openURL
@@ -38,7 +40,21 @@ struct VersionBadge: View {
         .buttonStyle(.plain)
         .foregroundStyle(tint)
         .help(helpText)
-        .padding(.top, 2)
+        .task { await checkAtLaunchIfAsked() }
+        // The result survives leaving the Dashboard and coming back, because the answer has not
+        // changed and asking again would be a second request for the same fact.
+        .onAppear { outcome = UpdateCheck.lastOutcome }
+    }
+
+    /// The automatic check, and everything that stops it becoming a poll.
+    ///
+    /// Off unless the setting says otherwise, and then **once for the life of the process** —
+    /// not once per visit to the Dashboard, which is the shape that turns "at launch" into "every
+    /// time you click Dashboard".
+    private func checkAtLaunchIfAsked() async {
+        guard model.settingsStore[SettingsKeys.checkForNewReleasesOnLaunch],
+              !UpdateCheck.hasCheckedThisLaunch else { return }
+        await check()
     }
 
     // MARK: What it says
@@ -100,7 +116,10 @@ struct VersionBadge: View {
 
     private func check() async {
         checking = true
-        outcome = await UpdateCheck.run(running: AppVersion.semantic)
+        UpdateCheck.hasCheckedThisLaunch = true
+        let result = await UpdateCheck.run(running: AppVersion.semantic)
+        UpdateCheck.lastOutcome = result
+        outcome = result
         checking = false
     }
 }

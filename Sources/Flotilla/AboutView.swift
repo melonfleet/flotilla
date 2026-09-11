@@ -75,22 +75,34 @@ struct AboutView: View {
         model.settingsStore[SettingsKeys.defaultRegistryDomain]
     }
 
+    /// Read live, so this page describes what **this** copy of Flotilla does rather than what
+    /// the default does. A privacy page that ignores your own settings is a brochure.
+    private var launchCheckEnabled: Bool {
+        model.settingsStore[SettingsKeys.checkForNewReleasesOnLaunch]
+    }
+
     private var networkDestinations: some View {
         VStack(alignment: .leading, spacing: 12) {
             destinationRow(
                 status: .noConnection,
                 title: "Flotilla itself",
-                body: "Makes no network connections on its own. Not at launch, not on a timer, "
-                    + "not in the background. No analytics, no crash reporting, no licence "
-                    + "check. The one exception is below, and it happens only when you click."
+                body: "No analytics, no crash reporting, no licence check, nothing on a timer "
+                    + "and nothing in the background. There is exactly one destination it can "
+                    + "reach, below, and you decide when."
             )
             destinationRow(
-                status: .onRequest,
+                status: launchCheckEnabled ? .active : .onRequest,
                 title: "Checking for a Flotilla update",
-                body: "Clicking the version at the bottom of the Dashboard asks "
-                    + "api.github.com for this project's latest release, and compares it here. "
-                    + "The request carries no version number, no identifier and nothing about "
-                    + "this Mac; the answer is not stored. Never happens unless you click it."
+                body: "Asks api.github.com for this project's latest release and compares it "
+                    + "here. The request carries no version number, no identifier and nothing "
+                    + "about this Mac; the answer is not stored. "
+                    + (launchCheckEnabled
+                       ? "\"Check for new releases at launch\" is ON, so this runs once each "
+                         + "time Flotilla starts, and whenever you click the version in the "
+                         + "Dashboard's corner. Turn it off in Settings → Updates."
+                       : "It runs only when you click the version in the Dashboard's corner — "
+                         + "never at launch, unless you turn on \"Check for new releases at "
+                         + "launch\" in Settings → Updates.")
             )
             destinationRow(
                 status: .active,

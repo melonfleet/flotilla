@@ -43,7 +43,7 @@ Free. No account, no sign-in, no telemetry, no subscription, no paid tier.
 |---|---|
 | **macOS 26 or later** | On Apple silicon. Apple's container runtime needs both, so Flotilla does too. |
 | **Apple's `container` CLI** | Installed separately from [apple/container](https://github.com/apple/container). Flotilla drives that tool; it does not bundle or replace it, and it will offer to start the runtime service if it is not running. |
-| **Nothing else** | No account, no telemetry, no background phone-home. The app fetches nothing at launch — even the wordmark is drawn in SwiftUI rather than loaded as a webfont. The single exception is the version at the bottom of the Dashboard: click it and Flotilla asks GitHub what the latest release is. It carries nothing about you or your Mac, stores nothing, and never runs on its own. |
+| **Nothing else** | No account, no telemetry, no background phone-home. Even the wordmark is drawn in SwiftUI rather than loaded as a webfont. Flotilla reaches exactly one address of its own — GitHub, to ask what the latest release is — and only when you click the version in the Dashboard's corner. Nothing about you or your Mac is sent and nothing is stored. **Settings → Updates** can make that check run once at launch instead; it ships off. |
 
 ## Getting it
 

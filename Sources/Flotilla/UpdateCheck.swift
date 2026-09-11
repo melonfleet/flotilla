@@ -16,6 +16,15 @@ import FlotillaCore
 ///    here, on what comes back, not on a server.
 /// 3. **Nothing is remembered.** The result lives in the view for as long as the window is open.
 enum UpdateCheck {
+    /// Whether this process has already asked. The automatic check is **once per launch**, so
+    /// this is what stops "at launch" quietly becoming "every time the Dashboard appears".
+    @MainActor static var hasCheckedThisLaunch = false
+
+    /// The last answer, so leaving the Dashboard and coming back shows what was already learned
+    /// instead of asking again for the same fact. Process lifetime only — nothing is written to
+    /// disk, which is the third of the three rules above.
+    @MainActor static var lastOutcome: Outcome?
+
     /// GitHub's own API for "the latest published release".
     static let endpoint = URL(string: "https://api.github.com/repos/melonfleet/flotilla/releases/latest")!
 

@@ -207,19 +207,40 @@ public enum SettingsKeys {
     // and become lockable by the Phase 6 profile for free (Docker's `disableUpdate`
     // equivalent), instead of us wrapping them in custom keys Sparkle ignores.
 
+    /// Whether the Dashboard's version corner may ask GitHub, once, at launch.
+    ///
+    /// **Default `false`, and that is a promise rather than a preference.** The README and the
+    /// About page both say Flotilla makes no network connection of its own unless you ask for
+    /// one; a default of `true` would make both false for every user who never opened Settings.
+    /// Off, the version is still shown and a click still checks — the setting only decides
+    /// whether the click is needed.
+    ///
+    /// Its own key rather than Sparkle's `SUEnableAutomaticChecks` below, because they are
+    /// different promises: this looks up a version number and installs nothing, and the day
+    /// Sparkle arrives its key must not silently inherit whatever was chosen here.
+    ///
+    /// **Once per launch, not on a timer.** The releases page of a project you are using does
+    /// not change between opening two screens, and a poll is the shape the no-phone-home claim
+    /// exists to rule out.
+    public static let checkForNewReleasesOnLaunch = SettingsKey<Bool>(
+        "checkForNewReleasesOnLaunch", default: false,
+        summary: "Ask GitHub once at launch whether a newer Flotilla has been released. "
+            + "Off by default; the version in the Dashboard's corner checks when clicked either way."
+    )
+
     /// **Not built.** The four update keys use Sparkle's own `SU…` names, which was forward
     /// planning; Sparkle is not a dependency and `DECISIONS.md` keeps it out for now. Defaulting
     /// this to `true` while nothing checks is the most misleading combination available, so the row
     /// is disabled and says so.
     public static let automaticUpdateChecks = SettingsKey<Bool>(
         "SUEnableAutomaticChecks", default: true,
-        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater yet, so nothing checks for updates."),
+        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater. It can tell you a release exists — see the row above — but it cannot fetch or install one."),
         summary: "Let Sparkle check for Flotilla updates automatically."
     )
 
     public static let automaticallyDownloadUpdates = SettingsKey<Bool>(
         "SUAutomaticallyUpdate", default: false,
-        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater yet, so nothing checks for updates."),
+        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater. It can tell you a release exists — see the row above — but it cannot fetch or install one."),
         summary: "Download updates in the background without asking."
     )
 
@@ -290,6 +311,7 @@ public enum SettingsRegistry {
         SettingsKeys.identityKeychainLabel.descriptor,
         SettingsKeys.peerAllowlist.descriptor,
         SettingsKeys.trustAnchorFingerprints.descriptor,
+        SettingsKeys.checkForNewReleasesOnLaunch.descriptor,
         SettingsKeys.automaticUpdateChecks.descriptor,
         SettingsKeys.automaticallyDownloadUpdates.descriptor,
         SettingsKeys.updateCheckIntervalSeconds.descriptor,

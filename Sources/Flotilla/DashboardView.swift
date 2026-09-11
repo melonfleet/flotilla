@@ -41,6 +41,22 @@ struct DashboardView: View {
     }
 
     var body: some View {
+        // The version pins to the bottom-right of the pane rather than trailing the last panel,
+        // the way Docker Desktop's does: it is a property of the window, not the end of a
+        // document, and a reader should not have to scroll to the bottom to find out which
+        // version they are running.
+        VStack(spacing: 0) {
+            content
+            HStack {
+                Spacer()
+                VersionBadge(model: model)
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(spacing: 12) {
                 if case .unavailable(let reason) = model.state {
@@ -62,13 +78,6 @@ struct DashboardView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 attentionPanel
                 utilisationPanel
-
-                // Bottom right, quiet, and the last thing on the page — a version number is
-                // reference, not news.
-                HStack {
-                    Spacer()
-                    VersionBadge()
-                }
             }
             .padding(14)
         }

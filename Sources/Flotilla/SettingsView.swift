@@ -466,6 +466,11 @@ struct SettingsView: View {
     @ViewBuilder
     private var updatesPane: some View {
             SwiftUI.Section("Updates") {
+                // First, because it is the only row here that does anything today.
+                SettingRow(store: store, key: SettingsKeys.checkForNewReleasesOnLaunch,
+                           title: "Check for new releases at launch") { binding in
+                    Toggle("", isOn: binding).labelsHidden()
+                }
                 SettingRow(store: store, key: SettingsKeys.automaticUpdateChecks, title: "Automatically check for updates") { binding in
                     Toggle("", isOn: binding).labelsHidden()
                 }
