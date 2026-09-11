@@ -61,11 +61,21 @@ struct NewImageView: View {
         _mode = State(initialValue: initialMode)
     }
 
-    /// Both halves, so switching mode with something typed still counts as unsaved work — the
-    /// discard prompt is about the form, not about whichever half is showing.
+    /// Every control on the form, **including the source picker**.
+    ///
+    /// Both halves, so switching source with something typed still counts as unsaved work — the
+    /// prompt is about the form, not about whichever half is showing.
+    ///
+    /// `mode` is in here on the owner's report, and it is a deliberate softening of
+    /// `FormHeader`'s rule that a prompt means "there is something to lose". Switching Pull to
+    /// Build loses nothing, so by that rule Back should close silently — and it did, which read
+    /// as the guard being broken on this form when every other form has one. A reader cannot be
+    /// expected to know which controls the guard counts, and an occasional extra click costs
+    /// less than a guard that looks unreliable. Opening the form and leaving without touching
+    /// anything still closes on one click, which is the case the rule was really written for.
     private var editSignature: String {
-        [reference, scheme.rawValue, context?.path ?? "", dockerfile, tag, target, platform,
-         "\(noCache)"].joined(separator: "\u{1}")
+        [mode.rawValue, reference, scheme.rawValue, context?.path ?? "", dockerfile, tag, target,
+         platform, "\(noCache)"].joined(separator: "\u{1}")
     }
 
     var body: some View {
