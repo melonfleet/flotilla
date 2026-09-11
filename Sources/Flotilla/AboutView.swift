@@ -80,8 +80,17 @@ struct AboutView: View {
             destinationRow(
                 status: .noConnection,
                 title: "Flotilla itself",
-                body: "Makes no network connections at all today. Not analytics, not crash "
-                    + "reporting, not an update check, not a licence check."
+                body: "Makes no network connections on its own. Not at launch, not on a timer, "
+                    + "not in the background. No analytics, no crash reporting, no licence "
+                    + "check. The one exception is below, and it happens only when you click."
+            )
+            destinationRow(
+                status: .onRequest,
+                title: "Checking for a Flotilla update",
+                body: "Clicking the version at the bottom of the Dashboard asks "
+                    + "api.github.com for this project's latest release, and compares it here. "
+                    + "The request carries no version number, no identifier and nothing about "
+                    + "this Mac; the answer is not stored. Never happens unless you click it."
             )
             destinationRow(
                 status: .active,
@@ -98,21 +107,26 @@ struct AboutView: View {
             )
             destinationRow(
                 status: .future,
-                title: "Sparkle update checks (Phase 5)",
-                body: "Not built yet. Will apply only to unmanaged installs; Jamf-managed "
-                    + "Macs get updates from Jamf instead."
+                title: "Automatic updates (Phase 5)",
+                body: "Not built yet — today's check is manual and installs nothing. Automatic "
+                    + "updates will apply only to unmanaged installs; Jamf-managed Macs get "
+                    + "updates from Jamf instead."
             )
         }
         .padding(.vertical, 4)
     }
 
     private enum DestinationStatus {
-        case noConnection, active, future
+        case noConnection, active, onRequest, future
 
         var label: String {
             switch self {
             case .noConnection: "No connection"
             case .active: "Active"
+            // Its own status, not "Active": a destination that is only ever reached because
+            // you pressed something is a different promise from one that is reached for you,
+            // and collapsing the two is how a privacy page stops being worth reading.
+            case .onRequest: "Only when you ask"
             case .future: "Not yet built"
             }
         }
@@ -121,6 +135,7 @@ struct AboutView: View {
             switch self {
             case .noConnection: .secondary
             case .active: Theme.warning
+            case .onRequest: Theme.warning
             case .future: .secondary
             }
         }

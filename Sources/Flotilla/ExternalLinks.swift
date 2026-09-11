@@ -23,4 +23,9 @@ enum ExternalLinks {
     /// Where a newer `container` would appear. The installed version is shown beside the link so
     /// the comparison takes one glance.
     static let appleContainerReleases = URL(string: "https://github.com/apple/container/releases")!
+
+    /// Flotilla's own releases. Unlike Apple's, this one has a matching API call behind an
+    /// explicit click — see `UpdateCheck`, which is the only place the app itself uses the
+    /// network.
+    static let flotillaReleases = URL(string: "https://github.com/melonfleet/flotilla/releases")!
 }

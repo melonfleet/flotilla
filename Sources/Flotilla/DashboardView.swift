@@ -62,6 +62,13 @@ struct DashboardView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 attentionPanel
                 utilisationPanel
+
+                // Bottom right, quiet, and the last thing on the page — a version number is
+                // reference, not news.
+                HStack {
+                    Spacer()
+                    VersionBadge()
+                }
             }
             .padding(14)
         }

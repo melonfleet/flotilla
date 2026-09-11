@@ -1462,3 +1462,43 @@ func makeBuildFixtures() -> Bool {
     }
     return manager.fileExists(atPath: "/tmp/flotilla/src")
 }
+
+// MARK: - Version ordering
+
+@Test func versionsOrderTheWayReleasesActuallyRun() throws {
+    func version(_ text: String) throws -> SemanticVersion {
+        try #require(SemanticVersion(text), "\(text) should parse")
+    }
+
+    // The two a string sort gets wrong, which is why this type exists.
+    #expect(try version("1.0.9") < version("1.0.10"))
+    #expect(try version("1.0.0-beta.2") < version("1.0.0"))
+    // And within a pre-release series, also numerically.
+    #expect(try version("1.0.0-beta.9") < version("1.0.0-beta.10"))
+    #expect(try version("1.0.0-alpha.1") < version("1.0.0-beta.1"))
+    // A longer pre-release is the later one when the shared fields match.
+    #expect(try version("1.0.0-beta") < version("1.0.0-beta.1"))
+
+    #expect(try version("2.0.0") > version("1.9.9"))
+    #expect(try version("1.1.0") > version("1.0.99"))
+    #expect(try version("v1.2.3") == version("1.2.3"))
+    // Build metadata is not part of the ordering, per the spec.
+    #expect(try version("1.2.3+abc") == version("1.2.3"))
+    #expect(try version("1.2") == version("1.2.0"))
+}
+
+@Test func versionParsingRefusesWhatIsNotAVersion() {
+    // The bug this guards is real: a tagless build used to be stamped with a commit hash, and
+    // `5135510` is all digits — it parses as a *number* and would compare as version 5135510.
+    #expect(SemanticVersion("5135510") != nil)          // it does parse, as 5135510.0.0…
+    #expect(SemanticVersion("5135510").map(\.major) == 5_135_510)
+    // …which is exactly why the unreleased sentinel is explicit rather than inferred.
+    #expect(SemanticVersion("0.0.0")?.isUnreleased == true)
+    #expect(SemanticVersion("1.0.0")?.isUnreleased == false)
+    #expect(SemanticVersion("0.0.0-beta.1")?.isUnreleased == false)
+
+    #expect(SemanticVersion("") == nil)
+    #expect(SemanticVersion("main") == nil)
+    #expect(SemanticVersion("1.2.3.4") == nil)
+    #expect(SemanticVersion("1.-2.3") == nil)
+}
