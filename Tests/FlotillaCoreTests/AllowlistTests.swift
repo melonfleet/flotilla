@@ -163,6 +163,32 @@ private func requireRejected(
     }
 }
 
+@Test func aFollowIsLocalOnlyEvenWhenItCarriesABound() {
+    // `--follow` satisfies `wireRequiredFlags: ["n"]` and then never stops, which is a denial of
+    // service wearing a bounded read's clothes. The owner tailing their own log is fine; a peer
+    // asking a host to hold a pipe open indefinitely is not, and `-n 1` does not make it so.
+    guard case .success = Allowlist.validate(["logs", "--follow", "-n", "100", "web"]) else {
+        Issue.record("the owner's live tail must be allowed"); return
+    }
+    guard case .failure(.flagForbiddenOverWire(_, let flag)) =
+            Allowlist.validate(["logs", "--follow", "-n", "1", "web"], wirePolicy: .remotePeer) else {
+        Issue.record("a remote follow must be refused even with -n"); return
+    }
+    #expect(flag == "follow")
+
+    // The short spelling is the same flag, and canonicalisation is what makes one rule cover
+    // both — a check against the literal token would have missed `-f`.
+    guard case .failure(.flagForbiddenOverWire) =
+            Allowlist.validate(["logs", "-f", "-n", "1", "web"], wirePolicy: .remotePeer) else {
+        Issue.record("-f must be refused over the wire too"); return
+    }
+
+    // And the bounded form still goes through, so the rule costs a peer nothing it should have.
+    guard case .success = Allowlist.validate(["logs", "-n", "100", "web"], wirePolicy: .remotePeer) else {
+        Issue.record("a bounded remote read must still be accepted"); return
+    }
+}
+
 @Test func remoteCallersMustBoundTheirReads() {
     // `logs` without `-n` reads an entire log, and bare `stats` streams until killed. Both are
     // fine for the owner and are a denial of service from a peer.

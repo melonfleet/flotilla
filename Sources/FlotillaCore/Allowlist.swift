@@ -325,6 +325,15 @@ public struct CommandSpec: Sendable, Equatable {
     /// logs" (its own help), and `stats` streams until killed. Harmless locally, a memory and
     /// wire hazard from a peer.
     public let wireRequiredFlags: [String]
+    /// Long flag names a remote caller may **never** supply, even though the local owner may.
+    ///
+    /// The mirror of `wireRequiredFlags`, and it exists because requiring a bound is not the same
+    /// as having one: `--follow` *satisfies* `wireRequiredFlags: ["n"]` and then streams for ever
+    /// anyway, so `logs -n 1 --follow web` defeated the bounded-output rule from inside it. That
+    /// hole was documented on `machine logs` and closed only by that row being local-only; this
+    /// closes it where it is actually stated, so a row can offer a tail to the owner without
+    /// offering one to the wire.
+    public let wireForbiddenFlags: [String]
 
     public init(_ path: [String],
                 mutates: Bool,
@@ -333,7 +342,8 @@ public struct CommandSpec: Sendable, Equatable {
                 operands: OperandSpec = .none,
                 trailing: TrailingPolicy = .forbidden,
                 exposure: Exposure = .exposed,
-                wireRequiredFlags: [String] = []) {
+                wireRequiredFlags: [String] = [],
+                wireForbiddenFlags: [String] = []) {
         self.path = path
         self.mutates = mutates
         self.timeoutHint = timeoutHint
@@ -342,6 +352,7 @@ public struct CommandSpec: Sendable, Equatable {
         self.trailing = trailing
         self.exposure = exposure
         self.wireRequiredFlags = wireRequiredFlags
+        self.wireForbiddenFlags = wireForbiddenFlags
     }
 
     public var name: String { path.joined(separator: " ") }
@@ -409,6 +420,9 @@ public enum AllowlistError: Error, Equatable, Sendable {
     case notExposedToWire(command: String, reason: String)
     /// A remote caller omitted a flag that bounds the command's output.
     case flagRequiredOverWire(command: String, flag: String)
+    /// A remote caller supplied a flag that removes the bound — `--follow`, which turns a
+    /// bounded read into an endless one while satisfying every other rule.
+    case flagForbiddenOverWire(command: String, flag: String)
     case unknownFlag(String)
     case malformedFlag(String)
     case flagRequiresValue(String)
@@ -436,6 +450,8 @@ extension AllowlistError: CustomStringConvertible {
         case .unknownSubcommand(let s): "subcommand not allowed: \(s)"
         case .notExposedToWire(let c, let reason):
             "`\(c)` is not available to remote callers — \(reason)"
+        case .flagForbiddenOverWire(let c, let flag):
+            "`\(c) --\(flag)` is not available to remote callers — it streams without end"
         case .flagRequiredOverWire(let c, let flag):
             // Rendered by length, because `-n` is the one required flag with no long spelling and
             // the message must be copy-pasteable: `logs --n 100 web` is refused by the grammar.
@@ -488,8 +504,10 @@ public enum Allowlist {
     /// - `cp`, `export`, `push`, `registry login` — not Phase 1, and each is a
     ///   data-exfiltration or credential surface that deserves its own review. (`exec` and
     ///   `build` have since had theirs; see their rows.)
-    /// - `logs --follow`, `stats` streaming — Phase 4 streaming transport; a bounded
-    ///   fetch is all Phase 1 offers, so `-f` is not accepted.
+    /// - `stats` streaming — still Phase 4 transport; `--no-stream` is all that is offered.
+    ///   (`logs --follow` used to be listed here too. It is now accepted **locally**: the live
+    ///   tail runs in-process against the owner's own Mac, which needs no transport at all, and
+    ///   `wireForbiddenFlags` keeps it off the wire where the objection actually applied.)
     /// - `system start/stop`, `builder …` — fleet-wide destructive or privileged;
     ///   Phase 3+. (`prune`, unlike those, *is* Phase 1 scope — see the `prune` rows
     ///   below, one per resource kind, matching the real CLI's shape rather than a
@@ -567,19 +585,23 @@ public enum Allowlist {
                         operands: OperandSpec(shape: .identifier, min: 0, max: 1),
                         exposure: .localOnly(reason: "it discloses the owner's account name, the VM address and home-mount state, and nothing redacts wire responses yet")),
 
-            // Local-only on the review's finding, for two reasons that compound. It discloses the
-            // owner's own data — VM topology, home-mount state, command lines — and `--follow`
-            // *satisfies* `wireRequiredFlags: ["n"]` while still streaming indefinitely, so
-            // `machine logs -n 1 --follow prod` defeated the bounded-output rule from inside it.
-            // `wireRequiredFlags` stays declared: if this is ever exposed with redaction, the
-            // bound is already stated rather than needing to be remembered.
+            // Local-only on the review's finding: it discloses the owner's own data — VM
+            // topology, home-mount state, command lines.
+            //
+            // It used to carry a second reason, that `--follow` *satisfies* `wireRequiredFlags:
+            // ["n"]` and streams indefinitely anyway. That was a real hole and being local-only
+            // was never the fix for it — it was the accident that hid it. `wireForbiddenFlags`
+            // is the fix, and it is declared here as well as on `logs`, so that if this row is
+            // ever exposed with redaction the bound survives the change rather than depending on
+            // whoever makes it remembering this comment.
             CommandSpec(["machine", "logs"], mutates: false,
                         flags: [FlagSpec(short: "n", value: .count),
                                 FlagSpec(long: "boot"),
                                 FlagSpec(long: "follow", short: "f")],
                         operands: OperandSpec(shape: .identifier, min: 0, max: 1),
-                        exposure: .localOnly(reason: "it discloses VM topology and the owner's command lines, and --follow streams without bound"),
-                        wireRequiredFlags: ["n"]),
+                        exposure: .localOnly(reason: "it discloses VM topology and the owner's command lines"),
+                        wireRequiredFlags: ["n"],
+                        wireForbiddenFlags: ["follow"]),
 
             // Boots a VM and pulls an image, so `timeoutHint` is generous and `mutates` true.
             // `--cpus`, `--memory` and `--home-mount` are accepted inline here — confirmed
@@ -638,10 +660,17 @@ public enum Allowlist {
             // `-n` is *optional* to the CLI — "if not provided this will print all of the
             // logs", its own help — which is fine for the owner reading their own log and a
             // memory-and-wire hazard from a peer. Required over the wire only.
+            //
+            // `--follow` is the live tail the Logs tab runs, and it is the one flag here that
+            // must never cross the wire: it satisfies `-n` and then never stops, which is a
+            // denial of service wearing a bounded read's clothes. See `wireForbiddenFlags`.
             CommandSpec(["logs"], mutates: false,
-                        flags: [FlagSpec(short: "n", value: .count), FlagSpec(long: "boot")],
+                        flags: [FlagSpec(short: "n", value: .count),
+                                FlagSpec(long: "boot"),
+                                FlagSpec(long: "follow", short: "f")],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 1),
-                        wireRequiredFlags: ["n"]),
+                        wireRequiredFlags: ["n"],
+                        wireForbiddenFlags: ["follow"]),
 
             // MARK: containers — mutate
             // Exactly one operand. Verified: `container start idle cache` is refused with
@@ -1053,6 +1082,11 @@ public enum Allowlist {
         if wirePolicy == .remotePeer {
             for required in spec.wireRequiredFlags where !presentLongFlags.contains(required) {
                 throw AllowlistError.flagRequiredOverWire(command: spec.name, flag: required)
+            }
+            // Checked *after* the required flags, so the message a peer gets names the bound it
+            // is missing before the one it is evading.
+            for forbidden in spec.wireForbiddenFlags where presentLongFlags.contains(forbidden) {
+                throw AllowlistError.flagForbiddenOverWire(command: spec.name, flag: forbidden)
             }
         }
 

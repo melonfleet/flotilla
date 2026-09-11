@@ -260,3 +260,109 @@ private final class LineBox: @unchecked Sendable {
     }
     #expect(box.all == ["before"])
 }
+
+// MARK: - Streaming (`logs --follow`)
+
+/// Collects what a stream delivered, from whichever thread delivers it.
+private final class StreamRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [(String, OutputChannel)] = []
+    private var end: CommandStreamEnd?
+
+    func line(_ text: String, _ channel: OutputChannel) {
+        lock.lock(); lines.append((text, channel)); lock.unlock()
+    }
+    func finish(_ end: CommandStreamEnd) {
+        lock.lock(); self.end = end; lock.unlock()
+    }
+    var texts: [String] { lock.lock(); defer { lock.unlock() }; return lines.map(\.0) }
+    var channels: [OutputChannel] { lock.lock(); defer { lock.unlock() }; return lines.map(\.1) }
+    var ending: CommandStreamEnd? { lock.lock(); defer { lock.unlock() }; return end }
+
+    /// Wait until `predicate` holds, or give up. Polling, because the whole point of a stream is
+    /// that it delivers before the child is finished — there is nothing to await.
+    func wait(upTo seconds: TimeInterval = 5, for predicate: @Sendable () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if predicate() { return true }
+            usleep(20_000)
+        }
+        return predicate()
+    }
+}
+
+@Test func aStreamDeliversLinesWhileTheChildIsStillRunning() throws {
+    // The property the old three-second poll could not have: output is visible *before* the
+    // command ends. This child writes three lines and then sleeps, so if the reader waited for
+    // exit — as `run` does — nothing would arrive for five seconds.
+    let recorder = StreamRecorder()
+    let stream = try runner().stream(
+        ["-c", "printf 'one\\ntwo\\n'; printf 'bad\\n' 1>&2; sleep 5"],
+        onLine: { recorder.line($0, $1) },
+        onEnd: { recorder.finish($0) }
+    )
+    defer { stream.cancel() }
+
+    #expect(recorder.wait { recorder.texts.count >= 3 })
+    #expect(recorder.texts.sorted() == ["bad", "one", "two"])
+    // Which pipe each line came from survives, which is what colours stderr red in the viewer.
+    #expect(recorder.channels.filter { $0 == .stderr }.count == 1)
+    // Still running: no end has been reported.
+    #expect(recorder.ending == nil)
+}
+
+@Test func cancellingAStreamStopsTheChildAndSaysItWasCancelled() throws {
+    let recorder = StreamRecorder()
+    let stream = try runner().stream(
+        ["-c", "printf 'up\\n'; sleep 30"],
+        onLine: { recorder.line($0, $1) },
+        onEnd: { recorder.finish($0) }
+    )
+    #expect(recorder.wait { !recorder.texts.isEmpty })
+
+    stream.cancel()
+    #expect(recorder.wait { recorder.ending != nil })
+    // A child killed by SIGTERM reports a non-zero status, and reporting that as a failure is
+    // exactly the lie this flag exists to prevent — every time the user turns Live off.
+    let end = try #require(recorder.ending)
+    #expect(end.cancelled)
+    #expect(end.ok)
+}
+
+@Test func aStreamThatEndsOnItsOwnReportsTheExitCode() throws {
+    let recorder = StreamRecorder()
+    let stream = try runner().stream(
+        ["-c", "printf 'gone\\n' 1>&2; exit 3"],
+        onLine: { recorder.line($0, $1) },
+        onEnd: { recorder.finish($0) }
+    )
+    defer { stream.cancel() }
+
+    #expect(recorder.wait { recorder.ending != nil })
+    let end = try #require(recorder.ending)
+    #expect(!end.cancelled)
+    #expect(end.exitCode == 3)
+    #expect(!end.ok)
+    // The explanation arrives as a stderr line, because a stream retains nothing to explain it
+    // with afterwards.
+    #expect(recorder.texts == ["gone"])
+}
+
+@Test func aStreamRetainsNothingHoweverMuchItCarries() throws {
+    // The ceiling that bounds `run`'s buffers is zero here: lines flow, memory does not grow.
+    // A tail of a chatty container must not become a way to exhaust the app's memory by leaving
+    // a tab open, and the viewer's own cap cannot help with what the host holds.
+    let recorder = StreamRecorder()
+    let stream = try runner(limitBytes: 8 * 1024).stream(
+        ["-c", "i=0; while [ $i -lt 2000 ]; do printf 'line %d\\n' $i; i=$((i+1)); done"],
+        onLine: { recorder.line($0, $1) },
+        onEnd: { recorder.finish($0) }
+    )
+    defer { stream.cancel() }
+
+    #expect(recorder.wait { recorder.ending != nil })
+    // Every line was delivered even though the sink's ceiling is far smaller than the output.
+    #expect(recorder.texts.count == 2000)
+    #expect(recorder.texts.first == "line 0")
+    #expect(recorder.texts.last == "line 1999")
+}

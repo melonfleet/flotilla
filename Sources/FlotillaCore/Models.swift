@@ -554,8 +554,11 @@ public struct LogLine: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
-/// One bounded fetch of a container's logs. Phase 1 is a bounded fetch only;
-/// `--follow` streaming is Phase 4, which is why there's no cursor here yet.
+/// One bounded fetch of a container's logs — the "reload" half of the log viewer.
+///
+/// The live half does not produce one of these: `ContainerCLI.followLogs` hands lines to an
+/// observer as they arrive and there is no chunk to describe, which is why this has no cursor.
+/// A chunk is a snapshot; a tail is not.
 public struct LogChunk: Codable, Sendable, Equatable {
     public var containerID: String
     public var lines: [LogLine]

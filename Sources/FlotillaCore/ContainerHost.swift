@@ -51,6 +51,96 @@ public protocol ContainerHost: Sendable {
     /// returns one `CommandResult` when the child exits.
     func run(_ args: [String], timeout: TimeInterval,
              onLine: (@Sendable (String) -> Void)?) throws -> CommandResult
+
+    /// Run a command that is **not expected to end**, delivering each line as it arrives and
+    /// handing back the only thing that can stop it.
+    ///
+    /// This is the other half of `run(_:timeout:onLine:)`, and the difference is the whole point:
+    /// that one is for bounded work whose result is worth waiting for, and it keeps what the
+    /// child wrote. `logs --follow` has no result and no end — it is a tail — so this retains
+    /// **nothing**, has no deadline, and is cancelled rather than completed.
+    ///
+    /// `onLine` says which pipe each line came from, because a follow has no second chance to
+    /// ask: the bounded form gets stdout and stderr as separate strings afterwards and can
+    /// colour stderr red from that, and a stream that flattened them would lose the distinction
+    /// permanently.
+    ///
+    /// `onEnd` fires exactly once, on a background thread, whether the child exited on its own
+    /// or was cancelled.
+    func stream(_ args: [String],
+                onLine: @escaping @Sendable (String, OutputChannel) -> Void,
+                onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream
+}
+
+/// Which pipe a streamed line arrived on.
+public enum OutputChannel: Sendable { case stdout, stderr }
+
+/// How a streamed command ended.
+public struct CommandStreamEnd: Sendable {
+    public let exitCode: Int32
+    /// True when `CommandStream.cancel()` stopped it. A cancelled child dies of `SIGTERM` and
+    /// reports a non-zero status for it, which is not a failure and must not be shown as one.
+    public let cancelled: Bool
+
+    public init(exitCode: Int32, cancelled: Bool) {
+        self.exitCode = exitCode
+        self.cancelled = cancelled
+    }
+
+    public var ok: Bool { cancelled || exitCode == 0 }
+}
+
+/// A running streamed command, and the only handle on stopping it.
+///
+/// Cancelling is not optional bookkeeping: nothing else ends a `--follow`, so a viewer that
+/// drops this without calling `cancel()` leaves a `container` process and two reader threads
+/// alive for the lifetime of the app. `deinit` therefore cancels as well — the last-resort net
+/// under the explicit call, not a substitute for it.
+public final class CommandStream: @unchecked Sendable {
+    /// Shared with the watcher thread so it can ask "was this cancelled?" without holding the
+    /// handle itself — a strong reference there would keep the object alive exactly as long as
+    /// the child, which is precisely when `deinit` needed to fire.
+    final class State: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stop: (@Sendable () -> Void)?
+        private var cancelled = false
+
+        func arm(_ stop: @escaping @Sendable () -> Void) {
+            lock.lock()
+            let alreadyCancelled = cancelled
+            if !alreadyCancelled { self.stop = stop }
+            lock.unlock()
+            // Cancelled before the child was even armed — stop it now rather than leak it.
+            if alreadyCancelled { stop() }
+        }
+
+        func cancel() {
+            lock.lock()
+            let stop = self.stop
+            self.stop = nil
+            cancelled = true
+            lock.unlock()
+            stop?()
+        }
+
+        var isCancelled: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return cancelled
+        }
+    }
+
+    private let state: State
+
+    init(state: State) { self.state = state }
+
+    /// A stream that has already ended — what a host that cannot really stream hands back.
+    public static func finished() -> CommandStream { CommandStream(state: State()) }
+
+    public var isCancelled: Bool { state.isCancelled }
+
+    public func cancel() { state.cancel() }
+
+    deinit { state.cancel() }
 }
 
 public extension ContainerHost {
@@ -64,6 +154,21 @@ public extension ContainerHost {
     func run(_ args: [String], timeout: TimeInterval,
              onLine: (@Sendable (String) -> Void)?) throws -> CommandResult {
         try run(args, timeout: timeout)
+    }
+
+    /// Default: run it once and replay the result as a stream that has already ended.
+    ///
+    /// The honest degradation for a scripted double, which has no child to follow: the caller
+    /// gets every line it would have got, in order, and an end. A viewer built on this sees a
+    /// tail that stops immediately rather than one that never starts.
+    func stream(_ args: [String],
+                onLine: @escaping @Sendable (String, OutputChannel) -> Void,
+                onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream {
+        let result = try run(args)
+        for line in result.stdout.split(separator: "\n") { onLine(String(line), .stdout) }
+        for line in result.stderr.split(separator: "\n") { onLine(String(line), .stderr) }
+        onEnd(CommandStreamEnd(exitCode: result.exitCode, cancelled: false))
+        return .finished()
     }
 }
 
@@ -251,6 +356,76 @@ public struct LocalHost: ContainerHost {
             exitCode: process.terminationStatus,
             stdoutTruncated: stdoutCut, stderrTruncated: stderrCut
         )
+    }
+
+    /// A tail: no deadline, nothing retained, stopped by cancelling.
+    ///
+    /// Three deliberate differences from `run`, each the opposite of what a bounded command
+    /// wants. There is **no timeout**, because a follow that stopped after thirty seconds would
+    /// be a worse version of the poll it replaces. Nothing is **retained** — the sinks are given
+    /// a ceiling of zero, so lines flow to the observer and are then dropped rather than growing
+    /// a buffer for the lifetime of a window nobody is watching; what to keep is the viewer's
+    /// decision and it already caps itself. And the caller is handed a `CommandStream` instead
+    /// of a result, because the only interesting question about a tail is how to stop it.
+    public func stream(_ args: [String],
+                       onLine: @escaping @Sendable (String, OutputChannel) -> Void,
+                       onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream {
+        guard let executable = resolve() else {
+            throw ContainerCLIError.runtimeNotFound(searched: Preflight.searchedDirectories())
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = args
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+
+        // Ceiling zero: `Sink` hands every complete line to the observer *before* it decides
+        // whether to keep the bytes, so a limit of zero streams everything and stores nothing.
+        let out = Sink(limit: 0, onLine: { onLine($0, .stdout) })
+        let err = Sink(limit: 0, onLine: { onLine($0, .stderr) })
+
+        let draining = DispatchGroup()
+        try process.run()
+        // Dedicated threads for the same reason `run` uses them: these block in `read(2)` for as
+        // long as the child lives, which for a follow is indefinitely.
+        for (sink, handle, name) in [(out, outPipe.fileHandleForReading, "stdout"),
+                                     (err, errPipe.fileHandleForReading, "stderr")] {
+            draining.enter()
+            let thread = Thread {
+                sink.drain(handle)
+                draining.leave()
+            }
+            thread.name = "flotilla.stream.\(name)"
+            thread.stackSize = 512 * 1024
+            thread.start()
+        }
+
+        let state = CommandStream.State()
+        state.arm { [limits] in
+            guard process.isRunning else { return }
+            process.terminate()
+            // `container` stops on TERM; this is the allowance for that, after which it is reaped
+            // rather than left holding the pipes — the same escalation `run` uses on a deadline.
+            let deadline = Date().addingTimeInterval(limits.terminationGrace)
+            while process.isRunning && Date() < deadline { usleep(20_000) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
+
+        // One more thread to report the end. It waits on the drains rather than on the child, so
+        // a line written just before exit is delivered before the viewer is told it stopped.
+        let watcher = Thread {
+            draining.wait()
+            process.waitUntilExit()
+            onEnd(CommandStreamEnd(exitCode: process.terminationStatus, cancelled: state.isCancelled))
+        }
+        watcher.name = "flotilla.stream.end"
+        watcher.stackSize = 512 * 1024
+        watcher.start()
+
+        return CommandStream(state: state)
     }
 }
 

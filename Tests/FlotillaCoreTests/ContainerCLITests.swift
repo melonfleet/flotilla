@@ -452,6 +452,61 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     #expect(!chunk.isBootLog)
 }
 
+@Test func followingLogsSendsTheBoundedFollowFormAndTagsEachStream() throws {
+    // The live tail still sends `-n`: turning it on must not drag an entire log into the window
+    // before the streaming part begins.
+    let host = RecordingHost()
+    host.stdoutByPath["logs --follow"] = "one\ntwo\n"
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
+
+    let recorder = LineRecorder()
+    let stream = try cli.followLogs("web", lines: 50,
+                                    onLine: { recorder.line($0, $1) },
+                                    onEnd: { _ in recorder.finish() })
+    defer { stream.cancel() }
+
+    #expect(host.invocations[0] == ["logs", "--follow", "-n", "50", "web"])
+    #expect(recorder.texts == ["one", "two"])
+    #expect(recorder.ended)
+}
+
+@Test func followingMachineLogsUsesTheMachineFormOfTheSameCommand() throws {
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
+
+    let recorder = LineRecorder()
+    let stream = try cli.followMachineLogs("dev", lines: 200, boot: true,
+                                           onLine: { recorder.line($0, $1) },
+                                           onEnd: { _ in recorder.finish() })
+    defer { stream.cancel() }
+
+    #expect(host.invocations[0] == ["machine", "logs", "--follow", "-n", "200", "--boot", "dev"])
+}
+
+@Test func followingLogsRejectsALineCountOutsideTheAllowlistedRange() {
+    // The tail goes through `Allowlist` exactly as the bounded fetch does; a follow is still an
+    // argv, and nothing gets to skip the table because it happens to stream.
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
+    #expect(throws: AllowlistError.self) {
+        _ = try cli.followLogs("web", lines: 10_000_000, onLine: { _, _ in }, onEnd: { _ in })
+    }
+}
+
+/// Collects streamed lines. Plain and unlocked: the default `stream` implementation a scripted
+/// host inherits replays synchronously on the calling thread.
+private final class LineRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [(LogLine.Stream, String)] = []
+    private var done = false
+    func line(_ stream: LogLine.Stream, _ text: String) {
+        lock.lock(); lines.append((stream, text)); lock.unlock()
+    }
+    func finish() { lock.lock(); done = true; lock.unlock() }
+    var texts: [String] { lock.lock(); defer { lock.unlock() }; return lines.map(\.1) }
+    var ended: Bool { lock.lock(); defer { lock.unlock() }; return done }
+}
+
 @Test func logsRejectsALineCountOutsideTheAllowlistedRange() {
     let host = RecordingHost()
     let cli = ContainerCLI(host: host, wirePolicy: .localOwner)

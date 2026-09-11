@@ -219,6 +219,23 @@ public struct ContainerCLI: Sendable {
         return try succeeding(validated.arguments, timeout: validated.timeoutHint, onLine: onLine)
     }
 
+    /// `execute`'s counterpart for a command that does not end: same validation, no deadline,
+    /// and a handle instead of a result.
+    ///
+    /// It goes through `Allowlist.validated` exactly as `execute` does — a tail is still an
+    /// argv, and the one command shape allowed to skip the table is none of them.
+    private func streaming(_ args: [String],
+                           onLine: @escaping @Sendable (LogLine.Stream, String) -> Void,
+                           onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream {
+        let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
+                                                execPolicy: execPolicy, wirePolicy: wirePolicy)
+        return try host.stream(validated.arguments,
+                               onLine: { text, channel in
+                                   onLine(channel == .stderr ? .stderr : .stdout, text)
+                               },
+                               onEnd: onEnd)
+    }
+
     /// Validated execution that **returns** a non-zero exit rather than throwing on it.
     ///
     /// Still goes through `Allowlist` and `MountPolicy` — that is the invariant, and this is not
@@ -702,9 +719,7 @@ public struct ContainerCLI: Sendable {
 
     // MARK: Logs
 
-    /// A bounded fetch of `lines` lines — `container logs --follow` streaming is Phase 4,
-    /// so there is no follow flag here (`Allowlist`'s `logs` row does not accept `-f`
-    /// either; see its table notes).
+    /// A bounded fetch of `lines` lines. `followLogs` is the live counterpart.
     public func logs(_ id: String, lines: Int = 100, bootLog: Bool = false) throws -> LogChunk {
         var args = ["logs", "-n", String(lines)]
         if bootLog { args.append("--boot") }
@@ -712,6 +727,19 @@ public struct ContainerCLI: Sendable {
         let result = try execute(args)
         return LogChunk.from(stdout: result.stdout, stderr: result.stderr,
                              containerID: id, requestedLines: lines, isBootLog: bootLog)
+    }
+
+    /// `container logs --follow` — the last `lines` lines, and then every line as it is written.
+    ///
+    /// Cancel the returned stream to stop it; nothing else will. `-n` is still sent, so turning
+    /// the tail on does not drag an entire log into the window before the live part begins.
+    public func followLogs(_ id: String, lines: Int = 100, bootLog: Bool = false,
+                           onLine: @escaping @Sendable (LogLine.Stream, String) -> Void,
+                           onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream {
+        var args = ["logs", "--follow", "-n", String(lines)]
+        if bootLog { args.append("--boot") }
+        args.append(id)
+        return try streaming(args, onLine: onLine, onEnd: onEnd)
     }
 
     // MARK: Machines
@@ -853,5 +881,16 @@ public struct ContainerCLI: Sendable {
         let result = try execute(args)
         return LogChunk.from(stdout: result.stdout, stderr: result.stderr,
                              containerID: id ?? "default", requestedLines: lines, isBootLog: boot)
+    }
+
+    /// `container machine logs --follow` — the machine's own live tail, the same shape as
+    /// `followLogs` because the two viewers are now the same viewer.
+    public func followMachineLogs(_ id: String? = nil, lines: Int = 100, boot: Bool = false,
+                                  onLine: @escaping @Sendable (LogLine.Stream, String) -> Void,
+                                  onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream {
+        var args = ["machine", "logs", "--follow", "-n", String(lines)]
+        if boot { args.append("--boot") }
+        if let id { args.append(id) }
+        return try streaming(args, onLine: onLine, onEnd: onEnd)
     }
 }

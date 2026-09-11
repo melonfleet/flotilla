@@ -74,7 +74,7 @@ struct MachineDetailView: View {
                 switch tab {
                 case .overview: overview
                 case .shell: MachineShellTab(model: model, machine: machine)
-                case .logs: MachineLogsTab(model: model, machine: machine)
+                case .logs: LogViewer(model: model, source: .machine(machine.id))
                 // `detail`, not `machine`. The list row has no `homeMount` at all — verified
                 // against `machine ls --format json`, which returns eight fields and not that one —
                 // so this tab was seeding its picker from nil and defaulting the display to
@@ -377,68 +377,6 @@ private struct MachineTerminalSurface: NSViewRepresentable {
         terminal.autoresizingMask = [.width, .height]
         host.addSubview(terminal)
         DispatchQueue.main.async { host.window?.makeFirstResponder(terminal) }
-    }
-}
-
-// MARK: - Logs
-
-private struct MachineLogsTab: View {
-    let model: AppModel
-    let machine: ContainerMachine
-
-    @State private var text = ""
-    @State private var boot = false
-    @State private var loading = false
-    @State private var failure: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                // `machine logs --boot` is a genuinely different log, not a filter of the same
-                // one, so this is a mode switch rather than a checkbox on one stream.
-                Picker("", selection: $boot) {
-                    Text("Machine").tag(false)
-                    Text("Boot").tag(true)
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-                Spacer()
-                Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }
-                    .disabled(loading).help("Refresh")
-            }
-            .padding(12)
-            Divider()
-
-            if let failure {
-                ContentUnavailableView("Cannot read logs",
-                                       systemImage: "exclamationmark.triangle",
-                                       description: Text(failure))
-            } else if text.isEmpty {
-                ContentUnavailableView(loading ? "Loading…" : "No log output",
-                                       systemImage: "doc.text")
-            } else {
-                ScrollView {
-                    Text(text)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                }
-            }
-        }
-        .task(id: boot) { await load() }
-    }
-
-    private func load() async {
-        loading = true
-        failure = nil
-        do {
-            let chunk = try await model.machineLogs(for: machine.id, lines: 500, boot: boot)
-            text = chunk.lines.map(\.text).joined(separator: "\n")
-        } catch {
-            text = ""
-            failure = String(describing: error)
-        }
-        loading = false
     }
 }
 
