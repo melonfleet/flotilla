@@ -396,7 +396,9 @@ struct VolumesView: View {
             .width(min: 28, ideal: 30, max: 34)
 
             TableColumn("Name", value: \.name) { volume in
-                Text(volume.name).foregroundStyle(Theme.accentText).lineLimit(1)
+                Text(volume.name)
+                    .foregroundStyle(Theme.rowName(selected: selection.contains(volume.id)))
+                    .lineLimit(1)
             }
             .width(min: 160, ideal: 240)
 

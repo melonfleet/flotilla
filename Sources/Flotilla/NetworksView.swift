@@ -302,7 +302,9 @@ struct NetworksView: View {
 
             TableColumn("Name", value: \.id) { network in
                 HStack(spacing: 6) {
-                    Text(network.name).foregroundStyle(Theme.accentText).lineLimit(1)
+                    Text(network.name)
+                        .foregroundStyle(Theme.rowName(selected: selection.contains(network.id)))
+                        .lineLimit(1)
                     if network.isBuiltin {
                         Text("built-in")
                             .font(.caption2).fixedSize()

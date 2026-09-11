@@ -294,7 +294,7 @@ struct ImagesView: View {
 
             TableColumn("Repository", value: \.reference) { image in
                 Text(Self.repository(image))
-                    .foregroundStyle(Theme.accentText)
+                    .foregroundStyle(Theme.rowName(selected: selection.contains(image.id)))
                     .lineLimit(1).truncationMode(.middle)
                     .help(image.reference)
             }

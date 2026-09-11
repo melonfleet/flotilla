@@ -552,10 +552,11 @@ struct MachinesView: View {
             .customizationID("state")
 
             TableColumn("Name", value: \.id) { machine in
+                let selected = selection.contains(machine.id)
                 HStack(spacing: 6) {
                     Button(machine.id) { detailTarget = DetailTarget(id: machine.id) }
                         .buttonStyle(.link)
-                        .foregroundStyle(Theme.accentText)
+                        .foregroundStyle(Theme.rowName(selected: selected))
                         .lineLimit(1)
                         .help("Open \(machine.id)")
                     // Which machine a bare `machine stop` or `inspect` would hit. Not cosmetic.
@@ -568,8 +569,12 @@ struct MachinesView: View {
                             // no badge; it has to be the last thing to give.
                             .fixedSize()
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Theme.accentTint, in: Capsule())
-                            .foregroundStyle(Theme.accentText)
+                            // The badge is a pink pill on a pink fill when the row is selected —
+                            // the same disappearing act as the name, one size smaller.
+                            .background(selected ? AnyShapeStyle(.quaternary)
+                                                 : AnyShapeStyle(Theme.accentTint),
+                                        in: Capsule())
+                            .foregroundStyle(Theme.rowName(selected: selected))
                     }
                 }
             }
