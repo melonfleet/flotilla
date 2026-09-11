@@ -15,13 +15,9 @@ struct ImagesView: View {
     /// the containers table there is no cross-section state to preserve.
     @State private var search = ""
 
-    @State private var showingPull = false
-    @State private var showingBuild = false
-    @State private var pullReference = ""
-    /// HTTPS unless someone changes it, every time the form opens. Deliberately **not**
-    /// remembered: a persisted "use plaintext" would apply to the next pull from a public
-    /// registry too, and the one thing worse than no HTTP support is HTTP nobody asked for.
-    @State private var pullScheme = ContainerCLI.RegistryScheme.default
+    /// The merged New Image form, and which half it opened on — `nil` when it is closed.
+    /// One screen where there were two: see `NewImageView`.
+    @State private var newImageMode: NewImageView.Mode?
     @State private var pendingDelete: ContainerImage?
     /// Set from the row menu's Run — presents the run sheet with this reference already in
     /// place. Nothing is launched from here; the sheet's validated preview still gates it.
@@ -43,10 +39,8 @@ struct ImagesView: View {
             // forms you fill in and save.
             if let reference = runImage {
                 RunSheetView(model: model, initialImage: reference) { runImage = nil }
-            } else if showingBuild {
-                BuildImageView(model: model) { showingBuild = false }
-            } else if showingPull {
-                pullScreen
+            } else if let mode = newImageMode {
+                NewImageView(model: model, initialMode: mode) { newImageMode = nil }
             } else if let image = taggingImage {
                 tagScreen(for: image)
             } else {
@@ -58,7 +52,7 @@ struct ImagesView: View {
                     // this, pressing Back during a 40-second pull looks exactly like the pull
                     // having been cancelled.
                     if let pull = model.activePull {
-                        pullStatus(pull, compact: true)
+                        ImagePullStatus(pull: pull, compact: true)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                         Divider()
@@ -80,17 +74,17 @@ struct ImagesView: View {
         .task { await model.refreshImages() }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingPullForm) { _, requested in
-            if requested { pullReference = ""; pullScheme = .default; showingPull = true; model.pendingPullForm = false }
+            if requested { newImageMode = .pull; model.pendingPullForm = false }
         }
         .onAppear {
-            if model.pendingPullForm { pullReference = ""; pullScheme = .default; showingPull = true; model.pendingPullForm = false }
+            if model.pendingPullForm { newImageMode = .pull; model.pendingPullForm = false }
         }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingBuildForm) { _, requested in
-            if requested { showingBuild = true; model.pendingBuildForm = false }
+            if requested { newImageMode = .build; model.pendingBuildForm = false }
         }
         .onAppear {
-            if model.pendingBuildForm { showingBuild = true; model.pendingBuildForm = false }
+            if model.pendingBuildForm { newImageMode = .build; model.pendingBuildForm = false }
         }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
@@ -165,13 +159,11 @@ struct ImagesView: View {
                 columns: Self.columnSpecs,
                 filters: platformFilters)
         }, trailing: {
-            ToolbarIconButton(systemImage: "hammer", label: "Build an image from a Dockerfile…") {
-                showingBuild = true
-            }
-            ToolbarIconButton(systemImage: "arrow.down.circle", label: "Pull an image…") {
-                pullReference = ""
-                pullScheme = .default
-                showingPull = true
+            // One control for one intention. It was a hammer and a download arrow — two
+            // buttons for "add an image", in a section where every other action is a single
+            // control — and both forms were short enough to share one screen.
+            ToolbarIconButton(systemImage: "plus", label: "New image — pull or build…") {
+                newImageMode = .pull
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh images") {
                 Task { await model.refreshImages() }
@@ -248,7 +240,7 @@ struct ImagesView: View {
                 if isFiltered {
                     Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
                 } else {
-                    Button("Pull an Image…") { showingPull = true }
+                    Button("Pull an Image…") { newImageMode = .pull }
                         .buttonStyle(.borderedProminent)
                 }
             }
@@ -499,19 +491,12 @@ struct ImagesView: View {
         }
     }
 
-    private var trimmedPull: String {
-        pullReference.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
     private var trimmedTag: String {
         tagTarget.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// An image reference has its own shape, and its own rule text — so "not a valid
     /// imageReference" now comes with "expected something like docker.io/library/alpine:latest".
-    private var pullProblem: String? {
-        guard !trimmedPull.isEmpty else { return nil }
-        return problem(in: ["image", "pull", trimmedPull])
-    }
     private var tagProblem: String? {
         guard !trimmedTag.isEmpty else { return nil }
         return problem(in: ["image", "tag", "placeholder:latest", trimmedTag])
@@ -720,203 +705,6 @@ struct ImagesView: View {
         }
         .padding(20)
         .frame(width: 420)
-    }
-
-    /// The Pull form, built like every other create form: a left-aligned 640pt column with an
-    /// information rail beside it.
-    ///
-    /// It used to be a 440pt centred card with its own layout — the last form in the app that
-    /// looked like a dialog rather than a screen. Moving it onto `FormScaffold` is not only
-    /// cosmetic: the rail is where the worked examples belong, and they were taking a third of
-    /// the column while the window had a third of its width empty.
-    private var pullScreen: some View {
-        VStack(spacing: 0) {
-            FormHeader(title: "Pull Image", systemImage: "arrow.down.circle",
-                       hasUnsavedChanges: !trimmedPull.isEmpty && model.activePull == nil,
-                       onBack: { showingPull = false })
-            Divider()
-            if let pull = model.activePull {
-                // The form *is* the progress screen while a pull runs. Dismissing on submit —
-                // which is what this did once — reported a 40-second network operation by
-                // showing nothing at all and then growing a row.
-                ScrollView {
-                    pullStatus(pull, compact: false)
-                        .padding(20)
-                        .frame(maxWidth: 640, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            } else {
-                FormScaffold {
-                    pullForm
-                } preview: {
-                    pullRailPreview
-                }
-                Divider()
-                pullFooter
-            }
-        }
-    }
-
-    private var pullForm: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            FormField("Reference",
-                      help: FieldHelp(
-                          "What to pull, and where from.",
-                          detail: "A bare name is completed the way the CLI completes it — "
-                              + "`nginx` becomes `docker.io/library/nginx:latest`. Lead with a "
-                              + "registry host to pull from anywhere else.",
-                          example: "nginx\nnginx:alpine\nghcr.io/owner/app:1.2.3\nalpine@sha256:…",
-                          warning: "A tag can be moved by whoever published it. Pin a digest "
-                              + "(`@sha256:…`) when you need the same bytes every time."),
-                      problem: pullProblem) {
-                TextField("nginx:alpine", text: $pullReference)
-                    .textFieldStyle(.roundedBorder)
-                    .monospaced()
-                    .onSubmit(startPull)
-            }
-
-            // An action, so it stays in the column rather than moving to the rail with the help.
-            Link(destination: URL(string: "https://hub.docker.com/search?image_filter=official")!) {
-                Label("Browse Docker Hub", systemImage: "arrow.up.right.square")
-                    .font(.callout)
-            }
-            // `Link` draws in the system accent, which made this the one blue thing in an app
-            // whose links are all brand pink. Same reason `Theme.rowName` exists.
-            .foregroundStyle(Theme.accentText)
-
-            FormSectionHeader(title: "Registry",
-                              note: "How Flotilla reaches it. Almost always the default.")
-
-            FormField("Connect using",
-                      help: FieldHelp(
-                          "HTTPS, unless the registry has no TLS.",
-                          detail: "`container` 1.4.1 removed the old `auto` scheme that fell "
-                              + "back to plaintext on its own, so a development registry without "
-                              + "TLS is unreachable unless you ask for HTTP here.",
-                          example: "http is for localhost:5000\nand your own network — nothing\non the internet",
-                          warning: "It must be an anonymous registry: `container` refuses to "
-                              + "send credentials over HTTP even when you ask for it. The choice "
-                              + "is not remembered, so the next pull is HTTPS again.")) {
-                Picker("", selection: $pullScheme) {
-                    Text("HTTPS").tag(ContainerCLI.RegistryScheme.https)
-                    Text("HTTP").tag(ContainerCLI.RegistryScheme.http)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-            }
-
-            if pullScheme == .http {
-                // In the column, not only the rail: a warning that has to be read *before*
-                // pressing Pull cannot live where the reader may not be looking.
-                Label("Image layers cross the network unencrypted.",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(Theme.warning)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var pullRailPreview: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Command preview", systemImage: "chevron.right.square")
-                .font(.caption)
-                .foregroundStyle(Theme.info)
-            Text((["container"] + ContainerCLI.pullArguments(
-                    trimmedPull.isEmpty ? "<reference>" : trimmedPull, scheme: pullScheme))
-                    .joined(separator: " "))
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var pullFooter: some View {
-        HStack {
-            Spacer()
-            Button("Cancel") { showingPull = false }
-            Button("Pull", action: startPull)
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(trimmedPull.isEmpty || pullProblem != nil)
-        }
-        .padding(12)
-    }
-
-    private func pullExample(_ reference: String, _ meaning: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(reference)
-                .font(.system(.caption, design: .monospaced))
-            Text(meaning)
-                .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    /// Live progress, in the form and — `compact` — in the band above the list.
-    ///
-    /// The percentage is the CLI's own and is **not** monotonic: it discovers the blob count as
-    /// it walks the manifest, so 99% of 17 blobs becomes 8% of 96. The bar therefore goes
-    /// backwards sometimes, which is the CLI telling the truth about what it just learned;
-    /// smoothing it here would only invent a number nothing measured.
-    @ViewBuilder
-    private func pullStatus(_ pull: AppModel.ImagePull, compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 4 : 10) {
-            HStack(spacing: 8) {
-                Text(pull.reference)
-                    .font(.system(compact ? .caption : .body, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                if let elapsed = pull.progress?.elapsed {
-                    Text("\(Int(elapsed))s")
-                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                }
-            }
-
-            // Linear in both states, so the shape does not jump when the first percentage
-            // arrives — the early lines carry no percentage at all.
-            Group {
-                if let fraction = pull.progress?.fraction {
-                    ProgressView(value: fraction) { Text(phaseLabel(pull.progress)) }
-                } else {
-                    ProgressView { Text(phaseLabel(pull.progress)) }
-                }
-            }
-            .progressViewStyle(.linear)
-            .font(.caption)
-
-            if let detail = pull.progress?.detail, !compact {
-                // The CLI's own wording, passed through. See `ImagePullProgress.detail`.
-                Text(detail)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func phaseLabel(_ progress: ImagePullProgress?) -> String {
-        guard let progress else { return "Contacting registry…" }
-        var label = progress.phase == .fetching ? "Fetching" : "Unpacking"
-        if let platform = progress.platform { label += " \(platform)" }
-        return "\(label) · step \(progress.step) of \(progress.stepCount)"
-    }
-
-    /// Returns to the list only on success, and only after `pullImage` has refreshed it — so the
-    /// image that was just pulled is present the moment the list appears. On failure the form
-    /// stays put with the reference intact: the likeliest cause is a typo in it.
-    private func startPull() {
-        let reference = trimmedPull
-        guard !reference.isEmpty, pullProblem == nil, model.activePull == nil else { return }
-        Task {
-            if await model.pullImage(reference, scheme: pullScheme) {
-                pullReference = ""
-                pullScheme = .default
-                showingPull = false
-            }
-        }
     }
 
     /// Defers to `model.deletePolicy`, the one authority. This used to read the setting key
