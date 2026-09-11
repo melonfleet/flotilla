@@ -274,3 +274,89 @@ success and failure exit codes for every command Flotilla actually invokes.
 - [live-container export PR #1630](https://github.com/apple/container/pull/1630)
 - [`container clean` PR #1949](https://github.com/apple/container/pull/1949) and
   [read-only mount fix PR #2228](https://github.com/apple/container/pull/2228)
+
+---
+
+## Verification pass — 2026-09-12
+
+Iris wrote the report above without network access to `api.github.com` and marked several
+findings **unconfirmed** for that reason. Those calls succeed from this session, so the
+compatibility-sensitive claims were checked against primary sources: the releases API, and the
+`command-reference.md` and Swift sources at tags `1.0.0` and `1.4.1`.
+
+**Confirmed as written.** The release list and dates, all eight versions, no 1.4.0. The documented
+command surface gains exactly two things: `container clean` (no command-specific flags) and six
+`container k8s` leaves. Gaps 1–4 in `UPSTREAM-GAPS.md` are unchanged at the CLI surface —
+`machine create` still has no `--network` and no mount option of any kind, there is still no
+`container network connect`, and `run` still has no machine selector. `machine set` gained
+`virtualization=<bool>` and `kernel=`, which the `machineSetting` closed set correctly refuses
+today.
+
+**A complete flag-level diff of every documented command** (1.0.0 → 1.4.1, ignoring
+`--debug`/`--help`/`--version`) is shorter than the report implies:
+
+| Command | Change |
+|---|---|
+| `container build` | `+ --ssh` |
+| `container run`, `container create` | `+ --masked-path --read-only-path` |
+| `container machine create` | `+ --kernel --virtualization` |
+| `container system kernel set` | `+ --digest` |
+
+Nothing was removed from any command Flotilla invokes. **No flag that Flotilla emits today
+changed spelling, arity or value shape**, which is the fact the allowlist actually depends on and
+the one the report could not establish.
+
+### Two corrections
+
+1. **`--kernel-arg` does not exist in the 1.4.1 reference.** The table above lists "repeatable
+   `container run --kernel-arg <arg>`" as available grammar, taken from the 1.2.0 release notes.
+   The string `kernel-arg` does not appear anywhere in `command-reference.md` at tag 1.4.1, and
+   the flag diff finds it on neither `run` nor `create`. Treat it as not present until a live
+   `--help` says otherwise; it should not be planned against.
+
+2. **`--scheme auto` was not removed from the documentation.** The report notes the 1.4.1
+   reference still documents `auto`, and that is the whole of what can be established: the tagged
+   text reads `values: http, https, auto; default: auto`, exactly as 1.0.0 does. So the 1.3.0
+   release note and the tagged reference contradict each other, and only a live 1.4.1
+   `image pull --help` settles it. Flotilla emits no `--scheme`, so the allowlist is unaffected
+   either way; the behavioural risk to an HTTP dev registry stands as a thing to test, not a
+   thing established.
+
+### The `system status` redesign is real, and it breaks nothing here
+
+Read from source rather than release notes. `StatusPayload` at 1.4.1:
+
+```swift
+status: String
+client: ClientInfo?        // version, build, commit, appName
+server: ServerInfo?        // version, build, commit, appName
+host: HostInfo?            // architecture, operatingSystem, cpus
+paths: PathInfo?           // appRoot, installRoot, logRoot?
+resources: ResourceCounts? // containersTotal, containersRunning, images?
+```
+
+`SystemStatus` in `Models.swift` declares `status`, `apiServerVersion?`, `appRoot?` and
+`installRoot?`. On 1.4.1 `status` still decodes and the other three become `nil` — their values
+moved to `server.version`, `paths.appRoot` and `paths.installRoot`.
+
+**And nothing reads them.** `Preflight` uses only `status`/`isRunning`; `flotilla-probe` prints
+only `status.status`; the diagnostics snapshot has an `apiServerVersion` field of its own that is
+never filled from this type. So the report's highest-risk item costs a fixture refresh and the
+deletion of three dead properties — or wiring them to the new nested paths, if the version and
+roots are wanted after all. It is not a decode break and preflight cannot regress.
+
+The stopped/unregistered contract is unchanged in source: both versions
+`Application.exit(withError: ExitCode(1))`, and 1.4.1 renders `status: "unregistered"` before
+doing so.
+
+### What still needs the real binary
+
+Everything the report lists under recapture, for the reason it gives — CLI stability is only
+promised within a patch series and four minor boundaries are being crossed. But the gate is
+narrower than "all 51 help files are suspect": the flag diff above is primary-source evidence
+that the *documented* grammar Flotilla uses did not move. Recapture is to catch what the docs do
+not say — undocumented payload fields, the `auto` contradiction, and exit codes.
+
+Priority order for a 1.4.1 smoke: `system status` (running and stopped), `machine list` and
+`machine inspect` (new settings may serialize), then the remaining list/inspect fixtures for the
+`\/` rendering change, then `image pull` against an HTTP registry.
