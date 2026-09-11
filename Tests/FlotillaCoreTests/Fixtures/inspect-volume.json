@@ -12,7 +12,7 @@
         "size" : "64M"
       },
       "sizeInBytes" : 67108864,
-      "source" : "\/Users\/example\/Library\/Application Support\/com.apple.container\/volumes\/probe-shortform\/volume.img"
+      "source" : "/Users/example/Library/Application Support/com.apple.container/volumes/probe-shortform/volume.img"
     },
     "id" : "probe-shortform"
   }

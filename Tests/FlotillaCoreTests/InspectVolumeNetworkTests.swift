@@ -56,8 +56,8 @@ private func fixture(_ name: String) throws -> String {
     #expect(network.id == "default")
     #expect(network.configuration.mode == "nat")
     // The reason inspect is worth having for networks at all: the assigned addressing.
-    #expect(network.status?.ipv4Gateway == "192.168.66.1")
-    #expect(network.status?.ipv4Subnet == "192.168.66.0/24")
+    #expect(network.status?.ipv4Gateway == "192.168.67.1")
+    #expect(network.status?.ipv4Subnet == "192.168.67.0/24")
     #expect(network.status?.ipv6Subnet?.hasSuffix("::/64") == true)
     // The builtin marker, which is why `default` cannot be deleted.
     #expect(network.configuration.labels?["com.apple.container.resource.role"] == "builtin")

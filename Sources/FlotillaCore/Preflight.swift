@@ -66,6 +66,14 @@ public struct Preflight: Sendable {
         guard status.isRunning else {
             return .serviceStopped(version: component.version, path: path, status: status.status)
         }
+        // Running, and running the *wrong build*. See `SystemStatus.hasVersionSkew` — this is
+        // what a `container` upgrade leaves behind until the service is restarted, and in that
+        // state no container can start even though everything here says it should.
+        if status.hasVersionSkew, let server = status.server {
+            return .needsRestart(cli: component.version,
+                                 service: SystemStatus.shortVersion(server.version),
+                                 path: path)
+        }
 
         return .ok(version: component.version, path: path)
     }

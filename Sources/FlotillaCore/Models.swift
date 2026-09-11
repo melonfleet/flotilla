@@ -355,6 +355,57 @@ public struct SystemStatus: Codable, Sendable {
 
     public var appRoot: String? { paths?.appRoot ?? appRootFlat }
     public var installRoot: String? { paths?.installRoot ?? installRootFlat }
+
+    /// True when the CLI and the running service are **different builds**.
+    ///
+    /// This is the state a `container` upgrade leaves behind, and it is worth detecting because
+    /// nothing else about it looks wrong. Measured here on 2026-09-12, upgrading 1.0.0 → 1.4.1
+    /// without restarting the service (the fixture is
+    /// `Fixtures/system-status-version-skew.json`, captured in exactly that state):
+    ///
+    /// * `status` said `running`, so preflight was satisfied and Flotilla showed a green light;
+    /// * every already-running container kept running;
+    /// * and **no new container or machine could start at all**, failing with
+    ///   `no available interface strategy for network default, plugin=container-network-vmnet
+    ///   variant=nil` — the old plugin processes were still holding the networks.
+    ///
+    /// `container system stop && container system start` fixed it completely. So the symptom is
+    /// baffling, the cause is invisible, and the remedy is one button Flotilla already has.
+    ///
+    /// **Compared by commit, not by version string.** The old daemon reported its version as a
+    /// whole sentence — `container-apiserver version 1.0.0 (build: release, commit: ee848e3)` —
+    /// while 1.4.1 reports a bare `1.4.1`, so a string comparison would have to parse two
+    /// formats and would still be guessing. The commit is exact and format-independent. Version
+    /// strings are the fallback for a payload that omits commits.
+    ///
+    /// Only ever true on a runtime new enough to report both halves: 1.0.0's flat payload named
+    /// the server alone, so there was nothing to compare it against and this is `false` there.
+    /// That is the honest answer rather than a guess — and the version that can detect the
+    /// problem is the version you are upgrading *to*, which is when it matters.
+    public var hasVersionSkew: Bool {
+        guard let client, let server else { return false }
+        if let clientCommit = client.commit, let serverCommit = server.commit {
+            return clientCommit != serverCommit
+        }
+        return !server.version.contains(client.version)
+    }
+
+    /// The two builds, for a message that names them rather than saying "mismatch".
+    public var skewDescription: String? {
+        guard hasVersionSkew, let client, let server else { return nil }
+        return "CLI \(client.version), service \(Self.shortVersion(server.version))"
+    }
+
+    /// `container-apiserver version 1.0.0 (build: release, commit: ee848e3)` → `1.0.0`.
+    ///
+    /// Only for the sentence the pre-1.4.1 daemon reports, and only for display — the raw string
+    /// is what reaches a support bundle, unchanged.
+    static func shortVersion(_ reported: String) -> String {
+        for word in reported.split(separator: " ") where SemanticVersion(String(word)) != nil {
+            return String(word)
+        }
+        return reported
+    }
 }
 
 public struct VersionComponent: Codable, Identifiable, Sendable {
@@ -798,6 +849,18 @@ public enum PreflightResult: Codable, Sendable, Equatable {
     /// a reboot and one `container system start` from working, so the UI offers to fix it rather
     /// than reporting a fault. `status` is the CLI's own word for the state.
     case serviceStopped(version: String, path: String, status: String)
+    /// Installed, new enough, service **running** — and the service is a *different build* from
+    /// the CLI, which means nothing new can start.
+    ///
+    /// Its own case rather than a flavour of `.ok`, because the difference is not cosmetic:
+    /// measured on 2026-09-12 upgrading 1.0.0 → 1.4.1 without restarting, `status` said
+    /// `running` and every `container run` failed with `no available interface strategy for
+    /// network default`. `.ok` would have Flotilla show a green light over a runtime that cannot
+    /// start a container, which is the one thing preflight exists to prevent.
+    ///
+    /// One `container system stop && start` fixes it, so this is offered like `.serviceStopped`
+    /// — a state the app can repair — rather than reported like a fault.
+    case needsRestart(cli: String, service: String, path: String)
     /// Present but not usable: wrong architecture, unreadable version, an API that will not
     /// answer even once started.
     case unusable(reason: String)
@@ -809,6 +872,7 @@ public enum PreflightResult: Codable, Sendable, Equatable {
         switch self {
         case .ok(let version, _): version
         case .serviceStopped(let version, _, _): version
+        case .needsRestart(let cli, _, _): cli
         case .tooOld(let found, _): found
         case .missing, .unusable: nil
         }
@@ -820,6 +884,8 @@ public enum PreflightResult: Codable, Sendable, Equatable {
         case .ok(let version, _): "container \(version) ready"
         case .missing: "container is not installed"
         case .serviceStopped(let version, _, let status): "container \(version) installed, service \(status)"
+        case .needsRestart(let cli, let service, _):
+            "container \(cli) installed but the running service is \(service) — restart it"
         case .tooOld(let found, let required): "container \(found) is older than the required \(required)"
         case .unusable(let reason): "container is unusable: \(reason)"
         }

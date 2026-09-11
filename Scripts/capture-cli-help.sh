@@ -32,17 +32,32 @@ command -v container >/dev/null || {
 }
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="$ROOT/reference/cli-help/container-1.0.0-help.txt"
+# **Named for the version it captured, derived — not hardcoded.** It used to say `1.0.0`
+# literally, so running it after an upgrade overwrote the 1.0.0 record with 1.4.1 output under
+# the 1.0.0 name: the exact "stale capture silently trusted" failure the header above warns
+# about, in the file that is supposed to prevent it. Now each version gets its own file and the
+# old one stays as evidence of what that version said.
+CLI_VERSION="$(container --version 2>/dev/null | sed -nE 's/.*version ([0-9][0-9A-Za-z.-]*).*/\1/p' | head -1)"
+[ -n "$CLI_VERSION" ] || CLI_VERSION="unknown"
+OUT="$ROOT/reference/cli-help/container-$CLI_VERSION-help.txt"
 mkdir -p "$(dirname "$OUT")"
 
+# Every leaf, including the ones Flotilla deliberately does not allow — the point is to see what
+# the CLI offers, not what we use. The 1.4.1 additions are at the end: `clean`, the `machine`
+# leaves that were only reachable through the parent before, and the experimental `k8s` family,
+# which is listed precisely so a future audit can see it is still out of scope on purpose.
 SUBCOMMANDS=(
-  "" run create start stop kill delete list inspect logs exec prune copy export build
+  "" run create start stop kill delete list inspect logs exec prune copy export build clean
   image "image pull" "image push" "image list" "image inspect" "image delete" "image tag"
   "image save" "image load" "image prune"
   volume "volume create" "volume delete" "volume list" "volume inspect" "volume prune"
   network "network create" "network delete" "network list" "network inspect" "network prune"
   system "system start" "system stop" "system status" "system logs" "system df" "system property"
-  registry "registry login" "registry logout" builder machine
+  "system kernel" "system kernel set"
+  registry "registry login" "registry logout" builder
+  machine "machine create" "machine delete" "machine inspect" "machine list" "machine logs"
+  "machine run" "machine set" "machine set-default" "machine stop"
+  k8s "k8s create" "k8s start" "k8s delete" "k8s list" "k8s load-image" "k8s write-config"
 )
 
 {

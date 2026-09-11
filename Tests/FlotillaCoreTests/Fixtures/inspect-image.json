@@ -1,58 +1,58 @@
 [
   {
     "configuration" : {
-      "creationDate" : "2026-06-16T00:01:20Z",
+      "creationDate" : "2026-06-22T19:20:11Z",
       "descriptor" : {
-        "digest" : "sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
-        "mediaType" : "application\/vnd.oci.image.index.v1+json",
+        "digest" : "sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce",
+        "mediaType" : "application/vnd.oci.image.index.v1+json",
         "size" : 9218
       },
-      "name" : "docker.io\/library\/alpine:latest"
+      "name" : "docker.io/library/alpine:3.22"
     },
-    "id" : "28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
+    "id" : "14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce",
     "variants" : [
       {
         "config" : {
           "architecture" : "arm64",
           "config" : {
             "Cmd" : [
-              "\/bin\/sh"
+              "/bin/sh"
             ],
             "Env" : [
-              "PATH=\/usr\/local\/sbin:\/usr\/local\/bin:\/usr\/sbin:\/usr\/bin:\/sbin:\/bin"
+              "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             ],
-            "WorkingDir" : "\/"
+            "WorkingDir" : "/"
           },
-          "created" : "2026-06-16T00:01:20.474100947Z",
+          "created" : "2026-06-22T19:20:11.029738351Z",
           "history" : [
             {
               "comment" : "buildkit.dockerfile.v0",
-              "created" : "2026-06-16T00:01:20.474100947Z",
-              "created_by" : "ADD alpine-minirootfs-3.24.1-aarch64.tar.gz \/ # buildkit"
+              "created" : "2026-06-22T19:20:11.029738351Z",
+              "created_by" : "ADD alpine-minirootfs-3.22.5-aarch64.tar.gz / # buildkit"
             },
             {
               "comment" : "buildkit.dockerfile.v0",
-              "created" : "2026-06-16T00:01:20.474100947Z",
-              "created_by" : "CMD [\"\/bin\/sh\"]",
+              "created" : "2026-06-22T19:20:11.029738351Z",
+              "created_by" : "CMD [\"/bin/sh\"]",
               "empty_layer" : true
             }
           ],
           "os" : "linux",
           "rootfs" : {
             "diff_ids" : [
-              "sha256:b2848c02ac6ff53d265469b5b30f649f335e546a83330cd8916d54e65e640409"
+              "sha256:03ba6f53ebfcc662cb046823a1858bd5029e4040d22dd34096868ddf7b5dd776"
             ],
             "type" : "layers"
           },
           "variant" : "v8"
         },
-        "digest" : "sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18",
+        "digest" : "sha256:2c9d26f410d032d5b1525aa8a873e238b05b90c4ae8618743d4311f0cc827e37",
         "platform" : {
           "architecture" : "arm64",
           "os" : "linux",
           "variant" : "v8"
         },
-        "size" : 4184689
+        "size" : 4122138
       }
     ]
   }

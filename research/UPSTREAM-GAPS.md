@@ -4,8 +4,11 @@ Things Flotilla deliberately does **not** offer because Apple's CLI has no way t
 Each entry says how it was established, and what we would build the day it changes. Re-check this
 file whenever `container` is updated; every item has a one-line test.
 
-**Pinned to:** `container CLI version 1.0.0 (build: release, commit: ee848e3)`
-**Last checked:** 2026-09-11 (six gaps)
+**Pinned to:** `container CLI version 1.4.1 (build: release, commit: 9a8917c)`
+**Last checked:** 2026-09-12 on 1.4.1 — **all six still hold**, re-run against the live CLI, not
+the docs. Two results changed wording rather than substance and are noted under their items:
+machines now take an address on the *container* subnet (item 4), and `set-default`'s leaf help
+still says nothing about what it affects even though the tagged reference does (item 6).
 
 ---
 
@@ -72,6 +75,14 @@ container machine list                                                   # still
 Corroborating: `container run` has no flag for choosing a machine, and a container's own
 `inspect` output never names one (see `Tests/FlotillaCoreTests/Fixtures/inspect-container.json`).
 
+**Re-measured on 1.4.1, 2026-09-12.** Still true, and the evidence is now stronger rather than
+weaker: five containers ran for the whole upgrade with **both machines stopped**. What did change
+is addressing — under 1.0.0 machines sat on `192.168.64.x` while containers were on `.67`; on
+1.4.1 a booted machine took `192.168.67.3`, on the same subnet as the containers. Sharing a
+subnet is not hosting: `run` still has no machine selector and a container still never names one.
+It does mean the old "sequential neighbours on one bridge" observation is now literally true of
+one bridge.
+
 So each container gets its own VM, and a machine is a separate persistent VM you create and shell
 into. **Machines are therefore not on your container networks either**, which is the real reason
 item 1 bites: even if `--network` appeared on `machine create`, a machine joining a container
@@ -102,6 +113,13 @@ container machine set-default --help
 # OVERVIEW: Set the default container machine   — and nothing further
 ```
 
+**Re-checked on 1.4.1:** the leaf help is unchanged — still that one line. Apple's *tagged
+reference* does explain it ("Commands that take an optional container machine ID use the default
+when you don't provide one"), and that sentence is in the 1.0.0 reference too, so the
+documentation always had what the help still withholds. Flotilla can therefore state the
+behaviour and cite the reference; it should not claim the CLI explains itself, because it does
+not.
+
 It certainly does **not** decide where containers run, because nothing does (item 4). Flotilla
 exposes the action but does not claim a behaviour for it, and the wiki says so explicitly. If
 Apple documents it, say what it does in `Machines.md` and in the row action's help text.
@@ -112,3 +130,9 @@ Apple documents it, say what it does in `Machines.md` and in the row action's he
 
 After any `container` upgrade, run the greps above and update the pinned version. If an item has
 lifted, the "if this lifts" note is the work; delete the entry once it is built.
+
+Run them against the **installed binary**, not the tagged documentation. The 1.4.1 pass found the
+two disagreeing: the reference documents `--scheme auto` as present and the 1.3.0 release notes
+say it was removed, and only the live help settles which is true. `Scripts/capture-cli-help.sh`
+writes the whole leaf surface to a file named for the version it captured, which is the evidence
+a later reader needs.

@@ -1,1 +1,1 @@
-[{"createdDate":"2026-08-03T09:16:13Z","default":true,"memory":34359738368,"diskSize":78692352,"ipAddress":"192.168.64.10","id":"flotilla-probe","cpus":6,"status":"running"}]
+[{"default":false,"diskSize":78692352,"createdDate":"2026-08-03T11:13:19Z","status":"stopped","id":"parked-alpine","cpus":2,"memory":2147483648},{"ipAddress":"192.168.67.3","default":true,"diskSize":78725120,"createdDate":"2026-08-03T10:41:35Z","status":"running","id":"probe-alpine","cpus":2,"memory":2147483648}]

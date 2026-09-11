@@ -1,7 +1,7 @@
 [
   {
     "configuration" : {
-      "creationDate" : "2026-07-27T16:47:04Z",
+      "creationDate" : "2026-09-11T22:59:37Z",
       "labels" : {
         "com.apple.container.resource.role" : "builtin"
       },
@@ -14,9 +14,9 @@
     },
     "id" : "default",
     "status" : {
-      "ipv4Gateway" : "192.168.66.1",
-      "ipv4Subnet" : "192.168.66.0\/24",
-      "ipv6Subnet" : "fd55:a2f9:1eb:71c8::\/64"
+      "ipv4Gateway" : "192.168.67.1",
+      "ipv4Subnet" : "192.168.67.0/24",
+      "ipv6Subnet" : "fdac:60fc:e4eb:986e::/64"
     }
   }
 ]

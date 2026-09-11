@@ -14,18 +14,25 @@ private func fixture(_ name: String) throws -> Data {
 
 @Test func decodeMachineList() throws {
     let machines = try JSONDecoder.flotilla.decode([ContainerMachine].self, from: fixture("machines"))
-    let m = try #require(machines.first)
+    // Named, not indexed: a recapture lists whatever machines the Mac has, in the CLI's order.
+    let m = try #require(machines.first { $0.id == "probe-alpine" })
 
-    #expect(m.id == "flotilla-probe")
     #expect(m.status == "running")
-    #expect(m.cpus == 6)
+    #expect(m.cpus == 2)
     // Bytes, not the human-readable units `machine list --format table` shows.
-    #expect(m.memory == 34_359_738_368)
-    #expect(m.diskSize == 78_692_352)
-    #expect(m.ipAddress == "192.168.64.10")
-    #expect(m.createdDate == "2026-08-03T09:16:13Z")
+    #expect(m.memory == 2_147_483_648)
+    #expect(m.diskSize == 78_725_120)
+    #expect(m.ipAddress == "192.168.67.3")
+    #expect(m.createdDate == "2026-08-03T10:41:35Z")
     #expect(m.isDefault == true)
     #expect(m.isRunning)
+
+    // A stopped machine reports no address at all, which is why the field is optional and why
+    // the inspect fixture is captured from a *running* one.
+    let stopped = try #require(machines.first { $0.id == "parked-alpine" })
+    #expect(!stopped.isRunning)
+    #expect(stopped.ipAddress == nil)
+    #expect(stopped.isDefault == false)
 
     // `machine list` carries none of the inspect-only fields.
     #expect(m.containerId == nil)
@@ -41,20 +48,20 @@ private func fixture(_ name: String) throws -> Data {
     let m = try #require(machines.first)
 
     // The list-shared fields decode identically from either endpoint.
-    #expect(m.id == "flotilla-probe")
+    #expect(m.id == "probe-alpine")
     #expect(m.status == "running")
-    #expect(m.cpus == 6)
-    #expect(m.memory == 34_359_738_368)
-    #expect(m.diskSize == 78_692_352)
-    #expect(m.ipAddress == "192.168.64.10")
-    #expect(m.createdDate == "2026-08-03T09:16:13Z")
+    #expect(m.cpus == 2)
+    #expect(m.memory == 2_147_483_648)
+    #expect(m.diskSize == 78_725_120)
+    #expect(m.ipAddress == "192.168.67.3")
+    #expect(m.createdDate == "2026-08-03T10:41:35Z")
     // `machine inspect` reports no `default` key at all — nil, not false.
     #expect(m.isDefault == nil)
 
     // The five inspect-only fields.
-    #expect(m.containerId == "flotilla-probe-93936e")
-    #expect(m.homeMount == "rw")
-    #expect(m.startedDate == "2026-08-03T09:16:14Z")
+    #expect(m.containerId?.hasPrefix("probe-alpine-") == true)
+    #expect(m.homeMount == "ro")
+    #expect(m.startedDate == "2026-09-11T23:02:46Z")
 
     let image = try #require(m.image)
     #expect(image.reference == "docker.io/library/alpine:3.22")

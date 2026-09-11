@@ -314,13 +314,25 @@ the one the report could not establish.
    the flag diff finds it on neither `run` nor `create`. Treat it as not present until a live
    `--help` says otherwise; it should not be planned against.
 
-2. **`--scheme auto` was not removed from the documentation.** The report notes the 1.4.1
-   reference still documents `auto`, and that is the whole of what can be established: the tagged
-   text reads `values: http, https, auto; default: auto`, exactly as 1.0.0 does. So the 1.3.0
-   release note and the tagged reference contradict each other, and only a live 1.4.1
-   `image pull --help` settles it. Flotilla emits no `--scheme`, so the allowlist is unaffected
-   either way; the behavioural risk to an HTTP dev registry stands as a thing to test, not a
-   thing established.
+2. **`--scheme auto` — the docs and the release notes disagreed, and the binary settled it.**
+   The tagged 1.4.1 reference still reads `values: http, https, auto; default: auto`, exactly as
+   1.0.0 does. The installed 1.4.1 says otherwise:
+
+   ```
+   --scheme <scheme>  Scheme to use when connecting to the container
+                      registry. One of (http, https) (default: https)
+   ```
+
+   So the release note was right and the tagged reference is stale — which is the whole argument
+   for capturing leaf help from the binary rather than reading the repository's documentation.
+
+   **Consequence, and it is a real one.** Flotilla emits no `--scheme`, so the allowlist needed no
+   rename; but that also means Flotilla can no longer pull from a plain-HTTP registry *at all*,
+   where 1.0.0 would silently downgrade. Anyone running a loopback or private HTTP registry loses
+   image pulls through the app with no way to ask for HTTP. Adding `--scheme` to the `image pull`
+   spec as a closed `http|https` set would restore it; that is a decision, not an oversight, and
+   it should be taken deliberately — sending credentials or image layers over plaintext is
+   exactly the kind of thing a default-deny table exists to make somebody choose.
 
 ### The `system status` redesign is real, and it breaks nothing here
 
@@ -348,6 +360,43 @@ roots are wanted after all. It is not a decode break and preflight cannot regres
 The stopped/unregistered contract is unchanged in source: both versions
 `Application.exit(withError: ExitCode(1))`, and 1.4.1 renders `status: "unregistered"` before
 doing so.
+
+### Upgrade performed — 2026-09-12
+
+Installed from Apple's signed, notarised `container-1.4.1-installer-signed.pkg` (`Developer ID
+Installer: Apple Inc. - Containerization`, UPBK2H6LZM). What the upgrade actually found:
+
+**The one thing no release note mentions: the service must be restarted, or nothing works.**
+After installing, `container system status` reported `running`, every already-running container
+kept running, and **every new container and machine failed to start** with
+
+```
+no available interface strategy for network default, plugin=container-network-vmnet variant=nil
+```
+
+`container system stop && container system start` fixed it completely. The cause is visible in
+the new payload and only there: `client.version` was `1.4.1` while `server.version` was still
+`container-apiserver version 1.0.0` — the old daemon and its network plugins were still resident.
+`Fixtures/system-status-version-skew.json` is that state, captured. Flotilla now detects it
+(`SystemStatus.hasVersionSkew` → `PreflightResult.needsRestart`) and offers the restart, which
+turns an inexplicable failure into a sentence and a button. That detection is only possible
+*because* the payload was redesigned, so the upgrade's riskiest change paid for itself.
+
+**Fixtures:** all 14 machine-capturable ones recaptured with `Scripts/capture-fixtures.sh`. A
+shape diff of every one — key paths and value types, array indices collapsed — found exactly one
+genuine schema change, `system-status`, which was already handled. Everything else that looked
+like a change was a different subject: the old set described one purpose-made container and two
+networks, the new one describes a real fleet. `image list` does now embed each variant's full
+`config`, which is payload growth rather than a schema break and is worth remembering before
+anyone puts `image list` in a polling loop.
+
+**Gaps:** all six re-run against the binary. All hold. Two footnotes: a booted machine now takes
+an address on the *container* subnet rather than its own, and `machine set-default --help` still
+explains nothing even though the tagged reference does.
+
+**Tests:** 378 green. The assertions that broke were all naming the old fixtures' subjects by
+array position; they name them by id now, so the next recapture is a two-line change rather than
+forty.
 
 ### What still needs the real binary
 

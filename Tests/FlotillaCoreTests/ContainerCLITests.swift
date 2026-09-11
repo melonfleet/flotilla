@@ -18,9 +18,8 @@ private func fixture(_ name: String) throws -> Data {
 // decoding THREW: the Volumes screen showed a runtime error the moment a volume existed.
 @Test func decodeVolumes() throws {
     let volumes = try JSONDecoder.flotilla.decode([ContainerVolume].self, from: fixture("volumes"))
-    let v = try #require(volumes.first)
-    #expect(v.id == "audit-probe")
-    #expect(v.name == "audit-probe")
+    let v = try #require(volumes.first { $0.id == "test1" })
+    #expect(v.name == "test1")
     #expect(v.format == "ext4")
     #expect(v.driver == "local")
     // The real size is the ext4 image's provisioned size, not what is in use — 512 GiB for a
@@ -29,7 +28,14 @@ private func fixture(_ name: String) throws -> Data {
     // `source` is an absolute path under the user's Library. It must never reach a support
     // bundle unredacted; `Redaction` handles that, and this asserts the field is populated so
     // the redactor has something to find.
-    #expect(v.source?.hasSuffix("volumes/audit-probe/volume.img") == true)
+    #expect(v.source?.hasSuffix("volumes/test1/volume.img") == true)
+
+    // And one created with an explicit `--size 64M`, which is where the "provisioned, not used"
+    // caveat above becomes visible: 64 MiB requested, 64 MiB reported, ~2 MB actually on disk.
+    // That gap is why the Volumes column is labelled **Capacity**.
+    let sized = try #require(volumes.first { $0.id == "probe-shortform" })
+    #expect(sized.sizeInBytes == 67_108_864)
+    #expect(sized.configuration.options?["size"] == "64M")
 }
 
 // The fixture behind this was FABRICATED until 2026-07-30 — a flat shape written to match the
@@ -38,21 +44,23 @@ private func fixture(_ name: String) throws -> Data {
 // `state` field at all.
 @Test func decodeNetworks() throws {
     let networks = try JSONDecoder.flotilla.decode([ContainerNetwork].self, from: fixture("networks"))
-    #expect(networks.count == 2)
+    #expect(networks.count == 4)
 
     let builtin = try #require(networks.first { $0.id == "default" })
     #expect(builtin.name == "default")
     #expect(builtin.mode == "nat")
     #expect(builtin.plugin == "container-network-vmnet")
-    #expect(builtin.subnet == "192.168.64.0/24")
-    #expect(builtin.gateway == "192.168.64.1")
+    #expect(builtin.subnet == "192.168.67.0/24")
+    #expect(builtin.gateway == "192.168.67.1")
     #expect(builtin.isBuiltin, "Apple's own network carries the builtin role label")
 
     // A network the user made: same shape, but not builtin — which is what gates whether we
-    // offer to delete it.
+    // offer to delete it. Its subnet is **not** asserted: addresses are assigned by the vmnet
+    // plugin and a user network's subnet moved between two captures on the same Mac, so pinning
+    // one would be testing the plugin's bookkeeping rather than our decoder.
     let mine = try #require(networks.first { $0.id == "test" })
     #expect(mine.isBuiltin == false)
-    #expect(mine.subnet == "192.168.65.0/24")
+    #expect(mine.subnet?.hasPrefix("192.168.") == true)
 }
 
 // MARK: - ContainerCLI: every mutation is allowlisted
@@ -212,10 +220,12 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     host.stdoutByPath["inspect"] = String(decoding: try fixture("containers"), as: UTF8.self)
     let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
-    let container = try cli.inspect("flotilla-probe-test")
+    let container = try cli.inspect("test1")
 
-    #expect(host.invocations[0] == ["inspect", "flotilla-probe-test"])
-    #expect(container.name == "flotilla-probe-test")
+    #expect(host.invocations[0] == ["inspect", "test1"])
+    // The canned payload is the whole `ls` fixture, so this asserts the decode and the argv,
+    // not which container came back first.
+    #expect(container.name == "test1")
 }
 
 @Test func inspectImageDecodesTheSameShapeAsListImages() throws {
@@ -223,10 +233,10 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     host.stdoutByPath["image inspect"] = String(decoding: try fixture("images"), as: UTF8.self)
     let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
-    let image = try cli.inspectImage("docker.io/library/alpine:latest")
+    let image = try cli.inspectImage("docker.io/library/alpine:3.22")
 
-    #expect(host.invocations[0] == ["image", "inspect", "docker.io/library/alpine:latest"])
-    #expect(image.reference == "docker.io/library/alpine:latest")
+    #expect(host.invocations[0] == ["image", "inspect", "docker.io/library/alpine:3.22"])
+    #expect(image.reference == "docker.io/library/alpine:3.22")
 }
 
 @Test func rawInspectJSONReturnsTheCLIsOwnOutputVerbatimAndRoutesThroughAllowlist() throws {

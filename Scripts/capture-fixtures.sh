@@ -88,22 +88,50 @@ item = items[0]
 print(item.get('id') or item.get('name') or item.get('configuration',{}).get('name',''))
 " 2>/dev/null; }
 
+# A running container for preference, for the same reason as the machine below: `status.networks`
+# and the address in it exist only while one is up.
 if id="$(container ls --all --format json | python3 -c "
 import json,sys
 items=json.load(sys.stdin)
-print(items[0]['configuration']['id'] if items else '')" 2>/dev/null)" && [ -n "$id" ]; then
+def running(c):
+    s = c.get('status')
+    return (s.get('state') if isinstance(s, dict) else s) == 'running'
+up = [c for c in items if running(c)]
+print((up or items or [{}])[0].get('configuration',{}).get('id',''))" 2>/dev/null)" && [ -n "$id" ]; then
   capture inspect-container.json "inspect $id" inspect "$id"
 else
   skipped+=("inspect-container.json — no container exists")
 fi
 
-for kind in volume network; do
-  if id="$(first "$kind")" && [ -n "$id" ]; then
-    capture "inspect-$kind.json" "inspect $id" "$kind" inspect "$id"
-  else
-    skipped+=("inspect-$kind.json — no $kind exists")
-  fi
-done
+# A volume created with an explicit `--size` for preference: `options.size` only exists on one,
+# and it is the field that shows the reported size is a *capacity*, not usage.
+VOLUME="$(container volume list --format json 2>/dev/null | python3 -c "
+import json,sys
+try: items = json.load(sys.stdin)
+except Exception: sys.exit(0)
+sized = [v for v in items if (v.get('configuration') or {}).get('options', {}).get('size')]
+print((sized or items or [{}])[0].get('id',''))
+" 2>/dev/null)"
+if [ -n "$VOLUME" ]; then
+  capture inspect-volume.json "inspect $VOLUME" volume inspect "$VOLUME"
+else
+  skipped+=("inspect-volume.json — no volume exists")
+fi
+
+# The built-in network for preference: it is the one every container lands on by default, and
+# the one whose `builtin` role label gates whether Flotilla offers to delete it.
+NETWORK="$(container network list --format json 2>/dev/null | python3 -c "
+import json,sys
+try: items = json.load(sys.stdin)
+except Exception: sys.exit(0)
+names = [n.get('id') for n in items]
+print('default' if 'default' in names else (names[0] if names else ''))
+" 2>/dev/null)"
+if [ -n "$NETWORK" ]; then
+  capture inspect-network.json "inspect $NETWORK" network inspect "$NETWORK"
+else
+  skipped+=("inspect-network.json — no network exists")
+fi
 
 if ref="$(container image list --format json | python3 -c "
 import json,sys
@@ -114,8 +142,18 @@ else
   skipped+=("inspect-image.json — no image exists")
 fi
 
-if id="$(first machine)" && [ -n "$id" ]; then
-  capture machine-inspect.json "inspect $id" machine inspect "$id"
+# A **running** machine for preference. `ipAddress`, `startedDate` and `containerId` exist only
+# while one is up, so a fixture captured from a stopped machine silently drops three fields from
+# the decoder's coverage — which is how those three would rot unnoticed.
+MACHINE="$(container machine list --format json 2>/dev/null | python3 -c "
+import json,sys
+try: items = json.load(sys.stdin)
+except Exception: sys.exit(0)
+running = [m for m in items if (m.get('status') or '').lower() == 'running']
+print((running or items or [{}])[0].get('id',''))
+" 2>/dev/null)"
+if [ -n "$MACHINE" ]; then
+  capture machine-inspect.json "inspect $MACHINE" machine inspect "$MACHINE"
 else
   skipped+=("machine-inspect.json — no machine exists")
 fi

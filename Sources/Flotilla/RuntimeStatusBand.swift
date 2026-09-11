@@ -85,6 +85,10 @@ struct RuntimeStatusBand: View {
             switch model.preflight {
             case .serviceStopped:
                 Button("Start Container System") { Task { await model.startRuntime() } }
+            // The remedy for a skewed runtime is exactly this button, so it is offered first
+            // and without the confirmation: nothing useful is running in that state anyway.
+            case .needsRestart:
+                Button("Restart Container System") { Task { await model.restartRuntime() } }
             case .ok:
                 Button("Restart Container System…") { confirmingRestart = true }
             default:
@@ -121,6 +125,8 @@ struct RuntimeStatusBand: View {
             ("Container system running", "container \(version)", Theme.online)
         case .serviceStopped(let version, _, _):
             ("Container system stopped", "container \(version)", Theme.warning)
+        case .needsRestart(let cli, let service, _):
+            ("Restart needed after upgrade", "CLI \(cli), service \(service)", Theme.warning)
         case .tooOld(let found, let required):
             ("container \(found) is too old", "needs \(required)", Theme.warning)
         case .missing:

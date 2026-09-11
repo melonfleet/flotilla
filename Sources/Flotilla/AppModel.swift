@@ -670,6 +670,11 @@ final class AppModel {
                 + Preflight.searchedDirectories().joined(separator: ", ")
         case .serviceStopped(_, _, let status):
             return "Apple's `container` service isn't running (\(status))."
+        case .needsRestart(let cli, let service, _):
+            // Names both builds, because the symptom without them is inexplicable: everything
+            // reports healthy and nothing new will start. Measured on the 1.0.0 → 1.4.1 upgrade.
+            return "`container` was upgraded to \(cli) but the running service is still "
+                + "\(service). Nothing new can start until it restarts."
         case .tooOld(let found, let required):
             return "`container` \(found) is too old — \(required) or newer is required."
         case .unusable(let reason):
