@@ -712,26 +712,7 @@ private struct MachineInspectTab: View {
         } else if presentation == .table {
             InspectTableView(json: json, search: search)
         } else if let json {
-            // A two-axis `ScrollView` **centres** content smaller than its viewport, and a
-            // machine's inspect payload is narrow — which is why this read as a block of text
-            // floating in the middle of the pane. Neither aligning the stack nor framing the
-            // scroll view fixes it: the centring happens inside, so the content has to be told
-            // it is at least as big as the viewport. `minWidth`/`minHeight`, not `maxWidth`, so
-            // a payload that *is* larger still scrolls.
-            GeometryReader { viewport in
-                ScrollView([.vertical, .horizontal]) {
-                    // Filtering the JSON view by line keeps the two presentations answering the
-                    // same question — a filter that only worked in one of them would be worse
-                    // than no filter, because you would trust the empty result.
-                    Text(Self.filtered(json, search: search))
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .padding(12)
-                        .frame(minWidth: viewport.size.width,
-                               minHeight: viewport.size.height,
-                               alignment: .topLeading)
-                }
-            }
+            JSONTextView(json: json, search: search)
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }

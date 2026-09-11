@@ -789,19 +789,20 @@ private struct InspectTab: View {
                 description: Text(error)
             )
         } else if let json {
-            LineListView(lines: Self.displayLines(json), search: search, wrap: true)
+            // Same viewer as the machine Inspect tab. These two used to render JSON by different
+            // means — a line list here, plain text there — which is how they drifted in the first
+            // place.
+            JSONTextView(json: json, search: search)
         }
     }
 
-    private static func displayLines(_ json: String) -> [DisplayLine] {
-        json.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, line in
-            DisplayLine(id: index, text: String(line), color: .primary)
-        }
-    }
-
+    /// Matching lines, for the count beside the filter field. Counted here rather than asked of
+    /// the viewer, which now filters rather than highlights — the two must agree, and the line is
+    /// the unit both work in.
     private var matchCount: Int {
         guard let json, !search.isEmpty else { return 0 }
-        return LineListView.matchCount(Self.displayLines(json), search: search)
+        return json.split(separator: "\n", omittingEmptySubsequences: false)
+            .count { $0.localizedCaseInsensitiveContains(search) }
     }
 
     private func load() async {

@@ -5,7 +5,7 @@ Each entry says how it was established, and what we would build the day it chang
 file whenever `container` is updated; every item has a one-line test.
 
 **Pinned to:** `container CLI version 1.0.0 (build: release, commit: ee848e3)`
-**Last checked:** 2026-09-11
+**Last checked:** 2026-09-11 (six gaps)
 
 ---
 
@@ -77,7 +77,25 @@ into. **Machines are therefore not on your container networks either**, which is
 item 1 bites: even if `--network` appeared on `machine create`, a machine joining a container
 network would be a genuinely new capability rather than a missing flag.
 
-## 5. What `set-default` affects is undocumented
+## 5. A machine's filesystem cannot be copied to or from
+
+Containers have a Files tab: it lists with `container exec <id> -- ls -la -- <path>` and moves
+files with `container copy`. A machine can do the first and not the second.
+
+```sh
+container copy --help          # "between a container and the local filesystem"; endpoints are
+                               # container:path — no machine form, and there is no `machine cp`
+container machine run --help   # takes <executable> and <arguments>, so `ls -la` works
+```
+
+So a Files tab for machines would browse and never transfer — a tab that looks exactly like the
+container one and silently does half of it. That is why there isn't one, rather than an oversight.
+
+**If this lifts:** `FilesTab` needs making source-agnostic first (it is written against container
+plumbing throughout), then a `listMachineDirectory` on `ContainerCLI` using `machine run`, and the
+Files tab joins the machine detail after the divider beside Settings.
+
+## 6. What `set-default` affects is undocumented
 
 ```sh
 container machine set-default --help
