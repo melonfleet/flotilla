@@ -21,7 +21,7 @@ struct InspectSheet: View {
     @State private var loading = false
     @State private var error: String?
     @State private var search = ""
-    @State private var presentation: InspectPresentation = .json
+    @State private var presentation: InspectPresentation = .table
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

@@ -41,9 +41,13 @@ require Sources/Flotilla/ContainersUIState.swift 'var presentation: ContainersVi
 # explicit `requestedTab` in front of it — that parameter exists because routing the request
 # through `lastMachineTab` alone silently dropped it whenever the view was already installed.
 require Sources/Flotilla/MachineDetailView.swift 'model.lastMachineTab[machine.id] ?? .overview)'
-require Sources/Flotilla/MachineDetailView.swift '@State private var presentation: InspectPresentation = .json'
+# `.table`, not `.json`. Inspect opens on the readable form — one row per path, searchable —
+# and JSON is what you switch to for the raw payload; it was `.json` only because that view
+# existed first. Pinned for the same reason the old value was: a default that drifts back is a
+# regression nobody notices until they open the tab.
+require Sources/Flotilla/MachineDetailView.swift '@State private var presentation: InspectPresentation = .table'
 require Sources/Flotilla/ContainerDetailView.swift 'model.lastDetailTab[container.id] ?? .overview)'
-require Sources/Flotilla/ContainerDetailView.swift '@State private var presentation: InspectPresentation = .json'
+require Sources/Flotilla/ContainerDetailView.swift '@State private var presentation: InspectPresentation = .table'
 
 # A detail target that opens pre-populated is always a scaffold: both screens navigate to it.
 for f in Sources/Flotilla/MachinesView.swift Sources/Flotilla/ContainersView.swift; do

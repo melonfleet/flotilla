@@ -551,7 +551,6 @@ struct ContainersView: View {
         Button("Terminal") { openDetail(container.id, tab: .terminal) }
             // A shell needs a running process to attach to.
             .disabled(!running)
-        Button("Configuration") { openDetail(container.id, tab: .configuration) }
         Button("Inspect") { openDetail(container.id, tab: .inspect) }
 
         Divider()

@@ -53,10 +53,13 @@ struct ContainerDetailView: View {
                 case .terminal: TerminalTab(model: model, container: container)
                 case .files: FilesTab(model: model, container: container)
                 case .inspect: InspectTab(model: model, container: container)
-                case .configuration: ConfigurationTab(model: model, container: container)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // `.topLeading`, not `.top`. SwiftUI's `.top` is *horizontally centred* and only
+            // vertically top — which is why the Inspect tab's JSON sat as a floating block in
+            // the middle of the pane instead of reading as a document from the top-left. It
+            // applies to every tab here, so the one word fixes all of them.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         // Remembered for this run only — see `AppModel.lastDetailTab` for why it is not
         // persisted to disk.
@@ -83,7 +86,10 @@ struct ContainerDetailView: View {
     /// alone.
     private var tabBar: some View {
         HStack(spacing: 2) {
-            ForEach(Tab.allCases) { candidate in
+            ForEach(Array(Tab.allCases.enumerated()), id: \.element.id) { index, candidate in
+                if index > 0, Tab.allCases[index - 1].isShared, !candidate.isShared {
+                    Divider().frame(height: 16).padding(.horizontal, 6)
+                }
                 let selected = candidate == tab
                 Button { tab = candidate } label: {
                     HStack(spacing: 6) {
@@ -677,7 +683,7 @@ private struct InspectTab: View {
     @State private var loading = false
     @State private var error: String?
     @State private var search = ""
-    @State private var presentation: InspectPresentation = .json
+    @State private var presentation: InspectPresentation = .table
 
     /// Narrowed on purpose. The standard set is tuned for a support bundle **leaving the
     /// machine**; this is a panel you read on your own Mac, and applying the strict rules here
@@ -1011,253 +1017,35 @@ private struct ProcessesTab: View {
 }
 
 // MARK: - Configuration (rendered YAML)
-
-/// A hand-rolled JSON→YAML renderer. `Foundation` has no YAML encoder, and this can't be
-/// built or run on this machine to catch a subtle emitter bug before it ships — so every
-/// string scalar, key and value alike, is double-quoted and escaped unconditionally rather
-/// than emitted plain when it "looks safe."
-///
-/// That is the deliberate choice the brief calls out explicitly: *valid but ugly* over
-/// *pretty but wrong*. A plain-scalar emitter has to get right, all at once, that `no`,
-/// `true`, `~`, `0755`, a leading `-`, an embedded `: `, a leading `#`, an empty string, and
-/// leading/trailing whitespace all corrupt meaning if left unquoted — one missed case is a
-/// silent data-corruption bug in a view whose whole job is to be trustworthy about what the
-/// container is configured to do. Double-quoting everything sidesteps all of those cases
-/// simultaneously. Its known cost: the output is noisier than a hand-written YAML file, and
-/// numeric formatting comes from `NSNumber.stringValue`, which is not guaranteed to
-/// reproduce unusual source literals (e.g. a float written in scientific notation) exactly.
-///
-/// Object keys are sorted so the rendering is stable between refreshes rather than
-/// reshuffling with whatever order `JSONSerialization` happens to hand back.
-private enum ConfigurationYAML {
-    static func render(fromJSON json: String) -> String? {
-        guard let data = json.data(using: .utf8) else { return nil }
-        guard let root = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
-            return nil
-        }
-        return lines(for: root, indent: 0).joined(separator: "\n")
-    }
-
-    private static func lines(for value: Any, indent: Int) -> [String] {
-        let pad = String(repeating: "  ", count: indent)
-        if let dict = value as? [String: Any] {
-            guard !dict.isEmpty else { return ["\(pad){}"] }
-            var out: [String] = []
-            for (key, v) in dict.sorted(by: { $0.key < $1.key }) {
-                appendEntry(prefix: "\(pad)\(quoted(key)):", value: v, indent: indent, into: &out)
-            }
-            return out
-        }
-        if let array = value as? [Any] {
-            guard !array.isEmpty else { return ["\(pad)[]"] }
-            var out: [String] = []
-            for item in array {
-                appendEntry(prefix: "\(pad)-", value: item, indent: indent, into: &out)
-            }
-            return out
-        }
-        return ["\(pad)\(scalar(value))"]
-    }
-
-    /// Appends a `key:` (or `-`) entry, plus whatever follows it: inline for a scalar or an
-    /// empty container, or on further-indented lines below for a non-empty nested one — as
-    /// `key:` / `-` alone on their own line, which is plain valid YAML and needs no special
-    /// handling of where a nested mapping's first field lands relative to its dash.
-    private static func appendEntry(prefix: String, value: Any, indent: Int, into out: inout [String]) {
-        let childIndent = indent + 1
-        if let dict = value as? [String: Any] {
-            if dict.isEmpty {
-                out.append("\(prefix) {}")
-            } else {
-                out.append(prefix)
-                out.append(contentsOf: lines(for: value, indent: childIndent))
-            }
-            return
-        }
-        if let array = value as? [Any] {
-            if array.isEmpty {
-                out.append("\(prefix) []")
-            } else {
-                out.append(prefix)
-                out.append(contentsOf: lines(for: value, indent: childIndent))
-            }
-            return
-        }
-        out.append("\(prefix) \(scalar(value))")
-    }
-
-    private static func scalar(_ value: Any) -> String {
-        switch value {
-        case is NSNull:
-            return "null"
-        case let number as NSNumber:
-            // `JSONSerialization` bridges JSON booleans to `NSNumber` on Apple platforms;
-            // `CFGetTypeID` is the standard way to tell an `NSNumber` holding a real `Bool`
-            // apart from one holding a numeric value that happens to be 0 or 1.
-            if CFGetTypeID(number) == CFBooleanGetTypeID() {
-                return number.boolValue ? "true" : "false"
-            }
-            return number.stringValue
-        case let string as String:
-            return quoted(string)
-        default:
-            return quoted(String(describing: value))
-        }
-    }
-
-    /// Double-quoted YAML scalar escaping: backslash, double quote, and the common control
-    /// characters get named escapes; anything else below `0x20` — a raw newline would
-    /// otherwise break a plain scalar, which is exactly the case the brief calls out — gets
-    /// a `\xNN` escape so the result stays valid on one logical line.
-    private static func quoted(_ s: String) -> String {
-        var out = "\""
-        for scalar in s.unicodeScalars {
-            switch scalar {
-            case "\\": out += "\\\\"
-            case "\"": out += "\\\""
-            case "\n": out += "\\n"
-            case "\t": out += "\\t"
-            case "\r": out += "\\r"
-            default:
-                if scalar.value < 0x20 {
-                    out += String(format: "\\x%02X", scalar.value)
-                } else {
-                    out.unicodeScalars.append(scalar)
-                }
-            }
-        }
-        out += "\""
-        return out
-    }
-}
-
-/// Configuration tab: the container's inspect JSON, rendered as YAML by `ConfigurationYAML`.
-/// Apple's `container` has no YAML anywhere — no compose file, no YAML config, TOML for
-/// system config and JSON per-container — so this is a rendering, not a file on disk, and
-/// says so on screen rather than letting the YAML syntax imply otherwise.
-private struct ConfigurationTab: View {
-    let model: AppModel
-    let container: Container
-
-    @State private var yaml: String?
-    @State private var loading = false
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            caption
-            Divider()
-            controls
-            Divider()
-            content
-        }
-        .task { await load() }
-    }
-
-    /// Why this view is read-only, stated here so it is not mistaken for unfinished work:
-    /// **Apple's `container` has no command that mutates an existing container.** There is no
-    /// `container update`, and no pause/resume/set — the lifecycle is create, start, stop,
-    /// kill, delete. An editable configuration pane would therefore let someone type changes
-    /// that could never be applied, which is worse than not offering the field.
-    ///
-    /// The real "edit" is to recreate: the portability review recommends a `Duplicate…`
-    /// action that pre-fills the run sheet from this container's configuration, which is the
-    /// honest shape of the same intent. See `research/DOCKER-PORTABILITY.md`.
-    private var caption: some View {
-        Label(
-            "Read-only. Apple's `container` has no YAML config file, and no command to change "
-                + "an existing container's settings — to change one, recreate it.",
-            systemImage: "info.circle"
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(12)
-    }
-
-    private var controls: some View {
-        HStack {
-            Spacer()
-            Button {
-                Task { await load() }
-            } label: {
-                Label("Reload", systemImage: "arrow.clockwise")
-            }
-            .disabled(loading)
-            Button {
-                copyAll()
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            .disabled(yaml == nil)
-        }
-        .padding(12)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if loading && yaml == nil {
-            ProgressView("Rendering configuration…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error {
-            ContentUnavailableView(
-                "Couldn't render configuration",
-                systemImage: "exclamationmark.triangle",
-                description: Text(error)
-            )
-        } else if let yaml {
-            LineListView(lines: Self.displayLines(yaml), search: "", wrap: true)
-        }
-    }
-
-    private static func displayLines(_ text: String) -> [DisplayLine] {
-        text.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, line in
-            DisplayLine(id: index, text: String(line), color: .primary)
-        }
-    }
-
-    private func load() async {
-        loading = true
-        error = nil
-        do {
-            let json = try await model.fetchInspectJSON(for: container.id)
-            if let rendered = ConfigurationYAML.render(fromJSON: json) {
-                yaml = rendered
-            } else {
-                error = "Couldn't parse the container's configuration JSON."
-            }
-        } catch {
-            self.error = String(describing: error)
-        }
-        loading = false
-    }
-
-    private func copyAll() {
-        guard let yaml else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(yaml, forType: .string)
-    }
-}
-
 /// Which pane of the container detail is showing.
 ///
 /// Top-level rather than nested in the view because `AppModel` remembers the last one per
 /// container, and a model reaching into a view's private nested type would be backwards.
 enum DetailTab: String, CaseIterable, Identifiable {
+    // Overview, Terminal, Logs, Inspect are the four both detail screens have, in this order on
+    // both — so moving between a container and a machine does not move the tabs under you. What
+    // only one of them can offer comes after, behind a divider.
     case overview = "Overview"
-    case processes = "Processes"
-    case logs = "Logs"
-    // Between Logs and Inspect, matching the mockup's tab order.
     case terminal = "Terminal"
-    // Between Terminal and Inspect, as in the mockup.
-    case files = "Files"
+    case logs = "Logs"
     case inspect = "Inspect"
-    case configuration = "Configuration"
+    case processes = "Processes"
+    case files = "Files"
     var id: Self { self }
 
+    /// True for the four tabs the machine detail also has. The tab bar draws a divider where this
+    /// stops being true, so the shared set reads as one group.
+    var isShared: Bool {
+        switch self {
+        case .overview, .terminal, .logs, .inspect: true
+        case .processes, .files: false
+        }
+    }
+
     /// The mockup names an icon per tab (`i-info`, `i-doc`, `i-terminal`, `i-braces`).
-    /// Processes and Configuration have no counterpart there — that mockup shows Stats and
-    /// Files, which the CLI cannot back — so those two are chosen to stay distinguishable
-    /// from their neighbours rather than invented to look busy.
+    /// Processes has no counterpart there — that mockup shows Stats and Files, which the CLI
+    /// cannot back — so it is chosen to stay distinguishable from its neighbours rather than
+    /// invented to look busy.
     var systemImage: String {
         switch self {
         case .overview: "info.circle"
@@ -1266,7 +1054,6 @@ enum DetailTab: String, CaseIterable, Identifiable {
         case .terminal: "terminal"
         case .files: "folder"
         case .inspect: "curlybraces"
-        case .configuration: "doc.plaintext"
         }
     }
 }

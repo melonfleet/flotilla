@@ -8,12 +8,24 @@ import FlotillaCore
 /// `machine ps`, no `machine copy` and no per-machine config file, so those tabs would be
 /// controls with nothing behind them. `Settings` replaces them because `machine set` is real.
 enum MachineDetailTab: String, CaseIterable, Identifiable {
+    // Overview, Terminal, Logs, Inspect in the same order as the container detail, so the two
+    // screens do not shuffle the tabs under you. Settings is the one only a machine has — `machine
+    // set` is real, where a container cannot be changed after creation — so it comes last, behind
+    // a divider.
     case overview = "Overview"
     case shell = "Terminal"
     case logs = "Logs"
-    case settings = "Settings"
     case inspect = "Inspect"
+    case settings = "Settings"
     var id: Self { self }
+
+    /// True for the four tabs the container detail also has. See `DetailTab.isShared`.
+    var isShared: Bool {
+        switch self {
+        case .overview, .shell, .logs, .inspect: true
+        case .settings: false
+        }
+    }
 
     var systemImage: String {
         switch self {
@@ -72,7 +84,11 @@ struct MachineDetailView: View {
                 case .inspect: MachineInspectTab(model: model, machine: machine)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // `.topLeading`, not `.top`. SwiftUI's `.top` is *horizontally centred* and only
+            // vertically top — which is why the Inspect tab's JSON sat as a floating block in
+            // the middle of the pane instead of reading as a document from the top-left. It
+            // applies to every tab here, so the one word fixes all of them.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .onChange(of: tab) { _, newTab in model.lastMachineTab[machine.id] = newTab }
         // `init`'s seed only applies when SwiftUI installs the view. Arriving here from a detail
@@ -93,7 +109,10 @@ struct MachineDetailView: View {
     /// The same underline strip as the container detail, from the same stylesheet numbers.
     private var tabBar: some View {
         HStack(spacing: 2) {
-            ForEach(MachineDetailTab.allCases) { candidate in
+            ForEach(Array(MachineDetailTab.allCases.enumerated()), id: \.element.id) { index, candidate in
+                if index > 0, MachineDetailTab.allCases[index - 1].isShared, !candidate.isShared {
+                    Divider().frame(height: 16).padding(.horizontal, 6)
+                }
                 let selected = candidate == tab
                 Button { tab = candidate } label: {
                     HStack(spacing: 6) {
@@ -615,7 +634,7 @@ private struct MachineInspectTab: View {
     @State private var failure: String?
     @State private var loading = false
     @State private var search = ""
-    @State private var presentation: InspectPresentation = .json
+    @State private var presentation: InspectPresentation = .table
 
     /// Narrowed exactly as the container Inspect tab is: image digests are public content
     /// hashes, not fingerprints, and mount paths are the point of inspecting. Secrets still go —
@@ -630,7 +649,10 @@ private struct MachineInspectTab: View {
     /// `image.descriptor`) that scanning for one value in raw JSON is real work, so the Table
     /// view earns its place here at least as much as it does on the containers side.
     var body: some View {
-        VStack(spacing: 0) {
+        // `alignment: .leading`: a `VStack` centres its children, and the JSON view is a
+        // `ScrollView` sized to its content — so a payload narrower than the pane was centred in
+        // it, reading as a floating block of text rather than as a document.
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Picker("View", selection: $presentation) {
                     ForEach(InspectPresentation.allCases) { Text($0.rawValue).tag($0) }
@@ -690,14 +712,25 @@ private struct MachineInspectTab: View {
         } else if presentation == .table {
             InspectTableView(json: json, search: search)
         } else if let json {
-            ScrollView([.vertical, .horizontal]) {
-                // Filtering the JSON view by line keeps the two presentations answering the
-                // same question — a filter that only worked in one of them would be worse
-                // than no filter, because you would trust the empty result.
-                Text(Self.filtered(json, search: search))
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(12)
+            // A two-axis `ScrollView` **centres** content smaller than its viewport, and a
+            // machine's inspect payload is narrow — which is why this read as a block of text
+            // floating in the middle of the pane. Neither aligning the stack nor framing the
+            // scroll view fixes it: the centring happens inside, so the content has to be told
+            // it is at least as big as the viewport. `minWidth`/`minHeight`, not `maxWidth`, so
+            // a payload that *is* larger still scrolls.
+            GeometryReader { viewport in
+                ScrollView([.vertical, .horizontal]) {
+                    // Filtering the JSON view by line keeps the two presentations answering the
+                    // same question — a filter that only worked in one of them would be worse
+                    // than no filter, because you would trust the empty result.
+                    Text(Self.filtered(json, search: search))
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .padding(12)
+                        .frame(minWidth: viewport.size.width,
+                               minHeight: viewport.size.height,
+                               alignment: .topLeading)
+                }
             }
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)

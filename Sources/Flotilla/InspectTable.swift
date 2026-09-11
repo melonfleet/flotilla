@@ -8,8 +8,14 @@ import SwiftUI
 /// them and shipped with a JSON view only — which is exactly how the two panels would have
 /// drifted: a fix to one walk (empty arrays, `null`, ordering) would silently not apply to the
 /// other. One implementation, two callers.
+/// Table first, and first is the default everywhere this is used.
+///
+/// `allCases` drives the segmented picker, so the order here is the order on screen. Table leads
+/// because it is the readable form — one row per path, searchable — and JSON was the default only
+/// because it was the thing that existed first. A wall of braces is what you drop to when you
+/// want the raw payload, not what you should be handed when you click Inspect.
 enum InspectPresentation: String, CaseIterable, Identifiable {
-    case json = "JSON", table = "Table"
+    case table = "Table", json = "JSON"
     var id: Self { self }
 }
 
