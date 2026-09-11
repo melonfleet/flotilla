@@ -427,7 +427,14 @@ private struct InspectTab: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Picker("View", selection: $presentation) {
-                    ForEach(InspectPresentation.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(InspectPresentation.allCases) {
+                        // The word survives as the accessibility label and the tooltip; only the
+                        // drawing changes.
+                        Label($0.rawValue, systemImage: $0.symbol)
+                            .labelStyle(.iconOnly)
+                            .help($0.rawValue)
+                            .tag($0)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()

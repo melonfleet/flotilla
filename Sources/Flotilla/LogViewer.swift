@@ -130,43 +130,53 @@ struct LogViewer: View {
 
     // MARK: Chrome
 
+    /// One band, laid out like the Inspect tab's: what you are reading and what you can do with
+    /// it on the left, how it is displayed on the right.
+    ///
+    /// It was two rows of labelled buttons. The words went because every other action in the app
+    /// is a glyph and these were the exception; the second row went with them, because three icon
+    /// buttons and a 200pt field do not need a row of their own, and the space they were using is
+    /// space the log itself now gets.
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Toggle("Boot Log", isOn: $bootLog)
-                Spacer()
-                Toggle("Timestamps", isOn: $showTimestamps)
-                Toggle("Wrap", isOn: $wrap)
-                Toggle("Live", isOn: $live)
-                    .help("Stream new lines as they are written")
+        HStack(spacing: 10) {
+            Toggle("Boot Log", isOn: $bootLog)
+
+            IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
+                             help: live ? "Not needed while Live is on" : "Fetch the most recent lines again",
+                             busy: loading && !live, disabled: live) {
+                Task { await load() }
             }
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                TextField("Search", text: $search)
-                    .textFieldStyle(.roundedBorder)
-                if !search.isEmpty {
-                    Text("\(matchCount) match\(matchCount == 1 ? "" : "es")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    Task { await load() }
-                } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                }
-                .disabled(loading || live)
-                .help(live ? "Not needed while Live is on" : "Fetch the most recent lines again")
-                Button { copyAll() } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .disabled(displayLines.isEmpty)
-                Button { save() } label: {
-                    Label("Save…", systemImage: "square.and.arrow.down")
-                }
-                .disabled(displayLines.isEmpty)
+            IconActionButton(systemImage: "doc.on.doc", label: "Copy",
+                             help: "Copy every line shown",
+                             disabled: displayLines.isEmpty) {
+                copyAll()
             }
+            IconActionButton(systemImage: "square.and.arrow.down", label: "Save…",
+                             help: "Save every line shown to a file",
+                             disabled: displayLines.isEmpty) {
+                save()
+            }
+
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Search", text: $search)
+                .textFieldStyle(.roundedBorder)
+                // The same 200 as the Inspect tab's filter. It used to take every point left over,
+                // which made one search field on a detail screen four times the width of the
+                // other for no reason either of them could give.
+                .frame(maxWidth: 200)
+            if !search.isEmpty {
+                Text("\(matchCount) match\(matchCount == 1 ? "" : "es")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Toggle("Timestamps", isOn: $showTimestamps)
+            Toggle("Wrap", isOn: $wrap)
+            Toggle("Live", isOn: $live)
+                .help("Stream new lines as they are written")
         }
         .padding(12)
     }

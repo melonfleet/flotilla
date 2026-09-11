@@ -17,6 +17,19 @@ import SwiftUI
 enum InspectPresentation: String, CaseIterable, Identifiable {
     case table = "Table", json = "JSON"
     var id: Self { self }
+
+    /// The glyph the picker draws. Both are literal pictures of the thing they switch to — a
+    /// grid of cells, a pair of braces — which is what lets the words go: an icon that needs its
+    /// label to be understood is just a smaller label.
+    ///
+    /// `curlybraces` is also the Inspect tab's own icon in the tab bar, so the JSON half of this
+    /// switch and the tab it lives on are drawn with the same symbol.
+    var symbol: String {
+        switch self {
+        case .table: "tablecells"
+        case .json: "curlybraces"
+        }
+    }
 }
 
 struct InspectRow: Identifiable {

@@ -593,15 +593,32 @@ private struct MachineInspectTab: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Picker("View", selection: $presentation) {
-                    ForEach(InspectPresentation.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(InspectPresentation.allCases) {
+                        // The word survives as the accessibility label and the tooltip; only the
+                        // drawing changes.
+                        Label($0.rawValue, systemImage: $0.symbol)
+                            .labelStyle(.iconOnly)
+                            .help($0.rawValue)
+                            .tag($0)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
 
-                TextField("Filter…", text: $search)
+                // Magnifier, placeholder and match count all match the container panel. This
+                // one had none of them, which is the same drift the Table view was missing for:
+                // two screens that are meant to be one screen, differing wherever nobody looked.
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                TextField("Filter keys", text: $search)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 200)
+                if !search.isEmpty {
+                    Text("\(matchCount) match\(matchCount == 1 ? "" : "es")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 Spacer()
 
@@ -682,6 +699,14 @@ private struct MachineInspectTab: View {
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .top) { Divider() }
+    }
+
+    /// Matching lines, for the count beside the filter field — counted the same way the
+    /// container panel counts them, on the same redacted text both views render.
+    private var matchCount: Int {
+        guard let json, !search.isEmpty else { return 0 }
+        return json.split(separator: "\n", omittingEmptySubsequences: false)
+            .count { $0.localizedCaseInsensitiveContains(search) }
     }
 
     private func load() async {
