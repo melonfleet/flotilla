@@ -749,3 +749,29 @@ private final class ProgressBox: @unchecked Sendable {
     #expect(box.all.count == 1)
     #expect(box.all[0].fraction == 0.2)
 }
+
+// MARK: - Stopping the runtime
+
+@Test func stopSystemSendsTheBareSubcommand() throws {
+    // No `--prefix`, no `--debug`. The CLI accepts both; nothing in the app has any business
+    // naming a launchd service, and a spec that accepts a flag no caller sends is surface for
+    // nothing.
+    let host = RecordingHost()
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
+
+    try cli.stopSystem()
+
+    #expect(host.invocations == [["system", "stop"]])
+}
+
+@Test func stoppingTheRuntimeIsRefusedOverTheWire() throws {
+    // Stopping the services takes every running container down with them. `system start` is
+    // already `.localOnly` for the weaker version of this reason; a remote peer must not be able
+    // to do the stronger one.
+    #expect(throws: (any Error).self) {
+        _ = try Allowlist.validated(["system", "stop"], wirePolicy: .remotePeer)
+    }
+    #expect(throws: Never.self) {
+        _ = try Allowlist.validated(["system", "stop"], wirePolicy: .localOwner)
+    }
+}

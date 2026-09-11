@@ -829,6 +829,15 @@ public enum Allowlist {
                         flags: [FlagSpec(long: "disable-kernel-install"),
                                 FlagSpec(long: "timeout", value: .count)],
                         exposure: .localOnly(reason: "starting the host's own runtime services is the owner's decision")),
+            // No flags offered. The CLI takes `--prefix` to address a differently-named launchd
+            // service; nothing in the app has any business naming one, and a spec that accepts a
+            // flag no caller sends is surface for nothing. `--debug` is the same.
+            //
+            // Stopping is strictly more dangerous than starting — it takes every running
+            // container down with it — so it carries the same `.localOnly` exposure for the
+            // stronger version of the same reason.
+            CommandSpec(["system", "stop"], mutates: true, timeoutHint: 120,
+                        exposure: .localOnly(reason: "stopping the host's own runtime services, and every container with them, is the owner's decision")),
         ]
     }()
 

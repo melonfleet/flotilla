@@ -149,17 +149,36 @@ struct IconActionButtonStyle: ButtonStyle {
 /// the default foreground and disappeared into the accent fill of a selected row — the same
 /// problem the trash had, and the one the owner reported.
 ///
-/// Vertical dots by rotation: **`ellipsis.vertical` is not a real SF Symbol.**
-/// `NSImage(systemSymbolName:)` returns nil for it, and `Image(systemName:)` renders nothing at
-/// all for an unknown name, which is how every overflow menu in the app silently vanished once.
+/// Vertical dots, **drawn rather than symbol-and-rotated.**
+///
+/// Two findings, and the second undid the first. `ellipsis.vertical` is still not a real SF
+/// Symbol — re-checked with `NSImage(systemSymbolName:)` on macOS 26, and `Image(systemName:)`
+/// renders *nothing* for an unknown name, which is how every overflow menu in the app silently
+/// vanished once. So this was `ellipsis` with `.rotationEffect(.degrees(90))`.
+///
+/// That rotation never reached the screen. Every one of these labels is the label of a `Menu`,
+/// and a `Menu` in `.borderlessButton` style hands its label to AppKit to draw — which keeps the
+/// image and drops the geometry effect. The dots have therefore been **horizontal everywhere in
+/// the app** since the rotation was added, while the source and its comment said otherwise. Found
+/// by looking at a screenshot of a row, not by reading the code.
+///
+/// Drawn shapes fared no better: three `Circle()`s in a `VStack` rendered as **nothing at all**
+/// in the same place. That pathway preserves `Image` and `Text` and discards the rest, which is
+/// the single explanation for both failures.
+///
+/// So: `Text("\u{22EE}")`, the Unicode vertical ellipsis. It is text, it survives, and it is
+/// genuinely three dots stacked — no symbol that does not exist, and no transform to lose.
 struct RowOverflowLabel: View {
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.isEnabled) private var isEnabled
 
+    /// Sized to sit where the `ellipsis` glyph did — the character is lighter than the symbol at
+    /// the same point size, so it carries a little more weight to match the icons beside it.
     var body: some View {
-        Image(systemName: "ellipsis")
-            .rotationEffect(.degrees(90))
+        Text(verbatim: "\u{22EE}")
+            .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(colour)
+            .frame(width: 14, height: 14)
     }
 
     private var colour: AnyShapeStyle {

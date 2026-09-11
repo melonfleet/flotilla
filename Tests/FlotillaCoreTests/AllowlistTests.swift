@@ -43,11 +43,12 @@ private func requireRejected(
         ["image"],
         ["image", "push", "alpine"],
         ["system"],
-        // `system start` is allowed now (the app starts a stopped service for you), but only in
-        // the shape it is offered in. These stay refused:
+        // `system start` and `system stop` are both allowed now — the sidebar offers Start and
+        // Restart — but only in the shapes they are offered in. These stay refused:
         ["system", "start", "--enable-kernel-install"],   // never install a kernel unasked
         ["system", "start", "--app-root", "/tmp/x"],      // host paths are not grammar
-        ["system", "stop"],
+        ["system", "stop", "--prefix", "com.example."],   // naming a launchd service is not ours
+        ["system", "stop", "--debug"],
     ]
 
     for args in rejected {
@@ -73,6 +74,7 @@ private func requireRejected(
         "machine create", "machine set", "machine delete", "machine set-default",
         "machine run", "machine stop", "machine inspect", "machine logs",
         "system start",
+        "system stop",
     ]
     let exposed: Set<String> = [
         "ls", "list", "inspect", "stats", "exec", "copy", "logs",
@@ -467,6 +469,7 @@ private func requireRejected(
         "network create", "network delete", "network rm", "network prune",
         // The only mutating `system` leaf: it changes machine state (it launches services).
         "system start",
+        "system stop",
     ]
     let actualMutating = Set(Allowlist.commands.filter(\.mutates).map(\.name))
     #expect(actualMutating == expectedMutating)
@@ -617,6 +620,7 @@ private func requireRejected(
         // The exact argv `ContainerCLI.startSystem` sends, verified accepted by the live CLI.
         // `--disable-kernel-install` is mandatory in practice: the flag defaults to prompting,
         // and a windowed app has nowhere to show a prompt.
+        AllowedCase(["system", "stop"], mutates: true, timeout: 120),
         AllowedCase(["system", "start", "--disable-kernel-install", "--timeout", "60"],
                     mutates: true, timeout: 120),
 

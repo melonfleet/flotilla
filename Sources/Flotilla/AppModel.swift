@@ -629,6 +629,31 @@ final class AppModel {
         }
     }
 
+    /// Stops the `container` services and starts them again.
+    ///
+    /// Synthesised, because the CLI has no `system restart` — only `start` and `stop`. Every
+    /// running container goes down with the services, which is why the only caller confirms
+    /// first; this method does not ask, so do not call it from anywhere that does not.
+    func restartRuntime() async {
+        guard !startingRuntime else { return }
+        startingRuntime = true
+        state = .loading
+        do {
+            try await Task.detached { [cli] in
+                try cli.stopSystem()
+                try cli.startSystem()
+            }.value
+            recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                          kind: .runtime, subject: hostLabel,
+                                          action: "Runtime restarted"))
+            startingRuntime = false
+            await reload()
+        } catch {
+            startingRuntime = false
+            state = .unavailable("Couldn't restart the `container` services — \(error)")
+        }
+    }
+
     /// Shared with `refreshVolumes`/`refreshNetworks`: they fail the same runtime check
     /// containers do, and repeating the diagnosis text in three places would let them drift.
     private static func unavailableReason(for result: PreflightResult) -> String? {

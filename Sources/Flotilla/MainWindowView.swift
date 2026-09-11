@@ -143,6 +143,11 @@ struct MainWindowView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             Color.clear.frame(height: sidebarTopInset)
         }
+        // The corner furthest from the toolbar, which is where the runtime's own state belongs:
+        // visible without being asked for, and out of the way of the things you manage.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            RuntimeStatusBand(model: model, railed: railed)
+        }
     }
 
     /// Kept equal to the 10pt this adds to `contentTopInset`, so the first row and the section

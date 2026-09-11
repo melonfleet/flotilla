@@ -130,6 +130,15 @@ public struct ContainerCLI: Sendable {
                      "--timeout", String(timeoutSeconds)])
     }
 
+    /// Stops the `container` services.
+    ///
+    /// Every running container goes down with them, so this is never something to do on the app's
+    /// own initiative — the caller confirms first.
+    @discardableResult
+    public func stopSystem() throws -> CommandResult {
+        try execute(["system", "stop"])
+    }
+
     /// `container system status`, which reports a **stopped** service by exiting non-zero while
     /// still printing the status JSON on stdout.
     ///

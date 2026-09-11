@@ -117,10 +117,10 @@ struct AppLinksMenu: View {
     /// button's own `square.grid.2x2`, via a scratch `NSImage(systemSymbolName:)` check.
     static let links: [AppLink] = [
         AppLink(name: "Flotilla on GitHub",
-                url: URL(string: "https://github.com/melonfleet/flotilla")!,
+                url: ExternalLinks.flotilla,
                 systemImage: "chevron.left.slash.chevron.right"),
         AppLink(name: "melonfleet.dev",
-                url: URL(string: "https://melonfleet.dev")!,
+                url: ExternalLinks.melonfleet,
                 systemImage: "globe"),
     ]
 
