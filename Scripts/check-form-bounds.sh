@@ -30,7 +30,11 @@ for file in $(git ls-files 'Sources/Flotilla/*.swift'); do
     grep -q "FormHeader(" "$file" || continue
     # FormHeader.swift itself defines the component; it is not a screen.
     case "$file" in */FormHeader.swift) continue ;; esac
-    if grep -qE '^\s*(Form \{|ScrollView)' "$file"; then continue; fi
+    # `ScrollView {` and not bare `ScrollView`: RunSheetView carries a *horizontal* one for its
+    # image suggestion chips, and that satisfied the old pattern while bounding no height at all —
+    # so this check was passing that file for a reason unrelated to the thing it tests.
+    # `FormScaffold` bounds height the same way, and additionally owns the explainer rail.
+    if grep -qE '^\s*(Form \{|ScrollView \{|FormScaffold \{)' "$file"; then continue; fi
     offenders+=("$file")
     fail=1
 done
@@ -38,9 +42,9 @@ done
 if [ "$fail" -ne 0 ]; then
     echo "✗ a screen with a FormHeader does not bound its own height:"
     for f in "${offenders[@]}"; do echo "    $f"; done
-    echo "  Wrap the fields in a Form (as MachineFormView, RunSheetView and BuildImageView do)"
-    echo "  or a ScrollView. Without one, .frame(maxHeight: .infinity) grows the window's split"
-    echo "  view past its own bounds and pushes every control — Back included — off-screen."
+    echo "  Wrap the fields in a FormScaffold (as MachineFormView and RunSheetView do), a Form,"
+    echo "  or a vertical ScrollView. Without one, .frame(maxHeight: .infinity) grows the window's"
+    echo "  split view past its own bounds and pushes every control — Back included — off-screen."
     exit 1
 fi
 

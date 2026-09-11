@@ -25,96 +25,90 @@ struct BuildImageView: View {
         VStack(spacing: 0) {
             FormHeader(title: "Build Image", systemImage: "hammer", onBack: dismiss)
             Divider()
-            // Left-aligned label, control, guidance — the shape `FormField` documents, and the
-            // one the other create screens use. The grouped `Form` this replaced pushed every
-            // control to the far right of the window.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        FormSectionHeader(title: "Context")
+            // The context grant and the CLI-specific defaults need more room than an inline
+            // caption, while the bounded field column must still survive a narrow window.
+            FormScaffold {
+                VStack(alignment: .leading, spacing: 14) {
+                    FormSectionHeader(title: "Context")
 
-                        FormField("Folder",
-                                  help: "Everything in it is sent to the builder, and the build "
-                                      + "may read all of it. Choosing it here is what grants "
-                                      + "access — Flotilla denies host paths otherwise.") {
-                            HStack(spacing: 8) {
-                                Text(context?.path ?? "No folder chosen")
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(context == nil ? .tertiary : .primary)
-                                    .lineLimit(1).truncationMode(.head)
-                                Spacer()
-                                Button("Choose…") { chooseContext() }
-                            }
-                        }
-
-                        FormField("Dockerfile",
-                                  help: "Left empty, the Dockerfile in the context folder is "
-                                      + "used. A path here must also sit inside that folder.",
-                                  optional: true) {
-                            TextField("<context>/Dockerfile", text: $dockerfile)
-                                .textFieldStyle(.roundedBorder)
-                                .monospaced()
+                    FormField("Folder",
+                              help: FieldHelp(
+                                  "The build context available to Dockerfile instructions.",
+                                  detail: "Everything in this directory is sent to the builder, and the build may read all of it.",
+                                  warning: "Choosing the folder grants access to that host path for this build; Flotilla otherwise denies host paths."),
+                                  autoFocus: true) {
+                        HStack(spacing: 8) {
+                            Text(context?.path ?? "No folder chosen")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(context == nil ? .tertiary : .primary)
+                                .lineLimit(1).truncationMode(.head)
+                            Spacer()
+                            Button("Choose…") { chooseContext() }
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 14) {
-                        FormSectionHeader(title: "Image")
-
-                        // The default is worth stating precisely: `container build -t` documents
-                        // it as a UUID, so an untagged build does not produce `<none>` you can
-                        // find later — it produces a random name.
-                        FormField("Tag",
-                                  help: "Name for the built image. Left empty, `container` names "
-                                      + "it with a random UUID.",
-                                  optional: true) {
-                            TextField("myapp:latest", text: $tag)
-                                .textFieldStyle(.roundedBorder)
-                                .monospaced()
-                        }
-
-                        FormField("Target stage",
-                                  help: "The stage to stop at in a multi-stage Dockerfile — the "
-                                      + "name after `FROM … AS`. Left empty, the last stage is "
-                                      + "built.",
-                                  optional: true) {
-                            TextField("build", text: $target)
-                                .textFieldStyle(.roundedBorder)
-                                .monospaced()
-                        }
-
-                        FormField("Platform",
-                                  help: "os/arch, optionally /variant. This Mac builds "
-                                      + "linux/arm64 unless you say otherwise.",
-                                  optional: true) {
-                            TextField("linux/arm64", text: $platform)
-                                .textFieldStyle(.roundedBorder)
-                                .monospaced()
-                        }
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Toggle("Ignore the build cache", isOn: $noCache)
-                            Text("Re-runs every layer instead of reusing what has not changed.")
-                                .font(.caption).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 14) {
-                        FormSectionHeader(title: "Command",
-                                          note: "Built through the allowlist, so it cannot say "
-                                              + "one thing while Build does another.")
-                        Text(previewText)
-                            .font(.system(size: 11, design: .monospaced))
-                            .textSelection(.enabled)
-                            .foregroundStyle(previewStyle)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    FormField("Dockerfile",
+                              help: FieldHelp(
+                                  "Overrides the Dockerfile inside the context folder.",
+                                  detail: "Left empty, the Dockerfile in the context folder is used.",
+                                  example: "docker/release.Dockerfile",
+                                  warning: "Any path entered here must stay inside the selected context folder."),
+                              optional: true) {
+                        TextField("<context>/Dockerfile", text: $dockerfile)
+                            .textFieldStyle(.roundedBorder)
+                            .monospaced()
                     }
                 }
-                .formColumn()
-                .padding(20)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    FormSectionHeader(title: "Image")
+
+                    // The default is worth stating precisely: `container build -t` documents
+                    // it as a UUID, so an untagged build does not produce `<none>` you can
+                    // find later — it produces a random name.
+                    FormField("Tag",
+                              help: FieldHelp(
+                                  "A name and tag for finding the built image later.",
+                                  detail: "The `container build -t` format is `name:tag`.",
+                                  example: "myapp:latest",
+                                  warning: "Left empty, `container` uses a random UUID, so the image is not findable by name afterwards."),
+                              optional: true) {
+                        TextField("myapp:latest", text: $tag)
+                            .textFieldStyle(.roundedBorder)
+                            .monospaced()
+                    }
+
+                    FormField("Target stage",
+                              help: FieldHelp(
+                                  "Stops a multi-stage build at the named stage.",
+                                  detail: "Use the name after `FROM … AS` in the Dockerfile. Left empty, the last stage is built.",
+                                  example: "builder"),
+                              optional: true) {
+                        TextField("build", text: $target)
+                            .textFieldStyle(.roundedBorder)
+                            .monospaced()
+                    }
+
+                    FormField("Platform",
+                              help: FieldHelp(
+                                  "Chooses the operating system and architecture to build for.",
+                                  detail: "Use `os/arch[/variant]`. This Mac builds `linux/arm64` unless told otherwise.",
+                                  example: "linux/amd64"),
+                              optional: true) {
+                        TextField("linux/arm64", text: $platform)
+                            .textFieldStyle(.roundedBorder)
+                            .monospaced()
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Ignore the build cache", isOn: $noCache)
+                        Text("Re-runs every layer instead of reusing what has not changed.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } preview: {
+                railPreview
             }
 
             Divider()
@@ -132,6 +126,22 @@ struct BuildImageView: View {
                     .disabled(!isValid || building)
             }
             .padding(12)
+        }
+    }
+
+    /// Kept beside the active field because it is the answer to what Build will run, not another
+    /// field to discover at the end of the form.
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            Text(previewText)
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .foregroundStyle(previewStyle)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

@@ -80,19 +80,16 @@ struct MachineFormView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            // Explicit `ScrollView`: the grouped `Form` this replaced brought its own, and
-            // `Scripts/check-form-bounds.sh` enforces that every `FormHeader` screen has one —
-            // without it the content grows the split view instead of scrolling, which is the
-            // fault that blanked the Volumes and Networks forms.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    machineSection
-                    resourcesSection
-                    homeSection
-                    commandSection
-                }
-                .formColumn()
-                .padding(20)
+            // `FormScaffold` owns the bounded scroll, the 640pt column and the explainer rail.
+            // `Scripts/check-form-bounds.sh` enforces that every `FormHeader` screen has something
+            // that bounds its height — without it the content grows the split view instead of
+            // scrolling, which is the fault that blanked the Volumes and Networks forms.
+            FormScaffold {
+                machineSection
+                resourcesSection
+                homeSection
+            } preview: {
+                railPreview
             }
 
             Divider()
@@ -112,8 +109,12 @@ struct MachineFormView: View {
             importBanner
 
             FormField("Image reference",
-                      help: "Any image reference, pulled from the same registries as any other "
-                          + "image — for example alpine:3.22 or alpine:latest.") {
+                      help: FieldHelp(
+                          "A machine boots from a container image, not an installer.",
+                          detail: "The image supplies the userland; the kernel comes from Apple's runtime. That is why this pulls from Docker Hub, and why a machine's disk reads tens of megabytes rather than gigabytes.",
+                          example: "alpine:3.22    verified\nalpine:latest  verified",
+                          warning: "In practice only Alpine boots. Ubuntu, Debian, Fedora and BusyBox each pull around 100 MB, create a machine record, and then fail to boot."),
+                      autoFocus: true) {
                 TextField("alpine:3.22", text: $image)
                     .textFieldStyle(.roundedBorder)
                     .monospaced()
@@ -131,8 +132,10 @@ struct MachineFormView: View {
             }
 
             FormField("Verified images",
-                      help: "Fills the field above. Short because reality is short: only Alpine "
-                          + "boots as a machine today.") {
+                      help: FieldHelp(
+                          "Fills the field above.",
+                          detail: "The list is short because reality is short — these are the images that have actually been booted successfully as a machine.",
+                          example: "Want a full Ubuntu or Fedora VM?\nUse Lima, UTM or Vagrant. This is\nnot that, and will not become it.")) {
                 Picker("", selection: $image) {
                     Text("Choose…").tag("")
                     ForEach(Self.suggestions, id: \.reference) { suggestion in
@@ -145,8 +148,9 @@ struct MachineFormView: View {
             }
 
             FormField("Name",
-                      help: "Letters, numbers, dots, dashes or underscores, starting with a "
-                          + "letter or number. No spaces.",
+                      help: FieldHelp(
+                          "How you refer to the machine afterwards — shell, logs, stop, delete.",
+                          example: "Letters, numbers, dots, dashes or\nunderscores. Must start with a letter\nor number. No spaces."),
                       optional: true) {
                 TextField("dev", text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -162,8 +166,9 @@ struct MachineFormView: View {
                                   + "and \(Self.hostMemoryGB()) GB.")
 
             FormField("CPUs",
-                      help: "1 to \(ProcessInfo.processInfo.processorCount). Two is enough to "
-                          + "boot Alpine, run a package manager and build something small.") {
+                      help: FieldHelp(
+                          "Virtual CPUs for this machine.",
+                          detail: "1 to \(ProcessInfo.processInfo.processorCount) on this Mac. Two is enough to boot Alpine, run a package manager and build something small.")) {
                 Stepper(value: $cpus, in: 1...ProcessInfo.processInfo.processorCount) {
                     Text("\(cpus)").monospacedDigit()
                 }
@@ -171,9 +176,10 @@ struct MachineFormView: View {
             }
 
             FormField("Memory",
-                      help: "1 to \(Self.hostMemoryGB()) GB. `container` itself defaults this to "
-                          + "half of system memory, which is most of your Mac handed to a "
-                          + "scratch workload; this form starts at 4 GB instead.") {
+                      help: FieldHelp(
+                          "Memory for this machine, in whole gigabytes.",
+                          detail: "1 to \(Self.hostMemoryGB()) GB on this Mac.",
+                          warning: "`container` itself defaults this to half of system memory — \(max(1, Self.hostMemoryGB() / 2)) GB here, for a VM you spin up to try something in. This form starts at 4 GB instead.")) {
                 Stepper(value: $memoryGB, in: 1...max(1, Self.hostMemoryGB())) {
                     Text("\(memoryGB) GB").monospacedDigit()
                 }
@@ -188,7 +194,14 @@ struct MachineFormView: View {
                               note: "Your Mac's home directory, mounted inside the machine.")
 
             FormField("Mount",
-                      help: "`container` defaults this to read-write.") {
+                      help: FieldHelp(
+                          "Whether this Mac's home directory is visible inside the machine.",
+                          example: """
+                              Read-write   the CLI default
+                              Read-only    visible, not writable
+                              Not mounted  no access at all
+                              """,
+                          warning: "Read-write is a grant to everything running in the machine, not just to you at its shell.")) {
                 Picker("", selection: $homeMount) {
                     Text("Read-write").tag("rw")
                     Text("Read-only").tag("ro")
@@ -211,13 +224,15 @@ struct MachineFormView: View {
         }
     }
 
-    private var commandSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            FormSectionHeader(title: "Command",
-                              note: "Built through the allowlist, so it cannot say one thing "
-                                  + "while Save does another.")
-            // The Run sheet's validated live preview, same convention: what will run, before
-            // you press anything.
+    /// What will run, plus the one thing this form cannot offer. Both live in the rail: the
+    /// preview because it is the answer to "what is this about to do", and the limitation because
+    /// the alternative is leaving someone to hunt for a control that cannot exist.
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+
             HStack(alignment: .top, spacing: 8) {
                 Text(preview)
                     .font(.system(size: 11, design: .monospaced))
@@ -229,8 +244,15 @@ struct MachineFormView: View {
                 CommandPreviewCopyButton(command: preview,
                                          help: "Copy the machine command to the clipboard")
             }
-            .padding(10)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+
+            Divider()
+                .padding(.vertical, 2)
+
+            Text("A machine cannot join a network or mount a volume — `container machine create` "
+                 + "has no option for either. Only the home-directory mount above.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -179,21 +179,18 @@ struct RunSheetView: View {
 
     private var content: some View {
         VStack(spacing: 0) {
-            // Explicit `ScrollView` in place of the grouped `Form`'s own. See
-            // `Scripts/check-form-bounds.sh`: a `FormHeader` screen without one grows the split
-            // view instead of scrolling.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    prefillBanner
-                    imageSection
-                    networkingSection
-                    storageSection
-                    commandSection
-                    optionsSection
-                    previewGroup
-                }
-                .formColumn()
-                .padding(20)
+            // `FormScaffold` owns the bounded scroll, the 640pt column and the explainer rail.
+            // See `Scripts/check-form-bounds.sh`: a `FormHeader` screen needs something that
+            // bounds its height, or it grows the split view instead of scrolling.
+            FormScaffold {
+                prefillBanner
+                imageSection
+                networkingSection
+                storageSection
+                commandSection
+                optionsSection
+            } preview: {
+                railPreview
             }
             Divider()
             footer
@@ -236,9 +233,17 @@ struct RunSheetView: View {
             FormSectionHeader(title: "Image")
 
             FormField("Image reference",
-                      help: "Pulled if this Mac does not have it. Registry and tag are "
-                          + "optional: nginx means docker.io/library/nginx:latest.",
-                      problem: message(for: .image)) {
+                      help: FieldHelp(
+                          "What the container is made from. Pulled automatically if this Mac does not have it.",
+                          detail: "Registry and tag are both optional — the defaults are Docker Hub and latest.",
+                          example: """
+                              nginx                    docker.io/library/nginx:latest
+                              nginx:alpine             a specific tag
+                              ghcr.io/owner/app:1.2.3  another registry
+                              alpine@sha256:…          pinned to a digest
+                              """),
+                      problem: message(for: .image),
+                      autoFocus: true) {
                 TextField("nginx:alpine", text: $image)
                     .textFieldStyle(.roundedBorder)
                     .monospaced()
@@ -258,8 +263,10 @@ struct RunSheetView: View {
             }
 
             FormField("Name",
-                      help: "Used as the container ID. Letters, numbers, dots, dashes or "
-                          + "underscores, starting with a letter or number.",
+                      help: FieldHelp(
+                          "Used as the container ID.",
+                          detail: "It is how you refer to this container everywhere else — logs, shell, stop, delete. Left empty, `container` assigns one for you.",
+                          example: "Letters, numbers, dots, dashes or\nunderscores. Must start with a letter\nor number. No spaces."),
                       problem: message(for: .name),
                       optional: true) {
                 TextField("web", text: $name)
@@ -277,9 +284,15 @@ struct RunSheetView: View {
             // reachable from the whole network and one reachable only from this Mac, and the
             // allowlist accepts it (`isPortMapping`, case 3).
             FormField("Ports",
-                      help: "host-port:container-port, optionally /tcp or /udp — 8080:80. "
-                          + "Prefix a host IP to publish on one interface only: "
-                          + "127.0.0.1:8080:80.",
+                      help: FieldHelp(
+                          "Publishes a port inside the container to a port on this Mac.",
+                          detail: "Without one, nothing outside the container can reach it.",
+                          example: """
+                              8080:80            host 8080 → container 80
+                              8080:80/udp        UDP instead of TCP
+                              127.0.0.1:8080:80  this Mac only
+                              """,
+                          warning: "Without a host IP the port is reachable from your whole network, not just this Mac. A bare port is refused — the CLI needs both halves."),
                       problem: message(for: .ports),
                       optional: true) {
                 rows($ports, placeholder: "8080:80", max: Self.maxPorts)
@@ -290,10 +303,13 @@ struct RunSheetView: View {
             // has carried a `network` field the whole time; no screen ever set it.
             FormField("Network",
                       help: model.networks.isEmpty
-                          ? "No networks yet. Create one in the Networks section and it will "
-                              + "appear here."
-                          : "Containers on the same network reach each other by name. Left as "
-                              + "Default, `container` chooses.",
+                          ? FieldHelp(
+                              "No networks yet.",
+                              detail: "Create one in the Networks section and it will appear here.")
+                          : FieldHelp(
+                              "Containers on the same network reach each other by name.",
+                              detail: "So an app can talk to a database as `db` rather than by IP. Left as Default, `container` chooses.",
+                              warning: "Creation time only. Neither the CLI nor Flotilla can move a container onto a network after it exists — choose it now, or recreate the container later."),
                       optional: true) {
                 Picker("", selection: $network) {
                     Text("Default").tag("")
@@ -313,15 +329,29 @@ struct RunSheetView: View {
             FormSectionHeader(title: "Environment and storage")
 
             FormField("Environment variables",
-                      help: "KEY=VALUE, one per row.",
+                      help: FieldHelp(
+                          "Passed into the container as environment. One KEY=VALUE per row.",
+                          example: """
+                              POSTGRES_PASSWORD=secret
+                              NODE_ENV=production
+                              TZ=Europe/London
+                              """,
+                          warning: "The CLI also accepts a bare KEY to inherit that variable from this Mac. Flotilla refuses it deliberately — it exports your shell environment into the container without saying which values went."),
                       problem: message(for: .env),
                       optional: true) {
                 rows($env, placeholder: "KEY=VALUE", max: Self.maxEnv)
             }
 
             FormField("Volumes",
-                      help: "source:/destination, optionally :ro or :rw. Source is a named "
-                          + "volume or an absolute path on this Mac.",
+                      help: FieldHelp(
+                          "Storage that outlives the container.",
+                          detail: "The source is either a named volume you created, or an absolute path on this Mac.",
+                          example: """
+                              web:/srv/data        a named volume
+                              /Users/me/src:/app   a folder on this Mac
+                              web:/srv/data:ro     read-only
+                              """,
+                          warning: "The destination cannot be `/`. Mounting over the container root is refused."),
                       problem: message(for: .volumes),
                       optional: true) {
                 rows($volumes, placeholder: "data:/data", max: Self.maxVolumes)
@@ -335,8 +365,11 @@ struct RunSheetView: View {
             FormSectionHeader(title: "Command")
 
             FormField("Command",
-                      help: "Splits on whitespace into up to \(Self.maxCommandTokens) tokens. "
-                          + "Left empty, the image runs its own entrypoint.",
+                      help: FieldHelp(
+                          "Replaces whatever the image runs by default.",
+                          detail: "Split on whitespace into up to \(Self.maxCommandTokens) tokens.",
+                          example: "echo hello\nsh -c \"while true; do date; sleep 5; done\"",
+                          warning: "Left empty, the image runs its own entrypoint — which is what you want most of the time."),
                       problem: message(for: .command),
                       optional: true) {
                 TextField("echo hello", text: $commandText)
@@ -362,8 +395,9 @@ struct RunSheetView: View {
 
             if limitResources {
                 FormField("CPUs",
-                          help: "1 to \(ProcessInfo.processInfo.processorCount) on this Mac. "
-                              + "The default comes from Settings ▸ Resources.") {
+                          help: FieldHelp(
+                              "How many virtual CPUs this container may use.",
+                              detail: "1 to \(ProcessInfo.processInfo.processorCount) on this Mac. The default comes from Settings ▸ Resources.")) {
                     Stepper(value: $cpus, in: 1...ProcessInfo.processInfo.processorCount) {
                         Text("\(cpus)").monospacedDigit()
                     }
@@ -371,7 +405,9 @@ struct RunSheetView: View {
                 }
 
                 FormField("Memory",
-                          help: "In 128 MB steps. The default comes from Settings ▸ Resources.") {
+                          help: FieldHelp(
+                              "How much memory this container may use.",
+                              detail: "In 128 MB steps. The default comes from Settings ▸ Resources.")) {
                     Stepper(value: $memoryMB, in: 128...131_072, step: 128) {
                         Text("\(memoryMB) MB").monospacedDigit()
                     }
@@ -381,12 +417,18 @@ struct RunSheetView: View {
         }
     }
 
-    private var previewGroup: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            FormSectionHeader(title: "Preview",
-                              note: "Built through the allowlist, so it cannot say one thing "
-                                  + "while Run does another.")
+    /// The validated command, in the rail. It used to be the last thing on a long scroll — the
+    /// one place a preview of what you are about to run is no use.
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
             previewSection
+            Text("Built through the allowlist, so it cannot say one thing while Run does another.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

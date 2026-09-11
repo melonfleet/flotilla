@@ -14,11 +14,15 @@ import SwiftUI
 /// inventing a third — is what makes the five create screens read the same.
 struct FormField<Content: View>: View {
     let label: String
-    /// Shown **under** the control, and always, not as a placeholder. A placeholder vanishes at
-    /// the exact moment someone starts typing and most needs to know what belongs there, so the
-    /// rules and the example live here instead; the placeholder is left to carry one specimen
-    /// value.
-    var help: String?
+    /// Identity for the rail. Defaults to the label, and `FormScaffold`'s help table is keyed by
+    /// the same string, so a field and its explainer cannot drift apart without the key failing
+    /// to match and the rail visibly saying nothing.
+    var id: String?
+    /// What the field takes. Its `summary` sits under the control when there is no rail; the rail
+    /// shows the whole thing. Never a placeholder — a placeholder vanishes at the exact moment
+    /// someone starts typing and most needs to know what belongs there, so the placeholder carries
+    /// one specimen value and the rules live here.
+    var help: FieldHelp?
     /// A real refusal, coloured as one. It replaces `help` rather than stacking with it, because
     /// two lines of small text under a field is where people stop reading either. An empty field
     /// is not a refusal, so callers pass nil until there is genuinely something wrong.
@@ -26,16 +30,28 @@ struct FormField<Content: View>: View {
     /// Marks the field as not required, in the label rather than the placeholder — "optional" as
     /// a placeholder reads like a value someone typed.
     var optional: Bool = false
+    /// Claims the rail when the form opens, so it explains something instead of asking to be
+    /// clicked first. Declared on one field per form rather than left to whichever `onAppear`
+    /// fires first — that order is not document order, and it gave the rail to Command.
+    var autoFocus: Bool = false
     let content: Content
 
-    init(_ label: String, help: String? = nil, problem: String? = nil,
-         optional: Bool = false, @ViewBuilder content: () -> Content) {
+    init(_ label: String, id: String? = nil, help: FieldHelp? = nil, problem: String? = nil,
+         optional: Bool = false, autoFocus: Bool = false,
+         @ViewBuilder content: () -> Content) {
         self.label = label
+        self.id = id ?? label
         self.help = help
         self.problem = problem
         self.optional = optional
+        self.autoFocus = autoFocus
         self.content = content()
     }
+
+    @Environment(\.formGuide) private var guide
+    @Environment(\.formRailVisible) private var railVisible
+
+    private var isFocused: Bool { railVisible && guide?.focusedLabel == id }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -52,13 +68,31 @@ struct FormField<Content: View>: View {
                 }
             }
             content
+            // A refusal is shown wherever the rail is, because it is about what you just typed.
+            // The summary is not: with a rail it would be the same sentence twice.
             if let problem {
                 fieldNote(problem, systemImage: "exclamationmark.circle", style: AnyShapeStyle(Theme.danger))
-            } else if let help {
-                fieldNote(help, systemImage: nil, style: AnyShapeStyle(.secondary))
+            } else if let help, !railVisible {
+                fieldNote(help.summary, systemImage: nil, style: AnyShapeStyle(.secondary))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(isFocused ? AnyShapeStyle(Theme.raisedSurface) : AnyShapeStyle(.clear),
+                    in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(isFocused ? Theme.hairline.opacity(0.35) : .clear, lineWidth: 1)
+        )
+        // The whole row is the target, not just the control: a stepper or a radio group has very
+        // little to aim at, and the rail is the point of aiming.
+        .contentShape(Rectangle())
+        .onTapGesture { guide?.focus(id ?? label, help: help) }
+        .onAppear {
+            // Only the declared lead field, and only while nothing has claimed the rail — a field
+            // scrolling into view later must not steal focus from the one you are in.
+            if autoFocus, guide?.focusedLabel == nil { guide?.focus(id ?? label, help: help) }
+        }
     }
 
     /// `fixedSize` on the vertical axis so a two-line explanation wraps instead of being
