@@ -584,11 +584,13 @@ struct ImagesView: View {
     /// only the two image forms need the wrapper shape; the header itself is shared.
     @ViewBuilder
     private func embeddedForm<Content: View>(
-        title: String, systemImage: String, onBack: @escaping () -> Void,
+        title: String, systemImage: String, hasUnsavedChanges: Bool,
+        onBack: @escaping () -> Void,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(spacing: 0) {
-            FormHeader(title: title, systemImage: systemImage, onBack: onBack)
+            FormHeader(title: title, systemImage: systemImage,
+                       hasUnsavedChanges: hasUnsavedChanges, onBack: onBack)
             Divider()
             // The ScrollView bounds the height. `maxHeight: .infinity` inside a parent that is
             // itself unbounded means "as tall as you like", not "fill the window" — which grew
@@ -603,7 +605,9 @@ struct ImagesView: View {
     }
 
     private func tagScreen(for image: ContainerImage) -> some View {
-        embeddedForm(title: "Tag Image", systemImage: "tag", onBack: { taggingImage = nil }) {
+        embeddedForm(title: "Tag Image", systemImage: "tag",
+                     hasUnsavedChanges: !trimmedTag.isEmpty,
+                     onBack: { taggingImage = nil }) {
             tagForm(for: image).padding(20)
         }
         .frame(width: 440)
@@ -715,6 +719,7 @@ struct ImagesView: View {
 
     private var pullScreen: some View {
         embeddedForm(title: "Pull Image", systemImage: "arrow.down.circle",
+                     hasUnsavedChanges: !trimmedPull.isEmpty && model.activePull == nil,
                      onBack: { showingPull = false }) {
             pullForm.padding(20)
         }

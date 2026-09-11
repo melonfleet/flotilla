@@ -33,9 +33,13 @@ struct MachineFormView: View {
     @State private var memoryGB: Int
     @State private var homeMount = "rw"
     @State private var creating = false
-    @State private var importedFrom: String?
-    @State private var importProblem: String?
-    @State private var pendingSpecs: [MachineSpec] = []
+    @State private var edits = FormEditTracker()
+
+    /// Everything a Back would throw away. Captured on appear rather than compared to defaults,
+    /// because the resource defaults come from Settings ▸ Resources and are not constants here.
+    private var editSignature: String {
+        [image, name, homeMount, "\(cpus)", "\(memoryGB)"].joined(separator: "\u{1}")
+    }
 
     init(model: AppModel, dismiss: @escaping () -> Void) {
         self.model = model
@@ -96,6 +100,7 @@ struct MachineFormView: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { edits.open(editSignature) }
     }
 
     private var machineSection: some View {
@@ -106,8 +111,6 @@ struct MachineFormView: View {
             FormSectionHeader(title: "Machine",
                               note: "Built from a container image, not an installer. The image "
                                   + "supplies the userland; `container` supplies the kernel.")
-            importBanner
-
             FormField("Image reference",
                       help: FieldHelp(
                           "A machine boots from a container image, not an installer.",
@@ -257,103 +260,15 @@ struct MachineFormView: View {
 
     /// Back, then the title — the same header shape as the machine and container detail
     /// screens, so leaving a form works exactly like leaving a detail.
-    /// The shared `FormHeader`, with the import button in its trailing slot. This used to be a
-    /// near-copy of that view; see `FormHeader.trailing` for what the copies cost.
+    ///
+    /// It used to carry an "Import Flotillafile…" button in `FormHeader`'s trailing slot. That is
+    /// **withheld from this release** at the owner's direction: the format is not settled enough
+    /// to put in front of testers, and a half-ready import is worse than none. The parser and its
+    /// 35 tests stay in `FlotillaCore` untouched, so restoring this is a UI change and nothing
+    /// more.
     private var header: some View {
         FormHeader(title: "New Machine", systemImage: "plus.rectangle.on.folder",
-                   onBack: dismiss) {
-            Button {
-                importFlotillafile()
-            } label: {
-                Label("Import Flotillafile…", systemImage: "doc.badge.arrow.up")
-            }
-            .controlSize(.small)
-            .help("Fill this form from a Flotillafile")
-        }
-    }
-
-    /// Import **fills the form**; it never creates anything on its own.
-    ///
-    /// A Flotillafile is a file on disk that can name several machines, and applying it
-    /// silently would be a one-click way to boot VMs you have not read. So the file is parsed,
-    /// one machine is loaded into these fields, and you still press Save — with the validated
-    /// command preview showing exactly what will run. That is the same rule the Run sheet
-    /// follows, and the reason the preview exists at all.
-    private func importFlotillafile() {
-        importProblem = nil
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.message = "Choose a Flotillafile"
-        // Named `Flotillafile` by convention but the parser takes JSON from anywhere, so the
-        // panel does not insist on an extension it cannot rely on.
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            let data = try Data(contentsOf: url)
-            let file = try Flotillafile.parse(data)
-            guard let first = file.machines.first else {
-                importProblem = "That Flotillafile declares no machines."
-                return
-            }
-            apply(first)
-            importedFrom = url.lastPathComponent
-            // Kept so the banner can say what was left behind. Loading several machines into
-            // one form is not possible, and pretending otherwise would lose the rest silently.
-            pendingSpecs = Array(file.machines.dropFirst())
-        } catch let error as FlotillafileError {
-            importProblem = error.description
-        } catch {
-            importProblem = "Could not read that file: \(error.localizedDescription)"
-        }
-    }
-
-    private func apply(_ spec: MachineSpec) {
-        image = spec.image
-        name = spec.name
-        if let specCPUs = spec.cpus { cpus = specCPUs }
-        if let specMemory = spec.memory, let gb = Self.gigabytes(from: specMemory) {
-            memoryGB = gb
-        }
-        if let mount = spec.homeMount { homeMount = mount.rawValue }
-    }
-
-    /// `2G`, `2048M`, `2Gi` → whole gigabytes for the stepper. Returns nil rather than
-    /// guessing when the suffix is unrecognised, so an odd value leaves the stepper alone
-    /// instead of silently becoming something else.
-    static func gigabytes(from memory: String) -> Int? {
-        let trimmed = memory.trimmingCharacters(in: .whitespaces).uppercased()
-        let digits = trimmed.prefix { $0.isNumber }
-        guard let value = Int(digits), value > 0 else { return nil }
-        let suffix = trimmed.dropFirst(digits.count)
-        switch suffix {
-        case "G", "GB", "GI", "GIB": return value
-        case "M", "MB", "MI", "MIB": return max(1, value / 1024)
-        case "": return value                       // bare number is gigabytes, as the CLI reads it
-        default: return nil
-        }
-    }
-
-    @ViewBuilder
-    private var importBanner: some View {
-        if let importProblem {
-            Label(importProblem, systemImage: "exclamationmark.triangle")
-                .font(.caption).foregroundStyle(Theme.danger)
-        } else if let importedFrom {
-            VStack(alignment: .leading, spacing: 2) {
-                Label("Filled from \(importedFrom). Review it, then Save.",
-                      systemImage: "checkmark.circle")
-                    .font(.caption).foregroundStyle(Theme.success)
-                if !pendingSpecs.isEmpty {
-                    // Never lose part of a file quietly.
-                    Text("That file also declares "
-                         + pendingSpecs.map(\.name).joined(separator: ", ")
-                         + ". This form creates one machine at a time — import again for the rest.")
-                        .font(.caption2).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
+                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
     }
 
     /// Save lives bottom-right, where a form's commit belongs on macOS.

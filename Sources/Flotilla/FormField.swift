@@ -66,7 +66,7 @@ struct FormField<Content: View>: View {
         // The rail is built from these, in view-tree order. Declared here and nowhere else, so a
         // field and its explanation cannot drift apart.
         .preference(key: FormGuideKey.self,
-                    value: help.map { [FormFieldGuide(label: label, help: $0)] } ?? [])
+                    value: help.map { [.field(FormFieldGuide(label: label, help: $0))] } ?? [])
     }
 
     /// `fixedSize` on the vertical axis so a two-line explanation wraps instead of being
@@ -108,6 +108,8 @@ struct FormSectionHeader: View {
             Divider().padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The rail groups under these, in this order, without the grouping being declared twice.
+        .preference(key: FormGuideKey.self, value: [.section(title)])
     }
 }
 

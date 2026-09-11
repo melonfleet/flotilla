@@ -124,6 +124,19 @@ struct RunSheetView: View {
     /// when the container is created — neither the CLI nor Flotilla can move an existing one.
     @State private var network = ""
 
+    @State private var edits = FormEditTracker()
+
+    /// Everything a Back would throw away, in one string. Compared against the value captured when
+    /// the screen appeared — not against defaults, because a prefilled run sheet opens full and
+    /// that is not the user's unsaved work.
+    private var editSignature: String {
+        [image, name, commandText, network,
+         ports.map(\.value).joined(separator: ","),
+         env.map(\.value).joined(separator: ","),
+         volumes.map(\.value).joined(separator: ","),
+         "\(detach)", "\(limitResources)", "\(cpus)", "\(memoryMB)"].joined(separator: "\u{1}")
+    }
+
     @State private var detach = true
     @State private var cpus: Int
     @State private var memoryMB: Int
@@ -162,6 +175,7 @@ struct RunSheetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Suggestions want the local image list; a user opening this sheet without ever
         // visiting Images otherwise sees none.
+        .onAppear { edits.open(editSignature) }
         .task { await model.refreshImages() }
         // Networks are refreshed by their own section and by every sixth poll tick, so a run
         // sheet opened from the File menu on a fresh launch would otherwise offer an empty list.
@@ -174,7 +188,8 @@ struct RunSheetView: View {
     /// with its own close button is the odd one out, and a hand-picked 560×680 frame meant the
     /// content had to fit the window rather than the other way round.
     private var header: some View {
-        FormHeader(title: "Run Container", systemImage: "shippingbox", onBack: dismiss)
+        FormHeader(title: "Run Container", systemImage: "shippingbox",
+                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
     }
 
     private var content: some View {

@@ -17,6 +17,13 @@ import SwiftUI
 struct FormHeader<Trailing: View>: View {
     let title: String
     let systemImage: String
+    /// Whether leaving now would lose something.
+    ///
+    /// Required rather than defaulted to `false`: a form that forgets to say would lose the guard
+    /// silently, and "a setting that drives nothing is worse than a missing one" is a lesson this
+    /// project has already paid for. Every screen with a `FormHeader` is a form, so every one of
+    /// them has an answer.
+    let hasUnsavedChanges: Bool
     let onBack: () -> Void
     /// Controls that belong to the whole form rather than to a field — the machine form's
     /// "Import Flotillafile…" is the only one so far.
@@ -27,10 +34,13 @@ struct FormHeader<Trailing: View>: View {
     /// and nobody kept them. One header, one number.
     @ViewBuilder var trailing: Trailing
 
+    @State private var confirmingDiscard = false
+
     var body: some View {
         HStack(spacing: 10) {
-            IconActionButton(systemImage: "chevron.left", label: "Back", help: "Back",
-                             action: onBack)
+            IconActionButton(systemImage: "chevron.left", label: "Back", help: "Back") {
+                if hasUnsavedChanges { confirmingDiscard = true } else { onBack() }
+            }
             Image(systemName: systemImage)
                 .font(.system(size: 17))
                 .foregroundStyle(.secondary)
@@ -40,12 +50,43 @@ struct FormHeader<Trailing: View>: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        // Only on the way out, and only when there is something to lose. A form you opened and
+        // did not touch closes on one click, as it always did.
+        .confirmationDialog("Discard your changes?", isPresented: $confirmingDiscard,
+                            titleVisibility: .visible) {
+            Button("Discard Changes", role: .destructive, action: onBack)
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("This form has changes that have not been saved. Leaving now loses them.")
+        }
+    }
+}
+
+/// Whether a form has been edited since it opened.
+///
+/// Compares a signature of the fields against the one captured when the screen appeared, rather
+/// than against hardcoded defaults. Two reasons: a prefilled Run sheet opens full and that is not
+/// unsaved work of the user's, and the forms whose defaults come from Settings ▸ Resources have no
+/// constant to compare against in the first place.
+struct FormEditTracker {
+    private var opened: String?
+
+    /// Call from `onAppear`. Idempotent — a re-appear must not re-baseline and quietly forget
+    /// edits made before it.
+    mutating func open(_ signature: String) {
+        if opened == nil { opened = signature }
+    }
+
+    func isDirty(_ signature: String) -> Bool {
+        guard let opened else { return false }
+        return opened != signature
     }
 }
 
 extension FormHeader where Trailing == EmptyView {
-    init(title: String, systemImage: String, onBack: @escaping () -> Void) {
-        self.init(title: title, systemImage: systemImage, onBack: onBack,
-                  trailing: { EmptyView() })
+    init(title: String, systemImage: String, hasUnsavedChanges: Bool,
+         onBack: @escaping () -> Void) {
+        self.init(title: title, systemImage: systemImage, hasUnsavedChanges: hasUnsavedChanges,
+                  onBack: onBack, trailing: { EmptyView() })
     }
 }

@@ -20,10 +20,17 @@ struct BuildImageView: View {
     @State private var platform = ""
     @State private var noCache = false
     @State private var building = false
+    @State private var edits = FormEditTracker()
+
+    private var editSignature: String {
+        [context?.path ?? "", dockerfile, tag, target, platform, "\(noCache)"]
+            .joined(separator: "\u{1}")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            FormHeader(title: "Build Image", systemImage: "hammer", onBack: dismiss)
+            FormHeader(title: "Build Image", systemImage: "hammer",
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
             Divider()
             // The context grant and the CLI-specific defaults need more room than an inline
             // caption, while the bounded field column must still survive a narrow window.

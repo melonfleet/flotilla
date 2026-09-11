@@ -36,15 +36,32 @@ struct FormFieldGuide: Equatable, Sendable, Identifiable {
     var id: String { label }
 }
 
-/// Carries each field's help up to the scaffold.
+/// One line of the rail: a heading, or a field's help.
+///
+/// Both kinds travel in one preference so they arrive interleaved in view-tree order — which is
+/// what lets the rail be grouped under the form's own headings without anyone declaring the
+/// grouping twice.
+enum FormGuideItem: Equatable, Sendable, Identifiable {
+    case section(String)
+    case field(FormFieldGuide)
+
+    var id: String {
+        switch self {
+        case .section(let title): "section:\(title)"
+        case .field(let field): "field:\(field.label)"
+        }
+    }
+}
+
+/// Carries each field's help, and each section heading, up to the scaffold.
 ///
 /// A SwiftUI preference rather than a table passed down, because the alternative is declaring every
 /// field's help twice — once at the field and once in a dictionary keyed by its label — where the
 /// key silently not matching is the failure mode. Preferences also collect in view-tree order, so
 /// the rail reads in the same order as the form without anyone maintaining a second ordering.
 struct FormGuideKey: PreferenceKey {
-    static var defaultValue: [FormFieldGuide] { [] }
-    static func reduce(value: inout [FormFieldGuide], nextValue: () -> [FormFieldGuide]) {
+    static var defaultValue: [FormGuideItem] { [] }
+    static func reduce(value: inout [FormGuideItem], nextValue: () -> [FormGuideItem]) {
         value.append(contentsOf: nextValue())
     }
 }
@@ -71,13 +88,18 @@ extension EnvironmentValues {
 /// Below `railWidthThreshold` the rail is dropped and `FormField` puts its summary back under the
 /// control, so a narrow window degrades to exactly the previous layout rather than to a form with
 /// no guidance at all.
+///
+/// **Deferred to the release candidate, deliberately:** each section of the rail should carry a
+/// link to the matching wiki page. Not in the beta, because beta testing is expected to change
+/// the documentation — a link shipped now would point at a page about to be rewritten, and a
+/// wrong link is worse than no link. Add them once the wiki settles.
 struct FormScaffold<Fields: View, Preview: View>: View {
     @ViewBuilder var fields: Fields
     /// Pinned at the top of the rail — the validated command, which used to be the last thing on a
     /// long scroll and so was read last, if at all.
     @ViewBuilder var preview: Preview
 
-    @State private var entries: [FormFieldGuide] = []
+    @State private var items: [FormGuideItem] = []
 
     /// The column is 640 and the rail wants ~340 before it is too cramped to be worth the space;
     /// with the sidebar and padding that lands here. Measured against the shipping window, 1441.
@@ -112,7 +134,7 @@ struct FormScaffold<Fields: View, Preview: View>: View {
                 }
             }
             .environment(\.formRailVisible, showsRail)
-            .onPreferenceChange(FormGuideKey.self) { entries = $0 }
+            .onPreferenceChange(FormGuideKey.self) { items = $0 }
         }
     }
 
@@ -122,19 +144,58 @@ struct FormScaffold<Fields: View, Preview: View>: View {
             // what is about to run is the one thing worth keeping in view the whole time.
             card { preview }
 
-            if !entries.isEmpty {
+            if !groups.isEmpty {
                 ScrollView {
-                    card {
-                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                            if index > 0 {
-                                Divider().padding(.vertical, 2)
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(groups) { group in
+                            card {
+                                if let title = group.title {
+                                    Text(title)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .textCase(.uppercase)
+                                        .kerning(0.6)
+                                }
+                                ForEach(Array(group.fields.enumerated()), id: \.element.id) { index, entry in
+                                    if index > 0 || group.title != nil {
+                                        Divider().padding(.vertical, 2)
+                                    }
+                                    FormGuideEntry(entry: entry)
+                                }
                             }
-                            FormGuideEntry(entry: entry)
                         }
                     }
                 }
             }
         }
+    }
+
+    /// The rail's cards: one per section of the form, in the form's own order.
+    ///
+    /// A heading with no fields under it draws nothing — several forms carry section headers over
+    /// content that is not a `FormField` at all (a banner, the resources note), and an empty card
+    /// titled "Command" is worse than no card.
+    private var groups: [FormGuideGroup] {
+        var groups: [FormGuideGroup] = []
+        var title: String?
+        var fields: [FormFieldGuide] = []
+
+        func flush() {
+            if !fields.isEmpty { groups.append(FormGuideGroup(title: title, fields: fields)) }
+            fields = []
+        }
+
+        for item in items {
+            switch item {
+            case .section(let next):
+                flush()
+                title = next
+            case .field(let field):
+                fields.append(field)
+            }
+        }
+        flush()
+        return groups
     }
 
     @ViewBuilder
@@ -150,6 +211,13 @@ struct FormScaffold<Fields: View, Preview: View>: View {
                 .strokeBorder(Theme.hairline.opacity(0.35), lineWidth: 1)
         )
     }
+}
+
+/// One section of the rail.
+private struct FormGuideGroup: Identifiable {
+    let title: String?
+    let fields: [FormFieldGuide]
+    var id: String { title ?? "untitled:\(fields.first?.label ?? "")" }
 }
 
 /// One field's block in the rail.

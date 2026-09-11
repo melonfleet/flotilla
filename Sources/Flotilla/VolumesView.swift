@@ -22,6 +22,13 @@ struct VolumesView: View {
     @State private var newDriverOptions: [String] = []
     @State private var pendingDelete: ContainerVolume?
     @State private var confirmingBulkDelete = false
+    @State private var edits = FormEditTracker()
+
+    private var editSignature: String {
+        [newVolumeName, newSize,
+         newLabels.joined(separator: ","),
+         newDriverOptions.joined(separator: ",")].joined(separator: "\u{1}")
+    }
 
     var body: some View {
         Group {
@@ -536,6 +543,7 @@ struct VolumesView: View {
     private var createScreen: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Volume", systemImage: "externaldrive.badge.plus",
+                       hasUnsavedChanges: edits.isDirty(editSignature),
                        onBack: { showingCreate = false })
             Divider()
             FormScaffold {
@@ -546,6 +554,7 @@ struct VolumesView: View {
             Divider()
             createFooter
         }
+        .onAppear { edits.open(editSignature) }
     }
 
     private var createForm: some View {

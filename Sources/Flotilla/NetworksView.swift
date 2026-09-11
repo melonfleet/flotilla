@@ -446,6 +446,14 @@ struct NewNetworkView: View {
     @State private var newLabels: [String] = []
     @State private var newOptions: [String] = []
     @State private var newPlugin = ""
+    @State private var edits = FormEditTracker()
+
+    private var editSignature: String {
+        [newNetworkName, addressFamily.rawValue, newSubnet, newSubnetV6, newPlugin,
+         "\(newInternal)",
+         newLabels.joined(separator: ","),
+         newOptions.joined(separator: ",")].joined(separator: "\u{1}")
+    }
     @State private var addressFamily: AddressFamily = .ipv4
 
     /// The **only** moment a network's settings can be chosen.
@@ -462,7 +470,7 @@ struct NewNetworkView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Network", systemImage: "network.badge.shield.half.filled",
-                       onBack: dismiss)
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
             Divider()
             FormScaffold {
                 form
@@ -472,6 +480,7 @@ struct NewNetworkView: View {
             Divider()
             footer
         }
+        .onAppear { edits.open(editSignature) }
     }
 
     private var form: some View {
