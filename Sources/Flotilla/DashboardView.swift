@@ -49,9 +49,17 @@ struct DashboardView: View {
                     runtimeBanner(reason)
                 }
 
-                hostsStrip
                 pressureSection
-                resourceRows
+                // Side by side, because neither earns the full width: three rate rows and four
+                // resource rows are both narrow lists, and stacked they pushed the utilisation
+                // table off the bottom of the window — the one panel here that actually wants
+                // room. `alignment: .top` with both halves stretched, so the two cards are the
+                // same height whichever has more rows.
+                HStack(alignment: .top, spacing: 12) {
+                    throughputSection
+                    resourceRows
+                }
+                .fixedSize(horizontal: false, vertical: true)
                 attentionPanel
                 utilisationPanel
             }
@@ -60,7 +68,7 @@ struct DashboardView: View {
         .navigationTitle("")
         .task {
             await model.refresh()
-            await model.refreshMachines()      // the strip counts them; nothing else fetches here
+            await model.refreshMachines()      // Pressure counts them; nothing else fetches here
             await loadDiskUsage()
         }
     }
@@ -106,49 +114,18 @@ struct DashboardView: View {
 
     // MARK: Tiles
 
-    // MARK: Hosts
+    // MARK: Host summary
     //
-    // The dashboard leads with *hosts* rather than with a grid of resource cards. That is the
-    // one structural thing Flotilla has that a single-machine container GUI does not: it is
-    // built to manage a fleet, and the layout should say so from the first row rather than
-    // reading as a re-skin of somebody else's panel.
+    // What used to be a "Hosts" heading over a single "This Mac" row. With one host it was a
+    // section header, a card and a row to say two numbers, and it pushed everything below it
+    // down a hundred points to do it. The numbers are worth having; the furniture was not, so
+    // they moved into the Pressure card — which is the panel about this machine anyway.
+    //
+    // When Phase 2 brings real hosts this becomes a list again, and Pressure will describe one
+    // host at a time rather than the only one.
 
-    private var hostsStrip: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Hosts").font(.headline)
-
-            VStack(spacing: 0) {
-                thisMacRow
-            }
-            .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
-        }
-    }
-
-    /// Identity and reachability, and nothing that another panel already says.
-    ///
-    /// The first version carried CPU, Memory and Running on the right — all three duplicated
-    /// from Pressure and Resources directly below, which made the top of the dashboard read
-    /// twice. It also had a chevron that went to Containers while the row itself said
-    /// "4 containers · 2 machines": a link that satisfies half its own sentence is worse than
-    /// no link, so the row is not a button at all now. Same call as the sidebar's host row,
-    /// which is deliberately `selectionDisabled` for the same reason.
-    ///
-    /// What is left is the thing only this row knows: whether the host is reachable, and what
-    /// it is carrying. In Phase 2 that becomes a list, and the per-host split starts earning
-    /// its place — Pressure will only ever describe one host at a time.
-    private var thisMacRow: some View {
-        HStack(spacing: 10) {
-            Circle().fill(hostDot).frame(width: 8, height: 8).frame(width: 24)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.hostLabel).font(.system(size: 13, weight: .medium))
-                Text(hostSubtitle).font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 12).padding(.vertical, 10)
-    }
-
+    /// Whether the runtime is reachable. The one thing the host row knew that no other panel
+    /// says, so it came across with the counts rather than being dropped with the rest.
     private var hostDot: Color {
         switch model.state {
         case .loaded: Theme.online
@@ -203,6 +180,7 @@ struct DashboardView: View {
                 resourceRow("Machines", systemImage: "server.rack", target: .machines,
                             detail: machinesDetail, size: nil)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
         }
@@ -275,23 +253,60 @@ struct DashboardView: View {
             }
 
             VStack(spacing: 0) {
-                pressureChart
+                hostSummaryRow
                 Divider()
+                pressureChart
+            }
+            .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
+        }
+    }
+
+    /// What the machine is carrying, above the graph of how hard it is working.
+    ///
+    /// These two numbers had a section, a card and a row of their own at the top of the
+    /// dashboard. They belong here: "5 of 6 containers running" and "CPU 23%" are the same
+    /// question asked twice, and reading them in one box is the point of a dashboard.
+    private var hostSummaryRow: some View {
+        HStack(spacing: 8) {
+            Circle().fill(hostDot).frame(width: 8, height: 8)
+            Text(hostSubtitle).font(.system(size: 12, weight: .medium))
+            Spacer(minLength: 12)
+            // Pinning the chart's domain means a 1h view can be mostly empty, which on its own
+            // looks like a broken chart. Naming how much has actually been collected turns that
+            // into a fact about the app's uptime instead.
+            Text(collectedNote.map { "\($0) · \(ProcessInfo.processInfo.processorCount) cores · \(model.hostLabel)" }
+                 ?? "\(ProcessInfo.processInfo.processorCount) cores · \(model.hostLabel)")
+                .font(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+    }
+
+    /// Network, disk and container disk — rates, in bytes per second.
+    ///
+    /// Out of the Pressure card and into their own, beside Resources. They were never part of
+    /// that chart: it is a 0–100 percentage axis and these are throughput, which is why they
+    /// were rows under it rather than lines in it. Sitting in the same box only made the
+    /// dashboard's tallest panel taller.
+    private var throughputSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Throughput").font(.headline)
+            VStack(spacing: 0) {
                 rateRow("Network", systemImage: "arrow.up.arrow.down",
                         down: model.hostMetrics.latest?.networkRxBytesPerSecond,
                         up: model.hostMetrics.latest?.networkTxBytesPerSecond,
                         note: "whole machine, includes the runtime's own interfaces")
-                Divider()
-                // Whole-machine disk, from IOKit's `IOBlockStorageDriver` counters — the row the
-                // caption below used to promise. It sits above the container row for the same
-                // reason Network does: this panel reads top-down from the machine to the
-                // containers, and the host figure is the one that answers "is the disk busy".
+                Divider().padding(.leading, 34)
+                // Whole-machine disk, from IOKit's `IOBlockStorageDriver` counters. It sits above
+                // the container row for the same reason Network does: this panel reads top-down
+                // from the machine to the containers, and the host figure is the one that answers
+                // "is the disk busy".
                 rateRow("Disk", systemImage: "internaldrive",
                         down: model.hostMetrics.latest?.diskReadBytesPerSecond,
                         up: model.hostMetrics.latest?.diskWriteBytesPerSecond,
                         downLabel: "R", upLabel: "W",
                         note: "whole machine, includes the runtime's own disk images")
-                Divider()
+                Divider().padding(.leading, 34)
                 rateRow("Container disk", systemImage: "shippingbox",
                         down: aggregatedContainerPoints.last?.read,
                         up: aggregatedContainerPoints.last?.write,
@@ -302,6 +317,7 @@ struct DashboardView: View {
                         // measured: a `dd` of 300 MB moved the counter only once `sync` ran.
                         note: "containers only, and only once the guest flushes to its block device")
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
         }
@@ -317,12 +333,6 @@ struct DashboardView: View {
                           model.hostMetrics.latest?.cpuPercent.map { String(format: "%.0f%%", $0) })
                 legendDot(Theme.accent, "Memory", memoryPercentLabel)
                 Spacer()
-                // Pinning the domain means a 1h view can be mostly empty, which on its own looks
-                // like a broken chart. Naming how much has actually been collected turns that
-                // into a fact about the app's uptime instead.
-                Text(collectedNote.map { "\($0) · \(ProcessInfo.processInfo.processorCount) cores · \(model.hostLabel)" }
-                     ?? "\(ProcessInfo.processInfo.processorCount) cores · \(model.hostLabel)")
-                    .font(.caption2).foregroundStyle(.tertiary)
             }
             // One flattened array with an explicit series name, not two `ForEach`es each
             // setting a flat `foregroundStyle`. Swift Charts derives series identity from the
@@ -510,9 +520,21 @@ struct DashboardView: View {
                             .monospacedDigit()
                     }
                 }
-                .frame(minHeight: 160)
+                .frame(minHeight: utilisationHeight)
             }
         }
+    }
+
+    /// Tall enough for the containers that are actually running, up to eight.
+    ///
+    /// It was a flat 160, which is three and a bit rows: with five containers up you got an
+    /// inner scrollbar inside a panel that had empty window beneath it, which is the worst of
+    /// both — a list you have to scroll and a dashboard with nothing in the space. Eight is the
+    /// cap because past that the table should scroll rather than push everything else off the
+    /// screen, and three is the floor so a one-container fleet still looks like a table.
+    private var utilisationHeight: CGFloat {
+        let rows = min(max(model.running.count, 3), 8)
+        return 34 + 44 * CGFloat(rows)
     }
 
     // MARK: Panels
