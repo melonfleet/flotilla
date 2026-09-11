@@ -35,8 +35,7 @@ struct BuildImageView: View {
                               help: FieldHelp(
                                   "The build context available to Dockerfile instructions.",
                                   detail: "Everything in this directory is sent to the builder, and the build may read all of it.",
-                                  warning: "Choosing the folder grants access to that host path for this build; Flotilla otherwise denies host paths."),
-                                  autoFocus: true) {
+                                  warning: "Choosing the folder grants access to that host path for this build; Flotilla otherwise denies host paths.")) {
                         HStack(spacing: 8) {
                             Text(context?.path ?? "No folder chosen")
                                 .font(.system(size: 12, design: .monospaced))

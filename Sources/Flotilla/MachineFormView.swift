@@ -113,8 +113,7 @@ struct MachineFormView: View {
                           "A machine boots from a container image, not an installer.",
                           detail: "The image supplies the userland; the kernel comes from Apple's runtime. That is why this pulls from Docker Hub, and why a machine's disk reads tens of megabytes rather than gigabytes.",
                           example: "alpine:3.22    verified\nalpine:latest  verified",
-                          warning: "In practice only Alpine boots. Ubuntu, Debian, Fedora and BusyBox each pull around 100 MB, create a machine record, and then fail to boot."),
-                      autoFocus: true) {
+                          warning: "In practice only Alpine boots. Ubuntu, Debian, Fedora and BusyBox each pull around 100 MB, create a machine record, and then fail to boot.")) {
                 TextField("alpine:3.22", text: $image)
                     .textFieldStyle(.roundedBorder)
                     .monospaced()

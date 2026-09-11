@@ -538,80 +538,114 @@ struct VolumesView: View {
             FormHeader(title: "New Volume", systemImage: "externaldrive.badge.plus",
                        onBack: { showingCreate = false })
             Divider()
-            ScrollView {
+            FormScaffold {
                 createForm
-                    .padding(20)
-                    .frame(maxWidth: 640, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            } preview: {
+                railPreview
             }
+            Divider()
+            createFooter
         }
     }
 
     private var createForm: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Name").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 20) {
+            FormField("Name",
+                      help: FieldHelp(
+                          "What the volume is called, and how you mount it into a container.",
+                          detail: "In the Run form's Volumes field you write it as `name:/path`.",
+                          example: "Letters, numbers, dots, dashes or\nunderscores. Must start with a letter\nor number. No spaces."),
+                      problem: nameProblem) {
                 TextField("my-data", text: $newVolumeName)
                     .textFieldStyle(.roundedBorder)
-                if let problem = nameProblem {
-                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
-                }
+                    .monospaced()
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Size").font(.caption).foregroundStyle(.secondary)
+            FormField("Size",
+                      help: FieldHelp(
+                          "How large the volume may grow.",
+                          detail: "A number with an optional K, M or G suffix.",
+                          example: "64M\n2G\n512G",
+                          warning: "Left empty, the driver provisions 512 GiB as a sparse image. It does not consume that — but it is what the Size column reports, which is why an untouched volume looks alarming in the list."),
+                      problem: sizeProblem,
+                      optional: true) {
                 TextField("64M, 2G, …", text: $newSize)
                     .textFieldStyle(.roundedBorder)
                     .monospaced()
-                if let problem = sizeProblem {
-                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
-                } else {
-                    // Worth stating: the default is enormous and sparse, which is why the
-                    // Size column in the list looks alarming until you set one yourself.
-                    Text("Optional. Left empty the driver provisions 512 GiB as a sparse image — it does not consume that, but it is what the size column reports.")
-                        .font(.caption2).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
-            DisclosureGroup("Advanced") {
-                VStack(alignment: .leading, spacing: 10) {
-                    keyValueList($newLabels, title: "Labels", placeholder: "team=infra")
-                    keyValueList($newDriverOptions, title: "Driver options", placeholder: "type=fast")
+            // Expanded, not behind a disclosure triangle. There are two short lists here; hiding
+            // them behind a chevron mostly hides that they exist.
+            VStack(alignment: .leading, spacing: 14) {
+                FormSectionHeader(title: "Advanced")
+
+                FormField("Labels",
+                          help: FieldHelp(
+                              "Your own key=value metadata, carried on the volume.",
+                              detail: "Up to eight. Nothing reads them but you and whatever you script.",
+                              example: "team=infra\nenv=staging"),
+                          optional: true) {
+                    keyValueList($newLabels, title: nil, placeholder: "team=infra")
                 }
-                .padding(.top, 8)
+
+                FormField("Driver options",
+                          help: FieldHelp(
+                              "Options passed straight through to the storage driver.",
+                              detail: "Up to eight, again as key=value. What they mean is the driver's business, not Flotilla's.",
+                              example: "type=fast"),
+                          optional: true) {
+                    keyValueList($newDriverOptions, title: nil, placeholder: "type=fast")
+                }
             }
+        }
+    }
 
-            Divider()
-
+    /// The validated command, in the rail.
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
             Text((["container"] + ContainerCLI.createVolumeArguments(trimmedName, options: options))
                     .joined(separator: " "))
-                .font(.system(.caption2, design: .monospaced))
+                .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-
-            HStack {
-                Spacer()
-                Button("Create") {
-                    let name = trimmedName
-                    let opts = options
-                    showingCreate = false
-                    Task { await model.createVolume(name, options: opts) }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(trimmedName.isEmpty || anyProblem != nil)
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var createFooter: some View {
+        HStack {
+            Spacer()
+            Button("Cancel") { showingCreate = false }
+            Button("Create") {
+                let name = trimmedName
+                let opts = options
+                showingCreate = false
+                Task { await model.createVolume(name, options: opts) }
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(trimmedName.isEmpty || anyProblem != nil)
+        }
+        .padding(12)
     }
 
     /// Repeatable `key=value` flags, capped at the `Allowlist`'s own maximum of 8 — shown
     /// rather than silently enforced.
     @ViewBuilder
-    private func keyValueList(_ list: Binding<[String]>, title: String, placeholder: String) -> some View {
+    private func keyValueList(_ list: Binding<[String]>, title: String? = nil,
+                              placeholder: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
+            // `title` is nil when a `FormField` already supplies the label; the counter stays
+            // either way, because the cap is the thing worth showing rather than enforcing
+            // silently.
             HStack {
-                Text(title).font(.caption).foregroundStyle(.secondary)
+                if let title {
+                    Text(title).font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text("\(list.wrappedValue.count)/8").font(.caption2).foregroundStyle(.secondary)
             }

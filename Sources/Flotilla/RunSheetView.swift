@@ -242,8 +242,7 @@ struct RunSheetView: View {
                               ghcr.io/owner/app:1.2.3  another registry
                               alpine@sha256:…          pinned to a digest
                               """),
-                      problem: message(for: .image),
-                      autoFocus: true) {
+                      problem: message(for: .image)) {
                 TextField("nginx:alpine", text: $image)
                     .textFieldStyle(.roundedBorder)
                     .monospaced()

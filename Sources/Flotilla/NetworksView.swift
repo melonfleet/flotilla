@@ -464,89 +464,145 @@ struct NewNetworkView: View {
             FormHeader(title: "New Network", systemImage: "network.badge.shield.half.filled",
                        onBack: dismiss)
             Divider()
-            ScrollView {
+            FormScaffold {
                 form
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            } preview: {
+                railPreview
             }
+            Divider()
+            footer
         }
     }
 
     private var form: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Name").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 20) {
+            FormField("Name",
+                      help: FieldHelp(
+                          "What the network is called, and how you attach a container to it.",
+                          detail: "It appears in the Run form's Network picker under this name.",
+                          example: "Letters, numbers, dots, dashes or\nunderscores. Must start with a letter\nor number. No spaces."),
+                      problem: nameProblem) {
                 TextField("my-network", text: $newNetworkName)
                     .textFieldStyle(.roundedBorder)
-                if let problem = nameProblem {
-                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
+                    .monospaced()
+            }
+
+            FormField("Addressing",
+                      help: FieldHelp(
+                          "Which address family this network uses.",
+                          detail: "IPv4 and IPv6 are independent, and each takes its own subnet — which is why they are not offered in one column.")) {
+                Picker("Addressing", selection: $addressFamily) {
+                    ForEach(AddressFamily.allCases) { Text($0.rawValue).tag($0) }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
             }
 
-            Picker("Addressing", selection: $addressFamily) {
-                ForEach(AddressFamily.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            // Each family gets its own field, example and note — that is the point of
-            // separating them.
             switch addressFamily {
             case .ipv4:
-                addressField(
-                    text: $newSubnet,
-                    placeholder: "10.10.0.0/24",
-                    problem: subnetProblem,
-                    note: "Optional. Leave empty and a private range is assigned for you."
-                )
-            case .ipv6:
-                addressField(
-                    text: $newSubnetV6,
-                    placeholder: "fd00:1234::/64",
-                    problem: subnetV6Problem,
-                    note: "Optional. Use a unique-local prefix (fd00::/8) for a private network."
-                )
-            }
-
-            Toggle("Host-only — no external access", isOn: $newInternal)
-                .toggleStyle(.checkbox)
-
-            DisclosureGroup("Advanced") {
-                VStack(alignment: .leading, spacing: 10) {
-                    keyValueList($newLabels, title: "Labels", placeholder: "team=infra")
-                    keyValueList($newOptions, title: "Plugin options", placeholder: "mtu=1500")
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Plugin").font(.caption).foregroundStyle(.secondary)
-                        TextField("container-network-vmnet", text: $newPlugin)
-                            .textFieldStyle(.roundedBorder)
-                        Text("Leave empty for the default.")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
+                FormField("Subnet",
+                          help: FieldHelp(
+                              "The address range containers on this network are given.",
+                              detail: "CIDR notation. Left empty, a private range is assigned for you.",
+                              example: "10.10.0.0/24\n192.168.80.0/24"),
+                          problem: subnetProblem,
+                          optional: true) {
+                    TextField("10.10.0.0/24", text: $newSubnet)
+                        .textFieldStyle(.roundedBorder)
+                        .monospaced()
                 }
-                .padding(.top, 8)
+            case .ipv6:
+                FormField("Subnet",
+                          help: FieldHelp(
+                              "The address range containers on this network are given.",
+                              detail: "CIDR notation. Left empty, a private range is assigned for you.",
+                              example: "fd00:1234::/64",
+                              warning: "Use a unique-local prefix (fd00::/8) for a private network — a globally routable prefix you do not own will not behave."),
+                          problem: subnetV6Problem,
+                          optional: true) {
+                    TextField("fd00:1234::/64", text: $newSubnetV6)
+                        .textFieldStyle(.roundedBorder)
+                        .monospaced()
+                }
             }
 
-            Divider()
+            FormField("Isolation",
+                      help: FieldHelp(
+                          "Whether containers on this network can reach anything outside it.",
+                          detail: "Host-only keeps them talking to each other and to nothing else — the right default for a database that only its own app should reach.")) {
+                Toggle("Host-only — no external access", isOn: $newInternal)
+                    .toggleStyle(.checkbox)
+            }
 
+            // Expanded, not behind a disclosure triangle: three short controls, and hiding them
+            // behind a chevron mostly hides that they exist.
+            VStack(alignment: .leading, spacing: 14) {
+                FormSectionHeader(title: "Advanced")
+
+                FormField("Labels",
+                          help: FieldHelp(
+                              "Your own key=value metadata, carried on the network.",
+                              detail: "Up to eight. Nothing reads them but you.",
+                              example: "team=infra"),
+                          optional: true) {
+                    keyValueList($newLabels, title: nil, placeholder: "team=infra")
+                }
+
+                FormField("Plugin options",
+                          help: FieldHelp(
+                              "Options passed straight through to the network plugin.",
+                              detail: "Up to eight, as key=value. What they mean is the plugin's business.",
+                              example: "mtu=1500"),
+                          optional: true) {
+                    keyValueList($newOptions, title: nil, placeholder: "mtu=1500")
+                }
+
+                FormField("Plugin",
+                          help: FieldHelp(
+                              "Which network plugin backs this network.",
+                              detail: "Left empty, `container` uses its default.",
+                              example: "container-network-vmnet"),
+                          optional: true) {
+                    TextField("container-network-vmnet", text: $newPlugin)
+                        .textFieldStyle(.roundedBorder)
+                        .monospaced()
+                }
+            }
+        }
+    }
+
+    /// The validated command, in the rail.
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
             Text((["container"] + ContainerCLI.createNetworkArguments(trimmedName, options: options))
                     .joined(separator: " "))
-                .font(.system(.caption2, design: .monospaced))
+                .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-
-            HStack {
-                Spacer()
-                Button("Create") {
-                    let name = trimmedName
-                    let opts = options
-                    dismiss()
-                    Task { await model.createNetwork(name, options: opts) }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(trimmedName.isEmpty || anyProblem != nil)
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(20)
+    }
+
+    private var footer: some View {
+        HStack {
+            Spacer()
+            Button("Cancel", action: dismiss)
+            Button("Create") {
+                let name = trimmedName
+                let opts = options
+                dismiss()
+                Task { await model.createNetwork(name, options: opts) }
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(trimmedName.isEmpty || anyProblem != nil)
+        }
+        .padding(12)
     }
 
     enum AddressFamily: String, CaseIterable, Identifiable {
@@ -577,10 +633,13 @@ struct NewNetworkView: View {
     /// Repeatable `key=value` flags, capped at the `Allowlist`'s own maximum of 8 — the cap is
     /// shown rather than silently enforced.
     @ViewBuilder
-    private func keyValueList(_ list: Binding<[String]>, title: String, placeholder: String) -> some View {
+    private func keyValueList(_ list: Binding<[String]>, title: String? = nil,
+                              placeholder: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(title).font(.caption).foregroundStyle(.secondary)
+                if let title {
+                    Text(title).font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text("\(list.wrappedValue.count)/8").font(.caption2).foregroundStyle(.secondary)
             }
