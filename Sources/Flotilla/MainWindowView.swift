@@ -133,7 +133,6 @@ struct MainWindowView: View {
             // preferences. `.settings` is still a real `Section`: the gear, the menu-bar popover
             // and the dashboard all reach it through `model.pendingSection`.
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         // Space between the sidebar's top border and its first row — without it the selected
         // row's accent capsule butts straight against the navigation's own edge.
         //
@@ -191,41 +190,6 @@ struct MainWindowView: View {
         } else {
             SwiftUI.Section(title) { content() }
         }
-    }
-
-    /// Mode and security posture, always visible. Both lines say what is true **now** rather
-    /// than what is planned: there is no pairing yet, and the footer says so instead of
-    /// showing a reassuring "mTLS" with nothing behind it.
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Divider()
-            if railed {
-                // Glyphs only, one size up, because `caption2` icons with no words beside them
-                // are too small to identify. The sentence is still in the tooltip below.
-                VStack(spacing: 5) {
-                    Image(systemName: "dot.radiowaves.left.and.right")
-                    Image(systemName: "key")
-                }
-                .font(.caption)
-                .padding(.top, 7)
-                .frame(maxWidth: .infinity)
-            } else {
-                // Short enough to sit on one line at the sidebar's width. The first draft
-                // wrapped to three, which turned a quiet status footer into the loudest thing
-                // on screen.
-                Label("Client mode", systemImage: "dot.radiowaves.left.and.right")
-                    .padding(.top, 7)
-                Label("No paired hosts", systemImage: "key")
-            }
-        }
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-        .labelStyle(.titleAndIcon)
-        .lineLimit(1)
-        .help("Flotilla is running in client mode on \(model.hostLabel). Pairing with remote hosts over mTLS arrives in Phase 2.")
-        .padding(.horizontal, 12)
-        .padding(.bottom, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The section itself, shared by both shells so there is one switch on the selection rather

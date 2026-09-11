@@ -92,10 +92,9 @@ struct AboutView: View {
                     + "your instruction, not Flotilla phoning home."
             )
             destinationRow(
-                status: .future,
-                title: "Remote hosts you add (Phase 2)",
-                body: "Not built yet. When it lands, Flotilla will speak mTLS only to hosts "
-                    + "you explicitly add — no other destination."
+                status: .noConnection,
+                title: "Local resources only",
+                body: "This build manages container resources and machines on this Mac only."
             )
             destinationRow(
                 status: .future,
@@ -150,8 +149,8 @@ struct AboutView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Preferences are stored in the `dev.melonfleet.Flotilla` UserDefaults domain, "
                 + "on this Mac only.")
-            Text("No analytics identifier. No server-side identifier of any kind. Phase 2 will "
-                + "add Keychain identities for host connections; nothing is stored there today.")
+            Text("This local-only build does not create an analytics identifier or a "
+                + "server-side identifier, and it does not store an identity in Keychain.")
                 .foregroundStyle(.secondary)
         }
         .font(.caption)

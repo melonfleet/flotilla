@@ -210,20 +210,18 @@ struct SettingsView: View {
     @State private var pendingReset: ResetAction?
     @State private var showingAbout = false
 
-    /// Which pane is showing. The mockup's own six, in its order.
+    /// Which pane is showing.
     @State private var tab: Tab = .general
 
     private enum Tab: String, CaseIterable, Identifiable, Hashable {
-        case general, resources, network, updates, fleet, advanced
+        case general, resources, updates, advanced
         var id: Self { self }
 
         var title: String {
             switch self {
             case .general: "General"
             case .resources: "Resources"
-            case .network: "Network"
             case .updates: "Updates"
-            case .fleet: "Fleet"
             case .advanced: "Advanced"
             }
         }
@@ -232,15 +230,13 @@ struct SettingsView: View {
             switch self {
             case .general: "gearshape"
             case .resources: "cpu"
-            case .network: "wifi"
             case .updates: "arrow.down.circle"
-            case .fleet: "server.rack"
             case .advanced: "slider.horizontal.3"
             }
         }
     }
 
-    /// Six panes rather than one scroll, per `research/review/mockups/settings.html`.
+    /// Separate panes rather than one scroll, per `research/review/mockups/settings.html`.
     ///
     /// The content was already all here; it was stacked into a single `Form` eleven sections
     /// long, so finding anything meant scrolling past everything. Panes are how macOS's own
@@ -336,9 +332,7 @@ struct SettingsView: View {
             switch tab {
             case .general: generalPane
             case .resources: resourcesPane
-            case .network: networkPane
             case .updates: updatesPane
-            case .fleet: fleetPane
             case .advanced: advancedPane
             }
         }
@@ -467,34 +461,6 @@ struct SettingsView: View {
 
     }
 
-    // MARK: Network
-
-    @ViewBuilder
-    private var networkPane: some View {
-            SwiftUI.Section("Host mode") {
-                SettingRow(store: store, key: SettingsKeys.mode, title: "Mode") { binding in
-                    Picker("", selection: binding) {
-                        ForEach(Array(RunMode.allCases), id: \.rawValue) { mode in
-                            Text(Self.title(for: mode)).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                }
-                SettingRow(store: store, key: SettingsKeys.hostListenPort, title: "Port") { binding in
-                    Stepper(value: binding, in: 1...65_535) { Text("\(binding.wrappedValue)") }
-                }
-                SettingRow(store: store, key: SettingsKeys.bonjourEnabled, title: "Discoverable on this network") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                SettingRow(store: store, key: SettingsKeys.identityKeychainLabel, title: "Identity Keychain label") { binding in
-                    TextField("", text: binding).textFieldStyle(.roundedBorder).frame(minWidth: 200)
-                }
-            }
-
-    }
-
     // MARK: Updates
 
     @ViewBuilder
@@ -558,36 +524,7 @@ struct SettingsView: View {
 
     }
 
-    // MARK: Fleet
-
-    /// The mockup's Fleet pane lists paired peers with their certificate fingerprints. None of
-    /// that exists yet, so rather than draw an empty table — which reads as *your peers have
-    /// vanished* rather than *there are no peers* — this states the position and shows what is
-    /// actually true right now.
-    @ViewBuilder
-    private var fleetPane: some View {
-        SwiftUI.Section("Paired hosts") {
-            ContentUnavailableView {
-                Label("No paired hosts", systemImage: "server.rack")
-            } description: {
-                Text("Flotilla is managing containers on this Mac only. Pairing with remote "
-                     + "Apple silicon Macs over mutual TLS, with Bonjour discovery and manual "
-                     + "host entry, arrives in Phase 2.")
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-        }
-
-        SwiftUI.Section("Current posture") {
-            LabeledContent("Mode", value: "Client")
-            LabeledContent("Managing", value: model.hostLabel)
-            LabeledContent("Listening for peers", value: "No")
-            LabeledContent("Trusted certificates", value: "None")
-        }
-    }
-
-    /// **Three** resets, deliberately separate — `research/FEATURES.md`:
-    /// *Reset preferences ≠ Forget all hosts and trust ≠ Reset window layout*.
+    /// Preferences and window layout reset independently.
     ///
     /// Someone whose window is stranded on a display they no longer have should be able to
     /// recover it without losing every preference, and vice versa. One "Reset everything"
@@ -610,7 +547,6 @@ struct SettingsView: View {
                     }
                     Spacer()
                     Button("Reset") { pendingReset = action }
-                        .disabled(!action.isAvailable(model))
                 }
                 .padding(.vertical, 2)
             }
@@ -627,13 +563,12 @@ struct SettingsView: View {
     }
 
     enum ResetAction: String, CaseIterable, Identifiable {
-        case preferences, hostTrust, windowLayout
+        case preferences, windowLayout
         var id: Self { self }
 
         var title: String {
             switch self {
             case .preferences: "Reset preferences"
-            case .hostTrust: "Forget all hosts and trust"
             case .windowLayout: "Reset window layout"
             }
         }
@@ -642,8 +577,6 @@ struct SettingsView: View {
             switch self {
             case .preferences:
                 "Every setting back to its default. Your window position is left alone."
-            case .hostTrust:
-                "Removes paired hosts and their trusted keys. Nothing is paired yet."
             case .windowLayout:
                 "Forgets window size, position and the sidebar width. Takes effect at next launch."
             }
@@ -652,7 +585,6 @@ struct SettingsView: View {
         var confirmLabel: String {
             switch self {
             case .preferences: "Reset Preferences"
-            case .hostTrust: "Forget Hosts"
             case .windowLayout: "Reset Layout"
             }
         }
@@ -665,9 +597,6 @@ struct SettingsView: View {
                 "Every setting returns to its default, including your appearance choice, so "
                     + "Flotilla will ask about it again next launch.\n\nYour window layout, "
                     + "your containers, images and volumes are all untouched."
-            case .hostTrust:
-                "Removes every paired host and the keys that trust them. You would need to "
-                    + "pair each host again.\n\nNo containers are stopped or deleted."
             case .windowLayout:
                 "Forgets the window's size and position and the sidebar width. Useful if the "
                     + "window has ended up off-screen.\n\nTakes effect at next launch, because "
@@ -676,21 +605,10 @@ struct SettingsView: View {
             }
         }
 
-        /// Host/trust has nothing to forget until Phase 2. Shown disabled rather than hidden:
-        /// a control that only appears once you have something to lose is one nobody finds in
-        /// time.
-        @MainActor func isAvailable(_ model: AppModel) -> Bool {
-            switch self {
-            case .preferences, .windowLayout: true
-            case .hostTrust: model.hasHostTrustToForget
-            }
-        }
-
         @MainActor func perform(_ model: AppModel) {
             switch self {
             case .preferences: model.resetPreferences()
             case .windowLayout: model.resetWindowLayout()
-            case .hostTrust: break   // Phase 2 — no host store to clear yet.
             }
         }
     }
@@ -701,14 +619,6 @@ struct SettingsView: View {
         case .ask: "Ask"
         case .always: "Always"
         case .never: "Never"
-        }
-    }
-
-    private static func title(for mode: RunMode) -> String {
-        switch mode {
-        case .client: "Client"
-        case .host: "Host"
-        case .both: "Both"
         }
     }
 

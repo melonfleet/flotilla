@@ -119,18 +119,6 @@ struct DashboardView: View {
 
             VStack(spacing: 0) {
                 thisMacRow
-                Divider().padding(.leading, 34)
-                // Not a disabled "add a host" button. A control that drives nothing is the
-                // failure this project keeps re-learning, and a greyed row invites a click
-                // that cannot succeed. A sentence is honest and costs nothing.
-                HStack(spacing: 10) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 13)).foregroundStyle(.tertiary).frame(width: 24)
-                    Text("Pairing with remote Macs over mTLS arrives in Phase 2.")
-                        .font(.caption).foregroundStyle(.tertiary)
-                    Spacer()
-                }
-                .padding(.horizontal, 12).padding(.vertical, 9)
             }
             .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
