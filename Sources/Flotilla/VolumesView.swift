@@ -275,7 +275,7 @@ struct VolumesView: View {
     }
 
     private static let columnSpecs: [(id: String, title: String)] = [
-        ("format", "Format"), ("driver", "Driver"), ("size", "Size"), ("created", "Created"),
+        ("format", "Format"), ("driver", "Driver"), ("size", "Capacity"), ("created", "Created"),
     ]
 
     /// Prefix for a label filter's id, e.g. `label:team=infra`. Namespaced against
@@ -414,9 +414,22 @@ struct VolumesView: View {
             .width(min: 70, ideal: 90)
             .customizationID("driver")
 
-            TableColumn("Size", value: \.sizeSortKey) { volume in
+            // **Capacity, not usage**, and the header says so now. `volume list` reports the
+            // size the volume was *created* with: a volume made with `--size 64M` reports
+            // exactly 67,108,864 bytes, and one made with no size at all reports 549,755,813,888
+            // — the 512 GiB default. Measured 2026-09-12: those same two volumes occupy 2.2 MB
+            // and 66 MB on disk, and `system df` agrees with `du`, not with this field.
+            //
+            // Calling it "Size" put "549.76 GB" in a column on a Mac with nothing like that
+            // free, next to a dashboard total of 141.1 MB for every volume together. Both
+            // numbers were right; one of them was answering a different question.
+            //
+            // There is no per-volume *usage* to show instead — `system df` gives one total for
+            // all volumes and the CLI offers nothing finer — so the honest fix is the label.
+            TableColumn("Capacity", value: \.sizeSortKey) { volume in
                 Text(volume.sizeInBytes.map(Self.byteCount) ?? "—")
                     .monospacedDigit().foregroundStyle(.secondary)
+                    .help("The size this volume was created with, not what it is using")
             }
             .width(min: 74, ideal: 90)
             .customizationID("size")

@@ -178,12 +178,25 @@ struct DashboardView: View {
                             size: diskUsage.map { byteLabel($0.volumes.sizeInBytes) })
                 Divider().padding(.leading, 34)
                 resourceRow("Machines", systemImage: "server.rack", target: .machines,
-                            detail: machinesDetail, size: nil)
+                            detail: machinesDetail, size: machinesSize)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
         }
+    }
+
+    /// What the machines cost on disk, summed.
+    ///
+    /// The only row here whose size does not come from `system df` — that command does not count
+    /// machines — so it comes from `machine list`'s own `diskSize`. **Verified comparable**
+    /// (2026-09-12): a machine's `rootfs.ext4` is a sparse file with an apparent size of 512 GiB,
+    /// and `diskSize` reports 78,725,120 bytes, which is what `du` charges for the directory
+    /// (75M). It is space actually consumed, like the three rows above it, not the disk the VM
+    /// thinks it has.
+    private var machinesSize: String? {
+        guard model.machinesState == .loaded, !model.machines.isEmpty else { return nil }
+        return byteLabel(model.machines.reduce(Int64(0)) { $0 + $1.diskSize })
     }
 
     private var machinesDetail: String? {
@@ -461,80 +474,23 @@ struct DashboardView: View {
         return byDate.keys.sorted().map { (date: $0, read: byDate[$0]?.read, write: byDate[$0]?.write) }
     }
 
-    private func rateLabel(_ bytesPerSecond: Double?) -> String {
-        guard let bytesPerSecond else { return "—" }
-        return String(format: "%.1f KB/s", bytesPerSecond / 1024)
-    }
+
 
     // MARK: Utilisation
 
-    /// The per-container table from Orchard's dashboard. Every column is backed by a field
-    /// `ContainerStats` was already decoding and `StatsSampler` was throwing away.
-    private var utilisationPanel: some View {
-        panel("Container utilisation", systemImage: "chart.bar") {
-            if model.running.isEmpty {
-                Text("No running containers.").font(.caption).foregroundStyle(.secondary)
-            } else {
-                SwiftUI.Table(model.running) {
-                    TableColumn("Container") { container in
-                        Button(container.id) { go(.containers) }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.accentText)
-                    }
-                    TableColumn("CPU") { container in
-                        Text(model.cpuLabel(for: container.id)).monospacedDigit()
-                    }
-                    TableColumn("Memory") { container in
-                        let point = model.statsHistory(for: container.id).last
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(model.memoryLabel(for: container.id)).monospacedDigit()
-                            if let used = point?.memoryUsageBytes,
-                               let limit = point?.memoryLimitBytes, limit > 0 {
-                                Text(String(format: "%.1f%%", Double(used) / Double(limit) * 100))
-                                    .font(.caption2).foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                    TableColumn("Network I/O") { container in
-                        let point = model.statsHistory(for: container.id).last
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("↓ " + rateLabel(point?.networkRxBytesPerSecond))
-                                .font(.caption).monospacedDigit()
-                            Text("↑ " + rateLabel(point?.networkTxBytesPerSecond))
-                                .font(.caption).monospacedDigit()
-                        }
-                    }
-                    TableColumn("Block I/O") { container in
-                        let point = model.statsHistory(for: container.id).last
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("R " + rateLabel(point?.blockReadBytesPerSecond))
-                                .font(.caption).monospacedDigit()
-                            Text("W " + rateLabel(point?.blockWriteBytesPerSecond))
-                                .font(.caption).monospacedDigit()
-                        }
-                    }
-                    TableColumn("PIDs") { container in
-                        // `numProcesses`, decoded since day one and never shown until now.
-                        Text(model.statsHistory(for: container.id).last?.processCount
-                                .map(String.init) ?? "—")
-                            .monospacedDigit()
-                    }
-                }
-                .frame(minHeight: utilisationHeight)
-            }
-        }
-    }
-
-    /// Tall enough for the containers that are actually running, up to eight.
+    /// **Its own `View`, not a computed property, and that is the fix for the flicker.**
     ///
-    /// It was a flat 160, which is three and a bit rows: with five containers up you got an
-    /// inner scrollbar inside a panel that had empty window beneath it, which is the worst of
-    /// both — a list you have to scroll and a dashboard with nothing in the space. Eight is the
-    /// cap because past that the table should scroll rather than push everything else off the
-    /// screen, and three is the floor so a one-container fleet still looks like a table.
-    private var utilisationHeight: CGFloat {
-        let rows = min(max(model.running.count, 3), 8)
-        return 34 + 44 * CGFloat(rows)
+    /// A computed `some View` on this struct is re-evaluated every single time anything in
+    /// `DashboardView.body` invalidates — and this body reads the host metrics sampler, which
+    /// writes a new sample every few seconds. Measured on 2026-09-12 with the table's inputs
+    /// printed on each evaluation: the rows and every value were **identical** across bursts of
+    /// four re-evaluations 20ms apart, and each one hands `SwiftUI.Table` a freshly built array,
+    /// which is an `NSTableView` reload behind the scenes.
+    ///
+    /// As a separate `View` whose stored properties are just the model, SwiftUI can leave it
+    /// alone when the parent re-renders and nothing it reads has changed.
+    private var utilisationPanel: some View {
+        ContainerUtilisationPanel(model: model, go: go).equatable()
     }
 
     // MARK: Panels
@@ -645,4 +601,132 @@ struct DashboardView: View {
             diskFailure = "Could not measure disk usage: \(error)"
         }
     }
+}
+
+/// The per-container table, as its own view so the dashboard's other panels cannot make it
+/// redraw.
+///
+/// Every column here is backed by a field `ContainerStats` was already decoding and
+/// `StatsSampler` was throwing away.
+private struct ContainerUtilisationPanel: View, Equatable {
+    let model: AppModel
+    let go: (Section) -> Void
+
+    /// **Always equal, deliberately.** Both stored properties are stable for the life of the
+    /// screen: `model` is a reference, and `go` is the parent's navigation closure, which does
+    /// the same thing every time it is rebuilt. Without this the closure alone makes the view
+    /// compare unequal on every parent update — measured, it was re-running thirteen times in
+    /// fifty seconds, in bursts of five inside a fifth of a second, every one of them handing
+    /// `SwiftUI.Table` a freshly built array.
+    ///
+    /// This suppresses re-evaluation from the *parent* only. Changes to the observable state
+    /// this view reads — the container list, the stats — still invalidate it, because that is
+    /// `@Observable` tracking rather than view-value comparison. That is the whole distinction
+    /// being drawn: redraw when the data moves, not when a neighbouring panel does.
+    nonisolated static func == (lhs: ContainerUtilisationPanel,
+                                rhs: ContainerUtilisationPanel) -> Bool { true }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.bar").font(.system(size: 11))
+                Text("CONTAINER UTILISATION")
+                    .font(.system(size: 11, weight: .semibold)).kerning(0.5)
+            }
+            .foregroundStyle(.tertiary)
+            content
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        // **"No running containers" is a claim, and before the first list arrives we cannot make
+        // it.** Saying it anyway is what produced the flash at launch: the panel rendered the
+        // empty state at three rows tall, then a fifth of a second later swapped in five rows
+        // and grew 88 points. Measured — the two frames are 0.19s apart in the probe log.
+        if model.state == .idle || model.state == .loading {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(height: utilisationHeight)
+        } else if model.running.isEmpty {
+            Text("No running containers.").font(.caption).foregroundStyle(.secondary)
+        } else {
+            table
+        }
+    }
+
+    private var table: some View {
+        SwiftUI.Table(model.running) {
+            TableColumn("Container") { container in
+                Button(container.id) { go(.containers) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.accentText)
+            }
+            TableColumn("CPU") { container in
+                Text(model.cpuLabel(for: container.id)).monospacedDigit()
+            }
+            TableColumn("Memory") { container in
+                let point = model.statsHistory(for: container.id).last
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.memoryLabel(for: container.id)).monospacedDigit()
+                    if let used = point?.memoryUsageBytes,
+                       let limit = point?.memoryLimitBytes, limit > 0 {
+                        Text(String(format: "%.1f%%", Double(used) / Double(limit) * 100))
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            TableColumn("Network I/O") { container in
+                let point = model.statsHistory(for: container.id).last
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("↓ " + rateLabel(point?.networkRxBytesPerSecond))
+                        .font(.caption).monospacedDigit()
+                    Text("↑ " + rateLabel(point?.networkTxBytesPerSecond))
+                        .font(.caption).monospacedDigit()
+                }
+            }
+            TableColumn("Block I/O") { container in
+                let point = model.statsHistory(for: container.id).last
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("R " + rateLabel(point?.blockReadBytesPerSecond))
+                        .font(.caption).monospacedDigit()
+                    Text("W " + rateLabel(point?.blockWriteBytesPerSecond))
+                        .font(.caption).monospacedDigit()
+                }
+            }
+            TableColumn("PIDs") { container in
+                // `numProcesses`, decoded since day one and never shown until now.
+                Text(model.statsHistory(for: container.id).last?.processCount
+                        .map(String.init) ?? "—")
+                    .monospacedDigit()
+            }
+        }
+        .frame(minHeight: utilisationHeight)
+    }
+
+    /// Tall enough for the containers that are actually running, up to eight.
+    ///
+    /// It was a flat 160, which is three and a bit rows: with five containers up you got an
+    /// inner scrollbar inside a panel that had empty window beneath it, which is the worst of
+    /// both — a list you have to scroll and a dashboard with nothing in the space. Eight is the
+    /// cap because past that the table should scroll rather than push everything else off the
+    /// screen, and three is the floor so a one-container fleet still looks like a table.
+    private var utilisationHeight: CGFloat {
+        let rows = min(max(model.running.count, 3), 8)
+        return 34 + 44 * CGFloat(rows)
+    }
+}
+
+/// A throughput figure, or a dash when there is nothing to report.
+///
+/// File-scope because both panels that show rates need it and they are now separate views —
+/// one copy each is how the two would eventually disagree about what "unknown" looks like.
+private func rateLabel(_ bytesPerSecond: Double?) -> String {
+    guard let bytesPerSecond else { return "—" }
+    return String(format: "%.1f KB/s", bytesPerSecond / 1024)
 }

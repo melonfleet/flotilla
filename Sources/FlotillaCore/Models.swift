@@ -313,6 +313,12 @@ public struct ContainerVolume: Codable, Identifiable, Sendable, Equatable {
         public var format: String?
         public var source: String?
         public var creationDate: String?
+        /// The size the volume was **created with** — its capacity, not its usage.
+        ///
+        /// Measured 2026-09-12: a volume created with `--size 64M` reports exactly 67,108,864
+        /// here while occupying 2.2 MB on disk, and one created with no size reports
+        /// 549,755,813,888 (the 512 GiB default) while occupying 66 MB. `container system df`
+        /// reports the real figure, but only as one total for all volumes together.
         public var sizeInBytes: Int64?
         public var labels: [String: String]?
         public var options: [String: String]?
