@@ -722,112 +722,128 @@ struct ImagesView: View {
         .frame(width: 420)
     }
 
+    /// The Pull form, built like every other create form: a left-aligned 640pt column with an
+    /// information rail beside it.
+    ///
+    /// It used to be a 440pt centred card with its own layout — the last form in the app that
+    /// looked like a dialog rather than a screen. Moving it onto `FormScaffold` is not only
+    /// cosmetic: the rail is where the worked examples belong, and they were taking a third of
+    /// the column while the window had a third of its width empty.
     private var pullScreen: some View {
-        embeddedForm(title: "Pull Image", systemImage: "arrow.down.circle",
-                     hasUnsavedChanges: !trimmedPull.isEmpty && model.activePull == nil,
-                     onBack: { showingPull = false }) {
-            pullForm.padding(20)
+        VStack(spacing: 0) {
+            FormHeader(title: "Pull Image", systemImage: "arrow.down.circle",
+                       hasUnsavedChanges: !trimmedPull.isEmpty && model.activePull == nil,
+                       onBack: { showingPull = false })
+            Divider()
+            if let pull = model.activePull {
+                // The form *is* the progress screen while a pull runs. Dismissing on submit —
+                // which is what this did once — reported a 40-second network operation by
+                // showing nothing at all and then growing a row.
+                ScrollView {
+                    pullStatus(pull, compact: false)
+                        .padding(20)
+                        .frame(maxWidth: 640, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                FormScaffold {
+                    pullForm
+                } preview: {
+                    pullRailPreview
+                }
+                Divider()
+                pullFooter
+            }
         }
-        .frame(width: 440)
     }
 
-    @ViewBuilder
     private var pullForm: some View {
-        // The form is the progress screen while a pull runs. Dismissing on submit — which is
-        // what this did — reported a 40-second network operation by showing nothing at all,
-        // then eventually growing a row.
-        if let pull = model.activePull {
-            pullStatus(pull, compact: false)
-        } else {
-            pullEntry
-        }
-    }
-
-    private var pullEntry: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 20) {
+            FormField("Reference",
+                      help: FieldHelp(
+                          "What to pull, and where from.",
+                          detail: "A bare name is completed the way the CLI completes it — "
+                              + "`nginx` becomes `docker.io/library/nginx:latest`. Lead with a "
+                              + "registry host to pull from anywhere else.",
+                          example: "nginx\nnginx:alpine\nghcr.io/owner/app:1.2.3\nalpine@sha256:…",
+                          warning: "A tag can be moved by whoever published it. Pin a digest "
+                              + "(`@sha256:…`) when you need the same bytes every time."),
+                      problem: pullProblem) {
                 TextField("nginx:alpine", text: $pullReference)
                     .textFieldStyle(.roundedBorder)
+                    .monospaced()
                     .onSubmit(startPull)
-                if let problem = pullProblem {
-                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
-                } else {
-                    Text("Registry and tag are optional.")
-                        .font(.caption).foregroundStyle(.secondary)
+            }
+
+            // An action, so it stays in the column rather than moving to the rail with the help.
+            Link(destination: URL(string: "https://hub.docker.com/search?image_filter=official")!) {
+                Label("Browse Docker Hub", systemImage: "arrow.up.right.square")
+                    .font(.callout)
+            }
+            // `Link` draws in the system accent, which made this the one blue thing in an app
+            // whose links are all brand pink. Same reason `Theme.rowName` exists.
+            .foregroundStyle(Theme.accentText)
+
+            FormSectionHeader(title: "Registry",
+                              note: "How Flotilla reaches it. Almost always the default.")
+
+            FormField("Connect using",
+                      help: FieldHelp(
+                          "HTTPS, unless the registry has no TLS.",
+                          detail: "`container` 1.4.1 removed the old `auto` scheme that fell "
+                              + "back to plaintext on its own, so a development registry without "
+                              + "TLS is unreachable unless you ask for HTTP here.",
+                          example: "http is for localhost:5000\nand your own network — nothing\non the internet",
+                          warning: "It must be an anonymous registry: `container` refuses to "
+                              + "send credentials over HTTP even when you ask for it. The choice "
+                              + "is not remembered, so the next pull is HTTPS again.")) {
+                Picker("", selection: $pullScheme) {
+                    Text("HTTPS").tag(ContainerCLI.RegistryScheme.https)
+                    Text("HTTP").tag(ContainerCLI.RegistryScheme.http)
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
             }
-
-            // Concrete forms rather than a description of the grammar. Every one of these is
-            // accepted by both the allowlist's `imageReference` shape and the CLI itself —
-            // checked against `container image pull`, not inferred from the placeholder.
-            VStack(alignment: .leading, spacing: 6) {
-                pullExample("nginx", "docker.io/library/nginx:latest")
-                pullExample("nginx:alpine", "a specific tag")
-                pullExample("ghcr.io/owner/app:1.2.3", "another registry")
-                pullExample("alpine@sha256:…", "pinned to a digest")
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-
-            schemeChoice
-
-            HStack {
-                // Static destination on purpose: sending what someone has typed to a registry's
-                // search as they type would leak the name of a private image they had not
-                // pulled yet.
-                Link(destination: URL(string: "https://hub.docker.com/search?image_filter=official")!) {
-                    Label("Browse Docker Hub", systemImage: "arrow.up.right.square")
-                        .font(.callout)
-                }
-                // `Link` draws in the system accent, which made this the one blue thing in an
-                // app whose links are all brand pink. Same reason `Theme.rowName` exists.
-                .foregroundStyle(Theme.accentText)
-                Spacer()
-                Button("Pull", action: startPull)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(trimmedPull.isEmpty || pullProblem != nil)
-            }
-        }
-    }
-
-    /// HTTPS or HTTP, and what choosing HTTP actually means.
-    ///
-    /// Here rather than in Settings on purpose. A registry scheme reads like a preference and
-    /// behaves like a per-pull decision: `container` used to accept `--scheme auto` and fall back
-    /// to plaintext on its own, 1.4.1 removed it, and a *stored* "use HTTP" would put that
-    /// silent downgrade straight back — applying to the next pull from Docker Hub as much as to
-    /// the LAN registry it was set for. So it resets to HTTPS every time this form opens.
-    ///
-    /// The warning names the two things that actually cross the wire, because "insecure" on its
-    /// own does not tell anyone what they are risking.
-    private var schemeChoice: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker("Connect using", selection: $pullScheme) {
-                Text("HTTPS").tag(ContainerCLI.RegistryScheme.https)
-                Text("HTTP").tag(ContainerCLI.RegistryScheme.http)
-            }
-            .pickerStyle(.segmented)
-            .fixedSize()
 
             if pullScheme == .http {
-                Label("Image layers cross the network unencrypted, so this is only for a "
-                      + "registry on this Mac or your own network. An **anonymous** one: "
-                      + "`container` refuses to send credentials over HTTP even when you ask "
-                      + "for it.",
+                // In the column, not only the rail: a warning that has to be read *before*
+                // pressing Pull cannot live where the reader may not be looking.
+                Label("Image layers cross the network unencrypted.",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(Theme.warning)
                     .fixedSize(horizontal: false, vertical: true)
-            } else {
-                // Says why the control is there at all, which is otherwise a mystery until it
-                // fails: `container` 1.4.1 stopped falling back on its own.
-                Text("HTTP is for a development registry with no TLS — `container` no longer "
-                     + "falls back to it on its own.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private var pullRailPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            Text((["container"] + ContainerCLI.pullArguments(
+                    trimmedPull.isEmpty ? "<reference>" : trimmedPull, scheme: pullScheme))
+                    .joined(separator: " "))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var pullFooter: some View {
+        HStack {
+            Spacer()
+            Button("Cancel") { showingPull = false }
+            Button("Pull", action: startPull)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(trimmedPull.isEmpty || pullProblem != nil)
+        }
+        .padding(12)
     }
 
     private func pullExample(_ reference: String, _ meaning: String) -> some View {

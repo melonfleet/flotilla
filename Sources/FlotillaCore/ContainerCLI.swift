@@ -524,7 +524,9 @@ public struct ContainerCLI: Sendable {
         }
     }
 
-    static func pullArguments(_ reference: String, scheme: RegistryScheme) -> [String] {
+    /// The argv a pull will run, for the command preview in the rail as well as for the pull
+    /// itself — so what the form shows is the thing that executes, not a re-spelling of it.
+    public static func pullArguments(_ reference: String, scheme: RegistryScheme) -> [String] {
         var args = ["image", "pull"]
         if scheme != .default { args += ["--scheme", scheme.rawValue] }
         args.append(reference)
