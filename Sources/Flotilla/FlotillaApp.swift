@@ -41,6 +41,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         model = Self.pendingModel
         applyPresentation()
+        pruneEmptyFormatMenu()
+    }
+
+    /// Removes the Format menu, which the command audit emptied but could not delete.
+    ///
+    /// `CommandGroup(replacing:)` with an empty body empties a menu; it does not remove it. After
+    /// the audit, **Format** sat in the menu bar with nothing behind it — worse than the items it
+    /// used to hold, because a menu that opens onto nothing reads as broken rather than absent.
+    ///
+    /// **Why this matches on the title**, which is normally the wrong thing to do. The obvious
+    /// test — remove any top-level menu whose submenu is empty — is wrong here, and removing
+    /// View along with Format is how that was found: AppKit fills View with "Enter Full Screen"
+    /// *lazily, on first open*, so it reports zero items indefinitely and is indistinguishable
+    /// from a genuinely empty menu at any delay. Measured at one runloop turn, 0.5s and 1.5s:
+    /// View is zero at all three, and pruning it cost the app its Full Screen item.
+    ///
+    /// So the title it is, with the emptiness kept as a second condition so this can never remove
+    /// a Format menu that someone later fills. The app ships no `.lproj` and no localised strings,
+    /// so the title is "Format" on every system that runs this build; if Flotilla is ever
+    /// localised, this needs revisiting and will fail visibly — the menu simply returns.
+    private func pruneEmptyFormatMenu() {
+        // Half a second, measured rather than guessed: at one runloop turn the removal does not
+        // stick — SwiftUI is still assembling `NSApp.mainMenu` and puts Format back. The menu bar
+        // is not interactive before then either, so nothing is seen to flicker.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard let main = NSApp.mainMenu else { return }
+            for item in main.items where item.title == "Format" && item.submenu?.items.isEmpty == true {
+                main.removeItem(item)
+            }
+        }
     }
 
     /// Shells are live `container exec` processes. Quitting Flotilla must not leave them
@@ -109,6 +139,45 @@ private struct FlotillaCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        // A check is an explicit trip to Apple's releases page, never a request made by
+        // Flotilla itself. A silent comparison would break the app's no-phone-home promise;
+        // handing this URL to the browser keeps the network boundary visible to the user.
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") {
+                NSWorkspace.shared.open(ExternalLinks.appleContainerReleases)
+            }
+        }
+
+        // Settings is a section of the one main window, not a separate Settings scene. Replacing
+        // the standard placement gives it the expected app-menu position and shortcut while the
+        // same one-shot request path still works after the main window has been closed.
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { present { model.requestSection(.settings) } }
+                .keyboardShortcut(",", modifiers: .command)
+        }
+
+        // Flotilla manages runtime objects rather than documents. It has no generic import,
+        // export, page-layout or print operation for these stock File-menu groups to address.
+        CommandGroup(replacing: .importExport) {}
+        CommandGroup(replacing: .printItem) {}
+
+        // Search on the data screens is an app-level filter, not the responder-chain Find panel,
+        // and every editable field is plain text. The inherited spelling, substitutions,
+        // transformations, speech, Font and Text commands therefore promise editing surfaces
+        // that Flotilla does not have. Pasteboard and Undo/Redo stay in their separate groups.
+        CommandGroup(replacing: .textEditing) {}
+        CommandGroup(replacing: .textFormatting) {}
+
+        // The title bar is intentionally replaced by `WindowBar`, so there is no system toolbar
+        // to show or customise. The sidebar group stays: its toggle is translated into the app's
+        // rail by `MainWindowView`, and that group also owns the working Full Screen command.
+        CommandGroup(replacing: .toolbar) {}
+
+        // There is one main window, and forms and details are embedded in it. Commands for
+        // arranging all of an app's windows cannot change this layout. The save group remains
+        // for Close, and the size group remains for Minimize and Zoom.
+        CommandGroup(replacing: .windowArrangement) {}
+
         // `.newItem` is the File-menu placement. These are creation actions rather than a new
         // top-level menu: a tester looking for New/Run follows the platform's File convention.
         // Control-Command plus each action's initial is deliberate: bare Command-M and Command-P
