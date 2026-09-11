@@ -110,11 +110,19 @@ fi
 # Matched positively against the shapes that ARE versions, rather than negatively against
 # characters that are not. The old negative test accepted `5135510` — an all-digit commit hash is
 # still a hash, and stamping one as the version is the exact bug that already shipped once.
+# Four components as well as three: Flotilla's version is `<container version>.<revision>`
+# (DECISIONS.md, 2026-09-12), so `1.4.1.2` is a real version and must not be rejected into
+# `0.0.0`. `CFBundleShortVersionString` is a display string and takes it; `CFBundleVersion`,
+# which LaunchServices actually compares, is the commit count below and is unaffected.
 case "$SHORT_VERSION" in
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*|\
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*-rc.[0-9]*|\
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*|\
     [0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*|\
     [0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
     [0-9]*.[0-9]*.[0-9]*-rc.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*) : ;;               # X.Y.Z, optionally pre-release
+    [0-9]*.[0-9]*.[0-9]*) : ;;               # X.Y.Z[.R], optionally pre-release
     *) SHORT_VERSION="0.0.0" ;;
 esac
 

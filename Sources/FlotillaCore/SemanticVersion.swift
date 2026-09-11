@@ -11,6 +11,19 @@ import Foundation
 /// (`+sha`) is ignored, as the spec says it must be, and a leading `v` is tolerated because
 /// that is how the tags are written.
 ///
+/// **A fourth component is accepted, and semver does not have one.** Flotilla's version is
+/// `<container version>.<Flotilla revision>` — `1.4.1.0` means "verified against `container`
+/// 1.4.1 with no Flotilla changes since", `1.4.1.1` is the first change on top of it
+/// (`DECISIONS.md`, 2026-09-12). Apple's three components are Apple's to move; the fourth is
+/// ours, so a release can say which runtime it was tested against *and* still leave room for the
+/// changes that are ours alone — which is most of them.
+///
+/// The alternatives were rejected here rather than in prose: `1.4.1-flotilla.2` is a *pre-release*
+/// to semver and sorts **before** `1.4.1`, so the update check would call a newer build older,
+/// and `1.4.1+flotilla.2` is build metadata, which the spec excludes from ordering, so two
+/// Flotilla builds would compare equal. A fourth integer orders correctly. Apple's own versions
+/// simply have a revision of zero, which is the right answer for them.
+///
 /// In `FlotillaCore` rather than the app because it is pure, testable, and has nothing to do with
 /// the network call that fetches the other side of the comparison — that stays in the app layer,
 /// where the one place Flotilla ever reaches the network can be read in a single file.
@@ -18,6 +31,9 @@ public struct SemanticVersion: Sendable, Equatable, Comparable, CustomStringConv
     public let major: Int
     public let minor: Int
     public let patch: Int
+    /// Flotilla's own revision on top of the three components above. Zero for anything Apple
+    /// released, and for a Flotilla build that needed no changes.
+    public let revision: Int
     /// Dot-separated identifiers from `-beta.2`; empty for a release.
     public let prerelease: [String]
 
@@ -34,7 +50,7 @@ public struct SemanticVersion: Sendable, Equatable, Comparable, CustomStringConv
         }
 
         let numbers = rest.split(separator: ".", omittingEmptySubsequences: false)
-        guard (1...3).contains(numbers.count) else { return nil }
+        guard (1...4).contains(numbers.count) else { return nil }
         var parsed: [Int] = []
         for number in numbers {
             guard let value = Int(number), value >= 0 else { return nil }
@@ -45,22 +61,37 @@ public struct SemanticVersion: Sendable, Equatable, Comparable, CustomStringConv
         major = parsed[0]
         minor = parsed.count > 1 ? parsed[1] : 0
         patch = parsed.count > 2 ? parsed[2] : 0
+        revision = parsed.count > 3 ? parsed[3] : 0
         self.prerelease = prerelease
     }
 
+    /// Printed with the fourth component only when it is non-zero, so Apple's `1.4.1` reads as
+    /// `1.4.1` rather than as `1.4.1.0` — the revision is Flotilla's, and naming it on a version
+    /// that has none would be claiming something about a runtime that never said it.
     public var description: String {
-        let core = "\(major).\(minor).\(patch)"
+        var core = "\(major).\(minor).\(patch)"
+        if revision != 0 { core += ".\(revision)" }
         return prerelease.isEmpty ? core : core + "-" + prerelease.joined(separator: ".")
+    }
+
+    /// The three components that came from `container`, without Flotilla's revision — what to
+    /// compare against the installed runtime.
+    public var runtimeComponents: SemanticVersion? {
+        SemanticVersion("\(major).\(minor).\(patch)")
     }
 
     /// True for the `0.0.0` a build with no tag is stamped with — see `Scripts/make-app.sh`.
     /// Not a version anyone released, so nothing should be claimed by comparing against it.
-    public var isUnreleased: Bool { major == 0 && minor == 0 && patch == 0 && prerelease.isEmpty }
+    public var isUnreleased: Bool {
+        major == 0 && minor == 0 && patch == 0 && revision == 0 && prerelease.isEmpty
+    }
 
     public static func < (lhs: SemanticVersion, rhs: SemanticVersion) -> Bool {
         if lhs.major != rhs.major { return lhs.major < rhs.major }
         if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
         if lhs.patch != rhs.patch { return lhs.patch < rhs.patch }
+        // Flotilla's revision, ordered exactly where an admin would expect: 1.4.1 < 1.4.1.1.
+        if lhs.revision != rhs.revision { return lhs.revision < rhs.revision }
 
         // "A pre-release version has lower precedence than the associated normal version."
         switch (lhs.prerelease.isEmpty, rhs.prerelease.isEmpty) {

@@ -75,7 +75,7 @@ if [ -z "$VERSION" ]; then
     fi
 fi
 case "$VERSION" in
-    *[!0-9.]*|"") fail "version '$VERSION' is not 1-3 dot-separated numbers, which is what CFBundleShortVersionString requires." ;;
+    *[!0-9.]*|"") fail "version '$VERSION' is not dot-separated numbers. Flotilla's shape is <container version>.<revision> — 1.4.1.0, 1.4.1.2 — see DECISIONS.md." ;;
 esac
 
 # 3. A signing identity. Auto-detected only when the choice is unambiguous — picking one of several

@@ -1499,6 +1499,39 @@ func makeBuildFixtures() -> Bool {
 
     #expect(SemanticVersion("") == nil)
     #expect(SemanticVersion("main") == nil)
-    #expect(SemanticVersion("1.2.3.4") == nil)
     #expect(SemanticVersion("1.-2.3") == nil)
+    // Five is still not a version; four is Flotilla's own shape — see the next test.
+    #expect(SemanticVersion("1.2.3.4.5") == nil)
+}
+
+@Test func theFourthComponentIsFlotillasOwnRevision() throws {
+    // `<container version>.<Flotilla revision>` — DECISIONS.md, 2026-09-12. Apple owns the first
+    // three, Flotilla owns the fourth, so a release can name the runtime it was verified against
+    // and still have room for the changes that are only ours.
+    let build = try #require(SemanticVersion("1.4.1.2"))
+    #expect(build.major == 1)
+    #expect(build.minor == 4)
+    #expect(build.patch == 1)
+    #expect(build.revision == 2)
+    // Printed back with the revision, and compared against the runtime without it.
+    #expect(build.description == "1.4.1.2")
+    #expect(build.runtimeComponents == SemanticVersion("1.4.1"))
+
+    // Ordered where an admin would expect. The first of these is the property the two rejected
+    // schemes got wrong: `1.4.1-flotilla.2` sorts *before* 1.4.1, and `1.4.1+flotilla.2` sorts
+    // equal to it.
+    #expect(try SemanticVersion("1.4.1")! < #require(SemanticVersion("1.4.1.1")))
+    #expect(try SemanticVersion("1.4.1.1")! < #require(SemanticVersion("1.4.1.2")))
+    #expect(try SemanticVersion("1.4.1.9")! < #require(SemanticVersion("1.4.2")))
+    #expect(try SemanticVersion("1.4.1.9")! < #require(SemanticVersion("1.4.2.0")))
+
+    // A revision of zero is Apple's own shape and prints as Apple wrote it, so Flotilla never
+    // claims a revision on a version that has none.
+    #expect(SemanticVersion("1.4.1.0")?.description == "1.4.1")
+    #expect(SemanticVersion("1.4.1.0") == SemanticVersion("1.4.1"))
+
+    // A pre-release of a revisioned build still precedes it.
+    #expect(try SemanticVersion("1.4.1.0-beta.2")! < #require(SemanticVersion("1.4.1")))
+    #expect(SemanticVersion("0.0.0.0")?.isUnreleased == true)
+    #expect(SemanticVersion("0.0.0.1")?.isUnreleased == false)
 }

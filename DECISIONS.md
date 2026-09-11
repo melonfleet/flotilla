@@ -528,9 +528,21 @@ the spec, so two Flotilla builds would compare equal. A fourth integer orders co
 the way Debian's and Homebrew's revisions do. `SemanticVersion` currently refuses four components
 and would need to accept them; `CFBundleVersion` is unaffected, being the commit count already.
 
-**Open for the owner:** whether the confirm-only release is `x.y.z.0`. It means the first build for
-a runtime is always `.0`, which is tidy, but it also means a version ending in `.0` is *not* a
-Flotilla release in the ordinary sense. `.1` as the first is the alternative.
+**Settled 2026-09-12: the scheme is adopted, and a confirm-only release is `x.y.z.0`.** Zero reads
+as "nothing of ours changed since Apple's release", which is exactly what that build is claiming,
+and it keeps the revision counting Flotilla's changes rather than its releases. `SemanticVersion`
+prints a zero revision as Apple wrote it — `1.4.1.0` renders `1.4.1` — so Flotilla never appears to
+claim a revision on a version that has none, while `1.4.1.0` and `1.4.1` still compare equal.
+
+**Consequence for the unshipped beta:** the tag becomes `v1.4.1.0-beta.2` rather than
+`v1.0.0-beta.2`. Longer, and it says the useful thing — second beta, verified against `container`
+1.4.1, no Flotilla revision yet — where `1.0.0` said only "first". A pre-release of a revisioned
+build still sorts before it, which is the ordering the update check needs.
+
+What this touched: `SemanticVersion` accepts and orders a fourth component (five is still not a
+version); `Scripts/make-app.sh`'s positive shape guard accepts `X.Y.Z.R` with the same optional
+pre-release suffixes; `Scripts/release.sh` names the shape in its error. `CFBundleVersion` is
+untouched — it is the commit count, which is what LaunchServices compares.
 
 ### Every `container` release gets a review, not a version bump
 
