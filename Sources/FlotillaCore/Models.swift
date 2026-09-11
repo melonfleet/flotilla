@@ -267,13 +267,94 @@ public struct SystemDiskUsage: Codable, Sendable {
     }
 }
 
+/// `container system status --format json`, decoded from **either** payload shape.
+///
+/// Apple replaced this payload in 1.4.1 (PR #1769). 1.0.0 was flat:
+///
+/// ```json
+/// { "status": "running", "apiServerVersion": "container-apiserver version 1.0.0 (…)",
+///   "appRoot": "…", "installRoot": "/usr/local/" }
+/// ```
+///
+/// 1.4.1 keeps `status` at the top and nests the rest, with every nested object optional because
+/// the daemon-sourced ones are omitted when the server is unavailable:
+///
+/// ```json
+/// { "status": "running",
+///   "client": { "version": "1.4.1", "build": "release", "commit": "…", "appName": "container" },
+///   "server": { … }, "host": { "architecture": …, "cpus": … },
+///   "paths": { "appRoot": "…", "installRoot": "…", "logRoot": "…" },
+///   "resources": { "containersTotal": 7, "containersRunning": 5, "images": 9 } }
+/// ```
+///
+/// **Both are decoded, rather than cutting over.** Flotilla is installed next to whatever
+/// `container` the user happens to have, and the version it reports is exactly the thing this
+/// type is used to find out — so a build that only understood the new shape would be unable to
+/// describe the runtime it was complaining about. The computed properties below read whichever
+/// side is present, so callers never learn which version they are talking to.
+///
+/// `status` itself moved in neither version, which is why `Preflight` survived the change
+/// untouched: it reads `isRunning` and nothing else.
 public struct SystemStatus: Codable, Sendable {
     public var status: String
-    public var apiServerVersion: String?
-    public var appRoot: String?
-    public var installRoot: String?
+
+    // 1.0.0, flat. Absent on 1.4.1.
+    private var apiServerVersionFlat: String?
+    private var appRootFlat: String?
+    private var installRootFlat: String?
+
+    // 1.4.1, nested. Absent on 1.0.0.
+    public var client: Component?
+    public var server: Component?
+    public var host: Host?
+    public var paths: Paths?
+    public var resources: ResourceCounts?
+
+    public struct Component: Codable, Sendable {
+        public var version: String
+        public var build: String?
+        public var commit: String?
+        public var appName: String?
+    }
+
+    public struct Host: Codable, Sendable {
+        public var architecture: String?
+        public var operatingSystem: String?
+        public var cpus: Int?
+    }
+
+    public struct Paths: Codable, Sendable {
+        public var appRoot: String?
+        public var installRoot: String?
+        public var logRoot: String?
+    }
+
+    public struct ResourceCounts: Codable, Sendable {
+        public var containersTotal: Int?
+        public var containersRunning: Int?
+        public var images: Int?
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case apiServerVersionFlat = "apiServerVersion"
+        case appRootFlat = "appRoot"
+        case installRootFlat = "installRoot"
+        case client, server, host, paths, resources
+    }
 
     public var isRunning: Bool { status == "running" }
+
+    /// The daemon's version, from whichever shape reported it.
+    ///
+    /// 1.0.0 gave a whole sentence — `container-apiserver version 1.0.0 (build: release, commit:
+    /// ee848e3)` — and 1.4.1 gives the bare number. Not normalised here: this is diagnostic text,
+    /// and rewriting what the runtime said about itself in a support bundle is how a bug report
+    /// stops matching the machine it came from.
+    public var apiServerVersion: String? { server?.version ?? apiServerVersionFlat }
+
+    public var appRoot: String? { paths?.appRoot ?? appRootFlat }
+    public var installRoot: String? { paths?.installRoot ?? installRootFlat }
 }
 
 public struct VersionComponent: Codable, Identifiable, Sendable {

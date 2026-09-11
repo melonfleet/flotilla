@@ -493,3 +493,72 @@ check exposed two real bugs: the Configuration tab was handed the thin `machine 
 `homeMount` field at all, so it displayed "Read-write" for a machine this Mac reports as `ro` — and
 the escalation test inherited that nil, making the new confirmation unreachable. It now takes the
 inspected record and treats unknown as *confirm*.
+
+## 2026-09-12 — Release cadence pegged to `container`, and shipping the runtime
+
+**The owner's directive**, recorded first because the rest is my reading of it: every time Apple
+releases `container`, review what changed, adapt Flotilla if anything needs adapting, re-test, and
+release **with the same version number Apple used** — even when nothing needed changing, the
+release exists to say "verified against this runtime". And ship the matching `container` with the
+installer, either bundled or fetched during install.
+
+The intent is right and worth building around. Flotilla is a front end to a CLI whose own
+documentation guarantees stability only *within a patch series*; "which `container` was this tested
+against?" is the single most useful fact about a build, and today the honest answer lives in a
+comment at the top of `research/UPSTREAM-GAPS.md`. Making it the version number puts it where
+nobody can miss it.
+
+### The gap in a strict peg, and the scheme that closes it
+
+A strict peg has no room for Flotilla's own changes, and right now those are almost all of them —
+the app changed a dozen times in one day with `container` sitting still at 1.4.1. Under a strict
+peg the choices are to not ship until Apple does, or to ship "1.4.1" more than once, which makes a
+bug report ambiguous about which build it came from.
+
+So: **`<container version>.<Flotilla revision>`** — a fourth component.
+
+- `1.4.1.0` — verified against `container` 1.4.1, no Flotilla changes needed.
+- `1.4.1.1` — a Flotilla change on top of the same runtime.
+- `1.4.2.0` — Apple moved; the revision resets.
+
+Considered and rejected: `1.4.1-flotilla.2`, because semver reads anything after `-` as a
+*pre-release*, so it sorts **before** `1.4.1` — the update check in `UpdateCheck` would report a
+newer build as older. And `1.4.1+flotilla.2`, because build metadata is excluded from ordering by
+the spec, so two Flotilla builds would compare equal. A fourth integer orders correctly and reads
+the way Debian's and Homebrew's revisions do. `SemanticVersion` currently refuses four components
+and would need to accept them; `CFBundleVersion` is unaffected, being the commit count already.
+
+**Open for the owner:** whether the confirm-only release is `x.y.z.0`. It means the first build for
+a runtime is always `.0`, which is tidy, but it also means a version ending in `.0` is *not* a
+Flotilla release in the ordinary sense. `.1` as the first is the alternative.
+
+### Every `container` release gets a review, not a version bump
+
+The ritual, in order, because doing it out of order is how a release claims more than it verified:
+
+1. Diff the documented command surface, flag by flag, at both tags — `Scripts/` has no tool for
+   this yet and the method is in `research/CONTAINER-UPGRADE.md`'s verification pass.
+2. `Scripts/capture-cli-help.sh` and `Scripts/capture-fixtures.sh` on the new CLI.
+3. Re-run the one-line tests in `research/UPSTREAM-GAPS.md`; a lifted gap is a feature, not a
+   footnote.
+4. Adapt, or confirm nothing needs adapting.
+5. Tag, with the new runtime named in the release notes whether or not code changed.
+
+### Shipping `container` itself
+
+Apple publishes one signed, notarised installer per release —
+`container-<version>-installer-signed.pkg`, 118 MB, `Developer ID Installer: Apple Inc. -
+Containerization (UPBK2H6LZM)` — under Apache-2.0, so redistribution is permitted with notices.
+
+**Recommendation: bundle it, and ship two artefacts.** If a Flotilla release is already pinned to
+one runtime version, bundling that exact installer makes the pairing real rather than documented,
+installs offline, and removes version skew by construction. Downloading during install was the
+other option and is worse: a `preinstall` script running `curl` fails on a locked-down network,
+cannot be staged by Jamf, and is the kind of thing a security review rightly objects to.
+
+Two artefacts because the audience splits: a **slim** PKG (Flotilla only, for anyone who already
+has the runtime or manages it separately — which is what a Jamf fleet does) and a **bundled** one
+(~130 MB, for a single Mac from cold). The installer must never *downgrade* an existing newer
+`container`, and must say what it is about to install before it does.
+
+Not built. This is Phase 5 packaging and it lands after beta2 is tagged, not alongside it.
