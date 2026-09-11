@@ -60,6 +60,33 @@ extension SettingValue: Codable {
     }
 }
 
+// MARK: - Property-list bridging
+//
+// The whole point of this being a closed set of plist primitives, finally used for what it was
+// declared for: every setting is one key in `dev.melonfleet.Flotilla.plist`, readable with
+// `defaults read` and settable with `defaults write`. It used to be persisted as a single JSON
+// blob under one key, which meant the app's own preference domain looked empty and standard macOS
+// tooling could not touch it — the wrong shape for a tool whose users are Mac admins.
+//
+// Only the *write* direction lives here, because it is the portable half. Reading is
+// `UserDefaults`' own typed accessors chosen by the key's declared kind, in the app layer: that
+// keeps `FlotillaCore` free of CoreFoundation, and it deliberately inherits the platform's own
+// coercion, so `defaults write … -int 1` on a boolean key means what an admin expects it to mean
+// rather than being refused on a technicality.
+
+extension SettingValue {
+    /// The value as a property-list object, ready for `UserDefaults.set(_:forKey:)`.
+    public var plistObject: Any {
+        switch self {
+        case .bool(let value): value
+        case .int(let value): value
+        case .double(let value): value
+        case .string(let value): value
+        case .stringArray(let value): value
+        }
+    }
+}
+
 // MARK: - Typed bridging
 
 /// A Swift type that can be stored in the settings registry. Conformance is what

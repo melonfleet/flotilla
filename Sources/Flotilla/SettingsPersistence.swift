@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 import FlotillaCore
 
-/// Persists the **user tier** of settings to `UserDefaults`.
+/// Persists the **user tier** of settings to `UserDefaults`, **one key per setting**.
 ///
 /// `SettingsStore` is deliberately Foundation-only and in-memory: it owns precedence
 /// (`locked` > user > managed `defaults` > built-in) and nothing else, which is what makes
@@ -11,6 +11,26 @@ import FlotillaCore
 /// layer never did. Every setting therefore reset on every launch, which mattered most for
 /// appearance: a first-run question that is never remembered is asked forever, which is
 /// worse than not asking at all.
+///
+/// ## One key each, not one blob (changed 2026-09-12)
+///
+/// This used to write the whole user tier as a single JSON blob under `userSettings`. It worked,
+/// and it was the wrong shape for this product: `defaults read dev.melonfleet.Flotilla` showed one
+/// opaque `<data>`, `defaults write dev.melonfleet.Flotilla pollIntervalSeconds -int 15` did
+/// nothing at all, and a support request could not be answered by reading a plist. For a tool
+/// whose users are Mac admins, being invisible to `defaults`, `plutil` and every script they
+/// already have is a defect rather than an implementation detail.
+///
+/// So every setting is now its own key, named exactly as the registry names it, holding a
+/// property-list primitive — which is what `SettingValue` was declared as a closed set of plist
+/// types *for*. Settings are scriptable, greppable and diffable; a key that is absent means "not
+/// chosen", which is why `save` removes keys rather than writing defaults back.
+///
+/// **Configuration profiles were never affected either way**, and that is worth being precise
+/// about: MDM does not write an app's own preference domain, it writes
+/// `/Library/Managed Preferences/dev.melonfleet.Flotilla.plist`, which `ManagedPreferencesSource`
+/// has always read as two `defaults`/`locked` dictionaries and which outranks everything here.
+/// This change is about the *user* tier being inspectable, not about making management possible.
 ///
 /// Only the user tier is stored. Managed `defaults`/`locked` values come from
 /// `/Library/Managed Preferences` and must never be cached here, or a profile that stopped
@@ -27,7 +47,8 @@ enum SettingsPersistence {
     /// not the bundle identifier we intend to own.
     static let domain = "dev.melonfleet.Flotilla"
 
-    private static let key = "userSettings"
+    /// The retired blob. Read once, to carry existing preferences over, then removed.
+    private static let legacyBlobKey = "userSettings"
     private static let versionKey = "userSettingsSchemaVersion"
 
     /// `research/FEATURES.md`: *"Schema `version` integer + migration — one field on day one;
@@ -37,7 +58,11 @@ enum SettingsPersistence {
     /// settings to the fallback path.
     ///
     /// Bump this **only** alongside a migration step in `migrate(_:from:)`.
-    static let currentSchemaVersion = 1
+    ///
+    /// 1 = the single JSON blob. 2 = one plist key per setting. The version is still recorded
+    /// because per-key storage does not remove the need for migrations — it only removes the
+    /// need to decode everything at once to find out whether one is due.
+    static let currentSchemaVersion = 2
 
     /// `.standard` when we are running as the bundle that owns `domain`, an explicit suite
     /// otherwise.
@@ -58,63 +83,102 @@ enum SettingsPersistence {
 
     /// The persisted user tier, or empty on first run.
     ///
-    /// A decode failure is deliberately non-fatal: corrupt or older-format preferences fall
-    /// back to built-in defaults rather than preventing the app from starting. Settings are
-    /// recoverable; a launch failure is not.
+    /// Reads only keys the registry declares, and reads each one **as the kind it is declared
+    /// to be**. That is what stops a hand-edited plist turning `pollIntervalSeconds` into a
+    /// string the app then has to defend against everywhere: a key of the wrong shape is ignored
+    /// and its built-in default applies.
+    ///
+    /// `UserDefaults`' typed accessors do the reading, so the platform's own coercion applies —
+    /// `-int 1` on a boolean key reads as `true`, as it would for any other Mac app. Deliberate:
+    /// an admin's muscle memory should work here.
     static func load() -> [String: SettingValue] {
-        guard let data = defaults.data(forKey: key) else { return [:] }
+        let store = defaults
+        var values = importLegacyBlobIfPresent(into: store)
 
-        // Absent version on existing data means "written before versioning existed", which
-        // is schema 1 — not an error. Treating it as unknown would discard the settings of
-        // anyone who ran the build between persistence landing and this field being added.
-        let stored = defaults.object(forKey: versionKey) as? Int ?? currentSchemaVersion
-
-        // Newer than we understand: keep it and fall back to defaults for this launch
-        // rather than "migrating" by guessing, which would overwrite a newer build's
-        // preferences with a downgrade's idea of them.
-        if stored > currentSchemaVersion {
-            log.error("""
-                Stored preferences are schema \(stored, privacy: .public), newer than this \
-                build understands (\(currentSchemaVersion, privacy: .public)). Using defaults \
-                for this launch and leaving them untouched.
-                """)
-            return [:]
+        for descriptor in SettingsRegistry.all {
+            // `object(forKey:)` first: the typed accessors cannot tell "absent" from "false"
+            // or from "0", and absent has to stay absent or every default would be overwritten
+            // by a value nobody chose.
+            guard store.object(forKey: descriptor.name) != nil else { continue }
+            guard let value = read(descriptor, from: store) else {
+                log.error("Ignoring \(descriptor.name, privacy: .public): not a \(descriptor.kind.rawValue, privacy: .public).")
+                continue
+            }
+            values[descriptor.name] = value
         }
 
+        store.set(currentSchemaVersion, forKey: versionKey)
+        return values
+    }
+
+    private static func read(_ descriptor: SettingDescriptor, from store: UserDefaults) -> SettingValue? {
+        switch descriptor.kind {
+        case .bool: .bool(store.bool(forKey: descriptor.name))
+        case .int: .int(store.integer(forKey: descriptor.name))
+        case .double: .double(store.double(forKey: descriptor.name))
+        case .string: store.string(forKey: descriptor.name).map { .string($0) }
+        case .stringArray: store.stringArray(forKey: descriptor.name).map { .stringArray($0) }
+        }
+    }
+
+    /// Carry a pre-2026-09-12 blob over to individual keys, once.
+    ///
+    /// Individual keys win where both exist: someone who has already run a build that writes them
+    /// — or who set one with `defaults write` — has expressed a newer intention than the blob.
+    /// The blob is then deleted, so it cannot be resurrected by a later downgrade and quietly
+    /// override what has been set since.
+    private static func importLegacyBlobIfPresent(into store: UserDefaults) -> [String: SettingValue] {
+        guard let data = store.data(forKey: legacyBlobKey) else { return [:] }
+        defer { store.removeObject(forKey: legacyBlobKey) }
+
+        let stored = store.object(forKey: versionKey) as? Int ?? 1
         do {
             let decoded = try JSONDecoder().decode([String: SettingValue].self, from: data)
-            return migrate(decoded, from: stored)
+            let migrated = migrate(decoded, from: stored)
+            // Written out immediately rather than left in memory: if this launch crashes before
+            // anything calls `save`, the preferences have still moved rather than been dropped.
+            for descriptor in SettingsRegistry.all {
+                guard let value = migrated[descriptor.name],
+                      store.object(forKey: descriptor.name) == nil else { continue }
+                store.set(value.plistObject, forKey: descriptor.name)
+            }
+            log.info("Moved \(migrated.count, privacy: .public) stored preferences to individual keys.")
+            return migrated
         } catch {
             log.error("Ignoring unreadable stored preferences: \(error.localizedDescription, privacy: .public)")
             return [:]
         }
     }
 
-    /// Forward migration, one step per version. Nothing to do yet — there is only one
-    /// schema — but the seam exists so the first change is a two-line addition rather than
-    /// a decision about what to do with everybody's existing preferences.
+    /// Forward migration of a decoded blob, one step per version. There is nothing to do
+    /// between 1 and 2 — the values did not change shape, only where they are written — but the
+    /// seam stays, because the next change to a *value* needs it and adding it back later means
+    /// deciding what to do with everyone's existing preferences under pressure.
     private static func migrate(
         _ values: [String: SettingValue], from stored: Int
     ) -> [String: SettingValue] {
         guard stored < currentSchemaVersion else { return values }
         // One `case` per version bump, each transforming forward:
-        //     if stored < 2 { values = migrateV1ToV2(values) }
-        // Nothing yet — schema 1 is the only version that has ever existed — but the call
-        // site and the version field are in place, so the first change is additive.
+        //     if stored < 3 { values = migrateV2ToV3(values) }
         return values
     }
 
+    /// Write the user tier out, one key each.
+    ///
+    /// A setting the user has not chosen is **removed**, not written with its default. That is
+    /// what makes `defaults read dev.melonfleet.Flotilla` a list of decisions rather than a dump
+    /// of the whole registry, and it is what lets a managed `defaults` value take effect later:
+    /// a user key holding a value identical to the default still outranks the profile.
     static func save(_ values: [String: SettingValue]) {
-        do {
-            let encoded = try JSONEncoder().encode(values)
-            // Version first: a crash between the two writes must not leave data that claims
-            // to be older than it is, which would re-run a migration over already-migrated
-            // values.
-            defaults.set(currentSchemaVersion, forKey: versionKey)
-            defaults.set(encoded, forKey: key)
-        } catch {
-            log.error("Failed to persist preferences: \(error.localizedDescription, privacy: .public)")
+        let store = defaults
+        for descriptor in SettingsRegistry.all {
+            if let value = values[descriptor.name] {
+                store.set(value.plistObject, forKey: descriptor.name)
+            } else {
+                store.removeObject(forKey: descriptor.name)
+            }
         }
+        store.set(currentSchemaVersion, forKey: versionKey)
     }
 
     /// Forget every **user-set preference**, returning each key to its built-in or managed
@@ -125,8 +189,11 @@ enum SettingsPersistence {
     /// blob and nothing else. It also cannot touch containers, images or volumes, because it
     /// only knows about this one `UserDefaults` key.
     static func clearUserValues() {
-        defaults.removeObject(forKey: key)
-        defaults.removeObject(forKey: versionKey)
+        let store = defaults
+        for descriptor in SettingsRegistry.all { store.removeObject(forKey: descriptor.name) }
+        // The retired blob too, in case a reset is the first thing someone does after upgrading.
+        store.removeObject(forKey: legacyBlobKey)
+        store.removeObject(forKey: versionKey)
     }
 
     /// Forget saved **window geometry** — position, size, and the sidebar split.

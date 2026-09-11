@@ -175,7 +175,12 @@ struct AboutView: View {
     private var storage: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Preferences are stored in the `dev.melonfleet.Flotilla` UserDefaults domain, "
-                + "on this Mac only.")
+                + "on this Mac only — one key per setting, so `defaults read "
+                + "dev.melonfleet.Flotilla` shows every choice you have made and "
+                + "`defaults write` sets one.")
+            Text("A configuration profile can seed or lock any of them through "
+                + "/Library/Managed Preferences, which always outranks the values above.")
+                .foregroundStyle(.secondary)
             Text("This local-only build does not create an analytics identifier or a "
                 + "server-side identifier, and it does not store an identity in Keychain.")
                 .foregroundStyle(.secondary)
