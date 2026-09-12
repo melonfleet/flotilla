@@ -90,10 +90,10 @@ struct ContainerEvent: Identifiable, Hashable {
 
     var detail: String { "from \(from.lowercased())" }
 
-    /// Failure is not the same as a clean stop and must not look like one.
-    var isFailure: Bool {
-        let state = to.lowercased()
-        return state.contains("exit") && !state.contains("(0)")
-            || state.contains("dead") || state.contains("fail")
-    }
+    /// Whether this transition is one a person should look at.
+    ///
+    /// `ContainerState.needsAttention` owns the rule — see it for why "failure" is not
+    /// something this runtime can report. The old test here matched `exit`/`dead`/`fail`, so it
+    /// was always false and the two callers that tint on it never tinted.
+    var isFailure: Bool { ContainerState(to).needsAttention }
 }

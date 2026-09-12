@@ -839,9 +839,7 @@ struct MachinesView: View {
 
     /// `status`, not `state` — the machine payload spells it differently from `Container`, which
     /// is the sort of detail the captured fixture settled and a guess would have got wrong.
-    static func isRunning(_ machine: ContainerMachine) -> Bool {
-        machine.status.caseInsensitiveCompare("running") == .orderedSame
-    }
+    static func isRunning(_ machine: ContainerMachine) -> Bool { machine.state.isRunning }
 
     /// The dot's colour — and since the State column dropped its text on 9 August, the dot is
     /// now the *whole* statement, so a wrong colour is a wrong claim rather than a redundant one.
@@ -853,14 +851,20 @@ struct MachinesView: View {
     ///
     /// Amber is for the transitional states only: something is moving and will settle. Stopped
     /// is a resting state and takes the same neutral grey a stopped container does.
+    ///
+    /// The rule is now a `switch` over `MachineState` rather than substring tests, which is what
+    /// let the `stopp` bug exist at all — and which was also hiding a dead branch: the danger
+    /// arm tested for `error` and `fail`, and the runtime's machine vocabulary is
+    /// `starting`/`running`/`stopping`/`stopped`/`unknown` with no failure in it. `unknown`
+    /// takes the danger tint instead, being the one status that actually means something is
+    /// wrong. See `MachineState` and DECISIONS.md Q18.
     static func stateColor(_ machine: ContainerMachine) -> Color {
-        if isRunning(machine) { return Theme.online }
-        let status = machine.status.lowercased()
-        if status.contains("error") || status.contains("fail") { return Theme.danger }
-        // `stopping` before `stopped`: the shorter word is a prefix of neither, but the old
-        // `contains("stopp")` collapsed them and that is precisely what went wrong.
-        if status.contains("stopping") || status.contains("starting") { return Theme.warning }
-        return .secondary
+        switch machine.state {
+        case .running: Theme.online
+        case .starting, .stopping: Theme.warning
+        case .unknown: Theme.danger
+        case .stopped, .other: .secondary
+        }
     }
 
     static func bytes(_ value: Int64) -> String {

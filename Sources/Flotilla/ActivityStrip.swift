@@ -1,4 +1,5 @@
 import SwiftUI
+import FlotillaCore
 
 /// A recent-activity band across the bottom of a section list, the way vCenter keeps a task
 /// pane under the inventory.
@@ -153,12 +154,6 @@ struct ActivityStrip: View {
     }
 
     private func colour(for event: ContainerEvent) -> Color {
-        switch event.to.lowercased() {
-        case "running": Theme.online
-        case "stopped": .secondary
-        default:
-            event.to.lowercased().contains("exit") || event.to.lowercased().contains("dead")
-                ? Theme.danger : Theme.warning
-        }
+        Theme.color(for: ContainerState(event.to))
     }
 }

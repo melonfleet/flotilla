@@ -574,3 +574,59 @@ has the runtime or manages it separately — which is what a Jamf fleet does) an
 `container`, and must say what it is about to install before it does.
 
 Not built. This is Phase 5 packaging and it lands after beta2 is tagged, not alongside it.
+
+## Q18 — Flotilla cannot report that a container failed (settled 2026-09-12)
+
+**Question.** The dashboard and the menu-bar popover each had a "Needs attention" panel, the
+container dot had a danger colour, and the activity feed had a failure tint. Each was keyed on a
+container state matching `exit`, `dead`, `fail`, `restart` or `(0)`. Does Apple's `container`
+produce any of those, and if not, what should those surfaces show?
+
+**Answer: it does not, and there is no failure signal to replace it with.** Measured against
+`container` 1.4.1 on 2026-09-12:
+
+- `container ls -a --format json` reports `running` and `stopped` and nothing else.
+- A container run as `sh -c 'exit 3'` ends in state `stopped`. So does one killed with
+  `container kill`. A clean exit, a non-zero exit and a SIGKILL are indistinguishable in the
+  listing.
+- `container inspect <id>` returns a `status` object with exactly three keys — `networks`,
+  `startedDate`, `state`. **There is no exit code anywhere in the payload.**
+- A container whose command does not exist never becomes a record: `run` fails with the guest's
+  error and leaves nothing to list.
+- The runtime's own status enum, read out of the binary as a contiguous `RawValue`/`AllCases`
+  block: `unknown`, `stopped`, `running`, `stopping`.
+
+The one place an exit code does exist is the **foreground** `container run` process's own exit
+status — which Flotilla never sees, because nothing it lists was run in the foreground.
+
+**So the rules were unreachable, in five places**, and their unreachability was invisible: a
+panel that is absent when there is no problem looks exactly like a panel that can never appear.
+The comments asserted the intent confidently — "`exited (137)` is not the same as `stopped`, and
+they must not look the same" — and described Docker's vocabulary rather than Apple's.
+
+**The decision.** Flotilla does not claim a failure it cannot observe. `ContainerState` in
+`FlotillaCore` owns the vocabulary and the single question the UI asks of it, and the answer to
+"does this need a person?" is `unknown` — the runtime declining to say, which is the one listed
+state that genuinely wants attention. `stopping` gets the warning tint, being the one state that
+is honestly *in progress*. `stopped` is not a problem: most were stopped on purpose and the
+runtime gives no way to tell the rest apart.
+
+The panels stay, because they are absent when empty by design and the rule behind them can now
+actually match. They will be rare. Rare is the point.
+
+**Machines are the same, with one more state.** The sixth copy of the rule lived in
+`MachinesView.stateColor`, testing `status.contains("error")` and `contains("fail")`. The
+runtime's VM status enum — read from a binary block whose neighbours are unmistakably the VM
+domain (`kernel`, `initialFilesystem`, `bootLog`, `rosetta`, then `create`/`freeze`/`thaw`/`trim`)
+— is `starting`, `running`, `stopping`, `stopped`, `unknown`. No failure there either, so
+`unknown` takes the danger tint and the transitional pair keeps amber. `MachineState` is a
+separate type from `ContainerState` because it has `starting` and containers do not, and letting
+one borrow the other's cases is how a vocabulary drifts. `starting` and `stopping` were **not**
+observed directly on this Mac — `machine start` from the shell did not boot the machine — so
+those two rest on the binary and on the pre-existing amber rule, which was itself written after a
+real bug.
+
+**What would reopen this.** A `container` release that reports an exit code, or a state beyond
+those four. `ContainerStateTests` pins both — the known vocabulary, and every state in the
+captured fixtures — so such a release arrives as a failing test rather than as silence. Proved
+against a negative control: narrow the parser and the fixture test fails, naming the container.

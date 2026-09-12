@@ -95,7 +95,14 @@ public struct Container: Codable, Identifiable, Sendable, Equatable {
     // Convenience for the UI
     public var name: String { configuration.id }
     public var imageReference: String { configuration.image.reference }
-    public var isRunning: Bool { status.state.caseInsensitiveCompare("running") == .orderedSame }
+    /// The reported state, parsed. See `ContainerState` for the vocabulary and how it was
+    /// measured — in particular for why there is no "failed" among these.
+    public var state: ContainerState { ContainerState(status.state) }
+    public var isRunning: Bool { state.isRunning }
+    /// Whether a person should look at this container. `ContainerState.needsAttention` owns the
+    /// rule; this is here so the five call sites that each had their own copy have one place to
+    /// ask instead.
+    public var needsAttention: Bool { state.needsAttention }
     public var ipv4: String? { status.networks?.first?.ipv4Address }
 
     public var publishedPorts: [Configuration.PublishedPort] { configuration.publishedPorts ?? [] }
@@ -590,6 +597,10 @@ public struct ContainerNetwork: Codable, Identifiable, Sendable, Equatable {
 public struct ContainerMachine: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var status: String
+
+    /// The reported status, parsed. See `MachineState` — in particular for why there is no
+    /// "failed" among these either.
+    public var state: MachineState { MachineState(status) }
     public var cpus: Int
     /// Bytes. `machine list --format table` renders this in human units; the JSON does not.
     public var memory: Int64

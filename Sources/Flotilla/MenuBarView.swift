@@ -516,7 +516,7 @@ struct MenuBarView: View {
     /// is noise, and worse, it makes the section itself unremarkable.
     @ViewBuilder
     private var needsAttention: some View {
-        let troubled = model.containers.filter(Self.needsAttention)
+        let troubled = model.containers.filter(\.needsAttention)
         if !troubled.isEmpty {
             separator
             sectionHead("Needs attention", systemImage: "exclamationmark.triangle", trailing: nil)
@@ -524,17 +524,6 @@ struct MenuBarView: View {
                 containerRow(container)
             }
         }
-    }
-
-    /// Failure, not idleness. `exited (0)` is a job that finished and is excluded by the
-    /// zero-check; `exited (137)` is one that was killed and is not.
-    private static func needsAttention(_ container: Container) -> Bool {
-        let state = container.status.state.lowercased()
-        if state.contains("restart") || state.contains("dead") || state.contains("fail") {
-            return true
-        }
-        guard state.contains("exit") else { return false }
-        return !state.contains("(0)") && !state.contains(" 0")
     }
 
     // MARK: Actions

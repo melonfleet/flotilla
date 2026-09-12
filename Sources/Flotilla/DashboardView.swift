@@ -515,7 +515,7 @@ struct DashboardView: View {
     /// "0 problems" panel trains you to stop reading it.
     @ViewBuilder
     private var attentionPanel: some View {
-        let troubled = model.containers.filter(Self.needsAttention)
+        let troubled = model.containers.filter(\.needsAttention)
         if !troubled.isEmpty {
             // The same shape as every other section now: one headline, one raised card. It was
             // the last user of a second panel style — small caps inside a box, on a different
@@ -598,17 +598,6 @@ struct DashboardView: View {
     }
 
     // MARK: Derived
-
-    /// Same rule as the menu-bar popover: failure, not idleness. `exited (0)` finished; a clean
-    /// stop is not a problem and must not cry wolf.
-    private static func needsAttention(_ container: Container) -> Bool {
-        let state = container.status.state.lowercased()
-        if state.contains("restart") || state.contains("dead") || state.contains("fail") {
-            return true
-        }
-        guard state.contains("exit") else { return false }
-        return !state.contains("(0)") && !state.contains(" 0")
-    }
 
     private func loadDiskUsage() async {
         do {

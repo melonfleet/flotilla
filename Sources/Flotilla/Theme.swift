@@ -138,20 +138,33 @@ private extension NSColor {
     }
 }
 
+extension Theme {
+    /// The one mapping from a reported state to a colour.
+    ///
+    /// Four colours for four states, from `ContainerState`. Both the container dot and the
+    /// activity strip used to test the raw string for "exit", "fail", "dead" and "restart" —
+    /// Docker's words, none of which Apple's runtime emits — so the danger and warning branches
+    /// were unreachable in both, and the strip's `default` arm painted every unrecognised state
+    /// amber for good measure. Two copies of a dead rule is how you get two different wrong
+    /// answers; this is one live rule with one answer.
+    static func color(for state: ContainerState) -> Color {
+        switch state {
+        case .running: Theme.online
+        // Transient, and the one honest use of the warning tint: something is happening.
+        case .stopping: Theme.warning
+        // `unknown` is the runtime declining to answer — the only state that wants a person,
+        // and the only one this app can call a problem. There is no "failed" to colour: a
+        // clean exit, a non-zero exit and a SIGKILL all end `stopped`, measured.
+        case .unknown: Theme.danger
+        case .stopped, .other: .secondary
+        }
+    }
+}
+
 @MainActor
 extension Container {
     /// The dot colour for this container's state, using `Theme`'s semantic set rather than
     /// `.green`/`.secondary` picked per call site — which is how the table and the cards
     /// ended up with slightly different greens.
-    var stateColor: Color {
-        if AppModel.isRunning(self) { return Theme.online }
-        // "exited (137)" is not the same as "stopped", and they must not look the same:
-        // one is a thing you started and finished, the other is a thing that died.
-        let state = status.state.lowercased()
-        if state.contains("exit") || state.contains("fail") || state.contains("dead") {
-            return Theme.danger
-        }
-        if state.contains("restart") || state.contains("start") { return Theme.warning }
-        return .secondary
-    }
+    var stateColor: Color { Theme.color(for: state) }
 }
