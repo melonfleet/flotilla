@@ -506,7 +506,7 @@ struct DashboardView: View {
     /// As a separate `View` whose stored properties are just the model, SwiftUI can leave it
     /// alone when the parent re-renders and nothing it reads has changed.
     private var utilisationPanel: some View {
-        ContainerUtilisationPanel(model: model, go: go).equatable()
+        ContainerUtilisationPanel(model: model).equatable()
     }
 
     // MARK: Panels
@@ -531,7 +531,14 @@ struct DashboardView: View {
                             Text(container.status.state.lowercased())
                                 .font(.system(size: 12)).foregroundStyle(.secondary)
                             Spacer()
-                            Button("Open") { go(.containers) }
+                            // `requestDetail`, not `go(.containers)`. This button sits beside
+                            // one named container and said "Open", and opened the *list* — the
+                            // same gap a tester reported on the menu-bar popover, whose fix is
+                            // the mechanism being used here. Nothing on the dashboard had
+                            // learned it, so every route off this screen landed on a section.
+                            Button("Open") {
+                                model.requestDetail(kind: .container, subject: container.id)
+                            }
                                 .buttonStyle(.plain)
                                 .font(.caption)
                                 .foregroundStyle(Theme.accentText)
@@ -621,14 +628,14 @@ struct DashboardView: View {
 /// `StatsSampler` was throwing away.
 private struct ContainerUtilisationPanel: View, Equatable {
     let model: AppModel
-    let go: (Section) -> Void
 
-    /// **Always equal, deliberately.** Both stored properties are stable for the life of the
-    /// screen: `model` is a reference, and `go` is the parent's navigation closure, which does
-    /// the same thing every time it is rebuilt. Without this the closure alone makes the view
-    /// compare unequal on every parent update — measured, it was re-running thirteen times in
-    /// fifty seconds, in bursts of five inside a fifth of a second, every one of them handing
-    /// `SwiftUI.Table` a freshly built array.
+    /// **Always equal, deliberately.** The one stored property is stable for the life of the
+    /// screen: `model` is a reference. There used to be a second — the parent's navigation
+    /// closure — and a closure alone makes the view compare unequal on every parent update:
+    /// measured, it was re-running thirteen times in fifty seconds, in bursts of five inside a
+    /// fifth of a second, every one of them handing `SwiftUI.Table` a freshly built array. The
+    /// closure is gone now (rows ask the model to open a container rather than being handed a
+    /// way to change section), but this conformance is what holds the guarantee, not its absence.
     ///
     /// This suppresses re-evaluation from the *parent* only. Changes to the observable state
     /// this view reads — the container list, the stats — still invalidate it, because that is
@@ -676,7 +683,12 @@ private struct ContainerUtilisationPanel: View, Equatable {
     private var table: some View {
         SwiftUI.Table(model.running) {
             TableColumn("Container") { container in
-                Button(container.id) { go(.containers) }
+                // The name is the way in, exactly as it is in the containers table and the
+                // activity strip. It used to open the section, so clicking `web` on the busiest
+                // row left you to find `web` again in a list.
+                Button(container.id) {
+                    model.requestDetail(kind: .container, subject: container.id)
+                }
                     .buttonStyle(.plain)
                     .foregroundStyle(Theme.accentText)
             }
