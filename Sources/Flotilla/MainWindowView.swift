@@ -64,7 +64,7 @@ struct MainWindowView: View {
     /// under the bar. Applied once here rather than in six section files — the alignment is a
     /// property of the window's two columns, not of any one screen, and six copies of a number
     /// is how the toolbar padding drifted three ways before.
-    private let contentTopInset: CGFloat = 25
+    private let contentTopInset: CGFloat = 35
 
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
     ///
@@ -143,15 +143,6 @@ struct MainWindowView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             Color.clear.frame(height: sidebarTopInset)
         }
-        // Pulls the first row up under the window bar, to about the distance Docker Desktop
-        // leaves above its own first item.
-        //
-        // **-6, and not more, because the row clips.** On macOS 26 the sidebar is a floating
-        // glass card with its own top inset, which Docker's flush sidebar does not have; at -12
-        // the Dashboard row's capsule was cut by the card's rounded top corner — seen on screen,
-        // not reasoned about. So this closes what it can and the rest is the system's card. The
-        // gap went 43pt → 27pt: 10 from `sidebarTopInset`, 6 from here.
-        .padding(.top, sidebarRowLift)
         // The corner furthest from the toolbar, which is where the runtime's own state belongs:
         // visible without being asked for, and out of the way of the things you manage.
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -161,11 +152,14 @@ struct MainWindowView: View {
 
     /// Kept equal to the 10pt this adds to `contentTopInset`, so the first row and the section
     /// controls beside it stay on one line. Change them together or not at all.
-    private let sidebarTopInset: CGFloat = 0
+    private let sidebarTopInset: CGFloat = 10
 
-    /// See the note at the call site: as far up as the glass card allows before the first row
-    /// clips against its rounded top.
-    private let sidebarRowLift: CGFloat = -6
+    /// How far the floating sidebar card rises towards the window bar.
+    ///
+    /// Measured on screen: the card's top sat 30pt below the bar's divider while its left edge
+    /// was 11pt from the window's. 18 brings the top inset to about the side inset, so the card
+    /// is evenly spaced from the chrome around it rather than floating low.
+    private let sidebarCardLift: CGFloat = 18
 
     /// In rail mode the title *and* the count move into the tooltip rather than being dropped.
     /// The count is the sidebar's one piece of at-a-glance information, and there is no room for
@@ -244,6 +238,21 @@ struct MainWindowView: View {
             // Full width, above everything — so the sidebar starts below it.
             WindowBar(model: model, railed: $railed)
             splitView
+                // Lifts the **floating sidebar card**, not its contents.
+                //
+                // The first attempt at this pulled the `List` up instead, which moved the rows
+                // inside a card that stayed where it was — so Dashboard clipped against the
+                // card's rounded top while the gap above the card was untouched. The gap the
+                // owner meant is between the window bar's divider and the card's own edge, and
+                // that edge is the system's: macOS 26 insets the glass card from its column, and
+                // the column starts where this view does.
+                //
+                // A **negative top padding** is the one shape that moves it without dragging the
+                // bottom: the child is offset up by this much and given that much more height,
+                // so the card rises and the runtime band stays exactly where it is — which
+                // matters, because the window's height is set by that band's divider lining up
+                // with the Utilisation table.
+                .padding(.top, -sidebarCardLift)
         }
         // Up into the traffic-light row, so the bar IS the top of the window rather than a
         // second band under it. `.hiddenTitleBar` stops the title bar being *drawn* but SwiftUI

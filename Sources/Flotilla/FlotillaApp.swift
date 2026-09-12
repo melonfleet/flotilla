@@ -365,12 +365,12 @@ struct FlotillaApp: App {
         // holds seven of the eight and the fullest possible dashboard scrolls by a sliver rather
         // than the common one scrolling always.
         //
-        // And it still fits a 1440×900 display: 808 plus the ~25pt menu bar leaves room, which
+        // And it still fits a 1440×900 display: 800 plus the ~25pt menu bar leaves room, which
         // is the constraint that stops this being simply "make it taller". 1280 wide for the
         // same reason — it gives the side-by-side Throughput and Resources panels and the
         // six-column utilisation table real room without exceeding the narrowest Mac screen.
         //
-        // **808, not 860, because the owner set the height by where two lines meet**: the bottom
+        // **800, not 860, because the owner set the height by where two lines meet**: the bottom
         // of the Utilisation table and the hairline above "Container system running" in the
         // sidebar's runtime band. Measured on screen — the divider sat at y=1022 with the table
         // ending at 970, so the window loses the 52pt between them and the two land on one line.
@@ -381,7 +381,7 @@ struct FlotillaApp: App {
         // 24pt a row to a cap of eight, and at this height the dashboard scrolls from about the
         // sixth running container rather than the eighth. A deliberate trade, and the alignment
         // is what was asked for.
-        .defaultSize(width: 1280, height: 808)
+        .defaultSize(width: 1280, height: 800)
         // **This is the fix for "it only shows in the menu bar".**
         //
         // Left to `.automatic`, SwiftUI infers whether to present this scene at launch from the
