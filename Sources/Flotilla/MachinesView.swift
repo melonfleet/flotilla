@@ -684,6 +684,12 @@ struct MachinesView: View {
 
     @ViewBuilder
     private func machineMenu(for machine: ContainerMachine) -> some View {
+        let running = Self.isRunning(machine)
+        // Read here rather than only in `rowActions`, which disables the whole Menu while an
+        // operation is in flight. The **context menu** had no such guard at all, so right-click →
+        // Stop on a machine that was already stopping issued a second command.
+        let busy = model.isBusy(machine.id, kind: .machine)
+
         Button("Details…") { detailTarget = DetailTarget(id: machine.id) }
         // Edit opens the machine's own Settings tab rather than a second copy of the form.
         // `machine set` only accepts cpus, memory and home-mount — an "edit" that showed the
@@ -691,15 +697,23 @@ struct MachinesView: View {
         // do, and the Settings tab already states the restart requirement.
         Button("Edit Settings…") { detailTarget = DetailTarget(id: machine.id, tab: .settings) }
         Divider()
-        if machine.isDefault != true {
-            Button("Set as Default") { Task { await model.perform(.setDefault, on: machine) } }
-        }
-        if Self.isRunning(machine) {
-            Button("Stop") { Task { await model.perform(.stop, on: machine) } }
-            Button("Restart") { Task { await model.perform(.restart, on: machine) } }
-        } else {
-            Button("Start") { Task { await model.perform(.start, on: machine) } }
-        }
+        // Greyed out when it is already the default, rather than absent — same rule as the
+        // lifecycle items below.
+        Button("Set as Default") { Task { await model.perform(.setDefault, on: machine) } }
+            .disabled(machine.isDefault == true || busy)
+
+        // All three lifecycle items, always, with the ones that do not apply greyed out rather
+        // than absent — the rule the runtime band's menu follows, in the same order, and for the
+        // same reason: a menu whose items rearrange as state changes teaches nothing about what
+        // the section can do, while a greyed-out Stop says plainly that this machine is already
+        // stopped. The old shape showed Stop and Restart *or* Start, so the item under the
+        // pointer depended on the row.
+        Button("Start") { Task { await model.perform(.start, on: machine) } }
+            .disabled(running || busy)
+        Button("Stop") { Task { await model.perform(.stop, on: machine) } }
+            .disabled(!running || busy)
+        Button("Restart") { Task { await model.perform(.restart, on: machine) } }
+            .disabled(!running || busy)
         Divider()
         CopyMenu([
             ("Name", machine.id),

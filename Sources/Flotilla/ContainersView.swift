@@ -548,15 +548,21 @@ struct ContainersView: View {
         Button("Inspect") { openDetail(container.id, tab: .inspect) }
 
         Divider()
-        if running {
-            Button("Stop") { Task { await model.perform(.stop, on: container) } }.disabled(busy)
-            Button("Restart") { Task { await model.perform(.restart, on: container) } }.disabled(busy)
-            // Below Stop and Restart, and named plainly. For the container that ignores its stop
-            // signal, the only alternative used to be deleting it.
-            Button("Force Kill") { Task { await model.perform(.kill, on: container) } }.disabled(busy)
-        } else {
-            Button("Start") { Task { await model.perform(.start, on: container) } }.disabled(busy)
-        }
+        // Every lifecycle item, always, with the ones that do not apply greyed out rather than
+        // absent — the rule the runtime band's menu follows, in the same order, and carried here
+        // so containers and machines answer a right-click the same way. The old shape showed
+        // Stop/Restart/Force Kill *or* Start, so which item sat under the pointer depended on the
+        // row you happened to open it on.
+        Button("Start") { Task { await model.perform(.start, on: container) } }
+            .disabled(running || busy)
+        Button("Stop") { Task { await model.perform(.stop, on: container) } }
+            .disabled(!running || busy)
+        Button("Restart") { Task { await model.perform(.restart, on: container) } }
+            .disabled(!running || busy)
+        // Below Stop and Restart, and named plainly. For the container that ignores its stop
+        // signal, the only alternative used to be deleting it.
+        Button("Force Kill") { Task { await model.perform(.kill, on: container) } }
+            .disabled(!running || busy)
 
         // The nearest thing to "Edit Settings…" that the CLI can actually back. There is no
         // `container update`: a container's configuration is fixed at creation, so the only way to
