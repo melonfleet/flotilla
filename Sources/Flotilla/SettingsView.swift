@@ -337,6 +337,18 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // Lets the app's own content wash through. A grouped `Form` paints an opaque background
+        // of its own, so Settings was the one screen in the app that did not sit on the honeydew
+        // every other section sits on — white page, grey cards, against honeydew page and white
+        // cards everywhere else.
+        //
+        // The cards themselves stay SwiftUI's: `.listRowBackground(Theme.raisedSurface)` was
+        // tried and **measured to do nothing** on a macOS grouped `Form` — the sampled card
+        // colour was identical with and without it — so it is not left in as a modifier that
+        // looks like it is doing something. The rows read very slightly recessed against the
+        // page rather than raised, which is SwiftUI's relationship and not one this can change
+        // from here.
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: General
@@ -401,7 +413,15 @@ struct SettingsView: View {
     private var advancedPane: some View {
             SwiftUI.Section("The container CLI") {
                 SettingRow(store: store, key: SettingsKeys.containerBinaryPath, title: "Binary path") { binding in
-                    TextField("Detect automatically", text: binding)
+                    // `prompt:`, not the title argument. `TextField("Detect automatically", …)`
+                    // reads like a placeholder and is not one: the first argument is the field's
+                    // **title**, which a grouped `Form` draws as a visible label. So the row said
+                    // "Binary path … Detect automatically [empty box]" — a stray label that looked
+                    // like a second setting, beside a field with no hint in it at all. The
+                    // neighbouring registry field sidesteps this with an empty title and loses the
+                    // hint instead; `prompt:` is the one that puts the words where they belong.
+                    TextField("", text: binding, prompt: Text("Detect automatically"))
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder).frame(minWidth: 220)
                 }
                 // Says which path is actually in force. An override that silently fell back to
@@ -439,7 +459,12 @@ struct SettingsView: View {
                     Stepper(value: binding, in: 128...131_072, step: 128) { Text("\(binding.wrappedValue) MB") }
                 }
                 SettingRow(store: store, key: SettingsKeys.defaultRegistryDomain, title: "Default registry") { binding in
-                    TextField("", text: binding).textFieldStyle(.roundedBorder).frame(minWidth: 180)
+                    // Empty title so no stray label appears, and a prompt so an emptied field
+                    // says what happens next rather than sitting blank — clearing this one falls
+                    // back to `docker.io`, which is the registry key's own default.
+                    TextField("", text: binding, prompt: Text("docker.io"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder).frame(minWidth: 180)
                 }
             }
 
