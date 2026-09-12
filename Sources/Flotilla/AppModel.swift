@@ -1088,8 +1088,19 @@ final class AppModel {
     /// would otherwise push a machine restart off the end within minutes.
     static let activityLimit = 500
 
-    func events(for subject: String) -> [ContainerEvent] {
-        activity.filter { $0.subject == subject }
+    /// Events about one subject **of one kind**.
+    ///
+    /// The kind is not optional, and that is the whole point. This used to filter on the subject
+    /// alone, so a name shared across kinds mixed their histories — and names are shared
+    /// routinely: the dev Mac this was found on has a container named `web` *and* a volume named
+    /// `web`, so the container's Recent events card would have listed the volume's creation and
+    /// deletion as its own.
+    ///
+    /// Exactly the collision `BusySet` exists for, one layer up. The lesson recorded there was
+    /// that a key which cannot answer the unqualified question is the fix — so this signature no
+    /// longer lets a caller ask it.
+    func events(for subject: String, kind: ActivityKind) -> [ContainerEvent] {
+        activity.filter { $0.subject == subject && $0.kind == kind }
     }
 
     func events(ofKind kind: ActivityKind) -> [ContainerEvent] {

@@ -144,62 +144,112 @@ struct MachineDetailView: View {
 
     private var overview: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12)],
-                      alignment: .leading, spacing: 12) {
-                card("State") {
-                    HStack(spacing: 6) {
-                        Circle().fill(MachinesView.stateColor(machine)).frame(width: 7, height: 7)
-                        Text(machine.status.capitalized)
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    row("Started", RelativeDate.relative(detail.startedDate))
-                    row("Created", RelativeDate.relative(machine.createdDate))
-                    row("Default", machine.isDefault == true ? "Yes" : "No")
-                }
-
-                card("Resources") {
-                    row("CPUs", "\(machine.cpus)")
-                    row("Memory", MachinesView.bytes(machine.memory))
-                    row("Disk", MachinesView.bytes(machine.diskSize))
-                    // Stated here because it is a filesystem grant, not a preference. `rw` is the
-                    // CLI's own default, so a machine you created without thinking about it has
-                    // your home directory mounted writable.
-                    if let homeMount = detail.homeMount {
-                        row("Home mount", homeMountLabel(homeMount))
-                    }
-                }
-
-                card("Network") {
-                    row("IP address", machine.ipAddress ?? "—")
-                    if let platform = detail.platform {
-                        row("Platform", [platform.os, platform.architecture]
-                            .compactMap { $0 }.joined(separator: "/"))
-                    }
-                }
-
-                card("Image") {
-                    if let image = detail.image {
-                        row("Reference", image.reference)
-                        if let digest = image.descriptor?.digest {
-                            row("Digest", digest, monospaced: true)
+            VStack(alignment: .leading, spacing: 12) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                    GridItem(.flexible(), spacing: 12)],
+                          alignment: .leading, spacing: 12) {
+                    card("State") {
+                        HStack(spacing: 6) {
+                            Circle().fill(MachinesView.stateColor(machine)).frame(width: 7, height: 7)
+                            Text(machine.status.capitalized)
+                                .font(.system(size: 13, weight: .medium))
                         }
-                    } else {
-                        Text("Loading the full record…")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        row("Started", RelativeDate.relative(detail.startedDate))
+                        row("Created", RelativeDate.relative(machine.createdDate))
+                        row("Default", machine.isDefault == true ? "Yes" : "No")
                     }
-                    // The kernel is the runtime's, not the image's — verified: the image has no
-                    // /boot at all. Worth saying, because "Ubuntu machine" means Ubuntu
-                    // userland on `container`'s kernel, not Ubuntu's kernel.
-                    Text("A machine boots a container image's userland on the runtime's own "
-                         + "kernel — the image supplies no kernel.")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
+
+                    card("Resources") {
+                        row("CPUs", "\(machine.cpus)")
+                        row("Memory", MachinesView.bytes(machine.memory))
+                        row("Disk", MachinesView.bytes(machine.diskSize))
+                        // Stated here because it is a filesystem grant, not a preference. `rw` is the
+                        // CLI's own default, so a machine you created without thinking about it has
+                        // your home directory mounted writable.
+                        if let homeMount = detail.homeMount {
+                            row("Home mount", homeMountLabel(homeMount))
+                        }
+                    }
+
+                    card("Network") {
+                        row("IP address", machine.ipAddress ?? "—")
+                        if let platform = detail.platform {
+                            row("Platform", [platform.os, platform.architecture]
+                                .compactMap { $0 }.joined(separator: "/"))
+                        }
+                    }
+
+                    card("Image") {
+                        if let image = detail.image {
+                            row("Reference", image.reference)
+                            if let digest = image.descriptor?.digest {
+                                row("Digest", digest, monospaced: true)
+                            }
+                        } else {
+                            Text("Loading the full record…")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        // The kernel is the runtime's, not the image's — verified: the image has no
+                        // /boot at all. Worth saying, because "Ubuntu machine" means Ubuntu
+                        // userland on `container`'s kernel, not Ubuntu's kernel.
+                        Text("A machine boots a container image's userland on the runtime's own "
+                             + "kernel — the image supplies no kernel.")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    }
+
                 }
+
+                // Full width **beneath** the grid, exactly as the container detail places its own —
+                // a timeline reads badly in a narrow column. Inside the `LazyVGrid` it took one
+                // cell and came out half width: `gridCellColumns` is a `Grid` modifier and does
+                // nothing in a `LazyVGrid`, silently, which is how it looked plausible in code and
+                // wrong on screen.
+                //
+                // Machines record activity exactly as containers do, so this card was simply never
+                // added: the two detail screens are built to the same shapes and this was the one
+                // shape only one of them had.
+                eventsCard
             }
             .padding(12)
+        }
+    }
+
+    /// What Flotilla watched happen to this machine, this run.
+    ///
+    /// Says so plainly rather than implying a complete history — there is no store, and a
+    /// timeline that starts at app launch while presenting itself as complete is the lie of
+    /// omission the container detail's copy already refuses to tell.
+    private var eventsCard: some View {
+        DetailCard(title: "Recent events", minHeight: nil) {
+            let events = model.events(for: machine.id, kind: .machine)
+            if events.isEmpty {
+                Text("Nothing has changed since Flotilla started. State changes appear here as "
+                     + "they happen; history from before launch is not recorded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(events.prefix(8)) { event in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(Theme.color(forEventEndingIn: event.to))
+                            .frame(width: 6, height: 6)
+                        Text(event.summary).font(.system(size: 12, weight: .medium))
+                        Text(event.detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(event.date.formatted(date: .omitted, time: .shortened))
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                if events.count > 8 {
+                    Text("+ \(events.count - 8) earlier this session")
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
+            }
         }
     }
 
@@ -214,18 +264,13 @@ struct MachineDetailView: View {
 
     // MARK: Building blocks — same card/row idiom as the container detail
 
+    /// `DetailCard`, now genuinely the same one: this was a line-for-line copy of the container
+    /// detail's private builder, and the comment above claiming they shared an idiom was the
+    /// only thing keeping them together. 112 rather than 132 because the heading now sits
+    /// outside the box.
     private func card<Content: View>(_ title: String,
-                                    @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold)).kerning(0.5)
-                .foregroundStyle(.tertiary)
-            content()
-        }
-        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
+                                    @ViewBuilder content: @escaping () -> Content) -> some View {
+        DetailCard(title: title, minHeight: 112, content: content)
     }
 
     private func row(_ label: String, _ value: String, monospaced: Bool = false) -> some View {

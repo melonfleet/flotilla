@@ -817,7 +817,7 @@ struct ContainersView: View {
     private var activityEntries: [ActivityStrip.Entry] {
         model.containers
             .flatMap { container in
-                model.events(for: container.id).map {
+                model.events(for: container.id, kind: .container).map {
                     ActivityStrip.Entry(id: $0.id, subject: container.id, event: $0)
                 }
             }

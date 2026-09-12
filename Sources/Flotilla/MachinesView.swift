@@ -397,7 +397,7 @@ struct MachinesView: View {
     private var activityEntries: [ActivityStrip.Entry] {
         model.machines
             .flatMap { machine in
-                model.events(for: machine.id).map {
+                model.events(for: machine.id, kind: .machine).map {
                     ActivityStrip.Entry(id: $0.id, subject: machine.id, event: $0)
                 }
             }

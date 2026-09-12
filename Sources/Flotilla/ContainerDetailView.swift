@@ -280,7 +280,7 @@ struct ContainerDetailView: View {
     /// would be a lie of omission — the sort this project has already paid for once.
     private var eventsCard: some View {
         card("Recent events") {
-            let events = model.events(for: container.id)
+            let events = model.events(for: container.id, kind: .container)
             if events.isEmpty {
                 Text("Nothing has changed since Flotilla started. State changes appear here as "
                      + "they happen; history from before launch is not recorded.")
@@ -291,7 +291,11 @@ struct ContainerDetailView: View {
                 ForEach(events.prefix(8)) { event in
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(event.isFailure ? Theme.danger : Theme.online)
+                            // The fourth copy of the event colour rule, and the most wrong: it
+                            // painted **every** non-failure event green, so a container stopping
+                            // read as healthy here while the same event was grey in the activity
+                            // strip, the Activity table and the dashboard. One rule now.
+                            .fill(Theme.color(forEventEndingIn: event.to))
                             .frame(width: 6, height: 6)
                         Text(event.summary).font(.system(size: 12, weight: .medium))
                         Text(event.detail).font(.system(size: 12)).foregroundStyle(.secondary)
@@ -312,24 +316,14 @@ struct ContainerDetailView: View {
 
     // MARK: Card building blocks
 
-    /// The mockup's `.card.pad` with a `.section-title` heading.
+    /// `DetailCard` — shared with the machine detail, which had a line-for-line copy of the
+    /// private builder this replaces. 128 rather than 148 because the heading now sits outside
+    /// the box and takes its height with it.
     private func card<Content: View>(_ title: String,
-                                     @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold))
-                .kerning(0.5)
-                .foregroundStyle(.tertiary)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        // Squares the grid off. The events card opts out — it is full width and its height
-        // follows how much actually happened.
-        .frame(minHeight: title == "Recent events" ? 0 : 148, alignment: .topLeading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator, lineWidth: 0.5))
+                                     @ViewBuilder content: @escaping () -> Content) -> some View {
+        // The events card is full width and its height should follow how much actually
+        // happened, so it opts out of the squared grid.
+        DetailCard(title: title, minHeight: title == "Recent events" ? nil : 128, content: content)
     }
 
     private func detailRow(_ label: String, _ value: String,

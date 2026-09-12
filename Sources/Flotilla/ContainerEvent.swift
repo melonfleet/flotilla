@@ -90,10 +90,4 @@ struct ContainerEvent: Identifiable, Hashable {
 
     var detail: String { "from \(from.lowercased())" }
 
-    /// Whether this transition is one a person should look at.
-    ///
-    /// `ContainerState.needsAttention` owns the rule — see it for why "failure" is not
-    /// something this runtime can report. The old test here matched `exit`/`dead`/`fail`, so it
-    /// was always false and the two callers that tint on it never tinted.
-    var isFailure: Bool { ContainerState(to).needsAttention }
 }
