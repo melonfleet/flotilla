@@ -147,6 +147,27 @@ extension Theme {
     /// were unreachable in both, and the strip's `default` arm painted every unrecognised state
     /// amber for good measure. Two copies of a dead rule is how you get two different wrong
     /// answers; this is one live rule with one answer.
+    /// The colour for an activity entry, from the state it ended in.
+    ///
+    /// An event's vocabulary is wider than a container's: images, volumes and networks have no
+    /// lifecycle, so their events are `present`/`absent` — they exist or they do not. Those two
+    /// have to be mapped here rather than through `ContainerState`, which would take both as
+    /// `.other`.
+    ///
+    /// This is the **third** copy of the rule, found while checking the Activity section after
+    /// the other two were consolidated. All three had drifted: `ActivityView` painted `present`
+    /// green while `ActivityStrip` painted it grey, and both fell through to amber for anything
+    /// unrecognised — the "every unknown state is a warning" default that made a dead failure
+    /// rule invisible in the first place. Unrecognised is now neutral, and `unknown` — the one
+    /// state that means the runtime cannot say — is the only thing that reads as a problem.
+    static func color(forEventEndingIn raw: String) -> Color {
+        switch raw.lowercased() {
+        case "present": Theme.online
+        case "absent": .secondary
+        default: color(for: ContainerState(raw))
+        }
+    }
+
     static func color(for state: ContainerState) -> Color {
         switch state {
         case .running: Theme.online

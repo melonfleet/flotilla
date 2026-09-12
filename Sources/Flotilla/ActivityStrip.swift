@@ -154,6 +154,6 @@ struct ActivityStrip: View {
     }
 
     private func colour(for event: ContainerEvent) -> Color {
-        Theme.color(for: ContainerState(event.to))
+        Theme.color(forEventEndingIn: event.to)
     }
 }

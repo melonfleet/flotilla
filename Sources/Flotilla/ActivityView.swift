@@ -17,6 +17,8 @@ struct ActivityView: View {
     /// Set so a row can take you to the section its subject lives in.
     let go: (Section) -> Void
 
+    @State private var showingFilters = false
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -28,6 +30,15 @@ struct ActivityView: View {
 
     // MARK: Controls
 
+    /// One filter icon beside the search field, like every other section.
+    ///
+    /// It was two **worded** pickers — "Kind / All kinds" and "Subject / Everything" — laid out
+    /// before the search field, which pushed that field a long way right while every other screen
+    /// starts it near the left. That is the same shape the Logs toolbar had before its two source
+    /// controls collapsed into one filter, and the owner's standing rule applies identically:
+    /// *"we don't want to use a lot of words instead of icons"*. Kind and subject are both "which
+    /// entries", so they are one control, and the words move into the popover where they are read
+    /// once rather than worn permanently.
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search activity…",
@@ -37,34 +48,60 @@ struct ActivityView: View {
                        // than every other one.
                        status: "\(filtered.count) of \(model.activity.count)",
                        leading: {
+            // Filled when narrowed, hollow when not — the same signal every other filter gives.
+            IconActionButton(systemImage: "line.3.horizontal.decrease", label: "Filter",
+                             help: filterHelp, active: isFiltered) {
+                showingFilters.toggle()
+            }
+            .popover(isPresented: $showingFilters, arrowEdge: .bottom) { filterPopover }
+        }, trailing: {
+            EmptyView()
+        })
+    }
+
+    private var filterHelp: String {
+        var parts: [String] = []
+        if let kind = ui.kind { parts.append(kind.title) }
+        if let subject = ui.subject { parts.append(subject) }
+        return parts.isEmpty ? "Filter by kind or subject" : "Showing " + parts.joined(separator: " · ")
+    }
+
+    private var filterPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Picker("Kind", selection: Binding(get: { ui.kind }, set: { ui.kind = $0 })) {
                 Text("All kinds").tag(ActivityKind?.none)
                 ForEach(ActivityKind.allCases) { kind in
                     Label(kind.title, systemImage: kind.systemImage).tag(ActivityKind?.some(kind))
                 }
             }
-            .fixedSize()
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
 
             // Populated from the feed, not from the current inventory: something that has been
             // deleted is exactly what you may want to look up, and by then it is gone from the
             // lists.
-            Picker("Subject", selection: Binding(get: { ui.subject }, set: { ui.subject = $0 })) {
-                Text("Everything").tag(String?.none)
-                ForEach(subjects, id: \.self) { subject in
-                    Text(subject).tag(String?.some(subject))
+            if !subjects.isEmpty {
+                Divider()
+                Picker("Subject", selection: Binding(get: { ui.subject }, set: { ui.subject = $0 })) {
+                    Text("Everything").tag(String?.none)
+                    ForEach(subjects, id: \.self) { subject in
+                        Text(subject).tag(String?.some(subject))
+                    }
                 }
+                .labelsHidden()
+                .frame(minWidth: 180)
             }
-            .fixedSize()
-            .disabled(subjects.isEmpty)
-        }, trailing: {
-            ToolbarIconButton(systemImage: "line.3.horizontal.decrease",
-                              label: "Clear filters",
-                              active: isFiltered) {
+
+            Divider()
+            Button("Clear filters") {
                 ui.kind = nil
                 ui.subject = nil
                 ui.search = ""
             }
-        })
+            .disabled(!isFiltered)
+        }
+        .padding(14)
+        .frame(minWidth: 200)
     }
 
     /// Whether anything is currently narrowing the feed — drives the accent tint on the clear
@@ -145,11 +182,11 @@ struct ActivityView: View {
                 .width(min: 96, ideal: 112)
 
                 TableColumn("Subject") { event in
-                    Button(event.subject) { go(event.kind.section) }
+                    Button(event.subject) { open(event) }
                         .buttonStyle(.link)
                         .foregroundStyle(Theme.accentText)
                         .lineLimit(1)
-                        .help("Open \(event.kind.title)")
+                        .help(openHelp(event))
                 }
                 .width(min: 130, ideal: 200)
 
@@ -169,16 +206,69 @@ struct ActivityView: View {
                 .width(min: 110, ideal: 160)
             }
             .frame(maxHeight: .infinity)
+            .contextMenu(forSelectionType: ContainerEvent.ID.self) { ids in
+                if let event = filtered.first(where: { ids.contains($0.id) }) {
+                    rowMenu(for: event)
+                }
+            } primaryAction: { ids in
+                // Double-click does what the subject link does. Only when the activation names
+                // exactly one row: `ids` is a `Set`, and opening an arbitrary member of a
+                // multi-row activation is the bug the containers table was fixed for.
+                guard ids.count == 1, let event = filtered.first(where: { ids.contains($0.id) })
+                else { return }
+                open(event)
+            }
+        }
+    }
+
+    /// Right-click offers what the row's own link offers, plus the two things you come to this
+    /// feed wanting: the name, and everything else about that subject. The table had **no**
+    /// context menu at all, which made it the one list in the app where right-clicking a row did
+    /// nothing.
+    @ViewBuilder
+    private func rowMenu(for event: ContainerEvent) -> some View {
+        Button(openHelp(event)) { open(event) }
+        Divider()
+        Button("Filter to \(event.subject)") {
+            ui.subject = event.subject
+            ui.kind = event.kind
+        }
+        .disabled(ui.subject == event.subject)
+        CopyMenu([
+            ("Subject", event.subject),
+            ("What happened", event.summary),
+            ("Time", event.date.formatted(date: .abbreviated, time: .standard)),
+        ])
+    }
+
+    /// Opens the **subject**, not just its section, where a subject can be opened at all.
+    ///
+    /// The link used to call `go(event.kind.section)`, so clicking `web` on a row about `web`
+    /// dropped you on the containers list to find it again — and the tooltip said so ("Open
+    /// Containers"), which made the tooltip the bug report. Same fault the dashboard's
+    /// utilisation table had, and `requestDetail(kind:subject:)` is the mechanism built for it.
+    ///
+    /// Only containers and machines have a detail screen, so only they get the subject; for the
+    /// rest the section is genuinely all there is to open, and asking for a detail nothing
+    /// consumes would leave the request set with no one to clear it. A subject that has since
+    /// been deleted is fine — the detail screen says so by name, which is a better answer than a
+    /// list.
+    private func open(_ event: ContainerEvent) {
+        switch event.kind {
+        case .container, .machine: model.requestDetail(kind: event.kind, subject: event.subject)
+        default: go(event.kind.section)
+        }
+    }
+
+    private func openHelp(_ event: ContainerEvent) -> String {
+        switch event.kind {
+        case .container, .machine: "Open \(event.subject)"
+        default: "Open \(event.kind.title)"
         }
     }
 
     private func colour(for event: ContainerEvent) -> Color {
-        if event.isFailure { return Theme.danger }
-        switch event.to.lowercased() {
-        case "running", "present": return Theme.online
-        case "stopped", "absent": return .secondary
-        default: return Theme.warning
-        }
+        Theme.color(forEventEndingIn: event.to)
     }
 }
 

@@ -54,7 +54,15 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
                     .foregroundStyle(.secondary)
             }
 
-            ActionCluster { trailing }
+            // **Only when there is something to put in it.** `ActionCluster` draws a glass
+            // capsule unconditionally, so a section with no trailing action — Activity, whose
+            // feed is appended to as things happen and therefore has nothing to refresh — showed
+            // an empty pill floating at the end of the band. Checked on the type rather than with
+            // a flag the caller has to remember to pass, so it cannot be got wrong at a call
+            // site: `EmptyView` is exactly what "no trailing content" is spelled as.
+            if Trailing.self != EmptyView.self {
+                ActionCluster { trailing }
+            }
         }
         // Horizontal 12 so the band lines up with the content edge; vertical **8**, which is
         // tighter than the 12 this used and gives back a strip of height on every section.
