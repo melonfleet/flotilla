@@ -29,6 +29,15 @@ struct ActivityStrip: View {
     @Binding var isExpanded: Bool
     /// Called when a row is clicked, so the strip can take you to the thing that changed.
     let open: (String) -> Void
+    /// Whether this subject can still be opened — normally "does it still exist".
+    ///
+    /// The row is a `Button` and its subject is tinted with the accent, so it reads as a link on
+    /// every section. In Images, Volumes and Networks `open` was `{ _ in }`: the row looked
+    /// exactly as clickable as the ones in Containers and Machines and did nothing at all. The
+    /// same is true of any subject since deleted, which a feed of *what happened* is full of by
+    /// design. Both cases now render as plain text and refuse the click, so a live link and a
+    /// dead one stop looking alike.
+    var canOpen: (String) -> Bool = { _ in true }
 
     private static let visibleRows = 4
 
@@ -121,7 +130,8 @@ struct ActivityStrip: View {
     }
 
     private func row(_ entry: ActivityStrip.Entry) -> some View {
-        Button { open(entry.subject) } label: {
+        let openable = canOpen(entry.subject)
+        return Button { open(entry.subject) } label: {
             HStack(spacing: 8) {
                 Circle()
                     .fill(colour(for: entry.event))
@@ -131,7 +141,7 @@ struct ActivityStrip: View {
                     .foregroundStyle(.tertiary)
                 Text(entry.subject)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.accentText)
+                    .foregroundStyle(openable ? Theme.accentText : .secondary)
                 Text(entry.event.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -151,6 +161,7 @@ struct ActivityStrip: View {
             .contentShape(.rect)
         }
         .buttonStyle(MenuRowStyle())
+        .disabled(!openable)
     }
 
     private func colour(for event: ContainerEvent) -> Color {

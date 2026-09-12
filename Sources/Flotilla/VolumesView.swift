@@ -48,7 +48,17 @@ struct VolumesView: View {
                                   entries: activityEntries,
                                   isExpanded: Binding(get: { ui.activityExpanded },
                                                       set: { ui.activityExpanded = $0 }),
-                                  open: { _ in })
+                                  // Inspect is this section's "show me this one" — there is no
+                                  // detail screen, and the sheet is keyed by exactly the name
+                                  // the strip carries. It used to be `{ _ in }`: a row that
+                                  // looked like a link and did nothing.
+                                  open: { inspecting = $0 },
+                                  // Matched on `name`, the key the feed records volumes by.
+                                  // It equals `id` on every volume the CLI returns, but matching
+                                  // the feed's own key is what keeps that from mattering — the
+                                  // images strip below is keyed on `reference` for the same
+                                  // reason, and there the two genuinely differ.
+                                  canOpen: { name in model.volumes.contains { $0.name == name } })
                 }
             }
         }

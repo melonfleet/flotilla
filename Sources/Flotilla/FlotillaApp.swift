@@ -353,7 +353,23 @@ struct FlotillaApp: App {
         // takes the traffic lights, window dragging and the sidebar toggle with it. This keeps
         // the window's standard buttons; only the title bar's own drawing goes.
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1180, height: 720)
+        // **Measured against the densest screen, which is the Dashboard.** At the old 1180×720
+        // its content ran 59pt past the viewport with only four containers up, so a first launch
+        // met a scrolling, squashed dashboard — and nobody saw it, because a window whose frame
+        // macOS has restored keeps whatever size it was dragged to. It only shows on a machine
+        // that has never run the app, or after the saved frame is lost.
+        //
+        // 860 is the first height that clears it with headroom: measured by resizing the live
+        // window, the vertical scroll indicator disappears at exactly 800 with four utilisation
+        // rows, and the panel grows 24pt a row (`utilisationHeight`) to a cap of eight — so 860
+        // holds seven of the eight and the fullest possible dashboard scrolls by a sliver rather
+        // than the common one scrolling always.
+        //
+        // And it still fits a 1440×900 display: 860 plus the ~25pt menu bar leaves room, which
+        // is the constraint that stops this being simply "make it taller". 1280 wide for the
+        // same reason — it gives the side-by-side Throughput and Resources panels and the
+        // six-column utilisation table real room without exceeding the narrowest Mac screen.
+        .defaultSize(width: 1280, height: 860)
         // **This is the fix for "it only shows in the menu bar".**
         //
         // Left to `.automatic`, SwiftUI infers whether to present this scene at launch from the

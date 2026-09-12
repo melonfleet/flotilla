@@ -66,7 +66,25 @@ struct ImagesView: View {
                                   entries: activityEntries,
                                   isExpanded: Binding(get: { ui.activityExpanded },
                                                       set: { ui.activityExpanded = $0 }),
-                                  open: { _ in })
+                                  // Images have no detail screen and no Inspect sheet, so the
+                                  // honest destination is the row itself: select it, and the
+                                  // table shows you which one the feed meant. Less than the
+                                  // other sections offer, and more than the `{ _ in }` that
+                                  // made the row a link to nowhere.
+                                  //
+                                  // Keyed on `reference`, **not** `id`: the feed records images
+                                  // by `configuration.name` while `ContainerImage.id` is the
+                                  // digest, so matching on `id` would never hit and every row
+                                  // would read as dead. The selection then takes the image's own
+                                  // id, which is what the table is keyed by.
+                                  open: { reference in
+                                      guard let image = model.images.first(where: {
+                                          $0.reference == reference }) else { return }
+                                      selection = [image.id]
+                                  },
+                                  canOpen: { reference in
+                                      model.images.contains { $0.reference == reference }
+                                  })
                 }
             }
         }

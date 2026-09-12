@@ -66,6 +66,26 @@ struct ActivityView: View {
         return parts.isEmpty ? "Filter by kind or subject" : "Showing " + parts.joined(separator: " · ")
     }
 
+    /// The subjects, newest first, as one radio group including "Everything".
+    ///
+    /// In a `ScrollView` rather than a plain stack: `subjects` is every subject the feed has
+    /// mentioned, which grows without limit, and a popover as tall as that list is a popover
+    /// taller than the window.
+    @ViewBuilder
+    private var subjectPicker: some View {
+        ScrollView {
+            Picker("Subject", selection: Binding(get: { ui.subject }, set: { ui.subject = $0 })) {
+                Text("Everything").tag(String?.none)
+                ForEach(subjects, id: \.self) { subject in
+                    Text(subject).tag(String?.some(subject))
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     private var filterPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
             Picker("Kind", selection: Binding(get: { ui.kind }, set: { ui.kind = $0 })) {
@@ -82,14 +102,15 @@ struct ActivityView: View {
             // lists.
             if !subjects.isEmpty {
                 Divider()
-                Picker("Subject", selection: Binding(get: { ui.subject }, set: { ui.subject = $0 })) {
-                    Text("Everything").tag(String?.none)
-                    ForEach(subjects, id: \.self) { subject in
-                        Text(subject).tag(String?.some(subject))
-                    }
-                }
-                .labelsHidden()
-                .frame(minWidth: 180)
+                // Radio buttons, like the kinds above them — the owner's call, and right: a
+                // pop-up button inside a popover is a menu inside a menu, and it read as a
+                // different *kind* of control from the list it sat under.
+                //
+                // Scrolls past a handful rather than growing the popover to the height of the
+                // feed's subject list, which is unbounded — every container, machine, image,
+                // volume and network the feed has ever mentioned.
+                subjectPicker
+                    .frame(maxHeight: 180)
             }
 
             Divider()

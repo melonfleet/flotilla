@@ -33,7 +33,10 @@ struct NetworksView: View {
                                   entries: activityEntries,
                                   isExpanded: Binding(get: { ui.activityExpanded },
                                                       set: { ui.activityExpanded = $0 }),
-                                  open: { _ in })
+                                  // As in Volumes: Inspect is the destination, keyed by the
+                                  // same id the strip carries.
+                                  open: { inspecting = $0 },
+                                  canOpen: { id in model.networks.contains { $0.id == id } })
                 }
             }
         }
