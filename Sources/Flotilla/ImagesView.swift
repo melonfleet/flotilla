@@ -594,73 +594,89 @@ struct ImagesView: View {
             .disabled(busy)
     }
 
-    /// Header + body, the embedded counterpart of `ModalCard`. Local to this file because
-    /// only the two image forms need the wrapper shape; the header itself is shared.
-    @ViewBuilder
-    private func embeddedForm<Content: View>(
-        title: String, systemImage: String, hasUnsavedChanges: Bool,
-        onBack: @escaping () -> Void,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(spacing: 0) {
-            FormHeader(title: title, systemImage: systemImage,
-                       hasUnsavedChanges: hasUnsavedChanges, onBack: onBack)
-            Divider()
-            // The ScrollView bounds the height. `maxHeight: .infinity` inside a parent that is
-            // itself unbounded means "as tall as you like", not "fill the window" — which grew
-            // the window's split view to 2020pt on a 720pt window in Volumes and Networks and
-            // pushed every control, Back included, off the top. This helper's own screens are
-            // short enough that it never showed, which is exactly what latent means.
-            ScrollView {
-                content()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
+    /// Tag Image, built to the same shape as every other form in the app.
+    ///
+    /// It was the last one that was not. This screen had no information rail, a hard
+    /// `.frame(width: 440)` and a `Save` button inline in the body — so it sat as a narrow
+    /// centred column while Run, New Machine, New Volume, New Network and New Image are all
+    /// left-aligned against a rail with the action in a footer. That is exactly the complaint
+    /// the owner made about the pull form: *"it doesn't look like any of the other forms… it
+    /// needs to be to the left aligned and also has the information rail to the right."* Pull
+    /// was fixed and this one was never looked at, because nothing pointed at it.
     private func tagScreen(for image: ContainerImage) -> some View {
-        embeddedForm(title: "Tag Image", systemImage: "tag",
-                     hasUnsavedChanges: !trimmedTag.isEmpty,
-                     onBack: { taggingImage = nil }) {
-            tagForm(for: image).padding(20)
+        VStack(spacing: 0) {
+            FormHeader(title: "Tag Image", systemImage: "tag",
+                       hasUnsavedChanges: !trimmedTag.isEmpty,
+                       onBack: { taggingImage = nil })
+            Divider()
+            FormScaffold {
+                tagForm(for: image)
+            } preview: {
+                tagRail(for: image)
+            }
+            Divider()
+            tagFooter(for: image)
         }
-        .frame(width: 440)
     }
 
     private func tagForm(for image: ContainerImage) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(image.reference)
-                .font(.caption).foregroundStyle(.secondary)
-                .lineLimit(1).truncationMode(.middle)
-            VStack(alignment: .leading, spacing: 4) {
-                TextField("myregistry/name:tag", text: $tagTarget)
-                    .textFieldStyle(.roundedBorder)
-                if let problem = tagProblem {
-                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
-                }
-            }
-            HStack {
-                Spacer()
-                Button("Tag") {
-                    let target = tagTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let source = image.reference
-                    taggingImage = nil
-                    guard !target.isEmpty else { return }
-                    Task {
-                        do {
-                            try await model.tagImage(source, as: target)
-                            await model.refreshImages()
-                        } catch {
-                            tagError = "Tag failed for \(source) → \(target): \(error)"
-                        }
+        FormField("New reference",
+                  help: FieldHelp(
+                      "The name the image gains. Tagging adds a name; it does not "
+                          + "rename or copy anything.",
+                      detail: "A reference is `registry/namespace/name:tag`. Leave the registry "
+                          + "off and the runtime assumes Docker Hub, so `myapp:v2` and "
+                          + "`docker.io/library/myapp:v2` are the same image.",
+                      example: "ghcr.io/acme/web:v2",
+                      warning: "Reusing a tag that already exists moves it to this image. The "
+                          + "old image stays on disk but loses that name."),
+                  problem: tagProblem) {
+            TextField("myregistry/name:tag", text: $tagTarget)
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    /// The command the button will run, beside the field — the same rail every other form
+    /// carries, and the reason it is an answer rather than another field to find at the end.
+    private func tagRail(for image: ContainerImage) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            Text("container image tag \(image.reference) "
+                 + (trimmedTag.isEmpty ? "<new reference>" : trimmedTag))
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .foregroundStyle(trimmedTag.isEmpty ? AnyShapeStyle(.secondary)
+                                                    : AnyShapeStyle(.primary))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func tagFooter(for image: ContainerImage) -> some View {
+        HStack(spacing: 8) {
+            Spacer()
+            Button("Cancel") { taggingImage = nil }
+            Button("Tag") {
+                let target = trimmedTag
+                let source = image.reference
+                taggingImage = nil
+                guard !target.isEmpty else { return }
+                Task {
+                    do {
+                        try await model.tagImage(source, as: target)
+                        await model.refreshImages()
+                    } catch {
+                        tagError = "Tag failed for \(source) \u{2192} \(target): \(error)"
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(tagTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(trimmedTag.isEmpty || tagProblem != nil)
         }
-        .padding(20)
-        .frame(width: 420)
+        .padding(12)
     }
 
     /// Every image not referenced by any known container — client-side, since the CLI has
