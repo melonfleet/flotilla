@@ -32,9 +32,16 @@ struct WindowBar: View {
     /// is cosmetic and obvious rather than silent.
     /// The bar's height, shared with `TrafficLightAligner` so the buttons are centred on the same
     /// number the content is.
-    static let barHeight: CGFloat = 44
+    /// 52, up from 44, to match Docker Desktop's strip — the reference the owner gave. Measured
+    /// off that screenshot with the traffic lights as the ruler: macOS spaces their centres 20pt
+    /// apart, which fixes the image's scale, and the blue band comes out around 50pt with the
+    /// buttons centred in it. The extra height is also what gives the wordmark room to grow.
+    static let barHeight: CGFloat = 52
 
-    private let trafficLightInset: CGFloat = 82
+    /// Where the bar's own content starts, clearing the traffic lights. Docker's logo sits
+    /// closer to the left edge than ours did; 72 puts the sidebar toggle at about the same
+    /// distance from the buttons as Docker's search field is from its logo.
+    private let trafficLightInset: CGFloat = 72
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,7 +58,7 @@ struct WindowBar: View {
                 .help(railed ? "Show the sidebar labels" : "Collapse the sidebar to icons")
                 .accessibilityLabel(railed ? "Expand sidebar" : "Collapse sidebar to icons")
 
-                Wordmark(size: 13)
+                Wordmark(size: 17)
                     .fixedSize()          // a lockup, never wrapped
 
                 Spacer(minLength: 12)
@@ -74,7 +81,7 @@ struct WindowBar: View {
             Divider()
         }
         // Pull the traffic lights down onto the wordmark's line. See `TrafficLightAligner`.
-        .background(TrafficLightAligner(barHeight: Self.barHeight, nudgeRight: 4))
+        .background(TrafficLightAligner(barHeight: Self.barHeight, nudgeRight: 0))
         // The whole bar is a window-drag handle, because with the title bar hidden the strip
         // *looks* like the place you would grab to move the window — and controls inside it keep
         // their own clicks, since a gesture on the container does not swallow a button's hit.

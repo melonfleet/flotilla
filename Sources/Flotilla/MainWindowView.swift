@@ -64,7 +64,7 @@ struct MainWindowView: View {
     /// under the bar. Applied once here rather than in six section files — the alignment is a
     /// property of the window's two columns, not of any one screen, and six copies of a number
     /// is how the toolbar padding drifted three ways before.
-    private let contentTopInset: CGFloat = 35
+    private let contentTopInset: CGFloat = 25
 
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
     ///
@@ -143,6 +143,15 @@ struct MainWindowView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             Color.clear.frame(height: sidebarTopInset)
         }
+        // Pulls the first row up under the window bar, to about the distance Docker Desktop
+        // leaves above its own first item.
+        //
+        // **-6, and not more, because the row clips.** On macOS 26 the sidebar is a floating
+        // glass card with its own top inset, which Docker's flush sidebar does not have; at -12
+        // the Dashboard row's capsule was cut by the card's rounded top corner — seen on screen,
+        // not reasoned about. So this closes what it can and the rest is the system's card. The
+        // gap went 43pt → 27pt: 10 from `sidebarTopInset`, 6 from here.
+        .padding(.top, sidebarRowLift)
         // The corner furthest from the toolbar, which is where the runtime's own state belongs:
         // visible without being asked for, and out of the way of the things you manage.
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -152,7 +161,11 @@ struct MainWindowView: View {
 
     /// Kept equal to the 10pt this adds to `contentTopInset`, so the first row and the section
     /// controls beside it stay on one line. Change them together or not at all.
-    private let sidebarTopInset: CGFloat = 10
+    private let sidebarTopInset: CGFloat = 0
+
+    /// See the note at the call site: as far up as the glass card allows before the first row
+    /// clips against its rounded top.
+    private let sidebarRowLift: CGFloat = -6
 
     /// In rail mode the title *and* the count move into the tooltip rather than being dropped.
     /// The count is the sidebar's one piece of at-a-glance information, and there is no room for
