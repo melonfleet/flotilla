@@ -601,9 +601,13 @@ final class AppModel {
     /// gated by this: a manual retry is a new decision by the user.
     private var autoStartAttempted = false
 
-    /// True while `container system start` is running, so the banner can say so. The CLI takes
-    /// several seconds (it launches the API server, then waits for it to answer), which is long
-    /// enough that silence reads as nothing happening.
+    /// True while a `container system` lifecycle command — start, stop or restart — is running,
+    /// so the banner can say so. The CLI takes several seconds (start launches the API server,
+    /// then waits for it to answer), which is long enough that silence reads as nothing happening.
+    ///
+    /// One flag for all three because every caller wants the same thing from it: the spinner
+    /// instead of the dot, and no second lifecycle command while the first is in flight. The name
+    /// predates stop and restart; it is not worth a rename that touches every call site.
     private(set) var startingRuntime = false
 
     /// Starts the `container` services, then re-checks and reloads.
@@ -626,6 +630,34 @@ final class AppModel {
             // The CLI's own words. The likeliest real failure is a missing kernel, which we
             // deliberately do not install, and its message says exactly that.
             state = .unavailable("Couldn't start the `container` service — \(error)")
+        }
+    }
+
+    /// Stops the `container` services.
+    ///
+    /// Every running container goes down with them and does not come back, which is why the only
+    /// caller confirms first; this method does not ask, so do not call it from anywhere that
+    /// does not.
+    func stopRuntime() async {
+        guard !startingRuntime else { return }
+        startingRuntime = true
+        state = .loading
+        do {
+            try await Task.detached { [cli] in try cli.stopSystem() }.value
+            recordActivity(ContainerEvent(date: Date(), from: "running", to: "stopped",
+                                          kind: .runtime, subject: hostLabel,
+                                          action: "Runtime stopped"))
+            // A deliberate stop must survive the reload. `reload()` re-runs preflight, which
+            // starts a stopped service by itself when the auto-start policy is `always` — so
+            // without this the runtime would come straight back up and the menu item would look
+            // broken. Spending the once-per-launch attempt is exactly the right veto: the user
+            // has now made this decision by hand.
+            autoStartAttempted = true
+            startingRuntime = false
+            await reload()
+        } catch {
+            startingRuntime = false
+            state = .unavailable("Couldn't stop the `container` services — \(error)")
         }
     }
 
