@@ -65,6 +65,9 @@ echo "▸ checking view defaults…"
 # freshly downloaded .p8 sitting in the repo root.
 "$ROOT/Scripts/check-hygiene.sh"
 "$ROOT/Scripts/check-test-isolation.sh"
+# A row whose `⋯` button and right-click offer different things. Broken twice already,
+# and invisible unless you open both menus on the same row and compare them by eye.
+"$ROOT/Scripts/check-menu-parity.sh"
 
 echo "▸ building ($CONFIG)…"
 if [ "$CONFIG" = "release" ]; then

@@ -367,7 +367,6 @@ struct NetworksView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .disabled(busy)
             .accessibilityLabel("More actions for \(network.id)")
 
             Divider().frame(height: 14)
@@ -388,6 +387,12 @@ struct NetworksView: View {
 
     @ViewBuilder
     private func menu(for network: ContainerNetwork) -> some View {
+        let busy = model.isBusy(network.id, kind: .network)
+
+        // Guarded item by item rather than by disabling the whole menu from the row, so the
+        // `⋯` button and a right-click render **identically**. The row used to wrap this in
+        // `.disabled(busy)`, which greyed out the reads — Inspect, Copy — on the one surface and
+        // left them live on the other.
         // GAP-06, same as Volumes. Worth more here than there: `network inspect` carries the
         // `status` block — the gateway and both subnets the runtime actually assigned — which
         // `network ls` does not always return.
@@ -399,8 +404,13 @@ struct NetworksView: View {
             ("Gateway", network.gateway),
         ])
         Divider()
+        // `isBuiltin`, not just `busy`. The trash **button** beside this menu has carried
+        // `disabled: network.isBuiltin` since the busy/disabled split, and its tooltip explains
+        // why — but the menu never learned: right-click → Delete on `default` offered a deletion
+        // the CLI refuses outright. Same family as the containers context menu that deleted with
+        // no dialog while the button two lines away always asked.
         Button("Delete…", role: .destructive) { requestDelete(network) }
-            .disabled(model.isBusy(network.id, kind: .network))
+            .disabled(network.isBuiltin || busy)
     }
 
 

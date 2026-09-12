@@ -11,7 +11,7 @@ import FlotillaCore
 /// Deliberately self-contained: it takes its data and its actions as plain values and
 /// closures rather than an `AppModel`, so it can be dropped into a grid, previewed on its
 /// own, and so every action still flows through the one model call site wires up.
-struct ContainerCard: View {
+struct ContainerCard<MenuContent: View>: View {
     let container: Container
     /// `nil` means "not measured yet" — never render this as 0%. A container we have not
     /// sampled is unknown, not idle, and painting a false zero claims a measurement that was
@@ -26,6 +26,12 @@ struct ContainerCard: View {
     let onRestart: () -> Void
     let onDetails: () -> Void
     let onDelete: () -> Void
+    /// What the `⋯` button offers. Supplied by the owner rather than built here, so the card's
+    /// menu **is** the row's menu and its own right-click menu rather than a third copy of the
+    /// idea. The previous local definition claimed in a comment to be "the same overflow menu as
+    /// the table row, from the same definition" and was not: it held Details and Copy while the
+    /// right-click menu on the very same card offered ten items.
+    @ViewBuilder let menuContent: () -> MenuContent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -134,13 +140,8 @@ struct ContainerCard: View {
                 actionButton("arrow.clockwise", "Restart", help: "", action: {}).hidden()
             }
 
-            // The same overflow menu as the table row, from the same definition. It briefly
-            // held only "Details…" here, which is why Copy was missing from cards entirely —
-            // the toggle quietly cost you a feature.
             Menu {
-                Button("Details…", action: onDetails)
-                Divider()
-                CopyMenu.forContainer(container)
+                menuContent()
             } label: {
                 RowOverflowLabel()
             }
@@ -148,7 +149,6 @@ struct ContainerCard: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .accessibilityLabel("More actions for \(container.id)")
-            .disabled(isBusy)
 
             Divider().frame(height: 14)
 

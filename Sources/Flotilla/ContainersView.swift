@@ -445,11 +445,13 @@ struct ContainersView: View {
                     .hidden()
             }
 
-            // The overflow: everything that isn't a one-tap lifecycle action.
+            // The **same** builder the right-click menu uses. It used to be its own two-item
+            // menu — Details and Copy — so the three dots and a right-click on the same row
+            // offered different things, and everything in between (Logs, Terminal, Inspect, Run
+            // Again, Force Kill, Delete) was reachable only by right-click. Two menus for one row
+            // is two menus to keep in step, and they had already drifted.
             Menu {
-                Button("Details…") { openDetail(container.id) }
-                Divider()
-                copyMenu(for: container)
+                actions(for: container)
             } label: {
                 RowOverflowLabel()
             }
@@ -457,7 +459,6 @@ struct ContainersView: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .accessibilityLabel("More actions for \(container.id)")
-            .disabled(busy)
 
             Divider().frame(height: 14)
 
@@ -487,13 +488,6 @@ struct ContainersView: View {
         // section toolbars all give the same feedback. See `IconActionButton`.
         IconActionButton(systemImage: symbol, label: label, help: help,
                          busy: busy, destructive: destructive, action: action)
-    }
-
-    /// `FEATURES.md` asks for a Copy submenu (id, image, IP, port URL) on the row. The contents
-    /// now live on `CopyMenu` itself so the card gets the identical menu — see
-    /// `CopyMenu.forContainer`.
-    private func copyMenu(for container: Container) -> CopyMenu {
-        CopyMenu.forContainer(container)
     }
 
     /// The context menu for a right-click that landed on one or more rows.
@@ -594,6 +588,11 @@ struct ContainersView: View {
             // `portSummary` lives on the model and `ipNetworkLabel` is this view's own.
             ("Ports", container.portSummary),
             ("IP / Network", Self.ipNetworkLabel(container)),
+            // Carried over from `CopyMenu.forContainer`, which the cards used until this menu
+            // became the single definition. It is the one entry that list had and this one did
+            // not, and the useful form is something you can paste into a browser rather than the
+            // mapping. Dropped by `CopyMenu` when the container publishes no ports.
+            ("Port URL", container.publishedPorts.first.map { "http://localhost:\($0.hostPort)" }),
         ])
         Divider()
         // Destructive, and deliberately only in the main window — never the popover.
@@ -1132,10 +1131,12 @@ struct ContainersView: View {
                         onStop: { Task { await model.perform(.stop, on: container) } },
                         onRestart: { Task { await model.perform(.restart, on: container) } },
                         onDetails: { openDetail(container.id) },
-                        onDelete: { requestDelete(container) }
+                        onDelete: { requestDelete(container) },
+                        menuContent: { actions(for: container) }
                     )
-                    // Same menu as the table row, so the two presentations offer identical
-                    // capabilities — a toggle that changes what you can *do* is a trap.
+                    // Same menu as the table row, the card's own `⋯`, and a right-click — one
+                    // builder reaches all four, so the two presentations offer identical
+                    // capabilities. A toggle that changes what you can *do* is a trap.
                     .contextMenu { actions(for: container) }
                 }
             }

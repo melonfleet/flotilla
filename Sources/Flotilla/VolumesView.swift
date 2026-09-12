@@ -469,7 +469,6 @@ struct VolumesView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .disabled(busy)
             .accessibilityLabel("More actions for \(volume.name)")
 
             Divider().frame(height: 14)
@@ -524,6 +523,12 @@ struct VolumesView: View {
 
     @ViewBuilder
     private func menu(for volume: ContainerVolume) -> some View {
+        let busy = model.isBusy(volume.id, kind: .volume)
+
+        // Guarded item by item rather than by disabling the whole menu from the row, so the
+        // `⋯` button and a right-click render **identically**. The row used to wrap this in
+        // `.disabled(busy)`, which greyed out the reads — Inspect, Copy — on the one surface and
+        // left them live on the other.
         // First, above Copy: `volume inspect` was allowlisted from the start with nothing able to
         // call it (GAP-06). This is the authoritative record — `options`, `labels`, the on-disk
         // source — rather than the columns this table chose to show.
@@ -536,7 +541,7 @@ struct VolumesView: View {
         ])
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(volume) }
-            .disabled(model.isBusy(volume.id, kind: .volume))
+            .disabled(busy)
     }
 
     /// Embedded, not modal — see `MachineFormView` for the 9 August reversal.

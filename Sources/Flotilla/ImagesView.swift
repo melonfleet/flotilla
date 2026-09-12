@@ -377,7 +377,6 @@ struct ImagesView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .disabled(busy)
             .accessibilityLabel("More actions for \(Self.repository(image))")
 
             Divider().frame(height: 14)
@@ -552,13 +551,20 @@ struct ImagesView: View {
     /// launching anything directly, so the command preview still gets the final say.
     @ViewBuilder
     private func menu(for image: ContainerImage) -> some View {
+        let busy = model.isBusy(image.id, kind: .image)
+
+        // Guarded item by item rather than by disabling the whole menu from the row, so the
+        // `⋯` button and a right-click render **identically**. The row used to wrap this in
+        // `.disabled(busy)`, which greyed out the reads — Inspect, Copy — on the one surface and
+        // left them live on the other.
         Button("Run…") { runImage = image.reference }
+            .disabled(busy)
         Divider()
         Button("Tag…") {
             tagTarget = ""
             taggingImage = image
         }
-        .disabled(model.isBusy(image.id, kind: .image))
+        .disabled(busy)
         CopyMenu([
             ("Reference", image.reference),
             ("Repository", Self.repository(image)),
@@ -567,7 +573,7 @@ struct ImagesView: View {
         ])
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(image) }
-            .disabled(model.isBusy(image.id, kind: .image))
+            .disabled(busy)
     }
 
     /// Header + body, the embedded counterpart of `ModalCard`. Local to this file because

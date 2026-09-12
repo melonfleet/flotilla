@@ -670,7 +670,6 @@ struct MachinesView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .disabled(busy)
             .accessibilityLabel("More actions for \(machine.id)")
 
             Divider().frame(height: 14)
@@ -685,9 +684,11 @@ struct MachinesView: View {
     @ViewBuilder
     private func machineMenu(for machine: ContainerMachine) -> some View {
         let running = Self.isRunning(machine)
-        // Read here rather than only in `rowActions`, which disables the whole Menu while an
-        // operation is in flight. The **context menu** had no such guard at all, so right-click →
-        // Stop on a machine that was already stopping issued a second command.
+        // Guarded item by item rather than by disabling the whole menu from the row, so the
+        // `⋯` button and a right-click render **identically**. The row used to wrap this in
+        // `.disabled(busy)` while the context menu had no guard at all, so right-click → Stop on
+        // a machine that was already stopping issued a second command — and the reads were
+        // greyed on one surface and live on the other.
         let busy = model.isBusy(machine.id, kind: .machine)
 
         Button("Details…") { detailTarget = DetailTarget(id: machine.id) }
@@ -722,6 +723,7 @@ struct MachinesView: View {
         ])
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(machine) }
+            .disabled(busy)
     }
 
     private func iconButton(_ symbol: String, _ label: String, busy: Bool,
