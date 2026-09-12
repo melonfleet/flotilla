@@ -78,6 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// "Quit — containers keep running" quietly untrue about the shells.
     func applicationWillTerminate(_ notification: Notification) {
         model?.terminals.closeEverything()
+        // Live log tails are the same argument as the shells above, and were missing from it:
+        // `container logs --follow` children have no reason to stop when their view goes away
+        // with the whole app. Measured — a clean quit while the Logs section streamed five
+        // sources left all five running under launchd.
+        LiveStreamRegistry.shared.cancelAll()
     }
 
     /// Honours **Show Dock icon**, which is now a toggle rather than a three-way picker.

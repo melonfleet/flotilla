@@ -75,12 +75,19 @@ extension AppModel {
 private final class PendingStream: @unchecked Sendable {
     private let lock = NSLock()
     private var handle: CommandStream?
+    private var token: UUID?
     private var cancelled = false
 
     func adopt(_ handle: CommandStream) {
         lock.lock()
         let alreadyCancelled = cancelled
-        if !alreadyCancelled { self.handle = handle }
+        if !alreadyCancelled {
+            self.handle = handle
+            // Registered so quitting the app can end it. Nothing in the view layer runs on
+            // termination — see `LiveStreamRegistry`, which was written after a clean quit left
+            // five `--follow` children reparented to launchd.
+            token = LiveStreamRegistry.shared.register(handle)
+        }
         lock.unlock()
         if alreadyCancelled { handle.cancel() }
     }
@@ -88,9 +95,12 @@ private final class PendingStream: @unchecked Sendable {
     func cancel() {
         lock.lock()
         let handle = self.handle
+        let token = self.token
         self.handle = nil
+        self.token = nil
         cancelled = true
         lock.unlock()
+        if let token { LiveStreamRegistry.shared.remove(token) }
         handle?.cancel()
     }
 }

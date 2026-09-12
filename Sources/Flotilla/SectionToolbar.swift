@@ -88,9 +88,17 @@ extension SectionToolbar where Leading == EmptyView {
 struct ToolbarIconButton: View {
     let systemImage: String
     let label: String
+    /// The tooltip, when it has more to say than the label. Defaults to the label, which is what
+    /// every existing caller wants — but a button whose meaning changes with state (Live, which
+    /// is "start streaming N sources" or "stop streaming" or "too many sources to stream") has a
+    /// tooltip that cannot be its name.
+    var help: String?
     var isDestructive = false
     /// Engaged — see `IconActionButton.active`.
     var active = false
+    /// Not offered, as distinct from busy — see `IconActionButton`, which has carried the
+    /// distinction since a built-in network's delete button span forever instead of refusing.
+    var disabled = false
     let action: () -> Void
 
     var body: some View {
@@ -98,8 +106,9 @@ struct ToolbarIconButton: View {
         // states, so a toolbar button and a row button react identically. They did not before:
         // these were a bare `Button` with only a tooltip, so nothing happened on hover and
         // nothing happened on click either.
-        IconActionButton(systemImage: systemImage, label: label, help: label,
-                         destructive: isDestructive, active: active, action: action)
+        IconActionButton(systemImage: systemImage, label: label, help: help ?? label,
+                         disabled: disabled, destructive: isDestructive,
+                         active: active, action: action)
     }
 }
 

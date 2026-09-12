@@ -58,4 +58,25 @@ final class LogsUIState {
     /// the user picks is honest; an unbounded fetch behind a friendly button is not.
     var lineLimit = 200
     static let lineLimits = [100, 200, 500, 1000]
+
+    /// Whether the section is streaming rather than fetching.
+    ///
+    /// Lives here with the filters rather than as `@State` in the view for the same reason they
+    /// do: the section view is rebuilt on every sidebar change, so a tail held locally would
+    /// stop the moment you looked at Containers — and silently, which is the worst way for a
+    /// live view to stop.
+    var live = false
+
+    /// The most sources this section will follow at once.
+    ///
+    /// A judgement, not a measurement, and worth stating as one. Each followed source is its own
+    /// `container logs --follow` process with a reader thread pair, so the cost is linear in
+    /// sources; and the source tag is a fixed 128pt column, which stops being scannable at about
+    /// this many distinct names anyway. Above the ceiling Live is refused with a reason rather
+    /// than quietly following a subset — a live view that silently omits sources is worse than
+    /// one that will not start.
+    ///
+    /// Raise it if someone has a real fleet and the processes turn out to be cheap; the number
+    /// is here, once, so that is a one-line change.
+    static let maxLiveSources = 8
 }

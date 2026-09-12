@@ -249,6 +249,16 @@ struct LogViewer: View {
 
     @ViewBuilder
     private var content: some View {
+        // Every branch fills the pane. The two `ContentUnavailableView`s did not, so on a
+        // container with nothing to say the log surface shrank to the size of the message and
+        // sat as a white card in the middle of the honeydew — the one screen whose background is
+        // supposed to read as "this is where log text lives" looked like a dialog instead.
+        logContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var logContent: some View {
         if loading && lines.isEmpty {
             ProgressView(live ? "Waiting for output…" : "Loading logs…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
