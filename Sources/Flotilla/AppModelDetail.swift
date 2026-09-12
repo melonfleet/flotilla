@@ -58,6 +58,19 @@ extension AppModel {
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
+    /// And for an image — the last of the five, and the one that was still GAP-06.
+    ///
+    /// `image inspect` has been in the `Allowlist` and implemented in `ContainerCLI` as both
+    /// `inspectImage` and `rawInspectImageJSON` the whole time, and **nothing in the app called
+    /// either**: the capability existed, was audited, had a captured fixture, and was unreachable
+    /// from the UI. Exactly the shape the volume and network inspects were in before they got a
+    /// method, which is the argument for checking the sections against each other rather than
+    /// against their own history.
+    func fetchImageInspectJSON(for reference: String) async throws -> String {
+        let raw = try await Task.detached { [cli] in try cli.rawInspectImageJSON(reference) }.value
+        return JSONPrettyPrinter.prettyPrint(raw)
+    }
+
     func fetchNetworkInspectJSON(for id: String) async throws -> String {
         let raw = try await Task.detached { [cli] in try cli.rawInspectNetworkJSON(id) }.value
         return JSONPrettyPrinter.prettyPrint(raw)

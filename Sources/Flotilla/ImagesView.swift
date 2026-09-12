@@ -23,6 +23,17 @@ struct ImagesView: View {
     /// place. Nothing is launched from here; the sheet's validated preview still gates it.
     @State private var runImage: String?
 
+    /// Which image the detail screen is showing, and optionally which tab to open it on.
+    private struct DetailTarget: Identifiable, Hashable {
+        let id: String
+        var tab: ImageDetailTab?
+    }
+
+    /// The image whose detail screen is showing, or nil for the list. Keyed on the **reference**,
+    /// which is how this section identifies an image everywhere else — `ContainerImage.id` is the
+    /// digest.
+    @State private var detailTarget: DetailTarget?
+
     @State private var taggingImage: ContainerImage?
     @State private var tagTarget = ""
     @State private var tagError: String?
@@ -43,6 +54,8 @@ struct ImagesView: View {
                 NewImageView(model: model, initialMode: mode) { newImageMode = nil }
             } else if let image = taggingImage {
                 tagScreen(for: image)
+            } else if let target = detailTarget {
+                detailScreen(target)
             } else {
                 VStack(spacing: 0) {
                     toolbar
@@ -66,22 +79,15 @@ struct ImagesView: View {
                                   entries: activityEntries,
                                   isExpanded: Binding(get: { ui.activityExpanded },
                                                       set: { ui.activityExpanded = $0 }),
-                                  // Images have no detail screen and no Inspect sheet, so the
-                                  // honest destination is the row itself: select it, and the
-                                  // table shows you which one the feed meant. Less than the
-                                  // other sections offer, and more than the `{ _ in }` that
-                                  // made the row a link to nowhere.
+                                  // The detail screen, as in every other section. It used to
+                                  // select the row, because images had nowhere to go — they do
+                                  // now.
                                   //
                                   // Keyed on `reference`, **not** `id`: the feed records images
                                   // by `configuration.name` while `ContainerImage.id` is the
                                   // digest, so matching on `id` would never hit and every row
-                                  // would read as dead. The selection then takes the image's own
-                                  // id, which is what the table is keyed by.
-                                  open: { reference in
-                                      guard let image = model.images.first(where: {
-                                          $0.reference == reference }) else { return }
-                                      selection = [image.id]
-                                  },
+                                  // would read as dead.
+                                  open: { detailTarget = DetailTarget(id: $0) },
                                   canOpen: { reference in
                                       model.images.contains { $0.reference == reference }
                                   })
@@ -278,7 +284,7 @@ struct ImagesView: View {
                              ("Digest", Self.shortDigest(image)),
                              ("Size", image.displaySize.map(Self.byteCount)),
                              ("Created", RelativeDate.relative(image.configuration.creationDate))],
-                    onOpen: nil
+                    onOpen: { detailTarget = DetailTarget(id: image.reference) }
                 ) {
                     rowActions(for: image)
                 }
@@ -308,10 +314,15 @@ struct ImagesView: View {
             .width(min: 28, ideal: 30, max: 34)
 
             TableColumn("Repository", value: \.reference) { image in
-                Text(Self.repository(image))
-                    .foregroundStyle(Theme.rowName(selected: selection.contains(image.id)))
-                    .lineLimit(1).truncationMode(.middle)
-                    .help(image.reference)
+                // The way in, as in every other table. This was plain text, because until now
+                // there was nowhere for it to go.
+                Button(Self.repository(image)) {
+                    detailTarget = DetailTarget(id: image.reference)
+                }
+                .buttonStyle(.link)
+                .foregroundStyle(Theme.rowName(selected: selection.contains(image.id)))
+                .lineLimit(1).truncationMode(.middle)
+                .help(image.reference)
             }
             .width(min: 170, ideal: 260)
 
@@ -364,6 +375,10 @@ struct ImagesView: View {
             if let image = model.images.first(where: { ids.contains($0.id) }) {
                 menu(for: image)
             }
+        } primaryAction: { ids in
+            guard ids.count == 1,
+                  let image = model.images.first(where: { ids.contains($0.id) }) else { return }
+            detailTarget = DetailTarget(id: image.reference)
         }
     }
 
@@ -415,7 +430,10 @@ struct ImagesView: View {
     /// `linux/amd64` first, so the table claimed amd64 on an Apple Silicon Mac while the
     /// container the CLI runs from it is arm64. Prefer the host's architecture, and mark the
     /// image as multi-arch so the single value does not imply there is only one.
-    fileprivate nonisolated static func platformLabel(_ image: ContainerImage) -> String {
+    /// `internal`, not `fileprivate`: these four derivations of a reference are what the detail
+    /// screen needs too, and a second copy of "split the repository off the tag" is how the sort
+    /// key and the column once disagreed about what a tag is.
+    nonisolated static func platformLabel(_ image: ContainerImage) -> String {
         let platforms = image.variants?.compactMap(\.platform) ?? []
         guard !platforms.isEmpty else { return "—" }
         let native = platforms.first { $0.architecture?.contains("arm64") == true } ?? platforms[0]
@@ -423,7 +441,7 @@ struct ImagesView: View {
         return platforms.count > 1 ? "\(label) +\(platforms.count - 1)" : label
     }
 
-    private static func shortDigest(_ image: ContainerImage) -> String {
+    nonisolated static func shortDigest(_ image: ContainerImage) -> String {
         guard let digest = image.configuration.descriptor?.digest else { return "—" }
         // Drop the `sha256:` prefix and keep the first 12, which is what every registry UI and
         // the CLI's own `image list` show.
@@ -575,6 +593,9 @@ struct ImagesView: View {
         // `⋯` button and a right-click render **identically**. The row used to wrap this in
         // `.disabled(busy)`, which greyed out the reads — Inspect, Copy — on the one surface and
         // left them live on the other.
+        Button("Details…") { detailTarget = DetailTarget(id: image.reference) }
+        Button("Inspect") { detailTarget = DetailTarget(id: image.reference, tab: .inspect) }
+        Divider()
         Button("Run…") { runImage = image.reference }
             .disabled(busy)
         Divider()
@@ -592,6 +613,98 @@ struct ImagesView: View {
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(image) }
             .disabled(busy)
+    }
+
+    // MARK: Detail
+
+    @ViewBuilder
+    private func detailScreen(_ target: DetailTarget) -> some View {
+        VStack(spacing: 0) {
+            if let image = model.images.first(where: { $0.reference == target.id }) {
+                detailHeader(for: image)
+                Divider()
+                ImageDetailView(model: model, image: image, requestedTab: target.tab)
+                    .id(image.reference)
+            } else {
+                detailHeader(for: nil)
+                Divider()
+                ContentUnavailableView(
+                    "Image unavailable",
+                    systemImage: "questionmark.square.dashed",
+                    description: Text("\u{201C}\(target.id)\u{201D} is no longer on this Mac. It may have been deleted.")
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailHeader(for image: ContainerImage?) -> some View {
+        HStack(spacing: 10) {
+            IconActionButton(systemImage: "chevron.left", label: "Back to Images",
+                             help: "Back to Images") { detailTarget = nil }
+
+            if let image {
+                Image(systemName: "square.stack.3d.up")
+                    .font(.system(size: 19)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(Self.repository(image)).font(.headline)
+                        Text(Self.tag(image)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(subtitle(for: image))
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            } else {
+                Text("Image unavailable").font(.headline)
+            }
+
+            Spacer()
+            stepper
+            if let image {
+                ActionCluster { rowActions(for: image) }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var stepper: some View {
+        let order = displayedImages
+        let index = order.firstIndex { $0.reference == detailTarget?.id }
+        HStack(spacing: 2) {
+            Button {
+                if let index, index > 0 {
+                    detailTarget = DetailTarget(id: order[index - 1].reference)
+                }
+            } label: { Image(systemName: "chevron.up") }
+                .disabled(index == nil || index == 0)
+                .help("Previous image")
+                .accessibilityLabel("Previous image")
+
+            Button {
+                if let index, index < order.count - 1 {
+                    detailTarget = DetailTarget(id: order[index + 1].reference)
+                }
+            } label: { Image(systemName: "chevron.down") }
+                .disabled(index == nil || index == order.count - 1)
+                .help("Next image")
+                .accessibilityLabel("Next image")
+
+            if let index {
+                Text("\(index + 1) of \(order.count)")
+                    .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
+        }
+    }
+
+    private func subtitle(for image: ContainerImage) -> String {
+        var parts = [Self.platformLabel(image)]
+        if let size = image.displaySize { parts.append(Self.byteCount(size)) }
+        parts.append(Self.shortDigest(image))
+        return parts.joined(separator: " \u{00B7} ")
     }
 
     /// Tag Image, built to the same shape as every other form in the app.
@@ -770,8 +883,8 @@ struct ImagesView: View {
         return (String(reference[..<colon]), String(reference[reference.index(after: colon)...]))
     }
 
-    fileprivate nonisolated static func repository(_ image: ContainerImage) -> String { split(image.reference).repository }
-    fileprivate nonisolated static func tag(_ image: ContainerImage) -> String { split(image.reference).tag }
+    nonisolated static func repository(_ image: ContainerImage) -> String { split(image.reference).repository }
+    nonisolated static func tag(_ image: ContainerImage) -> String { split(image.reference).tag }
 
     private static func byteCount(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
