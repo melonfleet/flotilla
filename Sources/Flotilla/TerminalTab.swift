@@ -207,12 +207,6 @@ struct TerminalTab: View {
     /// the store, so both survive this view being destroyed and rebuilt.
     @State private var failure: String?
 
-    /// The shell being renamed, and the text being typed. An alert rather than inline editing:
-    /// the chips are small, and a text field that appears inside one is fiddly to hit and
-    /// easy to lose focus from.
-    @State private var renaming: TerminalSession?
-    @State private var draftName = ""
-
     private var open: [TerminalSession] { model.terminals.sessions(for: container.id) }
 
     var body: some View {
@@ -258,84 +252,13 @@ struct TerminalTab: View {
         .onChange(of: AppModel.isRunning(container)) { _, running in
             if !running { model.terminals.closeAll(for: container.id) }
         }
-        .alert("Rename shell", isPresented: Binding(get: { renaming != nil },
-                                                    set: { if !$0 { renaming = nil } })) {
-            TextField("Name", text: $draftName)
-            Button("Rename") {
-                if let session = renaming {
-                    model.terminals.rename(session, in: container.id, to: draftName)
-                }
-                renaming = nil
-            }
-            Button("Cancel", role: .cancel) { renaming = nil }
-        } message: {
-            Text("Leave it empty to go back to the default name.")
-        }
     }
 
-    private func beginRenaming(_ session: TerminalSession) {
-        draftName = session.name ?? ""
-        renaming = session
-    }
-
-    /// Several shells per container, so you can leave something running in one and work in
-    /// another — Terminal.app's model, and what the owner asked for.
-    ///
-    /// Each chip closes individually. That control is not optional now that sessions persist:
-    /// without it the only way to end a shell would be to type `exit` into it, and a session
-    /// you have forgotten about is a process you cannot see.
+    /// `ShellStrip`, shared with the machine Terminal tab — which carried a copy that had
+    /// quietly lost rename.
     private func shellStrip(current: TerminalSession) -> some View {
-        HStack(spacing: 4) {
-            ForEach(open) { session in
-                let isCurrent = session.id == current.id
-                HStack(spacing: 5) {
-                    Circle().fill(Theme.online).frame(width: 5, height: 5)
-                    Text(session.title).font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
-                    Button {
-                        model.terminals.close(session, in: container.id)
-                    } label: {
-                        Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Close \(session.title)")
-                    .accessibilityLabel("Close \(session.title)")
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .foregroundStyle(isCurrent ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.secondary))
-                .background(isCurrent ? Theme.accentTint : .clear, in: RoundedRectangle(cornerRadius: 6))
-                .contentShape(.rect)
-                .onTapGesture { model.terminals.select(session, in: container.id) }
-                // Right-click to rename, which is where people look for it, plus double-click
-                // as the other habit Terminal.app trains.
-                .contextMenu {
-                    Button("Rename…") { beginRenaming(session) }
-                    if session.name != nil {
-                        Button("Reset name") {
-                            model.terminals.rename(session, in: container.id, to: "")
-                        }
-                    }
-                    Divider()
-                    Button("Close \(session.title)") {
-                        model.terminals.close(session, in: container.id)
-                    }
-                }
-                .onTapGesture(count: 2) { beginRenaming(session) }
-                .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
-            }
-
-            Button { openShell() } label: {
-                Image(systemName: "plus").font(.system(size: 10))
-            }
-            .buttonStyle(.plain)
-            .padding(4)
-            .help("Open another shell in \(container.id)")
-            .accessibilityLabel("New shell")
-
-            Spacer()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        ShellStrip(store: model.terminals, subjectID: container.id, current: current,
+                   newShellHelp: "Open another shell in \(container.id)", onOpen: openShell)
     }
 
     /// Builds the argv **through the allowlist** rather than assembling a command line here.
@@ -381,7 +304,7 @@ struct TerminalTab: View {
 /// The representable owns only a plain host view; the terminal is **re-parented** into it and
 /// stays owned by the store. That indirection is the fix: handing SwiftUI the terminal
 /// directly makes SwiftUI's teardown the session's teardown, which is the bug this replaces.
-private struct TerminalSurface: NSViewRepresentable {
+struct TerminalSurface: NSViewRepresentable {
     let store: TerminalSessionStore
     let session: TerminalSession
 
@@ -407,5 +330,108 @@ private struct TerminalSurface: NSViewRepresentable {
         host.addSubview(terminal)
         // Typing should reach the shell as soon as it is showing, without a click first.
         DispatchQueue.main.async { host.window?.makeFirstResponder(terminal) }
+    }
+}
+
+/// The row of shell chips above a terminal, with the `+` that opens another.
+///
+/// **One strip, two subjects.** `MachineShellTab` carried a copy of this — the same chips, the
+/// same dot, the same close button, the same accent tint — which had lost three things somewhere
+/// along the way: renaming (both the context menu and the double-click), the close button's
+/// accessibility label, and the selected trait. So a shell chip in a container could be renamed
+/// and the identical-looking chip in a machine could not, silently, because nothing points at a
+/// difference between two files.
+///
+/// The store is keyed by a plain string, which is why this takes a `subjectID` rather than a
+/// container: a machine named `web` and a container named `web` are different subjects in
+/// different stores, and this view has no business knowing which kind it is holding.
+struct ShellStrip: View {
+    let store: TerminalSessionStore
+    let subjectID: String
+    let current: TerminalSession
+    /// The `+` button's tooltip, which is the one string here that names the kind.
+    let newShellHelp: String
+    let onOpen: () -> Void
+
+    /// An alert rather than inline editing: the chips are small, and a text field that appears
+    /// inside one is fiddly to hit and easy to lose focus from.
+    @State private var renaming: TerminalSession?
+    @State private var draftName = ""
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(store.sessions(for: subjectID)) { session in
+                chip(session)
+            }
+
+            Button(action: onOpen) {
+                Image(systemName: "plus").font(.system(size: 10))
+            }
+            .buttonStyle(.plain)
+            .padding(4)
+            .help(newShellHelp)
+            .accessibilityLabel("New shell")
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .alert("Rename shell", isPresented: Binding(get: { renaming != nil },
+                                                    set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $draftName)
+            Button("Rename") {
+                if let session = renaming { store.rename(session, in: subjectID, to: draftName) }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        } message: {
+            Text("Leave it empty to go back to the default name.")
+        }
+    }
+
+    /// Several shells per subject, so you can leave something running in one and work in
+    /// another — Terminal.app's model, and what the owner asked for.
+    ///
+    /// Each chip closes individually. That control is not optional now that sessions persist:
+    /// without it the only way to end a shell would be to type `exit` into it, and a session you
+    /// have forgotten about is a process you cannot see.
+    private func chip(_ session: TerminalSession) -> some View {
+        let isCurrent = session.id == current.id
+        return HStack(spacing: 5) {
+            Circle().fill(Theme.online).frame(width: 5, height: 5)
+            Text(session.title)
+                .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
+            Button {
+                store.close(session, in: subjectID)
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .help("Close \(session.title)")
+            .accessibilityLabel("Close \(session.title)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .foregroundStyle(isCurrent ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.secondary))
+        .background(isCurrent ? Theme.accentTint : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(.rect)
+        .onTapGesture { store.select(session, in: subjectID) }
+        // Right-click to rename, which is where people look for it, plus double-click as the
+        // other habit Terminal.app trains.
+        .contextMenu {
+            Button("Rename…") { beginRenaming(session) }
+            if session.name != nil {
+                Button("Reset name") { store.rename(session, in: subjectID, to: "") }
+            }
+            Divider()
+            Button("Close \(session.title)") { store.close(session, in: subjectID) }
+        }
+        .onTapGesture(count: 2) { beginRenaming(session) }
+        .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
+    }
+
+    private func beginRenaming(_ session: TerminalSession) {
+        draftName = session.name ?? ""
+        renaming = session
     }
 }

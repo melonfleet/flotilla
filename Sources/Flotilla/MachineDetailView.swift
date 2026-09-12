@@ -290,7 +290,7 @@ private struct MachineShellTab: View {
                 VStack(spacing: 0) {
                     shellStrip(current: current)
                     Divider()
-                    MachineTerminalSurface(store: model.machineTerminals, session: current)
+                    TerminalSurface(store: model.machineTerminals, session: current)
                 }
             } else if let failure {
                 ContentUnavailableView {
@@ -321,35 +321,12 @@ private struct MachineShellTab: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// `ShellStrip`, the same one the container Terminal tab draws. This was a copy that had
+    /// lost rename, the close button's accessibility label and the selected trait — all of which
+    /// this now gets by not being a copy.
     private func shellStrip(current: TerminalSession) -> some View {
-        HStack(spacing: 4) {
-            ForEach(model.machineTerminals.sessions(for: machine.id)) { session in
-                let isCurrent = session.id == current.id
-                HStack(spacing: 5) {
-                    Circle().fill(Theme.online).frame(width: 5, height: 5)
-                    Text(session.title)
-                        .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
-                    Button {
-                        model.machineTerminals.close(session, in: machine.id)
-                    } label: {
-                        Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Close \(session.title)")
-                }
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .foregroundStyle(isCurrent ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.secondary))
-                .background(isCurrent ? Theme.accentTint : .clear, in: RoundedRectangle(cornerRadius: 6))
-                .contentShape(.rect)
-                .onTapGesture { model.machineTerminals.select(session, in: machine.id) }
-            }
-            Button { open() } label: { Image(systemName: "plus").font(.system(size: 10)) }
-                .buttonStyle(.plain).padding(4)
-                .help("Open another shell in \(machine.id)")
-                .accessibilityLabel("New shell")
-            Spacer()
-        }
-        .padding(.horizontal, 10).padding(.vertical, 5)
+        ShellStrip(store: model.machineTerminals, subjectID: machine.id, current: current,
+                   newShellHelp: "Open another shell in \(machine.id)", onOpen: open)
     }
 
     /// Built through the allowlist, never by string interpolation — same rule as the container
@@ -376,32 +353,6 @@ private struct MachineShellTab: View {
             model.record("Refused to open a machine shell in \(machine.id): \(error)",
                          subsystem: "machines")
         }
-    }
-}
-
-/// Same re-parenting trick as the container terminal: the store owns the view so it outlives
-/// any tab switch, and the representable owns only an empty host.
-private struct MachineTerminalSurface: NSViewRepresentable {
-    let store: TerminalSessionStore
-    let session: TerminalSession
-
-    func makeNSView(context: Context) -> NSView {
-        let host = NSView(frame: .zero)
-        attach(to: host)
-        return host
-    }
-
-    func updateNSView(_ host: NSView, context: Context) { attach(to: host) }
-
-    private func attach(to host: NSView) {
-        guard let terminal = store.view(for: session) else { return }
-        for existing in host.subviews where existing !== terminal { existing.removeFromSuperview() }
-        guard terminal.superview !== host else { return }
-        terminal.removeFromSuperview()
-        terminal.frame = host.bounds
-        terminal.autoresizingMask = [.width, .height]
-        host.addSubview(terminal)
-        DispatchQueue.main.async { host.window?.makeFirstResponder(terminal) }
     }
 }
 
