@@ -106,38 +106,18 @@ struct MachineDetailView: View {
         }
     }
 
-    /// The same underline strip as the container detail, from the same stylesheet numbers.
+    /// `DetailTabBar` — shared with the container, volume and network detail screens, which all
+    /// carried or would have carried a copy of the same strip.
     private var tabBar: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(MachineDetailTab.allCases.enumerated()), id: \.element.id) { index, candidate in
-                if index > 0, MachineDetailTab.allCases[index - 1].isShared, !candidate.isShared {
-                    Divider().frame(height: 16).padding(.horizontal, 6)
-                }
-                let selected = candidate == tab
-                Button { tab = candidate } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: candidate.systemImage).font(.system(size: 12))
-                        Text(candidate.rawValue)
-                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                    }
-                    .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                    .frame(height: 34)
-                    .padding(.horizontal, 11)
-                    .overlay(alignment: .bottom) {
-                        if selected {
-                            RoundedRectangle(cornerRadius: 1).fill(Theme.accent)
-                                .frame(height: 2).padding(.horizontal, 8)
-                        }
-                    }
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? [.isSelected] : [])
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .overlay(alignment: .bottom) { Divider() }
+        DetailTabBar(items: MachineDetailTab.allCases.enumerated().map { index, candidate in
+            .init(tab: candidate,
+                  title: candidate.rawValue,
+                  systemImage: candidate.systemImage,
+                  // Fences off the tabs a machine has and a container does not, so the shared
+                  // four always read as a set.
+                  separatedFromPrevious: index > 0
+                      && MachineDetailTab.allCases[index - 1].isShared && !candidate.isShared)
+        }, selection: $tab)
     }
 
     // MARK: Overview
@@ -609,156 +589,16 @@ private struct MachineSettingsTab: View {
 
 // MARK: - Inspect
 
+/// The machine's Inspect tab — `InspectPane` with this subject's command and loader. See
+/// `InspectPane` for why this is four lines rather than a hundred and fifty.
 private struct MachineInspectTab: View {
     let model: AppModel
     let machine: ContainerMachine
 
-    @State private var json: String?
-    @State private var failure: String?
-    @State private var loading = false
-    @State private var search = ""
-    @State private var presentation: InspectPresentation = .table
-
-    /// Narrowed exactly as the container Inspect tab is: image digests are public content
-    /// hashes, not fingerprints, and mount paths are the point of inspecting. Secrets still go —
-    /// and here that matters especially, because `machine inspect` carries `userSetup.username`,
-    /// the host user's own name.
-    private static let redactor = Redactor(excluding: [.fingerprint, .homePath,
-                                                       .temporaryPath, .email])
-
-    /// The same control band as the container Inspect tab, member for member. This panel used
-    /// to be JSON-only — not by design, but because the flattening it needed was private to
-    /// `ContainerDetailView`. `machine inspect` is nested enough (`userSetup`, `platform`,
-    /// `image.descriptor`) that scanning for one value in raw JSON is real work, so the Table
-    /// view earns its place here at least as much as it does on the containers side.
     var body: some View {
-        // `alignment: .leading`: a `VStack` centres its children, and the JSON view is a
-        // `ScrollView` sized to its content — so a payload narrower than the pane was centred in
-        // it, reading as a floating block of text rather than as a document.
-        VStack(alignment: .leading, spacing: 0) {
-            // Member for member, and now in the same order as the container panel and the Logs
-            // band: actions in the cluster, the view switch, then the field.
-            HStack(spacing: 12) {
-                ActionCluster {
-                    IconActionButton(systemImage: "doc.on.doc", label: "Copy JSON",
-                                     help: "Copy the inspect output, with secrets redacted",
-                                     disabled: json == nil) {
-                        if let json { Clipboard.copy(json) }
-                    }
-                    Divider().frame(height: 14)
-                    IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
-                                     help: "Reload", busy: loading) {
-                        Task { await load() }
-                    }
-                }
-
-                Picker("View", selection: $presentation) {
-                    ForEach(InspectPresentation.allCases) {
-                        // The word survives as the accessibility label and the tooltip; only the
-                        // drawing changes.
-                        Label($0.rawValue, systemImage: $0.symbol)
-                            .labelStyle(.iconOnly)
-                            .help($0.rawValue)
-                            .tag($0)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-
-                TextField("Filter keys", text: $search)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 200)
-                if !search.isEmpty {
-                    Text("\(matchCount) match\(matchCount == 1 ? "" : "es")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 12)
-
-                // The command it ran, so the panel is reproducible in a terminal.
-                Text("container machine inspect \(machine.id)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            Divider()
-
-            content
-
-            redactionNote
-        }
-        .task { await load() }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let failure {
-            ContentUnavailableView("Cannot inspect", systemImage: "exclamationmark.triangle",
-                                   description: Text(failure))
-        } else if loading && json == nil {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if presentation == .table {
-            InspectTableView(json: json, search: search)
-        } else if let json {
-            JSONTextView(json: json, search: search)
-        } else {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    /// Matching lines only, when a filter is set. Kept simple deliberately: this is a reading
-    /// aid, and dropping the enclosing braces would produce text that looks like JSON and is
-    /// not, which is worse than a list of lines.
-    private static func filtered(_ json: String, search: String) -> String {
-        let query = search.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return json }
-        let matching = json.split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { $0.localizedCaseInsensitiveContains(query) }
-        return matching.isEmpty ? "No line matches “\(query)”." : matching.joined(separator: "\n")
-    }
-
-    /// Says that what you are reading has been filtered. `machine inspect` carries
-    /// `userSetup.username` — the host user's own name — so a redaction the reader cannot see
-    /// is the difference between "this machine has no such field" and "we hid it".
-    private var redactionNote: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "eye.slash").font(.caption2)
-            Text("Secrets are redacted. Values shown as `<redacted:…>` are present on the "
-                 + "machine but hidden here and in Copy JSON.")
-                .font(.caption2)
-        }
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { Divider() }
-    }
-
-    /// Matching lines, for the count beside the filter field — counted the same way the
-    /// container panel counts them, on the same redacted text both views render.
-    private var matchCount: Int {
-        guard let json, !search.isEmpty else { return 0 }
-        return json.split(separator: "\n", omittingEmptySubsequences: false)
-            .count { $0.localizedCaseInsensitiveContains(search) }
-    }
-
-    private func load() async {
-        loading = true
-        defer { loading = false }
-        failure = nil
-        do {
-            let machineID = machine.id
-            let raw = try await Task.detached { [cli = model.cli] in
-                try cli.rawMachineInspectJSON(machineID)
-            }.value
-            json = Self.redactor.redact(raw)
-        } catch {
-            failure = String(describing: error)
+        InspectPane(command: "container machine inspect \(machine.id)",
+                    failureTitle: "Couldn't inspect this machine") {
+            try await model.fetchMachineInspectJSON(for: machine.id)
         }
     }
 }

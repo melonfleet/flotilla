@@ -11,7 +11,14 @@ struct NetworksView: View {
 
     @State private var search = ""
     @State private var showingCreate = false
-    @State private var inspecting: String?
+    /// Which network the detail screen is showing, and optionally which tab to open it on.
+    private struct DetailTarget: Identifiable, Hashable {
+        let id: String
+        var tab: NetworkDetailTab?
+    }
+
+    /// The network whose detail screen is showing, or nil for the list.
+    @State private var detailTarget: DetailTarget?
     @State private var pendingDelete: ContainerNetwork?
     @State private var confirmingBulkDelete = false
 
@@ -19,6 +26,8 @@ struct NetworksView: View {
         Group {
             if showingCreate {
                 NewNetworkView(model: model) { showingCreate = false }
+            } else if let target = detailTarget {
+                detailScreen(target)
             } else {
                 VStack(spacing: 0) {
                     toolbar
@@ -33,24 +42,15 @@ struct NetworksView: View {
                                   entries: activityEntries,
                                   isExpanded: Binding(get: { ui.activityExpanded },
                                                       set: { ui.activityExpanded = $0 }),
-                                  // As in Volumes: Inspect is the destination, keyed by the
-                                  // same id the strip carries.
-                                  open: { inspecting = $0 },
+                                  // As in Volumes: the detail screen, which is what clicking
+                                  // the name gives too.
+                                  open: { detailTarget = DetailTarget(id: $0) },
                                   canOpen: { id in model.networks.contains { $0.id == id } })
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
-        .sheet(isPresented: Binding(get: { inspecting != nil },
-                                    set: { if !$0 { inspecting = nil } })) {
-            if let id = inspecting {
-                InspectSheet(title: id,
-                             command: "container network inspect \(id)",
-                             load: { try await model.fetchNetworkInspectJSON(for: id) },
-                             dismiss: { inspecting = nil })
-            }
-        }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingNetworkForm) { _, requested in
             if requested { showingCreate = true; model.pendingNetworkForm = false }
@@ -277,7 +277,9 @@ struct NetworksView: View {
                              ("Subnet", network.subnet),
                              ("Gateway", network.gateway),
                              ("Created", RelativeDate.relative(network.configuration.creationDate))],
-                    onOpen: nil
+                    // The card title opens the detail, so the list/cards toggle does not change
+                    // what you can reach. Every caller of `ResourceCard` passed `nil` here.
+                    onOpen: { detailTarget = DetailTarget(id: network.id) }
                 ) {
                     rowActions(for: network)
                 }
@@ -305,9 +307,12 @@ struct NetworksView: View {
 
             TableColumn("Name", value: \.id) { network in
                 HStack(spacing: 6) {
-                    Text(network.name)
+                    // The way in, as in every other table.
+                    Button(network.name) { detailTarget = DetailTarget(id: network.id) }
+                        .buttonStyle(.link)
                         .foregroundStyle(Theme.rowName(selected: selection.contains(network.id)))
                         .lineLimit(1)
+                        .help("Open \(network.name)")
                     if network.isBuiltin {
                         Text("built-in")
                             .font(.caption2).fixedSize()
@@ -355,6 +360,12 @@ struct NetworksView: View {
             if let network = model.networks.first(where: { ids.contains($0.id) }) {
                 menu(for: network)
             }
+        } primaryAction: { ids in
+            // Double-click opens the detail, and only for an unambiguous activation — `ids` is a
+            // `Set`, so with several rows selected `first` is an arbitrary member.
+            guard ids.count == 1,
+                  let network = model.networks.first(where: { ids.contains($0.id) }) else { return }
+            detailTarget = DetailTarget(id: network.id)
         }
     }
 
@@ -388,6 +399,97 @@ struct NetworksView: View {
         }
     }
 
+    // MARK: Detail
+
+    @ViewBuilder
+    private func detailScreen(_ target: DetailTarget) -> some View {
+        VStack(spacing: 0) {
+            if let network = model.networks.first(where: { $0.id == target.id }) {
+                detailHeader(for: network)
+                Divider()
+                NetworkDetailView(model: model, network: network, requestedTab: target.tab)
+                    .id(network.id)
+            } else {
+                detailHeader(for: nil)
+                Divider()
+                ContentUnavailableView(
+                    "Network unavailable",
+                    systemImage: "questionmark.square.dashed",
+                    description: Text("\u{201C}\(target.id)\u{201D} is no longer on this Mac. It may have been deleted.")
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailHeader(for network: ContainerNetwork?) -> some View {
+        HStack(spacing: 10) {
+            IconActionButton(systemImage: "chevron.left", label: "Back to Networks",
+                             help: "Back to Networks") { detailTarget = nil }
+
+            if let network {
+                Image(systemName: "globe")
+                    .font(.system(size: 19)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(network.name).font(.headline)
+                        if network.isBuiltin {
+                            Text("built-in").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(subtitle(for: network))
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            } else {
+                Text("Network unavailable").font(.headline)
+            }
+
+            Spacer()
+            stepper
+            if let network {
+                ActionCluster { rowActions(for: network) }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var stepper: some View {
+        let order = displayedNetworks
+        let index = order.firstIndex { $0.id == detailTarget?.id }
+        HStack(spacing: 2) {
+            Button {
+                if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) }
+            } label: { Image(systemName: "chevron.up") }
+                .disabled(index == nil || index == 0)
+                .help("Previous network")
+                .accessibilityLabel("Previous network")
+
+            Button {
+                if let index, index < order.count - 1 {
+                    detailTarget = DetailTarget(id: order[index + 1].id)
+                }
+            } label: { Image(systemName: "chevron.down") }
+                .disabled(index == nil || index == order.count - 1)
+                .help("Next network")
+                .accessibilityLabel("Next network")
+
+            if let index {
+                Text("\(index + 1) of \(order.count)")
+                    .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
+        }
+    }
+
+    private func subtitle(for network: ContainerNetwork) -> String {
+        [network.mode, network.subnet, network.gateway]
+            .compactMap { $0 }
+            .joined(separator: " \u{00B7} ")
+    }
+
     @ViewBuilder
     private func menu(for network: ContainerNetwork) -> some View {
         let busy = model.isBusy(network.id, kind: .network)
@@ -399,7 +501,8 @@ struct NetworksView: View {
         // GAP-06, same as Volumes. Worth more here than there: `network inspect` carries the
         // `status` block — the gateway and both subnets the runtime actually assigned — which
         // `network ls` does not always return.
-        Button("Inspect…") { inspecting = network.id }
+        Button("Details…") { detailTarget = DetailTarget(id: network.id) }
+        Button("Inspect") { detailTarget = DetailTarget(id: network.id, tab: .inspect) }
         Divider()
         CopyMenu([
             ("Name", network.id),

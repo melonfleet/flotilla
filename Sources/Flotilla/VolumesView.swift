@@ -13,9 +13,17 @@ struct VolumesView: View {
 
     @State private var selection = Set<ContainerVolume.ID>()
     @State private var showingCreate = false
-    /// Name of the volume whose inspect record is on screen, or nil. A name rather than the value:
-    /// the sheet refetches, so holding a stale struct would show old data next to a live command.
-    @State private var inspecting: String?
+    /// Which volume the detail screen is showing, and optionally which tab to open it on.
+    /// Private per section, as it is in Containers and Machines — the tab type differs.
+    private struct DetailTarget: Identifiable, Hashable {
+        let id: String
+        var tab: VolumeDetailTab?
+    }
+
+    /// The volume whose detail screen is showing, or nil for the list. A `DetailTarget` rather
+    /// than a value, exactly as Containers and Machines hold theirs: the screen looks the volume
+    /// up each render, so a deleted one becomes an explanation rather than stale data.
+    @State private var detailTarget: DetailTarget?
     @State private var newVolumeName = ""
     @State private var newSize = ""
     @State private var newLabels: [String] = []
@@ -34,6 +42,8 @@ struct VolumesView: View {
         Group {
             if showingCreate {
                 createScreen
+            } else if let target = detailTarget {
+                detailScreen(target)
             } else {
                 VStack(spacing: 0) {
                     toolbar
@@ -48,11 +58,11 @@ struct VolumesView: View {
                                   entries: activityEntries,
                                   isExpanded: Binding(get: { ui.activityExpanded },
                                                       set: { ui.activityExpanded = $0 }),
-                                  // Inspect is this section's "show me this one" — there is no
-                                  // detail screen, and the sheet is keyed by exactly the name
-                                  // the strip carries. It used to be `{ _ in }`: a row that
-                                  // looked like a link and did nothing.
-                                  open: { inspecting = $0 },
+                                  // The detail screen, as in every other section. This was
+                                  // `{ _ in }` — a row that looked like a link and did nothing —
+                                  // then briefly the Inspect sheet, and now the same destination
+                                  // clicking the name gives.
+                                  open: { detailTarget = DetailTarget(id: $0) },
                                   // Matched on `name`, the key the feed records volumes by.
                                   // It equals `id` on every volume the CLI returns, but matching
                                   // the feed's own key is what keeps that from mattering — the
@@ -64,15 +74,6 @@ struct VolumesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
-        .sheet(isPresented: Binding(get: { inspecting != nil },
-                                    set: { if !$0 { inspecting = nil } })) {
-            if let name = inspecting {
-                InspectSheet(title: name,
-                             command: "container volume inspect \(name)",
-                             load: { try await model.fetchVolumeInspectJSON(for: name) },
-                             dismiss: { inspecting = nil })
-            }
-        }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingVolumeForm) { _, requested in
             if requested { showingCreate = true; model.pendingVolumeForm = false }
@@ -376,7 +377,9 @@ struct VolumesView: View {
                              ("Driver", volume.configuration.driver),
                              ("Size", volume.sizeInBytes.map(Self.byteCount)),
                              ("Created", RelativeDate.relative(volume.configuration.creationDate))],
-                    onOpen: nil
+                    // The card title opens the detail, so the list/cards toggle does not change
+                    // what you can reach.
+                    onOpen: { detailTarget = DetailTarget(id: volume.name) }
                 ) {
                     rowActions(for: volume)
                 }
@@ -406,9 +409,13 @@ struct VolumesView: View {
             .width(min: 28, ideal: 30, max: 34)
 
             TableColumn("Name", value: \.name) { volume in
-                Text(volume.name)
+                // The name is the way in, as it is in every other table. It was plain text here,
+                // so the only route to a volume's record was a menu item that opened a sheet.
+                Button(volume.name) { detailTarget = DetailTarget(id: volume.name) }
+                    .buttonStyle(.link)
                     .foregroundStyle(Theme.rowName(selected: selection.contains(volume.id)))
                     .lineLimit(1)
+                    .help("Open \(volume.name)")
             }
             .width(min: 160, ideal: 240)
 
@@ -462,6 +469,14 @@ struct VolumesView: View {
             if let volume = model.volumes.first(where: { ids.contains($0.id) }) {
                 menu(for: volume)
             }
+        } primaryAction: { ids in
+            // Double-click opens the detail, as it does in Containers and Machines — but only
+            // when the activation names exactly one row. `ids` is a `Set`, so with several
+            // selected `first` is an arbitrary member, and opening the wrong volume is worse
+            // than opening none.
+            guard ids.count == 1, let volume = model.volumes.first(where: { ids.contains($0.id) })
+            else { return }
+            detailTarget = DetailTarget(id: volume.name)
         }
     }
 
@@ -496,7 +511,11 @@ struct VolumesView: View {
     private func row(for volume: ContainerVolume) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(volume.name)
+                Button(volume.name) { detailTarget = DetailTarget(id: volume.name) }
+                    .buttonStyle(.link)
+                    .foregroundStyle(Theme.accentText)
+                    .lineLimit(1)
+                    .help("Open \(volume.name)")
                 HStack(spacing: 8) {
                     if let format = volume.format {
                         Text(format).font(.caption).foregroundStyle(.secondary)
@@ -531,6 +550,100 @@ struct VolumesView: View {
         .contextMenu { menu(for: volume) }
     }
 
+    // MARK: Detail
+
+    /// Built to the same shape as the containers and machines detail screens — header with Back,
+    /// identity, a stepper through the list as currently shown, then the row's own actions.
+    @ViewBuilder
+    private func detailScreen(_ target: DetailTarget) -> some View {
+        VStack(spacing: 0) {
+            if let volume = model.volumes.first(where: { $0.name == target.id }) {
+                detailHeader(for: volume)
+                Divider()
+                VolumeDetailView(model: model, volume: volume, requestedTab: target.tab)
+                    // Keyed so stepping to the next volume rebuilds rather than keeping the
+                    // previous one's tab state under a new name.
+                    .id(volume.name)
+            } else {
+                detailHeader(for: nil)
+                Divider()
+                ContentUnavailableView(
+                    "Volume unavailable",
+                    systemImage: "questionmark.square.dashed",
+                    description: Text("\u{201C}\(target.id)\u{201D} is no longer on this Mac. It may have been deleted.")
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailHeader(for volume: ContainerVolume?) -> some View {
+        HStack(spacing: 10) {
+            IconActionButton(systemImage: "chevron.left", label: "Back to Volumes",
+                             help: "Back to Volumes") { detailTarget = nil }
+
+            if let volume {
+                Image(systemName: "cylinder.split.1x2")
+                    .font(.system(size: 19)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(volume.name).font(.headline)
+                    Text(subtitle(for: volume))
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            } else {
+                Text("Volume unavailable").font(.headline)
+            }
+
+            Spacer()
+            stepper
+            if let volume {
+                ActionCluster { rowActions(for: volume) }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    /// Steps through volumes as currently shown — same rules as the other steppers: no wrapping,
+    /// buttons disable at the ends, and the position is stated.
+    @ViewBuilder
+    private var stepper: some View {
+        let order = displayedVolumes
+        let index = order.firstIndex { $0.name == detailTarget?.id }
+        HStack(spacing: 2) {
+            Button {
+                if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].name) }
+            } label: { Image(systemName: "chevron.up") }
+                .disabled(index == nil || index == 0)
+                .help("Previous volume")
+                .accessibilityLabel("Previous volume")
+
+            Button {
+                if let index, index < order.count - 1 {
+                    detailTarget = DetailTarget(id: order[index + 1].name)
+                }
+            } label: { Image(systemName: "chevron.down") }
+                .disabled(index == nil || index == order.count - 1)
+                .help("Next volume")
+                .accessibilityLabel("Next volume")
+
+            if let index {
+                Text("\(index + 1) of \(order.count)")
+                    .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
+        }
+    }
+
+    private func subtitle(for volume: ContainerVolume) -> String {
+        var parts: [String] = []
+        if let format = volume.format { parts.append(format) }
+        if let size = volume.sizeInBytes { parts.append(Self.byteCount(size)) }
+        if let source = volume.source { parts.append(source) }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
     @ViewBuilder
     private func menu(for volume: ContainerVolume) -> some View {
         let busy = model.isBusy(volume.id, kind: .volume)
@@ -542,7 +655,9 @@ struct VolumesView: View {
         // First, above Copy: `volume inspect` was allowlisted from the start with nothing able to
         // call it (GAP-06). This is the authoritative record — `options`, `labels`, the on-disk
         // source — rather than the columns this table chose to show.
-        Button("Inspect…") { inspecting = volume.name }
+        Button("Details…") { detailTarget = DetailTarget(id: volume.name) }
+        // Straight to the tab you wanted, the way the containers menu offers Logs and Inspect.
+        Button("Inspect") { detailTarget = DetailTarget(id: volume.name, tab: .inspect) }
         Divider()
         CopyMenu([
             ("Name", volume.name),

@@ -85,38 +85,13 @@ struct ContainerDetailView: View {
     /// heavier weight and full-strength text — three signals, so it does not rely on colour
     /// alone.
     private var tabBar: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(Tab.allCases.enumerated()), id: \.element.id) { index, candidate in
-                if index > 0, Tab.allCases[index - 1].isShared, !candidate.isShared {
-                    Divider().frame(height: 16).padding(.horizontal, 6)
-                }
-                let selected = candidate == tab
-                Button { tab = candidate } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: candidate.systemImage).font(.system(size: 12))
-                        Text(candidate.rawValue)
-                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                    }
-                    .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                    .frame(height: 34)
-                    .padding(.horizontal, 11)
-                    .overlay(alignment: .bottom) {
-                        if selected {
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(Theme.accent)
-                                .frame(height: 2)
-                                .padding(.horizontal, 8)
-                        }
-                    }
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? [.isSelected] : [])
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .overlay(alignment: .bottom) { Divider() }
+        DetailTabBar(items: Tab.allCases.enumerated().map { index, candidate in
+            .init(tab: candidate,
+                  title: candidate.rawValue,
+                  systemImage: candidate.systemImage,
+                  separatedFromPrevious: index > 0
+                      && Tab.allCases[index - 1].isShared && !candidate.isShared)
+        }, selection: $tab)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Detail sections")
     }
@@ -395,167 +370,19 @@ struct ContainerDetailView: View {
 /// (`AppModel.fetchInspectJSON`, which wraps the core owner's `rawInspectJSON(_:)` +
 /// `JSONPrettyPrinter`), monospaced, natively selectable, and filterable by a cheap
 /// line-substring search.
+/// The container's Inspect tab — `InspectPane` with this subject's command and loader.
+///
+/// The body of this used to live here in full, and a line-for-line copy lived in
+/// `MachineDetailView`. See `InspectPane`.
 private struct InspectTab: View {
     let model: AppModel
     let container: Container
 
-    @State private var json: String?
-    @State private var loading = false
-    @State private var error: String?
-    @State private var search = ""
-    @State private var presentation: InspectPresentation = .table
-
-    /// Narrowed on purpose. The standard set is tuned for a support bundle **leaving the
-    /// machine**; this is a panel you read on your own Mac, and applying the strict rules here
-    /// rewrote every image digest as `<redacted:fingerprint>` — a digest is 64 hex characters
-    /// and so is a certificate fingerprint. A digest is a public content hash and one of the
-    /// more useful things in this output, so redacting it removed information and protected
-    /// nothing. Mount paths go the same way: they are the point of inspecting.
-    ///
-    /// Everything that is actually a secret still goes: tokens, certificates, URL credentials
-    /// and `KEY=value` secrets.
-    private static let redactor = Redactor(excluding: [.fingerprint, .homePath,
-                                                       .temporaryPath, .email])
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // The same order as the Logs band next door: actions in the cluster, then the
-            // control that changes what you are looking at, then the field you search it with.
-            // These two tabs sit one click apart and used to read left-to-right in opposite
-            // directions.
-            HStack(spacing: 12) {
-                ActionCluster {
-                    IconActionButton(systemImage: "doc.on.doc", label: "Copy JSON",
-                                     help: "Copy the inspect output, with secrets redacted",
-                                     disabled: json == nil) {
-                        // Copies exactly what is displayed — redacted. See `load()`.
-                        if let json { Clipboard.copy(json) }
-                    }
-                    Divider().frame(height: 14)
-                    IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
-                                     help: "Reload", busy: loading) {
-                        Task { await load() }
-                    }
-                }
-
-                Picker("View", selection: $presentation) {
-                    ForEach(InspectPresentation.allCases) {
-                        // The word survives as the accessibility label and the tooltip; only the
-                        // drawing changes.
-                        Label($0.rawValue, systemImage: $0.symbol)
-                            .labelStyle(.iconOnly)
-                            .help($0.rawValue)
-                            .tag($0)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-
-                TextField("Filter keys", text: $search)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 200)
-                if !search.isEmpty {
-                    Text("\(matchCount) match\(matchCount == 1 ? "" : "es")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 12)
-
-                // The mockup shows the command it ran. Worth keeping: it turns an opaque
-                // panel into something you can reproduce in a terminal.
-                Text("container inspect \(container.id)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            Divider()
-            if presentation == .table { tableView } else { content }
-            redactionNote
+        InspectPane(command: "container inspect \(container.id)",
+                    failureTitle: "Couldn't inspect this container") {
+            try await model.fetchInspectJSON(for: container.id)
         }
-        .task { await load() }
-    }
-
-    /// The mockup's Table view. The flattening and the table itself are in
-    /// `InspectTable.swift` because the machine Inspect tab needs exactly the same thing —
-    /// they used to be private here, which is why that panel shipped JSON-only.
-    @ViewBuilder
-    private var tableView: some View {
-        InspectTableView(json: json, search: search)
-    }
-
-    /// Says that what you are reading has been filtered. A redaction the user cannot see is
-    /// indistinguishable from a container that had no secrets, and someone debugging a missing
-    /// environment variable deserves to know the difference.
-    private var redactionNote: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "eye.slash").font(.caption2)
-            Text("Secrets are redacted. Values shown as `<redacted:…>` are present in the "
-                 + "container but hidden here and in Copy JSON.")
-                .font(.caption2)
-        }
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { Divider() }
-    }
-
-
-    @ViewBuilder
-    private var content: some View {
-        if loading && json == nil {
-            ProgressView("Loading inspect JSON…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error {
-            ContentUnavailableView(
-                "Couldn't inspect this container",
-                systemImage: "exclamationmark.triangle",
-                description: Text(error)
-            )
-        } else if let json {
-            // Same viewer as the machine Inspect tab. These two used to render JSON by different
-            // means — a line list here, plain text there — which is how they drifted in the first
-            // place.
-            JSONTextView(json: json, search: search)
-        }
-    }
-
-    /// Matching lines, for the count beside the filter field. Counted here rather than asked of
-    /// the viewer, which now filters rather than highlights — the two must agree, and the line is
-    /// the unit both work in.
-    private var matchCount: Int {
-        guard let json, !search.isEmpty else { return 0 }
-        return json.split(separator: "\n", omittingEmptySubsequences: false)
-            .count { $0.localizedCaseInsensitiveContains(search) }
-    }
-
-    private func load() async {
-        loading = true
-        error = nil
-        do {
-            // Redacted before it is ever assigned, so nothing unredacted reaches the view, the
-            // search index or the clipboard.
-            //
-            // This is not decoration. `container inspect` includes
-            // `configuration.initProcess.environment`, verified against the live CLI — on nginx
-            // that is PATH and version strings, on Postgres it is POSTGRES_PASSWORD, and on an
-            // application container it is whatever API keys were passed at run time. The panel
-            // was rendering all of it in plain text, and the new Copy JSON button would have
-            // put it on the clipboard in one click. The mockup shows the same field as
-            // `POSTGRES_PASSWORD=••••••`, which is the design telling us this mattered.
-            //
-            // `Redactor.standard` is the one already trusted for support bundles, so the rules
-            // are shared with the surface that has tests behind it rather than reinvented here.
-            json = Self.redactor.redact(try await model.fetchInspectJSON(for: container.id))
-        } catch {
-            self.error = String(describing: error)
-        }
-        loading = false
     }
 }
 

@@ -45,9 +45,15 @@ require Sources/Flotilla/MachineDetailView.swift 'model.lastMachineTab[machine.i
 # and JSON is what you switch to for the raw payload; it was `.json` only because that view
 # existed first. Pinned for the same reason the old value was: a default that drifts back is a
 # regression nobody notices until they open the tab.
-require Sources/Flotilla/MachineDetailView.swift '@State private var presentation: InspectPresentation = .table'
+# One assertion now, not one per screen: the panel is `InspectPane`, shared by the container,
+# machine, volume and network detail screens. It used to be a copy in each of the first two —
+# which is exactly why this check named two files, and why adding volumes and networks would have
+# meant naming four.
+require Sources/Flotilla/InspectPane.swift '@State private var presentation: InspectPresentation = .table'
 require Sources/Flotilla/ContainerDetailView.swift 'model.lastDetailTab[container.id] ?? .overview)'
-require Sources/Flotilla/ContainerDetailView.swift '@State private var presentation: InspectPresentation = .table'
+# The two new detail screens open on Overview, for the same reason the other two do.
+require Sources/Flotilla/VolumeDetailView.swift 'requestedTab ?? .overview'
+require Sources/Flotilla/NetworkDetailView.swift 'requestedTab ?? .overview'
 
 # A detail target that opens pre-populated is always a scaffold: both screens navigate to it.
 for f in Sources/Flotilla/MachinesView.swift Sources/Flotilla/ContainersView.swift; do

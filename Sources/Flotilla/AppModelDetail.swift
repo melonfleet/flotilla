@@ -30,15 +30,29 @@ extension AppModel {
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
+    /// The machine's record, pretty-printed like the other three.
+    ///
+    /// It did not used to be. The machine Inspect tab called `cli.rawMachineInspectJSON` itself
+    /// and skipped `JSONPrettyPrinter`, so the one panel that reached past the model was also the
+    /// one showing JSON in whatever shape the CLI emitted. That is the cost of a view holding its
+    /// own loader: it is one edit away from the convention every sibling follows and nothing says
+    /// so.
+    func fetchMachineInspectJSON(for id: String) async throws -> String {
+        let raw = try await Task.detached { [cli] in try cli.rawMachineInspectJSON(id) }.value
+        return JSONPrettyPrinter.prettyPrint(raw)
+    }
+
     /// Same for a volume and a network. GAP-06: both subcommands were allowlisted from the start
     /// and had no method to call them, so the capability existed and was unreachable.
     ///
-    /// No detail *view* for either, deliberately. `volume inspect` returns the same fields as
-    /// `volume ls`, so a pane would mostly re-present the table it was opened from; what the CLI
-    /// adds is the authoritative record — `options`, `labels`, the on-disk source, and for a
-    /// network the assigned gateway and subnets. A sheet showing that record is the whole value,
-    /// and it reuses the inspector the container and machine panels already use rather than
-    /// inventing a third one.
+    /// **These now back a detail screen, not a sheet** — reversing the note that used to live
+    /// here. The reasoning was that `volume inspect` mostly re-presents `volume ls`, so a pane
+    /// would repeat the table it was opened from and a sheet carrying the authoritative record
+    /// was the whole value. True about the *content*, and beside the point about the shape: it
+    /// made Volumes and Networks the only sections where looking at one thing threw a floating
+    /// window over the list instead of taking you to it, which is the modal/embedded split this
+    /// app settled on 9 August and then kept one exception to. The owner's call, and the right
+    /// one — the exception was the thing that looked wrong, not the content.
     func fetchVolumeInspectJSON(for name: String) async throws -> String {
         let raw = try await Task.detached { [cli] in try cli.rawInspectVolumeJSON(name) }.value
         return JSONPrettyPrinter.prettyPrint(raw)

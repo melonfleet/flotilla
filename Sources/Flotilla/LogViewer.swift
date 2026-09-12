@@ -445,7 +445,7 @@ private final class LiveInbox {
 }
 
 /// One already-tagged, already-coloured line ready for display — shared by the log viewer, the
-/// Inspect tabs and `InspectSheet`, so all of them get the same search/highlight/wrap behaviour
+/// Inspect tabs, so all of them get the same search/highlight/wrap behaviour
 /// from one place.
 struct DisplayLine: Identifiable {
     let id: Int
