@@ -763,7 +763,12 @@ struct VolumesView: View {
             Text((["container"] + ContainerCLI.createVolumeArguments(trimmedName, options: options))
                     .joined(separator: " "))
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+                // Red when the command is refused, like the machine form's preview. It was
+                // `.secondary` unconditionally, so a rejected command looked exactly like an
+                // accepted one — which is how a disabled button ended up with no signal anywhere
+                // on the screen.
+                .foregroundStyle(anyProblem != nil && !trimmedName.isEmpty
+                                 ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -772,6 +777,12 @@ struct VolumesView: View {
 
     private var createFooter: some View {
         HStack {
+            if let unclaimedProblem {
+                Label(unclaimedProblem, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Theme.danger)
+                    .lineLimit(2)
+            }
             Spacer()
             Button("Cancel") { showingCreate = false }
             Button("Create") {
@@ -846,6 +857,15 @@ struct VolumesView: View {
     private var anyProblem: String? {
         problem(in: ContainerCLI.createVolumeArguments(
             trimmedName.isEmpty ? "placeholder" : trimmedName, options: options))
+    }
+
+    /// Why Create is refusing, when no field has claimed it — the same backstop the network form
+    /// carries, and for the same reason: this form validates the whole command to disable the
+    /// button and only two of its fields can explain themselves.
+    private var unclaimedProblem: String? {
+        guard let anyProblem, !trimmedName.isEmpty else { return nil }
+        let claimed = [nameProblem, sizeProblem].compactMap { $0 }
+        return claimed.contains(anyProblem) ? nil : anyProblem
     }
 
     private func problem(in args: [String]) -> String? {

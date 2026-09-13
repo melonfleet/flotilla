@@ -672,6 +672,7 @@ struct NewNetworkView: View {
                               "Your own key=value metadata, carried on the network.",
                               detail: "Up to eight. Nothing reads them but you.",
                               example: "team=infra"),
+                          problem: labelsProblem,
                           optional: true) {
                     keyValueList($newLabels, title: nil, placeholder: "team=infra")
                 }
@@ -681,6 +682,7 @@ struct NewNetworkView: View {
                               "Options passed straight through to the network plugin.",
                               detail: "Up to eight, as key=value. What they mean is the plugin's business.",
                               example: "mtu=1500"),
+                          problem: optionsProblem,
                           optional: true) {
                     keyValueList($newOptions, title: nil, placeholder: "mtu=1500")
                 }
@@ -689,7 +691,10 @@ struct NewNetworkView: View {
                           help: FieldHelp(
                               "Which network plugin backs this network.",
                               detail: "Left empty, `container` uses its default.",
-                              example: "container-network-vmnet"),
+                              example: "container-network-vmnet",
+                              warning: "A plugin **name**, not an option. `mtu=1500` and the like "
+                                  + "belong in Plugin options above."),
+                          problem: pluginProblem,
                           optional: true) {
                     TextField("container-network-vmnet", text: $newPlugin)
                         .textFieldStyle(.roundedBorder)
@@ -708,7 +713,12 @@ struct NewNetworkView: View {
             Text((["container"] + ContainerCLI.createNetworkArguments(trimmedName, options: options))
                     .joined(separator: " "))
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+                // Red when the command is refused, like the machine form's preview. It was
+                // `.secondary` unconditionally, so a rejected command looked exactly like an
+                // accepted one — which is how a disabled button ended up with no signal anywhere
+                // on the screen.
+                .foregroundStyle(anyProblem != nil && !trimmedName.isEmpty
+                                 ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -717,6 +727,14 @@ struct NewNetworkView: View {
 
     private var footer: some View {
         HStack {
+            // Says why, when nothing else does. A disabled button with no explanation anywhere
+            // on the screen is what this form shipped with.
+            if let unclaimedProblem {
+                Label(unclaimedProblem, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Theme.danger)
+                    .lineLimit(2)
+            }
             Spacer()
             Button("Cancel", action: dismiss)
             Button("Create") {
@@ -850,6 +868,47 @@ struct NewNetworkView: View {
         guard let v6 = trimmedSubnetV6 else { return nil }
         return problem(in: ContainerCLI.createNetworkArguments(
             "placeholder", options: .init(subnetV6: v6)))
+    }
+
+    /// The three fields that could refuse a create with nothing to say.
+    ///
+    /// `--plugin` takes a plugin **name**, and the example beside it says so — but the field next
+    /// to it is "Plugin options", which takes `key=value`, and typing `mtu=1500` into the wrong
+    /// one of the two disabled Create with no message anywhere on the screen. Reported exactly
+    /// that way: form filled in, button grey.
+    private var pluginProblem: String? {
+        let value = newPlugin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        return problem(in: ContainerCLI.createNetworkArguments(
+            "placeholder", options: .init(plugin: value)))
+    }
+
+    private var labelsProblem: String? {
+        let values = newLabels.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !values.isEmpty else { return nil }
+        return problem(in: ContainerCLI.createNetworkArguments(
+            "placeholder", options: .init(labels: values)))
+    }
+
+    private var optionsProblem: String? {
+        let values = newOptions.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !values.isEmpty else { return nil }
+        return problem(in: ContainerCLI.createNetworkArguments(
+            "placeholder", options: .init(options: values)))
+    }
+
+    /// Why Create is refusing, when **no field has claimed it**.
+    ///
+    /// The backstop. Every field above validates itself, but `anyProblem` checks the whole
+    /// command, so a combination — or a field added later without its own message — can still
+    /// block the button. Rather than let that be silent, the reason goes beside the button.
+    ///
+    /// Nil when a field is already showing it, so the same sentence is not printed twice.
+    private var unclaimedProblem: String? {
+        guard let anyProblem, !trimmedName.isEmpty else { return nil }
+        let claimed = [nameProblem, subnetProblem, subnetV6Problem,
+                       pluginProblem, labelsProblem, optionsProblem].compactMap { $0 }
+        return claimed.contains(anyProblem) ? nil : anyProblem
     }
 
 
