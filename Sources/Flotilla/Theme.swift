@@ -40,12 +40,21 @@ enum Theme {
     static let canary = dynamic(light: 0xF2C94C, dark: 0xF7D97A)
 
     /// The app tint: selection fills, links, focus rings, prominent buttons.
-    /// `flesh-deep #E63956` on light for contrast, `flesh #FC4A6B` on dark.
-    static let accent = dynamic(light: 0xE93A5F, dark: 0xFC4A6B)
+    ///
+    /// **Now the same hue as the window bar**, on the owner's ask — `#EE7B4D` on light and
+    /// `#FC4A6B` on dark. A highlight that matches the chrome is what makes the two read as one
+    /// app rather than as a coloured strip over someone else's window. Dark keeps the brand
+    /// flesh; light is the bar's orange, so the bar and the selected row are the same colour on
+    /// the screen the owner is looking at.
+    static let accent = dynamic(light: 0xEE7B4D, dark: 0xFC4A6B)
 
     /// Accent *text* — a deeper pink on light, a lighter one on dark, because the fill colour
     /// does not carry enough contrast as small type on either background.
-    static let accentText = dynamic(light: 0xC2185B, dark: 0xFF9BB2)
+    ///
+    /// Light follows the accent's new hue: `#EE7B4D` itself measures about 2.4:1 on the warm
+    /// ground and cannot carry small type, so this is the same orange taken down to a burnt tone
+    /// that can. Dark is unchanged — `#FF9BB2` already reads against a dark window.
+    static let accentText = dynamic(light: 0xB4501F, dark: 0xFF9BB2)
 
     /// The colour for a clickable row name, given whether that row is selected.
     ///
@@ -68,8 +77,8 @@ enum Theme {
 
     /// The wash behind a selected sidebar row. Alpha differs by appearance: the same
     /// translucency that reads as a tint on white disappears against a dark sidebar.
-    static let accentTint = dynamic(light: 0xFC4A6B, dark: 0xFC4A6B,
-                                    lightAlpha: 0.14, darkAlpha: 0.22)
+    static let accentTint = dynamic(light: 0xEE7B4D, dark: 0xFC4A6B,
+                                    lightAlpha: 0.18, darkAlpha: 0.22)
 
     // MARK: State
     //
@@ -117,9 +126,16 @@ enum Theme {
     /// `contentBackground`, which is why it read as part of the content rather than as chrome
     /// however tall it got. `#EE7B4D` on the owner's ask.
     ///
-    /// Light only for now: the dark value is the same hue held back to a depth that does not
-    /// glow against a dark window, not a second trial.
-    static let titleBar = dynamic(light: 0xEE7B4D, dark: 0x7A3C22)
+    /// `#FC4A6B` on dark, on the owner's ask — the brand flesh, which is also what the melon's
+    /// centre is drawn in. So the bar, the highlights and the logo's one warm note are the same
+    /// colour in dark mode.
+    static let titleBar = dynamic(light: 0xEE7B4D, dark: 0xFC4A6B)
+
+    /// What reads on `titleBar`. White on both: `#EE7B4D` and `#FC4A6B` are close enough in
+    /// lightness that one foreground serves both, and the alternative — a dark glyph on light
+    /// and a light one on dark — would make the bar the only surface in the app whose contents
+    /// invert while it does not.
+    static let onTitleBar = Color.white
 
 
     /// Cards, tables and popovers sitting on `contentBackground`. Opaque on purpose — the

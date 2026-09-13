@@ -58,7 +58,7 @@ struct WindowBar: View {
                 .help(railed ? "Show the sidebar labels" : "Collapse the sidebar to icons")
                 .accessibilityLabel(railed ? "Expand sidebar" : "Collapse sidebar to icons")
 
-                Wordmark(size: 17)
+                Wordmark(size: 17, monochrome: Theme.onTitleBar)
                     .fixedSize()          // a lockup, never wrapped
 
                 Spacer(minLength: 12)
@@ -81,6 +81,12 @@ struct WindowBar: View {
             // The bar's own ground — see `Theme.titleBar`. It had none, so it showed the content
             // wash and read as the top of the content rather than as chrome.
             .background(Theme.titleBar)
+            // Every glyph in the bar goes white, through the mechanism that already exists for
+            // exactly this: `IconActionButtonStyle` reads `backgroundProminence` and turns its
+            // icon white when an accent fill is painted behind it — written for selected table
+            // rows, and a coloured bar is the same situation. Reusing it means the bar's buttons
+            // cannot drift from the rule that governs every other icon button in the app.
+            .environment(\.backgroundProminence, .increased)
             Divider()
         }
         // Pull the traffic lights down onto the wordmark's line. See `TrafficLightAligner`.

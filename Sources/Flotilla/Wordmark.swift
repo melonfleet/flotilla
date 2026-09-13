@@ -20,30 +20,53 @@ struct Wordmark: View {
     /// geometry, so the lockup scales as one piece.
     var size: CGFloat = 15
 
+    /// Paints the whole lockup in one colour instead of the brand palette — for the coloured
+    /// window bar, where green-on-orange is a complementary clash and the near-black app name
+    /// reads heavy.
+    ///
+    /// **The melon survives it.** Flattening the `o` to a filled disc would be a different logo:
+    /// the geometry is the identity, which is the lesson this file was rewritten for. So the
+    /// rind, pith, flesh and seeds are still four concentric shapes — drawn in one colour at
+    /// descending opacity, the way a monochrome template icon keeps its structure. The menu-bar
+    /// glyph already does exactly this.
+    var monochrome: Color?
+
     @Environment(\.colorScheme) private var colorScheme
 
     // MARK: Palette — straight from the two SVGs
 
     /// `#1B5E20` on light, `#7CB342` on dark.
     private var melonGreen: Color {
-        colorScheme == .dark
+        if let monochrome { return monochrome }
+        return colorScheme == .dark
             ? Color(red: 0x7C / 255, green: 0xB3 / 255, blue: 0x42 / 255)
             : Color(red: 0x1B / 255, green: 0x5E / 255, blue: 0x20 / 255)
     }
     /// `#241F1A` on light, `#FBF7F0` on dark — the app name.
     private var appInk: Color {
-        colorScheme == .dark
+        if let monochrome { return monochrome }
+        return colorScheme == .dark
             ? Color(red: 0xFB / 255, green: 0xF7 / 255, blue: 0xF0 / 255)
             : Color(red: 0x24 / 255, green: 0x1F / 255, blue: 0x1A / 255)
     }
     /// `#6E675C` on light, `#C7BFB2` on dark. A warm grey rule — **not** the pink accent.
     private var rule: Color {
-        colorScheme == .dark
+        if let monochrome { return monochrome.opacity(0.55) }
+        return colorScheme == .dark
             ? Color(red: 0xC7 / 255, green: 0xBF / 255, blue: 0xB2 / 255)
             : Color(red: 0x6E / 255, green: 0x67 / 255, blue: 0x5C / 255)
     }
-    private let flesh = Color(red: 0xFC / 255, green: 0x4A / 255, blue: 0x6B / 255)
-    private let seedInk = Color(red: 0x24 / 255, green: 0x1F / 255, blue: 0x1A / 255)
+    private var flesh: Color {
+        // Mid-opacity in monochrome, so the flesh still separates from the rind and the pith
+        // and the slice keeps its three rings.
+        monochrome?.opacity(0.62) ?? Color(red: 0xFC / 255, green: 0x4A / 255, blue: 0x6B / 255)
+    }
+    private var seedInk: Color {
+        monochrome ?? Color(red: 0x24 / 255, green: 0x1F / 255, blue: 0x1A / 255)
+    }
+    /// The pith ring — white against the brand palette, and a near-transparent hole in
+    /// monochrome so the rind reads as a ring rather than a solid edge.
+    private var pith: Color { monochrome?.opacity(0.16) ?? .white }
 
     /// Ubuntu Medium when installed, falling back to the system font at the same weight. The
     /// fallback is legible and on-weight; it simply is not the brand face, which is the honest
@@ -95,7 +118,7 @@ struct Wordmark: View {
         let seedSize = CGSize(width: size * (1.1 * 2 / 72), height: size * (1.7 * 2 / 72))
         return ZStack {
             Circle().fill(melonGreen)                                  // rind
-            Circle().fill(.white).frame(width: diameter * (15.4 / 18.5))  // pith
+            Circle().fill(pith).frame(width: diameter * (15.4 / 18.5))    // pith
             Circle().fill(flesh).frame(width: diameter * (13 / 18.5))     // flesh
             // Three seeds: one above centre, two below, per the SVG's coordinates.
             seed(seedSize).offset(y: -diameter * (8 / 37))

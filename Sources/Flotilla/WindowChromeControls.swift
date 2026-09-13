@@ -137,6 +137,13 @@ struct AppLinksMenu: View {
             ToolbarMenuGlyph(systemImage: "square.grid.2x2")
         }
         .menuStyle(.borderlessButton)
+        // **`.tint`, not `.foregroundStyle`.** A borderless `Menu` paints its label with the
+        // app's accent and ignores a foreground set on the label — which went unnoticed while
+        // the accent was pink and the bar was near-white, and became invisible the moment the
+        // accent *became* the bar's colour: an orange glyph on an orange strip. The links button
+        // vanished entirely and the menu still worked, which is the worst way for a control to
+        // fail. Tint is the knob this style actually reads.
+        .tint(Theme.onTitleBar)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Flotilla links")
@@ -163,7 +170,9 @@ private struct ToolbarMenuGlyph: View {
             // the links grid read pink while the gear beside it did not. A `Menu` cannot take
             // `IconActionButtonStyle`, so the rule is mirrored here by hand — and it must stay
             // mirrored: hover speaks through the background fill below, never through the glyph.
-            .foregroundStyle(Color.primary)
+            // Deliberately **not** set here: see the `.tint` on `AppLinksMenu`. A foreground on
+            // this label is overridden by the borderless menu style, so setting one would look
+            // like it decides the colour while the tint quietly does.
             .frame(width: 18, height: 18)
             .padding(3)
             .background(hovering ? Theme.accent.opacity(0.13) : Color.clear,
