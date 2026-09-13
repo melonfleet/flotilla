@@ -130,9 +130,19 @@ public enum SettingsKeys {
         summary: "Default `--memory` (MB) for new containers."
     )
 
+    /// **The summary used to claim something false.** It read "mirrors `[registry] domain`",
+    /// and `container` does have that property — but `container system property` offers only
+    /// `list`, so nothing Flotilla can run will change it. For its whole life this key was
+    /// persisted, shown in Settings as "Default registry", and read by exactly one thing: the
+    /// About page, which displays it. It changed no pull.
+    ///
+    /// It now means what Flotilla can actually deliver: the registry **its own Pull form**
+    /// completes an unqualified reference against. Typing `alpine:latest` in a terminal still
+    /// goes to Docker Hub, because that is the runtime's business; the Registries screen says so
+    /// rather than leaving the smaller claim implied. See `ImageReferenceHost`.
     public static let defaultRegistryDomain = SettingsKey<String>(
         "defaultRegistryDomain", default: "docker.io",
-        summary: "Registry used for unqualified image references (mirrors `[registry] domain`)."
+        summary: "Registry that Flotilla's own Pull form completes an unqualified image reference against. Does not change what the `container` CLI does on its own."
     )
 
     // MARK: Logs

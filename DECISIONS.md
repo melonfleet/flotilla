@@ -797,3 +797,67 @@ fixture in `Fixtures/registries.json` was captured the same way — it had to be
 calls the fields `name`/`id`/`modificationDate` while the table header says `HOSTNAME` and
 `MODIFIED`, and a decoder written from the printed output would have shown an empty table to
 anyone with logins.
+
+### Q20 amended — the registry screen becomes a form, and the default becomes real (2026-09-13)
+
+The owner used the first version, hit a bug, and asked for a redesign. Both halves are recorded
+here because both changed a decision above.
+
+**The bug: Docker Hub is three hostnames.** Signing in to `docker.io` put the credential under
+`registry-1.docker.io`, so the Docker Hub row still read "Not signed in" while a second row
+appeared at the bottom, for the same account, marked "not in your list". GHCR has no such rewrite,
+which is what made it look like a Docker Hub problem rather than a matching problem.
+`KnownRegistry.canonicalHost` folds the three spellings; Sign Out names the host the credential is
+*stored* under, or it would report success and leave the login in place. Nothing else is aliased —
+`gcr.io` and `us.gcr.io` are different registries.
+
+**Two accounts on one registry is not possible, and the UI no longer implies it.** Measured: two
+`registry login` calls to one host leave **one** credential, the second replacing the first,
+because the store is keyed by hostname. The owner asked for multiple accounts per registry; it
+cannot be built, so the row shows who you are signed in as and offers **Switch…**, which is
+simply signing in again. That is what the runtime does anyway — the button names it rather than
+hiding it behind a sign-out-then-sign-in dance that would achieve the same thing in two steps.
+
+**The Add form asks for a *kind*, not a row.** The first version's picker offered "catalogue
+entries not already in your list", which on any install is empty: every registry with a fixed
+hostname is always listed and is never something you add. `RegistryKind` is the honest axis — the
+registries people add (Amazon ECR, Azure, Google Artifact Registry, Harbor, JFrog, Gitea, a
+self-managed GitLab, a bare `registry:2`) have no fixed host, and what they share is *how you
+authenticate to that family*. That is what the rail teaches, and the picker only offers kinds
+where `hostIsFixed` is false, so a choice that could only produce a duplicate is not offered.
+
+Per-family guidance now lives on the kind, and a row overrides it only where a specific host
+differs. `credentialHint` and `tokenURL` return nil when `hasAccounts` is false — caught by a
+test, because `registry.access.redhat.com` has no sign-in and is nonetheless of kind `.redHat`,
+so it had inherited Red Hat's service-account page and would have offered "Create a token…" for a
+registry that takes no credential.
+
+**The Add screen is embedded, not a sheet.** As a sheet it rendered about 400pt wide, under
+`FormScaffold`'s 1000pt rail threshold — so the rail, which is the entire point, did not appear.
+Embedded is also what New Volume and New Network do, per the 9 August modal-versus-embedded
+decision, so the Registries tab supplies its own container instead of being wrapped in Settings'
+grouped `Form`.
+
+**`defaultRegistryDomain` now does something.** It had been persisted since the beginning, shown
+in Resources as "Default registry", and read by exactly one thing: the About page, which
+*displays* it. Its summary claimed it "mirrors `[registry] domain`" — `container` does have that
+property, and `container system property` offers only `list`, so nothing Flotilla can run will
+change it. A control that stores a value and alters nothing is the defect class this project keeps
+deleting, and Settings had one of its own.
+
+It now means what Flotilla can actually deliver: **the registry its own Pull form completes an
+unqualified reference against.** `ImageReferenceHost` owns that, and the screen states the
+smaller claim rather than implying the larger one — a bare name typed in a terminal still goes to
+Docker Hub. Docker Hub is deliberately never rewritten even when it is the chosen default,
+because the CLI already completes `nginx` to `docker.io/library/nginx:latest` including the
+`library/` namespace that only Docker Hub has; prefixing `docker.io/nginx` ourselves would name
+an image that does not exist. The setting moved from Resources to Registries, beside the list of
+registries it can name.
+
+**The account name shape was wrong, and it shipped.** `--username` was `.identifier`, which
+refused half the account names registries actually issue: Red Hat's `12345678|name`, Quay's
+`org+robot`, Harbor's `robot$name`, Google's `_json_key`, and any email address.
+`.registryUsername` accepts those and still refuses anything that could change the command's
+meaning. It is classified **free-form**, so the audit line redacts the account while keeping the
+registry — which removed a hand-built error string that had been routing around the same problem
+in one `throw` instead of fixing it at the source.

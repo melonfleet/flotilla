@@ -37,7 +37,9 @@ final class RegistryStore {
             return KnownRegistry(id: host,
                                  name: entry["name"].flatMap { $0.isEmpty ? nil : $0 } ?? host,
                                  summary: entry["summary"] ?? "",
-                                 isUserAdded: true)
+                                 isUserAdded: true,
+                                 kind: entry["kind"].flatMap(RegistryKind.init(rawValue:)),
+                                 usesHTTP: entry["scheme"] == "http")
         }
         book = RegistryBook(userAdded: added)
     }
@@ -47,9 +49,11 @@ final class RegistryStore {
     var all: [KnownRegistry] { book.all }
 
     @discardableResult
-    func add(host: String, name: String, summary: String = "") -> KnownRegistry? {
+    func add(host: String, name: String, summary: String = "",
+             kind: RegistryKind? = nil, usesHTTP: Bool = false) -> KnownRegistry? {
         do {
-            let registry = try book.add(host: host, name: name, summary: summary)
+            let registry = try book.add(host: host, name: name, summary: summary,
+                                        kind: kind, usesHTTP: usesHTTP)
             persist()
             return registry
         } catch {
@@ -70,7 +74,8 @@ final class RegistryStore {
     private func persist() {
         guard let defaults else { return }
         defaults.set(book.userAdded.map {
-            ["host": $0.id, "name": $0.name, "summary": $0.summary]
+            ["host": $0.id, "name": $0.name, "summary": $0.summary,
+             "kind": $0.kind.rawValue, "scheme": $0.usesHTTP ? "http" : "https"]
         }, forKey: Self.key)
     }
 }

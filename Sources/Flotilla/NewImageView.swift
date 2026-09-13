@@ -38,6 +38,10 @@ struct NewImageView: View {
 
     // Pull
     @State private var reference = ""
+    /// Which registry an unqualified reference is completed against. Seeded from the user's
+    /// default on the Registries screen and changeable per pull, because "usually GHCR, this
+    /// once from Docker Hub" is an ordinary thing to want and changing a setting to do it is not.
+    @State private var registry = ""
     /// HTTPS unless someone changes it, every time the form opens. Deliberately **not**
     /// remembered: a persisted "use plaintext" would apply to the next pull from a public
     /// registry too, and the one thing worse than no HTTP support is HTTP nobody asked for.
@@ -104,7 +108,15 @@ struct NewImageView: View {
                 footer
             }
         }
-        .onAppear { edits.open(editSignature) }
+        .onAppear {
+            edits.open(editSignature)
+            // Seeded once, on open. Held in `@State` rather than read live so changing it for
+            // one pull does not rewrite the user's default — "usually GHCR, this once from
+            // Docker Hub" is an ordinary thing to want.
+            if registry.isEmpty {
+                registry = model.settingsStore[SettingsKeys.defaultRegistryDomain]
+            }
+        }
     }
 
     // MARK: Fields
@@ -137,6 +149,19 @@ struct NewImageView: View {
         }
     }
 
+    /// The catalogue and the user's own additions — what the picker offers.
+    private var registries: [KnownRegistry] { model.registries.all }
+
+    private var selectedRegistry: KnownRegistry? {
+        registries.first { KnownRegistry.canonicalHost($0.id) == KnownRegistry.canonicalHost(registry) }
+    }
+
+    /// The reference that will actually be pulled. Shown in the preview and sent on submit, so
+    /// the two cannot disagree.
+    private var qualifiedReference: String {
+        ImageReferenceHost.qualify(reference, with: registry)
+    }
+
     @ViewBuilder
     private var pullFields: some View {
         FormField("Reference",
@@ -156,16 +181,41 @@ struct NewImageView: View {
         }
 
         // An action, so it stays in the column rather than moving to the rail with the help.
-        Link(destination: URL(string: "https://hub.docker.com/search?image_filter=official")!) {
-            Label("Browse Docker Hub", systemImage: "arrow.up.right.square")
-                .font(.callout)
+        //
+        // **It follows the registry picker now.** It was hardcoded to Docker Hub's search, which
+        // was wrong the moment you were pulling from anywhere else — and the owner asked for
+        // exactly that. Absent where the registry has no browse page: `registry.k8s.io` genuinely
+        // has none, and a link to nothing is worse than no link.
+        if let url = selectedRegistry?.browseURL.flatMap(URL.init(string:)) {
+            Link(destination: url) {
+                Label("Browse \(selectedRegistry?.name ?? "registry")",
+                      systemImage: "arrow.up.right.square")
+                    .font(.callout)
+            }
+            // `Link` draws in the system accent, which made this the one blue thing in an app
+            // whose links are all brand pink. Same reason `Theme.rowName` exists.
+            .foregroundStyle(Theme.accentText)
         }
-        // `Link` draws in the system accent, which made this the one blue thing in an app whose
-        // links are all brand pink. Same reason `Theme.rowName` exists.
-        .foregroundStyle(Theme.accentText)
 
         FormSectionHeader(title: "Registry",
-                          note: "How Flotilla reaches it. Almost always the default.")
+                          note: "Where it comes from, and how Flotilla reaches it.")
+
+        FormField("Pull from",
+                  help: FieldHelp(
+                      "Which registry completes a bare name.",
+                      detail: "A reference that already names a host ignores this — "
+                          + "`quay.io/prometheus/busybox` comes from Quay whatever is picked "
+                          + "here. Docker Hub is left to the CLI, which adds the `library/` "
+                          + "namespace that only it has.",
+                      example: "myapp:1.0 + GitHub\n  → ghcr.io/myapp:1.0")) {
+            Picker("", selection: $registry) {
+                ForEach(registries) { entry in
+                    Text(entry.name).tag(entry.id)
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 280)
+        }
 
         FormField("Connect using",
                   help: FieldHelp(
@@ -315,6 +365,13 @@ struct NewImageView: View {
     // MARK: Validation and actions
 
     private var trimmedReference: String { reference.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// **Everything downstream uses this, not `trimmedReference`.** The validation, the preview
+    /// and the command that actually runs must all be about the same string, or the form would
+    /// validate one reference, display a second and pull a third.
+    private var effectiveReference: String {
+        ImageReferenceHost.qualify(trimmedReference, with: registry)
+    }
     private var trimmedDockerfile: String { dockerfile.trimmingCharacters(in: .whitespaces) }
     private var trimmedTag: String { tag.trimmingCharacters(in: .whitespaces) }
 
@@ -322,7 +379,7 @@ struct NewImageView: View {
     private var referenceProblem: String? {
         guard !trimmedReference.isEmpty else { return nil }
         if case .failure(let error) = Allowlist.validate(
-            ContainerCLI.pullArguments(trimmedReference, scheme: scheme)) {
+            ContainerCLI.pullArguments(effectiveReference, scheme: scheme)) {
             return error.description
         }
         return nil
@@ -353,7 +410,7 @@ struct NewImageView: View {
         switch mode {
         case .pull:
             let argv = ContainerCLI.pullArguments(
-                trimmedReference.isEmpty ? "<reference>" : trimmedReference, scheme: scheme)
+                trimmedReference.isEmpty ? "<reference>" : effectiveReference, scheme: scheme)
             return (["container"] + argv).joined(separator: " ")
         case .build:
             guard context != nil else { return "Choose a context folder to build the command." }
@@ -391,7 +448,7 @@ struct NewImageView: View {
             // so the image that was just pulled is present the moment the list appears. On
             // failure the form stays put with the reference intact: the likeliest cause is a
             // typo in it.
-            let wanted = trimmedReference
+            let wanted = effectiveReference
             let using = scheme
             Task {
                 if await model.pullImage(wanted, scheme: using) { dismiss() }

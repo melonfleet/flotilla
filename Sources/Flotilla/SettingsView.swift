@@ -334,18 +334,28 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func pane(for tab: Tab) -> some View {
-        Form {
-            switch tab {
-            case .general: generalPane
-            case .resources: resourcesPane
-            case .tags: TagManagerPane(model: model, store: model.tags)
-            case .registries: RegistriesPane(model: model, store: model.registries)
-            case .updates: updatesPane
-            case .advanced: advancedPane
+        // **Registries is not wrapped in the `Form`, and that is not an inconsistency.** Its Add
+        // screen is a real form with the guidance rail — the same shape as New Volume and New
+        // Network — and those are *embedded screens that replace the list*, per the 9 August
+        // modal-versus-embedded decision. A form nested inside a grouped `Form` is neither, and
+        // as a sheet it came out ~400pt wide, which is under `FormScaffold`'s rail threshold: the
+        // rail simply did not appear, which is the entire point of the screen. So this tab
+        // supplies its own container and swaps it for the form.
+        if case .registries = tab {
+            RegistriesPane(model: model, store: model.registries)
+        } else {
+            Form {
+                switch tab {
+                case .general: generalPane
+                case .resources: resourcesPane
+                case .tags: TagManagerPane(model: model, store: model.tags)
+                case .updates: updatesPane
+                case .advanced: advancedPane
+                case .registries: EmptyView()   // handled above
+                }
             }
-        }
-        .formStyle(.grouped)
-        // Lets the app's own content wash through. A grouped `Form` paints an opaque background
+            .formStyle(.grouped)
+            // Lets the app's own content wash through. A grouped `Form` paints an opaque background
         // of its own, so Settings was the one screen in the app that did not sit on the honeydew
         // every other section sits on — white page, grey cards, against honeydew page and white
         // cards everywhere else.
@@ -356,7 +366,8 @@ struct SettingsView: View {
         // looks like it is doing something. The rows read very slightly recessed against the
         // page rather than raised, which is SwiftUI's relationship and not one this can change
         // from here.
-        .scrollContentBackground(.hidden)
+            .scrollContentBackground(.hidden)
+        }
     }
 
     // MARK: General
@@ -466,14 +477,10 @@ struct SettingsView: View {
                 SettingRow(store: store, key: SettingsKeys.defaultContainerMemoryMB, title: "Memory") { binding in
                     Stepper(value: binding, in: 128...131_072, step: 128) { Text("\(binding.wrappedValue) MB") }
                 }
-                SettingRow(store: store, key: SettingsKeys.defaultRegistryDomain, title: "Default registry") { binding in
-                    // Empty title so no stray label appears, and a prompt so an emptied field
-                    // says what happens next rather than sitting blank — clearing this one falls
-                    // back to `docker.io`, which is the registry key's own default.
-                    TextField("", text: binding, prompt: Text("docker.io"))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder).frame(minWidth: 180)
-                }
+                // "Default registry" used to live here as a free-text field. It is on the
+                // Registries pane now, where the list of registries it can name actually is —
+                // the owner's call, and it was the right one: a text box that had to be typed
+                // correctly sat two tabs away from the screen holding every valid answer.
             }
 
     }

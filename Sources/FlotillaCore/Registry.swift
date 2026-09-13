@@ -84,6 +84,21 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     /// Whether the user added this themselves, as opposed to it being in the built-in catalogue.
     public let isUserAdded: Bool
 
+    /// Which family this registry belongs to. The credential guidance and the token link come
+    /// from here rather than being repeated per row — a self-hosted Harbor and the Harbor in
+    /// somebody's catalogue authenticate identically, and two copies of that text would drift.
+    public let kind: RegistryKind
+
+    /// Whether this registry is reached over plain HTTP.
+    ///
+    /// **Remembered per registry, unlike the Pull form's one-off switch**, and the difference is
+    /// deliberate. That one resets every time because choosing plaintext for a public registry
+    /// by accident is the failure worth preventing. This one is a property *of a specific
+    /// registry the user added*: a development registry with no TLS today will not have any
+    /// tomorrow, and making someone re-assert it on every sign-in is how they stop reading the
+    /// warning. Built-in registries are all HTTPS and cannot set it.
+    public let usesHTTP: Bool
+
     /// Where, in a browser, you create the token this registry wants as a password.
     ///
     /// **This is as close to a browser sign-in as the runtime allows**, and it is worth being
@@ -104,7 +119,15 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     /// Every URL here was checked to resolve before it shipped. The ones that answer `302` do so
     /// by redirecting to *their own* sign-in with a `returnTo` back to the same path, which is
     /// what proves the path exists.
-    public let tokenURL: String?
+    private let ownTokenURL: String?
+    /// The family's token page, unless this row names its own — and **nothing at all** when
+    /// this registry has no accounts.
+    ///
+    /// That last guard is not belt-and-braces: `registry.access.redhat.com` has no sign-in and
+    /// is nonetheless of kind `.redHat`, so without it the row inherited Red Hat's service-account
+    /// page and would have offered "Create a token…" for a registry that takes no credential.
+    /// Caught by the test that pins the two sets against each other.
+    public var tokenURL: String? { hasAccounts ? (ownTokenURL ?? kind.tokenURL) : nil }
 
     /// Where to browse or search this registry's images, if it has such a page.
     ///
@@ -113,7 +136,8 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     /// `registry.k8s.io` genuinely has none, only a repository README.
     public let browseURL: String?
 
-    /// What to put in the two fields, in this registry's own terms.
+    /// What to put in the two fields. Defaults to the family's wording — see `RegistryKind` —
+    /// and is overridden only where a specific host differs from its family.
     ///
     /// **Plain prose, no backticks and no asterisks.** These reach the view as a `String`
     /// variable, and SwiftUI's `Text` parses Markdown only in a string *literal* — so the syntax
@@ -123,13 +147,20 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     /// that tail monospaced. Shown in the sign-in sheet,
     /// because "username and password" is wrong for most of them — GHCR wants a GitHub username
     /// and a `read:packages` token, and someone typing their GitHub password will simply fail.
-    public let credentialHint: String?
+    private let ownCredentialHint: String?
+    /// The family's wording, unless this row names its own. Nil where there is no account —
+    /// see `tokenURL`.
+    public var credentialHint: String? {
+        hasAccounts ? (ownCredentialHint ?? kind.credentialHint) : nil
+    }
 
     public init(id: String, name: String, summary: String,
                 anonymousPullWorks: Bool = false,
                 hasAccounts: Bool = true,
                 isImplicitDefault: Bool = false,
                 isUserAdded: Bool = false,
+                kind: RegistryKind? = nil,
+                usesHTTP: Bool = false,
                 tokenURL: String? = nil,
                 browseURL: String? = nil,
                 credentialHint: String? = nil) {
@@ -140,9 +171,13 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
         self.hasAccounts = hasAccounts
         self.isImplicitDefault = isImplicitDefault
         self.isUserAdded = isUserAdded
-        self.tokenURL = tokenURL
+        // Inferred from the host when the caller does not say, so a registry restored from a
+        // plist written before kinds existed still gets the right guidance.
+        self.kind = kind ?? RegistryKind.inferred(fromHost: id)
+        self.usesHTTP = usesHTTP
+        self.ownTokenURL = tokenURL
         self.browseURL = browseURL
-        self.credentialHint = credentialHint
+        self.ownCredentialHint = credentialHint
     }
 
     /// The registries offered out of the box.
@@ -158,20 +193,17 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                       // Straight to the create form, not the list. Verified to exist (302 to
                       // Docker's own login with a returnTo back to this path).
                       tokenURL: "https://app.docker.com/settings/personal-access-tokens/create",
-                      browseURL: "https://hub.docker.com/search",
-                      credentialHint: "Your Docker ID, and a personal access token — not your account password. Public images pull without signing in; a token mainly raises your rate limit."),
+                      browseURL: "https://hub.docker.com/search"),
         KnownRegistry(id: "ghcr.io", name: "GitHub Container Registry",
                       summary: "Images published from GitHub repositories. Apple's own builder image lives here.",
                       // The `scopes` and `description` parameters pre-fill GitHub's own form, so
                       // the page opens with the right scope already ticked.
                       tokenURL: "https://github.com/settings/tokens/new?scopes=read:packages&description=Flotilla",
-                      browseURL: "https://github.com/search?type=registrypackages",
-                      credentialHint: "Your GitHub username, and a classic personal access token with only the read:packages scope — GHCR does not accept fine-grained tokens, and a GitHub password will not work. Public images pull without signing in. Do not tick write:packages: Flotilla never pushes, and GitHub adds the repo scope — full control of private repositories — along with it."),
+                      browseURL: "https://github.com/search?type=registrypackages"),
         KnownRegistry(id: "quay.io", name: "Quay",
                       summary: "Red Hat's public registry.",
                       tokenURL: "https://docs.quay.io/glossary/robot-accounts.html",
-                      browseURL: "https://quay.io/search",
-                      credentialHint: "A robot account name and its token, or your Quay username and CLI password from Account Settings. Public repositories pull without signing in."),
+                      browseURL: "https://quay.io/search"),
         // No accounts at all: Microsoft's public distribution endpoint. Measured — `/v2/`
         // answers 200 rather than 401, so there is not even a token step. Do not confuse it
         // with Azure Container Registry, which is a different product on a different host.
@@ -184,10 +216,7 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
         KnownRegistry(id: "public.ecr.aws", name: "Amazon ECR Public",
                       summary: "Amazon's public gallery. Private ECR is per-account — add it below.",
                       anonymousPullWorks: true,
-                      browseURL: "https://gallery.ecr.aws/",
-                      credentialHint: "Public images need no account; signing in only raises "
-                        + "your pull rate limit. The username is AWS; for the password "
-                        + "run:\n\naws ecr-public get-login-password --region us-east-1"),
+                      browseURL: "https://gallery.ecr.aws/"),
         KnownRegistry(id: "registry.k8s.io", name: "Kubernetes",
                       summary: "Official Kubernetes images. There is no account and no sign-in.",
                       anonymousPullWorks: true, hasAccounts: false),
@@ -196,8 +225,7 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                       // The `legacy/new` form takes a `scopes` parameter, so this opens with
                       // `read_registry` already ticked — the same trick as the GitHub link.
                       tokenURL: "https://gitlab.com/-/user_settings/personal_access_tokens/legacy/new?scopes=read_registry",
-                      browseURL: "https://gitlab.com/explore/projects",
-                      credentialHint: "Your GitLab username, and a personal access token with the read_registry scope. Public projects pull without signing in."),
+                      browseURL: "https://gitlab.com/explore/projects"),
         KnownRegistry(id: "registry.redhat.io", name: "Red Hat Registry",
                       summary: "Red Hat's authenticated registry; needs a Red Hat account.",
                       tokenURL: "https://access.redhat.com/terms-based-registry/",
@@ -345,7 +373,9 @@ public struct RegistryBook: Sendable, Equatable {
 
     @discardableResult
     public mutating func add(host rawHost: String, name rawName: String,
-                             summary: String = "") throws -> KnownRegistry {
+                             summary: String = "",
+                             kind: RegistryKind? = nil,
+                             usesHTTP: Bool = false) throws -> KnownRegistry {
         let host = try normalised(host: rawHost)
         let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         // Falls back to the host rather than refusing: the name is for recognising the row, and
@@ -354,7 +384,7 @@ public struct RegistryBook: Sendable, Equatable {
         let name = trimmed.isEmpty ? host : trimmed
         let registry = KnownRegistry(id: host, name: name,
                                      summary: summary.trimmingCharacters(in: .whitespacesAndNewlines),
-                                     isUserAdded: true)
+                                     isUserAdded: true, kind: kind, usesHTTP: usesHTTP)
         userAdded.append(registry)
         return registry
     }

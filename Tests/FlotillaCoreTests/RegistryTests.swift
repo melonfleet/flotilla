@@ -414,3 +414,88 @@ extension RegistryCredentialTests {
         #expect(validated.arguments.contains("12345678|flotilla"))
     }
 }
+
+/// Completing an unqualified reference against the chosen registry — the behaviour that turns
+/// `defaultRegistryDomain` from a stored value nothing read into a setting that does something.
+@Suite("Image reference hosts")
+struct ImageReferenceHostTests {
+
+    /// The rule is not "does it contain a slash": `owner/app` is a Docker Hub reference with no
+    /// host, and treating the first segment as one would make every namespaced image unpullable.
+    @Test("a first segment is a host only when it looks like one")
+    func hostDetection() {
+        for withHost in ["ghcr.io/owner/app", "localhost:5000/app", "registry.example.com/x",
+                         "192.168.1.5:5000/app", "quay.io/prometheus/busybox"] {
+            #expect(ImageReferenceHost.hasRegistryHost(withHost),
+                    Comment(rawValue: "missed the host in \(withHost)"))
+        }
+        for without in ["nginx", "nginx:alpine", "owner/app", "library/nginx:latest",
+                        "myteam/app:1.2.3", "alpine@sha256:abc"] {
+            #expect(!ImageReferenceHost.hasRegistryHost(without),
+                    Comment(rawValue: "invented a host in \(without)"))
+        }
+    }
+
+    /// Docker Hub is left entirely alone. The CLI completes `nginx` to
+    /// `docker.io/library/nginx:latest` — including the `library/` namespace that only Docker Hub
+    /// has — and prefixing `docker.io/nginx` ourselves would name an image that does not exist.
+    @Test("Docker Hub references are never rewritten")
+    func dockerHubIsLeftAlone() {
+        for spelling in ["docker.io", "registry-1.docker.io", "index.docker.io"] {
+            #expect(ImageReferenceHost.qualify("nginx", with: spelling) == "nginx")
+            #expect(ImageReferenceHost.qualify("owner/app:1", with: spelling) == "owner/app:1")
+        }
+    }
+
+    /// Everywhere else the prefix is exactly the host — no namespace insertion, because no other
+    /// registry has Docker Hub's implicit one.
+    @Test("another registry prefixes the host and nothing more")
+    func otherRegistriesArePrefixed() {
+        #expect(ImageReferenceHost.qualify("owner/app:1.2", with: "ghcr.io")
+                == "ghcr.io/owner/app:1.2")
+        #expect(ImageReferenceHost.qualify("app", with: "registry.internal:5000")
+                == "registry.internal:5000/app")
+        // Case-folded, like every other host in this app.
+        #expect(ImageReferenceHost.qualify("app", with: "GHCR.IO") == "ghcr.io/app")
+    }
+
+    /// A reference that already names a registry is authoritative. Overriding it would silently
+    /// pull a different image than the one written down.
+    @Test("an explicit host always wins")
+    func explicitHostWins() {
+        #expect(ImageReferenceHost.qualify("quay.io/prometheus/busybox", with: "ghcr.io")
+                == "quay.io/prometheus/busybox")
+        #expect(ImageReferenceHost.qualify("localhost:5000/app", with: "ghcr.io")
+                == "localhost:5000/app")
+    }
+
+    @Test("empty inputs change nothing")
+    func emptyInputs() {
+        #expect(ImageReferenceHost.qualify("", with: "ghcr.io") == "")
+        #expect(ImageReferenceHost.qualify("nginx", with: "") == "nginx")
+        #expect(ImageReferenceHost.resolvedHost("", default: "ghcr.io") == nil)
+    }
+
+    /// What the preview says the pull will actually contact.
+    @Test("the resolved host is what will really be fetched from")
+    func resolvedHost() {
+        #expect(ImageReferenceHost.resolvedHost("nginx", default: "docker.io") == "docker.io")
+        #expect(ImageReferenceHost.resolvedHost("nginx", default: "ghcr.io") == "ghcr.io")
+        #expect(ImageReferenceHost.resolvedHost("quay.io/x/y", default: "ghcr.io") == "quay.io")
+        // A host-less reference under a Docker Hub default still resolves to Docker Hub, even
+        // though the string was not rewritten.
+        #expect(ImageReferenceHost.resolvedHost("owner/app", default: "docker.io") == "docker.io")
+    }
+
+    /// Whatever `qualify` produces must be something the allowlist will actually accept, or the
+    /// form would build a command the executor refuses.
+    @Test("a qualified reference is still a valid image reference")
+    func qualifiedReferencesStayValid() {
+        for (reference, registry) in [("nginx", "ghcr.io"), ("owner/app:1.2", "ghcr.io"),
+                                      ("app", "registry.internal:5000"), ("nginx", "docker.io")] {
+            let qualified = ImageReferenceHost.qualify(reference, with: registry)
+            #expect(Allowlist.accepts(qualified, as: .imageReference),
+                    Comment(rawValue: "allowlist refuses \(qualified)"))
+        }
+    }
+}

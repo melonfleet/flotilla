@@ -97,6 +97,22 @@ struct RegistriesPane: View {
     }
 
     var body: some View {
+        // Embedded, not modal — the same choice New Volume and New Network make, and for the
+        // same reason: a form with a guidance rail needs the width, and a sheet inside the
+        // Settings pane does not have it.
+        Group {
+            if showingAdd {
+                AddRegistryView(model: model, store: store) { showingAdd = false }
+            } else {
+                Form { sections }
+                    .formStyle(.grouped)
+                    .scrollContentBackground(.hidden)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sections: some View {
         SwiftUI.Section {
             ForEach(rows) { row in
                 registryRow(row)
@@ -125,6 +141,32 @@ struct RegistriesPane: View {
         }
 
         SwiftUI.Section {
+            Picker("Default registry", selection: Binding(
+                get: { model.settingsStore[SettingsKeys.defaultRegistryDomain] },
+                set: { try? model.settingsStore.set($0, for: SettingsKeys.defaultRegistryDomain) }
+            )) {
+                ForEach(rows) { row in
+                    Text("\(row.name) — \(row.id)").tag(row.id)
+                }
+            }
+        } header: {
+            Text("Default")
+        } footer: {
+            // **The smaller claim, said out loud.** `container` has a `[registry] domain`
+            // property, but `container system property` offers only `list` — nothing Flotilla
+            // can run will change it. So this is Flotilla's own default, and pretending
+            // otherwise would put the app back where it was: a control that stores a value and
+            // alters nothing.
+            Text("Which registry Flotilla's own Pull form completes a bare name against — type "
+                 + "myapp:1.0 and it becomes that registry's. It does not change what the "
+                 + "container CLI does on its own: a bare name typed in a terminal still comes "
+                 + "from Docker Hub.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        SwiftUI.Section {
             HStack {
                 Button("Add Registry…") { showingAdd = true }
                 Spacer()
@@ -147,9 +189,6 @@ struct RegistriesPane: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .task { await reload() }
-        .sheet(isPresented: $showingAdd) {
-            AddRegistrySheet(store: store) { showingAdd = false }
-        }
         .sheet(item: $signIn) { row in
             SignInSheet(model: model, row: row) { error in
                 signIn = nil
@@ -210,8 +249,16 @@ struct RegistriesPane: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(row.name).font(.system(size: 13, weight: .medium))
-                    if row.known?.isImplicitDefault == true {
+                    // Two different facts, and they were one badge. `isImplicitDefault` is
+                    // what the **runtime** resolves a bare name to and is not configurable;
+                    // "default" here is the registry **Flotilla's** own forms complete against,
+                    // which is. Showing one badge for both would have claimed the setting
+                    // changes the runtime, which is the overclaim this whole screen avoids.
+                    if row.id == defaultRegistry {
                         badge("default")
+                    }
+                    if row.known?.isImplicitDefault == true, row.id != defaultRegistry {
+                        badge("CLI default")
                     }
                     if row.isUserAdded { badge("yours") }
                     if row.known == nil { badge("not in your list") }
@@ -232,6 +279,16 @@ struct RegistriesPane: View {
                 status(row)
                 HStack(spacing: 6) {
                     if row.isSignedIn {
+                        // **Switching accounts is signing in again**, not signing out first.
+                        // Measured: `container registry login` twice for one host leaves one
+                        // credential — the second replaces the first — because the store is
+                        // keyed by hostname. So there is no two-step dance to build, and no
+                        // second account to hold: one registry, one signed-in account, and this
+                        // button is how you change which.
+                        Button("Switch…") { signIn = row }
+                            .disabled(!model.runtimeUsable)
+                            .help("Sign in as a different account. "
+                                  + "\(row.name) holds one account at a time.")
                         Button("Sign Out") { pendingSignOut = row }
                     } else if row.canSignIn {
                         Button("Sign In…") { signIn = row }
@@ -289,6 +346,10 @@ struct RegistriesPane: View {
         }
     }
 
+    private var defaultRegistry: String {
+        model.settingsStore[SettingsKeys.defaultRegistryDomain]
+    }
+
     private func badge(_ text: String) -> some View {
         Text(text)
             .font(.caption2).fixedSize()
@@ -302,65 +363,6 @@ struct RegistriesPane: View {
         loading = true
         logins = await model.registryLogins()
         loading = false
-    }
-}
-
-/// Adding a registry to the list. Says why it is refusing while you type.
-struct AddRegistrySheet: View {
-    let store: RegistryStore
-    let dismiss: () -> Void
-
-    @State private var host = ""
-    @State private var name = ""
-
-    private var problem: String? {
-        host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? nil : store.book.problem(withHost: host)
-    }
-    private var canAdd: Bool {
-        !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && problem == nil
-    }
-
-    var body: some View {
-        ModalCard(title: "Add Registry", onClose: dismiss) {
-            VStack(alignment: .leading, spacing: 14) {
-                field("Server", placeholder: "registry.example.com:5000", text: $host,
-                      monospaced: true)
-                if let problem {
-                    Text(problem).font(.caption).foregroundStyle(Theme.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text("The host only — no scheme such as https://, and no repository path.")
-                    .font(.caption).foregroundStyle(.secondary)
-
-                field("Name", placeholder: "Optional", text: $name, monospaced: false)
-                Text("What to call it in the list. Defaults to the server name.")
-                    .font(.caption).foregroundStyle(.secondary)
-
-                HStack {
-                    Spacer()
-                    Button("Cancel", action: dismiss).keyboardShortcut(.cancelAction)
-                    Button("Add") {
-                        store.add(host: host, name: name)
-                        dismiss()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canAdd)
-                }
-            }
-            .frame(width: 360)
-            .padding(16)
-        }
-    }
-
-    private func field(_ label: String, placeholder: String,
-                       text: Binding<String>, monospaced: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
-            TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
-                .font(monospaced ? .system(size: 12, design: .monospaced) : nil)
-        }
     }
 }
 
@@ -378,8 +380,18 @@ struct SignInSheet: View {
 
     @State private var username = ""
     @State private var password = ""
-    @State private var plaintext = false
+    @State private var plaintext: Bool
     @State private var working = false
+
+    init(model: AppModel, row: RegistryRow, finish: @escaping (String?) -> Void) {
+        self.model = model
+        self.row = row
+        self.finish = finish
+        // Seeded from the registry rather than always false: a registry the user added as HTTP
+        // is HTTP every time, and making them re-assert it on each sign-in is how a warning
+        // stops being read.
+        _plaintext = State(initialValue: row.known?.usesHTTP ?? false)
+    }
 
     private var canSubmit: Bool {
         !working && !username.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty
