@@ -194,10 +194,18 @@ struct LogsView: View {
             // How the feed is *drawn* — wrapping, and whether the Received column shows.
             // Beside the other two popovers rather than in the trailing cluster, because those
             // are the things you do to the feed and these are things you do to the view of it.
-            // `textformat`, not `text.alignleft`: that is the scope picker's own "Output" glyph,
-            // two controls to the left, and two identical icons in one band is two controls
-            // nobody can tell apart.
-            IconActionButton(systemImage: "textformat", label: "Display",
+            // `gearshape`, the owner's call. It was `textformat` (Aa), which named the *kind*
+            // of thing behind the button rather than what it is — and the two switches in there
+            // are not both about type: wrapping is, the timestamp column is not. A gear says
+            // "options for this view", which is what it actually holds.
+            //
+            // Not confusable with the window bar's own Settings gear: that one lives in the
+            // title bar at the far right of the window, on a coloured ground, and this sits in
+            // the section's control band with the section's other controls. It is also distinct
+            // from everything beside it here — neither the scope picker's `text.alignleft`, the
+            // Lines list nor the Sources filter reads as a gear, which is what the previous
+            // choice was avoiding.
+            IconActionButton(systemImage: "gearshape", label: "Display",
                              help: displayHelp,
                              active: ui.wrapLines || ui.showTimestamps) {
                 showingDisplay.toggle()
