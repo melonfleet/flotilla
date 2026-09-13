@@ -281,3 +281,34 @@ struct RegistryCredentialTests {
         #expect(KnownRegistry.cloudCredentialHint(forHost: "MyTeam.AzureCR.io") != nil)
     }
 }
+
+/// `anonymousPullWorks` means "this registry has no private tier", not "public images are
+/// anonymous" — which is true almost everywhere and would make the flag say nothing. Pinned
+/// because the first version of the docstring claimed the wider rule.
+extension RegistryCredentialTests {
+    @Test("only registries with no private tier claim that no sign-in is needed")
+    func publicOnlyRegistries() {
+        let publicOnly = Set(KnownRegistry.builtIn.filter(\.anonymousPullWorks).map(\.id))
+        #expect(publicOnly == ["mcr.microsoft.com", "public.ecr.aws", "registry.k8s.io"])
+
+        // The registries with both tiers must say in their own words that public images need no
+        // sign-in, because the status column cannot: for them "not signed in" is the truth.
+        for id in ["docker.io", "ghcr.io", "quay.io", "registry.gitlab.com"] {
+            let registry = KnownRegistry.builtIn.first { $0.id == id }
+            let hint = registry?.credentialHint ?? ""
+            #expect(hint.lowercased().contains("without signing in"),
+                    Comment(rawValue: "\(id) never mentions that public images are anonymous"))
+        }
+    }
+
+    /// GitHub's own documentation: selecting `write:packages` in the UI also selects `repo`,
+    /// which is full control of private repositories. Flotilla has no `push` in its allowlist at
+    /// all, so that scope buys nothing and costs a great deal.
+    @Test("the GHCR hint warns about the scope GitHub adds behind your back")
+    func ghcrScopeWarning() throws {
+        let hint = try #require(KnownRegistry.builtIn.first { $0.id == "ghcr.io" }?.credentialHint)
+        #expect(hint.contains("read:packages"))
+        #expect(hint.contains("write:packages"))
+        #expect(hint.contains("repo"))
+    }
+}

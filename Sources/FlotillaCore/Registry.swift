@@ -52,10 +52,20 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     public let name: String
     /// One line on what it is for, shown under the name.
     public let summary: String
-    /// Whether pulling public images from it needs no credentials at all. Drives the status
-    /// column's third state: "not signed in" and "no sign-in needed" are different facts, and
-    /// showing the first for `mcr.microsoft.com` would send people looking for an account they
-    /// do not need.
+    /// Whether this registry hosts **only** public content, so there is never anything to sign
+    /// in for.
+    ///
+    /// The first wording of this was "whether pulling public images needs no credentials", and
+    /// that is a different and much wider claim — GitHub's own documentation says "you can also
+    /// access public container images anonymously", and an anonymous token fetch against
+    /// `ghcr.io/apple/container-builder-shim` returns the manifest with a 200. By that rule
+    /// almost every registry here would qualify and the flag would say nothing.
+    ///
+    /// What it actually marks is registries with no private tier at all: Microsoft's, ECR
+    /// **Public**, and Kubernetes'. Those get "No sign-in needed" in the status column, which is
+    /// a different fact from "not signed in" — showing the latter would send someone looking for
+    /// an account that does not exist. Where a registry has both tiers, the sign-in sheet says
+    /// so in its own words instead.
     public let anonymousPullWorks: Bool
     /// True for the one registry a bare `alpine:latest` resolves to.
     public let isImplicitDefault: Bool
@@ -123,17 +133,17 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                       summary: "Where an image reference with no host comes from, such as `alpine:latest`.",
                       isImplicitDefault: true,
                       tokenURL: "https://app.docker.com/settings/personal-access-tokens",
-                      credentialHint: "Your Docker ID, and a personal access token — not your account password."),
+                      credentialHint: "Your Docker ID, and a personal access token — not your account password. Public images pull without signing in; a token mainly raises your rate limit."),
         KnownRegistry(id: "ghcr.io", name: "GitHub Container Registry",
                       summary: "Images published from GitHub repositories. Apple's own builder image lives here.",
                       // The `scopes` and `description` parameters pre-fill GitHub's own form, so
                       // the page opens with the right scope already ticked.
                       tokenURL: "https://github.com/settings/tokens/new?scopes=read:packages&description=Flotilla",
-                      credentialHint: "Your GitHub username, and a classic personal access token with the read:packages scope. A GitHub password will not work."),
+                      credentialHint: "Your GitHub username, and a classic personal access token with only the read:packages scope — GHCR does not accept fine-grained tokens, and a GitHub password will not work. Public images pull without signing in. Do not tick write:packages: Flotilla never pushes, and GitHub adds the repo scope — full control of private repositories — along with it."),
         KnownRegistry(id: "quay.io", name: "Quay",
                       summary: "Red Hat's public registry.",
                       tokenURL: "https://docs.quay.io/glossary/robot-accounts.html",
-                      credentialHint: "A robot account name and its token, or your Quay username and CLI password from Account Settings."),
+                      credentialHint: "A robot account name and its token, or your Quay username and CLI password from Account Settings. Public repositories pull without signing in."),
         KnownRegistry(id: "mcr.microsoft.com", name: "Microsoft Artifact Registry",
                       summary: "Microsoft's official images. Public images need no account.",
                       anonymousPullWorks: true),
@@ -146,7 +156,7 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
         KnownRegistry(id: "registry.gitlab.com", name: "GitLab Container Registry",
                       summary: "Images published from GitLab projects.",
                       tokenURL: "https://gitlab.com/-/user_settings/personal_access_tokens",
-                      credentialHint: "Your GitLab username, and a personal access token with the read_registry scope."),
+                      credentialHint: "Your GitLab username, and a personal access token with the read_registry scope. Public projects pull without signing in."),
         KnownRegistry(id: "registry.redhat.io", name: "Red Hat Registry",
                       summary: "Red Hat's authenticated registry; needs a Red Hat account.",
                       tokenURL: "https://access.redhat.com/terms-based-registry/",
