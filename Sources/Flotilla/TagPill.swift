@@ -124,8 +124,9 @@ struct TagMenu: View {
 /// bug report waiting to happen.
 struct NewTagSheet: View {
     let store: TagStore
-    /// Applied to this subject on creation, when the sheet was opened from a row.
-    var applyTo: TagSubject?
+    /// Applied to these on creation — one subject when the sheet was opened from a row, the
+    /// whole selection when it came from the bulk bar.
+    var applyTo: [TagSubject] = []
     let dismiss: () -> Void
 
     @State private var name = ""
@@ -175,10 +176,10 @@ struct NewTagSheet: View {
     }
 
     private func create() {
-        if let applyTo {
-            store.createTag(name: name, color: color, andApplyTo: applyTo)
-        } else {
+        if applyTo.isEmpty {
             store.createTag(name: name, color: color)
+        } else {
+            store.createTag(name: name, color: color, andApplyTo: applyTo)
         }
         dismiss()
     }
@@ -217,16 +218,81 @@ struct TagColorPicker: View {
     }
 }
 
-/// One subject, wrapped for `.sheet(item:)`.
+/// The subjects a "New Tag…" sheet will tag, wrapped for `.sheet(item:)`.
 ///
 /// `TagSubject` is deliberately **not** `Identifiable`: its `id` is the subject's own name,
 /// which is unique within a kind and not across them — a volume and a container may both be
 /// called `web`, which is the whole reason a subject carries its kind. `.sheet(item:)` needs an
 /// identity that is the *whole* subject, so that is what this supplies.
+///
+/// A list rather than one subject, because the same sheet is opened from a row's Tags menu and
+/// from the bulk bar with six rows selected, and a second near-identical sheet for the second
+/// case is how two sheets drift apart.
 struct TagSheetTarget: Identifiable, Hashable {
-    let subject: TagSubject
-    var id: String { subject.storageKey }
+    let subjects: [TagSubject]
+    /// Every subject, so opening the sheet for a different selection re-presents it rather than
+    /// reusing the one already on screen.
+    var id: String { subjects.map(\.storageKey).joined(separator: "\u{1}") }
 
-    init(_ subject: TagSubject) { self.subject = subject }
-    init(kind: ActivityKind, id: String) { subject = TagSubject(kind: kind, id: id) }
+    init(_ subjects: [TagSubject]) { self.subjects = subjects }
+    init(kind: ActivityKind, id: String) { subjects = [TagSubject(kind: kind, id: id)] }
+}
+
+/// The **Tags** menu for a multi-row selection, in each section's bulk action bar.
+///
+/// Shares `TagMenu`'s shape and not its code, because the question is genuinely different. With
+/// one row a tag is on or off; with six it is on all, on some, or on none, and the swatch says
+/// which (tick, dash, plain — the three marks a checkbox uses, for the same reason).
+///
+/// **Picking a tag applies it to everything selected unless it is already on everything, in which
+/// case it comes off.** Toggling each row independently is the obvious implementation and the
+/// wrong behaviour: on a mixed selection it would tag half and untag half, which is nobody's
+/// reading of choosing a tag with six rows selected.
+struct BulkTagMenu: View {
+    let store: TagStore
+    let subjects: [TagSubject]
+    let onNewTag: () -> Void
+
+    private func coverage(of tagID: String) -> Theme.TagCoverage {
+        let on = subjects.count { store.isTagged($0, with: tagID) }
+        if on == 0 { return .none }
+        return on == subjects.count ? .all : .some
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(store.allTags) { tag in
+                let state = coverage(of: tag.id)
+                Button {
+                    store.apply(tag.id, to: subjects, applied: state != .all)
+                } label: {
+                    Label {
+                        // Names what the click will do when it is not obvious from the mark.
+                        // "Staging" on a mixed selection could mean either direction, and the
+                        // menu is the only place to say which.
+                        Text(state == .some ? "\(tag.name) — add to all" : tag.name)
+                    } icon: {
+                        Image(nsImage: Theme.swatchImage(for: tag.color, coverage: state))
+                    }
+                }
+            }
+            if !store.allTags.isEmpty { Divider() }
+            Button("New Tag…", action: onNewTag)
+            Button("Clear Tags") {
+                for subject in subjects { store.clearTags(on: subject) }
+            }
+            .disabled(!subjects.contains { !store.tags(on: $0).isEmpty })
+        } label: {
+            Image(systemName: "tag")
+                .frame(width: 18, height: 18)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        // Icon-only, so it has to be named — and the count belongs in the name, because this
+        // button acts on rows that are not under the pointer.
+        .accessibilityLabel("Tag \(subjects.count) selected")
+        .help("Tag the \(subjects.count) selected item\(subjects.count == 1 ? "" : "s")")
+        .disabled(subjects.isEmpty)
+    }
 }

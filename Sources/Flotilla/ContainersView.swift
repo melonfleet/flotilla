@@ -723,7 +723,7 @@ struct ContainersView: View {
             }
         }
         .sheet(item: $tagSheet) { target in
-            NewTagSheet(store: model.tags, applyTo: target.subject) { tagSheet = nil }
+            NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
@@ -864,6 +864,16 @@ struct ContainersView: View {
 
     /// Shown only while rows are multi-selected — the hook the `selection` state existed
     /// for but went unused before this.
+
+    /// The selected rows as tag subjects, in the table's own order.
+    ///
+    /// Built from `actionable`, not from `selection`: filtering does not clear a table's
+    /// selection, so a row you selected and then filtered away is still in the set — and tagging
+    /// something the user cannot see is the same mistake the bulk delete bars guard against.
+    private var selectedTagSubjects: [TagSubject] {
+        actionable.sorted().map { TagSubject(kind: .container, id: $0) }
+    }
+
     @ViewBuilder
     private var bulkActionBar: some View {
         // 2+, not 1+. Every row now carries its own start/stop/restart/delete, so a bar
@@ -876,6 +886,14 @@ struct ContainersView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
+                // Tags first in the cluster, before the lifecycle controls, and separated by a
+                // divider: it is the one action here that changes nothing about what the
+                // selection *is*. Same menu the row offers, asking the three-state question a
+                // multi-row selection actually poses — see `BulkTagMenu`.
+                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+                    tagSheet = TagSheetTarget(selectedTagSubjects)
+                }
+                Divider().frame(height: 14)
                 // The same `iconButton` and the same glyphs as the rows, not words. The rows
                 // carry `play.fill` / `stop.fill` / `arrow.clockwise` / `trash`; this bar used
                 // text, so the identical four actions looked like different controls depending

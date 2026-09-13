@@ -129,7 +129,7 @@ struct MachinesView: View {
         }
         .task { await model.refreshMachines() }
         .sheet(item: $tagSheet) { target in
-            NewTagSheet(store: model.tags, applyTo: target.subject) { tagSheet = nil }
+            NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
         // "Open in Flotilla" from the menu-bar popover names a subject, not just a section.
         // One-shot: cleared on consumption so a rebuild does not reopen it.
@@ -393,6 +393,16 @@ struct MachinesView: View {
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .machine) }
 
+
+    /// The selected rows as tag subjects, in the table's own order.
+    ///
+    /// Built from `actionable`, not from `selection`: filtering does not clear a table's
+    /// selection, so a row you selected and then filtered away is still in the set — and tagging
+    /// something the user cannot see is the same mistake the bulk delete bars guard against.
+    private var selectedTagSubjects: [TagSubject] {
+        actionable.sorted().map { TagSubject(kind: .machine, id: $0) }
+    }
+
     @ViewBuilder
     private var bulkActionBar: some View {
         // One selected row already has the same controls in its Actions column; this band earns
@@ -403,6 +413,14 @@ struct MachinesView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
+                // Tags first in the cluster, before the lifecycle controls, and separated by a
+                // divider: it is the one action here that changes nothing about what the
+                // selection *is*. Same menu the row offers, asking the three-state question a
+                // multi-row selection actually poses — see `BulkTagMenu`.
+                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+                    tagSheet = TagSheetTarget(selectedTagSubjects)
+                }
+                Divider().frame(height: 14)
                 iconButton("play.fill", "Start \(actionable.count) machines", busy: selectionBusy) {
                     Task { await model.performMachineBulk(.start, on: actionable) }
                 }

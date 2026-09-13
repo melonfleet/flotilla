@@ -656,6 +656,13 @@ per-line information while streaming and one shared read time per source when fe
 popover that switches it on says exactly that, because a column of identical timestamps left
 unexplained would be read as the container's own clock and believed.
 
+The Received column reads `2026-09-13 12:17:19` — fixed, 24-hour, no AM/PM and no locale.
+`.formatted(date:time:)` follows the user's region and was printing `12:17:19 PM`, which is right
+for "Updated …" in a toolbar and wrong for a log: the date matters because one feed can carry
+lines read hours apart, AM/PM costs three characters and orders nothing, and a twelve-hour clock
+is the one that makes 12:04 ambiguous. It is also text-sortable, which is the other reason the
+width is worth paying.
+
 Wrapping is off by default and a long message can be opened row by row instead. The chevron
 appears only on rows that actually overflow, and that is **measured** by `ViewThatFits` rather
 than guessed from a character count: the column is resizable, so the same line overflows at one
@@ -712,6 +719,12 @@ Machines could not without widening their typed `Filter` enums. A tag filter on 
 of four is the asymmetry this app keeps being asked to remove, so the tag's *name* is matched by
 the same free-text search every section already has.
 
-**What is deliberately not built.** Bulk tagging from the multi-select action bar; tags on images;
-a tag filter control. The first is the obvious next step if tagging six containers at a time turns
-out to be the common case.
+**Bulk tagging asks a three-state question, and answers it once.** With several rows selected a
+tag is on all, on some, or on none, and the swatch says which — tick, dash, plain, the three marks
+a checkbox uses. Picking it applies it to everything selected unless it is already on everything,
+in which case it comes off. Toggling each row independently is the obvious implementation and the
+wrong behaviour: on a mixed selection it would tag half and untag half, which is nobody's reading
+of choosing a tag with six rows selected. On a mixed selection the item also *says* which
+direction it will go, because the dash alone does not.
+
+**What is deliberately not built.** Tags on images, and a tag filter control.

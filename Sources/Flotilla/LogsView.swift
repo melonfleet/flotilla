@@ -433,11 +433,15 @@ struct LogsView: View {
                                     .help("When Flotilla received this line. `container logs` "
                                           + "has no timestamps of its own.")
                             }
-                            .width(min: 76, ideal: 92, max: 120)
+                            // Sized for the whole `2026-09-13 12:04:50`, not the time
+                            // alone — a date column that truncates to `2026-09-13 12:0…` is
+                            // worse than no column.
+                            .width(min: 140, ideal: 156, max: 190)
                         }
 
                         TableColumn("Object") { line in
-                            sourceButton(line.source, kind: line.kind)
+                            sourceButton(line.source, kind: line.kind,
+                                         selected: ui.selection.contains(line.id))
                         }
                         // Capped. `width(min:ideal:)` leaves the maximum unbounded, and with
                         // only three or four columns the table handed Object every spare point
@@ -567,7 +571,13 @@ struct LogsView: View {
             // writes program output to stdout, so a line arriving on stderr is the runtime
             // complaining. Tinted rather than filtered — offering a "stderr" filter would
             // imply a split the CLI does not make.
-            .foregroundStyle(line.stream == .stderr ? Theme.warning : .primary)
+            //
+            // The tint drops on a selected row. Amber `#E5A100` on the accent fill `#EE7B4D` is
+            // two neighbouring oranges, so the one line you deliberately clicked would be the
+            // hardest to read; `.primary` inverts with the selection and stays legible. The
+            // distinction is not lost — deselect, or read the Stream column in the CSV.
+            .foregroundStyle(line.stream == .stderr && !ui.selection.contains(line.id)
+                             ? AnyShapeStyle(Theme.warning) : AnyShapeStyle(.primary))
             .textSelection(.enabled)
             .lineLimit(wrapped ? nil : 1)
             .fixedSize(horizontal: false, vertical: wrapped)
@@ -602,10 +612,28 @@ struct LogsView: View {
             .accessibilityLabel("Select this line")
     }
 
-    /// `HH:mm:ss`, fixed. Not a relative time: two lines four seconds apart is the distinction
-    /// this column exists to draw, and "just now" for both would erase it.
+    /// `2026-09-13 12:04:50`, fixed, 24-hour, no AM/PM and no locale.
+    ///
+    /// The owner's call, and it is the right format for this column. `.formatted(date:time:)`
+    /// follows the user's region — it was rendering `12:04:50 PM` here — which is fine for
+    /// "Updated …" in a toolbar and wrong for a log: the date matters because the feed can carry
+    /// lines read minutes or hours apart, AM/PM costs three characters and orders nothing, and a
+    /// twelve-hour clock is the one that makes 12:04 ambiguous.
+    ///
+    /// Sortable as text, too, which is the other reason ISO-style ordering is worth the width.
+    /// `en_US_POSIX` and an explicit Gregorian calendar because a *fixed* format must not be
+    /// reinterpreted by whatever calendar or numbering system the Mac is set to — a Buddhist or
+    /// Hijri calendar would print a different year, and eastern Arabic numerals different digits.
+    ///
+    /// Not a relative time: two lines four seconds apart is the distinction this column exists to
+    /// draw, and "just now" for both would erase it.
     private static func timestamp(_ date: Date) -> String {
-        date.formatted(date: .omitted, time: .standard)
+        // One literal, not three concatenated: `Date.FormatString` is built by string
+        // *interpolation*, so `+` between pieces is a `String` and does not type-check.
+        date.formatted(.verbatim("\(year: .defaultDigits)-\(month: .twoDigits)-\(day: .twoDigits) \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits)",
+                                 locale: Locale(identifier: "en_US_POSIX"),
+                                 timeZone: .current,
+                                 calendar: Calendar(identifier: .gregorian)))
     }
 
     /// The row menu. Same shape as every other table's: what you can do with the rows, then Copy,
@@ -655,14 +683,23 @@ struct LogsView: View {
     ///
     /// Truncates from the head: container ids share prefixes far more often than suffixes, so
     /// keeping the end is what keeps two of them distinguishable.
-    private func sourceButton(_ source: String, kind: ActivityKind) -> some View {
+    private func sourceButton(_ source: String, kind: ActivityKind,
+                              selected: Bool = false) -> some View {
         HStack(spacing: 4) {
             Image(systemName: kind.systemImage)
                 .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                // Tertiary is nearly invisible on the accent fill; on a selected row the glyph
+                // follows the text rather than staying a wash.
+                .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
             Button(source) { openSource(source, kind: kind) }
                 .buttonStyle(.link)
-                .foregroundStyle(Theme.accentText)
+                // **`rowName(selected:)`, not `accentText`.** A selected row is filled with the
+                // accent, so an accent-coloured link on it is the one piece of text that stays
+                // the colour of its own background and vanishes — while still being clickable,
+                // which is the worst version of the problem. Every other table's Name column has
+                // taken this argument since `.link` was found to hardcode the system blue; the
+                // Logs table was new and did not inherit it.
+                .foregroundStyle(Theme.rowName(selected: selected))
                 .lineLimit(1)
                 .truncationMode(.head)
             // The subject's own tags, so a feed mixing five containers is readable by colour.

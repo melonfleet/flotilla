@@ -82,7 +82,7 @@ struct VolumesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
         .sheet(item: $tagSheet) { target in
-            NewTagSheet(store: model.tags, applyTo: target.subject) { tagSheet = nil }
+            NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingVolumeForm) { _, requested in
@@ -234,6 +234,21 @@ struct VolumesView: View {
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .volume) }
 
+
+    /// The selected rows as tag subjects, in the table's own order.
+    ///
+    /// Built from `actionable`, not from `selection`: filtering does not clear a table's
+    /// selection, so a row you selected and then filtered away is still in the set — and tagging
+    /// something the user cannot see is the same mistake the bulk delete bars guard against.
+    private var selectedTagSubjects: [TagSubject] {
+        // Resolved through the model rather than mapping the id set straight across. Tags on
+        // volumes key on `name` — the key the activity feed uses too — and `actionable` holds
+        // `ContainerVolume.ID`. They are equal on every volume this CLI returns, which is
+        // exactly the kind of coincidence that stops being true quietly.
+        model.volumes.filter { actionable.contains($0.id) }
+            .map { TagSubject(kind: .volume, id: $0.name) }
+    }
+
     @ViewBuilder
     private var bulkActionBar: some View {
         // The row already owns a delete button; this band appears only when it can delete more
@@ -244,6 +259,14 @@ struct VolumesView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
+                // Tags first in the cluster, before the lifecycle controls, and separated by a
+                // divider: it is the one action here that changes nothing about what the
+                // selection *is*. Same menu the row offers, asking the three-state question a
+                // multi-row selection actually poses — see `BulkTagMenu`.
+                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+                    tagSheet = TagSheetTarget(selectedTagSubjects)
+                }
+                Divider().frame(height: 14)
                 IconActionButton(systemImage: "trash",
                                  label: "Delete \(actionable.count) volumes",
                                  help: "Delete \(actionable.count) volumes",

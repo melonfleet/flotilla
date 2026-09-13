@@ -292,25 +292,44 @@ extension Theme {
         return image
     }
 
+    /// How much of a selection carries a tag. Three states, because with several rows selected
+    /// "is this tag on" has three answers and collapsing the middle one into either of the others
+    /// is how a bulk action does something the user did not ask for.
+    enum TagCoverage { case none, some, all }
+
     /// A tick beside the swatch, for a tag that is applied.
     ///
     /// Two glyphs in one image rather than a separate checkmark column, because a menu item has
     /// one icon slot: `Label`'s icon. A `Toggle` would supply its own indicator and push the
     /// swatch into the label text, which is what the first version did.
-    static func swatchImage(for tag: TagColor, applied: Bool, diameter: CGFloat = 10) -> NSImage {
-        guard applied else { return swatchImage(for: tag, diameter: diameter) }
+    static func swatchImage(for tag: TagColor, applied: Bool,
+                            diameter: CGFloat = 10) -> NSImage {
+        swatchImage(for: tag, coverage: applied ? .all : .none, diameter: diameter)
+    }
+
+    /// The swatch, marked with how much of the selection carries the tag: nothing for none, a
+    /// tick for all, a dash for some — the same three marks a checkbox uses, because it is the
+    /// same question.
+    static func swatchImage(for tag: TagColor, coverage: TagCoverage,
+                            diameter: CGFloat = 10) -> NSImage {
+        guard coverage != .none else { return swatchImage(for: tag, diameter: diameter) }
         let image = NSImage(size: CGSize(width: diameter, height: diameter), flipped: false) { rect in
             nsColor(for: tag).setFill()
             NSBezierPath(ovalIn: rect).fill()
-            let tick = NSBezierPath()
-            tick.move(to: CGPoint(x: rect.width * 0.24, y: rect.height * 0.52))
-            tick.line(to: CGPoint(x: rect.width * 0.43, y: rect.height * 0.31))
-            tick.line(to: CGPoint(x: rect.width * 0.78, y: rect.height * 0.70))
-            tick.lineWidth = max(1.2, rect.width * 0.16)
-            tick.lineCapStyle = .round
-            tick.lineJoinStyle = .round
+            let mark = NSBezierPath()
+            if coverage == .all {
+                mark.move(to: CGPoint(x: rect.width * 0.24, y: rect.height * 0.52))
+                mark.line(to: CGPoint(x: rect.width * 0.43, y: rect.height * 0.31))
+                mark.line(to: CGPoint(x: rect.width * 0.78, y: rect.height * 0.70))
+            } else {
+                mark.move(to: CGPoint(x: rect.width * 0.26, y: rect.height * 0.5))
+                mark.line(to: CGPoint(x: rect.width * 0.74, y: rect.height * 0.5))
+            }
+            mark.lineWidth = max(1.2, rect.width * 0.16)
+            mark.lineCapStyle = .round
+            mark.lineJoinStyle = .round
             NSColor.white.setStroke()
-            tick.stroke()
+            mark.stroke()
             return true
         }
         image.isTemplate = false

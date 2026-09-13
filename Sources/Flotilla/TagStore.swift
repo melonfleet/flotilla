@@ -104,15 +104,6 @@ final class TagStore {
         }
     }
 
-    /// Creates a tag and puts it on `subject` in one step — "New Tag…" from a row's menu, where
-    /// creating a tag you then have to go and apply is two steps for one intention.
-    @discardableResult
-    func createTag(name: String, color: TagColor, andApplyTo subject: TagSubject) -> Tag? {
-        guard let tag = createTag(name: name, color: color) else { return nil }
-        toggle(tag.id, on: subject)
-        return tag
-    }
-
     func rename(_ tagID: String, to name: String) {
         do { try book.rename(tagID, to: name); persist() }
         catch { lastError = (error as? TagBook.TagError)?.description ?? String(describing: error) }
@@ -136,6 +127,28 @@ final class TagStore {
     func clearTags(on subject: TagSubject) {
         book.clearTags(on: subject)
         persist()
+    }
+
+    /// Applies a tag to several subjects at once, or takes it off all of them.
+    ///
+    /// **Applies, rather than toggling each.** With a mixed selection — three rows tagged, three
+    /// not — toggling row by row would tag half and untag half, which is nobody's reading of
+    /// picking a tag with six rows selected. `BulkTagMenu` decides the direction from the whole
+    /// selection: on every row means take it off, otherwise put it on. One `persist()` for the
+    /// batch rather than one per subject.
+    func apply(_ tagID: String, to subjects: [TagSubject], applied: Bool) {
+        for subject in subjects {
+            try? book.setTag(tagID, on: subject, to: applied)
+        }
+        persist()
+    }
+
+    /// Creates a tag and puts it on several subjects at once — "New Tag…" from the bulk bar.
+    @discardableResult
+    func createTag(name: String, color: TagColor, andApplyTo subjects: [TagSubject]) -> Tag? {
+        guard let tag = createTag(name: name, color: color) else { return nil }
+        apply(tag.id, to: subjects, applied: true)
+        return tag
     }
 
     /// Drops assignments for things that no longer exist. Only ever called from the Tags
