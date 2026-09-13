@@ -680,7 +680,7 @@ private struct ContainerUtilisationPanel: View, Equatable {
         }
         // Grows the window by exactly the rows being revealed, so nothing else on the dashboard
         // moves relative to its neighbours and the bottom stays on the sidebar's divider.
-        .background(WindowHeightNudge(expanded: expanded, delta: Self.expansionDelta))
+        .background(WindowHeightNudge(extraHeight: extraHeight))
     }
 
     /// Offered only when there is something under the fold — but its **space is always
@@ -824,51 +824,65 @@ private struct ContainerUtilisationPanel: View, Equatable {
     /// grows by the difference, so the alignment holds whatever is running.
     static let collapsedRows = 5
     static let expandedRows = 10
-    /// What the window grows by when the table opens. One number, used for both the table's
-    /// height and the window's, because they have to be the same number or the dashboard's
-    /// spacing shifts — which is the thing the owner asked not to happen.
-    static let expansionDelta = 24 * CGFloat(expandedRows - collapsedRows)
+    private static let rowHeight: CGFloat = 24
+
+    /// Rows the table is sized for: five collapsed, and expanded as many as are actually running
+    /// up to ten — so opening it on a six-container fleet does not leave four empty rows under
+    /// the last one.
+    private var visibleRows: Int {
+        expanded ? min(max(model.running.count, Self.collapsedRows), Self.expandedRows)
+                 : Self.collapsedRows
+    }
 
     private var utilisationHeight: CGFloat {
-        34 + 24 * CGFloat(expanded ? Self.expandedRows : Self.collapsedRows)
+        34 + Self.rowHeight * CGFloat(visibleRows)
+    }
+
+    /// How much taller this panel is than collapsed. The window grows by exactly this, which is
+    /// what keeps every other panel where it was.
+    private var extraHeight: CGFloat {
+        Self.rowHeight * CGFloat(visibleRows - Self.collapsedRows)
     }
 }
 
-/// Grows the window by `delta` while `expanded`, and shrinks it back.
+/// Keeps the window's height in step with how much taller than its collapsed baseline the
+/// dashboard has become.
 ///
-/// The window, not just the panel, because the owner's requirement was that expanding the table
-/// must not change the padding or spacing of anything else on the dashboard. Growing only the
-/// panel would push every panel below it down and drag the content off the bottom; growing the
-/// window by exactly the rows revealed keeps every neighbour where it was and keeps the content's
-/// lower edge on the sidebar's divider.
+/// The window, not just the panel, because the requirement was that expanding the table must not
+/// change the padding or spacing of anything else on the dashboard. Growing only the panel would
+/// push every panel below it down and drag the content off the bottom; growing the window by
+/// exactly the rows revealed keeps every neighbour where it was and keeps the content's lower
+/// edge on the sidebar's divider.
+///
+/// **It tracks a height, not a boolean.** A toggle would be enough for expand and collapse, and
+/// wrong the moment a container starts while the table is open: the expanded table sizes itself
+/// to the running count, so its height moves without the expansion ever changing. Applying the
+/// *difference* from whatever was last applied covers both.
 ///
 /// The **top** edge is held still: macOS window frames are bottom-left origin, so adding height
 /// alone would grow the window upwards, off the top of the screen at the default position.
 private struct WindowHeightNudge: NSViewRepresentable {
-    let expanded: Bool
-    let delta: CGFloat
+    let extraHeight: CGFloat
 
     func makeNSView(context: Context) -> NSView { Nudger() }
     func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? Nudger)?.apply(expanded: expanded, delta: delta)
+        (nsView as? Nudger)?.apply(extraHeight)
     }
 
     final class Nudger: NSView {
-        /// What this view has already acted on. Nil until it first has a window, so appearing
-        /// with the table already expanded does **not** resize — this only ever applies a
-        /// *change*, never an absolute size.
-        private var applied: Bool?
-        private var desired = false
-        private var delta: CGFloat = 0
+        /// What this view has already added to the window. Nil until it first has a window, so
+        /// appearing with the table already expanded does **not** resize — this only ever applies
+        /// a *change*, never an absolute size.
+        private var applied: CGFloat?
+        private var desired: CGFloat = 0
 
         /// **Both entry points are needed, and `updateNSView` alone is not enough.** Measured:
         /// the two `updateNSView` calls at launch both arrive with `window == nil`, because
         /// SwiftUI configures a representable before installing it. Acting only there meant the
         /// first resize was dropped on the floor and the state recorded as applied, so the
         /// expand control moved the table and never the window.
-        func apply(expanded: Bool, delta: CGFloat) {
-            desired = expanded
-            self.delta = delta
+        func apply(_ extraHeight: CGFloat) {
+            desired = extraHeight
             resolve()
         }
 
@@ -879,16 +893,17 @@ private struct WindowHeightNudge: NSViewRepresentable {
 
         private func resolve() {
             guard let window else { return }
-            // First sighting with a window: adopt the state without touching the frame.
+            // First sighting with a window: adopt the height without touching the frame.
             guard let applied else { self.applied = desired; return }
-            guard applied != desired else { return }
+            let delta = desired - applied
+            guard delta != 0 else { return }
             self.applied = desired
 
             var frame = window.frame
-            frame.size.height += desired ? delta : -delta
+            frame.size.height += delta
             // Hold the top edge: the origin is the bottom-left, so y moves opposite to the
             // height. Without this the window would appear to jump upwards as it opened.
-            frame.origin.y -= desired ? delta : -delta
+            frame.origin.y -= delta
             window.setFrame(frame, display: true, animate: true)
         }
     }

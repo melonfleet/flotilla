@@ -849,14 +849,24 @@ final class AppModel {
     }
 
     func createVolume(_ name: String, options: ContainerCLI.VolumeOptions = .init()) async {
-        do {
-            _ = try await Task.detached { [cli] in
-                try cli.createVolume(name, options: options)
-            }.value
-        } catch {
-            actionError = "Create volume failed for \(name): \(error)"
-        }
-        await refreshVolumes()
+        await withProgress(
+            title: "Create a volume",
+            command: ContainerCLI.createVolumeArguments(name, options: options).joined(separator: " "),
+            work: { progress in
+                let step = progress.begin("Creating \(name)")
+                let result = try await Task.detached { [cli] in
+                    try cli.createVolume(name, options: options)
+                }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step)
+                return "\(name) created"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refreshVolumes()
+                return volumes.contains { $0.name == name }
+            }
+        )
     }
 
     func removeVolume(_ volume: ContainerVolume) async {
@@ -896,14 +906,24 @@ final class AppModel {
     }
 
     func createNetwork(_ name: String, options: ContainerCLI.NetworkOptions) async {
-        do {
-            _ = try await Task.detached { [cli] in
-                try cli.createNetwork(name, options: options)
-            }.value
-        } catch {
-            actionError = "Create network failed for \(name): \(error)"
-        }
-        await refreshNetworks()
+        await withProgress(
+            title: "Create a network",
+            command: ContainerCLI.createNetworkArguments(name, options: options).joined(separator: " "),
+            work: { progress in
+                let step = progress.begin("Creating \(name)")
+                let result = try await Task.detached { [cli] in
+                    try cli.createNetwork(name, options: options)
+                }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step)
+                return "\(name) created"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refreshNetworks()
+                return networks.contains { $0.id == name }
+            }
+        )
     }
 
     func removeNetwork(_ network: ContainerNetwork) async {
@@ -960,6 +980,53 @@ final class AppModel {
     /// form being left or the window being closed. A pull of a multi-platform image is a
     /// 40-second operation on a fast connection — long enough that trapping the user on one
     /// screen to watch it would be its own complaint.
+    /// The operation whose progress panel is on screen, or nil.
+    ///
+    /// One at a time, deliberately: these are all "I just pressed the button" operations, and a
+    /// stack of panels would be a worse answer than a queue. Starting a second while one runs
+    /// replaces the panel, which is the same thing the forms already do with each other.
+    var activeOperation: OperationProgress?
+
+    /// Runs `work` with a progress panel in front of it, and keeps the panel up until the list
+    /// the new thing belongs to actually contains it.
+    ///
+    /// **That last part is the whole point.** `container run` returns in a second or two and the
+    /// poll that would notice takes up to five more, so a form that dismissed on success dropped
+    /// the user on a table without their new row in it — which reads as nothing having happened.
+    ///
+    /// - Parameters:
+    ///   - confirm: called after the refresh; return true once the new item is visible. A
+    ///     progress panel that closes before the list agrees with it has not solved anything.
+    @discardableResult
+    func withProgress(title: String,
+                      command: String,
+                      work: @MainActor (OperationProgress) async throws -> String,
+                      confirm: (@MainActor () async -> Bool)? = nil) async -> Bool {
+        let progress = OperationProgress(title: title, command: command)
+        activeOperation = progress
+        do {
+            let summary = try await work(progress)
+            if let confirm {
+                let step = progress.begin("Refreshing the list")
+                // Bounded: the CLI can succeed and the list still not show the item — a machine
+                // that is booting, an image the registry is still unpacking. Give it a few
+                // seconds and then say so rather than spinning for ever on a promise.
+                var appeared = false
+                for _ in 0..<10 where !appeared {
+                    appeared = await confirm()
+                    if !appeared { try? await Task.sleep(for: .milliseconds(400)) }
+                }
+                progress.finish(step,
+                                detail: appeared ? nil : "not listed yet — it may still be starting")
+            }
+            progress.succeed(summary)
+            return true
+        } catch {
+            progress.fail(String(describing: error))
+            return false
+        }
+    }
+
     var activePull: ImagePull?
 
     struct ImagePull: Sendable, Equatable {
@@ -976,12 +1043,29 @@ final class AppModel {
                    scheme: ContainerCLI.RegistryScheme = .default) async -> Bool {
         activePull = ImagePull(reference: reference, startedAt: Date())
         defer { activePull = nil }
+        // The panel and `activePull` are not duplicates: the panel is the report you watch, and
+        // `activePull` is what the Images list shows after you dismiss it, so pressing Back
+        // during a forty-second pull still does not look like a cancelled pull.
+        let panel = OperationProgress(
+            title: "Pull an image",
+            command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
+        activeOperation = panel
+        let pullStep = panel.begin("Pulling \(reference)")
         do {
             _ = try await Task.detached { [cli] in
                 try cli.pull(reference, scheme: scheme) { progress in
-                    Task { @MainActor in self.notePullProgress(progress, for: reference) }
+                    Task { @MainActor in
+                        self.notePullProgress(progress, for: reference)
+                        // Reached through the model rather than by capturing the panel: it is
+                        // main-actor isolated and this closure is `@Sendable`, arriving from the
+                        // runner's drain thread. Rebuilt rather than carried, too —
+                        // `ImagePullProgress` is a parsed structure, not the raw line, and the
+                        // panel wants something readable rather than the CLI's redraws.
+                        self.activeOperation?.note(Self.pullLine(progress))
+                    }
                 }
             }.value
+            panel.finish(pullStep)
             // Named explicitly: the existence diff would say "Created", which is true but loses
             // the distinction between an image you pulled and one a build produced.
             // The scheme is part of the record when it was not the default: "pulled over
@@ -990,13 +1074,32 @@ final class AppModel {
             recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
                                           kind: .image, subject: reference,
                                           action: scheme == .default ? "Pulled" : "Pulled over HTTP"))
-            await refreshImages()
+            let listStep = panel.begin("Refreshing images")
+            var appeared = false
+            for _ in 0..<10 where !appeared {
+                await refreshImages()
+                appeared = images.contains { $0.reference == reference }
+                if !appeared { try? await Task.sleep(for: .milliseconds(400)) }
+            }
+            panel.finish(listStep, detail: appeared ? nil : "not listed yet")
+            panel.succeed("\(reference) pulled")
             return true
         } catch {
+            panel.fail(String(describing: error))
             actionError = "Pull failed for \(reference): \(error)"
             await refreshImages()
             return false
         }
+    }
+
+    /// One readable line per progress report, for the operation panel.
+    private static func pullLine(_ progress: ImagePullProgress) -> String {
+        var parts = ["[\(progress.step)/\(progress.stepCount)]",
+                     progress.phase == .fetching ? "Fetching" : "Unpacking"]
+        if let platform = progress.platform { parts.append(platform) }
+        if let fraction = progress.fraction { parts.append(String(format: "%.0f%%", fraction * 100)) }
+        if let detail = progress.detail { parts.append(detail) }
+        return parts.joined(separator: " ")
     }
 
     /// Progress arrives on the runner's drain thread, one line at a time, and hops here.
@@ -1483,12 +1586,28 @@ final class AppModel {
     // MARK: Run
 
     func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = []) async {
-        do {
-            _ = try await Task.detached { [cli] in try cli.run(image: image, options: options, command: command) }.value
-        } catch {
-            actionError = "Run failed for \(image): \(error)"
-        }
-        await refresh()
+        let argv = ContainerCLI.runArguments(image: image, options: options, command: command)
+        await withProgress(
+            title: "Run a container",
+            command: argv.joined(separator: " "),
+            work: { progress in
+                let step = progress.begin("Starting from \(image)")
+                let result = try await Task.detached { [cli] in
+                    try cli.run(image: image, options: options, command: command)
+                }.value
+                // `container run -d` prints the id it created. Worth surfacing: it is the one
+                // piece of output that tells you *which* row to look for.
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step, detail: options.name)
+                return options.name.map { "\($0) started" } ?? "Container started"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refresh()
+                guard let name = options.name else { return true }
+                return containers.contains { $0.id == name }
+            }
+        )
     }
 
     /// The validated argv for `container run …`, or the `Allowlist` error that rejects

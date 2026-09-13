@@ -34,24 +34,41 @@ extension AppModel {
         let contextPath = context.resolvingSymlinksInPath().standardizedFileURL.path
         let scoped = ContainerCLI(host: LocalHost(), mountPolicy: .roots([contextPath]), wirePolicy: .localOwner)
 
-        do {
-            _ = try await Task.detached {
-                try scoped.buildImage(contextDirectory: contextPath,
-                                      dockerfile: dockerfile, tag: tag,
-                                      buildArgs: buildArgs, labels: labels,
-                                      noCache: noCache, platform: platform, target: target)
-            }.value
-            recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
-                                          kind: .image,
-                                          subject: tag ?? contextPath,
-                                          action: "Built"))
-            await refreshImages()
-            return true
-        } catch {
-            actionError = describeBuild(error)
-            record("Build failed in \(contextPath): \(error)", subsystem: "images")
-            return false
-        }
+        let preview = Self.buildPreview(context: context, dockerfile: dockerfile, tag: tag,
+                                        buildArgs: buildArgs, labels: labels, noCache: noCache,
+                                        platform: platform, target: target)
+        let command = (try? preview.get())?.arguments.joined(separator: " ")
+            ?? "container build \(contextPath)"
+
+        return await withProgress(
+            title: "Build an image",
+            command: command,
+            work: { progress in
+                let step = progress.begin("Building from \(contextPath)")
+                let result = try await Task.detached {
+                    try scoped.buildImage(contextDirectory: contextPath,
+                                          dockerfile: dockerfile, tag: tag,
+                                          buildArgs: buildArgs, labels: labels,
+                                          noCache: noCache, platform: platform, target: target)
+                }.value
+                // A build is the one operation here with a lot to say, and the whole reason the
+                // panel has an output pane at all.
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                for line in result.stderr.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step, detail: tag)
+                self.recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
+                                                   kind: .image,
+                                                   subject: tag ?? contextPath,
+                                                   action: "Built"))
+                return tag.map { "\($0) built" } ?? "Image built"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refreshImages()
+                guard let tag else { return true }
+                return images.contains { $0.reference == tag || $0.reference.hasSuffix("/\(tag)") }
+            }
+        )
     }
 
     /// The validated argv, for the live preview — same construction the build runs, checked

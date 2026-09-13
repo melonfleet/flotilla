@@ -815,16 +815,28 @@ public struct ContainerCLI: Sendable {
     /// grant inline — confirmed against `reference/cli-help/container-machine-1.0.0-help.txt`,
     /// so no follow-up `set` is required before first boot.
     @discardableResult
-    public func createMachine(
-        image: String, name: String? = nil, cpus: Int? = nil, memory: String? = nil, homeMount: String? = nil
-    ) throws -> CommandResult {
+    /// The argv, separately from running it — the same split `runArguments`,
+    /// `createVolumeArguments` and `createNetworkArguments` already have, and for the same
+    /// reason: a caller that wants to *show* the command must not be left to rebuild it, because
+    /// a second construction is a second chance to disagree with what actually runs.
+    public static func createMachineArguments(
+        image: String, name: String? = nil, cpus: Int? = nil, memory: String? = nil,
+        homeMount: String? = nil
+    ) -> [String] {
         var args = ["machine", "create"]
         if let name { args += ["--name", name] }
         if let cpus { args += ["--cpus", String(cpus)] }
         if let memory { args += ["--memory", memory] }
         if let homeMount { args += ["--home-mount", homeMount] }
         args.append(image)
-        return try execute(args)
+        return args
+    }
+
+    public func createMachine(
+        image: String, name: String? = nil, cpus: Int? = nil, memory: String? = nil, homeMount: String? = nil
+    ) throws -> CommandResult {
+        try execute(Self.createMachineArguments(image: image, name: name, cpus: cpus,
+                                                memory: memory, homeMount: homeMount))
     }
 
     /// `container machine set [--name <id>] <key=value> ...`.

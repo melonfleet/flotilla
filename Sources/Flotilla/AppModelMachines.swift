@@ -143,18 +143,31 @@ extension AppModel {
 
     func createMachine(image: String, name: String?, cpus: Int?, memory: String?,
                        homeMount: String?) async -> Bool {
-        do {
-            _ = try await Task.detached { [cli] in
-                try cli.createMachine(image: image, name: name, cpus: cpus,
-                                      memory: memory, homeMount: homeMount)
-            }.value
-            await refreshMachines()
-            return true
-        } catch {
-            actionError = describe(error)
-            record("Machine create failed for \(image): \(error)", subsystem: "machines")
-            return false
-        }
+        return await withProgress(
+            title: "Create a machine",
+            command: ContainerCLI.createMachineArguments(image: image, name: name, cpus: cpus,
+                                                         memory: memory, homeMount: homeMount)
+                .joined(separator: " "),
+            work: { progress in
+                // Two steps, because a machine create genuinely is two things and the second is
+                // the slow one: the image has to be pulled before the VM record exists.
+                let step = progress.begin("Creating from \(image)")
+                let result = try await Task.detached { [cli] in
+                    try cli.createMachine(image: image, name: name, cpus: cpus,
+                                          memory: memory, homeMount: homeMount)
+                }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                for line in result.stderr.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step, detail: name)
+                return name.map { "\($0) created" } ?? "Machine created"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refreshMachines()
+                guard let name else { return true }
+                return machines.contains { $0.id == name }
+            }
+        )
     }
 
     /// Applies configuration. **Takes effect after a restart** — the CLI says so and the UI must

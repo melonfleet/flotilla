@@ -281,6 +281,18 @@ struct MainWindowView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: model.openFormCount)
+        // The operation panel. Here rather than on each section, because the operations it
+        // reports outlive the screen that started them: a pull begun on the New Image form is
+        // still running after Back, and a panel owned by that form would go with it.
+        //
+        // A **sheet**, like About and the support bundle — the two other things `ModalCard` is
+        // still for. It has to be: `ModalCard` draws a title bar and content and no surface of
+        // its own, because a sheet supplies that. Hand-rolling it as an overlay drew the card's
+        // text straight onto the window with the sidebar showing through it.
+        .sheet(item: Binding(get: { model.activeOperation },
+                             set: { if $0 == nil { model.activeOperation = nil } })) { operation in
+            OperationProgressView(progress: operation) { model.activeOperation = nil }
+        }
         .onChange(of: model.pendingSection) { _, requested in
             guard let requested else { return }
             selection = requested
