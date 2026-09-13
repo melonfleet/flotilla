@@ -377,15 +377,20 @@ struct FlotillaApp: App {
         // The band is anchored to the bottom and the dashboard's content to the top, so closing
         // the gap is exactly a height change.
         //
-        // That spends the headroom the 860 note described, and more of it than that note guessed.
-        // **Measured, once a fifth container appeared on its own:** the two lines meet exactly at
-        // four running containers, and a fifth adds the panel's 24pt a row and pushes the table
-        // 24pt past the divider, so the dashboard scrolls from five — not "about six".
+        // **The panel being aligned is now Throughput/Resources, not Utilisation.** Utilisation
+        // moved to the top of the dashboard, so the bottom of the content is the side-by-side
+        // row, and 805 is what puts its lower border on the sidebar's divider: measured at
+        // 1226 against a divider at 1221, and the band is anchored to the window's bottom while
+        // the dashboard's content is anchored to its top, so closing that gap is a height change
+        // and nothing else.
         //
-        // The alignment is what was asked for and it is a real trade: exact at the row count the
-        // window was sized against, approximate either side of it, because the dashboard's height
-        // depends on how many containers are up and the window's does not.
-        .defaultSize(width: 1280, height: 800)
+        // **This alignment no longer drifts with the container count**, which the previous one
+        // did. Utilisation grows 24pt a row, and while it sat last that growth moved the very
+        // edge being aligned — exact at four containers and wrong at five. Above the fold it
+        // still pushes everything below it down, so the dashboard still scrolls sooner with more
+        // containers; but when it fits, the bottom lands in the same place every time, because
+        // the panel that ends the content has a fixed height.
+        .defaultSize(width: 1280, height: 805)
         // **This is the fix for "it only shows in the menu bar".**
         //
         // Left to `.automatic`, SwiftUI infers whether to present this scene at launch from the

@@ -65,6 +65,22 @@ struct DashboardView: View {
                     runtimeBanner(reason)
                 }
 
+                // **Utilisation first.** The per-container rows are what you open a container
+                // manager for; Pressure and Throughput are context for those numbers, and
+                // context reads better after the thing it contextualises than before it.
+                //
+                // It also fixes the alignment the window's height is set by. While this panel
+                // sat last, its 24pt-a-row growth moved the very edge being aligned against the
+                // sidebar's divider — exact at four containers and 24pt out at five. The panel
+                // that now ends the content has a fixed height, so the bottom lands in the same
+                // place whatever is running.
+                //
+                // The cost, named because it is real: when the dashboard does overflow, what
+                // falls off the bottom is Throughput and Resources rather than container rows.
+                // Those are fixed-height summaries reachable elsewhere in the app; the rows are
+                // not.
+                utilisationPanel
+                attentionPanel
                 pressureSection
                 // Side by side, because neither earns the full width: three rate rows and four
                 // resource rows are both narrow lists, and stacked they pushed the utilisation
@@ -76,8 +92,6 @@ struct DashboardView: View {
                     resourceRows
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                attentionPanel
-                utilisationPanel
             }
             .padding(14)
         }
