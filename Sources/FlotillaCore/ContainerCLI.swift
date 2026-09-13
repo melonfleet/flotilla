@@ -146,17 +146,19 @@ public struct ContainerCLI: Sendable {
                                   input: password)
         guard result.ok else {
             throw ContainerCLIError.commandFailed(
-                // **Hand-built, and neither the argv nor `auditDescription`.** The first draft
-                // used `auditDescription` with a comment claiming it drops flag values; a probe
-                // against the live CLI printed
-                // `container registry login --username someone --password-stdin localhost:5001`,
-                // so it does not — `.identifier` is classified as *not* free-form precisely so
-                // audit lines keep the names that make them useful. That is the right call for
-                // every other command and the wrong one here: a registry username is often an
-                // email address, and this string reaches an alert, the error log and the support
-                // bundle. The registry is named because it is what the reader needs; the account
-                // is not.
-                command: "registry login \(server)",
+                // `auditDescription`, which now redacts this correctly at the source.
+                //
+                // Worth the history: the first draft used it with a comment claiming it drops
+                // flag values, and a probe disproved that — it printed the username in full,
+                // because `--username` was specified as `.identifier` and identifiers are
+                // deliberately kept whole so audit lines stay useful. The second draft
+                // hand-built a string here to route around it. The real fault was the shape:
+                // `--username` is now `.registryUsername`, which is classified as free-form, so
+                // the redaction happens once in the allowlist for every caller and every
+                // surface rather than in this one `throw`. Verified: the audit line reads
+                // `container registry login --username <registryUsername> --password-stdin
+                // registry.redhat.io` — the registry visible, the account not.
+                command: validated.auditDescription,
                 exitCode: result.exitCode,
                 message: Self.failureMessage(result))
         }

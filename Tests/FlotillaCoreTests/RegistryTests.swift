@@ -223,11 +223,17 @@ struct RegistryCredentialTests {
     @Test("every registry that needs a credential says where to get one")
     func tokenPagesMatchTheNeed() {
         for registry in KnownRegistry.builtIn {
-            if registry.anonymousPullWorks {
+            if !registry.hasAccounts {
+                // No account exists: a token page or a credential hint would both lead nowhere.
                 #expect(registry.tokenURL == nil,
-                        Comment(rawValue: "\(registry.id) needs no account but offers a token page"))
+                        Comment(rawValue: "\(registry.id) has no accounts but offers a token page"))
                 #expect(registry.credentialHint == nil,
-                        Comment(rawValue: "\(registry.id) needs no account but explains credentials"))
+                        Comment(rawValue: "\(registry.id) has no accounts but explains credentials"))
+            } else if registry.anonymousPullWorks {
+                // Public, but a sign-in exists — ECR Public raises your rate limit. It must say
+                // what to type; a token page is optional because the credential is CLI-minted.
+                #expect(registry.credentialHint != nil,
+                        Comment(rawValue: "\(registry.id) takes a sign-in and does not say what to type"))
             } else {
                 #expect(registry.tokenURL != nil,
                         Comment(rawValue: "\(registry.id) needs a credential and says nothing about where to get one"))
@@ -289,7 +295,15 @@ extension RegistryCredentialTests {
     @Test("only registries with no private tier claim that no sign-in is needed")
     func publicOnlyRegistries() {
         let publicOnly = Set(KnownRegistry.builtIn.filter(\.anonymousPullWorks).map(\.id))
-        #expect(publicOnly == ["mcr.microsoft.com", "public.ecr.aws", "registry.k8s.io"])
+        #expect(publicOnly == ["mcr.microsoft.com", "public.ecr.aws", "registry.k8s.io",
+                               "registry.access.redhat.com"])
+
+        // A narrower set: registries with no account system *at all*. ECR Public is public and
+        // still takes a sign-in (it raises your rate limit), which is why these are two flags
+        // and not one. The rows in this set must offer no Sign In control.
+        let noAccounts = Set(KnownRegistry.builtIn.filter { !$0.hasAccounts }.map(\.id))
+        #expect(noAccounts == ["mcr.microsoft.com", "registry.k8s.io",
+                               "registry.access.redhat.com"])
 
         // The registries with both tiers must say in their own words that public images need no
         // sign-in, because the status column cannot: for them "not signed in" is the truth.
@@ -347,5 +361,56 @@ extension RegistryTests {
         #expect(dockerHub != nil)
         #expect(KnownRegistry.canonicalHost(login.id)
                 == KnownRegistry.canonicalHost(dockerHub?.id ?? ""))
+    }
+}
+
+/// The account names real registries issue.
+///
+/// `--username` shipped as `.identifier`, and measured against this list that refused **half**
+/// of them — Red Hat's pipe, Quay's plus, Harbor's dollar, Google's leading underscore, and any
+/// email address. The Sign In form would have refused a valid account at the allowlist rather
+/// than at the field, which is the worst place for it.
+extension RegistryCredentialTests {
+    @Test("every account name a real registry issues is accepted")
+    func realUsernamesAreAccepted() {
+        let names = [
+            "12345678|flotilla",                        // Red Hat registry service account
+            "myorg+buildbot",                           // Quay robot account
+            "robot$ci", "robot$myproject+ci",           // Harbor robot accounts
+            "00000000-0000-0000-0000-000000000000",     // Azure `az acr login` token
+            "_json_key", "_json_key_base64",            // Google Artifact Registry key login
+            "oauth2accesstoken",                        // Google access-token login
+            "AWS",                                      // Amazon ECR
+            "gitlab-ci-token",                          // GitLab CI
+            "melonfleet",                               // an ordinary account
+            "kamal@example.com",                        // registries that take an email
+        ]
+        for name in names {
+            #expect(Allowlist.accepts(name, as: .registryUsername),
+                    Comment(rawValue: "refused \(name)"))
+        }
+    }
+
+    /// Widening the shape must not have widened what can change the command's meaning.
+    @Test("a username still cannot look like a flag or carry structure")
+    func usernameStaysNarrow() {
+        for bad in ["--username", "-u", "has space", "a/b", "a:b", "a\"b", "a\\b", "", "a b"] {
+            #expect(!Allowlist.accepts(bad, as: .registryUsername),
+                    Comment(rawValue: "accepted \(bad)"))
+        }
+    }
+
+    /// A registry username is the user's own identity and is often an email address, so it is
+    /// classified free-form and the audit line redacts it — while the **registry**, which is what
+    /// an auditor needs, stays visible as the operand.
+    @Test("the audit line hides the account and keeps the registry")
+    func auditRedactsTheAccountOnly() throws {
+        let validated = try Allowlist.validated(
+            ["registry", "login", "--username", "12345678|flotilla",
+             "--password-stdin", "registry.redhat.io"])
+        #expect(!validated.auditDescription.contains("12345678"))
+        #expect(validated.auditDescription.contains("registry.redhat.io"))
+        // And the argv actually sent is untouched.
+        #expect(validated.arguments.contains("12345678|flotilla"))
     }
 }

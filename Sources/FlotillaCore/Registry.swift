@@ -69,6 +69,18 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     public let anonymousPullWorks: Bool
     /// True for the one registry a bare `alpine:latest` resolves to.
     public let isImplicitDefault: Bool
+    /// Whether this registry has accounts to sign in to **at all**.
+    ///
+    /// Orthogonal to `anonymousPullWorks`, and the two together are what the research made
+    /// necessary. Microsoft's registry and `registry.k8s.io` have no sign-in of any kind — there
+    /// is no account, no token page, no credential. Offering "Sign In…" on those is a control
+    /// that cannot work, which is precisely what this app keeps deleting.
+    ///
+    /// Amazon ECR **Public** is the case that forced the second flag: it is public-only *and*
+    /// has a sign-in, because authenticating raises your pull rate limit. So "public" and
+    /// "no account exists" are not the same fact and cannot share a boolean.
+    public let hasAccounts: Bool
+
     /// Whether the user added this themselves, as opposed to it being in the built-in catalogue.
     public let isUserAdded: Bool
 
@@ -94,6 +106,13 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     /// what proves the path exists.
     public let tokenURL: String?
 
+    /// Where to browse or search this registry's images, if it has such a page.
+    ///
+    /// Backs the Pull form's browse link, which the owner asked to follow the chosen registry
+    /// rather than always saying "Browse Docker Hub". `nil` where no such page exists —
+    /// `registry.k8s.io` genuinely has none, only a repository README.
+    public let browseURL: String?
+
     /// What to put in the two fields, in this registry's own terms.
     ///
     /// **Plain prose, no backticks and no asterisks.** These reach the view as a `String`
@@ -108,17 +127,21 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
 
     public init(id: String, name: String, summary: String,
                 anonymousPullWorks: Bool = false,
+                hasAccounts: Bool = true,
                 isImplicitDefault: Bool = false,
                 isUserAdded: Bool = false,
                 tokenURL: String? = nil,
+                browseURL: String? = nil,
                 credentialHint: String? = nil) {
         self.id = id
         self.name = name
         self.summary = summary
         self.anonymousPullWorks = anonymousPullWorks
+        self.hasAccounts = hasAccounts
         self.isImplicitDefault = isImplicitDefault
         self.isUserAdded = isUserAdded
         self.tokenURL = tokenURL
+        self.browseURL = browseURL
         self.credentialHint = credentialHint
     }
 
@@ -132,35 +155,64 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
         KnownRegistry(id: "docker.io", name: "Docker Hub",
                       summary: "Where an image reference with no host comes from, such as `alpine:latest`.",
                       isImplicitDefault: true,
-                      tokenURL: "https://app.docker.com/settings/personal-access-tokens",
+                      // Straight to the create form, not the list. Verified to exist (302 to
+                      // Docker's own login with a returnTo back to this path).
+                      tokenURL: "https://app.docker.com/settings/personal-access-tokens/create",
+                      browseURL: "https://hub.docker.com/search",
                       credentialHint: "Your Docker ID, and a personal access token — not your account password. Public images pull without signing in; a token mainly raises your rate limit."),
         KnownRegistry(id: "ghcr.io", name: "GitHub Container Registry",
                       summary: "Images published from GitHub repositories. Apple's own builder image lives here.",
                       // The `scopes` and `description` parameters pre-fill GitHub's own form, so
                       // the page opens with the right scope already ticked.
                       tokenURL: "https://github.com/settings/tokens/new?scopes=read:packages&description=Flotilla",
+                      browseURL: "https://github.com/search?type=registrypackages",
                       credentialHint: "Your GitHub username, and a classic personal access token with only the read:packages scope — GHCR does not accept fine-grained tokens, and a GitHub password will not work. Public images pull without signing in. Do not tick write:packages: Flotilla never pushes, and GitHub adds the repo scope — full control of private repositories — along with it."),
         KnownRegistry(id: "quay.io", name: "Quay",
                       summary: "Red Hat's public registry.",
                       tokenURL: "https://docs.quay.io/glossary/robot-accounts.html",
+                      browseURL: "https://quay.io/search",
                       credentialHint: "A robot account name and its token, or your Quay username and CLI password from Account Settings. Public repositories pull without signing in."),
+        // No accounts at all: Microsoft's public distribution endpoint. Measured — `/v2/`
+        // answers 200 rather than 401, so there is not even a token step. Do not confuse it
+        // with Azure Container Registry, which is a different product on a different host.
         KnownRegistry(id: "mcr.microsoft.com", name: "Microsoft Artifact Registry",
-                      summary: "Microsoft's official images. Public images need no account.",
-                      anonymousPullWorks: true),
+                      summary: "Microsoft's official images. There is no account and no sign-in.",
+                      anonymousPullWorks: true, hasAccounts: false,
+                      browseURL: "https://mcr.microsoft.com/en-us/catalog"),
+        // Public-only **and** has a sign-in: authenticating raises the pull rate limit. This is
+        // the row that proved `anonymousPullWorks` and `hasAccounts` are different questions.
         KnownRegistry(id: "public.ecr.aws", name: "Amazon ECR Public",
                       summary: "Amazon's public gallery. Private ECR is per-account — add it below.",
-                      anonymousPullWorks: true),
+                      anonymousPullWorks: true,
+                      browseURL: "https://gallery.ecr.aws/",
+                      credentialHint: "Public images need no account; signing in only raises "
+                        + "your pull rate limit. The username is AWS; for the password "
+                        + "run:\n\naws ecr-public get-login-password --region us-east-1"),
         KnownRegistry(id: "registry.k8s.io", name: "Kubernetes",
-                      summary: "Official Kubernetes images. Public, no account.",
-                      anonymousPullWorks: true),
+                      summary: "Official Kubernetes images. There is no account and no sign-in.",
+                      anonymousPullWorks: true, hasAccounts: false),
         KnownRegistry(id: "registry.gitlab.com", name: "GitLab Container Registry",
                       summary: "Images published from GitLab projects.",
-                      tokenURL: "https://gitlab.com/-/user_settings/personal_access_tokens",
+                      // The `legacy/new` form takes a `scopes` parameter, so this opens with
+                      // `read_registry` already ticked — the same trick as the GitHub link.
+                      tokenURL: "https://gitlab.com/-/user_settings/personal_access_tokens/legacy/new?scopes=read_registry",
+                      browseURL: "https://gitlab.com/explore/projects",
                       credentialHint: "Your GitLab username, and a personal access token with the read_registry scope. Public projects pull without signing in."),
         KnownRegistry(id: "registry.redhat.io", name: "Red Hat Registry",
                       summary: "Red Hat's authenticated registry; needs a Red Hat account.",
                       tokenURL: "https://access.redhat.com/terms-based-registry/",
-                      credentialHint: "A registry service account — its username looks like 12345678|name, and its token is the password."),
+                      browseURL: "https://catalog.redhat.com/en/software/containers/explore",
+                      credentialHint: "A registry service account — its username looks like "
+                        + "12345678|name, and its token is the password. Everything here is "
+                        + "behind a subscription; registry.access.redhat.com carries the "
+                        + "unauthenticated images."),
+        // Red Hat's **unauthenticated** sibling, and a genuinely separate host and credential.
+        // Measured: an anonymous manifest fetch for `ubi9/ubi` returns 200, where the same
+        // request to `registry.redhat.io` returns 401. Worth a row precisely because someone
+        // who cannot get a Red Hat subscription can still pull the UBI images from here.
+        KnownRegistry(id: "registry.access.redhat.com", name: "Red Hat (no sign-in)",
+                      summary: "Red Hat's freely available images, including UBI. No account.",
+                      anonymousPullWorks: true, hasAccounts: false),
     ]
 
     /// The host a registry's credential is actually **stored** under, which is not always the

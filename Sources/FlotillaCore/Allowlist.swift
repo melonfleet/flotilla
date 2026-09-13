@@ -73,6 +73,27 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     /// resolves elsewhere and reads identically.
     case registryHost
 
+    /// A registry **account name**, as `container registry login --username` takes it.
+    ///
+    /// **Not `.identifier`, and that mistake shipped.** `--username` was specified as
+    /// `.identifier`, which permits letters, numbers, dots, dashes and underscores and must
+    /// start with a letter or number. Measured against the account names real registries
+    /// actually issue, that refused **half** of them:
+    ///
+    /// - Red Hat registry service accounts are `12345678|name` — a pipe.
+    /// - Quay robot accounts are `org+robotname` — a plus.
+    /// - Harbor robot accounts are `robot$name` or `robot$project+name` — a dollar and a plus.
+    /// - Google Artifact Registry's key login is `_json_key` — a leading underscore.
+    /// - Several registries accept an email address as the account name — an at-sign.
+    ///
+    /// So the Sign In form would have refused a valid Red Hat, Quay or Harbor username, at the
+    /// allowlist rather than at the field, which is the worst place for it.
+    ///
+    /// What it still refuses is what could change the *meaning* of the command rather than the
+    /// account: a leading `-` (which argv would read as a flag), whitespace, quotes, slashes and
+    /// colons. Control and bidi characters are refused for every shape by `screen`.
+    case registryUsername
+
     /// A **bare** home-directory mount mode — `ro`, `rw` or `none`.
     ///
     /// Distinct from `.machineSetting` on purpose. `machine set` takes `home-mount=ro` as a
@@ -128,6 +149,13 @@ extension ValueShape {
         // open, and `commandToken` is a token of a shell command line.
         case .envAssignment, .keyValue, .commandToken:
             true
+        // A registry account name is the user's own identity and is very often an email
+        // address. `.identifier` sits in the not-free-form group because an audit line that
+        // hides *which* container was deleted is useless; an audit line that hides which
+        // **account** signed in loses nothing an auditor needs, because the registry — the
+        // thing worth knowing — is the operand and stays visible.
+        case .registryUsername:
+            true
         // Host paths. These carry the account name, and often the sensitive part *is* the path —
         // `--volume /Users/someone/.ssh:/keys` says more than it looks like it does.
         case .mountSpec, .absolutePath, .copyEndpoint, .hostBuildPath:
@@ -179,6 +207,8 @@ extension ValueShape {
             "Expected `auto`, `plain` or `tty`."
         case .registryScheme:
             "Expected `http` or `https`."
+        case .registryUsername:
+            "Expected a registry account name. Letters, numbers and `. - _ + $ | @` are allowed — which covers Red Hat's `12345678|name`, Quay's `org+robot` and Harbor's `robot$name`. No spaces, and it cannot start with a dash."
         case .registryHost:
             "Expected a registry server such as `ghcr.io`, `quay.io` or `registry.example.com:5000` — the host only, with no scheme and no repository path."
         case .machineSetting:
@@ -813,7 +843,7 @@ public enum Allowlist {
                         flags: [format, quiet],
                         exposure: .localOnly(reason: "it enumerates every registry this Mac holds credentials for, which is an inventory of the owner's accounts")),
             CommandSpec(["registry", "login"], mutates: true, timeoutHint: 120,
-                        flags: [FlagSpec(long: "username", short: "u", value: .identifier),
+                        flags: [FlagSpec(long: "username", short: "u", value: .registryUsername),
                                 FlagSpec(long: "password-stdin"),
                                 FlagSpec(long: "scheme", value: .registryScheme)],
                         operands: OperandSpec(shape: .registryHost, min: 1, max: 1),
@@ -1480,6 +1510,8 @@ public enum Allowlist {
             // `auto` is deliberately absent even though 1.0.0 accepted it: it is the value that
             // decided for you, and on 1.4.1 it is not a value at all.
             return ["http", "https"].contains(value) ? nil : bad
+        case .registryUsername:
+            return isRegistryUsername(value) ? nil : bad
         case .registryHost:
             return isRegistryHost(value) ? nil : bad
         case .machineSetting:
@@ -1795,6 +1827,17 @@ public enum Allowlist {
         return parts.allSatisfy { part in
             (1...32).contains(part.count) && part.allSatisfy { isASCIIAlphanumeric($0) || $0 == "_" }
         }
+    }
+
+    /// A registry account name. See `ValueShape.registryUsername` for the measurement that set
+    /// this character set — the previous shape refused half the account names in real use.
+    private static func isRegistryUsername(_ value: String) -> Bool {
+        guard (1...255).contains(value.count) else { return false }
+        // A leading dash would be read as a flag by anything downstream. Nothing else about the
+        // name can change what the command means.
+        guard !value.hasPrefix("-") else { return false }
+        let extra: Set<Character> = [".", "-", "_", "+", "$", "|", "@"]
+        return value.allSatisfy { isASCIIAlphanumeric($0) || extra.contains($0) }
     }
 
     /// `host[:port]` — DNS labels or an IPv4 literal, with an optional port.

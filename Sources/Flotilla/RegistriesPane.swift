@@ -28,6 +28,14 @@ struct RegistryRow: Identifiable, Equatable {
 
     /// Where to create the token this registry wants as a password, if there is such a page.
     var tokenURL: URL? { known?.tokenURL.flatMap(URL.init(string:)) }
+    var browseURL: URL? { known?.browseURL.flatMap(URL.init(string:)) }
+
+    /// Whether this registry has an account to sign in to at all.
+    ///
+    /// A row the user added is assumed to have one — it is their own registry and we know
+    /// nothing about it, and withholding the control would be worse than offering one that
+    /// might fail with the registry's own message.
+    var canSignIn: Bool { known?.hasAccounts ?? true }
 
     /// What to put in the two fields. The catalogue's own wording where there is one; otherwise
     /// the cloud-CLI recipe, matched on the host — which is how a per-account registry the
@@ -225,9 +233,24 @@ struct RegistriesPane: View {
                 HStack(spacing: 6) {
                     if row.isSignedIn {
                         Button("Sign Out") { pendingSignOut = row }
-                    } else {
+                    } else if row.canSignIn {
                         Button("Sign In…") { signIn = row }
                             .disabled(!model.runtimeUsable)
+                    }
+                    // Nothing at all where there is nothing to sign in to. Microsoft's registry
+                    // and `registry.k8s.io` have no accounts, no token page and no credential —
+                    // measured, `mcr.microsoft.com/v2/` answers 200 rather than 401. A greyed
+                    // "Sign In…" would imply an account you could go and get; there isn't one.
+                    if let url = row.browseURL {
+                        Button {
+                            NSWorkspace.shared.open(url)
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Theme.accentText)
+                        .accessibilityLabel("Browse \(row.name)")
+                        .help("Browse \(row.name) in your browser")
                     }
                     if row.isUserAdded {
                         IconActionButton(systemImage: "trash",
@@ -256,7 +279,11 @@ struct RegistriesPane: View {
             Label("Signed in", systemImage: "checkmark.circle.fill")
                 .font(.caption).foregroundStyle(Theme.online).labelStyle(.titleAndIcon)
         } else if row.known?.anonymousPullWorks == true {
-            Text("No sign-in needed").font(.caption).foregroundStyle(.secondary)
+            // Two shades of the same fact: a registry with no accounts at all, and one that is
+            // public but will still take a sign-in (ECR Public, where authenticating raises your
+            // rate limit). Saying "No account" for the second would be wrong.
+            Text(row.canSignIn ? "No sign-in needed" : "No account")
+                .font(.caption).foregroundStyle(.secondary)
         } else {
             Text("Not signed in").font(.caption).foregroundStyle(.tertiary)
         }
