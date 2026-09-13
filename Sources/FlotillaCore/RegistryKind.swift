@@ -43,7 +43,11 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
         case .harbor: "Harbor"
         case .jfrog: "JFrog Artifactory"
         case .gitea: "Gitea or Forgejo"
-        case .other: "Something else"
+        // **Not "Something else".** That is the Registry picker's own wording for "let me
+        // describe one", and the owner saw it twice on one screen: once to get here, and again
+        // as the default answer to the next question. Two controls whose only option reads the
+        // same is two controls that look like one mistake.
+        case .other: "Generic or self-hosted"
         }
     }
 

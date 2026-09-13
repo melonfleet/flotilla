@@ -2,41 +2,67 @@ import SwiftUI
 import AppKit
 import FlotillaCore
 
-/// Adding a registry — one form, with the guidance rail, like every other form in the app.
+/// Adding a registry, and signing in to it, in one form.
 ///
-/// **One question, two answers.** Either you pick a registry Flotilla already knows, in which
-/// case there is nothing to type and the rail explains that registry; or you describe one it
-/// does not, in which case you say what kind it is and where it lives and the rail explains that
-/// family. There is no third path, and in particular there is no "put back": a registry removed
-/// from the list is simply not in the list, and adding it again is this same form.
+/// **Nothing is on screen until you have answered the first question.** The form opens as a
+/// single picker — Registry — and grows into whatever that answer needs: a known registry needs
+/// only its own guidance and a sign-in, while one Flotilla does not know needs a type, a host and
+/// a name as well. Showing all of it up front asked people to read past four fields that a
+/// Microsoft Artifact Registry will never use.
 ///
-/// That took three attempts. The first version listed every known registry permanently and had
-/// an Add form with an empty picker, because everything addable was already there. The second
-/// let you hide them. The third let you un-hide them, which added a second way to do the one
-/// thing this form is for. All three were elaborations of one wrong idea — that the catalogue is
-/// a list rather than a menu.
+/// **Sign-in happens here, not afterwards.** The first version added the registry and sent you
+/// back to the list to sign in from a second sheet — two screens and a context switch for one
+/// intention. Adding without signing in is still allowed: the credential fields are optional and
+/// say so.
+///
+/// The catalogue is a menu, not a list — see `RegistryBook`. Three designs got that wrong before
+/// this one.
 struct AddRegistryView: View {
     let model: AppModel
     let store: RegistryStore
     let dismiss: () -> Void
 
-    /// A known registry's host, or nil for one Flotilla does not know.
-    @State private var known: String?
+    /// What the first picker is set to. `nil` is "not answered yet", which is what keeps the
+    /// rest of the form off screen.
+    @State private var choice: Choice?
+
+    enum Choice: Hashable {
+        /// A registry the catalogue describes, by host.
+        case known(String)
+        /// One it does not. Deliberately **not** called "something else": that is what the type
+        /// picker used to call its fallback too, and seeing the same words twice on one screen
+        /// reads as a mistake.
+        case custom
+    }
+
     @State private var kind: RegistryKind = .other
     @State private var host = ""
     @State private var name = ""
     @State private var usesHTTP = false
+
+    // Sign-in, optional.
+    @State private var username = ""
+    @State private var password = ""
+    @State private var working = false
+    /// Set once the registry is in the list, so a failed sign-in does not look like a failed add
+    /// and the button stops offering to add it twice.
+    @State private var added = false
+    @State private var signInError: String?
+
     @State private var edits = FormEditTracker()
 
-    /// Known registries not already in the list. A registry you have is not one to add, and
-    /// offering it could only produce a duplicate.
     private var addable: [KnownRegistry] { store.addable }
 
-    private var chosen: KnownRegistry? { addable.first { $0.id == known } }
+    private var chosen: KnownRegistry? {
+        guard case .known(let id) = choice else { return nil }
+        return addable.first { $0.id == id }
+    }
+
+    private var isCustom: Bool { choice == .custom }
 
     /// The families you describe by hand: the ones with no fixed hostname, so no catalogue entry
     /// could name them.
-    private var customKinds: [RegistryKind] {
+    private var customTypes: [RegistryKind] {
         RegistryKind.allCases.filter { !$0.hostIsFixed }
     }
 
@@ -44,26 +70,36 @@ struct AddRegistryView: View {
         host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    private var effectiveHost: String { chosen?.id ?? trimmedHost }
+
     private var hostProblem: String? {
-        guard chosen == nil, !trimmedHost.isEmpty else { return nil }
+        guard isCustom, !trimmedHost.isEmpty else { return nil }
         return store.book.problem(withHost: trimmedHost)
     }
 
-    private var canAdd: Bool {
-        chosen != nil || (!trimmedHost.isEmpty && hostProblem == nil)
+    /// Whether this registry has an account to sign in to at all. A custom one is assumed to —
+    /// it is the user's own and we know nothing about it.
+    private var canSignIn: Bool { chosen?.hasAccounts ?? true }
+
+    private var guidance: (hint: String?, token: String?, docs: String?) {
+        if let chosen { return (chosen.credentialHint, chosen.tokenURL, chosen.kind.docsURL) }
+        return (kind.credentialHint, kind.tokenURL, kind.docsURL)
     }
 
-    /// Whichever set of guidance applies to what is on screen.
-    private var guidance: (summary: String, hint: String?, token: String?, docs: String?) {
-        if let chosen {
-            return (chosen.summary, chosen.credentialHint, chosen.tokenURL, chosen.kind.docsURL)
-        }
-        return (kind.summary, kind.credentialHint, kind.tokenURL, kind.docsURL)
+    private var hasCredentials: Bool {
+        !username.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty
+    }
+
+    private var canSubmit: Bool {
+        guard !working else { return false }
+        if added { return hasCredentials }
+        guard choice != nil else { return false }
+        return chosen != nil || (!trimmedHost.isEmpty && hostProblem == nil)
     }
 
     private var editSignature: String {
-        [known ?? "", kind.rawValue, host, name, usesHTTP ? "http" : "https"]
-            .joined(separator: "\u{1}")
+        [String(describing: choice), kind.rawValue, host, name,
+         usesHTTP ? "http" : "https", username].joined(separator: "\u{1}")
     }
 
     var body: some View {
@@ -89,116 +125,159 @@ struct AddRegistryView: View {
                   help: FieldHelp(
                       "Which registry to add.",
                       detail: "Pick one Flotilla knows and its server name, sign-in guidance and "
-                          + "links come with it. Choose Something else to describe a private, "
-                          + "self-hosted or per-account registry yourself.",
+                          + "links come with it — there is nothing to type. Choose Custom to "
+                          + "describe a private, self-hosted or per-account registry yourself.",
                       example: "Amazon ECR, Azure and Google Artifact\nRegistry are per-account, "
-                          + "so they are\nalways Something else")) {
-            Picker("", selection: $known) {
+                          + "so they are\nalways Custom")) {
+            Picker("", selection: $choice) {
+                Text("Choose a registry…").tag(Choice?.none)
+                Divider()
                 ForEach(addable) { registry in
-                    Text(registry.name).tag(Optional(registry.id))
+                    Text(registry.name).tag(Optional(Choice.known(registry.id)))
                 }
                 if !addable.isEmpty { Divider() }
-                Text("Something else…").tag(String?.none)
+                Text("Custom…").tag(Optional(Choice.custom))
             }
             .labelsHidden()
             .frame(maxWidth: 320)
+            .disabled(added)
         }
 
-        if let chosen {
-            // A known registry's host is its identity. A field you can only get wrong is not a
-            // field, so it is shown rather than typed.
-            FormField("Server", help: FieldHelp(chosen.summary,
-                                                detail: "Fixed for a registry Flotilla knows.")) {
-                Text(chosen.id)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-            }
-        } else {
-            FormField("Kind",
-                      help: FieldHelp(
-                          "What sort of registry this is.",
-                          detail: "It decides the guidance on the right — every family signs in "
-                              + "differently, and the differences are not small.",
-                          example: kind.summary)) {
-                Picker("", selection: $kind) {
-                    ForEach(customKinds) { option in
-                        Text(option.name).tag(option)
-                    }
+        // Everything below is an answer to that picker, so none of it exists until it has one.
+        if choice != nil {
+            if let chosen {
+                FormField("Server", help: FieldHelp(chosen.summary,
+                                                    detail: "Fixed for a registry Flotilla knows.")) {
+                    Text(chosen.id)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
                 }
-                .labelsHidden()
-                .frame(maxWidth: 320)
+            } else {
+                customFields
             }
 
-            FormField("Server",
-                      help: FieldHelp(
-                          "The registry's host name.",
-                          detail: "The host only — no scheme such as https://, and no repository "
-                              + "path. A port is allowed.",
-                          example: kind.hostExample ?? "registry.internal:5000",
-                          warning: kind == .gitea
-                              ? "Gitea and Forgejo put the registry on the main site host, not a "
-                                + "registry. subdomain."
-                              : nil),
-                      problem: hostProblem) {
-                TextField(kind.hostExample ?? "registry.example.com:5000", text: $host)
-                    .textFieldStyle(.roundedBorder)
-                    .monospaced()
-            }
-
-            FormField("Name",
-                      help: FieldHelp(
-                          "What to call it in the list.",
-                          detail: "Defaults to the server name, which is usually what you "
-                              + "recognise a self-hosted registry by anyway."),
-                      optional: true) {
-                TextField(trimmedHost.isEmpty ? "Optional" : trimmedHost, text: $name)
-                    .textFieldStyle(.roundedBorder)
-            }
-        }
-
-        // What signing in will want, before you commit to adding it.
-        if let hint = guidance.hint {
-            FormSectionHeader(title: "Signing in",
-                              note: "What this registry asks for when you sign in.")
-            credentialGuidance(hint)
-        }
-
-        // Only where it is a real choice. A known registry is HTTPS — every one in the catalogue
-        // is a public registry on the internet — so a picker there would be a control with one
-        // correct setting.
-        if chosen == nil {
-            FormSectionHeader(title: "Connection",
-                              note: "How Flotilla reaches it. Almost always the default.")
-
-            FormField("Connect using",
-                      help: FieldHelp(
-                          "HTTPS, unless the registry has no TLS.",
-                          detail: "Remembered for this registry, unlike the Pull form's one-off "
-                              + "switch: a development registry that has no TLS today will not "
-                              + "have any tomorrow either.",
-                          warning: "Over HTTP your password is sent in the clear. Only for a "
-                              + "registry on your own machine or network.")) {
-                Picker("", selection: $usesHTTP) {
-                    Text("HTTPS").tag(false)
-                    Text("HTTP").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-            }
-
-            if usesHTTP {
-                Label("Your password will be sent unencrypted.",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(Theme.warning)
+            if canSignIn {
+                signInFields
+            } else if let chosen {
+                // Not a greyed-out sign-in: there is no account to grey out. Microsoft's
+                // registry and `registry.k8s.io` have no credential of any kind.
+                FormSectionHeader(title: "Signing in", note: "Not needed here.")
+                Text("\(chosen.name) has no accounts — public images pull with no credential at "
+                     + "all. Add it and start pulling.")
+                    .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    /// Prose, then any command on its own line — the same split the sign-in sheet uses, because
-    /// it is the same text.
+    @ViewBuilder
+    private var customFields: some View {
+        FormField("Type",
+                  help: FieldHelp(
+                      "What sort of registry this is.",
+                      detail: "It decides the sign-in guidance below — every family "
+                          + "authenticates differently, and the differences are not small.",
+                      example: kind.summary)) {
+            Picker("", selection: $kind) {
+                ForEach(customTypes) { option in
+                    Text(option.name).tag(option)
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 320)
+            .disabled(added)
+        }
+
+        FormField("Server",
+                  help: FieldHelp(
+                      "The registry's host name.",
+                      detail: "The host only — no scheme such as https://, and no repository "
+                          + "path. A port is allowed.",
+                      example: kind.hostExample ?? "registry.internal:5000",
+                      warning: kind == .gitea
+                          ? "Gitea and Forgejo put the registry on the main site host, not a "
+                            + "registry. subdomain."
+                          : nil),
+                  problem: hostProblem) {
+            TextField(kind.hostExample ?? "registry.example.com:5000", text: $host)
+                .textFieldStyle(.roundedBorder)
+                .monospaced()
+                .disabled(added)
+        }
+
+        FormField("Name",
+                  help: FieldHelp(
+                      "What to call it in the list.",
+                      detail: "Defaults to the server name, which is usually what you recognise "
+                          + "a self-hosted registry by anyway."),
+                  optional: true) {
+            TextField(trimmedHost.isEmpty ? "Optional" : trimmedHost, text: $name)
+                .textFieldStyle(.roundedBorder)
+                .disabled(added)
+        }
+
+        FormField("Connect using",
+                  help: FieldHelp(
+                      "HTTPS, unless the registry has no TLS.",
+                      detail: "Remembered for this registry, unlike the Pull form's one-off "
+                          + "switch: a development registry that has no TLS today will not have "
+                          + "any tomorrow either.",
+                      warning: "Over HTTP your password is sent in the clear. Only for a "
+                          + "registry on your own machine or network.")) {
+            Picker("", selection: $usesHTTP) {
+                Text("HTTPS").tag(false)
+                Text("HTTP").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .disabled(added)
+        }
+
+        if usesHTTP {
+            Label("Your password will be sent unencrypted.",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var signInFields: some View {
+        FormSectionHeader(title: "Sign in",
+                          note: "Optional. You can add it now and sign in whenever you like.")
+
+        if let hint = guidance.hint {
+            credentialGuidance(hint)
+        }
+
+        FormField("Username",
+                  help: FieldHelp("The account name this registry issues.",
+                                  detail: "Not always a person: ECR's is literally AWS, Quay's "
+                                      + "is a robot account, Google's is oauth2accesstoken."),
+                  optional: true) {
+            TextField("", text: $username)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.username)
+        }
+
+        FormField("Password or token",
+                  help: FieldHelp("Usually a token rather than an account password.",
+                                  detail: "Flotilla does not store it. It goes to `container "
+                                      + "registry login`, which saves it in this Mac's Keychain.",
+                                  warning: "Several registries issue short-lived tokens — "
+                                      + "Amazon's lasts about 12 hours, Google's about one — so "
+                                      + "expect to sign in again."),
+                  problem: signInError,
+                  optional: true) {
+            SecureField("", text: $password)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { if canSubmit { submit() } }
+        }
+    }
+
+    /// Prose, then any command on its own line — the same split the sign-in sheet uses.
     private func credentialGuidance(_ hint: String) -> some View {
         let parts = hint.components(separatedBy: "\n\n")
         return VStack(alignment: .leading, spacing: 6) {
@@ -229,63 +308,103 @@ struct AddRegistryView: View {
         .textSelection(.enabled)
     }
 
-    /// **Not a command preview** — adding a registry runs nothing. The rail's pinned slot shows
-    /// the row you are about to create instead, which is the equivalent honesty.
+    /// **Not a command preview** — adding a registry runs nothing until you sign in. The rail's
+    /// pinned slot shows the row you are about to create instead.
     private var railPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Will be added as", systemImage: "shippingbox")
+            Label(added ? "Added" : "Will be added as", systemImage: "shippingbox")
                 .font(.caption)
-                .foregroundStyle(Theme.info)
-            if let chosen {
-                Text(chosen.name).font(.system(size: 13, weight: .medium))
-                Text(chosen.id)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            } else if trimmedHost.isEmpty {
-                Text("Pick a registry, or type a server name.")
+                .foregroundStyle(added ? Theme.online : Theme.info)
+            if choice == nil {
+                Text("Choose a registry to begin.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if effectiveHost.isEmpty {
+                Text("Type the registry's server name.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                Text(name.trimmingCharacters(in: .whitespaces).isEmpty ? trimmedHost : name)
+                Text(chosen?.name
+                     ?? (name.trimmingCharacters(in: .whitespaces).isEmpty ? trimmedHost : name))
                     .font(.system(size: 13, weight: .medium))
-                Text(trimmedHost)
+                Text(effectiveHost)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(hostProblem == nil
                                      ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.danger))
                     .textSelection(.enabled)
-                if usesHTTP {
+                if usesHTTP, isCustom {
                     Text("over HTTP").font(.caption).foregroundStyle(Theme.warning)
                 }
+                if canSignIn {
+                    Text(hasCredentials ? "Signing in as \(username)"
+                                        : "Not signing in yet — you can do it any time.")
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Text("You can sign in to it from the list afterwards.")
-                .font(.caption).foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var footer: some View {
         HStack {
-            // The backstop the network form gained: if the button is off and no field above has
-            // said why, say it here rather than leaving a grey button with no explanation.
+            if working { ProgressView().controlSize(.small) }
+            // The backstop the network form gained: if the button is off and no field has said
+            // why, say it here rather than leaving a grey button with no explanation.
             if let hostProblem {
                 Text(hostProblem).font(.caption).foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Button("Cancel", action: dismiss).keyboardShortcut(.cancelAction)
-            Button("Add") {
-                if let chosen {
-                    store.add(known: chosen)
-                } else {
-                    store.add(host: trimmedHost, name: name, summary: kind.summary,
-                              kind: kind, usesHTTP: usesHTTP)
-                }
-                dismiss()
-            }
-            .keyboardShortcut(.defaultAction)
-            .disabled(!canAdd)
+            Button(added ? "Done" : "Cancel", action: dismiss)
+                .keyboardShortcut(.cancelAction)
+            Button(buttonTitle, action: submit)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSubmit)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    private var buttonTitle: String {
+        if added { return "Sign In" }
+        return hasCredentials ? "Add and Sign In" : "Add"
+    }
+
+    /// Adds, then signs in if credentials were given.
+    ///
+    /// **The add is not undone by a failed sign-in**, and the form says so rather than
+    /// pretending nothing happened: the registry is genuinely in the list, and a wrong password
+    /// is something to correct here rather than a reason to start over. `added` is what keeps the
+    /// button from offering to add it a second time.
+    private func submit() {
+        guard canSubmit else { return }
+        signInError = nil
+
+        if !added {
+            if let chosen {
+                store.add(known: chosen)
+            } else {
+                store.add(host: trimmedHost, name: name, summary: kind.summary,
+                          kind: kind, usesHTTP: usesHTTP)
+            }
+            added = true
+            guard hasCredentials else { dismiss(); return }
+        }
+
+        working = true
+        let server = effectiveHost
+        let scheme = (chosen == nil && usesHTTP) ? "http" : nil
+        Task {
+            let error = await model.signIn(registry: server, username: username,
+                                           password: password, scheme: scheme)
+            working = false
+            if let error {
+                signInError = error
+                // Cleared on failure too: a rejected secret is one to retype, and leaving it in
+                // the field invites pressing the button again unchanged.
+                password = ""
+            } else {
+                password = ""
+                dismiss()
+            }
+        }
     }
 }

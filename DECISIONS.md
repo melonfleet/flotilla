@@ -917,3 +917,24 @@ first person to add GHCR keeps that day's text for ever. Only what the catalogue
 written down: host, kind, chosen name, scheme. The two retired keys from designs 2 and 3 are
 actively removed on save — a stale `hiddenRegistries` is a fact about a feature that no longer
 exists.
+
+### Q20 finished — the form asks one question at a time, and signs you in (2026-09-13)
+
+Three refinements on the owner's fourth pass, all of them about the same thing: a form should not
+ask for what this answer will never need.
+
+**The form opens as one picker.** Registry, and nothing else. Choosing a known registry adds its
+server and its guidance; choosing Custom adds a type, a host, a name and a scheme. Showing all of
+it up front asked someone adding `mcr.microsoft.com` to read past four fields it will never use —
+and past a sign-in for a registry that has no accounts at all, which now says so in a sentence
+instead.
+
+**Sign-in happens in the form.** It used to add the registry and send you back to the list to
+sign in from a separate sheet: two screens and a context switch for one intention. The credentials
+are optional and say so, and a failed sign-in does not undo the add — the registry is genuinely
+in the list by then, so the form stays open with the error and the button becomes Sign In rather
+than offering to add it twice.
+
+**"Something else" appeared twice on one screen** — once as the way to reach the custom path, and
+again as the default answer to the question that path asks. The first is now **Custom**, the
+second **Generic or self-hosted**, and the field is **Type** rather than Kind.
