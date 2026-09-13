@@ -388,14 +388,19 @@ that we *built* the right command; almost nothing checked the command was
 
 ### Branding
 
-**`design/brand/BRAND.md` is the source of truth for colour, not the mockups.** `Theme.swift`
+**There are two brand documents and they are both real.** `melonfleet/design/brand/BRAND.md` is
+the suite's canonical palette; `Flotilla/design/branding.md` is this product's own, and it says so
+in its first line. Earlier notes here cited the first by a path that is relative to the melonfleet
+root, not to this repo, which is why looking for it from inside Flotilla finds nothing. Colour
+rules live in the suite doc; Flotilla's assignment of them lives in `design/branding.md`. `Theme.swift`
 used to be transcribed from `research/review/mockups/assets/mac.css`, whose token block names
 its status colours `--sys-red`/`--sys-orange`/`--sys-blue` — macOS system colours, deliberately.
 Transcribed faithfully, that put a **plain blue** on the dashboard, the one hue with no place in
-a watermelon identity, while `BRAND.md` had a sanctioned teal `#2C7A7B` all along. Nobody had
-reconciled the two documents. Semantic colours now quote `BRAND.md` exactly; dark-mode
+a watermelon identity, while `branding.md` had a sanctioned teal `#2C7A7B` all along. Nobody had
+reconciled the two documents. Semantic colours now quote `branding.md` exactly; dark-mode
 counterparts it does not specify are *derived* and labelled as derived. The content column
-carries a faint honeydew wash so it reads as a decision rather than as absent.
+carried a faint honeydew wash for the same reason; since 13 September it carries `cream #FBF7F0`,
+under a `cantaloupe` window bar — see the chrome section in the suite doc.
 
 The approved watermelon language; light and dark are both first-class. Icons are
 **generated** from the brand geometry by `Scripts/make-icons.swift`, and the

@@ -4,16 +4,16 @@ import FlotillaCore
 
 /// The watermelon palette.
 ///
-/// **Source of truth is `design/brand/BRAND.md`**, not the mockups. That distinction matters
+/// **Source of truth is `design/branding.md`**, not the mockups. That distinction matters
 /// because this file used to be transcribed from `research/review/mockups/assets/mac.css`, whose
 /// token block names its status colours `--sys-red`, `--sys-orange` and `--sys-blue` — macOS
 /// system colours, deliberately. Faithfully transcribed, that gave the app a **plain blue** on
 /// the dashboard's CPU chart and disk-read marker, which is the one hue with no place in a
-/// watermelon identity. `BRAND.md` had a sanctioned informational colour all along (teal
+/// watermelon identity. `branding.md` had a sanctioned informational colour all along (teal
 /// `#2C7A7B`); nobody had reconciled the two documents.
 ///
 /// So: brand values are quoted exactly and labelled. Where a slot needs a dark-mode counterpart
-/// that `BRAND.md` does not specify, it is **derived** — lifted in lightness until it holds on a
+/// that `branding.md` does not specify, it is **derived** — lifted in lightness until it holds on a
 /// dark surface — and said to be derived rather than passed off as brand.
 ///
 /// Three rules carried forward, all load-bearing:
@@ -26,7 +26,7 @@ import FlotillaCore
 ///   as hardcoding a `preferredColorScheme`.
 enum Theme {
 
-    // MARK: Brand — quoted from BRAND.md
+    // MARK: Brand — quoted from branding.md
 
     /// `rind #1B5E20` — primary brand green, structure.
     static let rind = dynamic(light: 0x1B5E20, dark: 0x7CB342)
@@ -41,8 +41,15 @@ enum Theme {
 
     /// The app tint: selection fills, links, focus rings, prominent buttons.
     ///
-    /// **Now the same hue as the window bar**, on the owner's ask — `#EE7B4D` on light and
-    /// `#FC4A6B` on dark. A highlight that matches the chrome is what makes the two read as one
+    /// **This is only half of it.** AppKit takes the accent it uses for sidebar-list selection
+    /// and focus rings from the app's `AccentColor` asset and ignores SwiftUI's `.tint()`, so
+    /// `Resources/Assets.xcassets/AccentColor.colorset` carries the same two values and has to
+    /// move with this one. It did not, once: the selected navigation row stayed pink while every
+    /// other accent in the app went orange, and the asset is not somewhere you would think to
+    /// look from here. `branding.md` says so too.
+    ///
+    /// **Now the same hue as the window bar**, on the owner's ask — `cantaloupe #EE7B4D` on
+    /// light and `flesh #FC4A6B` on dark, both existing suite tokens. A highlight that matches the chrome is what makes the two read as one
     /// app rather than as a coloured strip over someone else's window. Dark keeps the brand
     /// flesh; light is the bar's orange, so the bar and the selected row are the same colour on
     /// the screen the owner is looking at.
@@ -51,8 +58,8 @@ enum Theme {
     /// Accent *text* — a deeper pink on light, a lighter one on dark, because the fill colour
     /// does not carry enough contrast as small type on either background.
     ///
-    /// Light follows the accent's new hue: `#EE7B4D` itself measures about 2.4:1 on the warm
-    /// ground and cannot carry small type, so this is the same orange taken down to a burnt tone
+    /// Light follows the accent's new hue: `cantaloupe` itself measures about 2.4:1 on `cream`
+    /// and cannot carry small type, so this is the same orange taken down to a burnt tone
     /// that can. Dark is unchanged — `#FF9BB2` already reads against a dark window.
     static let accentText = dynamic(light: 0xB4501F, dark: 0xFF9BB2)
 
@@ -83,7 +90,7 @@ enum Theme {
     // MARK: State
     //
     // Semantic, not decorative. These are the colours a *status* is allowed to use, and they
-    // now come from BRAND.md's semantic row rather than from macOS.
+    // now come from `branding.md`'s semantic row rather than from macOS.
 
     /// A running container, an online host. Brand `stripe`, darkened on light because
     /// `#7CB342` on white is too weak to read as a state at 7pt.
@@ -112,11 +119,9 @@ enum Theme {
     ///
     /// Dark is a deep rind-cast neutral, not pure grey, so the green character survives the
     /// appearance switch instead of the app looking like two different products.
-    /// **Experiment, 13 September.** `#FBF7F0` at full opacity, on the owner's ask, replacing the
-    /// honeydew wash. Warm off-white rather than a green cast, to sit under the coloured bar
-    /// below. `BRAND.md` still specifies the honeydew, so this and `titleBar` are the two lines
-    /// to revert if the trial does not stick — and `DECISIONS.md` is where the outcome belongs if
-    /// it does, since the brand doc is the source of truth for colour and this departs from it.
+    /// `cream #FBF7F0` at full opacity — a warm off-white rather than a green cast, to sit under
+    /// the coloured bar. **Not a new colour**: it is a suite neutral, as `cantaloupe` is a suite
+    /// melon. The palette did not grow; the roles moved. See `design/branding.md`.
     static let contentBackground = dynamic(light: 0xFBF7F0, dark: 0x171C14,
                                            lightAlpha: 1, darkAlpha: 0.85)
 
@@ -126,8 +131,8 @@ enum Theme {
     /// `contentBackground`, which is why it read as part of the content rather than as chrome
     /// however tall it got. `#EE7B4D` on the owner's ask.
     ///
-    /// `#FC4A6B` on dark, on the owner's ask — the brand flesh, which is also what the melon's
-    /// centre is drawn in. So the bar, the highlights and the logo's one warm note are the same
+    /// `flesh #FC4A6B` on dark, on the owner's ask — which is also what the melon's centre is
+    /// drawn in. So the bar, the highlights and the logo's one warm note are the same
     /// colour in dark mode.
     static let titleBar = dynamic(light: 0xEE7B4D, dark: 0xFC4A6B)
 
