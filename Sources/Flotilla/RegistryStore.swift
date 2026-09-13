@@ -25,6 +25,10 @@ final class RegistryStore {
     private let defaults: UserDefaults?
 
     static let key = "userRegistries"
+    /// Built-in registries the user removed from the list. A separate plist key, because these
+    /// are hosts rather than definitions and folding them into the same array would mean a row
+    /// whose only content is "not this one".
+    static let hiddenKey = "hiddenRegistries"
 
     init(defaults: UserDefaults? = TagStore.standardDefaults()) {
         self.defaults = defaults
@@ -41,7 +45,9 @@ final class RegistryStore {
                                  kind: entry["kind"].flatMap(RegistryKind.init(rawValue:)),
                                  usesHTTP: entry["scheme"] == "http")
         }
-        book = RegistryBook(userAdded: added)
+        let hidden = Set((defaults?.stringArray(forKey: Self.hiddenKey) ?? [])
+            .map(KnownRegistry.canonicalHost))
+        book = RegistryBook(userAdded: added, hidden: hidden)
     }
 
     var lastError: String?
@@ -63,8 +69,19 @@ final class RegistryStore {
         }
     }
 
+    /// Removes a registry from the list. A built-in is hidden and can be added back; one of the
+    /// user's own is deleted. Neither signs out — see `RegistryBook.remove(host:)`.
     func remove(host: String) {
         do { try book.remove(host: host); persist() }
+        catch {
+            lastError = (error as? RegistryBook.RegistryError)?.description
+                ?? String(describing: error)
+        }
+    }
+
+    /// Puts a removed built-in back.
+    func restore(host: String) {
+        do { try book.restore(host: host); persist() }
         catch {
             lastError = (error as? RegistryBook.RegistryError)?.description
                 ?? String(describing: error)
@@ -77,5 +94,6 @@ final class RegistryStore {
             ["host": $0.id, "name": $0.name, "summary": $0.summary,
              "kind": $0.kind.rawValue, "scheme": $0.usesHTTP ? "http" : "https"]
         }, forKey: Self.key)
+        defaults.set(book.hidden.sorted(), forKey: Self.hiddenKey)
     }
 }

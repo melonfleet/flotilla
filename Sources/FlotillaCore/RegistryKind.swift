@@ -18,6 +18,7 @@ import Foundation
 /// live registry API; see `DECISIONS.md` Q20.
 public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable {
     case dockerHub, github, gitlab, quay, redHat, microsoft, amazonPublic, kubernetes
+    case chainguard
     case amazonECR, azure, googleArtifact, harbor, jfrog, gitea
     /// A registry Flotilla knows nothing specific about — a bare `registry:2`, or anything else
     /// that speaks the distribution API.
@@ -35,6 +36,7 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
         case .microsoft: "Microsoft Artifact Registry"
         case .amazonPublic: "Amazon ECR Public"
         case .kubernetes: "Kubernetes"
+        case .chainguard: "Chainguard"
         case .amazonECR: "Amazon ECR (private)"
         case .azure: "Azure Container Registry"
         case .googleArtifact: "Google Artifact Registry"
@@ -52,7 +54,8 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
     /// choice that could only produce a duplicate is not offered at all.
     public var hostIsFixed: Bool {
         switch self {
-        case .dockerHub, .github, .quay, .redHat, .microsoft, .amazonPublic, .kubernetes:
+        case .dockerHub, .github, .quay, .redHat, .microsoft, .amazonPublic, .kubernetes,
+             .chainguard:
             true
         // GitLab's *hosted* registry is `registry.gitlab.com` and is in the catalogue; a
         // self-managed GitLab usually puts its registry on a different host from its web UI,
@@ -131,6 +134,9 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
         case .gitea:
             "Your account username and a personal access token with the package scope. The "
             + "registry is on the main site host, not a registry. subdomain."
+        case .chainguard:
+            "Your Chainguard account and a token from the console. The free tier of images "
+            + "pulls without signing in."
         case .microsoft, .kubernetes:
             nil
         case .other:
@@ -148,6 +154,7 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
         case .gitlab: "https://gitlab.com/-/user_settings/personal_access_tokens/legacy/new?scopes=read_registry"
         case .quay: "https://docs.quay.io/glossary/robot-accounts.html"
         case .redHat: "https://access.redhat.com/terms-based-registry/"
+        case .chainguard: "https://console.chainguard.dev/"
         case .amazonECR, .amazonPublic, .azure, .googleArtifact, .harbor, .jfrog, .gitea,
              .microsoft, .kubernetes, .other:
             nil
@@ -170,6 +177,7 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
         case .quay: "https://docs.quay.io/guides/login.html"
         case .redHat: "https://access.redhat.com/articles/RegistryAuthentication"
         case .dockerHub: "https://docs.docker.com/security/access-tokens/personal-access-tokens/"
+        case .chainguard: "https://edu.chainguard.dev/chainguard/containers/using-and-deploying/using-containers/"
         case .microsoft, .kubernetes, .other: nil
         }
     }
@@ -210,6 +218,7 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
         case "mcr.microsoft.com": return .microsoft
         case "public.ecr.aws": return .amazonPublic
         case "registry.k8s.io": return .kubernetes
+        case "cgr.dev": return .chainguard
         case "registry.gitlab.com": return .gitlab
         case "registry.redhat.io", "registry.access.redhat.com": return .redHat
         default: break

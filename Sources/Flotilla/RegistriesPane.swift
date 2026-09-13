@@ -236,11 +236,17 @@ struct RegistriesPane: View {
             // Says what it does *not* do. Removing a row and destroying a credential are
             // different decisions, and a row that vanished while the login survived would be a
             // login you can no longer see.
+            // Three different situations, and they are genuinely different: a built-in comes
+            // back by name from Add, one of your own has to be retyped, and either way a login
+            // survives and keeps the row visible.
             Text(pendingRemove?.isSignedIn == true
                  ? "This only removes it from the list. You stay signed in, so it will still "
                    + "appear here as a sign-in until you sign out."
-                 : "This only removes it from the list. Nothing is deleted and you can add it "
-                   + "again.")
+                 : (pendingRemove?.isUserAdded == true
+                    ? "This only removes it from the list. Nothing is deleted, and you can add "
+                      + "it again with Add Registry."
+                    : "This only removes it from the list. Add Registry will offer it back "
+                      + "under Removed."))
         }
     }
 
@@ -309,7 +315,14 @@ struct RegistriesPane: View {
                         .accessibilityLabel("Browse \(row.name)")
                         .help("Browse \(row.name) in your browser")
                     }
-                    if row.isUserAdded {
+                    // **Every row in the list can be removed now**, not only the user's own.
+                    // A built-in is hidden rather than deleted and comes back through Add —
+                    // refusing to remove one was defensible and wrong for the person using it:
+                    // a list of ten registries where you use two is a list you stop reading.
+                    //
+                    // A row that is only here because you are signed in to it is not in the
+                    // list to begin with, so there is nothing to remove.
+                    if row.known != nil {
                         IconActionButton(systemImage: "trash",
                                          label: "Remove \(row.id) from the list",
                                          help: "Remove from the list. Does not sign out.",

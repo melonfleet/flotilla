@@ -181,16 +181,21 @@ struct RegistryTests {
         #expect(book.userAdded.first?.name == "registry.internal:5000")
     }
 
-    @Test("a built-in registry cannot be removed, and says why")
+    /// **This assertion was reversed on purpose**, and the old one is worth remembering: a
+    /// built-in used to refuse removal outright, with `RegistryError.builtIn` to say why. That
+    /// was defensible — a built-in is code, there is nothing to delete — and it was wrong for
+    /// the person using it, because a list of ten registries where you use two is a list you
+    /// stop reading. Built-ins are hidden now; see `hidingAndRestoring`.
+    @Test("removing works on both kinds, and refuses a host that is neither")
     func removal() throws {
         var book = RegistryBook()
         try book.add(host: "registry.internal", name: "Mine")
         try book.remove(host: "registry.internal")
         #expect(book.userAdded.isEmpty)
 
-        #expect(throws: RegistryBook.RegistryError.builtIn("docker.io")) {
-            try book.remove(host: "docker.io")
-        }
+        try book.remove(host: "docker.io")
+        #expect(!book.all.contains { $0.id == "docker.io" })
+
         #expect(throws: RegistryBook.RegistryError.notUserAdded("nothing.example")) {
             try book.remove(host: "nothing.example")
         }
@@ -496,6 +501,82 @@ struct ImageReferenceHostTests {
             let qualified = ImageReferenceHost.qualify(reference, with: registry)
             #expect(Allowlist.accepts(qualified, as: .imageReference),
                     Comment(rawValue: "allowlist refuses \(qualified)"))
+        }
+    }
+}
+
+/// Removing and putting back.
+///
+/// A built-in is code, so it cannot be deleted — it is hidden, and Add offers it back by name.
+/// The first version simply refused to remove one, which is defensible and was wrong for the
+/// person using it: a list of ten registries where you use two is a list you stop reading.
+extension RegistryTests {
+    @Test("a built-in is hidden rather than deleted, and comes back")
+    func hidingAndRestoring() throws {
+        var book = RegistryBook()
+        #expect(book.all.contains { $0.id == "quay.io" })
+        #expect(book.restorable.isEmpty)
+
+        try book.remove(host: "quay.io")
+        #expect(!book.all.contains { $0.id == "quay.io" })
+        #expect(book.restorable.map(\.id) == ["quay.io"])
+
+        try book.restore(host: "quay.io")
+        #expect(book.all.contains { $0.id == "quay.io" })
+        #expect(book.restorable.isEmpty)
+    }
+
+    /// Typing a removed built-in's host is a sensible way to ask for it back, and must not
+    /// create a user-added row that shadows the real one with worse guidance.
+    @Test("adding a hidden built-in's host restores the built-in")
+    func addingAHiddenHostRestoresIt() throws {
+        var book = RegistryBook()
+        try book.remove(host: "ghcr.io")
+        let restored = try book.add(host: "GHCR.io", name: "My GitHub")
+        #expect(!restored.isUserAdded)
+        #expect(restored.name == "GitHub Container Registry")
+        #expect(book.userAdded.isEmpty)
+        #expect(book.restorable.isEmpty)
+    }
+
+    /// Docker Hub's three spellings are one registry here too — removing it by any of them
+    /// hides the one row, and it does not come back under a second name.
+    @Test("hiding follows the canonical host")
+    func hidingIsCanonical() throws {
+        var book = RegistryBook()
+        try book.remove(host: "registry-1.docker.io")
+        #expect(!book.all.contains { $0.id == "docker.io" })
+        #expect(throws: RegistryBook.RegistryError.duplicate("ghcr.io")) {
+            try book.add(host: "ghcr.io", name: "x")
+        }
+        try book.restore(host: "index.docker.io")
+        #expect(book.all.contains { $0.id == "docker.io" })
+    }
+
+    @Test("a user's own registry is deleted, not hidden")
+    func userAddedIsDeleted() throws {
+        var book = RegistryBook()
+        try book.add(host: "registry.internal:5000", name: "Mine")
+        try book.remove(host: "registry.internal:5000")
+        #expect(book.userAdded.isEmpty)
+        // Not restorable — there is no built-in behind it, so it has to be typed again.
+        #expect(book.restorable.isEmpty)
+        #expect(throws: RegistryBook.RegistryError.notUserAdded("nothing.example")) {
+            try book.remove(host: "nothing.example")
+        }
+    }
+
+    /// Amazon's "Popular registries" panel lists Datadog, NGINX, Ubuntu, Python and the rest.
+    /// Those are publishers **inside** `public.ecr.aws`, not registries, and must never become
+    /// rows — proven by fetching their manifests from that one host. Chainguard is the exception
+    /// and runs its own.
+    @Test("Chainguard is a registry; the other ECR publishers are not")
+    func chainguardIsItsOwnRegistry() {
+        #expect(KnownRegistry.builtIn.contains { $0.id == "cgr.dev" })
+        #expect(RegistryKind.inferred(fromHost: "cgr.dev") == .chainguard)
+        for publisher in ["datadog", "nginx", "ubuntu", "python", "chainguard"] {
+            #expect(!KnownRegistry.builtIn.contains { $0.id == publisher },
+                    Comment(rawValue: "\(publisher) is a namespace, not a registry"))
         }
     }
 }

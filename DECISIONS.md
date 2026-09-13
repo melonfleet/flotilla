@@ -861,3 +861,31 @@ refused half the account names registries actually issue: Red Hat's `12345678|na
 meaning. It is classified **free-form**, so the audit line redacts the account while keeping the
 registry — which removed a hand-built error string that had been routing around the same problem
 in one `throw` instead of fixing it at the source.
+
+### Q20 amended again — registries can be removed, and Amazon's "popular registries" are not registries (2026-09-13)
+
+**The panel the owner asked about lists publishers, not registries.** Amazon's ECR Public Gallery
+shows "Popular registries": Docker official, Chainguard, Datadog, Ubuntu, NGINX, Python, Lambda
+and the rest. Measured — `public.ecr.aws/docker/library/alpine`, `.../chainguard/static`,
+`.../ubuntu/ubuntu`, `.../nginx/nginx` and `.../datadog/agent` all return a manifest from that
+**one** host. They are namespaces inside `public.ecr.aws`, which is already a row; AWS's own
+wording is loose. Adding them would create nine rows for one registry.
+
+One exception, and it is a real one: **Chainguard runs its own registry at `cgr.dev`**, proven by
+an anonymous manifest fetch that returns 200 there as well. That is a row.
+
+**Built-ins can now be removed, which reverses a decision two commits old.** They used to refuse
+removal with `RegistryError.builtIn` — defensible, since a built-in is code and there is nothing
+to delete, and wrong for the person using it: a list of ten registries where you use two is a
+list you stop reading. A built-in is **hidden**; one of the user's own is deleted. The hidden set
+is stored as hosts rather than indices, so reordering the catalogue later cannot hide a different
+registry than the one that was removed.
+
+Hiding also fixed the Add form's remaining awkwardness. Its picker offers kinds with no fixed
+host — and now, above them, the built-ins you removed, by name. Putting one back restores it
+exactly: host, guidance, links. Typing a hidden built-in's host does the same thing rather than
+creating a user-added row that would shadow the real one with worse guidance, and the duplicate
+check runs against the **visible** list so that path is reachable at all.
+
+`RegistryError.builtIn` was deleted rather than left in place: nothing throws it now, and an error
+case that cannot happen is the same claim as a control that does nothing.

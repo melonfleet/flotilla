@@ -21,16 +21,28 @@ struct AddRegistryView: View {
     /// first version asked for a row and the answer set was empty, because every registry with a
     /// fixed hostname is already in the list and is never something you add.
     @State private var kind: RegistryKind = .other
+    /// A removed built-in the user is putting back, which short-circuits everything else on the
+    /// form: its host, name and guidance are all already known.
+    @State private var restoring: String?
     @State private var host = ""
     @State private var name = ""
     @State private var usesHTTP = false
     @State private var edits = FormEditTracker()
 
-    /// The families you can actually add: the ones with no fixed hostname. A `Sign In…` for
-    /// Docker Hub already exists on the list behind this form, so offering "add Docker Hub"
-    /// could only ever produce a duplicate.
+    /// The families you can actually add: the ones with no fixed hostname. A registry with a
+    /// fixed host is either already in the list — where offering it could only produce a
+    /// duplicate — or it was removed, in which case it is offered back above under Removed.
     private var addableKinds: [RegistryKind] {
         RegistryKind.allCases.filter { !$0.hostIsFixed }
+    }
+
+    /// Built-ins the user removed. Offered by name at the top of the picker, because putting one
+    /// back is a different act from adding a new registry and should not require knowing its
+    /// hostname.
+    private var restorable: [KnownRegistry] { store.book.restorable }
+
+    private var restoringRegistry: KnownRegistry? {
+        restoring.flatMap { host in restorable.first { $0.id == host } }
     }
 
     private var trimmedHost: String {
@@ -42,10 +54,13 @@ struct AddRegistryView: View {
         return store.book.problem(withHost: trimmedHost)
     }
 
-    private var canAdd: Bool { !trimmedHost.isEmpty && hostProblem == nil }
+    private var canAdd: Bool {
+        restoring != nil || (!trimmedHost.isEmpty && hostProblem == nil)
+    }
 
     private var editSignature: String {
-        [kind.rawValue, host, name, usesHTTP ? "http" : "https"].joined(separator: "\u{1}")
+        [restoring ?? "", kind.rawValue, host, name, usesHTTP ? "http" : "https"]
+            .joined(separator: "\u{1}")
     }
 
     var body: some View {
@@ -67,6 +82,37 @@ struct AddRegistryView: View {
 
     @ViewBuilder
     private var fields: some View {
+        if !restorable.isEmpty {
+            FormField("Put back",
+                      help: FieldHelp(
+                          "A registry you removed from the list.",
+                          detail: "Built-in registries are hidden rather than deleted, so they "
+                              + "come back exactly as they were — host, guidance and links.")) {
+                Picker("", selection: $restoring) {
+                    Text("Add a new registry…").tag(String?.none)
+                    Divider()
+                    ForEach(restorable) { registry in
+                        Text(registry.name).tag(Optional(registry.id))
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 320)
+            }
+        }
+
+        if let restoringRegistry {
+            FormField("Server", help: FieldHelp(restoringRegistry.summary,
+                                                detail: "Fixed for a registry Flotilla knows.")) {
+                Text(restoringRegistry.id)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+            if let hint = restoringRegistry.credentialHint {
+                FormSectionHeader(title: "Signing in",
+                                  note: "What this registry asks for when you sign in.")
+                credentialGuidance(hint)
+            }
+        } else {
         FormField("Kind",
                   help: FieldHelp(
                       "What sort of registry this is.",
@@ -144,6 +190,7 @@ struct AddRegistryView: View {
                 .foregroundStyle(Theme.warning)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        }
     }
 
     /// Prose, then any command on its own line — the same split the sign-in sheet uses, because
@@ -162,11 +209,13 @@ struct AddRegistryView: View {
                     .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 6))
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.hairline))
             }
-            if let url = (kind.tokenURL ?? kind.docsURL).flatMap(URL.init(string:)) {
+            let links = restoringRegistry.map { ($0.tokenURL, $0.kind.docsURL) }
+                ?? (kind.tokenURL, kind.docsURL)
+            if let url = (links.0 ?? links.1).flatMap(URL.init(string:)) {
                 Button { NSWorkspace.shared.open(url) } label: {
-                    Label(kind.tokenURL != nil
+                    Label(links.0 != nil
                           ? "Create a token in your browser…"
-                          : "Read \(kind.name)'s sign-in guide…",
+                          : "Read the sign-in guide…",
                           systemImage: "safari")
                         .font(.callout)
                 }
@@ -186,7 +235,15 @@ struct AddRegistryView: View {
             Label("Will be added as", systemImage: "shippingbox")
                 .font(.caption)
                 .foregroundStyle(Theme.info)
-            if trimmedHost.isEmpty {
+            if let restoringRegistry {
+                Text(restoringRegistry.name).font(.system(size: 13, weight: .medium))
+                Text(restoringRegistry.id)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Text("Put back exactly as it was.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if trimmedHost.isEmpty {
                 Text("Type the registry's server name.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
@@ -208,15 +265,19 @@ struct AddRegistryView: View {
         HStack {
             // The backstop the network form gained: if the button is off and no field above has
             // said why, say it here rather than leaving a grey button with no explanation.
-            if let hostProblem {
+            if let hostProblem, restoring == nil {
                 Text(hostProblem).font(.caption).foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             Button("Cancel", action: dismiss).keyboardShortcut(.cancelAction)
-            Button("Add") {
-                store.add(host: trimmedHost, name: name, summary: kind.summary,
-                          kind: kind, usesHTTP: usesHTTP)
+            Button(restoring == nil ? "Add" : "Put Back") {
+                if let restoring {
+                    store.restore(host: restoring)
+                } else {
+                    store.add(host: trimmedHost, name: name, summary: kind.summary,
+                              kind: kind, usesHTTP: usesHTTP)
+                }
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
