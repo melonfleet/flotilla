@@ -239,14 +239,18 @@ struct RegistriesPane: View {
             // Three different situations, and they are genuinely different: a built-in comes
             // back by name from Add, one of your own has to be retyped, and either way a login
             // survives and keeps the row visible.
+            // One kind of removal now, for one kind of row. A registry Flotilla knows comes
+            // back from the Add form's own picker; one of your own has to be retyped. Either
+            // way a login survives it and keeps the row visible, which is the only part that
+            // needs saying twice.
             Text(pendingRemove?.isSignedIn == true
                  ? "This only removes it from the list. You stay signed in, so it will still "
                    + "appear here as a sign-in until you sign out."
                  : (pendingRemove?.isUserAdded == true
                     ? "This only removes it from the list. Nothing is deleted, and you can add "
                       + "it again with Add Registry."
-                    : "This only removes it from the list. Add Registry will offer it back "
-                      + "under Removed."))
+                    : "This only removes it from the list. Add Registry offers it again "
+                      + "whenever you want it back."))
         }
     }
 
@@ -322,6 +326,8 @@ struct RegistriesPane: View {
                     //
                     // A row that is only here because you are signed in to it is not in the
                     // list to begin with, so there is nothing to remove.
+                    // Every row in the list can be removed; a row that is only here because
+                    // you are signed in to it is not in the list to begin with.
                     if row.known != nil {
                         IconActionButton(systemImage: "trash",
                                          label: "Remove \(row.id) from the list",

@@ -180,13 +180,20 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
         self.ownCredentialHint = credentialHint
     }
 
-    /// The registries offered out of the box.
+    /// The registries Flotilla knows how to describe.
+    ///
+    /// **This is a menu, not a list.** Nothing here is in anyone's list until they add it — the
+    /// list starts with Docker Hub and GHCR and grows when you say so. That distinction took
+    /// three attempts to get right: the first version put all of these in the list permanently,
+    /// the second let you hide them, and the third let you "put back" a hidden one. All three
+    /// were elaborations of the same wrong idea. A registry is either in your list or it is not,
+    /// and the catalogue's only job is to fill in the fields when you pick a known one.
     ///
     /// Every one has a **single, real, account-independent hostname** — that is the entry
     /// requirement, for the reason the type's own note gives. Ordered by how often they turn up
     /// rather than alphabetically, with the implicit default first because it is the one that
     /// answers "where did `alpine:latest` come from".
-    public static let builtIn: [KnownRegistry] = [
+    public static let catalogue: [KnownRegistry] = [
         KnownRegistry(id: "docker.io", name: "Docker Hub",
                       summary: "Where an image reference with no host comes from, such as `alpine:latest`.",
                       isImplicitDefault: true,
@@ -314,45 +321,51 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
 /// target, and "may a user add a host that is already built in" is not a question to answer by
 /// trying it.
 public struct RegistryBook: Sendable, Equatable {
-    /// Registries the user added themselves, in the order they added them.
-    public private(set) var userAdded: [KnownRegistry]
 
-    /// Built-in registries the user has removed from the list.
+    /// The registries in the user's list, in the order they were added.
     ///
-    /// **Hidden rather than deleted, because a built-in is code and cannot be deleted.** The
-    /// first version simply refused to remove one, which is defensible and was wrong for the
-    /// person using it: a list of nine registries where you use two is a list you stop reading.
-    /// So Remove hides, Add restores, and the set of hidden ones is exactly what the Add form
-    /// offers back — which is also what finally made that picker's contents meaningful.
+    /// **All of them, including the ones that came from the catalogue.** There is no second,
+    /// permanent tier — that idea produced three wrong designs in a row (a fixed list, then a
+    /// hideable one, then a hideable one with an undo). A registry is in your list because you
+    /// put it there, and it leaves because you took it out.
+    public private(set) var registries: [KnownRegistry]
+
+    public init(registries: [KnownRegistry] = []) {
+        self.registries = registries
+    }
+
+    /// What a fresh install starts with.
     ///
-    /// Stored as hosts rather than indices so a future reordering of the catalogue cannot
-    /// silently hide a different registry than the one that was removed.
-    public private(set) var hidden: Set<String>
-
-    public init(userAdded: [KnownRegistry] = [], hidden: Set<String> = []) {
-        self.userAdded = userAdded
-        self.hidden = hidden
+    /// Two, not ten. Docker Hub because it is where a reference with no host goes, and GHCR
+    /// because it is the other one almost everybody already pulls from — Apple's own builder
+    /// image lives there. Everything else is a menu item until someone wants it.
+    public static var starter: RegistryBook {
+        RegistryBook(registries: KnownRegistry.catalogue.filter {
+            $0.id == "docker.io" || $0.id == "ghcr.io"
+        })
     }
 
-    /// Everything the screen lists, built-ins first and minus whatever was removed.
-    public var all: [KnownRegistry] {
-        KnownRegistry.builtIn.filter { !hidden.contains(KnownRegistry.canonicalHost($0.id)) }
-            + userAdded
+    /// Everything the screen lists.
+    public var all: [KnownRegistry] { registries }
+
+    /// Catalogue entries not already in the list — what the Add form offers to pick from.
+    public var addable: [KnownRegistry] {
+        let present = Set(registries.map { KnownRegistry.canonicalHost($0.id) })
+        return KnownRegistry.catalogue.filter {
+            !present.contains(KnownRegistry.canonicalHost($0.id))
+        }
     }
 
-    /// Built-ins the user has removed, in catalogue order — what Add offers to put back.
-    public var restorable: [KnownRegistry] {
-        KnownRegistry.builtIn.filter { hidden.contains(KnownRegistry.canonicalHost($0.id)) }
+    public func registry(id: String) -> KnownRegistry? {
+        let host = KnownRegistry.canonicalHost(id)
+        return registries.first { KnownRegistry.canonicalHost($0.id) == host }
     }
-
-    public func registry(id: String) -> KnownRegistry? { all.first { $0.id == id } }
 
     public enum RegistryError: Error, Equatable, CustomStringConvertible {
         case emptyHost
         case invalidHost(String)
         case duplicate(String)
-        case notUserAdded(String)
-        case emptyName
+        case notInList(String)
 
         public var description: String {
             switch self {
@@ -361,11 +374,9 @@ public struct RegistryBook: Sendable, Equatable {
             case .invalidHost(let host):
                 "‘\(host)’ isn’t a registry server. " + ValueShape.registryHost.rule
             case .duplicate(let host):
-                "‘\(host)’ is already in the list."
-            case .notUserAdded(let host):
-                "‘\(host)’ isn’t one of your own registries."
-            case .emptyName:
-                "Give the registry a name, so you can recognise it in the list."
+                "‘\(host)’ is already in your list."
+            case .notInList(let host):
+                "‘\(host)’ isn’t in your list."
             }
         }
     }
@@ -393,67 +404,48 @@ public struct RegistryBook: Sendable, Equatable {
         guard Allowlist.accepts(host, as: .registryHost) else {
             throw RegistryError.invalidHost(host)
         }
-        // Against the **visible** list. A built-in the user removed is not a duplicate — typing
-        // its host is a perfectly sensible way to ask for it back, and `add` restores it.
-        guard !all.contains(where: {
-            KnownRegistry.canonicalHost($0.id) == KnownRegistry.canonicalHost(host)
-        }) else { throw RegistryError.duplicate(host) }
+        guard registry(id: host) == nil else { throw RegistryError.duplicate(host) }
         return host
     }
 
+    /// Adds a registry the catalogue already describes — its host, guidance and links come with
+    /// it, so there is nothing to type.
+    @discardableResult
+    public mutating func add(known: KnownRegistry) throws -> KnownRegistry {
+        guard registry(id: known.id) == nil else { throw RegistryError.duplicate(known.id) }
+        registries.append(known)
+        return known
+    }
+
+    /// Adds one the catalogue does not know: a private, self-hosted or per-account registry.
     @discardableResult
     public mutating func add(host rawHost: String, name rawName: String,
                              summary: String = "",
                              kind: RegistryKind? = nil,
                              usesHTTP: Bool = false) throws -> KnownRegistry {
-        // Typing the host of a removed built-in puts the built-in back, rather than creating a
-        // user-added row that shadows it with worse guidance.
-        let canonical = KnownRegistry.canonicalHost(
-            rawHost.trimmingCharacters(in: .whitespacesAndNewlines))
-        if hidden.contains(canonical),
-           let builtIn = KnownRegistry.builtIn.first(where: {
-               KnownRegistry.canonicalHost($0.id) == canonical
-           }) {
-            hidden.remove(canonical)
-            return builtIn
-        }
         let host = try normalised(host: rawHost)
         let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         // Falls back to the host rather than refusing: the name is for recognising the row, and
-        // for a self-hosted registry the host *is* how you recognise it. Only a name that is
-        // nothing but whitespace when one was typed is an error.
-        let name = trimmed.isEmpty ? host : trimmed
-        let registry = KnownRegistry(id: host, name: name,
+        // for a self-hosted registry the host *is* how you recognise it.
+        let registry = KnownRegistry(id: host, name: trimmed.isEmpty ? host : trimmed,
                                      summary: summary.trimmingCharacters(in: .whitespacesAndNewlines),
                                      isUserAdded: true, kind: kind, usesHTTP: usesHTTP)
-        userAdded.append(registry)
+        registries.append(registry)
         return registry
     }
 
-    /// Removes a registry from the list.
+    /// Takes a registry out of the list.
     ///
     /// **Does not sign out.** Removing a row and destroying a credential are different
     /// decisions, and doing both behind one button is how someone loses a login they meant to
     /// keep. The screen offers Sign Out separately, and a removed registry that still has a
     /// login reappears in the table — as a login, which is the truth.
     ///
-    /// A built-in is hidden; one of the user's own is deleted. Both come back the same way,
-    /// through Add.
+    /// One kind of removal, for one kind of row. A catalogue registry that is removed is simply
+    /// not in the list; adding it back is the same act as adding it the first time.
     public mutating func remove(host rawHost: String) throws {
         let host = KnownRegistry.canonicalHost(rawHost)
-        if userAdded.contains(where: { KnownRegistry.canonicalHost($0.id) == host }) {
-            userAdded.removeAll { KnownRegistry.canonicalHost($0.id) == host }
-            return
-        }
-        guard KnownRegistry.builtIn.contains(where: { KnownRegistry.canonicalHost($0.id) == host })
-        else { throw RegistryError.notUserAdded(rawHost) }
-        hidden.insert(host)
-    }
-
-    /// Puts a removed built-in back.
-    public mutating func restore(host rawHost: String) throws {
-        let host = KnownRegistry.canonicalHost(rawHost)
-        guard hidden.contains(host) else { throw RegistryError.notUserAdded(rawHost) }
-        hidden.remove(host)
+        guard registry(id: host) != nil else { throw RegistryError.notInList(rawHost) }
+        registries.removeAll { KnownRegistry.canonicalHost($0.id) == host }
     }
 }

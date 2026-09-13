@@ -889,3 +889,31 @@ check runs against the **visible** list so that path is reachable at all.
 
 `RegistryError.builtIn` was deleted rather than left in place: nothing throws it now, and an error
 case that cannot happen is the same claim as a control that does nothing.
+
+### Q20 settled — the catalogue is a menu, not a list (2026-09-13)
+
+Three designs preceded this one and all three were elaborations of the same wrong idea: that the
+registries Flotilla knows about *are* your list. The owner had to say it three times before it
+landed, and the corrections are worth recording because each one looked locally reasonable.
+
+1. **Every known registry, permanently listed.** Ten rows on a fresh install, of which most
+   people use two. The Add form's picker was then empty by construction — everything addable was
+   already there.
+2. **Hideable.** Remove now worked, but a removed registry needed somewhere to come back from.
+3. **Hideable with an undo.** A "Put back" picker above the Add picker: a second way to do the
+   one thing that form exists for.
+
+The list starts with **Docker Hub and GHCR** — where a host-less reference goes, and the other
+one almost everybody already pulls from. Everything else in `KnownRegistry.catalogue` is a menu
+item until someone adds it. Adding a known registry brings its host, guidance and links with it;
+adding anything else asks for a kind and a host. Removing takes it out of the list, and adding it
+again is the same act as adding it the first time. There is no second tier, no hidden set, and no
+"put back".
+
+**Definitions are not persisted — hosts are.** A stored row whose host is in the catalogue is
+rehydrated from the catalogue on every launch, so improving a registry's wording or fixing a
+token URL reaches lists that already exist. Freezing the definition into the plist would mean the
+first person to add GHCR keeps that day's text for ever. Only what the catalogue cannot know is
+written down: host, kind, chosen name, scheme. The two retired keys from designs 2 and 3 are
+actively removed on save — a stale `hiddenRegistries` is a fact about a feature that no longer
+exists.

@@ -131,9 +131,9 @@ struct RegistryTests {
     /// A row whose host is a template would be a row that cannot be used.
     @Test("every built-in registry has a usable, unique host")
     func builtInCatalogue() {
-        let hosts = KnownRegistry.builtIn.map(\.id)
+        let hosts = KnownRegistry.catalogue.map(\.id)
         #expect(Set(hosts).count == hosts.count)
-        for registry in KnownRegistry.builtIn {
+        for registry in KnownRegistry.catalogue {
             #expect(Allowlist.accepts(registry.id, as: .registryHost),
                     Comment(rawValue: "\(registry.id) is not a usable host"))
             #expect(!registry.isUserAdded)
@@ -143,74 +143,19 @@ struct RegistryTests {
             #expect(!registry.id.contains("<"))
         }
         // Exactly one registry is what a host-less reference resolves to.
-        #expect(KnownRegistry.builtIn.count { $0.isImplicitDefault } == 1)
-        #expect(KnownRegistry.builtIn.first { $0.isImplicitDefault }?.id == "docker.io")
+        #expect(KnownRegistry.catalogue.count { $0.isImplicitDefault } == 1)
+        #expect(KnownRegistry.catalogue.first { $0.isImplicitDefault }?.id == "docker.io")
     }
 
-    @Test("a host is normalised, checked and de-duplicated when added")
-    func addingRegistries() throws {
-        var book = RegistryBook()
-        try book.add(host: "  Registry.Example.COM:5000 ", name: " Staging ")
-        let added = try #require(book.userAdded.first)
-        // Lowercased, because a hostname is case-insensitive and two rows for one registry is
-        // one row that can never match what `registry list` reports.
-        #expect(added.id == "registry.example.com:5000")
-        #expect(added.name == "Staging")
-        #expect(added.isUserAdded)
-
-        #expect(throws: RegistryBook.RegistryError.duplicate("registry.example.com:5000")) {
-            try book.add(host: "REGISTRY.EXAMPLE.COM:5000", name: "Again")
-        }
-        #expect(throws: RegistryBook.RegistryError.duplicate("ghcr.io")) {
-            try book.add(host: "ghcr.io", name: "Mine")
-        }
-        #expect(throws: RegistryBook.RegistryError.invalidHost("https://x.example")) {
-            try book.add(host: "https://x.example", name: "Bad")
-        }
-        #expect(throws: RegistryBook.RegistryError.emptyHost) {
-            try book.add(host: "   ", name: "Nameless")
-        }
-    }
-
-    /// A name is for recognising the row, and for a self-hosted registry the host *is* how you
-    /// recognise it — so an omitted name is filled in rather than refused.
-    @Test("an omitted name falls back to the host")
-    func nameFallsBack() throws {
-        var book = RegistryBook()
-        try book.add(host: "registry.internal:5000", name: "")
-        #expect(book.userAdded.first?.name == "registry.internal:5000")
-    }
 
     /// **This assertion was reversed on purpose**, and the old one is worth remembering: a
     /// built-in used to refuse removal outright, with `RegistryError.builtIn` to say why. That
     /// was defensible — a built-in is code, there is nothing to delete — and it was wrong for
     /// the person using it, because a list of ten registries where you use two is a list you
     /// stop reading. Built-ins are hidden now; see `hidingAndRestoring`.
-    @Test("removing works on both kinds, and refuses a host that is neither")
-    func removal() throws {
-        var book = RegistryBook()
-        try book.add(host: "registry.internal", name: "Mine")
-        try book.remove(host: "registry.internal")
-        #expect(book.userAdded.isEmpty)
-
-        try book.remove(host: "docker.io")
-        #expect(!book.all.contains { $0.id == "docker.io" })
-
-        #expect(throws: RegistryBook.RegistryError.notUserAdded("nothing.example")) {
-            try book.remove(host: "nothing.example")
-        }
-    }
 
     /// The form must be able to ask the same question the executor will ask, or it is back to
     /// a button that refuses without saying why.
-    @Test("the add form's problem text matches what would be thrown")
-    func problemMatchesThrow() {
-        let book = RegistryBook()
-        #expect(book.problem(withHost: "ghcr.io")
-                == RegistryBook.RegistryError.duplicate("ghcr.io").description)
-        #expect(book.problem(withHost: "registry.internal") == nil)
-        #expect(book.problem(withHost: "ghcr.io/apple") != nil)
-    }
 }
 
 /// The browser half of signing in.
@@ -227,7 +172,7 @@ struct RegistryCredentialTests {
     /// registry that needs one with no link leaves you to go and find the page yourself.
     @Test("every registry that needs a credential says where to get one")
     func tokenPagesMatchTheNeed() {
-        for registry in KnownRegistry.builtIn {
+        for registry in KnownRegistry.catalogue {
             if !registry.hasAccounts {
                 // No account exists: a token page or a credential hint would both lead nowhere.
                 #expect(registry.tokenURL == nil,
@@ -252,7 +197,7 @@ struct RegistryCredentialTests {
     /// they shipped; this checks they are at least parseable and https.
     @Test("every token page is a well-formed https URL")
     func tokenPagesAreWellFormed() throws {
-        for registry in KnownRegistry.builtIn {
+        for registry in KnownRegistry.catalogue {
             guard let raw = registry.tokenURL else { continue }
             let url = try #require(URL(string: raw), Comment(rawValue: "unparseable: \(raw)"))
             #expect(url.scheme == "https", Comment(rawValue: "\(raw) is not https"))
@@ -299,21 +244,21 @@ struct RegistryCredentialTests {
 extension RegistryCredentialTests {
     @Test("only registries with no private tier claim that no sign-in is needed")
     func publicOnlyRegistries() {
-        let publicOnly = Set(KnownRegistry.builtIn.filter(\.anonymousPullWorks).map(\.id))
+        let publicOnly = Set(KnownRegistry.catalogue.filter(\.anonymousPullWorks).map(\.id))
         #expect(publicOnly == ["mcr.microsoft.com", "public.ecr.aws", "registry.k8s.io",
                                "registry.access.redhat.com"])
 
         // A narrower set: registries with no account system *at all*. ECR Public is public and
         // still takes a sign-in (it raises your rate limit), which is why these are two flags
         // and not one. The rows in this set must offer no Sign In control.
-        let noAccounts = Set(KnownRegistry.builtIn.filter { !$0.hasAccounts }.map(\.id))
+        let noAccounts = Set(KnownRegistry.catalogue.filter { !$0.hasAccounts }.map(\.id))
         #expect(noAccounts == ["mcr.microsoft.com", "registry.k8s.io",
                                "registry.access.redhat.com"])
 
         // The registries with both tiers must say in their own words that public images need no
         // sign-in, because the status column cannot: for them "not signed in" is the truth.
         for id in ["docker.io", "ghcr.io", "quay.io", "registry.gitlab.com"] {
-            let registry = KnownRegistry.builtIn.first { $0.id == id }
+            let registry = KnownRegistry.catalogue.first { $0.id == id }
             let hint = registry?.credentialHint ?? ""
             #expect(hint.lowercased().contains("without signing in"),
                     Comment(rawValue: "\(id) never mentions that public images are anonymous"))
@@ -325,7 +270,7 @@ extension RegistryCredentialTests {
     /// all, so that scope buys nothing and costs a great deal.
     @Test("the GHCR hint warns about the scope GitHub adds behind your back")
     func ghcrScopeWarning() throws {
-        let hint = try #require(KnownRegistry.builtIn.first { $0.id == "ghcr.io" }?.credentialHint)
+        let hint = try #require(KnownRegistry.catalogue.first { $0.id == "ghcr.io" }?.credentialHint)
         #expect(hint.contains("read:packages"))
         #expect(hint.contains("write:packages"))
         #expect(hint.contains("repo"))
@@ -362,7 +307,7 @@ extension RegistryTests {
     func dockerHubLoginMatchesItsRow() {
         let login = RegistryLogin(id: "registry-1.docker.io", name: "registry-1.docker.io",
                                   username: "someone")
-        let dockerHub = KnownRegistry.builtIn.first { $0.id == "docker.io" }
+        let dockerHub = KnownRegistry.catalogue.first { $0.id == "docker.io" }
         #expect(dockerHub != nil)
         #expect(KnownRegistry.canonicalHost(login.id)
                 == KnownRegistry.canonicalHost(dockerHub?.id ?? ""))
@@ -505,65 +450,93 @@ struct ImageReferenceHostTests {
     }
 }
 
-/// Removing and putting back.
+/// The list, and what goes in it.
 ///
-/// A built-in is code, so it cannot be deleted — it is hidden, and Add offers it back by name.
-/// The first version simply refused to remove one, which is defensible and was wrong for the
-/// person using it: a list of ten registries where you use two is a list you stop reading.
+/// **Three designs preceded this one**, and the test names are worth keeping as a record: the
+/// catalogue was first a permanent list, then a hideable one, then a hideable one with an undo.
+/// All three were elaborations of the same wrong idea — that the catalogue *is* the list. It is a
+/// menu. A registry is in your list because you added it, and it leaves because you removed it.
 extension RegistryTests {
-    @Test("a built-in is hidden rather than deleted, and comes back")
-    func hidingAndRestoring() throws {
-        var book = RegistryBook()
+    /// Two, not ten. Docker Hub because it is where a host-less reference goes, and GHCR because
+    /// it is the other one almost everybody already pulls from.
+    @Test("a fresh list holds Docker Hub and GHCR, and nothing else")
+    func starterList() {
+        let book = RegistryBook.starter
+        #expect(book.all.map(\.id) == ["docker.io", "ghcr.io"])
+        // Everything else in the catalogue is offered by the Add form instead.
+        #expect(book.addable.count == KnownRegistry.catalogue.count - 2)
+        #expect(!book.addable.contains { $0.id == "docker.io" })
+    }
+
+    @Test("a known registry is added whole, and removing it offers it back")
+    func addingAndRemovingAKnownRegistry() throws {
+        var book = RegistryBook.starter
+        let quay = try #require(book.addable.first { $0.id == "quay.io" })
+        try book.add(known: quay)
         #expect(book.all.contains { $0.id == "quay.io" })
-        #expect(book.restorable.isEmpty)
+        // Its guidance came with it — nothing was typed.
+        #expect(book.registry(id: "quay.io")?.credentialHint != nil)
+        #expect(!book.addable.contains { $0.id == "quay.io" })
 
         try book.remove(host: "quay.io")
         #expect(!book.all.contains { $0.id == "quay.io" })
-        #expect(book.restorable.map(\.id) == ["quay.io"])
-
-        try book.restore(host: "quay.io")
-        #expect(book.all.contains { $0.id == "quay.io" })
-        #expect(book.restorable.isEmpty)
+        // Back on the menu, and adding it again is the same act as the first time — there is no
+        // separate "put back".
+        #expect(book.addable.contains { $0.id == "quay.io" })
     }
 
-    /// Typing a removed built-in's host is a sensible way to ask for it back, and must not
-    /// create a user-added row that shadows the real one with worse guidance.
-    @Test("adding a hidden built-in's host restores the built-in")
-    func addingAHiddenHostRestoresIt() throws {
-        var book = RegistryBook()
-        try book.remove(host: "ghcr.io")
-        let restored = try book.add(host: "GHCR.io", name: "My GitHub")
-        #expect(!restored.isUserAdded)
-        #expect(restored.name == "GitHub Container Registry")
-        #expect(book.userAdded.isEmpty)
-        #expect(book.restorable.isEmpty)
-    }
-
-    /// Docker Hub's three spellings are one registry here too — removing it by any of them
-    /// hides the one row, and it does not come back under a second name.
-    @Test("hiding follows the canonical host")
-    func hidingIsCanonical() throws {
-        var book = RegistryBook()
-        try book.remove(host: "registry-1.docker.io")
-        #expect(!book.all.contains { $0.id == "docker.io" })
+    @Test("a registry already in the list is not offered again, and cannot be added twice")
+    func noDuplicates() throws {
+        var book = RegistryBook.starter
+        #expect(!book.addable.contains { $0.id == "ghcr.io" })
         #expect(throws: RegistryBook.RegistryError.duplicate("ghcr.io")) {
-            try book.add(host: "ghcr.io", name: "x")
+            try book.add(host: "GHCR.io", name: "Mine")
         }
-        try book.restore(host: "index.docker.io")
-        #expect(book.all.contains { $0.id == "docker.io" })
+        let ghcr = try #require(KnownRegistry.catalogue.first { $0.id == "ghcr.io" })
+        #expect(throws: RegistryBook.RegistryError.duplicate("ghcr.io")) {
+            try book.add(known: ghcr)
+        }
     }
 
-    @Test("a user's own registry is deleted, not hidden")
-    func userAddedIsDeleted() throws {
-        var book = RegistryBook()
-        try book.add(host: "registry.internal:5000", name: "Mine")
-        try book.remove(host: "registry.internal:5000")
-        #expect(book.userAdded.isEmpty)
-        // Not restorable — there is no built-in behind it, so it has to be typed again.
-        #expect(book.restorable.isEmpty)
-        #expect(throws: RegistryBook.RegistryError.notUserAdded("nothing.example")) {
-            try book.remove(host: "nothing.example")
+    /// Docker Hub's three spellings are one registry here too.
+    @Test("membership follows the canonical host")
+    func membershipIsCanonical() throws {
+        var book = RegistryBook.starter
+        #expect(book.registry(id: "registry-1.docker.io") != nil)
+        try book.remove(host: "index.docker.io")
+        #expect(book.registry(id: "docker.io") == nil)
+    }
+
+    @Test("a registry that is not in the list cannot be removed")
+    func removingWhatIsNotThere() {
+        var book = RegistryBook.starter
+        #expect(throws: RegistryBook.RegistryError.notInList("quay.io")) {
+            try book.remove(host: "quay.io")
         }
+    }
+
+    @Test("a custom registry is kept as typed")
+    func customRegistry() throws {
+        var book = RegistryBook.starter
+        try book.add(host: "  Registry.Internal:5000 ", name: " Staging ",
+                     kind: .harbor, usesHTTP: true)
+        let added = try #require(book.registry(id: "registry.internal:5000"))
+        #expect(added.id == "registry.internal:5000")
+        #expect(added.name == "Staging")
+        #expect(added.isUserAdded)
+        #expect(added.kind == .harbor)
+        #expect(added.usesHTTP)
+        // Harbor's guidance comes from the kind, so a self-hosted row is not left blank.
+        #expect(added.credentialHint?.contains("robot") == true)
+    }
+
+    /// A name is for recognising the row, and for a self-hosted registry the host *is* how you
+    /// recognise it — so an omitted name is filled in rather than refused.
+    @Test("an omitted name falls back to the host")
+    func nameFallsBack() throws {
+        var book = RegistryBook.starter
+        try book.add(host: "registry.internal", name: "")
+        #expect(book.registry(id: "registry.internal")?.name == "registry.internal")
     }
 
     /// Amazon's "Popular registries" panel lists Datadog, NGINX, Ubuntu, Python and the rest.
@@ -572,10 +545,10 @@ extension RegistryTests {
     /// and runs its own.
     @Test("Chainguard is a registry; the other ECR publishers are not")
     func chainguardIsItsOwnRegistry() {
-        #expect(KnownRegistry.builtIn.contains { $0.id == "cgr.dev" })
+        #expect(KnownRegistry.catalogue.contains { $0.id == "cgr.dev" })
         #expect(RegistryKind.inferred(fromHost: "cgr.dev") == .chainguard)
         for publisher in ["datadog", "nginx", "ubuntu", "python", "chainguard"] {
-            #expect(!KnownRegistry.builtIn.contains { $0.id == publisher },
+            #expect(!KnownRegistry.catalogue.contains { $0.id == publisher },
                     Comment(rawValue: "\(publisher) is a namespace, not a registry"))
         }
     }
