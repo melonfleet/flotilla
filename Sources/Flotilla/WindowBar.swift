@@ -78,6 +78,9 @@ struct WindowBar: View {
             .padding(.leading, trafficLightInset)
             .padding(.trailing, 12)
             .frame(height: Self.barHeight)
+            // The bar's own ground — see `Theme.titleBar`. It had none, so it showed the content
+            // wash and read as the top of the content rather than as chrome.
+            .background(Theme.titleBar)
             Divider()
         }
         // Pull the traffic lights down onto the wordmark's line. See `TrafficLightAligner`.

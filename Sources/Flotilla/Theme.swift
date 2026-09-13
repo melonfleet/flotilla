@@ -103,8 +103,24 @@ enum Theme {
     ///
     /// Dark is a deep rind-cast neutral, not pure grey, so the green character survives the
     /// appearance switch instead of the app looking like two different products.
-    static let contentBackground = dynamic(light: 0xEDF6E4, dark: 0x171C14,
-                                           lightAlpha: 0.55, darkAlpha: 0.85)
+    /// **Experiment, 13 September.** `#FBF7F0` at full opacity, on the owner's ask, replacing the
+    /// honeydew wash. Warm off-white rather than a green cast, to sit under the coloured bar
+    /// below. `BRAND.md` still specifies the honeydew, so this and `titleBar` are the two lines
+    /// to revert if the trial does not stick — and `DECISIONS.md` is where the outcome belongs if
+    /// it does, since the brand doc is the source of truth for colour and this departs from it.
+    static let contentBackground = dynamic(light: 0xFBF7F0, dark: 0x171C14,
+                                           lightAlpha: 1, darkAlpha: 0.85)
+
+    /// The window bar's own ground.
+    ///
+    /// Docker's reference strip is a solid colour, and the bar had none at all — it simply showed
+    /// `contentBackground`, which is why it read as part of the content rather than as chrome
+    /// however tall it got. `#EE7B4D` on the owner's ask.
+    ///
+    /// Light only for now: the dark value is the same hue held back to a depth that does not
+    /// glow against a dark window, not a second trial.
+    static let titleBar = dynamic(light: 0xEE7B4D, dark: 0x7A3C22)
+
 
     /// Cards, tables and popovers sitting on `contentBackground`. Opaque on purpose — the
     /// placement note in the mockups puts glass on chrome only, and data must stay legible
