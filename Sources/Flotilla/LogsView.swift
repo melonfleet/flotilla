@@ -194,18 +194,22 @@ struct LogsView: View {
             // How the feed is *drawn* — wrapping, and whether the Received column shows.
             // Beside the other two popovers rather than in the trailing cluster, because those
             // are the things you do to the feed and these are things you do to the view of it.
-            // `gearshape`, the owner's call. It was `textformat` (Aa), which named the *kind*
-            // of thing behind the button rather than what it is — and the two switches in there
-            // are not both about type: wrapping is, the timestamp column is not. A gear says
-            // "options for this view", which is what it actually holds.
+            // `slider.horizontal.3` — sliders rather than a cog, the owner's call and matched to
+            // a reference they supplied, so this does not read as a second copy of the app's own
+            // Settings gear.
             //
-            // Not confusable with the window bar's own Settings gear: that one lives in the
-            // title bar at the far right of the window, on a coloured ground, and this sits in
-            // the section's control band with the section's other controls. It is also distinct
-            // from everything beside it here — neither the scope picker's `text.alignleft`, the
-            // Lines list nor the Sources filter reads as a gear, which is what the previous
-            // choice was avoiding.
-            IconActionButton(systemImage: "gearshape", label: "Display",
+            // Three rails, not two: SF Symbols has no bare `slider.horizontal.2`, only boxed and
+            // decorated variants (`.square`, `.gobackward`), which would make this the only
+            // glyph in the band inside a container. Checked before use, per the
+            // `ellipsis.vertical` incident.
+            //
+            // One thing to know if this is ever revisited: rendered at the toolbar's own 13pt,
+            // this makes the band four stacks of horizontal lines in a row — `text.alignleft`,
+            // `list.bullet`, `line.3.horizontal.decrease`, then this. The knobs carry the
+            // distinction and the Sources filter is one control away, so it holds; but
+            // `slider.vertical.3` is the same idea turned ninety degrees if it ever stops
+            // holding.
+            IconActionButton(systemImage: "slider.horizontal.3", label: "Display",
                              help: displayHelp,
                              active: ui.wrapLines || ui.showTimestamps) {
                 showingDisplay.toggle()
