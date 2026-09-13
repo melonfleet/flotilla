@@ -163,6 +163,31 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                       credentialHint: "A registry service account — its username looks like 12345678|name, and its token is the password."),
     ]
 
+    /// The host a registry's credential is actually **stored** under, which is not always the
+    /// host you signed in to.
+    ///
+    /// **Measured, after it produced a visible bug.** Signing in to `docker.io` through this app
+    /// put a row in `container registry list` under `registry-1.docker.io` — Docker Hub's real
+    /// endpoint, which the CLI resolves `docker.io` to before storing. Matching logins to
+    /// catalogue rows by exact string then did the obvious wrong thing: the Docker Hub row kept
+    /// saying "Not signed in" while a second row appeared at the bottom marked "not in your
+    /// list", for the same account, on the same registry. GHCR has no such rewrite, which is why
+    /// it looked right and Docker Hub did not.
+    ///
+    /// `index.docker.io` is included because it is the third spelling of the same registry — it
+    /// is what Docker's own credential store uses — and a user who signed in from a terminal may
+    /// have it. Nothing else is aliased: `us.gcr.io` and `gcr.io` are genuinely different hosts
+    /// and folding them would merge two real registries into one row.
+    public static func canonicalHost(_ host: String) -> String {
+        let host = host.lowercased()
+        switch host {
+        case "registry-1.docker.io", "index.docker.io", "docker.io":
+            return "docker.io"
+        default:
+            return host
+        }
+    }
+
     /// How a registry whose credential comes from a **cloud CLI** is authenticated.
     ///
     /// Amazon ECR, Azure Container Registry and Google Artifact Registry do have browser sign-in

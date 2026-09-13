@@ -312,3 +312,40 @@ extension RegistryCredentialTests {
         #expect(hint.contains("repo"))
     }
 }
+
+/// Docker Hub is stored under a different host than the one you sign in to, which produced a
+/// visible bug: the Docker Hub row read "Not signed in" while a duplicate row appeared at the
+/// bottom marked "not in your list", for the same account.
+extension RegistryTests {
+    @Test("Docker Hub's three spellings are one registry")
+    func dockerHubAliases() {
+        for spelling in ["docker.io", "registry-1.docker.io", "index.docker.io",
+                         "REGISTRY-1.DOCKER.IO"] {
+            #expect(KnownRegistry.canonicalHost(spelling) == "docker.io",
+                    Comment(rawValue: "\(spelling) did not canonicalise"))
+        }
+    }
+
+    /// Only Docker Hub. `gcr.io` and `us.gcr.io` are genuinely different registries and folding
+    /// them would merge two real rows into one.
+    @Test("nothing else is aliased")
+    func nothingElseIsAliased() {
+        for host in ["ghcr.io", "quay.io", "gcr.io", "us.gcr.io", "registry.k8s.io",
+                     "localhost:5001", "myteam.azurecr.io"] {
+            #expect(KnownRegistry.canonicalHost(host) == host.lowercased(),
+                    Comment(rawValue: "\(host) was rewritten"))
+        }
+    }
+
+    /// The catalogue lists `docker.io`, so a login filed under `registry-1.docker.io` has to
+    /// land on that row rather than making a second one.
+    @Test("a Docker Hub login matches the catalogue row")
+    func dockerHubLoginMatchesItsRow() {
+        let login = RegistryLogin(id: "registry-1.docker.io", name: "registry-1.docker.io",
+                                  username: "someone")
+        let dockerHub = KnownRegistry.builtIn.first { $0.id == "docker.io" }
+        #expect(dockerHub != nil)
+        #expect(KnownRegistry.canonicalHost(login.id)
+                == KnownRegistry.canonicalHost(dockerHub?.id ?? ""))
+    }
+}

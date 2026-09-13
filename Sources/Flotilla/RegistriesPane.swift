@@ -22,6 +22,10 @@ struct RegistryRow: Identifiable, Equatable {
     var isSignedIn: Bool { login != nil }
     var username: String? { login?.username }
 
+    /// The host the credential is filed under, which is what a sign-out has to name. Usually the
+    /// row's own id; for Docker Hub it is `registry-1.docker.io`.
+    var credentialHost: String { login?.id ?? id }
+
     /// Where to create the token this registry wants as a password, if there is such a page.
     var tokenURL: URL? { known?.tokenURL.flatMap(URL.init(string:)) }
 
@@ -69,10 +73,17 @@ struct RegistriesPane: View {
     /// registry you signed in to with `container registry login` in a terminal appears here,
     /// marked as not being in your list, rather than being invisible.
     private var rows: [RegistryRow] {
-        let byHost = Dictionary(logins.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var rows = store.all.map { RegistryRow(id: $0.id, known: $0, login: byHost[$0.id]) }
-        let listed = Set(rows.map(\.id))
-        rows += logins.filter { !listed.contains($0.id) }
+        // Keyed on the **canonical** host, not the stored one. `docker.io` signs in and comes
+        // back as `registry-1.docker.io`; matching by exact string left the Docker Hub row
+        // saying "Not signed in" and added a duplicate row at the bottom for the same account.
+        // See `KnownRegistry.canonicalHost`.
+        let byHost = Dictionary(logins.map { (KnownRegistry.canonicalHost($0.id), $0) },
+                                uniquingKeysWith: { first, _ in first })
+        var rows = store.all.map {
+            RegistryRow(id: $0.id, known: $0, login: byHost[KnownRegistry.canonicalHost($0.id)])
+        }
+        let listed = Set(rows.map { KnownRegistry.canonicalHost($0.id) })
+        rows += logins.filter { !listed.contains(KnownRegistry.canonicalHost($0.id)) }
             .map { RegistryRow(id: $0.id, known: nil, login: $0) }
         return rows
     }
@@ -139,7 +150,7 @@ struct RegistriesPane: View {
             }
         }
         .confirmationDialog(
-            "Sign out of “\(pendingSignOut?.id ?? "")”?",
+            "Sign out of “\(pendingSignOut?.name ?? "")”?",
             isPresented: Binding(get: { pendingSignOut != nil },
                                  set: { if !$0 { pendingSignOut = nil } }),
             titleVisibility: .visible
@@ -147,7 +158,10 @@ struct RegistriesPane: View {
             if let row = pendingSignOut {
                 Button("Sign Out", role: .destructive) {
                     Task {
-                        actionError = await model.signOut(registry: row.id)
+                        // The **stored** host, not the row's. Docker Hub's row is `docker.io`
+                        // and its credential lives under `registry-1.docker.io`; signing out of
+                        // the wrong one would report success and leave the login in place.
+                        actionError = await model.signOut(registry: row.credentialHost)
                         await reload()
                     }
                     pendingSignOut = nil
