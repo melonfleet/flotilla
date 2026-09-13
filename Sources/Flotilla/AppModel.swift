@@ -48,6 +48,17 @@ final class AppModel {
     /// app reads `/Library/Managed Preferences` for real.
     let settingsStore: SettingsStore
 
+    /// The user's tags, and what they are on.
+    ///
+    /// Held here rather than beside the section UI states in `MainWindowView` because tags are
+    /// **data, not view state**: a filter resets harmlessly when a section is rebuilt, a tag
+    /// must not. It also has to be reachable from surfaces that are not the main window — the
+    /// menu-bar popover shows containers too — and from five sections at once, which is what an
+    /// app-model property is for.
+    ///
+    /// Deliberately not a setting; `TagStore` says why it is not in `SettingsStore`.
+    let tags = TagStore()
+
     /// Retained for as long as the app runs. `SettingsPersistence` writes on every change
     /// through this token, and dropping it would stop persistence silently — which looks
     /// identical to the bug it exists to fix.
@@ -1336,13 +1347,40 @@ final class AppModel {
     /// leave nothing for Containers to open. A tester reported it precisely: clicking a name in
     /// the menu bar "will open the correct machine" only when that section was already showing,
     /// and otherwise just switched section.
-    func requestDetail(kind: ActivityKind, subject: String) {
+    ///
+    /// **The tab travels too**, as a raw title rather than a typed tab. Containers and machines
+    /// have different tab enums — `DetailTab` and `MachineDetailTab` — and both spell the shared
+    /// ones identically ("Overview", "Terminal", "Logs", "Inspect") precisely so the two screens
+    /// do not shuffle under you. A string is the honest amount of structure for a request that
+    /// has to cross both: the receiving section resolves it with its own `init(rawValue:)` and
+    /// ignores a title it does not have, rather than opening some arbitrary other tab.
+    ///
+    /// This is what lets the Logs section's source column be a way in: clicking `web` there asks
+    /// Containers for `web`'s **Logs** tab, which is the whole point of clicking a source in an
+    /// aggregated feed.
+    func requestDetail(kind: ActivityKind, subject: String, tab: String? = nil) {
         pendingSection = kind.section
         pendingDetailKind = kind
         pendingDetailSubject = subject
+        pendingDetailTab = tab
     }
 
     var pendingDetailSubject: String?
+
+    /// The tab the requester wants, by title. Cleared alongside the subject.
+    var pendingDetailTab: String?
+
+    /// Clears all three halves of a pending request at once.
+    ///
+    /// One call rather than three assignments at each of the four consumption sites: the tab was
+    /// the third field to join subject and kind, and a site that clears two of them leaves a
+    /// stale tab to be applied to the *next* request — which is the same class of bug as the
+    /// kind-less request that had Machines swallow a container's id.
+    func clearPendingDetail() {
+        pendingDetailSubject = nil
+        pendingDetailKind = nil
+        pendingDetailTab = nil
+    }
 
     /// Which section the pending subject belongs to, so a section can ignore a request that is
     /// not its own instead of swallowing it.

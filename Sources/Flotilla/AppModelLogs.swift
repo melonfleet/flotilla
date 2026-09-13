@@ -14,6 +14,22 @@ struct AggregatedLogLine: Identifiable, Equatable {
     let stream: LogLine.Stream
     let text: String
 
+    /// When **Flotilla** received this line. Never the container's own clock.
+    ///
+    /// `container logs` has no `--timestamps` (captured help confirms it), so there is no
+    /// timestamp in the data to show. This is the next most honest thing and it is worth being
+    /// precise about what it means in each mode:
+    ///
+    /// - **Streaming**, it is genuine per-line arrival, to within one 120 ms drain tick — the
+    ///   same bound the detail viewer's tail carries, and real ordering rather than an invented
+    ///   one.
+    /// - **Fetched**, it is when that source's chunk was read, so every line from one source
+    ///   carries the same value. That is not a defect of the recording; it is the truth about a
+    ///   bulk read, and it is why the column is off by default and says so in its header.
+    ///
+    /// Optional because a line with no recorded time must render as "—" rather than as the epoch.
+    let receivedAt: Date?
+
     var id: String { "\(kind.rawValue)/\(source)#\(index)" }
 }
 
@@ -70,6 +86,11 @@ extension AppModel {
 
         let cli = self.cli
         return await withTaskGroup(of: AggregatedLogChunk.self) { group in
+            // One clock reading for the whole fetch, taken before any process starts, so two
+            // sources that take different times to answer do not appear to have been read
+            // minutes apart. This is the read time, not the write time; see
+            // `AggregatedLogLine.receivedAt`.
+            let readAt = Date()
             for (id, kind) in targets {
                 group.addTask {
                     do {
@@ -82,8 +103,14 @@ extension AppModel {
                         return AggregatedLogChunk(
                             source: id, kind: kind,
                             lines: chunk.lines.map {
+                                // Stamped here, once per chunk. `LogChunk.from` only carries a
+                                // `receivedAt` when the caller passes one and `ContainerCLI`
+                                // does not, so without this the column would be empty on every
+                                // fetched line — a control that exists and never has anything
+                                // to show.
                                 AggregatedLogLine(source: id, kind: kind, index: $0.index,
-                                                  stream: $0.stream, text: $0.text)
+                                                  stream: $0.stream, text: $0.text,
+                                                  receivedAt: $0.receivedAt ?? readAt)
                             },
                             truncated: chunk.truncated, failure: nil)
                     } catch {

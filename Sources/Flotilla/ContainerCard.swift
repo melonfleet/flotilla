@@ -21,6 +21,10 @@ struct ContainerCard<MenuContent: View>: View {
     /// Oldest → newest. May be empty or shorter than the sparkline's width.
     let history: [Double?]
     let isBusy: Bool
+    /// The card's tags, drawn as pills under the image line. A pill rather than a tinted card —
+    /// see `TagPill`: this card already carries a state dot, a state word and a sparkline, and
+    /// recolouring the whole surface would drown all three.
+    var tags: [Tag] = []
     let onStart: () -> Void
     let onStop: () -> Void
     let onRestart: () -> Void
@@ -77,6 +81,10 @@ struct ContainerCard<MenuContent: View>: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help(container.imageReference)
+                if !tags.isEmpty {
+                    TagPillRow(tags: tags, compact: true, limit: 3)
+                        .padding(.top, 2)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {

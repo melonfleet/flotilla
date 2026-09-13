@@ -1,4 +1,5 @@
 import SwiftUI
+import FlotillaCore
 
 /// The Cards presentation for Volumes, Networks and Images.
 ///
@@ -16,6 +17,15 @@ struct ResourceCard<Actions: View>: View {
     /// Label/value pairs, in display order. A nil value renders as an em dash rather than being
     /// dropped, so cards for two items of the same kind stay the same height and the same shape.
     let fields: [(String, String?)]
+    /// The row's tags, drawn as pills under the title.
+    ///
+    /// **A pill, not a tinted card** — the owner's call, and `TagPill` records why: colouring the
+    /// whole card would put an arbitrary hue behind a name, a badge and four values, so a card
+    /// tagged "Production" would read as a card in trouble.
+    ///
+    /// Four rather than the table's two: a card has the width, and the row of pills is the one
+    /// part of a card that is worth reading before the fields are.
+    var tags: [Tag] = []
     let onOpen: (() -> Void)?
     @ViewBuilder var actions: Actions
 
@@ -43,6 +53,10 @@ struct ResourceCard<Actions: View>: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+            }
+
+            if !tags.isEmpty {
+                TagPillRow(tags: tags, limit: 4)
             }
 
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {

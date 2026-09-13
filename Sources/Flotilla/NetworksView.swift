@@ -22,6 +22,13 @@ struct NetworksView: View {
     @State private var pendingDelete: ContainerNetwork?
     @State private var confirmingBulkDelete = false
 
+    /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
+    /// bare `TagSubject` — see that type for why a subject is not `Identifiable`.
+    ///
+    /// Presented from the view, never from inside the menu: a `.sheet` attached within a `Menu`
+    /// never appears, because the menu is gone by the time the state changes.
+    @State private var tagSheet: TagSheetTarget?
+
     var body: some View {
         Group {
             if showingCreate {
@@ -51,6 +58,9 @@ struct NetworksView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
+        .sheet(item: $tagSheet) { target in
+            NewTagSheet(store: model.tags, applyTo: target.subject) { tagSheet = nil }
+        }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingNetworkForm) { _, requested in
             if requested { showingCreate = true; model.pendingNetworkForm = false }
@@ -128,6 +138,7 @@ struct NetworksView: View {
     }
 
     private static let columnSpecs: [(id: String, title: String)] = [
+        ("tags", "Tags"),
         ("mode", "Mode"), ("subnet", "Subnet"), ("gateway", "Gateway"), ("created", "Created"),
     ]
 
@@ -157,7 +168,19 @@ struct NetworksView: View {
 
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
-            networks = networks.filter { $0.id.lowercased().contains(query) }
+        // **Tag names are searchable too, on every section.**
+        //
+        // This is how tags filter. The alternative was a tag entry in each section's filter
+        // control, which Volumes and Networks could take as a string id but Containers and
+        // Machines could not without widening their typed `Filter` enums — and a tag filter that
+        // exists on two sections out of five is the asymmetry this app keeps being asked to
+        // remove. Searching the name reaches every section through one line each, works exactly
+        // the same way everywhere, and composes with whatever filter is already on.
+            networks = networks.filter {
+                $0.id.lowercased().contains(query)
+                    || model.tags.tags(on: .network, $0.id)
+                        .contains { $0.name.lowercased().contains(query) }
+            }
         }
 
         return networks.sorted(using: ui.sortOrder)
@@ -277,6 +300,7 @@ struct NetworksView: View {
                              ("Subnet", network.subnet),
                              ("Gateway", network.gateway),
                              ("Created", RelativeDate.relative(network.configuration.creationDate))],
+                    tags: model.tags.tags(on: .network, network.id),
                     // The card title opens the detail, so the list/cards toggle does not change
                     // what you can reach. Every caller of `ResourceCard` passed `nil` here.
                     onOpen: { detailTarget = DetailTarget(id: network.id) }
@@ -323,6 +347,20 @@ struct NetworksView: View {
                 }
             }
             .width(min: 150, ideal: 210)
+
+            // Next to the name, the way Finder puts a tag beside a filename: the whole point is
+            // that you recognise the row without reading it, which only works if the pill is
+            // where your eye already is.
+            //
+            // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**, and a
+            // row's tags live in `TagStore`, not on the model — so a sortable column here would
+            // mean denormalising the user's tags onto the runtime's own types. Hideable instead,
+            // through the same column menu every other column uses.
+            TableColumn("Tags") { network in
+                TagPillRow(tags: model.tags.tags(on: .network, network.id), compact: true)
+            }
+            .width(min: 60, ideal: 130)
+            .customizationID("tags")
 
             TableColumn("Mode", value: \.modeSortKey) { network in
                 Text(network.mode ?? "—").foregroundStyle(.secondary)
@@ -503,6 +541,13 @@ struct NetworksView: View {
         // `network ls` does not always return.
         Button("Details…") { detailTarget = DetailTarget(id: network.id) }
         Button("Inspect") { detailTarget = DetailTarget(id: network.id, tab: .inspect) }
+        Divider()
+        // Tags, in the same place on every row menu in the app: after the things you open and
+        // before Copy. Not a destructive action, not a read of the runtime — it changes how the
+        // row looks to you and nothing about what it is.
+        TagMenu(store: model.tags, subject: TagSubject(kind: .network, id: network.id)) {
+            tagSheet = TagSheetTarget(kind: .network, id: network.id)
+        }
         Divider()
         CopyMenu([
             ("Name", network.id),

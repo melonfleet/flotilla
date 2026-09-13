@@ -630,3 +630,88 @@ real bug.
 those four. `ContainerStateTests` pins both — the known vocabulary, and every state in the
 captured fixtures — so such a release arrives as a failing test rather than as silence. Proved
 against a negative control: narrow the parser and the fixture test fails, naming the container.
+
+## Q19 — Tags are the user's own data, and the log feed is a table (settled 2026-09-13)
+
+Two changes that arrived together and share one argument.
+
+### The Logs feed is a table, like every other section
+
+It was a `LazyVStack` of hand-drawn rows, which is what a log *reads* like and not what the
+screen is for: you come here to find the handful of lines that matter among two hundred that do
+not, take them somewhere else, and jump to whatever produced them. None of that was reachable
+from a stack of `Text` — no selection, so nothing to export; no columns, so nothing to hide; and
+the source was a fixed-width label rather than a way in. It is now a `SwiftUI.Table` with the
+same selection, checkbox column, column customisation and row context menu the other five
+sections have, plus CSV export and a clickable **Object** column that opens that container's or
+machine's own Logs tab.
+
+**It has no `sortOrder`, and that is the deliberate difference.** Every other table sorts because
+its rows are independent things. Log lines are not: within a source, a line's position *is* its
+meaning, and there is no clock in the data — `container logs` has no `--timestamps`. A clickable
+"Received" header on a fetched feed would reorder two hundred lines that all share one timestamp,
+by nothing, and look authoritative doing it. The same reasoning governs the optional Received
+column, which is **off by default**: it shows when Flotilla received the line, which is genuine
+per-line information while streaming and one shared read time per source when fetching. The
+popover that switches it on says exactly that, because a column of identical timestamps left
+unexplained would be read as the container's own clock and believed.
+
+Wrapping is off by default and a long message can be opened row by row instead. The chevron
+appears only on rows that actually overflow, and that is **measured** by `ViewThatFits` rather
+than guessed from a character count: the column is resizable, so the same line overflows at one
+width and fits at another. The first attempt tested `text.count > 96` and was wrong in both
+directions.
+
+### Tags are content, not configuration
+
+Finder-style tagging across containers, machines, volumes and networks: a fixed palette of seven
+colours, tags that carry a user-chosen name, a starter set on first run, creation from any row's
+menu, and a Settings pane that renames, recolours and deletes them everywhere at once.
+
+**Not in `SettingsStore`.** That registry is a closed list where every key is declared once,
+carries a managed policy, appears in the Settings UI and the Jamf key list, and is checked by
+`check-settings-consumers.sh` — all correct for "poll interval" and meaningless for "the seven
+tags Kamal made". More concretely, a `manageable` key can be seeded or locked by a configuration
+profile, and an admin pushing a tag list over someone's own tags is not a capability worth
+building. Tags are written to the same preference domain by the same rules that file argues for:
+plist-native, one key per concern, readable with `defaults read dev.melonfleet.Flotilla
+tagDefinitions`.
+
+**The rules live in `FlotillaCore`.** `TagBook` is Foundation-only and holds every decision —
+what a legal name is, that duplicate detection ignores case and diacritics, that a rename keeps
+every assignment because identity is a minted id rather than the name, that deleting a tag takes
+its assignments with it, that an unknown tag id is refused rather than stored where it would be
+invisible. The app target has no test target; this is the same argument `DeletePolicy` and
+`ActivityKind` made when they moved.
+
+**A tag keys on kind *and* id.** A volume called `web` and a container called `web` are different
+objects. The activity feed learned that the hard way — `events(for:)` was subject-only, so a
+container listed a volume's history — and `TagSubject` is built so that cannot happen again.
+
+**Deleting a container does not delete its tags.** The live inventory comes from a poll that can
+fail or return early, and a sweep on every refresh would throw the user's tags away the first
+time it hiccuped. The Tags pane offers an explicit **Clean Up**, counted only against kinds whose
+list has actually loaded.
+
+**Images are the one section without tags, on purpose.** In Images, "tag" already means an image
+reference's tag — `nginx:latest` — with its own column, its own `Tag…` action and its own
+allowlisted `image tag` command. A second, unrelated "Tags" menu on that screen would be the
+ambiguity, not the consistency.
+
+**Two AppKit behaviours were measured rather than assumed.** A menu item's icon is tinted by
+AppKit, so `Image(systemName: "circle.fill").foregroundStyle(…)` rendered all seven swatches in
+one colour — on the menu where you *choose* the colour. They are drawn `NSImage`s with
+`isTemplate = false`. And a grouped `Form` reads a labelled control as `LabeledContent` and
+renders its label in the row's leading column, so `TextField("Name", …)` put the word "Name" at
+the start of all seven manager rows and pushed the swatch out of view; `.labelsHidden()` on the
+row is load-bearing.
+
+**Filtering by tag is the search field, everywhere.** A tag entry in each section's filter control
+was the alternative, and Volumes and Networks could take one as a string id while Containers and
+Machines could not without widening their typed `Filter` enums. A tag filter on two sections out
+of four is the asymmetry this app keeps being asked to remove, so the tag's *name* is matched by
+the same free-text search every section already has.
+
+**What is deliberately not built.** Bulk tagging from the multi-select action bar; tags on images;
+a tag filter control. The first is the obvious next step if tagging six containers at a time turns
+out to be the common case.

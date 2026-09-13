@@ -226,3 +226,94 @@ extension Container {
     /// ended up with slightly different greens.
     var stateColor: Color { Theme.color(for: state) }
 }
+
+extension Theme {
+    /// The tag palette, as light/dark hex pairs — the one table both the SwiftUI colour and the
+    /// AppKit swatch come from, so a pill and its menu item can never disagree about what "blue"
+    /// is.
+    ///
+    /// **These are the one place plain blue and purple are allowed**, and the exception is
+    /// deliberate. The rule at the top of this file — no `--sys-blue`, the brand has a teal — is
+    /// about colours *Flotilla* assigns to mean something: a chart series, a status dot. A tag's
+    /// colour is chosen by the user and has to be recognisable as "the blue one" across a table
+    /// of forty rows, next to whatever else they have tagged. Finder's swatches are the
+    /// vocabulary people already have for that, so matching them is worth more here than brand
+    /// consistency is; the values are pulled slightly towards the app's own saturation so a row
+    /// of pills does not read as a screenshot of a different application.
+    ///
+    /// Dark values are **derived**, not brand: each is lifted in lightness until it holds its hue
+    /// on `#171C14` and is still distinguishable from its two neighbours in the wheel.
+    private static func hexes(for tag: TagColor) -> (light: Int, dark: Int) {
+        switch tag {
+        case .red: (0xC9302C, 0xF2635F)
+        case .orange: (0xE07B39, 0xF59A76)
+        case .yellow: (0xD9A200, 0xF5C242)
+        case .green: (0x4C8C2B, 0x7CB342)
+        case .blue: (0x3A6EA5, 0x82AEDC)
+        case .purple: (0x7B4FA8, 0xB693DA)
+        case .grey: (0x77777C, 0x9EA09B)
+        }
+    }
+
+    static func color(for tag: TagColor) -> Color {
+        let hex = hexes(for: tag)
+        return dynamic(light: hex.light, dark: hex.dark)
+    }
+
+    static func nsColor(for tag: TagColor) -> NSColor {
+        let hex = hexes(for: tag)
+        return NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(hex: isDark ? hex.dark : hex.light, alpha: 1)
+        }
+    }
+
+    /// A tag's colour as a **drawn image**, for use inside a menu.
+    ///
+    /// This exists because of a measured failure: `Label { Text(tag.name) } icon: {
+    /// Image(systemName: "circle.fill").foregroundStyle(Theme.color(for: tag.color)) }` renders
+    /// all seven swatches in **one** colour. AppKit tints a menu item's icon itself, and a
+    /// SwiftUI `foregroundStyle` on the glyph does not survive the trip — the same shape as the
+    /// borderless `Menu` that ignored `foregroundStyle` and needed `.tint` instead, except that
+    /// here there is no tint to set per item. A seven-colour palette drawn entirely in the accent
+    /// colour is not a cosmetic defect: the menu is where you *choose* the colour.
+    ///
+    /// So the swatch is an `NSImage` with `isTemplate = false`, which AppKit leaves alone. The
+    /// drawing block runs in the menu's own appearance context, so the dynamic colour still
+    /// resolves light or dark at draw time rather than being frozen when the image is made.
+    static func swatchImage(for tag: TagColor, diameter: CGFloat = 10) -> NSImage {
+        let image = NSImage(size: CGSize(width: diameter, height: diameter), flipped: false) { rect in
+            nsColor(for: tag).setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
+        // The whole point: a template image is recoloured by the menu, which is the bug.
+        image.isTemplate = false
+        return image
+    }
+
+    /// A tick beside the swatch, for a tag that is applied.
+    ///
+    /// Two glyphs in one image rather than a separate checkmark column, because a menu item has
+    /// one icon slot: `Label`'s icon. A `Toggle` would supply its own indicator and push the
+    /// swatch into the label text, which is what the first version did.
+    static func swatchImage(for tag: TagColor, applied: Bool, diameter: CGFloat = 10) -> NSImage {
+        guard applied else { return swatchImage(for: tag, diameter: diameter) }
+        let image = NSImage(size: CGSize(width: diameter, height: diameter), flipped: false) { rect in
+            nsColor(for: tag).setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            let tick = NSBezierPath()
+            tick.move(to: CGPoint(x: rect.width * 0.24, y: rect.height * 0.52))
+            tick.line(to: CGPoint(x: rect.width * 0.43, y: rect.height * 0.31))
+            tick.line(to: CGPoint(x: rect.width * 0.78, y: rect.height * 0.70))
+            tick.lineWidth = max(1.2, rect.width * 0.16)
+            tick.lineCapStyle = .round
+            tick.lineJoinStyle = .round
+            NSColor.white.setStroke()
+            tick.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+}

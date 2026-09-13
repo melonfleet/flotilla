@@ -497,6 +497,20 @@ must preserve all of the following:
 13. **Installation and updates:** never silently perform a privileged `container`
     package install. Sparkle serves unmanaged Macs; Jamf owns managed-mini app
     updates.
+14. **Tags are content, not settings (Q19):** the user's tags live in `TagBook`
+    (Foundation-only, in `FlotillaCore`, with the rules and the tests) and are
+    persisted by `TagStore` as plist-native keys `tagDefinitions` /
+    `tagAssignments` in the same preference domain — **never** through
+    `SettingsStore`, whose registry is for configuration an admin may seed or
+    lock. A tag keys on kind **and** id (`TagSubject`); a volume and a container
+    may share a name. The seven-colour palette is fixed and is in
+    `design/branding.md`. Images deliberately have no tags: "tag" already means an
+    image reference's tag there.
+15. **The Logs feed is a table with no sort order (Q19).** It has the selection,
+    columns and row menu every other section's table has, and deliberately not the
+    sorting: `container logs` has no `--timestamps`, so a sortable "Received"
+    header would reorder a fetched feed by a clock that is the same for every line
+    in it. The Received column is off by default for the same reason.
 
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.

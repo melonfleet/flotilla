@@ -43,6 +43,7 @@ struct MachinesView: View {
 
     private static let columnSpecs: [(id: String, title: String)] = [
         ("state", "State"),
+        ("tags", "Tags"),
         ("cpus", "CPUs"),
         ("memory", "Memory"),
         ("disk", "Disk"),
@@ -57,6 +58,13 @@ struct MachinesView: View {
     @State private var showingCreate = false
     @State private var confirmingDelete: ContainerMachine?
     @State private var confirmingBulkDelete = false
+
+    /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
+    /// bare `TagSubject` — see that type for why a subject is not `Identifiable`.
+    ///
+    /// Presented from the view, never from inside the menu: a `.sheet` attached within a `Menu`
+    /// never appears, because the menu is gone by the time the state changes.
+    @State private var tagSheet: TagSheetTarget?
 
     /// `sheet(item:)` needs `Identifiable` and a bare `String` is not — same small wrapper the
     /// containers screen uses, and keyed by **id** so the screen re-reads live state each pass
@@ -73,6 +81,15 @@ struct MachinesView: View {
     private struct DetailTarget: Identifiable, Hashable {
         let id: String
         var tab: MachineDetailTab?
+    }
+
+    /// The tab a `requestDetail` asked for, resolved against **this** screen's own tab type.
+    ///
+    /// A title this screen does not have resolves to nil and the detail opens on its default tab,
+    /// which is the point of carrying a title rather than an index: a request naming a tab only
+    /// the other detail screen has can never land on an arbitrary third one.
+    private var requestedTab: MachineDetailTab? {
+        model.pendingDetailTab.flatMap(MachineDetailTab.init(rawValue:))
     }
 
     var body: some View {
@@ -111,20 +128,21 @@ struct MachinesView: View {
             }
         }
         .task { await model.refreshMachines() }
+        .sheet(item: $tagSheet) { target in
+            NewTagSheet(store: model.tags, applyTo: target.subject) { tagSheet = nil }
+        }
         // "Open in Flotilla" from the menu-bar popover names a subject, not just a section.
         // One-shot: cleared on consumption so a rebuild does not reopen it.
         .onChange(of: model.pendingDetailSubject) { _, subject in
             // Only this section's own requests. See `AppModel.requestDetail`.
             guard let subject, model.pendingDetailKind == .machine else { return }
-            detailTarget = DetailTarget(id: subject)
-            model.pendingDetailSubject = nil
-            model.pendingDetailKind = nil
+            detailTarget = DetailTarget(id: subject, tab: requestedTab)
+            model.clearPendingDetail()
         }
         .onAppear {
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .machine {
-                detailTarget = DetailTarget(id: subject)
-                model.pendingDetailSubject = nil
-                model.pendingDetailKind = nil
+                detailTarget = DetailTarget(id: subject, tab: requestedTab)
+                model.clearPendingDetail()
             }
         }
         // "New Machine…" from the menu-bar popover. One-shot: consumed and cleared, so the form
@@ -332,9 +350,19 @@ struct MachinesView: View {
         if !query.isEmpty {
             // Name **and** image, because a machine's name is often generated and the image is
             // the thing you actually remember about it.
+        // **Tag names are searchable too, on every section.**
+        //
+        // This is how tags filter. The alternative was a tag entry in each section's filter
+        // control, which Volumes and Networks could take as a string id but Containers and
+        // Machines could not without widening their typed `Filter` enums — and a tag filter that
+        // exists on two sections out of five is the asymmetry this app keeps being asked to
+        // remove. Searching the name reaches every section through one line each, works exactly
+        // the same way everywhere, and composes with whatever filter is already on.
             machines = machines.filter {
                 $0.id.lowercased().contains(query)
                 || ($0.image?.reference.lowercased().contains(query) ?? false)
+                || model.tags.tags(on: .machine, $0.id)
+                    .contains { $0.name.lowercased().contains(query) }
             }
         }
 
@@ -585,6 +613,20 @@ struct MachinesView: View {
             // No `customizationID` — the name is how you identify and open a row, so it is not
             // something to hide. Same reason the containers table pins its Name column.
 
+            // Next to the name, the way Finder puts a tag beside a filename: the whole point is
+            // that you recognise the row without reading it, which only works if the pill is
+            // where your eye already is.
+            //
+            // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**, and a
+            // row's tags live in `TagStore`, not on the model — so a sortable column here would
+            // mean denormalising the user's tags onto the runtime's own types. Hideable instead,
+            // through the same column menu every other column uses.
+            TableColumn("Tags") { machine in
+                TagPillRow(tags: model.tags.tags(on: .machine, machine.id), compact: true)
+            }
+            .width(min: 60, ideal: 130)
+            .customizationID("tags")
+
             TableColumn("CPUs", value: \.cpus) { machine in
                 Text("\(machine.cpus)").monospacedDigit().foregroundStyle(.secondary)
             }
@@ -715,6 +757,13 @@ struct MachinesView: View {
             .disabled(!running || busy)
         Button("Restart") { Task { await model.perform(.restart, on: machine) } }
             .disabled(!running || busy)
+        Divider()
+        // Tags, in the same place on every row menu in the app: after the things you open and
+        // before Copy. Not a destructive action, not a read of the runtime — it changes how the
+        // row looks to you and nothing about what it is.
+        TagMenu(store: model.tags, subject: TagSubject(kind: .machine, id: machine.id)) {
+            tagSheet = TagSheetTarget(kind: .machine, id: machine.id)
+        }
         Divider()
         CopyMenu([
             ("Name", machine.id),

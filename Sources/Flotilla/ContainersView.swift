@@ -81,6 +81,13 @@ struct ContainersView: View {
         var tab: DetailTab?
     }
     @State private var confirmingBulkDelete = false
+
+    /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
+    /// bare `TagSubject` — see that type for why a subject is not `Identifiable`.
+    ///
+    /// Presented from the view, never from inside the menu: a `.sheet` attached within a `Menu`
+    /// never appears, because the menu is gone by the time the state changes.
+    @State private var tagSheet: TagSheetTarget?
     /// Non-nil while a single row's trash button is awaiting confirmation. Destructive
     /// actions confirm with the object *named* (`FEATURES.md`'s destructive-action policy),
     /// which is why this holds the container rather than a bool.
@@ -101,6 +108,7 @@ struct ContainersView: View {
     /// menu makes the same choice about its Name column.
     private static let columnSpecs: [(id: String, title: String)] = [
         ("state", "State"),
+        ("tags", "Tags"),
         ("image", "Image"),
         ("created", "Created"),
         ("ports", "Ports"),
@@ -344,8 +352,18 @@ struct ContainersView: View {
     private var visible: [Container] {
         guard !ui.search.isEmpty else { return filtered }
         let needle = ui.search.lowercased()
+        // **Tag names are searchable too, on every section.**
+        //
+        // This is how tags filter. The alternative was a tag entry in each section's filter
+        // control, which Volumes and Networks could take as a string id but Containers and
+        // Machines could not without widening their typed `Filter` enums — and a tag filter that
+        // exists on two sections out of five is the asymmetry this app keeps being asked to
+        // remove. Searching the name reaches every section through one line each, works exactly
+        // the same way everywhere, and composes with whatever filter is already on.
         return filtered.filter {
             $0.id.lowercased().contains(needle) || $0.status.state.lowercased().contains(needle)
+                || model.tags.tags(on: .container, $0.id)
+                    .contains { $0.name.lowercased().contains(needle) }
         }
     }
 
@@ -422,6 +440,67 @@ struct ContainersView: View {
     /// - **Start and Stop swap, they do not both show.** Offering Stop on a stopped container
     ///   would be a control that does nothing, which is the failure mode this whole pass is
     ///   about.
+
+    /// The right-hand half of the containers table.
+    ///
+    /// Split out for two reasons, both mechanical. `TableColumnBuilder` accepts **ten** columns
+    /// and the Tags column made eleven; and wrapping the overflow in a `Group` — the documented
+    /// remedy — pushed this body past what the type checker will solve in reasonable time, which
+    /// it said out loud. A `@TableColumnBuilder` property is the same columns, checked in two
+    /// smaller pieces, and it renders and customises identically.
+    @TableColumnBuilder<ContainerRow, KeyPathComparator<ContainerRow>>
+    private var trailingColumns: some TableColumnContent<ContainerRow, KeyPathComparator<ContainerRow>> {
+                TableColumn("CPU", value: \.cpu) { row in
+                    let c = row.container
+                    Text(model.cpuLabel(for: c.id))
+                        .monospacedDigit()
+                        .foregroundStyle(model.cpuPercent(for: c.id) == nil ? .tertiary : .secondary)
+                        .lineLimit(1)
+                }
+                .width(min: 56, ideal: 68)
+                .customizationID("cpu")
+
+                TableColumn("Memory", value: \.memory) { row in
+                    let c = row.container
+                    Text(model.memoryLabel(for: c.id))
+                        .monospacedDigit()
+                        .foregroundStyle(model.memoryBytes(for: c.id) == nil ? .tertiary : .secondary)
+                        .lineLimit(1)
+                }
+                .width(min: 68, ideal: 84)
+                .customizationID("memory")
+
+                TableColumn("IP / Network", value: \.ipSortKey) { row in
+                    let c = row.container
+                    Text(Self.ipNetworkLabel(c))
+                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
+                }
+                .width(min: 90, ideal: 130)
+                .customizationID("ip")
+
+                // Hidden by default (see `ui.columnCustomization`): with one host it reads
+                // "This Mac" on every row, and a column identical in every row is pure
+                // width. The cross-host *dimension* stays — the data is on the row and the
+                // column is one header-menu click away — it just stops costing space until
+                // Phase 3 gives it something to say.
+                // **Not sortable, and not an omission.** Every row reads "This Mac" until Phase 2
+                // brings peers, and a column with one distinct value cannot be ordered — a header
+                // that highlights and reorders nothing is worse than one that does not respond.
+                // It gains a `value:` the moment a row carries a real host.
+                TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
+                    .width(min: 80, ideal: 100)
+                    .customizationID("host")
+
+                // Last. Sized to its content rather than fixed, so it compresses with
+                // everything else instead of forcing the table wider than the window.
+                TableColumn("Actions") { row in
+                    rowActions(for: row.container)
+                }
+                .width(min: 118, ideal: 128)
+                .customizationID("actions")
+    }
+
     @ViewBuilder
     private func rowActions(for container: Container) -> some View {
         let busy = model.isBusy(container.id, kind: .container)
@@ -579,6 +658,14 @@ struct ContainersView: View {
         }
 
         Divider()
+        // Tags, in the same place on every row menu in the app: after the things you open and
+        // operate on, and before Copy. Not a destructive action, not a read of the runtime — it
+        // changes how the row looks to you and nothing about what it is.
+        TagMenu(store: model.tags, subject: TagSubject(kind: .container, id: container.id)) {
+            tagSheet = TagSheetTarget(kind: .container, id: container.id)
+        }
+
+        Divider()
         // Containers were the **only** section without this. Machines, volumes, networks and
         // images all offer it, and the ids and ports here are the most copied values in the app.
         CopyMenu([
@@ -606,6 +693,15 @@ struct ContainersView: View {
             .disabled(busy)
     }
 
+    /// The tab a `requestDetail` asked for, resolved against **this** screen's own tab type.
+    ///
+    /// A title this screen does not have resolves to nil and the detail opens on its default tab,
+    /// which is the point of carrying a title rather than an index: a request naming a tab only
+    /// the other detail screen has can never land on an arbitrary third one.
+    private var requestedTab: DetailTab? {
+        model.pendingDetailTab.flatMap(DetailTab.init(rawValue:))
+    }
+
     var body: some View {
         Group {
             if showingRun {
@@ -626,6 +722,9 @@ struct ContainersView: View {
                 }
             }
         }
+        .sheet(item: $tagSheet) { target in
+            NewTagSheet(store: model.tags, applyTo: target.subject) { tagSheet = nil }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {
@@ -638,15 +737,13 @@ struct ContainersView: View {
         .onChange(of: model.pendingDetailSubject) { _, subject in
             // Only this section's own requests. See `AppModel.requestDetail`.
             guard let subject, model.pendingDetailKind == .container else { return }
-            detailTarget = DetailTarget(id: subject)
-            model.pendingDetailSubject = nil
-            model.pendingDetailKind = nil
+            detailTarget = DetailTarget(id: subject, tab: requestedTab)
+            model.clearPendingDetail()
         }
         .onAppear {
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .container {
-                detailTarget = DetailTarget(id: subject)
-                model.pendingDetailSubject = nil
-                model.pendingDetailKind = nil
+                detailTarget = DetailTarget(id: subject, tab: requestedTab)
+                model.clearPendingDetail()
             }
         }
         // "Run…" in the menu-bar popover. One-shot: consumed and cleared, so the sheet does
@@ -997,6 +1094,22 @@ struct ContainersView: View {
                     .foregroundStyle(Theme.rowName(selected: selection.contains(c.id)))
                     .help("Open \(c.id)")
                 }
+
+                // Next to the name, the way Finder puts a tag beside a filename: the whole point
+                // is that you recognise the row without reading it, which only works if the pill
+                // is where your eye already is.
+                //
+                // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**,
+                // and a row's tags live in `TagStore`, not on the model — so a sortable column
+                // here would mean denormalising the user's tags onto the runtime's own types.
+                // Hideable instead, through the same column menu every other column uses.
+                TableColumn("Tags") { row in
+                    TagPillRow(tags: model.tags.tags(on: .container, row.container.id),
+                               compact: true)
+                }
+                .width(min: 60, ideal: 130)
+                .customizationID("tags")
+
                 TableColumn("Image", value: \.container.imageReference) { row in
                     let c = row.container
                     Text(Self.imageLabel(c.configuration.image.reference))
@@ -1031,55 +1144,7 @@ struct ContainersView: View {
                 // this table never did. nil renders as a dash, never 0% — an unsampled
                 // container is not an idle one, and a table that says 0% and then jumps is
                 // lying twice.
-                TableColumn("CPU", value: \.cpu) { row in
-                    let c = row.container
-                    Text(model.cpuLabel(for: c.id))
-                        .monospacedDigit()
-                        .foregroundStyle(model.cpuPercent(for: c.id) == nil ? .tertiary : .secondary)
-                        .lineLimit(1)
-                }
-                .width(min: 56, ideal: 68)
-                .customizationID("cpu")
-
-                TableColumn("Memory", value: \.memory) { row in
-                    let c = row.container
-                    Text(model.memoryLabel(for: c.id))
-                        .monospacedDigit()
-                        .foregroundStyle(model.memoryBytes(for: c.id) == nil ? .tertiary : .secondary)
-                        .lineLimit(1)
-                }
-                .width(min: 68, ideal: 84)
-                .customizationID("memory")
-
-                TableColumn("IP / Network", value: \.ipSortKey) { row in
-                    let c = row.container
-                    Text(Self.ipNetworkLabel(c))
-                        .lineLimit(1)
-                        .foregroundStyle(.secondary)
-                }
-                .width(min: 90, ideal: 130)
-                .customizationID("ip")
-
-                // Hidden by default (see `ui.columnCustomization`): with one host it reads
-                // "This Mac" on every row, and a column identical in every row is pure
-                // width. The cross-host *dimension* stays — the data is on the row and the
-                // column is one header-menu click away — it just stops costing space until
-                // Phase 3 gives it something to say.
-                // **Not sortable, and not an omission.** Every row reads "This Mac" until Phase 2
-                // brings peers, and a column with one distinct value cannot be ordered — a header
-                // that highlights and reorders nothing is worse than one that does not respond.
-                // It gains a `value:` the moment a row carries a real host.
-                TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
-                    .width(min: 80, ideal: 100)
-                    .customizationID("host")
-
-                // Last. Sized to its content rather than fixed, so it compresses with
-                // everything else instead of forcing the table wider than the window.
-                TableColumn("Actions") { row in
-                    rowActions(for: row.container)
-                }
-                .width(min: 118, ideal: 128)
-                .customizationID("actions")
+                trailingColumns
             }
             // On the Table, not on a cell: `.contextMenu` inside a `TableColumn` only covers
             // that one cell, so right-clicking a row anywhere but the name did nothing at all.
@@ -1127,6 +1192,7 @@ struct ContainersView: View {
                         memoryBytes: model.memoryBytes(for: container.id),
                         history: model.cpuHistory(for: container.id),
                         isBusy: model.isBusy(container.id, kind: .container),
+                        tags: model.tags.tags(on: .container, container.id),
                         onStart: { Task { await model.perform(.start, on: container) } },
                         onStop: { Task { await model.perform(.stop, on: container) } },
                         onRestart: { Task { await model.perform(.restart, on: container) } },

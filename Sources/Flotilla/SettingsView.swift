@@ -214,13 +214,16 @@ struct SettingsView: View {
     @State private var tab: Tab = .general
 
     private enum Tab: String, CaseIterable, Identifiable, Hashable {
-        case general, resources, updates, advanced
+        // Tags sits between Resources and Updates: it is about the things the app manages,
+        // like Resources, rather than about the app itself.
+        case general, resources, tags, updates, advanced
         var id: Self { self }
 
         var title: String {
             switch self {
             case .general: "General"
             case .resources: "Resources"
+            case .tags: "Tags"
             case .updates: "Updates"
             case .advanced: "Advanced"
             }
@@ -230,6 +233,7 @@ struct SettingsView: View {
             switch self {
             case .general: "gearshape"
             case .resources: "cpu"
+            case .tags: "tag"
             case .updates: "arrow.down.circle"
             case .advanced: "slider.horizontal.3"
             }
@@ -332,6 +336,7 @@ struct SettingsView: View {
             switch tab {
             case .general: generalPane
             case .resources: resourcesPane
+            case .tags: TagManagerPane(model: model, store: model.tags)
             case .updates: updatesPane
             case .advanced: advancedPane
             }

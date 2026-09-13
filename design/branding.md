@@ -89,3 +89,39 @@ Notes that are load-bearing rather than descriptive:
 
 Each colour earns a job — accent = brand and selection, green = health — so the
 palette reads as intentional rather than decorative.
+
+## Tag palette (added 2026-09-13)
+
+Finder-style tags carry a **fixed seven-colour palette**, and it is deliberately *not* the brand
+palette:
+
+| Tag | Light | Dark (derived) |
+|---|---|---|
+| Red | `#C9302C` | `#F2635F` |
+| Orange | `#E07B39` | `#F59A76` |
+| Yellow | `#D9A200` | `#F5C242` |
+| Green | `#4C8C2B` | `#7CB342` |
+| Blue | `#3A6EA5` | `#82AEDC` |
+| Purple | `#7B4FA8` | `#B693DA` |
+| Grey | `#77777C` | `#9EA09B` |
+
+**This is the one place plain blue and purple are allowed**, and the exception is argued rather
+than assumed. The standing rule — no `--sys-blue`, the brand has a teal — is about colours
+*Flotilla* assigns to mean something: a chart series, a status dot. A tag's colour is chosen by
+the user and has to be recognisable as "the blue one" across a table of forty rows. Finder's
+swatches are the vocabulary people already have for that, so matching them is worth more here
+than brand consistency is. The values are pulled slightly towards the app's own saturation so a
+row of pills does not read as a screenshot of a different application, and the dark values are
+lifted until each holds its hue on `#171C14` while staying distinguishable from its two
+neighbours in the wheel.
+
+Seven, and no eighth. A tag is something you recognise in half a glance, which only works while
+the whole vocabulary fits in visual memory; an open colour well gives you two greens you cannot
+tell apart at 8pt.
+
+**Tags are drawn as pills, never as a tinted row or card.** The pill is additive — it says one
+more thing about a row without taking anything the row already said. Colouring a whole card would
+put an arbitrary hue behind a state dot, a name and four values, so a container tagged
+"Production" would read as *alarming* rather than as tagged. The dot carries the colour at full
+strength and the capsule at 16% alpha, so a pill stays legible on white, on the raised card
+surface and on a selected row.

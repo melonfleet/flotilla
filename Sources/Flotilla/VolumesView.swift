@@ -30,6 +30,13 @@ struct VolumesView: View {
     @State private var newDriverOptions: [String] = []
     @State private var pendingDelete: ContainerVolume?
     @State private var confirmingBulkDelete = false
+
+    /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
+    /// bare `TagSubject` — see that type for why a subject is not `Identifiable`.
+    ///
+    /// Presented from the view, never from inside the menu: a `.sheet` attached within a `Menu`
+    /// never appears, because the menu is gone by the time the state changes.
+    @State private var tagSheet: TagSheetTarget?
     @State private var edits = FormEditTracker()
 
     private var editSignature: String {
@@ -74,6 +81,9 @@ struct VolumesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
+        .sheet(item: $tagSheet) { target in
+            NewTagSheet(store: model.tags, applyTo: target.subject) { tagSheet = nil }
+        }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingVolumeForm) { _, requested in
             if requested { showingCreate = true; model.pendingVolumeForm = false }
@@ -182,7 +192,19 @@ struct VolumesView: View {
             // `name` is non-optional: the real payload nests it under `configuration` where it
             // is always present. It was optional before commit c258911 fixed the fabricated
             // fixture, and a `?? ""` here was leftover defensive code from that shape.
-            volumes = volumes.filter { $0.name.lowercased().contains(query) }
+        // **Tag names are searchable too, on every section.**
+        //
+        // This is how tags filter. The alternative was a tag entry in each section's filter
+        // control, which Volumes and Networks could take as a string id but Containers and
+        // Machines could not without widening their typed `Filter` enums — and a tag filter that
+        // exists on two sections out of five is the asymmetry this app keeps being asked to
+        // remove. Searching the name reaches every section through one line each, works exactly
+        // the same way everywhere, and composes with whatever filter is already on.
+            volumes = volumes.filter {
+                $0.name.lowercased().contains(query)
+                    || model.tags.tags(on: .volume, $0.name)
+                        .contains { $0.name.lowercased().contains(query) }
+            }
         }
 
         return volumes.sorted(using: ui.sortOrder)
@@ -286,6 +308,7 @@ struct VolumesView: View {
     }
 
     private static let columnSpecs: [(id: String, title: String)] = [
+        ("tags", "Tags"),
         ("format", "Format"), ("driver", "Driver"), ("size", "Capacity"), ("created", "Created"),
     ]
 
@@ -377,6 +400,7 @@ struct VolumesView: View {
                              ("Driver", volume.configuration.driver),
                              ("Size", volume.sizeInBytes.map(Self.byteCount)),
                              ("Created", RelativeDate.relative(volume.configuration.creationDate))],
+                    tags: model.tags.tags(on: .volume, volume.name),
                     // The card title opens the detail, so the list/cards toggle does not change
                     // what you can reach.
                     onOpen: { detailTarget = DetailTarget(id: volume.name) }
@@ -418,6 +442,20 @@ struct VolumesView: View {
                     .help("Open \(volume.name)")
             }
             .width(min: 160, ideal: 240)
+
+            // Next to the name, the way Finder puts a tag beside a filename: the whole point is
+            // that you recognise the row without reading it, which only works if the pill is
+            // where your eye already is.
+            //
+            // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**, and a
+            // row's tags live in `TagStore`, not on the model — so a sortable column here would
+            // mean denormalising the user's tags onto the runtime's own types. Hideable instead,
+            // through the same column menu every other column uses.
+            TableColumn("Tags") { volume in
+                TagPillRow(tags: model.tags.tags(on: .volume, volume.name), compact: true)
+            }
+            .width(min: 60, ideal: 130)
+            .customizationID("tags")
 
             TableColumn("Format", value: \.formatSortKey) { volume in
                 Text(volume.configuration.format ?? "—").foregroundStyle(.secondary)
@@ -658,6 +696,13 @@ struct VolumesView: View {
         Button("Details…") { detailTarget = DetailTarget(id: volume.name) }
         // Straight to the tab you wanted, the way the containers menu offers Logs and Inspect.
         Button("Inspect") { detailTarget = DetailTarget(id: volume.name, tab: .inspect) }
+        Divider()
+        // Tags, in the same place on every row menu in the app: after the things you open and
+        // before Copy. Not a destructive action, not a read of the runtime — it changes how the
+        // row looks to you and nothing about what it is.
+        TagMenu(store: model.tags, subject: TagSubject(kind: .volume, id: volume.name)) {
+            tagSheet = TagSheetTarget(kind: .volume, id: volume.name)
+        }
         Divider()
         CopyMenu([
             ("Name", volume.name),

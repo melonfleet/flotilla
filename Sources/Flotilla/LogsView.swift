@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import FlotillaCore
 
 /// The Logs section: one place that answers "what has everything been saying", instead of
@@ -41,6 +42,14 @@ struct LogsView: View {
     @State private var liveFailures: [AggregatedLogChunk] = []
     @State private var liveTask: Task<Void, Never>?
 
+    /// The display popover — wrapping and the timestamp column, the two things Docker Desktop's
+    /// own log screen puts behind an overflow menu. Same idea, same place: they change how the
+    /// feed is drawn rather than what is in it, so they do not belong beside the filters.
+    @State private var showingDisplay = false
+    /// Set when an export fails. A save that silently does nothing is the failure shape this app
+    /// keeps finding; `try?` on the write would have been exactly that.
+    @State private var exportError: String?
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -66,6 +75,12 @@ struct LogsView: View {
             } else {
                 Task { await load() }
             }
+        }
+        .alert("Couldn\u{2019}t save the CSV", isPresented: Binding(
+            get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
+            Button("OK") { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
         }
         .onDisappear {
             // The tail must not outlive the screen. `AsyncStream.onTermination` cancels the
@@ -123,6 +138,26 @@ struct LogsView: View {
                        searchPrompt: "Search log lines…",
                        updated: updated,
                        leading: {
+            // **Select all, in the same place every other section puts it** — first in the
+            // leading cluster, before the controls that change what you are looking at. It is
+            // what makes the selection worth having: the export button reads the selection, and
+            // "select these two hundred lines" with no select-all means dragging through them.
+            //
+            // Scoped to what is *visible*, like every other section's: it unions the feed's own
+            // ids rather than setting a flag, so a line filtered away is never silently exported
+            // because a box was ticked before the filter moved.
+            Toggle("", isOn: Binding(get: { allVisibleSelected },
+                                     set: { on in
+                                         if on { ui.selection.formUnion(visibleIDs) }
+                                         else { ui.selection.subtract(visibleIDs) }
+                                     }))
+                .labelsHidden()
+                .disabled(feed.isEmpty)
+                .accessibilityLabel(allVisibleSelected ? "Deselect all lines" : "Select all lines")
+                .help(allVisibleSelected
+                      ? "Deselect all"
+                      : "Select all \(visibleIDs.count) line\(visibleIDs.count == 1 ? "" : "s")")
+
             Picker("Log", selection: Binding(get: { ui.scope }, set: { ui.scope = $0 })) {
                 ForEach(LogsUIState.Scope.allCases) { option in
                     Label(option.rawValue, systemImage: option.systemImage)
@@ -156,7 +191,26 @@ struct LogsView: View {
                 showingSources.toggle()
             }
             .popover(isPresented: $showingSources, arrowEdge: .bottom) { sourcesPopover }
+            // How the feed is *drawn* — wrapping, and whether the Received column shows.
+            // Beside the other two popovers rather than in the trailing cluster, because those
+            // are the things you do to the feed and these are things you do to the view of it.
+            // `textformat`, not `text.alignleft`: that is the scope picker's own "Output" glyph,
+            // two controls to the left, and two identical icons in one band is two controls
+            // nobody can tell apart.
+            IconActionButton(systemImage: "textformat", label: "Display",
+                             help: displayHelp,
+                             active: ui.wrapLines || ui.showTimestamps) {
+                showingDisplay.toggle()
+            }
+            .popover(isPresented: $showingDisplay, arrowEdge: .bottom) { displayPopover }
         }, trailing: {
+            // Exports what you selected, or everything you can see. Named in the tooltip both
+            // ways round, because "Export 12 selected lines" and "Export all 847 lines" are
+            // different enough actions that the button has to say which one it is about to do.
+            ToolbarIconButton(systemImage: "arrow.down.document", label: "Export CSV",
+                              help: exportHelp, disabled: exportRows.isEmpty) {
+                exportCSV()
+            }
             // **Live sits beside Refresh, and they are the same axis** — once, or continuously —
             // exactly as they are in the detail Logs tabs, so the control you reach for is in the
             // same place whichever log screen you are on.
@@ -243,6 +297,41 @@ struct LogsView: View {
         .frame(minWidth: 200)
     }
 
+    private var displayHelp: String {
+        var on: [String] = []
+        if ui.wrapLines { on.append("wrapping") }
+        if ui.showTimestamps { on.append("timestamps") }
+        return on.isEmpty ? "How the feed is shown" : "Showing " + on.joined(separator: " and ")
+    }
+
+    private var displayPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Wrap lines", isOn: Binding(get: { ui.wrapLines },
+                                               set: { ui.wrapLines = $0 }))
+            Text("Off, a long message stays on one line and can be opened row by row with the "
+                 + "chevron.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            Toggle("Show timestamps", isOn: Binding(get: { ui.showTimestamps },
+                                                    set: { ui.showTimestamps = $0 }))
+            // The whole reason this is off by default, said where the control is rather than
+            // only in a docstring nobody reading the screen will find.
+            // Plain prose, no backticks and no asterisks. `Text` parses Markdown only in a
+            // string *literal*; this is built with `+`, so the syntax rendered on screen as
+            // literal punctuation — measured, not assumed.
+            Text("Apple\u{2019}s container CLI does not timestamp log lines, so this is when "
+                 + "Flotilla received the line: genuine per line while streaming, and one "
+                 + "shared read time per source when fetched.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(width: 300)
+    }
+
     private var limitPopover: some View {
         Picker("Lines", selection: Binding(get: { ui.lineLimit }, set: { ui.lineLimit = $0 })) {
             ForEach(LogsUIState.lineLimits, id: \.self) { Text("\($0) lines").tag($0) }
@@ -292,78 +381,297 @@ struct LogsView: View {
                 ContentUnavailableView.search(text: ui.search)
             }
         } else {
-            // **Follows the tail while Live is on**, the way `LineListView` does for the detail
-            // tabs. Without it the stream worked and did not look like it: lines were arriving
-            // and landing below the fold, so the screen sat perfectly still while five children
-            // pushed output into it — indistinguishable from a feed that is not connected.
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        // Failures first and compact — a source that cannot be read is a fact worth
-                        // seeing, and it must not be silently absent from a feed that otherwise
-                        // looks complete.
-                        ForEach(failures) { chunk in
-                            HStack(alignment: .top, spacing: 8) {
-                                sourceTag(chunk.source, kind: chunk.kind)
-                                Text(chunk.failure ?? "")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Theme.danger)
-                                    .textSelection(.enabled)
-                                Spacer(minLength: 0)
+            // **A `Table`, matching every other section.**
+            //
+            // It was a `LazyVStack` of hand-drawn rows, which is what a log *reads* like and not
+            // what this screen is for: you come here to find the lines that matter among two
+            // hundred that do not, take them somewhere else, and jump to whatever produced them.
+            // None of that is reachable from a stack of `Text` — no selection, so nothing to
+            // export; no columns, so nothing to hide; and a fixed source tag rather than a way
+            // in. Docker Desktop's log screen is a table for exactly these reasons and the owner
+            // asked for the same shape here.
+            //
+            // **No `sortOrder`, and that is the one place this deliberately differs from the
+            // other tables.** Every other section sorts because its rows are independent things.
+            // These are not: within a source, a log line's position *is* its meaning, and the
+            // only clock available is when we read it (see `AggregatedLogLine.receivedAt`). A
+            // clickable "Received" header on a fetched feed would reorder two hundred lines that
+            // all share one timestamp, by nothing, and look authoritative doing it. The source
+            // filter is what answers "just show me this one"; the search field answers the rest.
+            VStack(spacing: 0) {
+                // Failures above the table rather than mixed into it. A source that could not be
+                // read is not a log line — it has no message, no position and nothing to select
+                // — and a row that renders half the columns as blanks is how a table stops being
+                // readable. They stay visible under any filter, for the reason `filtered` gives:
+                // hiding why a source is missing is how you conclude a log is empty when it is
+                // broken.
+                if !failures.isEmpty { failureBand }
+
+                ScrollViewReader { proxy in
+                    SwiftUI.Table(feed,
+                                  selection: Binding(get: { ui.selection },
+                                                     set: { ui.selection = $0 }),
+                                  columnCustomization: Binding(
+                                      get: { ui.columnCustomization },
+                                      set: { ui.columnCustomization = $0 })) {
+                        TableColumn("") { line in
+                            selectionToggle(for: line.id)
+                        }
+                        .width(min: 28, ideal: 30, max: 34)
+
+                        // Present only when asked for, rather than always-present-and-hideable
+                        // through the column menu. The reason to leave it out is not "I have
+                        // enough columns" — it is that on a fetched feed every value in it is
+                        // the same, so it is a column that means something in one mode and
+                        // repeats itself in the other. The Display popover is where that is
+                        // explained, so that is where it is switched.
+                        if ui.showTimestamps {
+                            TableColumn("Received") { line in
+                                Text(line.receivedAt.map(Self.timestamp) ?? "\u{2014}")
+                                    .font(.system(size: 11).monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                    .help("When Flotilla received this line. `container logs` "
+                                          + "has no timestamps of its own.")
                             }
-                            .padding(.vertical, 2)
+                            .width(min: 76, ideal: 92, max: 120)
                         }
 
-                        ForEach(feed) { line in
-                            HStack(alignment: .top, spacing: 8) {
-                                sourceTag(line.source, kind: line.kind)
-                                Text(line.text)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    // `stderr` here is the *CLI's* stderr, not the container's own:
-                                    // `container logs` writes program output to stdout, so a line
-                                    // arriving on stderr is the runtime complaining. Tinted rather
-                                    // than filtered — offering a "stderr" filter would imply a split
-                                    // the CLI does not make.
-                                    .foregroundStyle(line.stream == .stderr ? Theme.warning : .primary)
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(.vertical, 1)
+                        TableColumn("Object") { line in
+                            sourceButton(line.source, kind: line.kind)
+                        }
+                        // Capped. `width(min:ideal:)` leaves the maximum unbounded, and with
+                        // only three or four columns the table handed Object every spare point
+                        // — measured at ~830pt for names eight characters long, with the
+                        // messages squeezed into the right-hand third. The message is what this
+                        // screen is for, so it is the column that takes the slack.
+                        .width(min: 110, ideal: 168, max: 260)
+                        .customizationID("object")
+                        // The only column carrying a `customizationID`, which is what the
+                        // customization binding actually persists: this is the one whose width
+                        // people drag, because source names vary from `web` to
+                        // `probe-alpine-latest`. Message has none because it is the screen's
+                        // whole purpose, and Received is switched from the Display popover
+                        // rather than the header menu — for the reason that popover explains.
+
+                        TableColumn("Message") { line in
+                            messageCell(line)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    // Follows the tail while Live is on, as the `LazyVStack` did. Without it the
+                    // stream works and does not look like it: lines arrive below the fold and the
+                    // screen sits still while five children push output into it.
+                    .onChange(of: feed.last?.id) { _, newest in
+                        guard ui.live, let newest else { return }
+                        // No animation: a tail that eases to each new line lags behind the output
+                        // and makes the text unreadable while it moves.
+                        proxy.scrollTo(newest, anchor: .bottom)
+                    }
+                    .onChange(of: ui.live) { _, isOn in
+                        if isOn, let newest = feed.last?.id {
+                            proxy.scrollTo(newest, anchor: .bottom)
+                        }
+                    }
                 }
-                .onChange(of: feed.last?.id) { _, newest in
-                    guard ui.live, let newest else { return }
-                    // No animation: a tail that eases to each new line lags behind the output and
-                    // makes the text unreadable while it moves. Same call the detail tail makes.
-                    proxy.scrollTo(newest, anchor: .bottom)
-                }
-                .onChange(of: ui.live) { _, isOn in
-                    if isOn, let newest = feed.last?.id { proxy.scrollTo(newest, anchor: .bottom) }
+                .contextMenu(forSelectionType: AggregatedLogLine.ID.self) { ids in
+                    lineMenu(for: ids)
+                } primaryAction: { ids in
+                    // Double-click opens the row, the way it opens a detail elsewhere. Only when
+                    // the activation names exactly one line: with several selected, `first` is an
+                    // arbitrary member of a `Set`.
+                    guard ids.count == 1, let id = ids.first else { return }
+                    toggleExpanded(id)
                 }
             }
         }
     }
 
-    /// The source name as a field on the line, fixed-width so the text column still lines up.
+    /// Sources that could not be read, above the feed.
+    private var failureBand: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(failures) { chunk in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.danger)
+                    sourceButton(chunk.source, kind: chunk.kind)
+                        .frame(width: 150, alignment: .leading)
+                    Text(chunk.failure ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.danger)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 3)
+            }
+            Divider()
+        }
+        .background(Theme.danger.opacity(0.07))
+    }
+
+    /// The message, and the control that opens it.
     ///
-    /// Truncates from the head rather than the tail: container ids share prefixes far more often
-    /// than suffixes, so keeping the end is what keeps two of them distinguishable.
-    private func sourceTag(_ source: String, kind: ActivityKind) -> some View {
+    /// Three states, and they compose: truncated to one line; wrapped, because the toolbar says
+    /// so; or wrapped because *this* row was opened. The per-row chevron exists because the
+    /// global toggle is the wrong tool for the usual case — one stack trace among two hundred
+    /// ordinary lines — and turning wrapping on for all of them pushes everything else off the
+    /// screen to read one.
+    ///
+    /// **The chevron appears only when there is something behind it, and that is measured rather
+    /// than guessed.** The first attempt tested `text.count > 96`, which is wrong in both
+    /// directions: the Message column is resizable, so the same line overflows at one width and
+    /// fits at another. `ViewThatFits` asks the layout system the actual question — it takes the
+    /// first child that fits, so a line that fits whole renders with no chevron at all, and one
+    /// that does not falls through to the truncated form with the control beside it. Resizing
+    /// the column re-evaluates it.
+    @ViewBuilder
+    private func messageCell(_ line: AggregatedLogLine) -> some View {
+        if ui.wrapLines {
+            // Everything is already shown, so a chevron here would be a control whose two
+            // states look identical.
+            messageText(line, wrapped: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if ui.expanded.contains(line.id) {
+            HStack(alignment: .top, spacing: 6) {
+                messageText(line, wrapped: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                expandButton(line, expanded: true)
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                // Fits whole: no control, because there is nothing to reveal.
+                //
+                // `fixedSize()` and **no** `maxWidth: .infinity` — that combination is what
+                // makes this measure anything at all. The first version put the greedy frame
+                // inside `messageText`, so this candidate always reported that it fitted and
+                // the chevron never appeared on any row, including visibly truncated ones.
+                // Measured on the `Starting Squid Cache version 6.13 for aarch64-…` line,
+                // which is where it showed.
+                messageText(line, wrapped: false).fixedSize()
+                HStack(alignment: .top, spacing: 6) {
+                    messageText(line, wrapped: false)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    expandButton(line, expanded: false)
+                }
+            }
+        }
+    }
+
+    /// The text alone, with no opinion about width — the caller supplies that, because the
+    /// `ViewThatFits` candidates need opposite answers: one intrinsic, one greedy.
+    private func messageText(_ line: AggregatedLogLine, wrapped: Bool) -> some View {
+        Text(line.text)
+            .font(.system(size: 11, design: .monospaced))
+            // `stderr` here is the *CLI's* stderr, not the container's own: `container logs`
+            // writes program output to stdout, so a line arriving on stderr is the runtime
+            // complaining. Tinted rather than filtered — offering a "stderr" filter would
+            // imply a split the CLI does not make.
+            .foregroundStyle(line.stream == .stderr ? Theme.warning : .primary)
+            .textSelection(.enabled)
+            .lineLimit(wrapped ? nil : 1)
+            .fixedSize(horizontal: false, vertical: wrapped)
+    }
+
+    private func expandButton(_ line: AggregatedLogLine, expanded: Bool) -> some View {
+        Button {
+            toggleExpanded(line.id)
+        } label: {
+            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .accessibilityLabel(expanded ? "Collapse this message" : "Show the whole message")
+        .help(expanded ? "Collapse" : "Show the whole message")
+    }
+
+    private func toggleExpanded(_ id: AggregatedLogLine.ID) {
+        if ui.expanded.contains(id) { ui.expanded.remove(id) } else { ui.expanded.insert(id) }
+    }
+
+    /// Same checkbox column every other section's table leads with. Plain `Table` selection hides
+    /// multi-select behind a modifier key; the box makes it visible.
+    private func selectionToggle(for id: AggregatedLogLine.ID) -> some View {
+        Toggle("", isOn: Binding(
+            get: { ui.selection.contains(id) },
+            set: { on in
+                if on { ui.selection.insert(id) } else { ui.selection.remove(id) }
+            }))
+            .labelsHidden()
+            .accessibilityLabel("Select this line")
+    }
+
+    /// `HH:mm:ss`, fixed. Not a relative time: two lines four seconds apart is the distinction
+    /// this column exists to draw, and "just now" for both would erase it.
+    private static func timestamp(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .standard)
+    }
+
+    /// The row menu. Same shape as every other table's: what you can do with the rows, then Copy,
+    /// and nothing that is only reachable here.
+    @ViewBuilder
+    private func lineMenu(for ids: Set<AggregatedLogLine.ID>) -> some View {
+        let lines = feed.filter { ids.contains($0.id) }
+        let sources = Set(lines.map { "\($0.kind.rawValue)/\($0.source)" })
+
+        // Only when the selection is about one source. "Open Logs" with three sources selected
+        // has no single answer, and picking one of them arbitrarily is how the containers detail
+        // used to open the wrong row.
+        if sources.count == 1, let first = lines.first {
+            Button("Open \(first.source) Logs") { openSource(first.source, kind: first.kind) }
+        }
+        Button(lines.count == 1 ? "Show Whole Message" : "Show Whole Messages") {
+            for line in lines { ui.expanded.insert(line.id) }
+        }
+        .disabled(lines.isEmpty || ui.wrapLines)
+        Divider()
+        Button(lines.count == 1 ? "Copy Line" : "Copy \(lines.count) Lines") {
+            Clipboard.copy(lines.map(\.text).joined(separator: "\n"))
+        }
+        .disabled(lines.isEmpty)
+        Button("Copy with Source") {
+            Clipboard.copy(lines.map { "\($0.source)\t\($0.text)" }.joined(separator: "\n"))
+        }
+        .disabled(lines.isEmpty)
+        Divider()
+        Button("Export \(lines.count) Line\(lines.count == 1 ? "" : "s") as CSV\u{2026}") {
+            exportCSV(lines)
+        }
+        .disabled(lines.isEmpty)
+    }
+
+    /// Clicking a source takes you to that container's or machine's own Logs tab.
+    ///
+    /// The owner asked for it and it closes a real gap: the source was a label, so the aggregated
+    /// feed could tell you *which* container was shouting and then leave you to find it. It is
+    /// the one navigation this screen owes, because the aggregated view is deliberately capped
+    /// at N lines per source and the per-source tab is where you go for more.
+    private func openSource(_ source: String, kind: ActivityKind) {
+        model.requestDetail(kind: kind, subject: source, tab: "Logs")
+    }
+
+    /// The source, as the way in rather than as a label.
+    ///
+    /// Truncates from the head: container ids share prefixes far more often than suffixes, so
+    /// keeping the end is what keeps two of them distinguishable.
+    private func sourceButton(_ source: String, kind: ActivityKind) -> some View {
         HStack(spacing: 4) {
             Image(systemName: kind.systemImage)
                 .font(.system(size: 9))
                 .foregroundStyle(.tertiary)
-            Text(source)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+            Button(source) { openSource(source, kind: kind) }
+                .buttonStyle(.link)
                 .foregroundStyle(Theme.accentText)
                 .lineLimit(1)
                 .truncationMode(.head)
+            // The subject's own tags, so a feed mixing five containers is readable by colour.
+            // This is the whole argument for tagging reaching Logs: you are not tagging log
+            // lines, you are recognising which of your things is talking.
+            TagPillRow(tags: model.tags.tags(on: kind, source), compact: true, limit: 1)
         }
-        .frame(width: 128, alignment: .leading)
-        .help("\(source) \u{2014} \(kind == .machine ? "machine" : "container")")
+        .help("Open \(source)\u{2019}s own Logs tab "
+              + "(\(kind == .machine ? "machine" : "container"))")
     }
 
     /// Every line from every selected source, in one list.
@@ -465,7 +773,7 @@ struct LogsView: View {
                     nextIndex[key] = index + 1
                     liveLines.append(AggregatedLogLine(source: item.source, kind: item.kind,
                                                        index: index, stream: item.stream,
-                                                       text: item.text))
+                                                       text: item.text, receivedAt: item.at))
                 }
                 // One cap across the whole feed, not per source: this is one list and what
                 // matters is how much of it is in memory.
@@ -488,6 +796,88 @@ struct LogsView: View {
             try? await Task.sleep(for: .milliseconds(120))
         }
         loading = false
+    }
+
+    // MARK: Export
+
+    /// What Export would write: the selected lines, or everything on screen when nothing is
+    /// selected.
+    ///
+    /// Intersected with the feed, never taken from the selection set alone. Filtering does not
+    /// clear a table's selection, so a line you selected and then filtered away is still in
+    /// `ui.selection` — and exporting a row the user cannot see is the same mistake the bulk
+    /// delete bars guard against with their own `actionable`.
+    private var exportRows: [AggregatedLogLine] {
+        let selected = feed.filter { ui.selection.contains($0.id) }
+        return selected.isEmpty ? feed : selected
+    }
+
+    /// The lines currently on screen. The same set `exportRows` falls back to, named separately
+    /// because select-all and export ask the same question for different reasons.
+    private var visibleIDs: Set<AggregatedLogLine.ID> { Set(feed.map(\.id)) }
+
+    private var allVisibleSelected: Bool {
+        !visibleIDs.isEmpty && visibleIDs.isSubset(of: ui.selection)
+    }
+
+    private var exportHelp: String {
+        let count = exportRows.count
+        guard count > 0 else { return "Nothing to export" }
+        let selected = feed.contains { ui.selection.contains($0.id) }
+        return selected
+            ? "Save the \(count) selected line\(count == 1 ? "" : "s") as CSV"
+            : "Save all \(count) line\(count == 1 ? "" : "s") as CSV"
+    }
+
+    private func exportCSV() { exportCSV(exportRows) }
+
+    /// Writes the given lines as CSV.
+    ///
+    /// **Five columns, including two the table does not show.** `Received` and `Object` and
+    /// `Message` are the table; `Kind` and `Stream` are not, and they are here because an export
+    /// is read without the app beside it. `Kind` is what makes `web` unambiguous once the rows
+    /// have left the screen — a container and a machine can share a name — and `Stream` carries
+    /// the stdout/stderr split that the table encodes as a colour, which a CSV cannot.
+    ///
+    /// The escaping, including the leading-apostrophe defence against spreadsheet formulas, is
+    /// `CSVWriter`'s and is tested there. A log line is attacker-influenced text by definition.
+    private func exportCSV(_ lines: [AggregatedLogLine]) {
+        guard !lines.isEmpty else { return }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = Self.exportFilename(scope: ui.scope)
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.isExtensionHidden = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let document = CSVWriter.document(
+            header: ["Received", "Kind", "Object", "Stream", "Message"],
+            rows: lines.map { line in
+                [line.receivedAt.map { $0.formatted(.iso8601) } ?? "",
+                 line.kind.rawValue,
+                 line.source,
+                 line.stream.rawValue,
+                 line.text]
+            })
+
+        do {
+            try document.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            // Surfaced, not swallowed. `try?` here would make a failed save — a read-only
+            // volume, a full disk — indistinguishable from a successful one.
+            exportError = error.localizedDescription
+        }
+    }
+
+    /// `flotilla-logs-2026-09-13-142233.csv`. Sortable, unambiguous, and safe on every
+    /// filesystem: no colons, which macOS shows as slashes, and no spaces.
+    private static func exportFilename(scope: LogsUIState.Scope) -> String {
+        let stamp = Date().formatted(
+            .verbatim("\(year: .defaultDigits)-\(month: .twoDigits)-\(day: .twoDigits)-\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased))\(minute: .twoDigits)\(second: .twoDigits)",
+                      locale: Locale(identifier: "en_US_POSIX"),
+                      timeZone: .current,
+                      calendar: Calendar(identifier: .gregorian)))
+        return "flotilla-\(scope.isBoot ? "boot-" : "")logs-\(stamp).csv"
     }
 
     private func load() async {
@@ -525,6 +915,11 @@ private final class LiveAggregateInbox {
         let kind: ActivityKind
         let stream: LogLine.Stream
         let text: String
+        /// Recorded when the line **arrived**, not when the tick drained it. A drain can carry
+        /// a hundred lines written over the preceding 120 ms, and stamping them all with the
+        /// drain's own clock would flatten that into one instant — which is precisely the
+        /// fabricated ordering this screen refuses to produce on a fetch.
+        let at: Date
     }
 
     private var pending: [Item] = []
@@ -541,7 +936,8 @@ private final class LiveAggregateInbox {
     func accept(_ event: LiveLogEvent, from source: String, kind: ActivityKind) {
         switch event {
         case .line(let stream, let text):
-            pending.append(Item(source: source, kind: kind, stream: stream, text: text))
+            pending.append(Item(source: source, kind: kind, stream: stream, text: text,
+                                at: Date()))
         case .ended(let end):
             // A clean end is not a failure. The container exited or was stopped, which is a fact
             // worth a row — but tinting it like a broken source would cry wolf every time
