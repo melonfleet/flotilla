@@ -24,6 +24,14 @@ struct DashboardView: View {
     @State private var diskFailure: String?
     @State private var range: Range = .fiveMinutes
 
+    /// Whether the utilisation table is showing ten rows instead of five.
+    ///
+    /// Held here rather than inside the panel because the panel is `Equatable` and suppresses
+    /// parent-driven updates — state it owns privately would still work, but the window resize
+    /// this drives belongs to the screen, not to one card inside it. Not persisted: expanding is
+    /// a look, and a window that reopens taller than you left it is a surprise.
+    @State private var utilisationExpanded = false
+
     /// The window the charts show. **24h is deliberately absent.** At a 5s poll that is 17,280
     /// points per container, lost on every restart, and it would need downsampling to
     /// per-minute averages to be honest — a different design, not a fourth button. Offering it
@@ -520,7 +528,7 @@ struct DashboardView: View {
     /// As a separate `View` whose stored properties are just the model, SwiftUI can leave it
     /// alone when the parent re-renders and nothing it reads has changed.
     private var utilisationPanel: some View {
-        ContainerUtilisationPanel(model: model).equatable()
+        ContainerUtilisationPanel(model: model, expanded: $utilisationExpanded).equatable()
     }
 
     // MARK: Panels
@@ -631,21 +639,27 @@ struct DashboardView: View {
 /// `StatsSampler` was throwing away.
 private struct ContainerUtilisationPanel: View, Equatable {
     let model: AppModel
+    @Binding var expanded: Bool
 
-    /// **Always equal, deliberately.** The one stored property is stable for the life of the
-    /// screen: `model` is a reference. There used to be a second — the parent's navigation
-    /// closure — and a closure alone makes the view compare unequal on every parent update:
-    /// measured, it was re-running thirteen times in fifty seconds, in bursts of five inside a
-    /// fifth of a second, every one of them handing `SwiftUI.Table` a freshly built array. The
-    /// closure is gone now (rows ask the model to open a container rather than being handed a
-    /// way to change section), but this conformance is what holds the guarantee, not its absence.
+    /// **Equal unless the expansion changed**, which is the whole of what the parent can tell
+    /// this view. `model` is a reference and stable for the life of the screen.
+    ///
+    /// This used to return `true` unconditionally, and that was right when `model` was the only
+    /// stored property: a closure alone makes the view compare unequal on every parent update —
+    /// measured, re-running thirteen times in fifty seconds, in bursts of five inside a fifth of
+    /// a second, each one handing `SwiftUI.Table` a freshly built array. **A flat `true` would
+    /// now be a bug rather than an optimisation**: the expand control would move the window and
+    /// the table would not redraw, because the parent's new value would be compared equal and
+    /// discarded.
     ///
     /// This suppresses re-evaluation from the *parent* only. Changes to the observable state
     /// this view reads — the container list, the stats — still invalidate it, because that is
     /// `@Observable` tracking rather than view-value comparison. That is the whole distinction
     /// being drawn: redraw when the data moves, not when a neighbouring panel does.
     nonisolated static func == (lhs: ContainerUtilisationPanel,
-                                rhs: ContainerUtilisationPanel) -> Bool { true }
+                                rhs: ContainerUtilisationPanel) -> Bool {
+        lhs.expanded == rhs.expanded
+    }
 
     var body: some View {
         // Heading above the card, in the same weight as Pressure, Throughput and Resources —
@@ -662,7 +676,59 @@ private struct ContainerUtilisationPanel: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
+            expandControl
         }
+        // Grows the window by exactly the rows being revealed, so nothing else on the dashboard
+        // moves relative to its neighbours and the bottom stays on the sidebar's divider.
+        .background(WindowHeightNudge(expanded: expanded, delta: Self.expansionDelta))
+    }
+
+    /// Offered only when there is something under the fold — but its **space is always
+    /// reserved**.
+    ///
+    /// A control that expands a table to show the same rows again is the dead affordance this
+    /// app keeps finding, so with five or fewer running containers there is no link. Hiding it
+    /// outright, though, made the panel a different height depending on how many containers were
+    /// running — which is exactly the drift that moving Utilisation to the top removed, arriving
+    /// again by the back door. Measured: the last Resources row landed 24pt past the sidebar's
+    /// divider the moment a sixth container appeared.
+    ///
+    /// So the row is always there and only its contents come and go.
+    @ViewBuilder
+    private var expandControl: some View {
+        Group {
+            if model.running.count > Self.collapsedRows {
+                expandButton
+            }
+        }
+        .frame(height: Self.expandControlHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The reserved row's height. One number, because the window's default height is measured
+    /// against a dashboard that includes it.
+    static let expandControlHeight: CGFloat = 17
+
+    @ViewBuilder
+    private var expandButton: some View {
+        Button {
+            expanded.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(expanded
+                     ? "Show fewer"
+                     : "Show all \(min(model.running.count, Self.expandedRows))")
+                    .font(.caption)
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.accentText)
+        .padding(.top, 2)
+        .help(expanded
+              ? "Collapse the table to \(Self.collapsedRows) rows"
+              : "Expand the table, growing the window to fit")
     }
 
     @ViewBuilder
@@ -750,9 +816,81 @@ private struct ContainerUtilisationPanel: View, Equatable {
     ///
     /// 24 a row plus the header, measured off the rendered table since the rows became one line
     /// each; it was 44 a row when three of the columns stacked a pair of values.
+    ///
+    /// **A fixed number of rows, not the container count.** It used to be
+    /// `min(max(running.count, 3), 8)`, so the panel grew and shrank as containers started and
+    /// stopped — and while this panel sat at the bottom of the dashboard that moved the very
+    /// edge the window's height is aligned against. Five collapsed, ten expanded, and the window
+    /// grows by the difference, so the alignment holds whatever is running.
+    static let collapsedRows = 5
+    static let expandedRows = 10
+    /// What the window grows by when the table opens. One number, used for both the table's
+    /// height and the window's, because they have to be the same number or the dashboard's
+    /// spacing shifts — which is the thing the owner asked not to happen.
+    static let expansionDelta = 24 * CGFloat(expandedRows - collapsedRows)
+
     private var utilisationHeight: CGFloat {
-        let rows = min(max(model.running.count, 3), 8)
-        return 34 + 24 * CGFloat(rows)
+        34 + 24 * CGFloat(expanded ? Self.expandedRows : Self.collapsedRows)
+    }
+}
+
+/// Grows the window by `delta` while `expanded`, and shrinks it back.
+///
+/// The window, not just the panel, because the owner's requirement was that expanding the table
+/// must not change the padding or spacing of anything else on the dashboard. Growing only the
+/// panel would push every panel below it down and drag the content off the bottom; growing the
+/// window by exactly the rows revealed keeps every neighbour where it was and keeps the content's
+/// lower edge on the sidebar's divider.
+///
+/// The **top** edge is held still: macOS window frames are bottom-left origin, so adding height
+/// alone would grow the window upwards, off the top of the screen at the default position.
+private struct WindowHeightNudge: NSViewRepresentable {
+    let expanded: Bool
+    let delta: CGFloat
+
+    func makeNSView(context: Context) -> NSView { Nudger() }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? Nudger)?.apply(expanded: expanded, delta: delta)
+    }
+
+    final class Nudger: NSView {
+        /// What this view has already acted on. Nil until it first has a window, so appearing
+        /// with the table already expanded does **not** resize — this only ever applies a
+        /// *change*, never an absolute size.
+        private var applied: Bool?
+        private var desired = false
+        private var delta: CGFloat = 0
+
+        /// **Both entry points are needed, and `updateNSView` alone is not enough.** Measured:
+        /// the two `updateNSView` calls at launch both arrive with `window == nil`, because
+        /// SwiftUI configures a representable before installing it. Acting only there meant the
+        /// first resize was dropped on the floor and the state recorded as applied, so the
+        /// expand control moved the table and never the window.
+        func apply(expanded: Bool, delta: CGFloat) {
+            desired = expanded
+            self.delta = delta
+            resolve()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            resolve()
+        }
+
+        private func resolve() {
+            guard let window else { return }
+            // First sighting with a window: adopt the state without touching the frame.
+            guard let applied else { self.applied = desired; return }
+            guard applied != desired else { return }
+            self.applied = desired
+
+            var frame = window.frame
+            frame.size.height += desired ? delta : -delta
+            // Hold the top edge: the origin is the bottom-left, so y moves opposite to the
+            // height. Without this the window would appear to jump upwards as it opened.
+            frame.origin.y -= desired ? delta : -delta
+            window.setFrame(frame, display: true, animate: true)
+        }
     }
 }
 
