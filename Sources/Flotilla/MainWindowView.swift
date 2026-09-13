@@ -237,6 +237,14 @@ struct MainWindowView: View {
         VStack(spacing: 0) {
             // Full width, above everything — so the sidebar starts below it.
             WindowBar(model: model, railed: $railed)
+                // **Draws last, despite being first.** `sidebarCardLift` below makes the split
+                // view overlap the bar's bottom by design, and in a `VStack` the later view
+                // paints over the earlier one — so the sidebar column's rounded glass corner was
+                // painting a pale notch across the bar's bottom-left. Visible as a strange wedge
+                // under the close button, which is exactly how the owner described it.
+                //
+                // The overlap is wanted; the paint order was not.
+                .zIndex(1)
             splitView
                 // Lifts the **floating sidebar card**, not its contents.
                 //

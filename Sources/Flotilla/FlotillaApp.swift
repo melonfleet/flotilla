@@ -377,10 +377,14 @@ struct FlotillaApp: App {
         // The band is anchored to the bottom and the dashboard's content to the top, so closing
         // the gap is exactly a height change.
         //
-        // That spends most of the headroom the 860 note described: the utilisation panel grows
-        // 24pt a row to a cap of eight, and at this height the dashboard scrolls from about the
-        // sixth running container rather than the eighth. A deliberate trade, and the alignment
-        // is what was asked for.
+        // That spends the headroom the 860 note described, and more of it than that note guessed.
+        // **Measured, once a fifth container appeared on its own:** the two lines meet exactly at
+        // four running containers, and a fifth adds the panel's 24pt a row and pushes the table
+        // 24pt past the divider, so the dashboard scrolls from five — not "about six".
+        //
+        // The alignment is what was asked for and it is a real trade: exact at the row count the
+        // window was sized against, approximate either side of it, because the dashboard's height
+        // depends on how many containers are up and the window's does not.
         .defaultSize(width: 1280, height: 800)
         // **This is the fix for "it only shows in the menu bar".**
         //

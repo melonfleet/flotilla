@@ -121,9 +121,11 @@ private struct WindowDragArea: NSViewRepresentable {
 /// share a centre line.
 ///
 /// **This overrides AppKit's own layout, and that has a cost worth naming.** The frames are set by
-/// hand, so anything that re-lays the titlebar puts them back: resizing, entering or leaving
-/// full screen, and the window becoming/losing main. Each of those is observed and the offset
-/// re-applied. If a future macOS moves the buttons for its own reasons, the symptom is cosmetic
+/// hand, so anything that re-lays the titlebar puts them back. That used to be handled by naming
+/// the causes — resize, full screen, becoming main — and the list was incomplete: AppKit's own
+/// layout at launch was not on it, so the app opened misaligned and corrected itself the first
+/// time the window became main. It is now driven by `didUpdate` as well, which fires for any
+/// cause rather than the ones someone thought of. If a future macOS moves the buttons for its own reasons, the symptom is cosmetic
 /// and obvious — misaligned lights — rather than silent. The alternative was a taller titlebar via
 /// an empty accessory view, which on this window is what `WindowBar`'s own docstring already
 /// records failing: a titlebar accessory here is laid out over the content column only.
@@ -159,10 +161,23 @@ private struct TrafficLightAligner: NSViewRepresentable {
         private func observe() {
             guard let window else { return }
             let centre = NotificationCenter.default
+            // `didUpdate` is the one that makes this correct rather than merely thorough.
+            //
+            // The other four are a *list of causes*, and the list was incomplete: at launch none
+            // of them fire after AppKit's own titlebar layout, so the buttons kept the positions
+            // AppKit gave them and the app opened with the lights riding high. Clicking away and
+            // back fixed it, because that finally posted `didBecomeMain` — which is exactly the
+            // shape of a bug that looks intermittent and is not.
+            //
+            // `didUpdate` posts at the end of every event-loop pass in which the window needed
+            // display, so the first one after launch corrects the initial layout and any future
+            // cause is covered without having to be predicted. `align()` below is a no-op when
+            // the buttons are already placed, so the frequency costs nothing.
             for name: NSNotification.Name in [NSWindow.didResizeNotification,
                                               NSWindow.didEnterFullScreenNotification,
                                               NSWindow.didExitFullScreenNotification,
-                                              NSWindow.didBecomeMainNotification] {
+                                              NSWindow.didBecomeMainNotification,
+                                              NSWindow.didUpdateNotification] {
                 centre.addObserver(self, selector: #selector(realign),
                                    name: name, object: window)
             }
@@ -181,7 +196,11 @@ private struct TrafficLightAligner: NSViewRepresentable {
                 // The buttons live in the window's frame view, whose coordinates run from the
                 // bottom, so centring them `barHeight / 2` below the top is a subtraction.
                 let centredY = frameView.bounds.height - barHeight / 2 - button.frame.height / 2
-                button.setFrameOrigin(NSPoint(x: baseX + nudgeRight, y: centredY))
+                let target = NSPoint(x: baseX + nudgeRight, y: centredY)
+                // Idempotent, because this now runs on every window update. Setting an origin a
+                // button already has would still mark it for display each pass.
+                guard button.frame.origin != target else { continue }
+                button.setFrameOrigin(target)
             }
         }
     }
