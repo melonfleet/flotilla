@@ -52,6 +52,24 @@ public protocol ContainerHost: Sendable {
     func run(_ args: [String], timeout: TimeInterval,
              onLine: (@Sendable (String) -> Void)?) throws -> CommandResult
 
+    /// Run with a deadline, writing `input` to the child's **stdin** and closing it.
+    ///
+    /// This exists for exactly one caller — `container registry login --password-stdin` — and
+    /// the whole reason it exists is that the alternative is a password in argv, which every
+    /// process on this Mac can read with `ps`. The secret goes down a pipe to one child and is
+    /// never a command-line token; `Allowlist`'s `registry login` row has no password flag at
+    /// all, so it could not become one.
+    ///
+    /// **No `onLine`, deliberately.** A caller streaming a command it is feeding a secret to is
+    /// a caller one mistake away from echoing it, and login has nothing to stream anyway.
+    ///
+    /// The default implementation **throws** rather than dropping `input` on the floor. A host
+    /// that cannot carry stdin must fail loudly: silently ignoring it would run
+    /// `registry login --password-stdin` with an empty stdin, which the CLI would answer with a
+    /// confusing authentication failure while the real fault was here.
+    func run(_ args: [String], timeout: TimeInterval,
+             input: String) throws -> CommandResult
+
     /// Run a command that is **not expected to end**, delivering each line as it arrives and
     /// handing back the only thing that can stop it.
     ///
@@ -144,6 +162,13 @@ public final class CommandStream: @unchecked Sendable {
 }
 
 public extension ContainerHost {
+    /// See the protocol requirement: loud, not silent.
+    func run(_ args: [String], timeout: TimeInterval, input: String) throws -> CommandResult {
+        throw ContainerCLIError.unsupported(
+            "This host cannot send input to a command, so a registry sign-in cannot be performed "
+            + "here.")
+    }
+
     func run(_ args: [String], timeout: TimeInterval) throws -> CommandResult {
         try run(args)
     }
@@ -275,12 +300,34 @@ public struct LocalHost: ContainerHost {
 
     public func run(_ args: [String], timeout: TimeInterval,
                     onLine: (@Sendable (String) -> Void)?) throws -> CommandResult {
+        try run(args, timeout: timeout, onLine: onLine, input: nil)
+    }
+
+    /// Writes `input` to the child's stdin and closes it. See the protocol requirement for why
+    /// this exists at all: a registry password belongs in a pipe, not in argv.
+    public func run(_ args: [String], timeout: TimeInterval,
+                    input: String) throws -> CommandResult {
+        try run(args, timeout: timeout, onLine: nil, input: input)
+    }
+
+    private func run(_ args: [String], timeout: TimeInterval,
+                     onLine: (@Sendable (String) -> Void)?,
+                     input: String?) throws -> CommandResult {
         guard let executable = resolve() else {
             throw ContainerCLIError.runtimeNotFound(searched: Preflight.searchedDirectories())
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = args
+
+        // **Stdin is attached only when there is something to send, and closed immediately
+        // after.** Left attached with nothing written, a child that reads stdin would block for
+        // ever against a pipe nobody is filling — the deadline would eventually kill it and the
+        // user would see a timeout instead of an answer. With no pipe at all the child inherits
+        // ours, which for a windowed app is not a terminal and reads EOF: right for every
+        // command here except the one being fed.
+        let inPipe: Pipe? = input == nil ? nil : Pipe()
+        if let inPipe { process.standardInput = inPipe }
 
         let outPipe = Pipe()
         let errPipe = Pipe()
@@ -307,6 +354,21 @@ public struct LocalHost: ContainerHost {
         process.terminationHandler = { _ in exited.signal() }
 
         try process.run()
+
+        // Written after `run()` and before the drains are waited on, so a payload larger than
+        // the pipe buffer cannot deadlock against a child that is still starting. A password is
+        // far smaller than the 64 KiB buffer, so this does not block in practice; it is ordered
+        // this way because "in practice" is not a guarantee.
+        //
+        // `try?` on the write, and deliberately: a child that has already exited — a refused
+        // login, a bad flag — gives us EPIPE, and throwing here would replace the CLI's own
+        // explanation with a plumbing error. The exit code and stderr below are the real answer.
+        if let inPipe, let input {
+            let handle = inPipe.fileHandleForWriting
+            try? handle.write(contentsOf: Data(input.utf8))
+            try? handle.close()
+        }
+
         for (sink, handle, name) in [(out, outPipe.fileHandleForReading, "stdout"),
                                      (err, errPipe.fileHandleForReading, "stderr")] {
             draining.enter()

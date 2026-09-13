@@ -728,3 +728,72 @@ of choosing a tag with six rows selected. On a mixed selection the item also *sa
 direction it will go, because the dash alone does not.
 
 **What is deliberately not built.** Tags on images, and a tag filter control.
+
+## Q20 — There is no supported-registry list, so the screen says so (settled 2026-09-13)
+
+The question was "what other OCI registries can we use, and can we manage them from Settings?".
+The first half has an awkward answer: **all of them**. Apple's `container` has no notion of a
+supported registry — it pulls from anything that speaks the OCI distribution API, and the only
+thing that decides where an image comes from is the host in the reference. `ghcr.io/apple/
+container-builder-shim/builder:0.13.1` is in this Mac's own `container` config already. A
+reference with no host resolves to `docker.io`, and there is no setting that changes that:
+`container system property list` has sections for build, container, dns, kernel and machine, and
+none for registries.
+
+So the Registries screen is a **catalogue, not a compatibility matrix**, and it says that in its
+own footer. It lists the registries you would otherwise have to remember the hostname of, plus
+your own, plus the ones this Mac is actually signed in to. Presenting a curated list as though
+unlisted registries did not work would be exactly the confident wrongness this project keeps
+removing.
+
+**The entry requirement for a built-in row is a single, real, account-independent hostname.**
+That is why Amazon ECR, Azure Container Registry, Google Artifact Registry and Harbor are absent
+despite being entirely usable: their hostnames are per account —
+`<account>.dkr.ecr.<region>.amazonaws.com` — so a built-in row would be a row whose host cannot
+be used, which is a placeholder control. They are what **Add Registry…** is for, and the form's
+help names their shapes.
+
+**The table shows three sources, and the third is what keeps it honest.** Catalogue, the user's
+own additions, and whatever `container registry list` actually reports. A registry someone signed
+in to from a terminal appears here marked "not in your list" rather than being invisible — a
+screen about credentials that cannot see the credentials would be worse than no screen.
+
+### The credential review the allowlist deferred
+
+`registry login` was listed in `Allowlist` as deliberately absent — "not Phase 1, a credential
+surface that deserves its own review". This is that review, and it is written on the rows rather
+than only here.
+
+1. **The secret never appears in argv.** argv is readable by every process running as this user
+   through `ps`. `container registry login` offers `--password-stdin`, and the spec has **no
+   password flag at all**, so the allowlist cannot construct a command carrying one even if a
+   caller asks — `--password` is refused outright, and a test pins that.
+2. **`ContainerHost` gained stdin, and the default implementation throws.** A host that cannot
+   carry input must fail loudly; silently dropping it would run `--password-stdin` against an
+   empty stdin and produce an authentication failure whose real cause was here.
+3. **All three leaves are local-only.** Not merely the login: `registry list` enumerates every
+   registry this Mac holds credentials for, which is an inventory of the owner's accounts, and
+   `logout` destroys them. The reasoning is `image pull --scheme`'s, applied harder.
+4. **`.registryHost` is a new shape, narrower than `.imageReference`.** The operand of a login is
+   the host a password is sent to, so a scheme, a path, a `user@` and anything non-ASCII are all
+   refused: `ghcr.io/apple` and `dоcker.io` (Cyrillic `о`) must not be accepted as destinations.
+5. **The thrown error names the registry and not the account.** The first draft used
+   `auditDescription` with a comment claiming it drops flag values. A probe against the live CLI
+   printed `container registry login --username someone --password-stdin localhost:5001` — it
+   does not, because `.identifier` is classified as not-free-form precisely so audit lines keep
+   the names that make them useful. Right for every other command, wrong here: a registry
+   username is often an email address and this string reaches an alert, the error log and the
+   support bundle.
+
+**Flotilla stores no credentials.** The password is held in the sheet's state, handed to the CLI,
+and dropped; the Keychain entry is written by `container`. `userRegistries` in the preference
+domain holds hosts and display names only.
+
+**Verified end to end against the real CLI**, not only by unit test: a throwaway local
+`registry:2`, a sign-in through `ContainerCLI.registryLogin` (so the stdin pipe itself was
+exercised), the login appearing in a decoded `registryLogins()`, a wrong password refused with an
+error carrying neither the username nor the password, and a sign-out leaving the store empty. The
+fixture in `Fixtures/registries.json` was captured the same way — it had to be, because the JSON
+calls the fields `name`/`id`/`modificationDate` while the table header says `HOSTNAME` and
+`MODIFIED`, and a decoder written from the printed output would have shown an empty table to
+anyone with logins.

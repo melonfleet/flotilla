@@ -60,6 +60,19 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     /// has to choose it.
     case registryScheme
 
+    /// A registry server: `host[:port]`, as `container registry login <server>` takes it.
+    ///
+    /// **Not `.identifier` and not `.imageReference`.** An identifier permits no dots-as-labels
+    /// rule and no port; an image reference is `host/name:tag` and would accept a whole
+    /// repository path where only the server belongs. Getting that wrong is not cosmetic here:
+    /// the operand of `registry login` is the host your credentials are sent to, so a shape that
+    /// accepted `evil.example.com/docker.io` would be a shape that accepted a lie about where
+    /// they are going.
+    ///
+    /// ASCII-only, like `.identifier`, and for the same reason: `dоcker.io` with a Cyrillic `о`
+    /// resolves elsewhere and reads identically.
+    case registryHost
+
     /// A **bare** home-directory mount mode — `ro`, `rw` or `none`.
     ///
     /// Distinct from `.machineSetting` on purpose. `machine set` takes `home-mount=ro` as a
@@ -123,8 +136,12 @@ extension ValueShape {
         // container was deleted, *which* image was pulled, or *which* `machine set` setting was
         // changed records that something happened and withholds the only interesting part.
         case .identifier, .imageReference, .machineSetting, .homeMountMode,
-             .progressType, .registryScheme, .signal, .platform, .outputFormat,
+             .progressType, .registryScheme, .registryHost, .signal, .platform, .outputFormat,
              .machineOutputFormat:
+            // `registryHost` belongs here, and the judgement is worth stating: it is the one
+            // part of a `registry login` an auditor most needs — *which* registry this Mac
+            // authenticated to. The password never reaches argv at all (see the `login` row), so
+            // there is nothing secret left in the line to hide.
             false
         // Numbers, sizes and network shapes. Configuration rather than content. A port mapping
         // can carry a bind address, which is precisely what an auditor wants to see.
@@ -162,6 +179,8 @@ extension ValueShape {
             "Expected `auto`, `plain` or `tty`."
         case .registryScheme:
             "Expected `http` or `https`."
+        case .registryHost:
+            "Expected a registry server such as `ghcr.io`, `quay.io` or `registry.example.com:5000` — the host only, with no scheme and no repository path."
         case .machineSetting:
             "Expected `cpus=<number>`, `memory=<size>` such as 8G, or `home-mount=ro|rw|none`."
         case .homeMountMode:
@@ -514,9 +533,9 @@ public enum Allowlist {
     /// means adding a row here — that is the point.
     ///
     /// Deliberately absent, with reasons:
-    /// - `cp`, `export`, `push`, `registry login` — not Phase 1, and each is a
-    ///   data-exfiltration or credential surface that deserves its own review. (`exec` and
-    ///   `build` have since had theirs; see their rows.)
+    /// - `cp`, `export`, `push` — not Phase 1, and each is a data-exfiltration surface that
+    ///   deserves its own review. (`exec`, `build` and `registry login` have since had theirs;
+    ///   see their rows.)
     /// - `stats` streaming — still Phase 4 transport; `--no-stream` is all that is offered.
     ///   (`logs --follow` used to be listed here too. It is now accepted **locally**: the live
     ///   tail runs in-process against the owner's own Mac, which needs no transport at all, and
@@ -755,6 +774,53 @@ public enum Allowlist {
             CommandSpec(["image", "prune"], mutates: true, timeoutHint: 120, flags: [all]),
             CommandSpec(["image", "tag"], mutates: true,
                         operands: OperandSpec(shape: .imageReference, min: 2, max: 2)),
+
+            // MARK: registry
+            //
+            // **The credential surface, reviewed.** This family was listed as deliberately
+            // absent — "not Phase 1, a credential surface that deserves its own review" — and
+            // this is that review, written where the grant is made rather than in a document
+            // beside it.
+            //
+            // The thing being protected is a registry password or token belonging to the person
+            // running Flotilla. Four rules follow from that, and each is enforced by something
+            // in these rows rather than by intention:
+            //
+            // 1. **The secret never appears in argv.** `container registry login` offers
+            //    `--password-stdin`, and that is the only way this app supplies one. There is no
+            //    `--password` flag in this spec, so the allowlist cannot construct a command
+            //    with a password in it even if a caller asks — and argv is world-readable on
+            //    this Mac through `ps`. `ContainerCLI.registryLogin` writes the secret to the
+            //    child's stdin and holds no copy.
+            // 2. **Local only, all three.** Not merely the login: `registry list` names every
+            //    registry this Mac has credentials for, which is an inventory of where the
+            //    owner has accounts, and `logout` destroys them. A Phase 2 peer has no business
+            //    with any of it, and "the peer would only be passing the owner's own password
+            //    along" is precisely the reasoning `image pull --scheme` already rejected.
+            // 3. **The destination is a host, not a reference.** `.registryHost` refuses a
+            //    scheme, a path, a `user@` and anything non-ASCII, so the operand cannot be a
+            //    lie about where the password is going. See that shape.
+            // 4. **`--scheme http` is offered, and it is the owner's to choose.** Logging in to
+            //    a plaintext registry sends the password in the clear; for a loopback or LAN
+            //    development registry that is a decision someone is entitled to make about
+            //    their own network, and the form says what it means. It is local-only anyway by
+            //    rule 2, which is where `image pull` had to put it explicitly.
+            //
+            // `registry list` is the only one that does not mutate, and it is what the
+            // Registries screen reads to say who you are signed in as — the alternative being a
+            // table that claims a login state it has not checked.
+            CommandSpec(["registry", "list"], mutates: false,
+                        flags: [format, quiet],
+                        exposure: .localOnly(reason: "it enumerates every registry this Mac holds credentials for, which is an inventory of the owner's accounts")),
+            CommandSpec(["registry", "login"], mutates: true, timeoutHint: 120,
+                        flags: [FlagSpec(long: "username", short: "u", value: .identifier),
+                                FlagSpec(long: "password-stdin"),
+                                FlagSpec(long: "scheme", value: .registryScheme)],
+                        operands: OperandSpec(shape: .registryHost, min: 1, max: 1),
+                        exposure: .localOnly(reason: "it sends the owner's registry password, and a peer that could issue it could choose where the password goes")),
+            CommandSpec(["registry", "logout"], mutates: true,
+                        operands: OperandSpec(shape: .registryHost, min: 1, max: 1),
+                        exposure: .localOnly(reason: "it destroys credentials the owner stored on their own Mac")),
 
             // MARK: build
             //
@@ -1368,6 +1434,26 @@ public enum Allowlist {
 
     // MARK: Shape validation
 
+    /// Whether a single value would be accepted as `shape`, with no command around it.
+    ///
+    /// Exposed so a **form** can ask the same question the executor will ask, and get the same
+    /// answer. The alternative is a second copy of each rule in the UI layer, which drifts: the
+    /// network form's Create button spent a release refusing a value for a reason no field
+    /// stated, and the fix there was to route every field through the allowlist's own verdict.
+    ///
+    /// Shapes that need a `MountPolicy` (the host-path family) are **refused here**, rather than
+    /// silently evaluated against the permissive default. A path is authorised by the filesystem
+    /// owner's policy, never by its grammar, and a convenience overload that forgot to say so
+    /// would be a way to ask "is this path allowed?" and get a misleading yes.
+    public static func accepts(_ value: String, as shape: ValueShape) -> Bool {
+        switch shape {
+        case .mountSpec, .absolutePath, .copyEndpoint, .hostBuildPath:
+            return false
+        default:
+            return check(value, as: shape, context: "value", mountPolicy: .denyHostPaths) == nil
+        }
+    }
+
     private static func check(_ value: String, as shape: ValueShape, context: String,
                               mountPolicy: MountPolicy) -> AllowlistError? {
         let bad = AllowlistError.invalidValue(context: context, value: value, shape: shape)
@@ -1394,6 +1480,8 @@ public enum Allowlist {
             // `auto` is deliberately absent even though 1.0.0 accepted it: it is the value that
             // decided for you, and on 1.4.1 it is not a value at all.
             return ["http", "https"].contains(value) ? nil : bad
+        case .registryHost:
+            return isRegistryHost(value) ? nil : bad
         case .machineSetting:
             return checkMachineSetting(value, context: context)
         case .homeMountMode:
@@ -1706,6 +1794,43 @@ public enum Allowlist {
         guard (2...3).contains(parts.count) else { return false }
         return parts.allSatisfy { part in
             (1...32).contains(part.count) && part.allSatisfy { isASCIIAlphanumeric($0) || $0 == "_" }
+        }
+    }
+
+    /// `host[:port]` — DNS labels or an IPv4 literal, with an optional port.
+    ///
+    /// Deliberately narrow. This value becomes the operand of `registry login`, which is the
+    /// command that sends a password somewhere, so everything that could make the destination
+    /// ambiguous is refused: no scheme (`https://…`), no `user@` (credentials in a hostname),
+    /// no path (`host/repo`), no query, no trailing dot, no empty label, no Unicode.
+    ///
+    /// `localhost` and IPv4 literals pass, because a loopback or LAN development registry is a
+    /// real thing people run and is exactly what `--scheme http` exists for.
+    private static func isRegistryHost(_ value: String) -> Bool {
+        guard (1...253).contains(value.count) else { return false }
+        // Anything that would make the host mean something other than a host.
+        guard !value.contains("/"), !value.contains("@"), !value.contains("?"),
+              !value.contains("#"), !value.contains("\\"), !value.contains(" ")
+        else { return false }
+
+        var host = value
+        // One colon, and only as the port separator. IPv6 literals would need brackets and are
+        // not accepted: `container registry login` is documented as taking a server name, and an
+        // untested shape here is a shape that fails at the CLI instead of at the form.
+        if let colon = value.lastIndex(of: ":") {
+            let port = String(value[value.index(after: colon)...])
+            guard isInteger(port, in: 1...65_535) else { return false }
+            host = String(value[..<colon])
+            guard !host.contains(":") else { return false }
+        }
+        guard !host.isEmpty, !host.hasPrefix("."), !host.hasSuffix(".") else { return false }
+
+        if isIPv4(host) { return true }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        return labels.allSatisfy { label in
+            guard (1...63).contains(label.count) else { return false }
+            guard !label.hasPrefix("-"), !label.hasSuffix("-") else { return false }
+            return label.allSatisfy { isASCIIAlphanumeric($0) || $0 == "-" }
         }
     }
 

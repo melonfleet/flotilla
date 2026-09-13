@@ -75,6 +75,9 @@ private func requireRejected(
         "machine run", "machine stop", "machine inspect", "machine logs",
         "system start",
         "system stop",
+        // The whole registry family, not only the login: `list` enumerates every registry this
+        // Mac holds credentials for, and `logout` destroys them. See the rows for the review.
+        "registry list", "registry login", "registry logout",
     ]
     let exposed: Set<String> = [
         "ls", "list", "inspect", "stats", "exec", "copy", "logs",
@@ -539,6 +542,9 @@ private func requireRejected(
         // The only mutating `system` leaf: it changes machine state (it launches services).
         "system start",
         "system stop",
+        // Both write the Mac's credential store — one puts a password in it, the other takes
+        // one out. `registry list` only reads it, and is below.
+        "registry login", "registry logout",
     ]
     let actualMutating = Set(Allowlist.commands.filter(\.mutates).map(\.name))
     #expect(actualMutating == expectedMutating)
@@ -550,6 +556,9 @@ private func requireRejected(
         "volume list", "volume inspect",
         "network list", "network inspect",
         "system status", "system version", "system df",
+        // Reads the credential store without changing it. Local-only all the same: see the
+        // exposure test, and the rows.
+        "registry list",
         // `exec` is read-only because the ONLY command it permits is a `ps` — see
         // TrailingPolicy.exact. If this ever moves to the mutating set, someone has widened
         // what exec can run, and that needs a fresh security review, not a test update.
@@ -692,6 +701,15 @@ private func requireRejected(
         AllowedCase(["system", "stop"], mutates: true, timeout: 120),
         AllowedCase(["system", "start", "--disable-kernel-install", "--timeout", "60"],
                     mutates: true, timeout: 120),
+
+        // The registry family. `login` carries `--password-stdin` and **no password flag at
+        // all** — the secret reaches the child through its stdin, never through argv, which is
+        // world-readable on this Mac through `ps`. This case pins that: if a `--password` flag
+        // is ever added to the spec, the canonical argv here stops matching.
+        AllowedCase(["registry", "list", "--format", "json"], mutates: false),
+        AllowedCase(["registry", "login", "--username", "kamal", "--password-stdin", "ghcr.io"],
+                    mutates: true, timeout: 120),
+        AllowedCase(["registry", "logout", "ghcr.io"], mutates: true),
 
         // The separator is required on input but DROPPED from the canonical argv: the real
         // `container exec` treats `--` as the program name and fails on it. Caught by running

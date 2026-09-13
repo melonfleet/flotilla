@@ -59,6 +59,11 @@ final class AppModel {
     /// Deliberately not a setting; `TagStore` says why it is not in `SettingsStore`.
     let tags = TagStore()
 
+    /// Registries the user has added by hand, on top of the built-in catalogue. Held here for
+    /// the reason `tags` is: data rather than view state. Carries no credentials — see
+    /// `RegistryStore`.
+    let registries = RegistryStore()
+
     /// Retained for as long as the app runs. `SettingsPersistence` writes on every change
     /// through this token, and dropping it would stop persistence silently — which looks
     /// identical to the bug it exists to fix.

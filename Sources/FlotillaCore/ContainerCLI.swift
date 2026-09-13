@@ -25,6 +25,11 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
     /// non-zero exit it never actually saw.
     case timedOut(command: String, seconds: TimeInterval)
 
+    /// The host cannot do what was asked — not a failure of the command, an absence of the
+    /// capability. Today's only case is a `ContainerHost` that cannot write to a child's stdin,
+    /// which is what a registry sign-in needs.
+    case unsupported(String)
+
     public var description: String {
         switch self {
         case .emptyInspectResult(let id):
@@ -40,6 +45,8 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
             "`container \(command)` was still running after \(Int(seconds))s and was stopped."
         case .runtimeNotFound(let searched):
             "Apple's `container` CLI was not found in: \(searched.joined(separator: ", "))"
+        case .unsupported(let reason):
+            reason
         }
     }
 }
@@ -103,6 +110,63 @@ public struct ContainerCLI: Sendable {
     public func listImages() throws -> [ContainerImage] {
         try JSONDecoder.flotilla.decode([ContainerImage].self, from: Data(try rawImagesJSON().utf8))
     }
+    /// Every registry this Mac holds credentials for.
+    ///
+    /// Empty is a real and common answer — `container` pulls public images with no login at all
+    /// — so this returning `[]` means "you are signed in to nothing", never "the read failed".
+    public func registryLogins() throws -> [RegistryLogin] {
+        let args = ["registry", "list", "--format", "json"]
+        return try JSONDecoder.flotilla.decode([RegistryLogin].self,
+                                               from: Data(try succeeding(args).stdout.utf8))
+    }
+
+    /// Signs in to a registry.
+    ///
+    /// **The password is written to the child's stdin and never appears in argv.** That is not a
+    /// style preference: argv is readable by every process running as this user, so a
+    /// `--password` flag would publish the secret to `ps` for the lifetime of the call. The
+    /// `Allowlist` row for `registry login` has no password flag at all, so this is enforced by
+    /// the table rather than by this function remembering — see the review written there.
+    ///
+    /// `password` is taken by value and not stored. The one copy this makes is the `Data` handed
+    /// to the pipe inside `LocalHost`.
+    ///
+    /// - Parameter scheme: `nil` for the CLI's own default, which is `https`. Pass `"http"` only
+    ///   for a registry that genuinely has no TLS — a loopback or LAN development registry —
+    ///   and understand that it sends the password in the clear.
+    public func registryLogin(server: String, username: String, password: String,
+                              scheme: String? = nil) throws {
+        var args = ["registry", "login", "--username", username, "--password-stdin"]
+        if let scheme { args += ["--scheme", scheme] }
+        args.append(server)
+
+        let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
+                                                execPolicy: execPolicy, wirePolicy: wirePolicy)
+        let result = try host.run(validated.arguments, timeout: validated.timeoutHint,
+                                  input: password)
+        guard result.ok else {
+            throw ContainerCLIError.commandFailed(
+                // **Hand-built, and neither the argv nor `auditDescription`.** The first draft
+                // used `auditDescription` with a comment claiming it drops flag values; a probe
+                // against the live CLI printed
+                // `container registry login --username someone --password-stdin localhost:5001`,
+                // so it does not — `.identifier` is classified as *not* free-form precisely so
+                // audit lines keep the names that make them useful. That is the right call for
+                // every other command and the wrong one here: a registry username is often an
+                // email address, and this string reaches an alert, the error log and the support
+                // bundle. The registry is named because it is what the reader needs; the account
+                // is not.
+                command: "registry login \(server)",
+                exitCode: result.exitCode,
+                message: Self.failureMessage(result))
+        }
+    }
+
+    /// Signs out of a registry, destroying the stored credential.
+    public func registryLogout(server: String) throws {
+        _ = try execute(["registry", "logout", server])
+    }
+
     /// One sample of every running container's resource use.
     ///
     /// **Always `--no-stream`, and there is no longer a parameter to say otherwise.** There used

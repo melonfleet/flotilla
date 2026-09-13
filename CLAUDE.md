@@ -506,7 +506,15 @@ must preserve all of the following:
     may share a name. The seven-colour palette is fixed and is in
     `design/branding.md`. Images deliberately have no tags: "tag" already means an
     image reference's tag there.
-15. **The Logs feed is a table with no sort order (Q19).** It has the selection,
+15. **Registries are a catalogue, not a capability list (Q20).** `container`
+    pulls from any OCI registry; the Settings → Registries screen exists to save
+    you typing a hostname and to show which registries this Mac is signed in to.
+    A built-in row needs a single account-independent host — per-account
+    registries (ECR, ACR, Artifact Registry) are added by hand, never shipped as
+    template rows. `registry login/logout/list` are **local-only**, the password
+    goes down the child's stdin and never into argv (the spec has no password
+    flag), and Flotilla stores no credential of any kind.
+16. **The Logs feed is a table with no sort order (Q19).** It has the selection,
     columns and row menu every other section's table has, and deliberately not the
     sorting: `container logs` has no `--timestamps`, so a sortable "Received"
     header would reorder a fetched feed by a clock that is the same for every line
