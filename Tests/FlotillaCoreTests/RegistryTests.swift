@@ -207,3 +207,77 @@ struct RegistryTests {
         #expect(book.problem(withHost: "ghcr.io/apple") != nil)
     }
 }
+
+/// The browser half of signing in.
+///
+/// `container registry login` takes a username and a password on stdin and nothing else — no
+/// device code, no OAuth grant, no callback — so Flotilla cannot hand a sign-in to a browser and
+/// get back a credential the runtime can use. What it can do is open the page where the token is
+/// made, because on almost every registry the password *is* a token. These pin that the links and
+/// the instructions exist exactly where they help and nowhere else.
+@Suite("Registry credentials")
+struct RegistryCredentialTests {
+
+    /// A "Create a token…" button on a registry that needs no account would lead nowhere, and a
+    /// registry that needs one with no link leaves you to go and find the page yourself.
+    @Test("every registry that needs a credential says where to get one")
+    func tokenPagesMatchTheNeed() {
+        for registry in KnownRegistry.builtIn {
+            if registry.anonymousPullWorks {
+                #expect(registry.tokenURL == nil,
+                        Comment(rawValue: "\(registry.id) needs no account but offers a token page"))
+                #expect(registry.credentialHint == nil,
+                        Comment(rawValue: "\(registry.id) needs no account but explains credentials"))
+            } else {
+                #expect(registry.tokenURL != nil,
+                        Comment(rawValue: "\(registry.id) needs a credential and says nothing about where to get one"))
+                #expect(registry.credentialHint != nil,
+                        Comment(rawValue: "\(registry.id) needs a credential and does not say what to type"))
+            }
+        }
+    }
+
+    /// A malformed URL is a button that does nothing. These were each checked to resolve before
+    /// they shipped; this checks they are at least parseable and https.
+    @Test("every token page is a well-formed https URL")
+    func tokenPagesAreWellFormed() throws {
+        for registry in KnownRegistry.builtIn {
+            guard let raw = registry.tokenURL else { continue }
+            let url = try #require(URL(string: raw), Comment(rawValue: "unparseable: \(raw)"))
+            #expect(url.scheme == "https", Comment(rawValue: "\(raw) is not https"))
+            #expect(url.host != nil)
+        }
+    }
+
+    /// The per-account registries can never be catalogue rows, so the host is the only thing
+    /// available to recognise them by — and getting the region or registry name out of it is what
+    /// makes the printed command copy-pasteable rather than a template.
+    @Test("a cloud registry is recognised from its host and named in the instructions")
+    func cloudHints() throws {
+        let ecr = try #require(KnownRegistry.cloudCredentialHint(
+            forHost: "123456789012.dkr.ecr.eu-west-1.amazonaws.com"))
+        #expect(ecr.contains("--region eu-west-1"))
+        #expect(ecr.contains("AWS"))
+
+        let acr = try #require(KnownRegistry.cloudCredentialHint(forHost: "myteam.azurecr.io"))
+        #expect(acr.contains("--name myteam"))
+
+        let gar = try #require(KnownRegistry.cloudCredentialHint(
+            forHost: "europe-west1-docker.pkg.dev"))
+        #expect(gar.contains("oauth2accesstoken"))
+        #expect(KnownRegistry.cloudCredentialHint(forHost: "gcr.io") != nil)
+
+        // Everything else gets nothing rather than a guess.
+        for host in ["ghcr.io", "docker.io", "registry.internal:5000", "example.amazonaws.com"] {
+            #expect(KnownRegistry.cloudCredentialHint(forHost: host) == nil,
+                    Comment(rawValue: "invented instructions for \(host)"))
+        }
+    }
+
+    /// Host matching must be case-insensitive: a hostname is, and `RegistryBook` lowercases on
+    /// the way in, but a login read back from the CLI has not been through that.
+    @Test("cloud hints ignore host case")
+    func cloudHintsIgnoreCase() {
+        #expect(KnownRegistry.cloudCredentialHint(forHost: "MyTeam.AzureCR.io") != nil)
+    }
+}

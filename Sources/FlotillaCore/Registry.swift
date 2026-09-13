@@ -62,16 +62,54 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     /// Whether the user added this themselves, as opposed to it being in the built-in catalogue.
     public let isUserAdded: Bool
 
+    /// Where, in a browser, you create the token this registry wants as a password.
+    ///
+    /// **This is as close to a browser sign-in as the runtime allows**, and it is worth being
+    /// exact about why. `container registry login` takes a username and a password on stdin and
+    /// nothing else — no device code, no OAuth grant, no callback (checked against the binary and
+    /// the leaf help on 1.4.1). The OCI distribution spec has no interactive grant either; its
+    /// auth is a bearer token fetched with HTTP Basic. So a browser flow that ended in a working
+    /// `container` credential is not something Flotilla can build.
+    ///
+    /// What *is* true, and what the owner's question was really about, is that on almost every
+    /// registry here the thing you type is **not your account password** — it is a token you
+    /// create in a browser. Taking you to that page is the useful half, and the sign-in sheet
+    /// does exactly that.
+    ///
+    /// `nil` where no such page exists: the anonymous registries need no credential at all, and
+    /// a "Create a token…" button on one would be a control that leads nowhere.
+    ///
+    /// Every URL here was checked to resolve before it shipped. The ones that answer `302` do so
+    /// by redirecting to *their own* sign-in with a `returnTo` back to the same path, which is
+    /// what proves the path exists.
+    public let tokenURL: String?
+
+    /// What to put in the two fields, in this registry's own terms.
+    ///
+    /// **Plain prose, no backticks and no asterisks.** These reach the view as a `String`
+    /// variable, and SwiftUI's `Text` parses Markdown only in a string *literal* — so the syntax
+    /// renders on screen as literal punctuation. Measured on the Registries pane, whose footer
+    /// showed `**any**` and the backticks verbatim; the same trap the Logs display popover fell
+    /// into. A command that needs to stand out is separated by a blank line, and the view renders
+    /// that tail monospaced. Shown in the sign-in sheet,
+    /// because "username and password" is wrong for most of them — GHCR wants a GitHub username
+    /// and a `read:packages` token, and someone typing their GitHub password will simply fail.
+    public let credentialHint: String?
+
     public init(id: String, name: String, summary: String,
                 anonymousPullWorks: Bool = false,
                 isImplicitDefault: Bool = false,
-                isUserAdded: Bool = false) {
+                isUserAdded: Bool = false,
+                tokenURL: String? = nil,
+                credentialHint: String? = nil) {
         self.id = id
         self.name = name
         self.summary = summary
         self.anonymousPullWorks = anonymousPullWorks
         self.isImplicitDefault = isImplicitDefault
         self.isUserAdded = isUserAdded
+        self.tokenURL = tokenURL
+        self.credentialHint = credentialHint
     }
 
     /// The registries offered out of the box.
@@ -83,11 +121,19 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
     public static let builtIn: [KnownRegistry] = [
         KnownRegistry(id: "docker.io", name: "Docker Hub",
                       summary: "Where an image reference with no host comes from, such as `alpine:latest`.",
-                      isImplicitDefault: true),
+                      isImplicitDefault: true,
+                      tokenURL: "https://app.docker.com/settings/personal-access-tokens",
+                      credentialHint: "Your Docker ID, and a personal access token — not your account password."),
         KnownRegistry(id: "ghcr.io", name: "GitHub Container Registry",
-                      summary: "Images published from GitHub repositories. Apple's own builder image lives here."),
+                      summary: "Images published from GitHub repositories. Apple's own builder image lives here.",
+                      // The `scopes` and `description` parameters pre-fill GitHub's own form, so
+                      // the page opens with the right scope already ticked.
+                      tokenURL: "https://github.com/settings/tokens/new?scopes=read:packages&description=Flotilla",
+                      credentialHint: "Your GitHub username, and a classic personal access token with the read:packages scope. A GitHub password will not work."),
         KnownRegistry(id: "quay.io", name: "Quay",
-                      summary: "Red Hat's public registry."),
+                      summary: "Red Hat's public registry.",
+                      tokenURL: "https://docs.quay.io/glossary/robot-accounts.html",
+                      credentialHint: "A robot account name and its token, or your Quay username and CLI password from Account Settings."),
         KnownRegistry(id: "mcr.microsoft.com", name: "Microsoft Artifact Registry",
                       summary: "Microsoft's official images. Public images need no account.",
                       anonymousPullWorks: true),
@@ -98,10 +144,45 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                       summary: "Official Kubernetes images. Public, no account.",
                       anonymousPullWorks: true),
         KnownRegistry(id: "registry.gitlab.com", name: "GitLab Container Registry",
-                      summary: "Images published from GitLab projects."),
+                      summary: "Images published from GitLab projects.",
+                      tokenURL: "https://gitlab.com/-/user_settings/personal_access_tokens",
+                      credentialHint: "Your GitLab username, and a personal access token with the read_registry scope."),
         KnownRegistry(id: "registry.redhat.io", name: "Red Hat Registry",
-                      summary: "Red Hat's authenticated registry; needs a Red Hat account."),
+                      summary: "Red Hat's authenticated registry; needs a Red Hat account.",
+                      tokenURL: "https://access.redhat.com/terms-based-registry/",
+                      credentialHint: "A registry service account — its username looks like 12345678|name, and its token is the password."),
     ]
+
+    /// How a registry whose credential comes from a **cloud CLI** is authenticated.
+    ///
+    /// Amazon ECR, Azure Container Registry and Google Artifact Registry do have browser sign-in
+    /// — through `aws`, `az` and `gcloud`, against the vendor's own identity system, not against
+    /// the registry. What comes out the other end is a short-lived token, and that token is what
+    /// goes in the password field here. A username-and-password form for these is not wrong so
+    /// much as incomplete, so the sheet prints the command that produces the password.
+    ///
+    /// Matched on the host, because these are the per-account registries that can never be
+    /// catalogue rows. Returns nil for everything else rather than guessing.
+    public static func cloudCredentialHint(forHost host: String) -> String? {
+        let host = host.lowercased()
+        if host.hasSuffix(".amazonaws.com"), host.contains(".dkr.ecr.") {
+            let region = host.split(separator: ".").dropFirst(3).first.map(String.init) ?? "<region>"
+            return "Amazon ECR issues a short-lived token. The username is AWS; for the password "
+                + "run:\n\naws ecr get-login-password --region \(region)"
+        }
+        if host.hasSuffix(".azurecr.io") {
+            let name = host.split(separator: ".").first.map(String.init) ?? "<registry>"
+            return "Azure issues a short-lived token. Run:\n\n"
+                + "az acr login --name \(name) --expose-token\n\n"
+                + "Use 00000000-0000-0000-0000-000000000000 as the username and the "
+                + "accessToken it prints as the password."
+        }
+        if host.hasSuffix("-docker.pkg.dev") || host == "gcr.io" || host.hasSuffix(".gcr.io") {
+            return "Google issues a short-lived token. The username is oauth2accesstoken; for the "
+                + "password run:\n\ngcloud auth print-access-token"
+        }
+        return nil
+    }
 }
 
 /// The catalogue: the built-in registries plus whatever the user has added.

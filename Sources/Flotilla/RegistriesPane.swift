@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import FlotillaCore
 
 /// One row of the Registries table: a catalogue entry, a login, or both.
@@ -20,6 +21,16 @@ struct RegistryRow: Identifiable, Equatable {
     var isUserAdded: Bool { known?.isUserAdded ?? false }
     var isSignedIn: Bool { login != nil }
     var username: String? { login?.username }
+
+    /// Where to create the token this registry wants as a password, if there is such a page.
+    var tokenURL: URL? { known?.tokenURL.flatMap(URL.init(string:)) }
+
+    /// What to put in the two fields. The catalogue's own wording where there is one; otherwise
+    /// the cloud-CLI recipe, matched on the host — which is how a per-account registry the
+    /// catalogue cannot list still gets useful instructions.
+    var credentialHint: String? {
+        known?.credentialHint ?? KnownRegistry.cloudCredentialHint(forHost: id)
+    }
 }
 
 /// Settings → **Registries**: what Flotilla can pull from, and which of them this Mac is signed
@@ -79,13 +90,19 @@ struct RegistriesPane: View {
             }
         } footer: {
             // The sentence the whole screen exists to prevent someone getting wrong.
-            Text("Flotilla can pull from **any** OCI registry — this list is not a restriction. "
-                 + "Write the host in the image reference and it works: "
-                 + "`ghcr.io/apple/container-builder-shim/builder:0.13.1`. A reference with no "
-                 + "host, such as `alpine:latest`, comes from Docker Hub.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            // Plain prose. `Text` parses Markdown only in a string literal, and this is built
+            // with `+` — the first version rendered "**any**" and the backticks verbatim.
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Flotilla can pull from any OCI registry — this list is not a restriction. "
+                     + "Write the host in the image reference and it works:")
+                Text("ghcr.io/apple/container-builder-shim/builder:0.13.1")
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                Text("A reference with no host, such as alpine:latest, comes from Docker Hub.")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
 
         SwiftUI.Section {
@@ -103,9 +120,9 @@ struct RegistriesPane: View {
             }
         } footer: {
             Text("Private registries are usually per-account, so they are not in the list above: "
-                 + "Amazon ECR is `<account>.dkr.ecr.<region>.amazonaws.com`, Azure is "
-                 + "`<name>.azurecr.io`, Google Artifact Registry is `<region>-docker.pkg.dev`. "
-                 + "Add yours, and a self-hosted Harbor or `registry:2`, here.")
+                 + "Amazon ECR is <account>.dkr.ecr.<region>.amazonaws.com, Azure is "
+                 + "<name>.azurecr.io, Google Artifact Registry is <region>-docker.pkg.dev. "
+                 + "Add yours, and a self-hosted Harbor or registry:2, here.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -272,7 +289,7 @@ struct AddRegistrySheet: View {
                     Text(problem).font(.caption).foregroundStyle(Theme.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("The host only — no `https://` and no repository path.")
+                Text("The host only — no scheme such as https://, and no repository path.")
                     .font(.caption).foregroundStyle(.secondary)
 
                 field("Name", placeholder: "Optional", text: $name, monospaced: false)
@@ -347,12 +364,58 @@ struct SignInSheet: View {
                     SecureField("", text: $password)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { if canSubmit { submit() } }
-                    // Most registries want a token rather than an account password, and a field
-                    // that just says "Password" is how someone pastes the wrong secret.
-                    Text("Most registries want a personal access token here, not your account "
-                         + "password.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // **What to type, in this registry's own terms.** "Username and password" is
+                    // wrong for most of them: GHCR wants a `read:packages` token and a GitHub
+                    // password simply fails, which is a dead end the form used to leave you in.
+                    // A hint may end with a command on its own line — the cloud registries
+                    // issue short-lived tokens and the command is the useful part. Split on the
+                    // blank line so the command reads as one, and can be copied.
+                    let hint = row.credentialHint
+                        ?? "Most registries want an access token here, not your account password."
+                    let parts = hint.components(separatedBy: "\n\n")
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(parts[0])
+                        ForEach(parts.dropFirst(), id: \.self) { command in
+                            Text(command)
+                                .font(.system(size: 11, design: .monospaced))
+                                .padding(.horizontal, 6).padding(.vertical, 3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Theme.raisedSurface,
+                                            in: RoundedRectangle(cornerRadius: 5))
+                                .overlay(RoundedRectangle(cornerRadius: 5)
+                                    .strokeBorder(Theme.hairline))
+                        }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // **The browser half, and the only half there is.**
+                //
+                // `container registry login` takes a username and a password on stdin — no
+                // device code, no OAuth grant, no callback, checked against the 1.4.1 binary and
+                // its leaf help. The OCI distribution spec has no interactive grant either. So
+                // Flotilla cannot hand the sign-in to a browser and get back something the
+                // runtime can use.
+                //
+                // What it can do is take you to the page where the token is made, which is where
+                // the browser genuinely belongs: on almost every registry here the password is a
+                // token, not an account password. Shown only when such a page exists — a button
+                // that leads nowhere is the control this app keeps deleting.
+                if let url = row.tokenURL {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Label("Create a token in your browser…", systemImage: "safari")
+                    }
+                    .buttonStyle(.link)
+                    // `.link` hardcodes the system blue and ignores the scene tint — the trap
+                    // `Theme.rowName` was written for. Measured here: the link rendered stock
+                    // macOS blue, the one hue with no place in this palette, on a sheet where
+                    // everything else is the brand orange.
+                    .foregroundStyle(Theme.accentText)
+                    .help(url.absoluteString)
                 }
 
                 Toggle("This registry has no TLS (http)", isOn: $plaintext)
@@ -368,8 +431,8 @@ struct SignInSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Text("Flotilla does not store your password. It is passed to `container "
-                     + "registry login`, which saves it in this Mac’s Keychain.")
+                Text("Flotilla does not store your password. It is passed to "
+                     + "container registry login, which saves it in this Mac’s Keychain.")
                     .font(.caption).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
