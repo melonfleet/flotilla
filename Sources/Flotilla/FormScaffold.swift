@@ -29,6 +29,24 @@ struct FieldHelp: Equatable, Sendable, ExpressibleByStringLiteral {
     }
 }
 
+extension FieldHelp {
+    /// `Text` parses Markdown only when the string reaches it as a `LocalizedStringKey`. A
+    /// `String` variable is taken literally, so every backtick and asterisk in this file's
+    /// guidance was being drawn on screen — "Left empty, `container` assigns one for you."
+    /// with the backticks showing. Screenshot-confirmed, not deduced.
+    ///
+    /// These three are author-written literals with no interpolated user data, so reading them
+    /// as Markdown is safe. A validation refusal is **not**: it can quote what the user typed,
+    /// and an image reference or a mount path is full of characters Markdown would eat. It is
+    /// rendered as a plain `String` and must stay that way.
+    ///
+    /// `example` is excluded too — it is already monospaced, which is what the backticks were
+    /// reaching for.
+    var summaryText: Text { Text(LocalizedStringKey(summary)) }
+    var detailText: Text? { detail.map { Text(LocalizedStringKey($0)) } }
+    var warningText: Text? { warning.map { Text(LocalizedStringKey($0)) } }
+}
+
 /// One field's entry in the rail, collected from the field itself.
 struct FormFieldGuide: Equatable, Sendable, Identifiable {
     let label: String
@@ -233,11 +251,11 @@ private struct FormGuideEntry: View {
                 Text(entry.label)
                     .font(.subheadline.weight(.semibold))
             }
-            Text(entry.help.summary)
+            entry.help.summaryText
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
-            if let detail = entry.help.detail {
-                Text(detail)
+            if let detail = entry.help.detailText {
+                detail
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -251,8 +269,8 @@ private struct FormGuideEntry: View {
                     .padding(9)
                     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
             }
-            if let warning = entry.help.warning {
-                Label(warning, systemImage: "exclamationmark.triangle")
+            if let warning = entry.help.warningText {
+                Label { warning } icon: { Image(systemName: "exclamationmark.triangle") }
                     .font(.caption)
                     .foregroundStyle(Theme.warning)
                     .fixedSize(horizontal: false, vertical: true)

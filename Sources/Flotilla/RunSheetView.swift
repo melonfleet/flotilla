@@ -321,9 +321,9 @@ struct RunSheetView: View {
                               "No networks yet.",
                               detail: "Create one in the Networks section and it will appear here.")
                           : FieldHelp(
-                              "Containers on the same network reach each other by name.",
-                              detail: "So an app can talk to a database as `db` rather than by IP. Left as Default, `container` chooses.",
-                              warning: "Creation time only. Neither the CLI nor Flotilla can move a container onto a network after it exists — choose it now, or recreate the container later."),
+                              "Containers on the same network reach each other by IP.",
+                              detail: "Networks are isolated from one another, so every part of an app has to share one. Left as Default, container chooses.",
+                              warning: "Names do not resolve. An app reaches a database at 192.168.64.40, not at db, and that address can change when the container is recreated. Choose the network now, too: neither the CLI nor Flotilla can move a container onto one after it exists."),
                       optional: true) {
                 Picker("", selection: $network) {
                     Text("Default").tag("")

@@ -57,9 +57,11 @@ struct FormField<Content: View>: View {
             // A refusal is shown wherever the rail is, because it is about what you just typed.
             // The summary is not: with a rail it would be the same sentence twice.
             if let problem {
-                fieldNote(problem, systemImage: "exclamationmark.circle", style: AnyShapeStyle(Theme.danger))
+                // Deliberately a plain `String`, not `FieldHelp`'s Markdown: a refusal quotes
+                // what the user typed, and Markdown would eat the punctuation in a mount path.
+                fieldNote(Text(problem), systemImage: "exclamationmark.circle", style: AnyShapeStyle(Theme.danger))
             } else if let help, !railVisible {
-                fieldNote(help.summary, systemImage: nil, style: AnyShapeStyle(.secondary))
+                fieldNote(help.summaryText, systemImage: nil, style: AnyShapeStyle(.secondary))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,12 +74,12 @@ struct FormField<Content: View>: View {
     /// `fixedSize` on the vertical axis so a two-line explanation wraps instead of being
     /// truncated to one — the guidance is the reason this component exists, and a clipped
     /// sentence is worse than none because it looks like the whole sentence.
-    private func fieldNote(_ text: String, systemImage: String?, style: AnyShapeStyle) -> some View {
+    private func fieldNote(_ text: Text, systemImage: String?, style: AnyShapeStyle) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             if let systemImage {
                 Image(systemName: systemImage).font(.caption2)
             }
-            Text(text)
+            text
                 .font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
         }
