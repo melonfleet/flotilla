@@ -678,7 +678,7 @@ menu, and a Settings pane that renames, recolours and deletes them everywhere at
 **Not in `SettingsStore`.** That registry is a closed list where every key is declared once,
 carries a managed policy, appears in the Settings UI and the Jamf key list, and is checked by
 `check-settings-consumers.sh` — all correct for "poll interval" and meaningless for "the seven
-tags Kamal made". More concretely, a `manageable` key can be seeded or locked by a configuration
+tags you made". More concretely, a `manageable` key can be seeded or locked by a configuration
 profile, and an admin pushing a tag list over someone's own tags is not a capability worth
 building. Tags are written to the same preference domain by the same rules that file argues for:
 plist-native, one key per concern, readable with `defaults read dev.melonfleet.Flotilla

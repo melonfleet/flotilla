@@ -11,7 +11,7 @@ import FlotillaCore
 ///
 /// A group is the user's *content*, the same argument `TagStore` makes at length. `SettingsStore`
 /// owns a closed registry where every key is declared once, carries a managed policy and appears
-/// in the Jamf key list — correct for "poll interval", wrong for "the four containers Kamal runs
+/// in the Jamf key list — correct for "poll interval", wrong for "the four containers you run
 /// together". An admin pushing a group list over somebody's own groups is not a capability worth
 /// building.
 ///

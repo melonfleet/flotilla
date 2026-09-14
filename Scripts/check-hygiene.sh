@@ -33,11 +33,19 @@ if [ -z "$IDENTITIES" ]; then
     echo "      generic account). Run it on a development machine to check for real names."
 fi
 
-# The **first name** is a separate question and deliberately not a failure. It appears ~89 times
-# across ~38 files as design attribution — "<name>'s call", "<name> spotted" — which is provenance
-# for a decision, not an identifier in data. Sweeping it would flatten the reasoning in every
-# docstring it appears in, and that is the owner's call to make, not a script's. Reported as a count
-# so the open question stays visible instead of being buried or silently enforced.
+# The **first name** was a separate question, left open as a count rather than a failure: it had
+# appeared as design attribution — "<name>'s call", "<name> spotted" — which is provenance for a
+# decision rather than an identifier in data, and sweeping it would have flattened the reasoning in
+# every docstring it appeared in.
+#
+# **The owner settled it on 14 September: scrub.** The last five went with it — two were genuine
+# identifiers in test data (a `--username` operand, an account email) and belonged under the
+# stricter rule anyway; three were prose standing in for "the person using this app", which the
+# second person says just as well. The count should now read zero.
+#
+# Still advisory rather than fatal, because what it now guards is reintroduction, and the honest
+# reading of one new mention is "look at this" rather than "the build is broken". Make it fatal by
+# moving it above the `fail` check if that ever stops being true.
 ATTRIBUTION="$FL_FIRST_NAME"
 
 # Files that exist in order to contain realistic fake secrets. Named individually rather than

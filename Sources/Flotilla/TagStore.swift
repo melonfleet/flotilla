@@ -14,7 +14,7 @@ import FlotillaCore
 /// Tags are the user's *content*, not their configuration. `SettingsStore` owns a closed
 /// registry where every key is declared once, carries a managed policy, appears in the Settings
 /// UI and the Jamf key list, and has a `check-settings-consumers.sh` entry — all of which is
-/// correct for "poll interval" and meaningless for "the seven tags Kamal made". More concretely:
+/// correct for "poll interval" and meaningless for "the seven tags you made". More concretely:
 /// a managed profile may seed or lock any `manageable` key, and an admin pushing a tag list over
 /// someone's own tags is not a capability worth building.
 ///

@@ -333,7 +333,7 @@ extension RegistryCredentialTests {
             "AWS",                                      // Amazon ECR
             "gitlab-ci-token",                          // GitLab CI
             "melonfleet",                               // an ordinary account
-            "kamal@example.com",                        // registries that take an email
+            "alice@example.com",                        // registries that take an email
         ]
         for name in names {
             #expect(Allowlist.accepts(name, as: .registryUsername),

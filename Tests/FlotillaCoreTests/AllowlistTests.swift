@@ -761,7 +761,7 @@ private func requireRejected(
         // world-readable on this Mac through `ps`. This case pins that: if a `--password` flag
         // is ever added to the spec, the canonical argv here stops matching.
         AllowedCase(["registry", "list", "--format", "json"], mutates: false),
-        AllowedCase(["registry", "login", "--username", "kamal", "--password-stdin", "ghcr.io"],
+        AllowedCase(["registry", "login", "--username", "alice", "--password-stdin", "ghcr.io"],
                     mutates: true, timeout: 120),
         AllowedCase(["registry", "logout", "ghcr.io"], mutates: true),
 
