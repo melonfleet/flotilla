@@ -1034,6 +1034,46 @@ extension ContainerCLI {
     /// Everything is optional because the CLI defaults all of it — including `--name`, which
     /// defaults to `k8s-dev`. Flotilla passes a name always: a default-named cluster is one you
     /// create twice by accident.
+    /// Creates a cluster, reporting the CLI's own progress as it arrives.
+    ///
+    /// A create takes minutes — twelve, on the machine this was written on — and the command
+    /// says so the whole way: `[2/2] Waiting for cluster to be ready [12m 3s]`. Buffered
+    /// execution throws all of that away and leaves a spinner that cannot be told from a hang,
+    /// which is exactly how it looked. `K8sCreateProgress` reads the lines.
+    ///
+    /// The same validated path as `createCluster` — an observer changes what the caller sees,
+    /// not what runs.
+    public func createClusterStreaming(
+        name: String, cpus: Int? = nil, memory: String? = nil, nodeImage: String? = nil,
+        scheme: RegistryScheme = .default, autoRemove: Bool = false,
+        onProgress: @escaping @Sendable (K8sCreateProgress) -> Void,
+        onEnd: @escaping @Sendable (CommandStreamEnd) -> Void
+    ) throws -> CommandStream {
+        try streaming(Self.createClusterArguments(name: name, cpus: cpus, memory: memory,
+                                                  nodeImage: nodeImage, scheme: scheme,
+                                                  autoRemove: autoRemove),
+                      onLine: { _, text in
+                          // Both channels: the counter lines arrive on one and the sentences on
+                          // the other, and which is which is not a thing to depend on.
+                          if let progress = K8sCreateProgress.parse(text) { onProgress(progress) }
+                      },
+                      onEnd: onEnd)
+    }
+
+    /// One construction for both the buffered and the streaming create, so a flag cannot be
+    /// added to one and missed by the other.
+    public static func createClusterArguments(name: String, cpus: Int?, memory: String?,
+                                              nodeImage: String?, scheme: RegistryScheme,
+                                              autoRemove: Bool) -> [String] {
+        var args = ["k8s", "create", "--name", name]
+        if autoRemove { args.append("--rm") }
+        if let cpus { args += ["--cpus", String(cpus)] }
+        if let memory { args += ["--memory", memory] }
+        if scheme != .default { args += ["--scheme", scheme.rawValue] }
+        if let nodeImage { args += ["--node-image", nodeImage] }
+        return args
+    }
+
     @discardableResult
     public func createCluster(name: String, cpus: Int? = nil, memory: String? = nil,
                               nodeImage: String? = nil, scheme: RegistryScheme = .default,

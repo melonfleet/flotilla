@@ -62,10 +62,14 @@ extension AppModel {
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("Creating \(name)")
-                _ = try await Task.detached { [cli] in
-                    try cli.createCluster(name: name, cpus: cpus, memory: memory,
-                                          nodeImage: nodeImage, autoRemove: autoRemove)
-                }.value
+                // Streamed, not buffered. The CLI narrates a create the whole way through —
+                // `[2/2] Waiting for cluster to be ready [12m 3s]` — and `execute` would hold
+                // all of it until the process exited, leaving a spinner for twelve minutes with
+                // no way to tell work from a hang.
+                try await runCreate(name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
+                                    autoRemove: autoRemove) { line in
+                    progress.update(step, detail: line.summary)
+                }
                 progress.finish(step, detail: nil)
                 recordActivity(ContainerEvent(date: Date(), from: "absent", to: "running",
                                               kind: .cluster, subject: name, action: "Created"))
@@ -77,6 +81,43 @@ extension AppModel {
                 return clusters.contains { $0.node == name }
             }
         )
+    }
+
+    /// Runs the create to completion, reporting each progress line.
+    ///
+    /// **No cancellation, deliberately.** A create that is stopped half way leaves a VM and a
+    /// kubeconfig entry behind and no command to tidy either — `k8s delete` wants a cluster that
+    /// finished being made. Offering a Cancel that produced that is worse than not offering one,
+    /// so the panel says what is happening and lets it finish. If the CLI ever grows a safe way
+    /// to abandon a create, this is where it goes.
+    private func runCreate(name: String, cpus: Int?, memory: String?, nodeImage: String?,
+                           autoRemove: Bool,
+                           onProgress: @escaping @MainActor (K8sCreateProgress) -> Void) async throws {
+        let cli = self.cli
+        let handle = StreamHandle()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            Task.detached {
+                do {
+                    let stream = try cli.createClusterStreaming(
+                        name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
+                        autoRemove: autoRemove,
+                        onProgress: { progress in
+                            Task { @MainActor in onProgress(progress) }
+                        },
+                        onEnd: { end in
+                            if end.exitCode == 0 {
+                                continuation.resume()
+                            } else {
+                                continuation.resume(throwing: ClusterCreateFailure(exitCode: end.exitCode))
+                            }
+                        })
+                    handle.adopt(stream)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+        handle.release()
     }
 
     func startCluster(_ cluster: K8sNode) async {
@@ -182,5 +223,34 @@ extension AppModel {
         if let memory, !memory.isEmpty { argv += ["--memory", memory] }
         if let nodeImage, !nodeImage.isEmpty { argv += ["--node-image", nodeImage] }
         return Allowlist.validate(argv, mountPolicy: .unrestricted)
+    }
+}
+
+/// Keeps the child alive for the length of the await.
+///
+/// The handle arrives on a detached task after `Process.run` returns, which can be *after* the
+/// continuation has already resumed on a fast failure. Holding it in a box rather than a local
+/// means neither order drops it on the floor.
+private final class StreamHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stream: CommandStream?
+
+    func adopt(_ stream: CommandStream) {
+        lock.lock(); defer { lock.unlock() }
+        self.stream = stream
+    }
+
+    func release() {
+        lock.lock(); defer { lock.unlock() }
+        stream = nil
+    }
+}
+
+/// The CLI refused or failed. Its own words went to the panel as progress lines; this carries
+/// the status so the operation is reported as failed rather than quietly succeeding.
+struct ClusterCreateFailure: Error, CustomStringConvertible {
+    let exitCode: Int32
+    var description: String {
+        "`container k8s create` exited with status \(exitCode). The lines above are what it said."
     }
 }

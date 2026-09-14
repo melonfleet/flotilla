@@ -70,6 +70,17 @@ final class OperationProgress: Identifiable {
         steps[index].detail = detail
     }
 
+    /// Updates a running step's detail, leaving it running.
+    ///
+    /// `finish` also sets a detail, but it marks the step done — right for a step that has
+    /// produced its answer, wrong for one that is still working. A cluster create runs for
+    /// minutes and the CLI reports itself the whole way; without this the panel could only show
+    /// a spinner, which is indistinguishable from a hang. That is exactly how it looked.
+    func update(_ id: UUID, detail: String) {
+        guard let index = steps.firstIndex(where: { $0.id == id }) else { return }
+        steps[index].detail = detail
+    }
+
     func note(_ line: String) {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

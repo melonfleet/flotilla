@@ -232,6 +232,17 @@ struct NewClusterView: View {
 ///
 /// A dialog rather than a screen: one field, one button, and it is an action on a row rather than
 /// a place you navigate to — the distinction `ModalCard` survives for.
+///
+/// **It picks from the images that exist**, and that was the fix. The first version was a bare
+/// text field whose placeholder named `fleetcheck:1.0` — an image that had been deleted by the
+/// time anyone read it — so the app's own hint led to a failure, and the only way to succeed was
+/// to remember an exact reference. Flotilla knows every image on the Mac; asking the user to
+/// retype one from memory is the thing the Run form's "Use an existing volume" menu exists to
+/// avoid.
+///
+/// `k8s load-image` **cannot** pull: it copies from this Mac's image store. So a reference that
+/// is not in that store is refused here, where it costs a sentence, rather than by the CLI
+/// several seconds later.
 struct LoadImageSheet: View {
     let model: AppModel
     let cluster: K8sNode
@@ -250,18 +261,20 @@ struct LoadImageSheet: View {
                 FormField("Image reference",
                           help: FieldHelp(
                               "An image that already exists on this Mac.",
-                              detail: "Build or pull it first; this does not fetch anything.",
-                              example: "fleetcheck:1.0"),
+                              detail: "This copies; it does not pull. Build or pull the image first."),
                           problem: problem) {
-                    TextField("fleetcheck:1.0", text: $reference)
-                        .textFieldStyle(.roundedBorder)
-                        .monospaced()
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField(placeholder, text: $reference)
+                            .textFieldStyle(.roundedBorder)
+                            .monospaced()
+                        imagePicker
+                    }
                 }
 
                 Text("Then run it with an image pull policy of Never, or Kubernetes will try to fetch it and fail:")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("kubectl --context \(cluster.node) run demo \\\n  --image=\(trimmed.isEmpty ? "<image>" : trimmed) --image-pull-policy=Never")
+                Text("kubectl --context \(cluster.node) run demo \\\n  --image=\(trimmed.isEmpty ? "<image>" : trimmed) \\\n  --image-pull-policy=Never")
                     .font(.system(size: 11, design: .monospaced))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -282,11 +295,36 @@ struct LoadImageSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(trimmed.isEmpty || problem != nil || loading)
+                    .disabled(!canLoad)
                 }
             }
-            .frame(width: 460)
+            .frame(width: 520)
         }
+    }
+
+    /// The images on this Mac, as a menu.
+    ///
+    /// Hidden rather than disabled when there are none: an empty menu is a control that opens
+    /// onto nothing, and the field still takes a reference typed by hand.
+    @ViewBuilder
+    private var imagePicker: some View {
+        if !model.images.isEmpty {
+            Menu {
+                ForEach(model.images, id: \.id) { image in
+                    Button(image.reference) { reference = image.reference }
+                }
+            } label: {
+                Label("Choose from this Mac’s images", systemImage: "square.stack.3d.down.right")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    /// A real image from this Mac, so following the hint cannot fail. Falls back to a shape
+    /// rather than a name when there is nothing to point at.
+    private var placeholder: String {
+        model.images.first?.reference ?? "name:tag"
     }
 
     private var trimmed: String { reference.trimmingCharacters(in: .whitespaces) }
@@ -296,8 +334,20 @@ struct LoadImageSheet: View {
         guard Allowlist.accepts(trimmed, as: .imageReference) else {
             return "“\(trimmed)” is not an image reference. \(ValueShape.imageReference.rule)"
         }
-        return nil
+        // Matched against what the Images table shows, which is the same store `load-image`
+        // reads. `container` records `nginx:alpine` as `docker.io/library/nginx:alpine`, so a
+        // bare name has to match on the tail as well or every short reference would be refused.
+        guard !isOnThisMac else { return nil }
+        return "No image called “\(trimmed)” on this Mac. Loading copies from here — pull or build it first."
     }
+
+    private var isOnThisMac: Bool {
+        model.images.contains {
+            $0.reference == trimmed || $0.reference.hasSuffix("/\(trimmed)")
+        }
+    }
+
+    private var canLoad: Bool { !trimmed.isEmpty && problem == nil && !loading }
 }
 
 /// Where the kubeconfig went, and what to do with it.
