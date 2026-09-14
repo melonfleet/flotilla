@@ -27,6 +27,10 @@ public enum ActivityKind: String, CaseIterable, Identifiable, Hashable, Sendable
     /// member's own events explain: four containers starting within a second of each other says
     /// *what* happened and not *why*.
     case group
+    /// A local Kubernetes cluster (`container k8s`). Its own kind rather than `.machine`: a
+    /// cluster *is* a VM, but so is every container, and the busy keys and the feed both need to
+    /// tell "the machine named dev" from "the cluster named dev".
+    case cluster
     /// The `container` runtime service itself — started, or found stopped. Not a resource, but
     /// it belongs in the same feed: it is the answer to "why was everything empty a minute ago",
     /// and an automatic action Flotilla takes on its own must leave a trace somewhere the user

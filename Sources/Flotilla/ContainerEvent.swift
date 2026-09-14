@@ -10,6 +10,7 @@ extension ActivityKind {
         switch self {
         case .container: "Containers"
         case .group: "Groups"
+        case .cluster: "Clusters"
         case .machine: "Machines"
         case .image: "Images"
         case .volume: "Volumes"
@@ -24,6 +25,8 @@ extension ActivityKind {
         switch self {
         case .container: "shippingbox"
         case .group: "rectangle.3.group"
+        // Verified present, per the `ellipsis.vertical` incident.
+        case .cluster: "circle.hexagongrid"
         case .machine: "server.rack"
         case .image: "square.stack.3d.up"
         case .volume: "cylinder.split.1x2"
@@ -37,6 +40,7 @@ extension ActivityKind {
         switch self {
         case .container: .containers
         case .group: .groups
+        case .cluster: .clusters
         case .machine: .machines
         case .image: .images
         case .volume: .volumes

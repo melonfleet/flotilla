@@ -22,6 +22,8 @@ struct MainWindowView: View {
     /// Same reasoning as `containersUI`, and owned here for the same reason — `MachinesView`
     /// is rebuilt from scratch on every sidebar change.
     @State private var machinesUI = MachinesUIState()
+    @State private var clustersUI = ResourceUIState<K8sNode>(
+        sortOrder: [KeyPathComparator(\K8sNode.node)])
     @State private var activityUI = ActivityUIState()
     @State private var logsUI = LogsUIState()
 
@@ -118,6 +120,10 @@ struct MainWindowView: View {
             // alongside them. Grouping it with images and volumes would imply otherwise.
             group("Virtualisation") {
                 row(.machines, count: model.machinesState == .loaded ? model.machines.count : nil)
+                // Beside Machines, because a cluster *is* a virtual machine — a kind node booted
+                // by `container k8s`. Not under Containers: nothing you run from this app goes
+                // into one, you reach it with kubectl.
+                row(.clusters, count: model.clustersState == .loaded ? model.clusters.count : nil)
             }
 
             // **No Hosts group until Phase 2.** The mockup shows eight hosts; there was exactly
@@ -235,6 +241,8 @@ struct MainWindowView: View {
             NetworksView(model: model, ui: networksUI)
         case .machines:
             MachinesView(model: model, ui: machinesUI)
+        case .clusters:
+            ClustersView(model: model, ui: clustersUI)
         case .settings:
             SettingsView(model: model)
         }

@@ -1110,3 +1110,66 @@ WordPress does not yet *use* it: the official image ships no `redis` PHP extensi
 entrypoint only writes `wp-config.php` when one does not already exist, so neither the extension
 nor the constants can be added by environment alone. Making it a real object cache needs a built
 image, which is a separate decision.
+
+## Q22 — Clusters is a section, and the k8s family is treated as provisional (settled 2026-09-14)
+
+**Asked:** can Flotilla manage Apple's local Kubernetes clusters?
+
+`DECISIONS.md`'s standing rejection of "Kubernetes (or any CRI-based orchestrator)" does not
+answer this. That entry rejects Flotilla *becoming* a CRI runtime for the fleet — "a CRI shim +
+CNI for per-VM containers on macOS is a multi-year project". `container k8s` is six CLI commands
+that boot a kind cluster in a VM, which is the shape of work `machine` already does here.
+`research/CONTAINER-UPGRADE.md` had already assessed the family and concluded it should stay out
+"unless Kubernetes becomes an explicit product feature"; the owner asking is that condition
+being met.
+
+### What is built
+
+An allowlisted family — `create`, `start`, `delete`, `rm`, `list`, `ls`, `load-image`,
+`write-config` — a parser, and a **Clusters** section under Virtualisation beside Machines.
+
+**The whole family is `.localOnly`, including the read.** That is the only exception in the table
+to "reads are exposed", so it carries its own argument: the command calls itself EXPERIMENTAL and
+Apple's `docs/kubernetes.md` does not use the word at all, and a read that enumerates the owner's
+clusters is the reconnaissance half of the same surface. The section says so in a band at the top
+rather than only in a commit message.
+
+**No Stop.** The CLI has `create`, `start` and `delete` and nothing between, so a Stop button
+would have nothing to call. Delete is the only way down, and it destroys the VM.
+
+### Three findings that constrain what any of this can claim
+
+**`k8s list` has no `--format`.** Every other listing offers `json|table|yaml|toml`. This is the
+one place in `FlotillaCore` that reads a human interface, and splitting the printed row on
+whitespace is not merely fragile — it is silently wrong on the first real cluster. CLUSTER comes
+back empty, removing a token; MEMORY is `16384 MB`, adding one. The errors cancel, so a naive
+parser gets eight tokens for eight columns and reports NODE holding the role and MEMORY holding
+the string `MB`, with nothing thrown. So the header is the authority and rows are sliced at its
+offsets, taken from the same output because the CLI recomputes widths per render.
+
+**The CLUSTER column is dead on 1.4.1** — empty with two clusters present, with the cluster's
+name printed under NODE. There is no cluster-to-node hierarchy to draw, so the section is a flat
+list. If Apple ever populates it, `AppModelClusters` is where the grouping goes.
+
+**`k8s create` writes `~/.kube/config` itself**, at creation time, with no flag to prevent it —
+measured, and it contradicts what this session first told the owner. A Flotilla-owned kubeconfig
+is an *additional* copy to hand to `KUBECONFIG`, not a way to leave the user's file alone, and
+the file it writes has no `current-context`, so `kubectl` against it fails until one is named.
+Both facts are in the dialog that offers it, because both are things a user would otherwise
+discover by being confused.
+
+### And one bug this section taught
+
+A wrapping `Text` inside an **`HStack`** must not carry `.fixedSize(horizontal: false, vertical:
+true)`. This app uses that modifier almost everywhere and it is right almost everywhere — in a
+`VStack`, where the width is already decided. In an `HStack` the width is negotiated, so fixing
+the vertical axis makes the text report its ideal height for a very narrow proposal. Measured:
+the experimental band alone drove the split view from 865pt to 2005pt, pushing every section's
+content above the top edge and rendering a blank window.
+
+Worse, **the grown split view is saved**. It came back at 2182pt on the next launch, on every
+section including ones that had not changed — which reads as the whole app being broken, and
+made the first bisect lie, because the corrupted state survived the change meant to clear it.
+Deleting `NSSplitView Subview Frames main, SidebarNavigationSplitView` from the preference domain
+is the cure. A window-layout reset is listed as unbuilt in `PLAN.md`; this is the first concrete
+argument for it.

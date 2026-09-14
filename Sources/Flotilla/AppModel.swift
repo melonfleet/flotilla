@@ -444,6 +444,11 @@ final class AppModel {
                     await self.refreshImages()
                     await self.refreshVolumes()
                     await self.refreshNetworks()
+                    // Clusters join the slow tick for the same reason: without it the sidebar
+                    // count and the feed would only be honest while you were looking at them.
+                    // It is also the most expensive of these — `k8s list` boots nothing, but it
+                    // is another process — which is why it is here and not on every tick.
+                    await self.refreshClusters()
                 }
             }
         }
@@ -1297,6 +1302,12 @@ final class AppModel {
     // internal property is redundant and the compiler says so.
     var machines: [ContainerMachine] = []
     var machinesState: LoadState = .idle
+
+    /// Local Kubernetes clusters. One row per cluster — see `AppModelClusters` for why there is
+    /// no node hierarchy to model.
+    var clusters: [K8sNode] = []
+    var clustersState: LoadState = .idle
+    var clustersLastRefresh: Date?
     var machinesLastRefresh: Date?
 
     /// **A second store, not a second namespace inside the first.**

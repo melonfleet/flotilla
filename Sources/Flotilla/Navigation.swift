@@ -10,7 +10,8 @@ import Foundation
 enum Section: String, CaseIterable, Identifiable, Hashable {
     // Dashboard first: it is the overview you land on, and every other section is a
     // drill-down from something it shows.
-    case dashboard, activity, logs, containers, groups, images, volumes, networks, machines, settings
+    case dashboard, activity, logs, containers, groups, images, volumes, networks, machines,
+         clusters, settings
 
     var id: Self { self }
 
@@ -25,6 +26,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .volumes: "Volumes"
         case .networks: "Networks"
         case .machines: "Machines"
+        case .clusters: "Clusters"
         case .settings: "Settings"
         }
     }
@@ -45,6 +47,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .volumes: "cylinder.split.1x2"
         case .networks: "network"
         case .machines: "server.rack"
+        case .clusters: "circle.hexagongrid"
         case .settings: "gearshape"
         }
     }

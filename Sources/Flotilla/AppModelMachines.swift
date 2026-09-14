@@ -214,7 +214,10 @@ extension AppModel {
 
     /// The CLI's own error text is more useful than Swift's `String(describing:)` on a thrown
     /// enum, so prefer it where we have it.
-    private func describe(_ error: any Error) -> String {
+    ///
+    /// Internal rather than private because `AppModelClusters` needs the same treatment and a
+    /// second copy of two lines is still a second place for the rule to change.
+    func describe(_ error: any Error) -> String {
         if let cliError = error as? ContainerCLIError { return String(describing: cliError) }
         return String(describing: error)
     }
