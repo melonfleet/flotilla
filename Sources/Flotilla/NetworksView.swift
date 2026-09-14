@@ -838,44 +838,13 @@ struct NewNetworkView: View {
         }
     }
 
-    /// Repeatable `key=value` flags, capped at the `Allowlist`'s own maximum of 8 — the cap is
-    /// shown rather than silently enforced.
+    /// Repeatable `key=value` flags. The cap is `--label`'s and `--option`'s own `maxRepeats`
+    /// in `Allowlist`; the editor itself is shared — see `KeyValueList`.
     @ViewBuilder
     private func keyValueList(_ list: Binding<[String]>, title: String? = nil,
                               placeholder: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                if let title {
-                    Text(title).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text("\(list.wrappedValue.count)/8").font(.caption2).foregroundStyle(.secondary)
-            }
-            ForEach(list.wrappedValue.indices, id: \.self) { index in
-                HStack {
-                    TextField(placeholder, text: Binding(
-                        get: { list.wrappedValue.indices.contains(index) ? list.wrappedValue[index] : "" },
-                        set: { if list.wrappedValue.indices.contains(index) { list.wrappedValue[index] = $0 } }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    Button {
-                        list.wrappedValue.remove(at: index)
-                    } label: {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Remove")
-                }
-            }
-            Button {
-                list.wrappedValue.append("")
-            } label: {
-                Label("Add", systemImage: "plus.circle")
-            }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-            .disabled(list.wrappedValue.count >= 8)
-        }
+        KeyValueList(values: list, limit: 8, placeholder: placeholder,
+                     title: title, itemLabel: "entry")
     }
 
     private var options: ContainerCLI.NetworkOptions {

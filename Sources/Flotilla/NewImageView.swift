@@ -53,6 +53,11 @@ struct NewImageView: View {
     @State private var tag = ""
     @State private var target = ""
     @State private var platform = ""
+    /// `--build-arg`, one `KEY=VALUE` per row.
+    ///
+    /// The allowlist has permitted these from the start; the form simply passed `[]`, so a
+    /// Dockerfile with an `ARG` could only ever be built with its defaults from inside Flotilla.
+    @State private var buildArgs: [String] = []
     @State private var noCache = false
     @State private var building = false
 
@@ -79,7 +84,8 @@ struct NewImageView: View {
     /// anything still closes on one click, which is the case the rule was really written for.
     private var editSignature: String {
         [mode.rawValue, reference, scheme.rawValue, context?.path ?? "", dockerfile, tag, target,
-         platform, "\(noCache)"].joined(separator: "\u{1}")
+         platform, "\(noCache)",
+         buildArgs.joined(separator: ",")].joined(separator: "\u{1}")
     }
 
     var body: some View {
@@ -317,6 +323,18 @@ struct NewImageView: View {
                 .monospaced()
         }
 
+        FormField("Build arguments",
+                  help: FieldHelp(
+                      "Values for the Dockerfile's `ARG` instructions, one `KEY=VALUE` per row.",
+                      detail: "An `ARG` with a default builds without one; an `ARG` with no default fails until you supply it here.",
+                      example: "APP_VERSION=1.4.1\nGO_VERSION=1",
+                      warning: "These are visible in the image's own history, so they are the wrong place for a token or a password."),
+                  problem: buildArgsProblem,
+                  optional: true) {
+            KeyValueList(values: $buildArgs, limit: 24, placeholder: "APP_VERSION=1.4.1",
+                         itemLabel: "build argument")
+        }
+
         VStack(alignment: .leading, spacing: 6) {
             Toggle("Ignore the build cache", isOn: $noCache)
             Text("Re-runs every layer instead of reusing what has not changed.")
@@ -375,6 +393,23 @@ struct NewImageView: View {
     private var trimmedDockerfile: String { dockerfile.trimmingCharacters(in: .whitespaces) }
     private var trimmedTag: String { tag.trimmingCharacters(in: .whitespaces) }
 
+    /// Blank rows are dropped rather than refused: an empty row is one you added and have not
+    /// filled in yet, and disabling Build for it would make adding a row feel like an error.
+    private var trimmedBuildArgs: [String] {
+        buildArgs.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// The allowlist's refusal for whichever argument is malformed, named so the message points
+    /// at the row rather than at the command. `KEY=VALUE` is easy to get subtly wrong — a bare
+    /// `KEY`, a leading dash, a space around the `=` — and the whole-command preview turning red
+    /// with no explanation is the failure the `ValueShape.rule` note describes.
+    private var buildArgsProblem: String? {
+        for argument in trimmedBuildArgs where !Allowlist.accepts(argument, as: .envAssignment) {
+            return "“\(argument)” is not a build argument. \(ValueShape.envAssignment.rule)"
+        }
+        return nil
+    }
+
     /// The allowlist's own refusal, so the form cannot accept something the table will reject.
     private var referenceProblem: String? {
         guard !trimmedReference.isEmpty else { return nil }
@@ -389,7 +424,7 @@ struct NewImageView: View {
         AppModel.buildPreview(context: context,
                               dockerfile: trimmedDockerfile.isEmpty ? nil : trimmedDockerfile,
                               tag: trimmedTag.isEmpty ? nil : trimmedTag,
-                              buildArgs: [], labels: [], noCache: noCache,
+                              buildArgs: trimmedBuildArgs, labels: [], noCache: noCache,
                               platform: platform.trimmingCharacters(in: .whitespaces),
                               target: target.trimmingCharacters(in: .whitespaces))
     }
@@ -466,7 +501,7 @@ struct NewImageView: View {
             context: context,
             dockerfile: trimmedDockerfile.isEmpty ? nil : trimmedDockerfile,
             tag: trimmedTag.isEmpty ? nil : trimmedTag,
-            buildArgs: [], labels: [], noCache: noCache,
+            buildArgs: trimmedBuildArgs, labels: [], noCache: noCache,
             platform: platform.trimmingCharacters(in: .whitespaces),
             target: target.trimmingCharacters(in: .whitespaces))
         if succeeded { dismiss() }

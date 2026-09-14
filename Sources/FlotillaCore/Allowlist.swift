@@ -185,56 +185,62 @@ extension ValueShape {
     /// and retried in lowercase; the real objection was the **space** — `Test1` is fine. A
     /// validation message that leads someone to the wrong conclusion is worse than a terse
     /// one, because they then design around a constraint that does not exist.
+    /// **No backticks.** These land in refusal messages, which are rendered as plain text on
+    /// purpose — a refusal quotes what the user typed, and Markdown would eat the punctuation in
+    /// a mount path. So a backtick here is not formatting, it is a character drawn on screen:
+    /// "Expected `KEY=VALUE`." appeared verbatim, backticks and all, under the Build arguments
+    /// field. This property's own promise is "words a user can act on", and stray punctuation is
+    /// not that.
     public var rule: String {
         switch self {
         case .identifier:
             "Use letters, numbers, dots, dashes or underscores, starting with a letter or number. No spaces."
         case .imageReference:
-            "Expected something like `docker.io/library/alpine:latest` — no spaces."
+            "Expected something like docker.io/library/alpine:latest — no spaces."
         case .portMapping:
-            "Expected `hostPort:containerPort`, optionally `/tcp` or `/udp` — for example `8080:80`."
+            "Expected hostPort:containerPort, optionally /tcp or /udp — for example 8080:80."
         case .envAssignment:
-            "Expected `KEY=VALUE`."
+            "Expected KEY=VALUE."
         case .mountSpec:
-            "Expected `source:/destination`, optionally `:ro` or `:rw`, where source is a named volume or an absolute path."
+            "Expected source:/destination, optionally :ro or :rw, where source is a named volume or an absolute path."
         case .absolutePath:
-            "Expected an absolute path with no `.` or `..` components."
+            "Expected an absolute path with no . or .. components."
         case .copyEndpoint:
-            "Expected `container:/path` or an absolute path on this Mac."
+            "Expected container:/path or an absolute path on this Mac."
         case .hostBuildPath:
             "Expected an absolute path on this Mac that the mount policy permits the build to read."
         case .progressType:
-            "Expected `auto`, `plain` or `tty`."
+            "Expected auto, plain or tty."
         case .registryScheme:
-            "Expected `http` or `https`."
+            "Expected http or https."
         case .registryUsername:
-            "Expected a registry account name. Letters, numbers and `. - _ + $ | @` are allowed — which covers Red Hat's `12345678|name`, Quay's `org+robot` and Harbor's `robot$name`. No spaces, and it cannot start with a dash."
+            "Expected a registry account name. Letters, numbers and . - _ + $ | @ are allowed — which covers Red Hat's 12345678|name, Quay's org+robot and Harbor's robot$name. No spaces, and it cannot start with a dash."
         case .registryHost:
-            "Expected a registry server such as `ghcr.io`, `quay.io` or `registry.example.com:5000` — the host only, with no scheme and no repository path."
+            "Expected a registry server such as ghcr.io, quay.io or registry.example.com:5000 — the host only, with no scheme and no repository path."
         case .machineSetting:
-            "Expected `cpus=<number>`, `memory=<size>` such as 8G, or `home-mount=ro|rw|none`."
+            "Expected cpus=<number>, memory=<size> such as 8G, or home-mount=ro|rw|none."
         case .homeMountMode:
-            "Expected `ro`, `rw` or `none`."
+            "Expected ro, rw or none."
         case .durationSeconds:
             "Expected whole seconds, 0 to 86400."
         case .signal:
-            "Expected a signal name like `SIGTERM` or `TERM`, or a number from 1 to 64."
+            "Expected a signal name like SIGTERM or TERM, or a number from 1 to 64."
         case .memorySize:
-            "Expected a size like `512M` or `2G`."
+            "Expected a size like 512M or 2G."
         case .count:
             "Expected a whole number from 1 to 1024."
         case .platform:
-            "Expected `os/arch`, optionally `/variant` — for example `linux/arm64`."
+            "Expected os/arch, optionally /variant — for example linux/arm64."
         case .cidr:
-            "Expected an IPv4 range in CIDR form — for example `10.0.0.0/24`."
+            "Expected an IPv4 range in CIDR form — for example 10.0.0.0/24."
         case .cidrV6:
-            "Expected an IPv6 prefix in CIDR form — for example `fd00:1234::/64`."
+            "Expected an IPv6 prefix in CIDR form — for example fd00:1234::/64."
         case .keyValue:
-            "Expected `key=value`."
+            "Expected key=value."
         case .outputFormat:
-            "Expected one of the CLI's `--format` values."
+            "Expected one of the CLI's --format values."
         case .machineOutputFormat:
-            "Expected `json` or `table`."
+            "Expected json or table."
         case .commandToken:
             "Not a permitted command token."
         }
