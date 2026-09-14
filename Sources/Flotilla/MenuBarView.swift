@@ -146,6 +146,27 @@ struct MenuBarView: View {
                             hoverChanged: { hovering(.machine, $0) }) {
                     machineMenuItems
                 }
+                // Only when there are groups. A box reading "0 / 0" on a Mac that has never made
+                // one is a row of furniture: Containers and Machines always have something to
+                // count, and a group is something you opt into.
+                if !model.groups.groups.isEmpty {
+                    MenuKindBox(title: "Groups",
+                                systemImage: ActivityKind.group.systemImage,
+                                running: model.groups.groups
+                                    .filter { model.state(of: $0) == .running }.count,
+                                total: model.groups.groups.count,
+                                loaded: model.state == .loaded,
+                                detail: groupSummary,
+                                // **No graph.** A group has no usage of its own — it is a name
+                                // over containers that each have their own, and a line drawn by
+                                // adding them up would be the Containers graph with a different
+                                // label. Same reasoning as Machines.
+                                history: nil,
+                                expanded: binding(for: .group),
+                                hoverChanged: { hovering(.group, $0) }) {
+                        groupMenuItems
+                    }
+                }
             }
 
             // The fleet note, as a line rather than a column.
@@ -169,6 +190,29 @@ struct MenuBarView: View {
         } else {
             ForEach(model.running + model.stopped) { container in
                 containerPopoverRow(container)
+            }
+        }
+    }
+
+    /// One line under the Groups box: how much of the fleet of groups is up.
+    private var groupSummary: String {
+        let groups = model.groups.groups
+        let services = groups.reduce(0) { $0 + $1.members.count }
+        let up = groups.flatMap(\.memberNames).filter(runningNames.contains).count
+        return "\(services) service\(services == 1 ? "" : "s") · \(up) running"
+    }
+
+    private var runningNames: Set<String> { Set(model.running.map(\.id)) }
+
+    @ViewBuilder
+    private var groupMenuItems: some View {
+        // The box is hidden when there are none, so this is only reachable in the moment a
+        // group is deleted while the popover is open.
+        if model.groups.groups.isEmpty {
+            emptyPopoverNote("No groups yet.")
+        } else {
+            ForEach(model.groups.groups) { group in
+                groupPopoverRow(group)
             }
         }
     }
@@ -199,6 +243,26 @@ struct MenuBarView: View {
                           stop: { Task { await model.perform(.stop, on: container) } },
                           restart: { Task { await model.perform(.restart, on: container) } },
                           openDetail: { openDetail(.container, container.id) })
+    }
+
+    /// A group's row. The same three controls a container gets, acting on the whole group.
+    ///
+    /// `running` is true only when **every** service is up, so a partly-running group offers
+    /// Start — which is what you want from a group that is half down. Restart is allowed as soon
+    /// as anything is running, because on a partial group it is the one control that gets you
+    /// back to a known state.
+    private func groupPopoverRow(_ group: ContainerGroup) -> some View {
+        let state = model.state(of: group)
+        return popoverRow(name: group.name,
+                          subtitle: state.title,
+                          dot: state.tint,
+                          running: state == .running,
+                          restartable: state != .empty && state != .notCreated,
+                          busy: false,
+                          start: { Task { await model.startGroup(group) } },
+                          stop: { Task { await model.stopGroup(group) } },
+                          restart: { Task { await model.restartGroup(group) } },
+                          openDetail: { openDetail(.group, group.name) })
     }
 
     private func machinePopoverRow(_ machine: ContainerMachine) -> some View {
@@ -237,8 +301,12 @@ struct MenuBarView: View {
     /// Start and Stop swap rather than both showing — offering Stop on a stopped thing is a
     /// control that does nothing, which is the failure this project keeps re-learning. Restart
     /// appears only while running, for the same reason.
+    /// - Parameter restartable: whether Restart is offered, defaulting to `running`. A container
+    ///   or a machine is either up or not, so those two are the same question; a **group** can be
+    ///   half up, and that is precisely when restarting is the useful thing to do.
     private func popoverRow(
-        name: String, subtitle: String, dot: Color, running: Bool, busy: Bool,
+        name: String, subtitle: String, dot: Color, running: Bool,
+        restartable: Bool? = nil, busy: Bool,
         start: @escaping () -> Void, stop: @escaping () -> Void,
         restart: @escaping () -> Void, openDetail: @escaping () -> Void
     ) -> some View {
@@ -273,7 +341,7 @@ struct MenuBarView: View {
                              busy: busy, action: running ? stop : start)
             IconActionButton(systemImage: "arrow.clockwise",
                              label: "Restart \(name)", help: "Restart \(name)",
-                             busy: busy, disabled: !running, action: restart)
+                             busy: busy, disabled: !(restartable ?? running), action: restart)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 5)

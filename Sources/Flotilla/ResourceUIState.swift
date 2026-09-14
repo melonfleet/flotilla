@@ -20,6 +20,14 @@ final class ResourceUIState<Row: Identifiable> {
     var columnCustomization = TableColumnCustomization<Row>()
     var presentation: ResourcePresentation = .list
 
+    /// Rows the user has expanded, by id.
+    ///
+    /// Only Groups has anything to expand today — a group's services are rows *inside* its row.
+    /// It lives here rather than as the section's own `@State` for the reason at the top of this
+    /// file: a section view is destroyed and rebuilt on every sidebar change, so an expanded
+    /// group would silently collapse the moment you looked at Containers and came back.
+    var expandedIDs: Set<String> = []
+
     /// Whether the recent-activity band is open.
     ///
     /// The owner chose to put the band on these three sections too, for uniformity, having been told

@@ -128,6 +128,65 @@ extension AppModel {
         await refresh()
     }
 
+    /// Stops everything that is running, then starts everything — one operation, not a stop
+    /// followed by a start.
+    ///
+    /// Two calls would give you two progress panels for one intention, and worse, the second
+    /// would begin from whatever the first left behind. Written out here so the whole thing
+    /// succeeds or reports once, and so the stop half honours reverse order the way `stopGroup`
+    /// does while the start half honours listed order.
+    ///
+    /// Like `startGroup`, a failure to start stops the run: there is no value in bringing up the
+    /// things that talk to a database that would not come back.
+    func restartGroup(_ group: ContainerGroup) async {
+        guard !group.members.isEmpty else { return }
+        await withProgress(
+            title: "Restart “\(group.name)”",
+            command: groupCommandPreview(group, starting: false) + "\n"
+                + groupCommandPreview(group, starting: true),
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                for member in group.members.reversed()
+                where runningContainerNames.contains(member.name) {
+                    let step = progress.begin("Stopping \(member.name)")
+                    // A member that will not stop is reported and skipped rather than aborting:
+                    // the restart's whole purpose is to get back to a known state.
+                    _ = try? await Task.detached { [cli] in try cli.stop(member.name) }.value
+                    progress.finish(step, detail: nil)
+                }
+                await refresh()
+
+                var started: [String] = []
+                for member in group.members {
+                    let step = progress.begin("Starting \(member.name)")
+                    do {
+                        if existingContainerNames.contains(member.name) {
+                            _ = try await Task.detached { [cli] in try cli.start(member.name) }.value
+                        } else {
+                            let options = member.runOptions(network: group.network)
+                            _ = try await Task.detached { [cli] in
+                                try cli.run(image: member.image, options: options,
+                                            command: member.command)
+                            }.value
+                        }
+                    } catch {
+                        progress.finish(step, detail: "failed")
+                        throw GroupRunFailure(member: member.name, started: started,
+                                              underlying: String(describing: error))
+                    }
+                    started.append(member.name)
+                    progress.finish(step, detail: nil)
+                }
+                await refresh()
+                let summary = "Restarted \(started.count) of \(group.members.count)"
+                recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                              kind: .group, subject: group.name, action: summary))
+                return summary
+            }
+        )
+        await refresh()
+    }
+
     /// What the progress panel shows as the command, since a group is several of them.
     ///
     /// Deliberately not a single joined line pretending to be one invocation: it is one line per

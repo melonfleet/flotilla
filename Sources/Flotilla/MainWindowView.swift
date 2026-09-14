@@ -16,8 +16,8 @@ struct MainWindowView: View {
     /// `@State` they hold is lost. Keeping the containers screen's columns, sort, filter and
     /// search here is what makes them survive a trip to Images and back.
     @State private var containersUI = ContainersUIState()
-    @State private var groupsUI = ResourceUIState<ContainerGroup>(
-        sortOrder: [KeyPathComparator(\ContainerGroup.name)])
+    @State private var groupsUI = ResourceUIState<GroupRow>(
+        sortOrder: [KeyPathComparator(\GroupRow.name)])
 
     /// Same reasoning as `containersUI`, and owned here for the same reason — `MachinesView`
     /// is rebuilt from scratch on every sidebar change.

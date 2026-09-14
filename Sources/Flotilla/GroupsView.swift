@@ -10,9 +10,9 @@ import FlotillaCore
 /// carries the view state, for the reason its own docstring gives.
 struct GroupsView: View {
     let model: AppModel
-    let ui: ResourceUIState<ContainerGroup>
+    let ui: ResourceUIState<GroupRow>
 
-    @State private var selection = Set<ContainerGroup.ID>()
+    @State private var selection = Set<GroupRow.ID>()
     @State private var editing: GroupFormTarget?
     @State private var pendingDelete: ContainerGroup?
     @State private var confirmingBulkDelete = false
@@ -62,6 +62,22 @@ struct GroupsView: View {
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
+        // "Open in Flotilla" from the menu-bar popover names a group, not just this section.
+        // One-shot: cleared on consumption so a rebuild does not reopen it. A group's detail is
+        // its form, so that is where the request lands.
+        //
+        // The menu bar names a group by **name**, because that is what it shows; the editor is
+        // addressed by id. Resolved here rather than by having the popover carry ids around.
+        .onChange(of: model.pendingDetailSubject) { _, subject in
+            // Only this section's own requests. See `AppModel.requestDetail`.
+            guard let subject, model.pendingDetailKind == .group else { return }
+            openFromRequest(subject)
+        }
+        .onAppear {
+            if let subject = model.pendingDetailSubject, model.pendingDetailKind == .group {
+                openFromRequest(subject)
+            }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {
@@ -99,6 +115,16 @@ struct GroupsView: View {
         }
     }
 
+    /// Opens the editor for a group named by a menu-bar request, and clears the request either
+    /// way — a request that names a group somebody has since deleted must not sit there waiting
+    /// to be applied to the next one.
+    private func openFromRequest(_ name: String) {
+        if let match = model.groups.groups.first(where: { $0.name == name }) {
+            editing = .existing(match.id)
+        }
+        model.clearPendingDetail()
+    }
+
     /// The one thing a user will assume and be wrong about, in both dialogs.
     private static let deleteWarning =
         "The containers named in it are left exactly as they are — running ones keep running. This deletes the grouping, not the containers."
@@ -120,7 +146,7 @@ struct GroupsView: View {
                 .accessibilityLabel(allVisibleSelected ? "Deselect all groups" : "Select all groups")
                 .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
-            ResourceListControls<ContainerGroup>(
+            ResourceListControls<GroupRow>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
                 columnCustomization: Binding(get: { ui.columnCustomization },
@@ -202,15 +228,37 @@ struct GroupsView: View {
                         .contains { $0.name.lowercased().contains(query) }
             }
         }
-        return groups.sorted(using: ui.sortOrder)
+        return groups
     }
 
-    private var visibleIDs: Set<ContainerGroup.ID> { Set(displayedGroups.map(\.id)) }
+    /// The table's rows: every group, each followed by its services when expanded.
+    ///
+    /// Built here rather than handed to `Table` as a tree. `DisclosureTableRow` needs parent and
+    /// children to be the *same* type, and a group and a service are not — a service has a
+    /// container behind it with its own state, tags and actions, and squeezing both into one
+    /// model to satisfy the API would make every cell a pair of branches anyway. Splicing the
+    /// rows keeps the branch in one place: `GroupRow.service`.
+    ///
+    /// Only the **group** rows are sorted. Services keep the order the group starts them in,
+    /// which is the one order that means something — sorting them alphabetically would put the
+    /// web tier above the database it waits for and quietly imply that is what happens.
+    private var displayedRows: [GroupRow] {
+        var groupRows = displayedGroups.map { GroupRow(group: $0, service: nil) }
+        groupRows.sort(using: ui.sortOrder)
+        return groupRows.flatMap { row -> [GroupRow] in
+            guard ui.expandedIDs.contains(row.group.id) else { return [row] }
+            return [row] + row.group.members.map { GroupRow(group: row.group, service: $0) }
+        }
+    }
+
+    private var visibleIDs: Set<GroupRow.ID> { Set(displayedGroups.map(\.id)) }
 
     /// Search and the state filter can hide selected rows without clearing their ids, so every
     /// bulk action is constrained to what is still on screen — the same guard the other sections'
     /// bulk bars use.
-    private var actionable: Set<ContainerGroup.ID> {
+    /// Group rows only — a service row can be selected by the same click, and starting "two
+    /// groups" that were really one group and one of its services is not what the bar says.
+    private var actionable: Set<GroupRow.ID> {
         Set(displayedGroups.lazy.filter { selection.contains($0.id) }.map(\.id))
     }
 
@@ -228,7 +276,7 @@ struct GroupsView: View {
         selectedGroups.map { TagSubject(kind: .group, id: $0.id) }
     }
 
-    private func selectionToggle(for id: ContainerGroup.ID) -> some View {
+    private func selectionToggle(for id: GroupRow.ID) -> some View {
         let isOn = Binding<Bool>(
             get: { selection.contains(id) },
             set: { on in if on { selection.insert(id) } else { selection.remove(id) } })
@@ -331,83 +379,209 @@ struct GroupsView: View {
     }
 
     private var table: some View {
-        Table(displayedGroups,
+        Table(displayedRows,
+              selection: $selection,
               sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
               columnCustomization: Binding(get: { ui.columnCustomization },
                                            set: { ui.columnCustomization = $0 })) {
-            TableColumn("") { group in
-                selectionToggle(for: group.id)
+            TableColumn("") { row in
+                // Services are not separately selectable: the checkbox drives the bulk bar, and
+                // "start 2 groups" meaning one group and somebody else's database is a lie the
+                // bar would have no way to tell.
+                if row.service == nil { selectionToggle(for: row.id) }
             }
             .width(min: 28, ideal: 30, max: 34)
 
-            // State goes **here**, between the checkbox and the name, because that is where
-            // Containers and Machines put theirs — a coloured dot you read without looking at.
-            // It was a labelled column over on the right, which made Groups the one table where
-            // you had to hunt for the thing you came to check.
-            //
-            // Unsortable, for the reason the Tags column is: `TableColumn(value:)` needs a key
-            // path on the **row**, and a group's state is derived from the live container list
-            // rather than stored on it. Sorting by it would mean caching a value that is wrong
-            // the moment somebody stops a member from a terminal.
-            TableColumn("") { group in
-                GroupStateDot(state: model.state(of: group))
+            // State sits between the checkbox and the name, where Containers and Machines put
+            // theirs. A service shows its **container's** state, from the same live list the
+            // group's own state is derived from, so a row and its parent can never disagree.
+            TableColumn("") { row in
+                if let member = row.service {
+                    ServiceStateDot(container: model.containers.first { $0.id == member.name })
+                } else {
+                    GroupStateDot(state: model.state(of: row.group))
+                }
             }
             .width(min: 30, ideal: 46, max: 56)
             .customizationID("state")
 
-            TableColumn("Name", value: \.name) { group in
-                // The name is the way in, as it is in every other table.
-                Button(group.name) { editing = .existing(group.id) }
-                    .buttonStyle(.link)
-                    .foregroundStyle(Theme.rowName(selected: selection.contains(group.id)))
-                    .lineLimit(1)
-                    .help("Edit \(group.name)")
+            TableColumn("Name", value: \.name) { row in
+                if let member = row.service {
+                    serviceNameCell(member, in: row.group)
+                } else {
+                    groupNameCell(row.group)
+                }
             }
-            .width(min: 120, ideal: 170)
+            .width(min: 150, ideal: 200)
 
-            // Beside the name, the way Finder puts a tag beside a filename. Unsorted for the
-            // reason the Volumes table gives: sorting takes a key path on the row, and tags live
-            // in `TagStore` rather than on the model.
-            TableColumn("Tags") { group in
-                TagPillRow(tags: model.tags.tags(on: .group, group.id), compact: true)
+            TableColumn("Tags") { row in
+                // A service's tags are its **container's** tags — the same pills the Containers
+                // table shows for that row, not a second vocabulary for the same object.
+                if let member = row.service {
+                    TagPillRow(tags: model.tags.tags(on: .container, member.name), compact: true)
+                } else {
+                    TagPillRow(tags: model.tags.tags(on: .group, row.group.id), compact: true)
+                }
             }
             .width(min: 60, ideal: 130)
             .customizationID("tags")
 
-            TableColumn("Services", value: \.serviceSortKey) { group in
-                Text(group.members.isEmpty ? "none yet" : group.memberNames.joined(separator: ", "))
-                    .foregroundStyle(group.members.isEmpty ? .secondary : .primary)
-                    .lineLimit(1)
-                    .help(group.members.map { "\($0.name) — \($0.image)" }.joined(separator: "\n"))
+            TableColumn("Services", value: \.serviceSortKey) { row in
+                if let member = row.service {
+                    // The image, which is the question you have about a service and not about a
+                    // group: "what is this one made from".
+                    Text(member.image)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(member.image)
+                } else {
+                    Text(row.group.members.isEmpty
+                         ? "none yet" : row.group.memberNames.joined(separator: ", "))
+                        .foregroundStyle(row.group.members.isEmpty ? .secondary : .primary)
+                        .lineLimit(1)
+                        .help(row.group.members.map { "\($0.name) — \($0.image)" }
+                            .joined(separator: "\n"))
+                }
             }
             .width(min: 140, ideal: 220)
             .customizationID("services")
 
-            TableColumn("Network", value: \.networkSortKey) { group in
-                Text(group.network ?? "Default")
-                    .foregroundStyle(group.network == nil ? .secondary : .primary)
+            TableColumn("Network", value: \.networkSortKey) { row in
+                // Blank on a service: it is on the group's network by construction, and
+                // repeating it down every child row says it is a per-service choice.
+                if row.service == nil {
+                    Text(row.group.network ?? "Default")
+                        .foregroundStyle(row.group.network == nil ? .secondary : .primary)
+                }
             }
             .width(min: 80, ideal: 100)
             .customizationID("network")
 
-            TableColumn("Actions") { group in
-                rowActions(for: group)
+            TableColumn("Actions") { row in
+                if let member = row.service {
+                    serviceActions(member)
+                } else {
+                    rowActions(for: row.group)
+                }
             }
             .width(min: 120, ideal: 140)
         }
         .tableStyle(.inset)
-        .contextMenu(forSelectionType: ContainerGroup.ID.self) { ids in
+        .contextMenu(forSelectionType: GroupRow.ID.self) { ids in
             if let group = model.groups.groups.first(where: { ids.contains($0.id) }) {
                 menu(for: group)
             }
         } primaryAction: { ids in
-            // Double-click edits — but only when the activation names exactly one row. `ids` is
-            // a `Set`, so with several selected `first` is an arbitrary member, and opening the
-            // wrong group is worse than opening none.
+            // Double-click edits — but only when the activation names exactly one group row.
+            // `ids` is a `Set`, so with several selected `first` is an arbitrary member.
             guard ids.count == 1,
                   let group = model.groups.groups.first(where: { ids.contains($0.id) })
             else { return }
             editing = .existing(group.id)
+        }
+    }
+
+    /// The group's name, behind the disclosure chevron that shows its services.
+    ///
+    /// The chevron is a button of its own rather than the whole row being clickable: the name is
+    /// already the way into the editor everywhere else in the app, and making a click mean two
+    /// different things depending on which pixel it landed on is how you lose both.
+    ///
+    /// A group with no services has no chevron — an empty disclosure that opens onto nothing is
+    /// the control-that-does-nothing failure in miniature. The space is still reserved so the
+    /// names line up.
+    private func groupNameCell(_ group: ContainerGroup) -> some View {
+        HStack(spacing: 4) {
+            if group.members.isEmpty {
+                Color.clear.frame(width: 16, height: 16)
+            } else {
+                let open = ui.expandedIDs.contains(group.id)
+                Button {
+                    if open { ui.expandedIDs.remove(group.id) }
+                    else { ui.expandedIDs.insert(group.id) }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(open
+                    ? "Hide the services in \(group.name)"
+                    : "Show the services in \(group.name)")
+                .help(open ? "Hide services" : "Show \(group.members.count) services")
+            }
+            Button(group.name) { editing = .existing(group.id) }
+                .buttonStyle(.link)
+                .foregroundStyle(Theme.rowName(selected: selection.contains(group.id)))
+                .lineLimit(1)
+                .help("Edit \(group.name)")
+        }
+    }
+
+    /// A service's name, indented under its group, and a way into the container itself.
+    ///
+    /// Clicking it opens the **container's** detail rather than the group's editor: by the time
+    /// you have expanded a group and are looking at one service, the thing you want is its logs
+    /// or its shell. A service whose container does not exist yet has nothing to open, so it is
+    /// plain text — not a link that would take you to a page about nothing.
+    private func serviceNameCell(_ member: GroupMember, in group: ContainerGroup) -> some View {
+        HStack(spacing: 4) {
+            Color.clear.frame(width: 18, height: 16)
+            if model.containers.contains(where: { $0.id == member.name }) {
+                Button(member.name) { model.requestDetail(kind: .container, subject: member.name) }
+                    .buttonStyle(.link)
+                    .foregroundStyle(Theme.rowName(selected: selection.contains(member.id)))
+                    .lineLimit(1)
+                    .help("Open \(member.name)")
+            } else {
+                Text(member.name)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help("Not created yet — starting “\(group.name)” creates it")
+            }
+        }
+    }
+
+    /// One service's own controls: the container lifecycle, for that container alone.
+    ///
+    /// Start and Stop rather than the group's pair, because from here you are acting on one
+    /// thing. Both are disabled until the container exists — `container start` needs something
+    /// to start, and a group that has never run has nothing yet.
+    @ViewBuilder
+    private func serviceActions(_ member: GroupMember) -> some View {
+        let container = model.containers.first { $0.id == member.name }
+        let running = container.map(AppModel.isRunning) ?? false
+        HStack(spacing: 2) {
+            IconActionButton(systemImage: "play.fill",
+                             label: "Start \(member.name)",
+                             help: container == nil
+                                 ? "This container does not exist yet"
+                                 : "Start \(member.name)",
+                             busy: model.isBusy(member.name, kind: .container),
+                             disabled: container == nil || running) {
+                if let container { Task { await model.perform(.start, on: container) } }
+            }
+            IconActionButton(systemImage: "stop.fill",
+                             label: "Stop \(member.name)",
+                             help: container == nil
+                                 ? "This container does not exist yet"
+                                 : "Stop \(member.name)",
+                             busy: model.isBusy(member.name, kind: .container),
+                             disabled: container == nil || !running) {
+                if let container { Task { await model.perform(.stop, on: container) } }
+            }
+            IconActionButton(systemImage: "text.alignleft",
+                             label: "Logs for \(member.name)",
+                             help: container == nil
+                                 ? "This container does not exist yet"
+                                 : "Open the logs for \(member.name)",
+                             disabled: container == nil) {
+                model.requestDetail(kind: .container, subject: member.name)
+            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -510,11 +684,57 @@ struct GroupsView: View {
     }
 }
 
-extension ContainerGroup {
-    /// Sort keys for the table. `Table`'s sorting needs a `Comparable` key path on the row, and
-    /// "Default" has to sort with the named networks rather than as an empty string at one end.
-    var serviceSortKey: String { memberNames.joined(separator: ", ") }
-    var networkSortKey: String { network ?? "Default" }
+/// One line of the Groups table: a group, or one service inside an expanded group.
+///
+/// A single type because `Table` has a single `Value`, and a branch on `service` because a group
+/// and a service genuinely differ — a service has a container behind it with its own state, tags
+/// and lifecycle. The alternative was a protocol with two conformances and a cast in every cell,
+/// which is the same branch with more ceremony.
+///
+/// `id` namespaces a service under its group. Two groups may not own a service of the same name
+/// (`GroupBook` refuses it), but the id is what `selection` holds, and deriving it from the
+/// member alone would make a row's identity depend on a rule enforced somewhere else.
+struct GroupRow: Identifiable {
+    let group: ContainerGroup
+    /// `nil` for the group's own row.
+    let service: GroupMember?
+
+    var id: String { service.map { "\(group.id)/\($0.id)" } ?? group.id }
+
+    /// Sort keys. Only group rows are ever sorted — see `GroupsView.displayedRows` — so these
+    /// read from the group, and a service row's values are never consulted.
+    var name: String { group.name }
+    var serviceSortKey: String { group.memberNames.joined(separator: ", ") }
+    /// "Default" sorts among the named networks rather than as an empty string at one end.
+    var networkSortKey: String { group.network ?? "Default" }
+}
+
+/// A service's state, read from its container rather than from the group.
+///
+/// A container that does not exist yet is a hollow ring, not a grey dot: "stopped" and "never
+/// created" are different answers to "why is this not running", and the group's own badge already
+/// distinguishes them.
+struct ServiceStateDot: View {
+    let container: Container?
+
+    var body: some View {
+        Group {
+            if let container {
+                Circle()
+                    .fill(container.stateColor)
+                    .frame(width: 8, height: 8)
+                    .help(container.status.state.capitalized)
+                    .accessibilityLabel(container.status.state.capitalized)
+            } else {
+                Circle()
+                    .strokeBorder(.tertiary, lineWidth: 1)
+                    .frame(width: 8, height: 8)
+                    .help("Not created yet")
+                    .accessibilityLabel("Not created")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
 /// Which group the form is editing, or that it is making a new one.

@@ -1068,3 +1068,45 @@ worth copying. Measured with a probe container: a port bound to the gateway addr
 from other containers and from the host, and refused on the Mac's LAN address. Published on
 `0.0.0.0` — which is what a bare `33306:3306` means — a development database is on the office
 network. The site itself binds `127.0.0.1` because nothing needs to reach it but this Mac.
+
+### Q21 amended — a group opens, and reaches the menu bar (2026-09-14)
+
+**A group's row expands.** A chevron beside the name reveals the services inside it, each as a
+row of its own: the container's state dot, its name, its tags, its image, and Start / Stop / Logs
+for that one container. Not `DisclosureTableRow` — that needs parent and child to be the same
+type, and a group and a service are not. `GroupRow` carries an optional `service`, the rows are
+spliced in `displayedRows`, and only **group** rows are sorted: services keep start order, which
+is the one order that means anything. Sorting them alphabetically would put the web tier above
+the database it waits for and imply that is what happens.
+
+Service rows are deliberately not selectable. The checkbox drives the bulk bar, and "start 2
+groups" meaning one group and somebody else's database is a claim the bar could not make good on.
+A service whose container does not exist yet shows a hollow ring rather than a grey dot, and its
+name is plain text rather than a link to a page about nothing.
+
+**Groups reach the menu bar**, as a third `MenuKindBox` beside Containers and Machines, with the
+same three controls per row. Two differences, both argued rather than inherited: the box is
+**hidden when there are no groups**, because a box reading 0/0 on a Mac that has never made one is
+furniture — Containers and Machines always have something to count, a group is opt-in. And
+`popoverRow` grew an optional `restartable`, defaulting to `running`: a container is up or it is
+not, but a group can be half up, and that is precisely when restarting is the useful thing.
+`restartGroup` is one operation rather than a stop followed by a start — two calls would give two
+progress panels for one intention, and the second would begin from whatever the first left behind.
+
+**A named volume is created owned by root**, measured at `0:0` mode 755. An image whose entrypoint
+starts as root and drops privileges — the official mysql and postgres — fixes its own ownership.
+`redis:alpine` does not, and the server exits on "Can't open or create append-only dir: Permission
+denied". That is how `wp-redis` failed to start, and the failure reads as the *group* being broken
+rather than the volume being unwritable, so the Volumes field now says it before you hit it. The
+Redis service dropped its volume: an object cache is derived data, and losing it on restart is a
+cache behaving correctly rather than a fault to engineer around.
+
+**The WordPress group is four services now** — `wp-db`, `wp-redis`, `wp-site`, `wp-phpmyadmin` —
+and every one of them is wired through the gateway, because there is still no DNS. phpMyAdmin
+binds `127.0.0.1` and is given `PMA_HOST`/`PMA_PORT` but **no** `PMA_USER`/`PMA_PASSWORD`: a
+database admin panel that logs itself in is reachable by anything running on the Mac, and
+loopback is not authentication. Redis is reachable from WordPress (`+PONG` over the gateway) but
+WordPress does not yet *use* it: the official image ships no `redis` PHP extension, and its
+entrypoint only writes `wp-config.php` when one does not already exist, so neither the extension
+nor the constants can be added by environment alone. Making it a real object cache needs a built
+image, which is a separate decision.

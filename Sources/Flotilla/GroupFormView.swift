@@ -395,7 +395,14 @@ struct GroupMemberFormView: View {
                       help: FieldHelp(
                           "One per line, as source:/destination.",
                           detail: "A named volume or an absolute path on this Mac.",
-                          example: "shop-data:/var/lib/postgresql/data"),
+                          example: "shop-data:/var/lib/postgresql/data",
+                          // Measured 14 September: a fresh named volume mounts `0:0` mode 755.
+                          // An image whose entrypoint starts as root and drops privileges — the
+                          // official mysql and postgres do — fixes its own ownership and is
+                          // fine. `redis:alpine` does not, and the server exits on "Can't open
+                          // or create append-only dir: Permission denied". The failure looks
+                          // like the group being broken, so the form says it first.
+                          warning: "A named volume is created owned by root. An image that runs as a non-root user and does not fix that itself — redis is one — will fail to write to it and the service will stop."),
                       optional: true) {
                 linesEditor($volumes, placeholder: "name:/path")
             }
