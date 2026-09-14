@@ -92,6 +92,15 @@ private func requireRejected(
         "system status", "system version", "system df",
     ]
 
+    // The whole `k8s` family, **including its read**, which is the one exception in this table
+    // to "reads are exposed". `Allowlist`'s own note on the family gives the argument: the
+    // command describes itself as EXPERIMENTAL and Apple's documentation does not, and a read
+    // that enumerates the owner's clusters is the reconnaissance half of the same surface.
+    let k8s: Set<String> = [
+        "k8s create", "k8s start", "k8s delete", "k8s rm", "k8s list", "k8s ls",
+        "k8s load-image", "k8s write-config",
+    ]
+
     let actualLocalOnly = Set(
         Allowlist.commands.filter {
             if case .localOnly = $0.exposure { return true } else { return false }
@@ -99,10 +108,11 @@ private func requireRejected(
     )
     let actualExposed = Set(Allowlist.commands.map(\.name)).subtracting(actualLocalOnly)
 
-    #expect(actualLocalOnly == localOnly)
+    #expect(actualLocalOnly == localOnly.union(k8s))
     #expect(actualExposed == exposed)
     #expect(localOnly.isDisjoint(with: exposed))
-    #expect(localOnly.union(exposed).count == Allowlist.commands.count)
+    #expect(k8s.isDisjoint(with: exposed))
+    #expect(localOnly.union(k8s).union(exposed).count == Allowlist.commands.count)
 
     // And every local-only spec must say WHY, in the spec, where the decision is made.
     for spec in Allowlist.commands {
@@ -555,6 +565,9 @@ private func requireRejected(
         // Both write the Mac's credential store — one puts a password in it, the other takes
         // one out. `registry list` only reads it, and is below.
         "registry login", "registry logout",
+        // Every k8s mutation boots, stops or destroys virtual machines, except `write-config`,
+        // which writes a file on this Mac that other tools read. All six are host changes.
+        "k8s create", "k8s start", "k8s delete", "k8s rm", "k8s load-image", "k8s write-config",
     ]
     let actualMutating = Set(Allowlist.commands.filter(\.mutates).map(\.name))
     #expect(actualMutating == expectedMutating)
@@ -573,6 +586,9 @@ private func requireRejected(
         // TrailingPolicy.exact. If this ever moves to the mutating set, someone has widened
         // what exec can run, and that needs a fresh security review, not a test update.
         "exec",
+        // Prints a table of clusters and changes nothing. Local-only anyway: see the exposure
+        // test and the rows.
+        "k8s list", "k8s ls",
     ]
     let actualReadOnly = Set(Allowlist.commands.filter { !$0.mutates }.map(\.name))
     #expect(actualReadOnly == expectedReadOnly)
@@ -668,6 +684,34 @@ private func requireRejected(
         AllowedCase(["machine", "run", "-n", "dev", "--", "/bin/true"],
                     canonical: ["machine", "run", "--name", "dev", "/bin/true"],
                     mutates: true, timeout: 300),
+        // k8s. The node image is digest-pinned by the CLI's own default; a caller that names
+        // one is naming a whole image reference, which is why the flag is `.imageReference` and
+        // not an identifier.
+        // One case per command is this table's rule, so this one carries every flag `create`
+        // accepts rather than splitting across two.
+        AllowedCase(["k8s", "create", "--name", "k8s-dev", "-c", "4", "-m", "8G", "--rm",
+                     "--node-image", "docker.io/kindest/node:v1.35.5",
+                     "--scheme", "https", "--max-concurrent-downloads", "3"],
+                    canonical: ["k8s", "create", "--name", "k8s-dev", "--cpus", "4",
+                                "--memory", "8G", "--rm",
+                                "--node-image", "docker.io/kindest/node:v1.35.5",
+                                "--scheme", "https", "--max-concurrent-downloads", "3"],
+                    mutates: true, timeout: 1800),
+        AllowedCase(["k8s", "start", "--name", "k8s-dev"], mutates: true, timeout: 600),
+        AllowedCase(["k8s", "delete", "--name", "k8s-dev"], mutates: true, timeout: 300),
+        AllowedCase(["k8s", "rm", "--name", "k8s-dev"], mutates: true, timeout: 300),
+        AllowedCase(["k8s", "list"], mutates: false),
+        AllowedCase(["k8s", "ls"], mutates: false),
+        AllowedCase(["k8s", "load-image", "--name", "k8s-dev", "--platform", "linux/arm64",
+                     "fleetcheck:1.0"],
+                    mutates: true, timeout: 600),
+        // The host write. `/tmp/...` rather than a real Application Support path so the case
+        // says nothing about where Flotilla puts the file — that is the app's decision, and a
+        // test that pinned it would be testing the wrong layer.
+        AllowedCase(["k8s", "write-config", "--name", "k8s-dev",
+                     "--kubeconfig", "/tmp/flotilla.kubeconfig"],
+                    mutates: true, timeout: 60),
+
         AllowedCase(["machine", "stop", "dev"], mutates: true, timeout: 120),
         AllowedCase(["machine", "delete", "dev"], mutates: true, timeout: 120),
         AllowedCase(["machine", "set-default", "dev"], mutates: true),

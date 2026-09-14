@@ -1008,3 +1008,89 @@ public struct ContainerCLI: Sendable {
         return try streaming(args, onLine: onLine, onEnd: onEnd)
     }
 }
+
+
+// MARK: - Local Kubernetes clusters
+//
+// Experimental, by `container k8s --help`'s own word. Every command here is `.localOnly` in the
+// allowlist and each says why on its row.
+extension ContainerCLI {
+
+    /// The nodes `container k8s list` reports.
+    ///
+    /// **Nodes, not clusters, and that is not a naming slip.** On 1.4.1 the CLUSTER column comes
+    /// back empty even with two clusters present, and the cluster's name is printed under NODE —
+    /// captured in `k8s-list-two-clusters.txt`. So there is no cluster-to-node mapping to be had
+    /// from this command, and a caller wanting "the clusters" wants `node` from each row.
+    ///
+    /// The only listing in this type that does not decode JSON: `k8s list` has no `--format`.
+    /// `K8sClusterList` carries the whole argument for how it is read instead.
+    public func k8sNodes() throws -> [K8sNode] {
+        K8sClusterList.parse(try execute(["k8s", "list"]).stdout)
+    }
+
+    /// Creates and starts a cluster.
+    ///
+    /// Everything is optional because the CLI defaults all of it — including `--name`, which
+    /// defaults to `k8s-dev`. Flotilla passes a name always: a default-named cluster is one you
+    /// create twice by accident.
+    @discardableResult
+    public func createCluster(name: String, cpus: Int? = nil, memory: String? = nil,
+                              nodeImage: String? = nil, scheme: RegistryScheme = .default,
+                              autoRemove: Bool = false) throws -> CommandResult {
+        var args = ["k8s", "create", "--name", name]
+        if autoRemove { args.append("--rm") }
+        if let cpus { args += ["--cpus", String(cpus)] }
+        if let memory { args += ["--memory", memory] }
+        // Sent only when it is not the default, the same rule `pullArguments` follows: an argv
+        // that names the default is an argv that looks like a decision.
+        if scheme != .default { args += ["--scheme", scheme.rawValue] }
+        if let nodeImage { args += ["--node-image", nodeImage] }
+        return try execute(args)
+    }
+
+    @discardableResult
+    public func startCluster(_ name: String) throws -> CommandResult {
+        try execute(["k8s", "start", "--name", name])
+    }
+
+    @discardableResult
+    public func deleteCluster(_ name: String) throws -> CommandResult {
+        try execute(["k8s", "delete", "--name", name])
+    }
+
+    /// Loads a local image into a cluster's containerd, so a pod can run it without a registry.
+    ///
+    /// The one command in this family that pays for the rest: build an image in Flotilla, load
+    /// it, and `kubectl run --image-pull-policy=Never` finds it.
+    @discardableResult
+    public func loadImage(_ reference: String, intoCluster name: String,
+                          platform: String? = nil) throws -> CommandResult {
+        var args = ["k8s", "load-image", "--name", name]
+        if let platform, !platform.isEmpty { args += ["--platform", platform] }
+        args.append(reference)
+        return try execute(args)
+    }
+
+    /// Writes the cluster's context to a kubeconfig file.
+    ///
+    /// `path` is **required**, with no default, and that is the decision rather than an
+    /// oversight. The CLI appends to `~/.kube/config` when you omit it, and silently editing the
+    /// file somebody's production contexts live in is not a thing an app does on your behalf.
+    /// The caller passes a path it owns; `MountPolicy` sees it like any other host path.
+    ///
+    /// **It does not follow that Flotilla leaves `~/.kube/config` alone.** Measured on 1.4.1:
+    /// `k8s create` writes the default kubeconfig itself, at creation time, with no flag to stop
+    /// it — `~/.kube/config` was born on this Mac during a `k8s create`, minutes before any
+    /// `write-config` ran, and came back holding both clusters' contexts with one marked current.
+    /// So a Flotilla-owned file is an *additional* copy the app can hand to `KUBECONFIG`, not a
+    /// way to avoid touching the user's. Anything the UI says about this has to say that.
+    ///
+    /// The file it writes has **no `current-context`**, so `kubectl` against it fails with
+    /// "the server could not find the requested resource" until a context is named. A caller
+    /// must either set one or tell the user to pass `--context <cluster>`.
+    @discardableResult
+    public func writeKubeconfig(cluster name: String, to path: String) throws -> CommandResult {
+        try execute(["k8s", "write-config", "--name", name, "--kubeconfig", path])
+    }
+}

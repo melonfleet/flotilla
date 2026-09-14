@@ -993,6 +993,71 @@ public enum Allowlist {
             // stronger version of the same reason.
             CommandSpec(["system", "stop"], mutates: true, timeoutHint: 120,
                         exposure: .localOnly(reason: "stopping the host's own runtime services, and every container with them, is the owner's decision")),
+
+            // MARK: k8s — local Kubernetes development clusters
+            //
+            // **The whole family is `.localOnly`, including the read.** Every other read in this
+            // table is exposed, so the exception needs its own argument rather than inheriting
+            // one: `container k8s --help` describes itself as EXPERIMENTAL, and Apple's
+            // `docs/kubernetes.md` does not use the word at all. A family whose own tool and own
+            // documentation disagree about how settled it is has no business being reachable by a
+            // remote peer, and a read that enumerates the owner's clusters is the reconnaissance
+            // half of the same surface. If it stabilises, `list` is the one row worth revisiting.
+            //
+            // `DECISIONS.md` rejects Kubernetes "or any CRI-based orchestrator", and this is not
+            // that: the rejected thing was Flotilla becoming a CRI runtime for the fleet. These
+            // are six CLI commands that create a kind cluster in a VM, which is the same kind of
+            // work `machine` already does here.
+            //
+            // Flags absent on purpose, per default-deny: `create` takes `--debug`, and nothing
+            // in the app has a reason to send it.
+            CommandSpec(["k8s", "create"], mutates: true, timeoutHint: 1800,
+                        flags: [FlagSpec(long: "name", value: .identifier),
+                                FlagSpec(long: "rm"),
+                                FlagSpec(long: "cpus", short: "c", value: .count),
+                                FlagSpec(long: "memory", short: "m", value: .memorySize),
+                                // Plaintext to a registry, on the same reasoning `image pull`
+                                // carries it and nowhere else does: the node image may come from
+                                // a loopback or LAN development registry, and choosing plaintext
+                                // for your own pull is a decision you are entitled to make about
+                                // your own network.
+                                FlagSpec(long: "scheme", value: .registryScheme),
+                                FlagSpec(long: "max-concurrent-downloads", value: .count),
+                                FlagSpec(long: "node-image", value: .imageReference)],
+                        exposure: .localOnly(reason: "creating a Kubernetes cluster boots virtual machines on this Mac")),
+            CommandSpec(["k8s", "start"], mutates: true, timeoutHint: 600,
+                        flags: [FlagSpec(long: "name", value: .identifier)],
+                        exposure: .localOnly(reason: "starting a Kubernetes cluster boots virtual machines on this Mac")),
+            CommandSpec(["k8s", "delete"], mutates: true, timeoutHint: 300,
+                        flags: [FlagSpec(long: "name", value: .identifier)],
+                        exposure: .localOnly(reason: "deleting a Kubernetes cluster destroys its virtual machines and everything in them")),
+            CommandSpec(["k8s", "rm"], mutates: true, timeoutHint: 300,
+                        flags: [FlagSpec(long: "name", value: .identifier)],
+                        exposure: .localOnly(reason: "deleting a Kubernetes cluster destroys its virtual machines and everything in them")),
+            // **No `--format`.** Not an omission here — the CLI has none. Every other listing in
+            // this table offers `json|table|yaml|toml`; `k8s list` prints one fixed-width table
+            // and nothing else, which is why `K8sClusterList` has to parse columns and why that
+            // parser carries the tests it does.
+            CommandSpec(["k8s", "list"], mutates: false,
+                        exposure: .localOnly(reason: "enumerating this Mac's Kubernetes clusters is the owner's business while the command family is experimental")),
+            CommandSpec(["k8s", "ls"], mutates: false,
+                        exposure: .localOnly(reason: "enumerating this Mac's Kubernetes clusters is the owner's business while the command family is experimental")),
+            CommandSpec(["k8s", "load-image"], mutates: true, timeoutHint: 600,
+                        flags: [FlagSpec(long: "name", value: .identifier),
+                                FlagSpec(long: "platform", value: .platform)],
+                        operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
+                        exposure: .localOnly(reason: "loading a local image into a cluster reads this Mac's image store")),
+            // `--kubeconfig` is a **host write**, and the only one in this table. It appends a
+            // context to a file other tools own — kubectl, k9s, whatever reads KUBECONFIG — so
+            // it is shaped as a host path and crosses `MountPolicy` like every other one.
+            //
+            // Flotilla supplies its own path rather than offering a free-text field: appending
+            // to `~/.kube/config` by default is the CLI's choice, and silently editing the file
+            // your production contexts live in is not a thing an app should do on your behalf.
+            CommandSpec(["k8s", "write-config"], mutates: true, timeoutHint: 60,
+                        flags: [FlagSpec(long: "name", value: .identifier),
+                                FlagSpec(long: "kubeconfig", value: .absolutePath)],
+                        exposure: .localOnly(reason: "writing a kubeconfig changes a file on this Mac that other tools read")),
         ]
     }()
 
