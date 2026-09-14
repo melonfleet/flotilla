@@ -230,75 +230,65 @@ struct NewClusterView: View {
 
 /// Loading a local image into a cluster's containerd.
 ///
-/// A dialog rather than a screen: one field, one button, and it is an action on a row rather than
-/// a place you navigate to — the distinction `ModalCard` survives for.
+/// **An embedded screen, not a dialog.** It began as a `ModalCard` and that was simply the wrong
+/// shape: `CLAUDE.md`'s 9 August rule is that anything you fill in and save is a screen with
+/// `FormHeader` and Save bottom-right, and `ModalCard` is for things you acknowledge — About,
+/// the support bundle, a progress panel. A form in a dialog is the surface you leave a different
+/// way from every other form in the app, which is the cost that rule was written to stop paying.
 ///
-/// **It picks from the images that exist**, and that was the fix. The first version was a bare
-/// text field whose placeholder named `fleetcheck:1.0` — an image that had been deleted by the
-/// time anyone read it — so the app's own hint led to a failure, and the only way to succeed was
-/// to remember an exact reference. Flotilla knows every image on the Mac; asking the user to
-/// retype one from memory is the thing the Run form's "Use an existing volume" menu exists to
-/// avoid.
+/// **It picks from the images that exist.** The first version was a bare text field whose
+/// placeholder named `fleetcheck:1.0` — an image that had been deleted by the time anyone read
+/// it — so the app's own hint led to a failure, and the only way to succeed was to remember an
+/// exact reference. Flotilla knows every image on the Mac; asking the user to retype one from
+/// memory is what the Run form's "Use an existing volume" menu exists to avoid.
 ///
 /// `k8s load-image` **cannot** pull: it copies from this Mac's image store. So a reference that
 /// is not in that store is refused here, where it costs a sentence, rather than by the CLI
 /// several seconds later.
-struct LoadImageSheet: View {
+struct LoadImageView: View {
     let model: AppModel
     let cluster: K8sNode
     let dismiss: () -> Void
 
     @State private var reference = ""
     @State private var loading = false
+    @State private var edits = FormEditTracker()
 
     var body: some View {
-        ModalCard(title: "Load an image into “\(cluster.node)”", onClose: dismiss) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Copies an image from this Mac into the cluster, so a pod can run it with no registry in between.")
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(spacing: 0) {
+            FormHeader(title: "Load an Image", systemImage: "square.and.arrow.down.on.square",
+                       hasUnsavedChanges: edits.isDirty(reference), onBack: dismiss)
+            Divider()
+            FormScaffold {
+                form
+            } preview: {
+                railPreview
+            }
+            Divider()
+            footer
+        }
+        .onAppear { edits.open(reference) }
+    }
 
-                FormField("Image reference",
-                          help: FieldHelp(
-                              "An image that already exists on this Mac.",
-                              detail: "This copies; it does not pull. Build or pull the image first."),
-                          problem: problem) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField(placeholder, text: $reference)
-                            .textFieldStyle(.roundedBorder)
-                            .monospaced()
-                        imagePicker
-                    }
-                }
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            FormSectionHeader(
+                title: "Into “\(cluster.node)”",
+                note: "Copies an image from this Mac into the cluster, so a pod can run it with no registry in between.")
 
-                Text("Then run it with an image pull policy of Never, or Kubernetes will try to fetch it and fail:")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("kubectl --context \(cluster.node) run demo \\\n  --image=\(trimmed.isEmpty ? "<image>" : trimmed) \\\n  --image-pull-policy=Never")
-                    .font(.system(size: 11, design: .monospaced))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(9)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
-
-                HStack {
-                    Spacer()
-                    Button("Cancel", action: dismiss)
-                    Button("Load") {
-                        Task {
-                            loading = true
-                            await model.loadImage(trimmed, into: cluster)
-                            loading = false
-                            dismiss()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canLoad)
+            FormField("Image reference",
+                      help: FieldHelp(
+                          "An image that already exists on this Mac.",
+                          detail: "This copies; it does not pull. Build or pull the image first, then load it.",
+                          example: placeholder),
+                      problem: problem) {
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField(placeholder, text: $reference)
+                        .textFieldStyle(.roundedBorder)
+                        .monospaced()
+                    imagePicker
                 }
             }
-            .frame(width: 520)
         }
     }
 
@@ -318,6 +308,35 @@ struct LoadImageSheet: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+        }
+    }
+
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            Text(trimmed.isEmpty
+                 ? "Choose an image to see the command."
+                 : "container k8s load-image --name \(cluster.node) \(trimmed)")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            FormSectionHeader(title: "Then run it")
+            Text("Kubernetes will try to fetch the image unless you tell it not to, and there is no registry here to fetch from:")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("kubectl --context \(cluster.node) run demo \\\n  --image=\(trimmed.isEmpty ? "<image>" : trimmed) \\\n  --image-pull-policy=Never")
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(9)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
         }
     }
 
@@ -348,58 +367,31 @@ struct LoadImageSheet: View {
     }
 
     private var canLoad: Bool { !trimmed.isEmpty && problem == nil && !loading }
-}
 
-/// Where the kubeconfig went, and what to do with it.
-///
-/// A dialog rather than a banner, because the useful part is a command to copy — and because the
-/// thing it has to say about `~/.kube/config` is a correction to what people will assume.
-struct KubeconfigSheet: View {
-    let result: KubeconfigResult
-    let dismiss: () -> Void
-
-    var body: some View {
-        ModalCard(title: "Kubeconfig written", onClose: dismiss) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("A kubeconfig holding only “\(result.cluster)” was written to:")
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(result.url.path)
-                    .font(.system(size: 11, design: .monospaced))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(9)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
-
-                // The file arrives with no current-context, so kubectl fails against it until one
-                // is named. Measured: "the server could not find the requested resource".
-                Text("It has no current context set, so name one:")
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if loading {
+                ProgressView().controlSize(.small)
+                Text("Copying into the cluster…")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("KUBECONFIG=\"\(result.url.path)\" \\\n  kubectl --context \(result.cluster) get nodes")
-                    .font(.system(size: 11, design: .monospaced))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(9)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
-
-                Label("Your ~/.kube/config already has this cluster too — `container k8s create` writes it when the cluster is made, and has no flag to prevent that. This file is an extra copy, not a way to keep it out.",
-                      systemImage: "info.circle")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack {
-                    Button("Reveal in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([result.url])
-                    }
-                    Spacer()
-                    Button("Done", action: dismiss)
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
+            }
+            Spacer()
+            Button("Cancel", action: dismiss)
+            // "Load", not "Save", following `NewImageView`'s "Build"/"Pull": the convention is
+            // that the commit sits bottom-right, not that it is always called Save, and a form
+            // whose button names what it does is easier to be sure about before pressing it.
+            Button("Load") {
+                Task {
+                    loading = true
+                    await model.loadImage(trimmed, into: cluster)
+                    loading = false
+                    dismiss()
                 }
             }
-            .frame(width: 500)
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(!canLoad)
         }
+        .padding(12)
     }
 }

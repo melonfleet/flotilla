@@ -19,9 +19,8 @@ struct ClustersView: View {
     @State private var selection = Set<K8sNode.ID>()
     @State private var showingCreate = false
     @State private var pendingDelete: K8sNode?
-    /// The cluster whose kubeconfig was just written, so the result is actionable rather than a
-    /// toast that disappears.
-    @State private var wroteConfigFor: KubeconfigResult?
+    /// The cluster being loaded into, or nil for the list. An embedded screen like the create
+    /// form, not a dialog — see `LoadImageView`.
     @State private var loadImageTarget: K8sNode?
 
     static let columnSpecs: [(id: String, title: String)] = [
@@ -33,6 +32,8 @@ struct ClustersView: View {
         Group {
             if showingCreate {
                 NewClusterView(model: model) { showingCreate = false }
+            } else if let target = loadImageTarget {
+                LoadImageView(model: model, cluster: target) { loadImageTarget = nil }
             } else {
                 VStack(spacing: 0) {
                     experimentalBand
@@ -60,12 +61,6 @@ struct ClustersView: View {
             Button("OK") { model.clearActionError() }
         } message: {
             Text(model.actionError ?? "")
-        }
-        .sheet(item: $loadImageTarget) { cluster in
-            LoadImageSheet(model: model, cluster: cluster) { loadImageTarget = nil }
-        }
-        .sheet(item: $wroteConfigFor) { result in
-            KubeconfigSheet(result: result) { wroteConfigFor = nil }
         }
         .confirmationDialog(
             "Delete the cluster “\(pendingDelete?.node ?? "")”?",
@@ -352,12 +347,11 @@ struct ClustersView: View {
     private func menu(for cluster: K8sNode) -> some View {
         Button("Load Image…") { loadImageTarget = cluster }
             .disabled(!cluster.isRunning)
+        // No result dialog. What it wrote and how to use it are reported in the progress panel
+        // that already appears — one surface for the operation instead of a panel that closes
+        // and a second card that opens saying the same thing.
         Button("Write Kubeconfig…") {
-            Task {
-                if let url = await model.writeKubeconfig(for: cluster) {
-                    wroteConfigFor = KubeconfigResult(cluster: cluster.node, url: url)
-                }
-            }
+            Task { await model.writeKubeconfig(for: cluster) }
         }
         Divider()
         CopyMenu([
@@ -368,13 +362,6 @@ struct ClustersView: View {
         Divider()
         Button("Delete…", role: .destructive) { pendingDelete = cluster }
     }
-}
-
-/// Where a kubeconfig was written, and for which cluster.
-struct KubeconfigResult: Identifiable, Hashable {
-    let cluster: String
-    let url: URL
-    var id: String { url.path }
 }
 
 extension K8sNode {

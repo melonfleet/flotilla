@@ -145,6 +145,11 @@ struct OperationProgressView: View {
                                     Text(line)
                                         .font(.system(size: 10, design: .monospaced))
                                         .foregroundStyle(.secondary)
+                                        // Selectable, because this is where a command reports
+                                        // a path or a line to run. Writing a kubeconfig puts
+                                        // both here, and a panel that shows you a command you
+                                        // cannot copy has made you retype it.
+                                        .textSelection(.enabled)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .id(index)
                                 }

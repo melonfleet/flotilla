@@ -163,7 +163,20 @@ extension AppModel {
                     try cli.writeKubeconfig(cluster: cluster.node, to: destination.path)
                 }.value
                 progress.finish(step, detail: nil)
-                return "Written to \(destination.path)"
+
+                // Reported here rather than in a second card that opens as this one closes.
+                // The panel is already the place a command's own words go, and these are the
+                // two facts somebody needs afterwards — where the file is, and why `kubectl`
+                // will refuse it until a context is named.
+                progress.note(destination.path)
+                progress.note("")
+                progress.note("KUBECONFIG=\"\(destination.path)\" \\")
+                progress.note("  kubectl --context \(cluster.node) get nodes")
+                progress.note("")
+                progress.note("The file has no current context, so kubectl needs --context.")
+                progress.note("~/.kube/config already has this cluster too: `k8s create` writes")
+                progress.note("it when the cluster is made, and has no flag to prevent that.")
+                return "Written to \(destination.lastPathComponent)"
             }
         )
         return succeeded ? destination : nil
