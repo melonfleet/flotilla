@@ -1,0 +1,14 @@
+OVERVIEW: Load a container image into a cluster's containerd
+
+USAGE: k8s load-image [--name <name>] <image> [--platform <platform>]
+
+ARGUMENTS:
+  <image>                 Image reference to load (e.g. demo-api:latest)
+
+OPTIONS:
+  --name <name>           Cluster name (default: k8s-dev) (default: k8s-dev)
+  --platform <platform>   Platform of the image to load (format:
+                          os/arch[/variant], default: linux/arm64)
+  --version               Show the version.
+  -h, --help              Show help information.
+
