@@ -219,3 +219,23 @@ struct TagBookTests {
         }
     }
 }
+
+/// A group is a sixth tag subject (Q21), and it keys on the group's **id** rather than its name
+/// so a rename keeps every pill. The id is a UUID, which is the case worth pinning: `storageKey`
+/// splits on the *first* slash, and a subject id is free to contain more of them.
+@Test func aGroupIsATagSubjectAndRoundTripsThroughItsStorageKey() throws {
+    let id = "75A7241F-71F4-42B0-9E1D-BCFC223F82A3"
+    let subject = TagSubject(kind: .group, id: id)
+    #expect(subject.storageKey == "group/\(id)")
+
+    let restored = try #require(TagSubject(storageKey: subject.storageKey))
+    #expect(restored == subject)
+
+    // A group and a container may share a name without sharing tags — the same collision the
+    // kind exists to prevent between a volume and a container.
+    var book = TagBook.starter
+    let tag = try #require(book.tags.first)
+    try book.setTag(tag.id, on: TagSubject(kind: .group, id: "shop"), to: true)
+    #expect(book.tags(on: TagSubject(kind: .container, id: "shop")).isEmpty)
+    #expect(book.tags(on: TagSubject(kind: .group, id: "shop")).count == 1)
+}

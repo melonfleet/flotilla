@@ -1023,3 +1023,48 @@ The unit tests passed throughout both times, because they check the argv we *bui
 the CLI *accepts* — the same family as the nine in `CLAUDE.md`. Previews now render the
 **validated** argv rather than the input grammar, so the Run sheet, the group form and the
 progress panel can no longer show a token the CLI would refuse.
+
+### Q21 amended — Groups joins the other sections, and a group must not print its own secrets (2026-09-14)
+
+**Parity.** Groups now wears everything the other sections wear: list/cards, hideable columns, a
+state filter that hides itself when there is only one state on screen, row selection with a bulk
+bar (tag, start, stop, delete), tags beside the name, a row `⋯` menu shared with right-click, and
+the recent-activity band. `ActivityKind` grew a sixth case, `.group`, rather than filing groups
+under `.container`: a tag keys on kind **and** id, and a group called `shop` and a container
+called `shop` are different objects. Group start and stop record their own feed entries, so the
+new filter chip is answering something rather than sitting there empty.
+
+**Row actions follow the house arrangement**, at the owner's direction: lifecycle buttons, then
+`⋯`, then a divider, then the bin. Edit moved out of a pencil and into the menu — it opens a whole
+screen, which is not a one-click action, and a fifth glyph in a table cell reads as a toolbar.
+
+**State moved to where every other table puts it**, also at the owner's direction: a coloured dot
+between the checkbox and the name, not a labelled column on the right. A group's state carries a
+count that a container's does not, so a partly-running group shows `3/4` beside its dot and every
+other state is the bare dot.
+
+**A group must not print its own secrets.** Starting a WordPress group put
+`MYSQL_ROOT_PASSWORD=…` and `WORDPRESS_DB_PASSWORD=…` in the progress panel in plain monospace,
+where it stayed until dismissed — and went straight into a screenshot. `ValidatedCommand` already
+draws the line this needs: `localPreview` is "for showing a person the command **they just
+typed**", `auditDescription` shapes free-form values away. The distinguishing test is *audience*,
+and for a group the audience is not the person who supplied the values — a group replays what was
+saved, possibly weeks ago, from one click on a table row, with nothing else on screen showing it.
+
+So the group progress panel and the group form's rail both use `auditDescription`, and the member
+editor keeps `localPreview` because there the env you are looking at is the env you are editing.
+The Run sheet keeps it too, for the same reason: you typed those values into the form behind the
+panel. This is SEC-03 restated for a surface that did not exist when SEC-03 was written.
+
+**The WordPress group, and what it proves.** Two services, `wp-db` (`mysql:oraclelinux9`) and
+`wp-site` (`wordpress:latest`), and the wiring is the whole point: with no DNS between containers,
+`WORDPRESS_DB_HOST` is `192.168.64.1:33306` — the network's gateway and the port the database
+publishes there. Verified end to end: the site serves at `127.0.0.1:8081`, reaches the install
+screen rather than "Error establishing a database connection", and `mysqli_connect` from inside
+`wp-site` returns a live handle.
+
+The database publishes on **`192.168.64.1:33306`, not `0.0.0.0:33306`**, and that is the part
+worth copying. Measured with a probe container: a port bound to the gateway address is reachable
+from other containers and from the host, and refused on the Mac's LAN address. Published on
+`0.0.0.0` — which is what a bare `33306:3306` means — a development database is on the office
+network. The site itself binds `127.0.0.1` because nothing needs to reach it but this Mac.

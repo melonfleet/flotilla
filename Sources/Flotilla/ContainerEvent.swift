@@ -9,6 +9,7 @@ extension ActivityKind {
     var title: String {
         switch self {
         case .container: "Containers"
+        case .group: "Groups"
         case .machine: "Machines"
         case .image: "Images"
         case .volume: "Volumes"
@@ -22,6 +23,7 @@ extension ActivityKind {
     var systemImage: String {
         switch self {
         case .container: "shippingbox"
+        case .group: "rectangle.3.group"
         case .machine: "server.rack"
         case .image: "square.stack.3d.up"
         case .volume: "cylinder.split.1x2"
@@ -34,6 +36,7 @@ extension ActivityKind {
     var section: Section {
         switch self {
         case .container: .containers
+        case .group: .groups
         case .machine: .machines
         case .image: .images
         case .volume: .volumes

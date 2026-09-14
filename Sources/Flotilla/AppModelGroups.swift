@@ -65,9 +65,18 @@ extension AppModel {
                     progress.finish(step, detail: nil)
                 }
                 await refresh()
-                return started.isEmpty
+                let summary = started.isEmpty
                     ? "Every service was already running"
                     : "Started \(started.count) of \(group.members.count)"
+                // The group's own line in the feed. Each member's `container run` leaves a
+                // container event of its own, but four of those within a second say what
+                // happened and not why — this says why.
+                if !started.isEmpty {
+                    recordActivity(ContainerEvent(date: Date(), from: "stopped", to: "running",
+                                                  kind: .group, subject: group.name,
+                                                  action: summary))
+                }
+                return summary
             }
         )
         await refresh()
@@ -105,6 +114,11 @@ extension AppModel {
                     }
                 }
                 await refresh()
+                if stopped > 0 {
+                    recordActivity(ContainerEvent(date: Date(), from: "running", to: "stopped",
+                                                  kind: .group, subject: group.name,
+                                                  action: "Stopped \(stopped)"))
+                }
                 if !failed.isEmpty {
                     throw GroupStopFailure(members: failed, stopped: stopped)
                 }
@@ -129,10 +143,19 @@ extension AppModel {
             // executed. Building it straight from `runArguments` prints the `--` that only
             // the input grammar carries, and a panel that shows a token the CLI would refuse
             // is the same lie the Run sheet's preview was telling.
+            //
+            // **`auditDescription`, not `localPreview`.** That property's own rule is that its
+            // audience is "the person at the keyboard who supplied the values" — and for a
+            // group they did not. A group replays what was saved, possibly weeks ago, from one
+            // click on a table row, with nothing else on screen showing it. A WordPress group
+            // put `MYSQL_ROOT_PASSWORD=…` and `WORDPRESS_DB_PASSWORD=…` in 13pt monospace in
+            // this panel, where it stayed until dismissed and went straight into a screenshot.
+            // That is SEC-03 with extra steps. The shaped form still names every flag and
+            // leaves the ports, image and container name legible.
             switch AppModel.runPreview(image: member.image,
                                        options: member.runOptions(network: group.network),
                                        command: member.command) {
-            case .success(let validated): return validated.localPreview
+            case .success(let validated): return validated.auditDescription
             case .failure: return "container run … \(member.image)"
             }
         }.joined(separator: "\n")
@@ -164,5 +187,32 @@ struct GroupStopFailure: Error, CustomStringConvertible {
         return members.count == 1
             ? "“\(names)” would not stop.\(tail)"
             : "These would not stop: \(names).\(tail)"
+    }
+}
+
+extension AppModel {
+    /// Deletes a group, its tags with it, and notes it in the feed.
+    ///
+    /// Tag cleanup belongs here rather than in `GroupStore`, which knows nothing about tags, and
+    /// it must be here rather than left to the user: a deleted group's assignments would
+    /// otherwise sit in the plist forever keyed to an id nothing can show. That is different
+    /// from `TagBook.removeAssignments(ofKind:notIn:)`, which is never automatic — a *container*
+    /// can come back, and a group you just deleted cannot.
+    func deleteGroup(_ group: ContainerGroup) {
+        tags.clearTags(on: TagSubject(kind: .group, id: group.id))
+        groups.deleteGroup(group.id)
+        recordActivity(ContainerEvent(date: Date(), from: "present", to: "absent",
+                                      kind: .group, subject: group.name, action: "Deleted"))
+    }
+
+    /// Starts several groups, one after another. Sequential rather than concurrent: two groups
+    /// starting at once would interleave their progress panels, and the runtime is the
+    /// bottleneck anyway.
+    func startGroups(_ selected: [ContainerGroup]) async {
+        for group in selected { await startGroup(group) }
+    }
+
+    func stopGroups(_ selected: [ContainerGroup]) async {
+        for group in selected { await stopGroup(group) }
     }
 }

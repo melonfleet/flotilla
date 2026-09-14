@@ -226,7 +226,7 @@ struct GroupFormView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text(draft.members.map { Self.preview(of: $0, network: draft.network) }
+                Text(draft.members.map { Self.preview(of: $0, network: draft.network, redacted: true) }
                         .joined(separator: "\n"))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -234,6 +234,10 @@ struct GroupFormView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            Text("Values are hidden here. Open a service to see or change them.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text("A service whose container already exists is started rather than re-created.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -241,14 +245,21 @@ struct GroupFormView: View {
         }
     }
 
-    /// One member's command exactly as it would run — through `Allowlist`, so the separator the
-    /// input grammar carries is stripped the same way execution strips it. A member that does not
+    /// One member's command as it would run — through `Allowlist`, so the separator the input
+    /// grammar carries is stripped the same way execution strips it. A member that does not
     /// validate shows the refusal instead of a command that could never run.
-    static func preview(of member: GroupMember, network: String?) -> String {
+    ///
+    /// - Parameter redacted: whether free-form values are shaped away. True on the **group**
+    ///   screen, where the list of commands is incidental to what you came to do — renaming a
+    ///   group should not put `MYSQL_ROOT_PASSWORD=…` on screen for every service in it. False
+    ///   on the member screen, where the env you are looking at is the env you are editing, and
+    ///   `<envAssignment>` would make the preview useless. That is `localPreview`'s own test:
+    ///   the audience is the person who supplied the values.
+    static func preview(of member: GroupMember, network: String?, redacted: Bool) -> String {
         switch AppModel.runPreview(image: member.image,
                                    options: member.runOptions(network: network),
                                    command: member.command) {
-        case .success(let validated): validated.localPreview
+        case .success(let validated): redacted ? validated.auditDescription : validated.localPreview
         case .failure(let error): "\(member.name): \(error)"
         }
     }
@@ -464,7 +475,7 @@ struct GroupMemberFormView: View {
                 .foregroundStyle(Theme.info)
             Text(built.image.isEmpty
                  ? "Add an image to see the command."
-                 : GroupFormView.preview(of: built, network: nil))
+                 : GroupFormView.preview(of: built, network: nil, redacted: false))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)

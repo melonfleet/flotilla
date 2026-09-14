@@ -1628,3 +1628,21 @@ func makeBuildFixtures() -> Bool {
                 "`\(argv.joined(separator: " "))` canonicalised to a command carrying a separator")
     }
 }
+
+/// A published port may name the interface to bind, and that is the shape multi-container work
+/// depends on (Q21).
+///
+/// With no name resolution between containers, a service reaches another through the network's
+/// **gateway** and a published port. Binding that port to the gateway address rather than
+/// `0.0.0.0` is what keeps a development database off the LAN while still letting containers
+/// reach it. Measured on 14 September with a probe container published at
+/// `192.168.64.1:18080:80`: reachable from another container and from the host at that address,
+/// and refused on the Mac's LAN address.
+@Test func aPublishedPortMayNameTheInterfaceItBindsTo() {
+    #expect(Allowlist.accepts("192.168.64.1:33306:3306", as: .portMapping))
+    #expect(Allowlist.accepts("127.0.0.1:8081:80", as: .portMapping))
+    #expect(Allowlist.accepts("8081:80", as: .portMapping))
+    #expect(Allowlist.accepts("192.168.64.1:33306:3306/tcp", as: .portMapping))
+    // A bare port is still refused — the CLI needs both halves.
+    #expect(!Allowlist.accepts("8081", as: .portMapping))
+}

@@ -181,7 +181,11 @@ struct TagManagerPane: View {
          .machine: Set(model.machines.map(\.id)),
          .image: Set(model.images.map(\.reference)),
          .volume: Set(model.volumes.map(\.name)),
-         .network: Set(model.networks.map(\.id))]
+         .network: Set(model.networks.map(\.id)),
+         // Keyed by the group's **id**, which is what `TagSubject(kind: .group, …)` carries, so
+         // that a renamed group keeps its pills. Deleting a group already clears its own tags
+         // (`AppModel.deleteGroup`); this catches what a hand-edited plist leaves behind.
+         .group: Set(model.groups.groups.map(\.id))]
     }
 
     /// How many tagged subjects no longer exist.

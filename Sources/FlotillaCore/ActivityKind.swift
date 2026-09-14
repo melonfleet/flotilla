@@ -18,6 +18,15 @@ import Foundation
 /// Symbol names or sidebar sections.
 public enum ActivityKind: String, CaseIterable, Identifiable, Hashable, Sendable {
     case container, machine, image, volume, network
+    /// A saved group of containers (Q21).
+    ///
+    /// Added rather than tagging groups under `.container`: a tag keys on kind **and** id, and a
+    /// group called `shop` and a container called `shop` are different objects — the same
+    /// collision `TagSubject` exists to prevent between a volume and a container. It earns its
+    /// place in the feed too, because starting a group is an action Flotilla performs that no
+    /// member's own events explain: four containers starting within a second of each other says
+    /// *what* happened and not *why*.
+    case group
     /// The `container` runtime service itself — started, or found stopped. Not a resource, but
     /// it belongs in the same feed: it is the answer to "why was everything empty a minute ago",
     /// and an automatic action Flotilla takes on its own must leave a trace somewhere the user
