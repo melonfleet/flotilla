@@ -531,10 +531,14 @@ public struct ContainerCLI: Sendable {
         if let network = options.network { args += ["--network", network] }
         if let platform = options.platform { args += ["--platform", platform] }
         args.append(image)
-        // An explicit `--` before the in-container command, even when it happens to be
-        // empty here: a command token that itself starts with `-` (e.g. `--version`)
-        // would otherwise be parsed as a flag *of `container run`* — see the separator
-        // note on `Allowlist.validated`.
+        // An explicit `--` before the in-container command. This is the **input** grammar, not
+        // what runs: without it `Allowlist` would read a trailing `-la` as an unknown flag and
+        // refuse the whole command. `Allowlist.validated` strips it from the canonical argv,
+        // because `container` has no `--` convention and would try to execute it — see the
+        // separator note there.
+        //
+        // So this is not the line to show a user. A preview must render the **validated**
+        // arguments; `AppModel.runPreview` returns them.
         if !command.isEmpty {
             args.append("--")
             args.append(contentsOf: command)

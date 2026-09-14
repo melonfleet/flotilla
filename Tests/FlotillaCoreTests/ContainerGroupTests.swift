@@ -183,3 +183,28 @@ import Testing
     #expect(!overriding.isFullyRepresentableAsSpec)
     #expect(GroupMember(overriding.spec).command.isEmpty)
 }
+
+// MARK: - Coming back from storage
+
+/// The bug this pins: loading through `createGroup` would mint a fresh id every launch, so
+/// anything that remembers which group you had open would lose it on restart.
+@Test func restoringAGroupKeepsTheIdItWasStoredUnder() throws {
+    var book = GroupBook()
+    let restored = try book.restoreGroup(id: "kept-id", name: "Shop", network: "shopnet")
+    #expect(restored.id == "kept-id")
+    #expect(book.group("kept-id")?.network == "shopnet")
+
+    let member = GroupMember(id: "member-id", name: "db", image: "postgres:16")
+    try book.addMember(member, to: "kept-id")
+    #expect(book.group("kept-id")?.members.first?.id == "member-id")
+}
+
+/// A hand-edited plist is an input like any other, so a restore is validated the same way a
+/// form submission is.
+@Test func aCorruptStoreDoesNotProduceTwoGroupsThatCannotBeToldApart() throws {
+    var book = GroupBook()
+    try book.restoreGroup(id: "a", name: "Shop", network: nil)
+    #expect(throws: (any Error).self) { try book.restoreGroup(id: "a", name: "Other", network: nil) }
+    #expect(throws: (any Error).self) { try book.restoreGroup(id: "b", name: "shop", network: nil) }
+    #expect(book.groups.count == 1)
+}

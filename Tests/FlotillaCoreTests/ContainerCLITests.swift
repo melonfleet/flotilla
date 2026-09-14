@@ -387,15 +387,26 @@ private final class RecordingHost: ContainerHost, @unchecked Sendable {
     #expect(host.invocations.isEmpty)
 }
 
-@Test func runSeparatesAnInContainerCommandThatLooksLikeAFlag() throws {
+/// An in-container command that looks like a flag survives to the container **without** a
+/// separator in the executed argv.
+///
+/// This test used to require the separator, and it was wrong in a way no unit test could see:
+/// `container` treats `--` as the program to run and fails with "failed to find target
+/// executable --", so every run carrying a command failed while this stayed green. The
+/// separator is still how the command reaches `Allowlist` — without it the parser reads
+/// `--version` as an unknown flag and refuses the whole thing — but it is consumed there.
+///
+/// Both halves are asserted, because either alone can pass while the feature is broken.
+@Test func runCarriesAnInContainerCommandThatLooksLikeAFlagAndSendsNoSeparator() throws {
     let host = RecordingHost()
     let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
 
     try cli.run(image: "alpine", command: ["--version"])
 
     let argv = host.invocations[0]
-    let separatorIndex = try #require(argv.firstIndex(of: "--"))
-    #expect(Array(argv[(separatorIndex + 1)...]) == ["--version"])
+    #expect(!argv.contains("--"), "the CLI would try to execute the separator")
+    #expect(argv.last == "--version")
+    #expect(argv.firstIndex(of: "alpine")! < argv.firstIndex(of: "--version")!)
 }
 
 @Test func pullAndRemoveImageRouteThroughAllowlist() throws {

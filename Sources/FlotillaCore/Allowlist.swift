@@ -1248,26 +1248,29 @@ public enum Allowlist {
             throw AllowlistError.tooManyOperands(count: operands.count + trailing.count, limit: spec.operands.max)
         }
 
-        // Canonical argv: subcommand, flags, operands, then the in-container command.
+        // Canonical argv: subcommand, flags, operands, then the in-container command —
+        // **never a separator**.
         //
-        // `run` needs an explicit `--` before that command, or a token like `--rm` gets
-        // re-parsed as a flag *of `container run`* by the CLI.
+        // `container` has no `--` convention anywhere. It takes the token as the program to
+        // run, and fails with "failed to find target executable --". That was found for `exec`
+        // first and fixed there; `run` kept appending one on the reasoning that a trailing
+        // `--rm` would otherwise be re-parsed as a flag of `container run`. Measured on 14
+        // September, that reasoning is wrong:
         //
-        // `exec` is the opposite: it has no separator at all. `container exec web -- ps`
-        // fails with "failed to find target executable --" — it takes `--` as the program
-        // name. Verified against the live CLI; the unit tests passed either way, so this was
-        // only caught by running it. The input grammar still requires the separator so
-        // parsing stays unambiguous, but it is dropped from the argv we actually execute.
+        //     container run --rm --name flagprobe alpine echo --name stolen
+        //     → prints "--name stolen"; the container is named flagprobe
+        //
+        // Swift ArgumentParser takes everything after the image as the trailing positional
+        // array, dashes included. So the separator bought nothing and cost every `container run`
+        // that carried a command — the Run form's Command field had never worked. The unit tests
+        // passed throughout, because they check what argv we *build* and not what the CLI
+        // *accepts*: the same family of bug as the nine in `CLAUDE.md`.
+        //
+        // The input grammar still requires the separator, and that half is real — without it
+        // this parser would read a trailing `-la` as an unknown flag and refuse the command. So
+        // `--` goes in and never comes out.
         var argv = spec.path + flagTokens + operands
-        if !trailing.isEmpty {
-            // Keyed on the SUBCOMMAND, not just the trailing policy. `exec` never takes a
-            // separator regardless of how its trailing is specified — which matters now that
-            // `interactiveExec` uses `.command`, the very case that appends one. Getting this
-            // wrong produces "failed to find target executable --" at runtime and passes
-            // every unit test, which is how it was missed the first time.
-            if case .command = spec.trailing, spec.path != ["exec"] { argv.append("--") }
-            argv.append(contentsOf: trailing)
-        }
+        argv.append(contentsOf: trailing)
 
         return ValidatedCommand(subcommand: spec.path,
                                 arguments: argv,

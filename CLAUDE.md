@@ -520,6 +520,22 @@ must preserve all of the following:
     header would reorder a fetched feed by a clock that is the same for every line
     in it. The Received column is off by default for the same reason.
 
+17. **A group is a saved form submission, not an orchestrator (Q21).** `ContainerGroup`
+    and `GroupBook` live in `FlotillaCore`; `GroupStore` persists them plist-native under
+    `containerGroups`, never through `SettingsStore` — the same split, and the same
+    argument, as tags. Start issues the same `container run` per member the Run form
+    issues for one, so a group adds **no** command to the allowlist. Do not add
+    `depends_on`, health gating, restart policy or Compose import: each needs a supervisor
+    that outlives the command, and `PLAN.md` rules that out.
+18. **`container` has no `--` convention — anywhere (Q21).** It executes the token and
+    fails with "failed to find target executable --". The separator is required on the way
+    **in**, or `Allowlist` reads a trailing `-la` as an unknown flag; it is stripped from
+    every canonical argv on the way out, and `noCanonicalCommandEverCarriesTheSeparator`
+    holds that line. This bug has now been shipped twice — `exec` in August, `run` in
+    September, where it meant the Run form's Command field had never worked — because the
+    tests check the argv we *build*, not what the CLI *accepts*. A preview must render the
+    **validated** argv, never `ContainerCLI.runArguments`.
+
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.
 

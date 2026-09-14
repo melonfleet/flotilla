@@ -16,6 +16,8 @@ struct MainWindowView: View {
     /// `@State` they hold is lost. Keeping the containers screen's columns, sort, filter and
     /// search here is what makes them survive a trip to Images and back.
     @State private var containersUI = ContainersUIState()
+    @State private var groupsUI = ResourceUIState<ContainerGroup>(
+        sortOrder: [KeyPathComparator(\ContainerGroup.name)])
 
     /// Same reasoning as `containersUI`, and owned here for the same reason — `MachinesView`
     /// is rebuilt from scratch on every sidebar change.
@@ -105,6 +107,9 @@ struct MainWindowView: View {
             // thing they actually attach to.
             group("Containers") {
                 row(.containers, count: model.state == .loaded ? model.containers.count : nil)
+                // Under Containers, above Volumes and Networks: a group *is* containers, and the
+                // two below it are things containers attach to.
+                row(.groups, count: model.groups.groups.isEmpty ? nil : model.groups.groups.count)
                 row(.volumes, count: model.volumesState == .loaded ? model.volumes.count : nil)
                 row(.networks, count: model.networksState == .loaded ? model.networks.count : nil)
             }
@@ -220,6 +225,8 @@ struct MainWindowView: View {
             DashboardView(model: model) { selection = $0 }
         case .containers:
             ContainersView(model: model, ui: containersUI)
+        case .groups:
+            GroupsView(model: model, ui: groupsUI)
         case .images:
             ImagesView(model: model, ui: imagesUI)
         case .volumes:

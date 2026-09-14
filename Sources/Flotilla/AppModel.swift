@@ -64,6 +64,10 @@ final class AppModel {
     /// `RegistryStore`.
     let registries = RegistryStore()
 
+    /// Saved groups of containers that start and stop together. Data rather than view state, for
+    /// the reason `tags` gives; `GroupStore` says why it is not in `SettingsStore`.
+    let groups = GroupStore()
+
     /// Retained for as long as the app runs. `SettingsPersistence` writes on every change
     /// through this token, and dropping it would stop persistence silently — which looks
     /// identical to the bug it exists to fix.

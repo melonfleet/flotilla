@@ -570,7 +570,15 @@ struct RunSheetView: View {
     /// same construction the preview validates and `runContainer` runs, whether or not it
     /// currently validates, so the sheet never shows a lookalike command.
     private var previewLine: String {
-        (["container"] + ContainerCLI.runArguments(image: trimmedImage, options: options, command: command))
+        // The **validated** argv when there is one, because that is what runs. `runArguments`
+        // is the input grammar: it carries a `--` before the command that `Allowlist` consumes
+        // and never re-emits, so showing it would put a token on screen that the CLI would
+        // refuse. The raw construction is still the fallback for a command that does not
+        // validate — a refused command must still be visible, or the error has nothing to
+        // point at.
+        if case .success(let validated) = preview { return validated.localPreview }
+        return (["container"] + ContainerCLI.runArguments(image: trimmedImage, options: options,
+                                                          command: command))
             .joined(separator: " ")
     }
 

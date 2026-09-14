@@ -10,7 +10,7 @@ import Foundation
 enum Section: String, CaseIterable, Identifiable, Hashable {
     // Dashboard first: it is the overview you land on, and every other section is a
     // drill-down from something it shows.
-    case dashboard, activity, logs, containers, images, volumes, networks, machines, settings
+    case dashboard, activity, logs, containers, groups, images, volumes, networks, machines, settings
 
     var id: Self { self }
 
@@ -20,6 +20,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .activity: "Activity"
         case .logs: "Logs"
         case .containers: "Containers"
+        case .groups: "Groups"
         case .images: "Images"
         case .volumes: "Volumes"
         case .networks: "Networks"
@@ -35,6 +36,11 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .logs: "text.alignleft"
         case .activity: "clock.arrow.circlepath"
         case .containers: "shippingbox"
+        // Verified present, per the `ellipsis.vertical` incident.
+        // Not a `square.stack.3d.*`: Images already uses that family, and a group of
+        // containers is not a stack of layers. Verified present, per the `ellipsis.vertical`
+        // incident.
+        case .groups: "rectangle.3.group"
         case .images: "square.stack.3d.down.right"
         case .volumes: "cylinder.split.1x2"
         case .networks: "network"

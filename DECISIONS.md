@@ -938,3 +938,88 @@ than offering to add it twice.
 **"Something else" appeared twice on one screen** — once as the way to reach the custom path, and
 again as the default answer to the question that path asks. The first is now **Custom**, the
 second **Generic or self-hosted**, and the field is **Type** rather than Kind.
+
+## Q21 — A group starts containers together, and `container` has no `--` (settled 2026-09-14)
+
+**Asked:** competitor tools and Docker let you build an app out of several containers — a
+database, a cache, a web server, an app process. Can Flotilla do that today?
+
+**Measured first.** Containers on one network reach each other **by IP** and not by name. From a
+running container on `default`:
+
+```
+ping 192.168.64.24   works, 1.0 ms
+ping web             127.0.53.53 — the ICANN collision sentinel, i.e. a public DNS answer
+ping vault           bad address
+```
+
+`resolv.conf` points at the gateway and that resolver holds no container records.
+[apple/container#1809](https://github.com/apple/container/issues/1809) is the open request for
+per-network DNS. The Run form's Network field had been promising the opposite — *"containers on
+the same network reach each other by name… so an app can talk to a database as `db`"* — which is
+a sentence that gets somebody to wire `db` into a connection string and then debug their own app.
+Corrected.
+
+**The workaround does not close the gap either.** `sudo container system dns create flotilla`
+(run by the owner; it needs an administrator) wires macOS's resolver to the runtime's own DNS
+server on `127.0.0.1:2053` — confirmed in `scutil --dns` — but that server answers NXDOMAIN for
+containers, including ones started afterwards with `--dns-domain flotilla`. The flag writes
+`domain flotilla` into the container's `resolv.conf`; nothing registers a record on the other
+side. Not proven further: finishing the proof needs `[dns] domain` in `config.toml` (there is no
+CLI write path — `system property` has only `list`) and probably a runtime restart, which would
+stop every running container on the machine.
+
+**What does work, and is worth telling users:** each network's gateway `.1` reaches the host, so
+a container finds another container's **published port** there — `192.168.64.1:8080` — and it
+works **across isolated networks** (a container on `test3` opened a connection to a container on
+`default` that way). The address is stable across recreations, unlike a container IP.
+
+### The decision
+
+A **group** is a saved set of containers that start and stop together: `ContainerGroup` and
+`GroupBook` in `FlotillaCore` with the rules and the tests, `GroupStore` for plist-native
+persistence under `containerGroups`, a Groups section under the Containers sidebar heading.
+
+It is a **remembered form submission, not an orchestrator**. Start issues the same `container
+run` per member the Run form issues for one, in listed order, through the same allowlist — it
+adds no command to the boundary. Ruled out, each for its own reason: dependency graphs and health
+gating (need a supervisor that outlives the command, and half of one is worse than none), restart
+policy (Q18 — Flotilla cannot observe that a container failed), and `docker-compose.yml` import
+(it would silently drop three quarters of the file's meaning). `PLAN.md`'s "Compose is not going
+to happen" still stands; this is not that.
+
+Rules worth naming: a member **must** be named, because `container run` without `--name` takes a
+random id and the group would never find it again; member names are unique across the **whole
+book**, because container names are global on this Mac; and nothing about "running" is stored —
+state is derived from the live container list every time it is asked.
+
+`GroupMember` is deliberately **not** `Flotillafile.ContainerSpec`, though they convert both ways
+so a future import maps onto a group rather than growing a second importer. `ContainerSpec` is a
+file format — immutable, version-pinned, parsed from something a stranger may have sent — and it
+is withheld from this release precisely because it is not settled.
+
+### `container` has no `--`, anywhere
+
+Building Start found it. `runArguments` appended `--` before the in-container command on the
+reasoning that a trailing `--rm` would otherwise be re-parsed as a flag of `container run`. Both
+halves of that were wrong:
+
+```
+container run --rm --name flagprobe alpine echo --name stolen
+→ prints "--name stolen"; the container is named flagprobe      (nothing is re-parsed)
+
+container run --name demo-cache alpine:latest -- sleep 600
+→ Error: failed to find target executable --                     (the separator is executed)
+```
+
+So **every `container run` carrying a command had always failed** — the Run form's Command field
+had never worked once. The identical bug was found and fixed for `exec` in August and the fix was
+scoped to `exec` alone. The separator is still required on the way **in**, because without it
+`Allowlist` reads a trailing `-la` as an unknown flag and refuses the command; it is now stripped
+from the canonical argv for every subcommand, and a test asserts that no canonical command ever
+carries one.
+
+The unit tests passed throughout both times, because they check the argv we *build* and not what
+the CLI *accepts* — the same family as the nine in `CLAUDE.md`. Previews now render the
+**validated** argv rather than the input grammar, so the Run sheet, the group form and the
+progress panel can no longer show a token the CLI would refuse.

@@ -226,6 +226,42 @@ public struct GroupBook: Sendable, Equatable {
         return nil
     }
 
+    /// The same question, asked by a form about a group that is **not in the book yet**.
+    ///
+    /// A form must not write until Save, so while you are building a group its members exist only
+    /// in the draft. Validating against the book alone would miss a clash between two services in
+    /// the group you are typing; validating against the book *including* the stored copy of the
+    /// group you are editing would report every unchanged member as a clash with itself. So the
+    /// caller passes both halves: which stored group to ignore, and what the draft currently
+    /// holds.
+    ///
+    /// - Parameters:
+    ///   - memberID: the member being edited, excluded from the clash check so it does not
+    ///     collide with itself.
+    ///   - groupID: the stored group this draft replaces, or `nil` when the group is new.
+    ///   - draftMembers: the draft's members, including the one being edited.
+    public func draftProblem(withMemberName raw: String, excluding memberID: String?,
+                             editing groupID: String?,
+                             draftMembers: [GroupMember]) -> String? {
+        let name = raw.trimmingCharacters(in: .whitespaces)
+        if name.isEmpty { return GroupError.emptyMemberName.description }
+        guard Allowlist.accepts(name, as: .identifier) else {
+            return GroupError.invalidMemberName(name).description
+        }
+        for group in groups where group.id != groupID {
+            for member in group.members
+            where member.name.caseInsensitiveCompare(name) == .orderedSame {
+                return GroupError.duplicateMemberName(member.name, inGroup: group.name).description
+            }
+        }
+        for member in draftMembers
+        where member.id != memberID && member.name.caseInsensitiveCompare(name) == .orderedSame {
+            // Within the draft there is no other group to name, so the message says where it is.
+            return "“\(member.name)” is already a service in this group."
+        }
+        return nil
+    }
+
     /// Why an image reference would be refused, or `nil`.
     public func problem(withImage raw: String) -> String? {
         let image = raw.trimmingCharacters(in: .whitespaces)
@@ -249,6 +285,30 @@ public struct GroupBook: Sendable, Equatable {
         return group
     }
 
+    /// Puts a group back with the id it was stored under — the path storage uses on launch.
+    ///
+    /// Deliberately not `createGroup`, which mints a fresh id. A group whose id changed every
+    /// launch would break anything that remembers one: the selected row, a detail screen, a
+    /// window restored into a group that no longer answers to that name.
+    ///
+    /// Validated exactly as `createGroup` is, because a hand-edited plist is an input like any
+    /// other. Members are added afterwards through `addMember`, which keeps *their* ids too.
+    @discardableResult
+    public mutating func restoreGroup(id: String, name rawName: String,
+                                      network: String?) throws -> ContainerGroup {
+        let name = rawName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { throw GroupError.emptyName }
+        guard !groups.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
+        else { throw GroupError.duplicateName(name) }
+        // A duplicated id is a corrupt store, not a name clash, but it has the same cure: keep
+        // the first and drop the second, rather than ending up with two rows that cannot be
+        // told apart.
+        guard !groups.contains(where: { $0.id == id }) else { throw GroupError.duplicateName(name) }
+        let group = ContainerGroup(id: id, name: name, network: network)
+        groups.append(group)
+        return group
+    }
+
     public mutating func rename(_ id: String, to rawName: String) throws {
         let name = rawName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { throw GroupError.emptyName }
@@ -261,6 +321,28 @@ public struct GroupBook: Sendable, Equatable {
     public mutating func setNetwork(_ network: String?, on id: String) throws {
         guard let index = groups.firstIndex(where: { $0.id == id }) else { throw GroupError.unknownGroup }
         groups[index].network = network?.isEmpty == true ? nil : network
+    }
+
+    /// Commits a form's draft: replaces the stored group of the same id, or adds it if new.
+    ///
+    /// One call rather than delete-then-add at the call site, so a rejected draft cannot leave
+    /// the book with the old group already gone.
+    public mutating func commit(_ draft: ContainerGroup) throws {
+        let name = draft.name.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { throw GroupError.emptyName }
+        guard !groups.contains(where: { $0.id != draft.id
+                                        && $0.name.caseInsensitiveCompare(name) == .orderedSame })
+        else { throw GroupError.duplicateName(name) }
+
+        var candidate = self
+        candidate.groups.removeAll { $0.id == draft.id }
+        try candidate.restoreGroup(id: draft.id, name: name, network: draft.network)
+        for member in draft.members {
+            try candidate.addMember(member, to: draft.id)
+        }
+        // Only now does the real book change: a draft that fails validation half way through
+        // leaves the stored group exactly as it was.
+        self = candidate
     }
 
     public mutating func deleteGroup(_ id: String) {

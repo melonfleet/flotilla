@@ -441,10 +441,20 @@ private func requireRejected(
     requireRejected(["run", "--", "alpine", "id"])
     requireRejected(["run", "alpine", "--", "echo\nforged"])
 
+    // The separator is an **input** convention only. `container` has none of its own — it
+    // takes `--` as the program to execute and fails with "failed to find target executable
+    // --" — so it is consumed here and never re-emitted, for `run` exactly as for `exec` and
+    // `machine run`. Measured 14 September:
+    //
+    //     container run --rm --name flagprobe alpine echo --name stolen
+    //     → prints "--name stolen"; the container is named flagprobe
+    //
+    // which is also the negative control for the reason `run` used to append one: a trailing
+    // token starting with `-` is *not* re-parsed as a flag of `container run`.
     let implicit = try Allowlist.validated(["run", "alpine", "echo", "--rm", ";", "id"])
     let explicit = try Allowlist.validated(["run", "alpine", "--", "echo", "--rm", ";", "id"])
     #expect(implicit == explicit)
-    #expect(explicit.arguments == ["run", "alpine", "--", "echo", "--rm", ";", "id"])
+    #expect(explicit.arguments == ["run", "alpine", "echo", "--rm", ";", "id"])
 
     let emptySeparator = try Allowlist.validated(["run", "alpine", "--"])
     #expect(emptySeparator.arguments == ["run", "alpine"])
@@ -600,7 +610,7 @@ private func requireRejected(
                         "--publish", "8080:80/tcp", "--volume", "/tmp/data:/data:ro",
                         "--cpus", "4", "--memory", "512MB", "--network", "bridge",
                         "--platform", "linux/arm64/v8", "registry.example/alpine:latest",
-                        "--", "echo", "hello"],
+                        "echo", "hello"],
             mutates: true,
             timeout: 600
         ),
@@ -1595,4 +1605,26 @@ func makeBuildFixtures() -> Bool {
     #expect(try SemanticVersion("1.4.1.0-beta.2")! < #require(SemanticVersion("1.4.1")))
     #expect(SemanticVersion("0.0.0.0")?.isUnreleased == true)
     #expect(SemanticVersion("0.0.0.1")?.isUnreleased == false)
+}
+
+/// No canonical argv may carry `--`, whatever the subcommand or trailing policy.
+///
+/// A blanket rule rather than three per-command assertions, because this bug has now been fixed
+/// twice — for `exec` in August and for `run` in September — and each time the fix was scoped to
+/// the one command somebody happened to run by hand. `container` has no `--` convention anywhere:
+/// it takes the token as the executable name and fails at runtime, while every unit test that
+/// only checks argv construction stays green.
+@Test func noCanonicalCommandEverCarriesTheSeparator() throws {
+    let inputs: [[String]] = [
+        ["run", "alpine", "--", "echo", "hi"],
+        ["run", "alpine", "--", "ls", "-la", "/tmp"],
+        ["run", "-d", "--name", "web", "alpine", "--", "sleep", "600"],
+        ["exec", "web", "--", "ps", "-o", "pid,comm,args"],
+        ["machine", "run", "-n", "dev", "--", "/bin/true"],
+    ]
+    for argv in inputs {
+        let validated = try Allowlist.validated(argv)
+        #expect(!validated.arguments.contains("--"),
+                "`\(argv.joined(separator: " "))` canonicalised to a command carrying a separator")
+    }
 }
