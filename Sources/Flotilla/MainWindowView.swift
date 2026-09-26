@@ -70,7 +70,13 @@ struct MainWindowView: View {
     /// under the bar. Applied once here rather than in six section files — the alignment is a
     /// property of the window's two columns, not of any one screen, and six copies of a number
     /// is how the toolbar padding drifted three ways before.
-    private let contentTopInset: CGFloat = 35
+    ///
+    /// **Measured against the lifted split view.** `sidebarCardLift` raises both columns, so this
+    /// was tuned with 18pt of lift already applied. On macOS 27 there is no lift, and the content
+    /// fell 18pt lower than it had ever sat — so the lift is taken back out here, keeping the
+    /// content's first control 26pt below the bar on both systems, level with the sidebar's first
+    /// row (measured: 291 against 293).
+    private var contentTopInset: CGFloat { 17 + sidebarCardLift }
 
     /// The sidebar, rebuilt to `research/review/mockups/main-window.html`.
     ///
@@ -169,10 +175,19 @@ struct MainWindowView: View {
 
     /// How far the floating sidebar card rises towards the window bar.
     ///
-    /// Measured on screen: the card's top sat 30pt below the bar's divider while its left edge
-    /// was 11pt from the window's. 18 brings the top inset to about the side inset, so the card
-    /// is evenly spaced from the chrome around it rather than floating low.
-    private let sidebarCardLift: CGFloat = 18
+    /// **macOS 26:** measured on screen, the card's top sat 30pt below the bar's divider while its
+    /// left edge was 11pt from the window's. 18 brings the top inset to about the side inset, so
+    /// the card is evenly spaced from the chrome around it rather than floating low.
+    ///
+    /// **macOS 27: zero, because there is no card to lift.** The sidebar is no longer an inset
+    /// glass card — its background starts at the bar's divider and runs flush to the window's
+    /// left edge (pixel-scanned, 26 September). The same 18pt therefore slid the sidebar's top
+    /// *under* the bar, which paints over it: the owner saw Dashboard tucked up against the bar,
+    /// 10pt below it, while the content column's first control sat 26pt below — out of line by
+    /// the lift exactly. With no lift the two start within 2pt of each other again.
+    private var sidebarCardLift: CGFloat {
+        if #available(macOS 27, *) { 0 } else { 18 }
+    }
 
     /// In rail mode the title *and* the count move into the tooltip rather than being dropped.
     /// The count is the sidebar's one piece of at-a-glance information, and there is no room for
