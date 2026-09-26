@@ -101,7 +101,7 @@ struct ImageDetailView: View {
                                     model.requestDetail(kind: .container, subject: container.id)
                                 }
                                 .buttonStyle(.plain)
-                                .foregroundStyle(Theme.accentText)
+                                .foregroundStyle(Theme.link)
                                 Spacer()
                                 Text(container.status.state)
                                     .font(.system(size: 11)).foregroundStyle(.secondary)

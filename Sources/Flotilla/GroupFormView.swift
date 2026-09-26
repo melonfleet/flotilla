@@ -156,7 +156,7 @@ struct GroupFormView: View {
                 Label("Add Service", systemImage: "plus")
             }
             .buttonStyle(.link)
-            .foregroundStyle(Theme.accentText)
+            .foregroundStyle(Theme.link)
             .padding(.top, 2)
         }
     }

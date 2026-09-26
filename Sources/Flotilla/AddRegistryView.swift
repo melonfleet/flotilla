@@ -301,7 +301,7 @@ struct AddRegistryView: View {
                         .font(.callout)
                 }
                 .buttonStyle(.link)
-                .foregroundStyle(Theme.accentText)
+                .foregroundStyle(Theme.link)
                 .help(url.absoluteString)
             }
         }

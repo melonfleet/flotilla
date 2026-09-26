@@ -315,7 +315,7 @@ struct RegistriesPane: View {
                             Image(systemName: "magnifyingglass")
                         }
                         .buttonStyle(.borderless)
-                        .foregroundStyle(Theme.accentText)
+                        .foregroundStyle(Theme.link)
                         .accessibilityLabel("Browse \(row.name)")
                         .help("Browse \(row.name) in your browser")
                     }
@@ -482,11 +482,8 @@ struct SignInSheet: View {
                         Label("Create a token in your browser…", systemImage: "safari")
                     }
                     .buttonStyle(.link)
-                    // `.link` hardcodes the system blue and ignores the scene tint — the trap
-                    // `Theme.rowName` was written for. Measured here: the link rendered stock
-                    // macOS blue, the one hue with no place in this palette, on a sheet where
-                    // everything else is the brand orange.
-                    .foregroundStyle(Theme.accentText)
+                    // The system link colour, named explicitly like every other link.
+                    .foregroundStyle(Theme.link)
                     .help(url.absoluteString)
                 }
 

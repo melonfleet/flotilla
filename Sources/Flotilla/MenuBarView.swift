@@ -324,7 +324,7 @@ struct MenuBarView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(name)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.accentText)
+                        .foregroundStyle(Theme.link)
                         .lineLimit(1)
                     Text(subtitle).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                 }

@@ -574,7 +574,7 @@ struct VolumesView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Button(volume.name) { detailTarget = DetailTarget(id: volume.name) }
                     .buttonStyle(.link)
-                    .foregroundStyle(Theme.accentText)
+                    .foregroundStyle(Theme.link)
                     .lineLimit(1)
                     .help("Open \(volume.name)")
                 HStack(spacing: 8) {

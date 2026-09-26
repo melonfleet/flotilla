@@ -1,6 +1,8 @@
 # Themes
 
-**Status: specified 26 September 2026. Not yet built.**
+**Status: specified and built 26 September 2026.** Code: `Sources/Flotilla/ThemePalette.swift` (the six
+themes), `Theme.swift` (the tokens), `ThemePicker.swift` (Settings), and `LightTheme`/`DarkTheme` in
+`FlotillaCore`.
 The palette's source of truth is [`branding.md`](branding.md). This file decides how the palette is applied.
 
 ## The rule
@@ -20,21 +22,28 @@ Everything else is fixed per appearance, the same in every theme:
 The brand stays on the toolbar, the body, charts and status colours, the wordmark and the app icon.
 Everywhere else, Flotilla looks and behaves like standard macOS.
 
-## The six themes
+## The four themes
 
-Themes are **named after their toolbar colour**. The toolbar text colour belongs to the theme.
+**Four themes, the same four in light and dark** (the owner, 26 September — revised the same day
+from a first draft of three light and three dark). Each is named after its bar, and the bar is the
+same brand colour in both appearances; only the body changes.
 
-| Appearance | Name | Toolbar | Toolbar text | Body |
+| Theme | Bar | Bar ink | Light body | Dark body |
 |---|---|---|---|---|
-| Light | **Cantaloupe** *(default)* | cantaloupe `#EE7B4D` | seed | cream `#FBF7F0` |
-| Light | **Rind** | rind `#1B5E20` | white | honeydew wash `#E5F4DC` (honeydew at 30% over white) |
-| Light | **Canary** | canary `#F2C94C` | seed | white `#FFFFFF`, **with a divider line under the toolbar** |
-| Dark | **Flesh** *(default)* | flesh `#FC4A6B` | seed | seed `#241F1A` |
-| Dark | **Rind** | rind `#1B5E20` | white | seed `#241F1A` |
-| Dark | **Cantaloupe** | cantaloupe `#EE7B4D` | seed | seed `#241F1A` |
+| **Stripe** | stripe `#7CB342` | seed | honeydew wash `#E5F4DC` (honeydew at 30% over white) | seed `#241F1A` |
+| **Flesh** | flesh `#FC4A6B` | seed | cream `#FBF7F0` | seed |
+| **Cantaloupe** | cantaloupe `#EE7B4D` | seed | cream `#FBF7F0` | seed |
+| **Canary** | canary `#F2C94C` | seed | white `#FFFFFF` (the bar's existing divider separates them) | seed |
 
-Surfaces derived from the body (raised panels, hairlines) are computed per body, not hand-picked, so
-every theme stays consistent.
+**Defaults:** Cantaloupe for light, Flesh for dark — the look the app shipped with. Both pickers
+offer all four, so choosing Stripe for both is a valid pair.
+
+**Every bar takes seed ink.** White measures 2.5:1 at best on these four bars (stripe), under the
+4.5:1 the wordmark needs; seed holds 4.9:1 at worst (flesh). The ink is still a per-theme value in
+`ThemePalette`, so a future bar that needs white is one line.
+
+Raised panels and hairlines do **not** vary by theme: every light body works under white cards and
+every dark theme shares seed. Dark cards are seed lifted 6% towards white, `#312D28`.
 
 ## Choosing a theme
 
@@ -51,24 +60,27 @@ every theme stays consistent.
 
 WCAG ratios. Text needs 4.5:1; non-text marks, such as status dots and chart lines, need 3:1.
 
-| Theme | Toolbar text | Body text | Weakest status colour on body |
+| Theme | Bar ink (seed) | Bar vs body | Weakest status colour on body |
 |---|---|---|---|
-| Light Cantaloupe | 5.9 | 19.7 | warning **2.1** ✗ (existing issue; see below) |
-| Light Rind (wash) | 7.9 | 18.3 | success 3.0, online 3.6 (warning aside) |
-| Light Rind (full honeydew) | 7.9 | 12.9 | online **2.5**, success **2.1** ✗: **why the body is a wash** |
-| Light Canary | 10.3 | 21.0 | warning 2.2 (toolbar to body only 1.6, hence the divider) |
-| Dark Flesh | 4.9 | 16.3 | danger 5.2 |
-| Dark Rind | 7.9 | 16.3 | danger 5.2 (toolbar to body only 2.1: subdued, but deliberate) |
-| Dark Cantaloupe | 5.9 | 16.3 | danger 5.2 |
+| Stripe, light | 6.5 | 2.2 | success 3.0 |
+| Flesh, light | 4.9 | 3.1 | success 3.2 |
+| Cantaloupe, light | 5.9 | 2.6 | success 3.2 |
+| Canary, light | 10.3 | 1.6 (hence the divider) | success 3.4 |
+| All four, dark | 4.9–10.3 | 4.9–10.3 | danger 5.2 |
 
-**Fix this before building themes:** light-mode `warning` `#E5A100` fails 3:1 on **every** light body,
-including today's. Replace it with a deeper amber that passes on cream, the honeydew wash and white.
+Two measurements shaped the design. **Full-strength honeydew hid the green status colours**
+(online 2.5:1, success 2.1:1), which is why Stripe's light body is a 30% wash. And **white bar ink
+failed** on every bar, which is why the ink is seed.
+
+**Fixed with themes:** light-mode `warning` `#E5A100` failed 3:1 on **every** light body, including
+the one the app always shipped with. It is now `#A87600`, the same hue deepened; its worst case, the
+honeydew wash, holds 3.5:1.
 
 ## Rules this changes or keeps
 
 - **Retired:** "pink is brand and selection". Selection now follows the system accent.
 - **Kept:** pink is never an error colour. Green means running and healthy, which is why buttons
-  never take a rind toolbar's colour.
+  never take the Stripe bar's colour.
 - **Kept:** every colour is a dynamic `NSColor`, so no appearance is frozen into another.
 
 ## Implementation notes
@@ -83,5 +95,5 @@ including today's. Replace it with a deeper amber that passes on cream, the hone
   per-use review, not a blind swap.
 - The theme identifiers and their settings keys belong in `FlotillaCore` settings, Foundation-only;
   the colours stay in the app target.
-- Verify every screen in all six themes, on a real launch, before shipping. Six themes means six
-  full passes.
+- Verify every screen in all eight variants (four themes, light and dark) on a real launch before
+  shipping.

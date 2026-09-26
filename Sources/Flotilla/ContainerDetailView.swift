@@ -230,16 +230,15 @@ struct ContainerDetailView: View {
             Button("Copy") { Clipboard.copy(address) }
                 .buttonStyle(.plain)
                 .font(.caption)
-                .foregroundStyle(Theme.accentText)
+                .foregroundStyle(Theme.link)
                 .help("Copy \(address)")
             // UDP is excluded outright: a browser has nothing to do with it.
             if port.proto?.lowercased() != "udp",
                let url = URL(string: "http://\(address)") {
                 Link("Open", destination: url)
                     .font(.caption)
-                    // `Link`, like `buttonStyle(.link)`, hardcodes the system blue and ignores
-                    // the scene tint.
-                    .foregroundStyle(Theme.accentText)
+                    // The system link colour, named explicitly like every other link.
+                    .foregroundStyle(Theme.link)
                     .help("Open http://\(address) — assumes this container serves HTTP on "
                           + "port \(port.containerPort). It will not respond if nothing is "
                           + "listening there.")

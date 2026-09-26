@@ -709,8 +709,9 @@ struct LogsView: View {
                 // accent, so an accent-coloured link on it is the one piece of text that stays
                 // the colour of its own background and vanishes — while still being clickable,
                 // which is the worst version of the problem. Every other table's Name column has
-                // taken this argument since `.link` was found to hardcode the system blue; the
-                // Logs table was new and did not inherit it.
+                // taken this argument since it was first made; the Logs table was new and did not
+                // inherit it. It still holds with the system link colour and the system accent,
+                // which are both blue by default.
                 .foregroundStyle(Theme.rowName(selected: selected))
                 .lineLimit(1)
                 .truncationMode(.head)

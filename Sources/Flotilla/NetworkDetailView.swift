@@ -96,7 +96,7 @@ struct NetworkDetailView: View {
                                     model.requestDetail(kind: .container, subject: container.id)
                                 }
                                 .buttonStyle(.plain)
-                                .foregroundStyle(Theme.accentText)
+                                .foregroundStyle(Theme.link)
                                 Spacer()
                                 Text(container.status.networks?
                                     .first { $0.network == network.id }?.ipv4Address ?? "—")

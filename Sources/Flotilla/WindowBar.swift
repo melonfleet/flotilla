@@ -21,6 +21,8 @@ import AppKit
 /// not laid the view out yet. Measuring three seconds later told the truth. A geometry reading
 /// taken before layout is not a measurement, it is a guess with a number attached.
 struct WindowBar: View {
+    /// The chosen light and dark themes; the bar's colour and its ink come from them.
+    @Environment(\.themeChoice) private var themes
     let model: AppModel
     @Binding var railed: Bool
 
@@ -58,7 +60,7 @@ struct WindowBar: View {
                 .help(railed ? "Show the sidebar labels" : "Collapse the sidebar to icons")
                 .accessibilityLabel(railed ? "Expand sidebar" : "Collapse sidebar to icons")
 
-                Wordmark(size: 17, monochrome: Theme.onTitleBar)
+                Wordmark(size: 17, monochrome: Theme.onTitleBar(themes), lockup: .appName)
                     .fixedSize()          // a lockup, never wrapped
 
                 Spacer(minLength: 12)
@@ -80,13 +82,14 @@ struct WindowBar: View {
             .frame(height: Self.barHeight)
             // The bar's own ground — see `Theme.titleBar`. It had none, so it showed the content
             // wash and read as the top of the content rather than as chrome.
-            .background(Theme.titleBar)
-            // Every glyph in the bar goes white, through the mechanism that already exists for
-            // exactly this: `IconActionButtonStyle` reads `backgroundProminence` and turns its
-            // icon white when an accent fill is painted behind it — written for selected table
-            // rows, and a coloured bar is the same situation. Reusing it means the bar's buttons
-            // cannot drift from the rule that governs every other icon button in the app.
+            .background(Theme.titleBar(themes))
+            // Every glyph in the bar takes the bar's ink, through the mechanism that already
+            // exists for a coloured fill: `IconActionButtonStyle` reads `backgroundProminence` and
+            // repaints its icon for the fill behind it — written for selected table rows, and a
+            // coloured bar is the same situation. The ink is the theme's — seed on all four bars
+            // today. On a table row, with no `barInk`, it stays white.
             .environment(\.backgroundProminence, .increased)
+            .environment(\.barInk, Theme.onTitleBar(themes))
             Divider()
         }
         // Pull the traffic lights down onto the wordmark's line. See `TrafficLightAligner`.

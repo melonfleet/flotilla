@@ -293,7 +293,10 @@ struct FlotillaApp: App {
                 // `AppModel.applyAppKitAppearance()` now owns appearance for app *and* windows,
                 // and SwiftUI reads `\.colorScheme` from the window it is drawing in, so views
                 // still follow. One authority.
-                .tint(Theme.accent)
+                //
+                // The themes, so the popover's colours agree with the window's. There is no
+                // `.tint` any more: controls take the system accent, as they do in Finder.
+                .environment(\.themeChoice, model.themeChoice)
         } label: {
             // The brand mark, as a **template** image: macOS inverts it for a light or dark
             // menu bar automatically, so one asset serves both and there is no pair to drift.
@@ -328,10 +331,14 @@ struct FlotillaApp: App {
                 // `AppModel.applyAppKitAppearance()` now owns appearance for app *and* windows,
                 // and SwiftUI reads `\.colorScheme` from the window it is drawing in, so views
                 // still follow. One authority.
-                // The watermelon accent, applied once at the scene root so every stock
-                // control inherits it. Set per-view it would be forgotten somewhere, and
-                // one blue segmented control in a pink app is worse than all-blue.
-                .tint(Theme.accent)
+                // **No `.tint`.** There used to be a watermelon tint here so every stock control
+                // inherited the brand. Themes put controls back on the system accent — the colour
+                // the user chose in System Settings, as Finder and System Settings themselves use —
+                // and keep the melon for the bar, the background and the data (`design/THEMES.md`).
+                //
+                // The chosen light and dark themes, for the bar and the background. Set once here,
+                // at the root, for the reason the tint was: set per view, it would be missed.
+                .environment(\.themeChoice, model.themeChoice)
                 .task { await model.reload() }
                 // First run: ask, with Auto pre-selected. `needsAppearanceOnboarding` is
                 // false once answered, including when the answer was Auto — which is

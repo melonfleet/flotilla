@@ -114,7 +114,7 @@ struct JSONTextView: View {
                 rest = rest.dropFirst(literal.count)
             } else if rest.hasPrefix("true") || rest.hasPrefix("false") || rest.hasPrefix("null") {
                 let literal = rest.hasPrefix("false") ? rest.prefix(5) : rest.prefix(4)
-                emit(literal, Theme.accentText)
+                emit(literal, Theme.melonText)
                 rest = rest.dropFirst(literal.count)
             } else {
                 // Punctuation, whitespace and indentation: deliberately quiet, so the structure

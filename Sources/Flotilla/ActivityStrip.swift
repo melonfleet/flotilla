@@ -18,6 +18,7 @@ import FlotillaCore
 /// `recordTransitions` deliberately ignores the containers present at launch, so an app just
 /// opened has an empty strip, and that is honest rather than broken.
 struct ActivityStrip: View {
+    @Environment(\.themeChoice) private var themes
     struct Entry: Identifiable {
         let id: UUID
         let subject: String
@@ -57,7 +58,7 @@ struct ActivityStrip: View {
         // `safeAreaInset` (Machines) it sat on the window background. Same view, two shades,
         // which is exactly what the owner spotted. An explicit background makes placement
         // irrelevant.
-        .background(Theme.contentBackground)
+        .background(Theme.contentBackground(themes))
     }
 
     private var header: some View {
@@ -141,7 +142,7 @@ struct ActivityStrip: View {
                     .foregroundStyle(.tertiary)
                 Text(entry.subject)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(openable ? Theme.accentText : .secondary)
+                    .foregroundStyle(openable ? Theme.link : .secondary)
                 Text(entry.event.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

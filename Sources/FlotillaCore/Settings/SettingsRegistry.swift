@@ -23,6 +23,19 @@ public enum SettingsKeys {
         summary: "Colour scheme. Chosen during first run; `notChosen` means onboarding hasn't asked yet."
     )
 
+    /// The light half of the theme pair. Defaults to Cantaloupe, which is the look the app
+    /// shipped with, so nobody's window changes colour on upgrade.
+    public static let lightTheme = SettingsKey<ThemeName>(
+        "lightTheme", default: .cantaloupe,
+        summary: "Window bar and background when the app draws light: stripe, flesh, cantaloupe or canary."
+    )
+
+    /// The dark half of the theme pair. Defaults to Flesh, the bar dark mode already had.
+    public static let darkTheme = SettingsKey<ThemeName>(
+        "darkTheme", default: .flesh,
+        summary: "Window bar and background when the app draws dark: stripe, flesh, cantaloupe or canary."
+    )
+
     public static let launchAtLogin = SettingsKey<Bool>(
         "launchAtLogin", default: false,
         summary: "Register Flotilla as a login item (SMAppService)."
@@ -302,6 +315,8 @@ public enum SettingsKeys {
 public enum SettingsRegistry {
     public static let all: [SettingDescriptor] = [
         SettingsKeys.appearance.descriptor,
+        SettingsKeys.lightTheme.descriptor,
+        SettingsKeys.darkTheme.descriptor,
         SettingsKeys.launchAtLogin.descriptor,
         SettingsKeys.showDockIcon.descriptor,
         SettingsKeys.confirmDestructiveActions.descriptor,

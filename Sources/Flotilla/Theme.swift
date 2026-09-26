@@ -16,10 +16,19 @@ import FlotillaCore
 /// that `branding.md` does not specify, it is **derived** — lifted in lightness until it holds on a
 /// dark surface — and said to be derived rather than passed off as brand.
 ///
+/// **Themes** (`design/THEMES.md`) change exactly two things: the window bar and the content
+/// background. Those are the only tokens here that take a `ThemeChoice`. Everything else is fixed
+/// per appearance, so there is one set of colours to check in light and one in dark, not one per
+/// theme.
+///
+/// **Controls are macOS's own.** Buttons, selection, focus rings and links use the system accent
+/// and the system link colour, as Finder and System Settings do. The melon lives in the bar, the
+/// background, charts, status and the wordmark.
+///
 /// Three rules carried forward, all load-bearing:
 ///
-/// - **Pink is brand and selection. Pink is NEVER an error colour.** The accent and a failure
-///   must not look alike, or a selected row reads as a broken one.
+/// - **Pink is NEVER an error colour.** Neither is the melon orange. (Pink used to be selection
+///   too; selection now follows the system accent, so that half of the rule retired with themes.)
 /// - **Green means running/healthy.** It is the brand's own green now, not Material's.
 /// - Every colour is a *dynamic* `NSColor`, so light and dark resolve at draw time. A plain
 ///   `Color(red:green:blue:)` freezes one appearance into the other — the same class of mistake
@@ -39,53 +48,61 @@ enum Theme {
     /// `canary #F2C94C`.
     static let canary = dynamic(light: 0xF2C94C, dark: 0xF7D97A)
 
-    /// The app tint: selection fills, links, focus rings, prominent buttons.
+    /// The system accent: selection fills, focus rings, hover washes, the current tab's marker.
     ///
-    /// **This is only half of it.** AppKit takes the accent it uses for sidebar-list selection
-    /// and focus rings from the app's `AccentColor` asset and ignores SwiftUI's `.tint()`, so
-    /// `Resources/Assets.xcassets/AccentColor.colorset` carries the same two values and has to
-    /// move with this one. It did not, once: the selected navigation row stayed pink while every
-    /// other accent in the app went orange, and the asset is not somewhere you would think to
-    /// look from here. `branding.md` says so too.
+    /// **This is the user's colour, not the brand's.** Themes made the app's controls behave the way
+    /// macOS's own do, so selection is whatever the user chose in System Settings ▸ Appearance —
+    /// blue unless they changed it. The `AccentColor` asset that used to force watermelon onto
+    /// AppKit's sidebar and focus rings is gone for exactly that reason: with it present,
+    /// `Color.accentColor` would still be the brand.
     ///
-    /// **Now the same hue as the window bar**, on the owner's ask — `cantaloupe #EE7B4D` on
-    /// light and `flesh #FC4A6B` on dark, both existing suite tokens. A highlight that matches the chrome is what makes the two read as one
-    /// app rather than as a coloured strip over someone else's window. Dark keeps the brand
-    /// flesh; light is the bar's orange, so the bar and the selected row are the same colour on
-    /// the screen the owner is looking at.
-    static let accent = dynamic(light: 0xEE7B4D, dark: 0xFC4A6B)
+    /// Never use this for data. A chart series drawn in the accent would change colour when the
+    /// user changed System Settings; that is what `melon` is for.
+    static let accent = Color.accentColor
 
-    /// Accent *text* — a deeper pink on light, a lighter one on dark, because the fill colour
-    /// does not carry enough contrast as small type on either background.
+    /// Clickable text: row names that open a detail view, "Copy", "Download…", breadcrumbs.
     ///
-    /// Light follows the accent's new hue: `cantaloupe` itself measures about 2.4:1 on `cream`
-    /// and cannot carry small type, so this is the same orange taken down to a burnt tone
-    /// that can. Dark is unchanged — `#FF9BB2` already reads against a dark window.
-    static let accentText = dynamic(light: 0xB4501F, dark: 0xFF9BB2)
+    /// The **system link colour**, fixed across every theme. It used to be a burnt orange, because
+    /// `.buttonStyle(.link)` hardcodes the system blue and a blue link was the one out-of-family hue
+    /// in the app. With controls following macOS, blue is now the family: this is what a link looks
+    /// like in every other Mac app, which is the point.
+    static let link = Color(nsColor: .linkColor)
 
     /// The colour for a clickable row name, given whether that row is selected.
     ///
-    /// `.buttonStyle(.link)` hardcodes the system blue and ignores the scene tint, so a row name
-    /// has to be coloured explicitly — but a *selected* row in a `Table` is filled with the tint
-    /// itself, and accent text on an accent fill is what a tester reported as "you do not see it
-    /// anymore because of their exact same color".
-    ///
-    /// A selected row uses `.primary` rather than white, which is what was asked for literally.
-    /// White on the brand pink measures **3.1:1**; near-black measures **6.8:1** — the darker
-    /// choice is the more visible one here, and it is also correct against the grey macOS paints
-    /// for a selection in an unfocused window, where white would be worse still. The request
-    /// allowed "white, or a different colour that will be visible"; this is the second.
+    /// A *selected* row in a `Table` is filled with the accent, and link blue on an accent fill is
+    /// the "you do not see it anymore because of their exact same color" a tester reported when
+    /// both were pink. `.primary` adapts inside a selected row — SwiftUI turns it white on an
+    /// emphasised selection — so it stays legible whatever accent the user picked.
     ///
     /// One function rather than the same ternary in five list views, because five copies of a
     /// rule is how the rule ends up applied in four places.
     static func rowName(selected: Bool) -> AnyShapeStyle {
-        selected ? AnyShapeStyle(.primary) : AnyShapeStyle(accentText)
+        selected ? AnyShapeStyle(.primary) : AnyShapeStyle(link)
     }
 
-    /// The wash behind a selected sidebar row. Alpha differs by appearance: the same
-    /// translucency that reads as a tint on white disappears against a dark sidebar.
-    static let accentTint = dynamic(light: 0xEE7B4D, dark: 0xFC4A6B,
-                                    lightAlpha: 0.18, darkAlpha: 0.22)
+    /// The wash behind a selected or current item that is not a native list row: the Settings tab
+    /// list, the current terminal tab, a machine's "default" badge. The system accent at low alpha;
+    /// the alpha differs by appearance because the translucency that reads as a tint on white
+    /// disappears against a dark surface.
+    static let accentTint = Color(nsColor: NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        var resolved = NSColor.systemBlue
+        appearance.performAsCurrentDrawingAppearance {
+            resolved = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+        }
+        return resolved.withAlphaComponent(isDark ? 0.22 : 0.18)
+    })
+
+    /// The melon as a **data** colour: the dashboard's memory series and its legend. Fixed per
+    /// appearance and the same in every theme, so a chart reads the same whatever bar is on top
+    /// and whatever accent the user chose. These are the values the accent had before themes.
+    static let melon = dynamic(light: 0xEE7B4D, dark: 0xFC4A6B)
+
+    /// `melon` as small type — a chart label, a JSON literal. The fill does not carry enough
+    /// contrast as text on either background (`cantaloupe` is about 2.4:1 on cream), so light takes
+    /// it down to a burnt tone and dark lifts it.
+    static let melonText = dynamic(light: 0xB4501F, dark: 0xFF9BB2)
 
     // MARK: State
     //
@@ -100,8 +117,12 @@ enum Theme {
     /// Failed, unreachable, exited non-zero. `danger #C9302C` exactly; dark is derived.
     static let danger = dynamic(light: 0xC9302C, dark: 0xF2635F)
     /// Needs attention but is not broken: untrusted, restarting, degraded.
-    /// `warning #E5A100` exactly; dark is derived.
-    static let warning = dynamic(light: 0xE5A100, dark: 0xF5C242)
+    ///
+    /// **Light is `#A87600`, deepened from the brand's `#E5A100`**, which measured 2.1:1 on cream —
+    /// under the 3:1 a status mark needs, on every light background the app had, before themes
+    /// existed. `#A87600` is the same hue taken down until its worst case, the Rind theme's
+    /// honeydew wash, holds 3.5:1. Dark is derived and was already fine.
+    static let warning = dynamic(light: 0xA87600, dark: 0xF5C242)
     /// Informational, and "not yet built" markers. `info #2C7A7B` exactly; dark is derived.
     ///
     /// **This replaces the system blue.** It is the single change that removes the last
@@ -110,43 +131,43 @@ enum Theme {
 
     // MARK: Surfaces
 
-    /// The wash behind the content column.
+    /// The content background for the chosen themes: the honeydew wash, cream or white in light;
+    /// seed in dark. See `ThemePalette`.
     ///
-    /// Honeydew at low alpha rather than the flat `#FFFFFF` the mockup specified — a white
-    /// content area next to a Liquid Glass sidebar reads as *absent* rather than as a choice.
-    /// Kept deliberately faint: this is a ground for cards to sit on, not a colour anyone
-    /// should notice. Cards stay `raisedSurface` so data keeps maximum contrast.
+    /// Dark keeps its 0.85 alpha: the window's own dark ground shows through a little, which is
+    /// what stops a flat near-black reading as a hole next to the sidebar.
+    static func contentBackground(_ choice: ThemeChoice) -> Color {
+        dynamic(light: choice.light.palette(dark: false).body, dark: choice.dark.palette(dark: true).body,
+                lightAlpha: 1, darkAlpha: 0.85)
+    }
+
+    /// The window bar's own ground for the chosen themes.
     ///
-    /// Dark is a deep rind-cast neutral, not pure grey, so the green character survives the
-    /// appearance switch instead of the app looking like two different products.
-    /// `cream #FBF7F0` at full opacity — a warm off-white rather than a green cast, to sit under
-    /// the coloured bar. **Not a new colour**: it is a suite neutral, as `cantaloupe` is a suite
-    /// melon. The palette did not grow; the roles moved. See `design/branding.md`.
-    static let contentBackground = dynamic(light: 0xFBF7F0, dark: 0x171C14,
-                                           lightAlpha: 1, darkAlpha: 0.85)
+    /// Docker's reference strip is a solid colour, and the bar had none at all — it showed
+    /// `contentBackground`, which is why it read as part of the content rather than as chrome.
+    static func titleBar(_ choice: ThemeChoice) -> Color {
+        dynamic(light: choice.light.palette(dark: false).bar, dark: choice.dark.palette(dark: true).bar)
+    }
 
-    /// The window bar's own ground.
+    /// What reads on `titleBar`: **seed, on all four bars.**
     ///
-    /// Docker's reference strip is a solid colour, and the bar had none at all — it simply showed
-    /// `contentBackground`, which is why it read as part of the content rather than as chrome
-    /// however tall it got. `#EE7B4D` on the owner's ask.
-    ///
-    /// `flesh #FC4A6B` on dark, on the owner's ask — which is also what the melon's centre is
-    /// drawn in. So the bar, the highlights and the logo's one warm note are the same
-    /// colour in dark mode.
-    static let titleBar = dynamic(light: 0xEE7B4D, dark: 0xFC4A6B)
+    /// It used to be white on both bars, on the grounds that one foreground was simpler. Measured,
+    /// white on `#EE7B4D` is about 2.8:1 — under the 4.5:1 the wordmark and the bar's buttons need
+    /// — and white on canary would be invisible. Seed holds 4.9:1 at worst. The ink stays a per-theme
+    /// value in `ThemePalette` so a future bar that needs white is one line.
+    static func onTitleBar(_ choice: ThemeChoice) -> Color {
+        dynamic(light: choice.light.palette(dark: false).onBar, dark: choice.dark.palette(dark: true).onBar)
+    }
 
-    /// What reads on `titleBar`. White on both: `#EE7B4D` and `#FC4A6B` are close enough in
-    /// lightness that one foreground serves both, and the alternative — a dark glyph on light
-    /// and a light one on dark — would make the bar the only surface in the app whose contents
-    /// invert while it does not.
-    static let onTitleBar = Color.white
-
-
-    /// Cards, tables and popovers sitting on `contentBackground`. Opaque on purpose — the
+    /// Cards, tables and popovers sitting on the content background. Opaque on purpose — the
     /// placement note in the mockups puts glass on chrome only, and data must stay legible
     /// over a busy desktop picture.
-    static let raisedSurface = dynamic(light: 0xFFFFFF, dark: 0x1F241C)
+    ///
+    /// **Not theme-dependent**, and that is measured rather than assumed: every light body works
+    /// under white cards, and every dark theme shares seed, so one pair serves all six. Dark is seed
+    /// lifted 6% towards white (`#312D28`), so a card sits *above* the background rather than
+    /// reading as a hole in it.
+    static let raisedSurface = dynamic(light: 0xFFFFFF, dark: 0x312D28)
 
     /// Hairlines and card borders, tinted to the same family rather than neutral grey.
     static let hairline = dynamic(light: 0x1B5E20, dark: 0xA7D98C,
@@ -154,7 +175,7 @@ enum Theme {
 
     // MARK: Construction
 
-    private static func dynamic(
+    static func dynamic(
         light: Int, dark: Int, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1
     ) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -164,7 +185,7 @@ enum Theme {
     }
 }
 
-private extension NSColor {
+extension NSColor {
     convenience init(hex: Int, alpha: CGFloat) {
         self.init(
             srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,

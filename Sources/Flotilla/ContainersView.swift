@@ -1107,8 +1107,8 @@ struct ContainersView: View {
                         Text(c.id).lineLimit(1)
                     }
                     .buttonStyle(.link)
-                    // `.link` hardcodes the system blue and ignores the scene tint — and a
-                    // selected row is filled with that tint, so the colour has to know.
+                    // A selected row is filled with the system accent, and a link-blue name on a
+                    // blue fill vanishes, so the colour has to know. See `Theme.rowName`.
                     .foregroundStyle(Theme.rowName(selected: selection.contains(c.id)))
                     .help("Open \(c.id)")
                 }

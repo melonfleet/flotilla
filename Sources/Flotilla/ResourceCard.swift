@@ -35,13 +35,13 @@ struct ResourceCard<Actions: View>: View {
                 if let onOpen {
                     Button(title, action: onOpen)
                         .buttonStyle(.link)
-                        .foregroundStyle(Theme.accentText)
+                        .foregroundStyle(Theme.link)
                         .lineLimit(1)
                         .help(title)
                 } else {
                     Text(title)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.accentText)
+                        .foregroundStyle(Theme.link)
                         .lineLimit(1)
                         .help(title)
                 }

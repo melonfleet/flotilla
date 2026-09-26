@@ -10,6 +10,8 @@ import FlotillaCore
 /// grow section-specific logic.
 struct MainWindowView: View {
     let model: AppModel
+    /// The chosen themes, for the content background. See `ThemeChoice`.
+    @Environment(\.themeChoice) private var themes
 
     /// Owned here, not in `ContainersView`. This view is the window's root and is built
     /// once; the detail views are destroyed and recreated on every sidebar change, so any
@@ -284,7 +286,7 @@ struct MainWindowView: View {
         // buttons' width at its leading edge, so nothing lands under them.
         .ignoresSafeArea(.container, edges: .top)
         // The wash has to reach the top of the window now that the content does.
-        .background(Theme.contentBackground.ignoresSafeArea())
+        .background(Theme.contentBackground(themes).ignoresSafeArea())
         .allowsHitTesting(model.openFormCount == 0)
         .overlay {
             if model.openFormCount > 0 {

@@ -412,7 +412,7 @@ struct ShellStrip: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .foregroundStyle(isCurrent ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.secondary))
+        .foregroundStyle(isCurrent ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
         .background(isCurrent ? Theme.accentTint : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(.rect)
         .onTapGesture { store.select(session, in: subjectID) }

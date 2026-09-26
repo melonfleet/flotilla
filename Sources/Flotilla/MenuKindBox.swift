@@ -85,7 +85,7 @@ struct MenuKindBox<Items: View>: View {
                 // what it is.
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(expanded ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.tertiary))
+                    .foregroundStyle(expanded ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.tertiary))
                     .rotationEffect(.degrees(expanded ? 90 : 0))
             }
 

@@ -490,8 +490,13 @@ must preserve all of the following:
 10. **Sandboxing (Q9):** no App Sandbox for v1. Hardened runtime, Developer ID
     signing, notarization, and least entitlements still apply.
 11. **Appearance:** onboarding asks the user; `Auto` is preselected and means
-    follow the system. Light and dark are equally supported. Keep the single
-    watermelon accent; do not introduce another accent palette.
+    follow the system. Light and dark are equally supported. **Themes (Q23,
+    2026-09-26):** a theme changes only the window bar and the content background,
+    and the user picks a light theme and a dark theme. Controls follow **macOS**:
+    system accent for buttons, selection and focus, system link colour for links.
+    The melon stays on the bar, the background, charts, status and the wordmark.
+    Never introduce a colour from outside the palette, and never put the accent
+    on data. See `design/THEMES.md`.
 12. **Runtime policy:** restart and health are self-implemented and run on the
     host peer, not only while a client laptop is connected.
 13. **Installation and updates:** never silently perform a privileged `container`

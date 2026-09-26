@@ -113,6 +113,8 @@ struct AppLink: Identifiable {
 /// source, marketing site — not content the app renders or tracks, so there is nothing here
 /// worth a WebView or navigation state.
 struct AppLinksMenu: View {
+    /// The bar's ink, from the theme. See `barInk`.
+    @Environment(\.barInk) private var barInk
     /// Verified to exist: `chevron.left.slash.chevron.right` and `globe`, alongside the
     /// button's own `square.grid.2x2`, via a scratch `NSImage(systemSymbolName:)` check.
     static let links: [AppLink] = [
@@ -143,7 +145,7 @@ struct AppLinksMenu: View {
         // accent *became* the bar's colour: an orange glyph on an orange strip. The links button
         // vanished entirely and the menu still worked, which is the worst way for a control to
         // fail. Tint is the knob this style actually reads.
-        .tint(Theme.onTitleBar)
+        .tint(barInk ?? .primary)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Flotilla links")
@@ -161,6 +163,7 @@ struct AppLinksMenu: View {
 /// new feel.
 private struct ToolbarMenuGlyph: View {
     let systemImage: String
+    @Environment(\.barInk) private var barInk
     @State private var hovering = false
 
     var body: some View {
@@ -175,7 +178,9 @@ private struct ToolbarMenuGlyph: View {
             // like it decides the colour while the tint quietly does.
             .frame(width: 18, height: 18)
             .padding(3)
-            .background(hovering ? Theme.accent.opacity(0.13) : Color.clear,
+            // The bar's ink as the wash, as `IconActionButtonStyle` does on the bar — the system
+            // accent would be a blue smear on an orange strip.
+            .background(hovering ? (barInk ?? Theme.accent).opacity(0.13) : Color.clear,
                         in: RoundedRectangle(cornerRadius: 5))
             .contentShape(.rect)
             .onHover { hovering = $0 }

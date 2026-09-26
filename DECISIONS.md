@@ -86,7 +86,9 @@ second-guess settled choices mid-project.
 - **Keep the mockups' visual language**: the dark treatment shown in
   `research/review/mockups/` is approved, and the **watermelon accent** is the single
   accent colour in both themes. Do not introduce a second accent or a theme-specific
-  palette.
+  palette. **Amended by Q23 (2026-09-26):** controls now take the *system* accent, and themes
+  apply the watermelon palette to the window bar and background. There is still no colour
+  from outside the palette.
 - Consequence: every view must be built and checked in **both** appearances — an
   auto default means a light bug is as user-visible as a dark one.
 
@@ -1173,3 +1175,52 @@ made the first bisect lie, because the corrupted state survived the change meant
 Deleting `NSSplitView Subview Frames main, SidebarNavigationSplitView` from the preference domain
 is the cure. A window-layout reset is listed as unbuilt in `PLAN.md`; this is the first concrete
 argument for it.
+
+## Q23 — Themes change the bar and the background, and controls follow macOS (settled 2026-09-26)
+
+**The owner's design.** A theme changes exactly two things: the window bar and the content
+background. There are **four themes, the same four in light and dark: Stripe, Flesh, Cantaloupe and
+Canary**, each named after its bar. (A first draft the same day had three light and three dark, with
+a Rind theme; the owner replaced it with Stripe and made the sets identical.) The install defaults,
+Cantaloupe for light and Flesh for dark, are the look the app already had. The spec, with the
+measured contrast for all eight variants, is `design/THEMES.md`.
+
+### The decision
+
+- **Two pickers, not one list.** Auto switches appearance at sunset, so a single "current theme"
+  would have to survive being drawn in both. The user picks a light theme and a dark theme; Auto
+  moves between the pair. `lightTheme` and `darkTheme` are separate settings keys holding one
+  `ThemeName`, and a managed profile can seed or lock either. VS Code's preferred light and dark themes are the precedent.
+- **Everything else is fixed per appearance**, the same in every theme: charts, status, tags. So
+  there is one set of colours to check in light and one in dark, not one per theme.
+- **Controls follow macOS.** Buttons, sidebar and table selection, and focus rings use the **system
+  accent**. Links use the **system link colour**. This **reverses** item 11 of `CLAUDE.md`'s settled
+  list, which kept the watermelon accent on every control. The owner's reason: the app should behave
+  like Finder and System Settings, with the melon on the chrome and the data rather than on every
+  button. The `AccentColor` asset is deleted, because an app that declares its own accent can never
+  follow the user's.
+- **The melon did not leave the data.** The dashboard's memory series and the JSON literal colour
+  were drawn in the accent; they now use `Theme.melon` and `Theme.melonText`, the accent's old
+  values, so a chart does not change colour when the user changes System Settings.
+
+### Measured, and it shaped the design
+
+- **Full-strength honeydew hides the green status colours:** online 2.5:1 and success 2.1:1, below
+  the 3:1 a status mark needs. Stripe's light body is honeydew at 30% over white, `#E5F4DC`, which
+  holds 3.6 and 3.0.
+- **White bar text failed on every bar:** 2.8:1 on cantaloupe, 2.5:1 at best across the four. The
+  ink is seed on all of them.
+- **And a bug that predates themes:** the light warning amber `#E5A100` measured 2.1:1 on cream, the
+  background the app had always shipped with. It is now `#A87600`, whose worst case, the honeydew
+  wash, holds 3.5:1.
+
+
+### Q23 amended — the window bar shows "Flotilla" alone (2026-09-26)
+
+The owner found the full **melonfleet | Flotilla** lockup heavy on the bar, especially in the seed
+ink every theme's bar now uses. The bar now draws `Wordmark(lockup: .appName)`: the plain word.
+About and the menu-bar popover keep the full lockup.
+
+A watermelon `o` in "Flotilla" was tried and **rejected** the same day. In the bar's single ink its
+four rings merge into a solid dot at 17pt and the word reads "Fl•tilla"; the owner asked for an
+ordinary `o`. The variant was deleted rather than kept as an option.

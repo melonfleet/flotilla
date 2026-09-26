@@ -198,9 +198,9 @@ struct NewImageView: View {
                       systemImage: "arrow.up.right.square")
                     .font(.callout)
             }
-            // `Link` draws in the system accent, which made this the one blue thing in an app
-            // whose links are all brand pink. Same reason `Theme.rowName` exists.
-            .foregroundStyle(Theme.accentText)
+            // The system link colour, stated rather than inherited, so every link in the app
+            // names `Theme.link` and a future change to link colour is one line.
+            .foregroundStyle(Theme.link)
         }
 
         FormSectionHeader(title: "Registry",

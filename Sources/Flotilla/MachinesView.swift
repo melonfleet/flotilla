@@ -527,7 +527,7 @@ struct MachinesView: View {
                 Circle().fill(Self.stateColor(machine)).frame(width: 7, height: 7)
                 Button(machine.id) { detailTarget = DetailTarget(id: machine.id) }
                     .buttonStyle(.link)
-                    .foregroundStyle(Theme.accentText)
+                    .foregroundStyle(Theme.link)
                     .lineLimit(1)
                     .help("Open \(machine.id)")
                 if machine.isDefault == true {
@@ -536,7 +536,7 @@ struct MachinesView: View {
                         .fixedSize()
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Theme.accentTint, in: Capsule())
-                        .foregroundStyle(Theme.accentText)
+                        .foregroundStyle(Theme.accent)
                 }
                 Spacer(minLength: 0)
             }
@@ -838,7 +838,7 @@ struct MachinesView: View {
                         }
                         .foregroundStyle(.secondary)
                         if machine.isDefault == true {
-                            Text("default").font(.caption2).foregroundStyle(Theme.accentText)
+                            Text("default").font(.caption2).foregroundStyle(Theme.accent)
                         }
                     }
                     Text(subtitle(for: machine))

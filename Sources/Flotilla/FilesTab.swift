@@ -100,14 +100,14 @@ struct FilesTab: View {
         return HStack(spacing: 3) {
             Button("/") { path = "/" }
                 .buttonStyle(.plain)
-                .foregroundStyle(path == "/" ? AnyShapeStyle(.primary) : AnyShapeStyle(Theme.accentText))
+                .foregroundStyle(path == "/" ? AnyShapeStyle(.primary) : AnyShapeStyle(Theme.link))
             ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
                 Text("›").foregroundStyle(.tertiary)
                 let target = "/" + parts[0...index].joined(separator: "/")
                 Button(part) { path = target }
                     .buttonStyle(.plain)
                     .foregroundStyle(index == parts.count - 1
-                                     ? AnyShapeStyle(.primary) : AnyShapeStyle(Theme.accentText))
+                                     ? AnyShapeStyle(.primary) : AnyShapeStyle(Theme.link))
             }
         }
         .font(.system(size: 12))
@@ -175,7 +175,7 @@ struct FilesTab: View {
                     Button("Download…") { download(entry) }
                         .buttonStyle(.plain)
                         .font(.caption)
-                        .foregroundStyle(Theme.accentText)
+                        .foregroundStyle(Theme.link)
                         .help("Copy \(entry.name) out of the container")
                 }
             }

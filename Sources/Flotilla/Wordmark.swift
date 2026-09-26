@@ -31,6 +31,18 @@ struct Wordmark: View {
     /// glyph already does exactly this.
     var monochrome: Color?
 
+    /// Which lockup to draw.
+    ///
+    /// `.full` is the brand lockup, **melonfleet | Flotilla**, used in About and the menu-bar
+    /// popover. `.appName` is the plain word, used on the window bar: the owner, on 26 September,
+    /// found the full lockup heavy there — especially in the seed ink every theme's bar uses.
+    ///
+    /// **A melon `o` in "Flotilla" was tried and rejected the same day.** In the bar's single ink
+    /// its four rings merge into a solid dot at 17pt and the word reads "Fl•tilla"; the owner asked
+    /// for an ordinary `o`. Do not reintroduce it on the bar.
+    enum Lockup { case full, appName }
+    var lockup: Lockup = .full
+
     @Environment(\.colorScheme) private var colorScheme
 
     // MARK: Palette — straight from the two SVGs
@@ -78,6 +90,15 @@ struct Wordmark: View {
     }
 
     var body: some View {
+        switch lockup {
+        case .full: fullLockup
+        case .appName:
+            Text("Flotilla").font(brandFont).foregroundStyle(appInk)
+                .accessibilityLabel("Flotilla")
+        }
+    }
+
+    private var fullLockup: some View {
         // `.firstTextBaseline`, not the default `.center`. This matters more than it looks:
         // the melon and the rule both position themselves with `alignmentGuide(.firstTextBaseline)`,
         // and a guide for an alignment the stack is not using is **silently ignored** — which

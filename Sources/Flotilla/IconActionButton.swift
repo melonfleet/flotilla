@@ -89,6 +89,8 @@ struct IconActionButtonStyle: ButtonStyle {
         /// the cell. Without reading this, the destructive red trash and the secondary glyphs sat
         /// on a pink background at almost no contrast and looked like they had vanished.
         @Environment(\.backgroundProminence) private var prominence
+        /// Set only on the window bar, where the ink depends on the theme. See `barInk`.
+        @Environment(\.barInk) private var barInk
 
         var body: some View {
             configuration.label
@@ -110,7 +112,7 @@ struct IconActionButtonStyle: ButtonStyle {
             // trash is unreadable, and the row already says "destructive" through the
             // confirmation it opens — losing the red for the moment the row is selected costs
             // less than losing the button.
-            if selected { return AnyShapeStyle(isEnabled ? .white : .white.opacity(0.55)) }
+            if selected { return AnyShapeStyle(isEnabled ? ink : ink.opacity(0.55)) }
             guard isEnabled else { return AnyShapeStyle(.tertiary) }
             // Destructive stays red: that is semantics, not decoration, and a trash can that
             // matches every other glyph is a trap.
@@ -123,22 +125,24 @@ struct IconActionButtonStyle: ButtonStyle {
             // — two kinds of drift in one control, and across appearances it read as "no
             // consistency in the colours". Hover and press now speak only through the background
             // fill below, which is what a highlight is for.
-            if active { return AnyShapeStyle(Theme.accentText) }
+            if active { return AnyShapeStyle(Theme.accent) }
             return AnyShapeStyle(.primary)
         }
 
         private var fill: Color {
             guard isEnabled else { return .clear }
-            // White washes on the accent fill; the brand tint would be invisible on it.
+            // Washes in the ink on a coloured fill; the accent would be invisible on it.
             if selected {
-                if configuration.isPressed { return .white.opacity(0.34) }
-                return hovering ? .white.opacity(0.18) : .clear
+                if configuration.isPressed { return ink.opacity(0.34) }
+                return hovering ? ink.opacity(0.18) : .clear
             }
             if configuration.isPressed { return tint.opacity(0.28) }
             return hovering ? tint.opacity(0.13) : .clear
         }
 
         private var selected: Bool { prominence == .increased }
+        /// White on a selected row; the theme's bar ink on the window bar.
+        private var ink: Color { barInk ?? .white }
     }
 }
 
@@ -170,6 +174,7 @@ struct IconActionButtonStyle: ButtonStyle {
 /// genuinely three dots stacked — no symbol that does not exist, and no transform to lose.
 struct RowOverflowLabel: View {
     @Environment(\.backgroundProminence) private var prominence
+    @Environment(\.barInk) private var barInk
     @Environment(\.isEnabled) private var isEnabled
 
     /// Sized to sit where the `ellipsis` glyph did — the character is lighter than the symbol at
@@ -183,7 +188,8 @@ struct RowOverflowLabel: View {
 
     private var colour: AnyShapeStyle {
         if prominence == .increased {
-            return AnyShapeStyle(isEnabled ? .white : .white.opacity(0.55))
+            let ink = barInk ?? .white
+            return AnyShapeStyle(isEnabled ? ink : ink.opacity(0.55))
         }
         // `.primary`, matching every other glyph in a row: black in light, white in dark, and no
         // third shade of grey for one control. Disabled still drops to tertiary.

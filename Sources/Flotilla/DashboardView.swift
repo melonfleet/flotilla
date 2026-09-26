@@ -382,7 +382,7 @@ struct DashboardView: View {
             HStack(spacing: 14) {
                 legendDot(Theme.rind, "CPU",
                           model.hostMetrics.latest?.cpuPercent.map { String(format: "%.0f%%", $0) })
-                legendDot(Theme.accent, "Memory", memoryPercentLabel)
+                legendDot(Theme.melon, "Memory", memoryPercentLabel)
                 Spacer()
             }
             // One flattened array with an explicit series name, not two `ForEach`es each
@@ -397,7 +397,7 @@ struct DashboardView: View {
                     .foregroundStyle(by: .value("Series", point.series))
                     .interpolationMethod(.monotone)
             }
-            .chartForegroundStyleScale(["CPU": Theme.rind, "Memory": Theme.accent])
+            .chartForegroundStyleScale(["CPU": Theme.rind, "Memory": Theme.melon])
             .chartLegend(.hidden)      // the header row above already names both, with values
             .chartYScale(domain: 0...100)
             .chartYAxis { AxisMarks(values: [0, 25, 50, 75, 100]) }
@@ -468,7 +468,7 @@ struct DashboardView: View {
             Text("\(downLabel) \(rateLabel(down))")
                 .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.info)
             Text("\(upLabel) \(rateLabel(up))")
-                .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.accentText)
+                .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.melonText)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
@@ -563,7 +563,7 @@ struct DashboardView: View {
                             }
                                 .buttonStyle(.plain)
                                 .font(.caption)
-                                .foregroundStyle(Theme.accentText)
+                                .foregroundStyle(Theme.link)
                         }
                         .padding(.horizontal, 12).padding(.vertical, 9)
                         if container.id != troubled.last?.id { Divider().padding(.leading, 12) }
@@ -724,7 +724,7 @@ private struct ContainerUtilisationPanel: View, Equatable {
             }
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Theme.accentText)
+        .foregroundStyle(Theme.link)
         .padding(.top, 2)
         .help(expanded
               ? "Collapse the table to \(Self.collapsedRows) rows"
@@ -759,7 +759,7 @@ private struct ContainerUtilisationPanel: View, Equatable {
                     model.requestDetail(kind: .container, subject: container.id)
                 }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Theme.accentText)
+                    .foregroundStyle(Theme.link)
             }
             TableColumn("CPU") { container in
                 Text(model.cpuLabel(for: container.id)).monospacedDigit()

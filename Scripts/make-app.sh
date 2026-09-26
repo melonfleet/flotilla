@@ -151,30 +151,14 @@ cp "$ROOT/build/icons/Flotilla.icns" "$APP/Contents/Resources/Flotilla.icns"
 cp "$ROOT/Resources/MenuBarIconTemplate.png" "$APP/Contents/Resources/"
 cp "$ROOT/Resources/MenuBarIconTemplate@2x.png" "$APP/Contents/Resources/"
 
-# The accent colour, as a compiled asset catalog.
+# No asset catalog, and no `NSAccentColorName`, on purpose (26 September, `design/THEMES.md`).
 #
-# Not decoration and not a duplicate of Theme.swift: macOS takes the *system* accent — the
-# one AppKit uses for sidebar-list selection and focus rings — from the app's AccentColor
-# asset, and ignores SwiftUI's `.tint()` for those. Without this the app tints every SwiftUI
-# control watermelon and then draws the selected sidebar row in stock blue.
-#
-# Best-effort, because `actool` is not always usable: on this machine it aborts with "A
-# required plugin failed to load … try running 'xcodebuild -runFirstLaunch'", which needs an
-# administrator. A broken Xcode install must not stop the app being built, so a failure here
-# downgrades to a warning and the accent key is omitted rather than left pointing at a
-# catalog that is not there. Moving to a real Xcode project makes this step disappear.
-ACCENT_ASSET=""
-echo "▸ compiling asset catalog…"
-if actool "$ROOT/Resources/Assets.xcassets" \
-     --compile "$APP/Contents/Resources" \
-     --platform macosx --minimum-deployment-target 26.0 \
-     --output-format human-readable-text >/dev/null 2>&1; then
-  ACCENT_ASSET="    <key>NSAccentColorName</key>            <string>AccentColor</string>"
-  echo "   ✓ Assets.car (AccentColor)"
-else
-  echo "   ! actool unavailable — skipping. Sidebar selection and focus rings will use the"
-  echo "     system accent instead of watermelon. Fix with: xcodebuild -runFirstLaunch"
-fi
+# There used to be one here, holding a single `AccentColor`: macOS takes the accent AppKit uses for
+# sidebar selection, table selection and focus rings from that asset, so it forced watermelon onto
+# them. Themes put those controls back on the **system accent** — the colour the user chose in
+# System Settings, as Finder and System Settings use — and an app that declares its own accent can
+# never follow the user's. Do not add it back to "fix" a blue selection: blue is the default system
+# accent, and that is the design.
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -200,7 +184,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key>      <true/>
     <!-- Names the colorset in Assets.car, when one was compiled. AppKit reads this for
          sidebar selection and focus rings; SwiftUI's .tint() does not reach them. -->
-$ACCENT_ASSET
     <!-- No telemetry, no account, no phone-home (FEATURES.md). Nothing here requests a
          network entitlement or a usage string beyond what Phase 2 mTLS will need. -->
 </dict>

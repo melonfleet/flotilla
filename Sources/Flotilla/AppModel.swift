@@ -97,6 +97,7 @@ final class AppModel {
         self.persistence = resolved.observation
         self.appearance = resolved.store.effectiveAppearance
         self.needsAppearanceOnboarding = resolved.store.needsAppearanceOnboarding
+        self.themeChoice = Self.themeChoice(from: resolved.store)
         self.showsDockIcon = resolved.store[SettingsKeys.showDockIcon]
         self.notifier = Notifier(categories: Self.notificationSettings(from: resolved.store))
         self.errorLog = ErrorLog(settings: resolved.store)
@@ -120,6 +121,9 @@ final class AppModel {
     /// True until the user (or a managed profile) has answered the first-run question.
     /// Distinct from "chose auto" — see `AppearancePreference.notChosen`.
     private(set) var needsAppearanceOnboarding: Bool
+    /// The light and dark themes. Observable for the same reason as `appearance`: the scenes put
+    /// it into the environment, and the bar and background repaint from it.
+    private(set) var themeChoice: ThemeChoice
 
     private var settingsObservation: SettingsObservation?
 
@@ -176,6 +180,10 @@ final class AppModel {
         appearance = settingsStore.effectiveAppearance
         needsAppearanceOnboarding = settingsStore.needsAppearanceOnboarding
         applyAppKitAppearance()
+        // Compared before assigning, so an unrelated settings edit does not re-run every view
+        // that reads the theme.
+        let newThemes = Self.themeChoice(from: settingsStore)
+        if newThemes != themeChoice { themeChoice = newThemes }
 
         let newShowsDockIcon = settingsStore[SettingsKeys.showDockIcon]
         if newShowsDockIcon != showsDockIcon {
@@ -192,6 +200,10 @@ final class AppModel {
         restartStatsPolling()
         // Categories may have been toggled.
         notifier.updateCategories(Self.notificationSettings(from: settingsStore))
+    }
+
+    private static func themeChoice(from store: SettingsStore) -> ThemeChoice {
+        ThemeChoice(light: store[SettingsKeys.lightTheme], dark: store[SettingsKeys.darkTheme])
     }
 
     /// Makes the **AppKit** appearance match the preference, which `preferredColorScheme` alone

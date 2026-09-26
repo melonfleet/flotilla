@@ -71,9 +71,8 @@ struct ContainerCard<MenuContent: View>: View {
                         .lineLimit(1)
                 }
                 .buttonStyle(.link)
-                // `.link` hardcodes the system blue and ignores the scene tint, so the one
-                // brand-coloured thing on the card came out stock-macOS blue.
-                .foregroundStyle(Theme.accentText)
+                // The system link colour, named explicitly like every other link.
+                .foregroundStyle(Theme.link)
                 .help("Open \(container.id)")
                 Text(ContainerImage.shortReference(container.imageReference))
                     .font(.caption)

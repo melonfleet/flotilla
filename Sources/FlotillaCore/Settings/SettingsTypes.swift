@@ -47,6 +47,29 @@ public enum AppearancePreference: String, SettingEnum, Codable {
     public static var selectable: [AppearancePreference] { [.auto, .light, .dark] }
 }
 
+/// One of the four themes. The same four exist in light and in dark, and the user picks one for
+/// each: the light theme and the dark theme are two settings keys holding a value of this type.
+///
+/// A theme changes exactly two things — the window bar and the content background — and is named
+/// after its bar (`design/THEMES.md`). There are two pickers rather than one because Auto switches
+/// appearance at sunset, so the user chooses a pair and Auto moves between them. Picking Stripe
+/// for both is a pair too.
+///
+/// The case names are the brand tokens, not display strings, so an exported profile says
+/// `stripe` rather than something a translation could change. Declaration order is picker order.
+public enum ThemeName: String, SettingEnum, Codable {
+    case stripe, flesh, cantaloupe, canary
+
+    public var title: String {
+        switch self {
+        case .stripe: "Stripe"
+        case .flesh: "Flesh"
+        case .cantaloupe: "Cantaloupe"
+        case .canary: "Canary"
+        }
+    }
+}
+
 /// Client / host / both. A `UserDefaults`-backed key from day one so a Phase 6
 /// profile can pin a mini to host mode without a code change.
 public enum RunMode: String, SettingEnum, Codable {

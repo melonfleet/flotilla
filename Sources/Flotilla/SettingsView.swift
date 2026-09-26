@@ -316,7 +316,7 @@ struct SettingsView: View {
                     .frame(width: 74)
                     .padding(.top, 4)
                     .padding(.bottom, 3)
-                    .foregroundStyle(selected ? AnyShapeStyle(Theme.accentText) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
                     .background(selected ? Theme.accentTint : .clear,
                                 in: RoundedRectangle(cornerRadius: 7))
                     .contentShape(.rect)
@@ -374,15 +374,22 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var generalPane: some View {
-            SwiftUI.Section("Startup & Appearance") {
+            SwiftUI.Section("Startup & Behaviour") {
                 LaunchAtLoginRow(store: store, model: model)
                 SettingRow(store: store, key: SettingsKeys.showDockIcon, title: "Show Dock icon") { binding in
                     Toggle("", isOn: binding).labelsHidden()
                 }
-                AppearanceRow(store: store)
                 SettingRow(store: store, key: SettingsKeys.confirmDestructiveActions, title: "Confirm destructive actions") { binding in
                     Toggle("", isOn: binding).labelsHidden()
                 }
+            }
+
+            // Everything about how the app looks, together: the mode, then the pair of themes the
+            // mode switches between. `design/THEMES.md`.
+            SwiftUI.Section("Appearance") {
+                AppearanceRow(store: store)
+                ThemePickerRow(appearance: .light, model: model)
+                ThemePickerRow(appearance: .dark, model: model)
             }
 
             SwiftUI.Section("Refreshing") {

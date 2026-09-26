@@ -205,7 +205,7 @@ struct ActivityView: View {
                 TableColumn("Subject") { event in
                     Button(event.subject) { open(event) }
                         .buttonStyle(.link)
-                        .foregroundStyle(Theme.accentText)
+                        .foregroundStyle(Theme.link)
                         .lineLimit(1)
                         .help(openHelp(event))
                 }

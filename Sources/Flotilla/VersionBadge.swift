@@ -73,8 +73,8 @@ struct VersionBadge: View {
         switch outcome {
         // The tick is the whole point of Docker's version corner: one glance says current.
         case .upToDate: ("checkmark.circle.fill", Theme.online)
-        case .updateAvailable: ("arrow.down.circle.fill", Theme.accentText)
-        case .latestIsKnown: ("arrow.up.right.circle", Theme.accentText)
+        case .updateAvailable: ("arrow.down.circle.fill", Theme.link)
+        case .latestIsKnown: ("arrow.up.right.circle", Theme.link)
         // A development build is ahead of every release, which is neither current nor behind.
         case .ahead: ("hammer.circle", .secondary)
         case .noReleases, .failed: ("exclamationmark.circle", .secondary)
@@ -86,8 +86,8 @@ struct VersionBadge: View {
         switch outcome {
         // Once checked, the line is a statement rather than an invitation — quiet unless there
         // is something to do about it.
-        case .updateAvailable, .latestIsKnown: Theme.accentText
-        case .none: Theme.accentText
+        case .updateAvailable, .latestIsKnown: Theme.link
+        case .none: Theme.link
         default: .secondary
         }
     }
