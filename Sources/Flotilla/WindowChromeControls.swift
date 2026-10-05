@@ -161,7 +161,7 @@ struct AppLinksMenu: View {
 /// toolbar item never does, so this only needs the plain hover tint every other toolbar
 /// control uses, matching `IconActionButtonStyle`'s colour and timing rather than inventing a
 /// new feel.
-private struct ToolbarMenuGlyph: View {
+struct ToolbarMenuGlyph: View {
     let systemImage: String
     @Environment(\.barInk) private var barInk
     @State private var hovering = false

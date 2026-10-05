@@ -101,6 +101,22 @@ struct ContainersView: View {
     @State private var showingColumns = false
     @State private var showingFilter = false
 
+    /// The group form, embedded like every other create form, when "+ ▸ New Group…" or a group's
+    /// Edit opened it. Groups have lived in this list since 5 October (to-do item 4).
+    @State private var editingGroup: GroupFormTarget?
+
+    /// A group delete awaiting confirmation, and which kind. The owner's rule: a group row's
+    /// Delete offers *both* "the group only" and "the group and its containers", and the second
+    /// names every container it will remove.
+    @State private var pendingGroupDelete: GroupDeleteRequest?
+
+    struct GroupDeleteRequest: Identifiable {
+        enum Mode { case ask, groupOnly, withContainers }
+        let group: ContainerGroup
+        let mode: Mode
+        var id: String { group.id }
+    }
+
     /// The columns the Columns popover offers, in table order.
     ///
     /// Name and Actions are deliberately absent: Name is the row's identity and Actions is
@@ -108,6 +124,9 @@ struct ContainersView: View {
     /// menu makes the same choice about its Name column.
     private static let columnSpecs: [(id: String, title: String)] = [
         ("state", "State"),
+        // Group or Container. The owner asked for an indicator column so the two kinds read
+        // apart at a glance, with the caret as the other cue.
+        ("type", "Type"),
         ("tags", "Tags"),
         ("image", "Image"),
         ("created", "Created"),
@@ -305,24 +324,51 @@ struct ContainersView: View {
     /// no shading while the columns button beside it did, on the same band. Same glyph, same
     /// accent-when-active rule, same feedback, everywhere.
     private var filterButton: some View {
-        IconActionButton(systemImage: "line.3.horizontal.decrease",
-                         label: "Filter by state",
-                         help: ui.filter == .all
-                             ? "Filter by state"
-                             : "Showing \(ui.filter.rawValue.lowercased()) only",
-                         active: ui.filter != .all) {
+        let filtering = ui.filter != .all || ui.kindFilter != .all
+        return IconActionButton(systemImage: "line.3.horizontal.decrease",
+                                label: "Filter",
+                                help: filtering ? filterSummary : "Filter by state or kind",
+                                active: filtering) {
             showingFilter.toggle()
         }
         .popover(isPresented: $showingFilter, arrowEdge: .bottom) {
-            Picker("Show", selection: $ui.filter) {
-                ForEach(Filter.allCases) { option in
-                    Label(option.rawValue, systemImage: option.systemImage).tag(option)
+            // Two radio groups, because they are two independent questions: *what state* and
+            // *what kind*. The kind filter is what lets the merged list collapse back to just
+            // groups, or just containers — which covers what the separate Groups screen gave.
+            VStack(alignment: .leading, spacing: 10) {
+                Text("State").font(.caption).foregroundStyle(.secondary)
+                Picker("State", selection: $ui.filter) {
+                    ForEach(Filter.allCases) { option in
+                        Label(option.rawValue, systemImage: option.systemImage).tag(option)
+                    }
                 }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                Divider()
+                Text("Show").font(.caption).foregroundStyle(.secondary)
+                Picker("Show", selection: $ui.kindFilter) {
+                    Label("Groups and containers", systemImage: "square.grid.2x2").tag(ContainerListing.KindFilter.all)
+                    Label("Groups only", systemImage: Section.groupSymbol).tag(ContainerListing.KindFilter.groups)
+                    Label("Containers only", systemImage: "shippingbox").tag(ContainerListing.KindFilter.containers)
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
             }
-            .pickerStyle(.radioGroup)
-            .labelsHidden()
             .padding(14)
         }
+    }
+
+    /// The filter button's tooltip while a filter is on, so a hidden row is explained from the
+    /// toolbar rather than discovered by wondering where it went.
+    private var filterSummary: String {
+        var parts: [String] = []
+        if ui.filter != .all { parts.append(ui.filter.rawValue.lowercased()) }
+        switch ui.kindFilter {
+        case .all: break
+        case .groups: parts.append("groups only")
+        case .containers: parts.append("containers only")
+        }
+        return "Showing " + parts.joined(separator: ", ")
     }
 
     private func binding(for id: String) -> Binding<Bool> {
@@ -341,69 +387,83 @@ struct ContainersView: View {
         }
     }
 
-    private var filtered: [Container] {
+    /// The state filter in the shared listing's terms.
+    private var stateFilter: ContainerListing.StateFilter {
         switch ui.filter {
-        case .all: model.containers
-        case .running: model.running
-        case .stopped: model.stopped
+        case .all: .all
+        case .running: .running
+        case .stopped: .stopped
         }
     }
 
-    private var visible: [Container] {
-        guard !ui.search.isEmpty else { return filtered }
-        let needle = ui.search.lowercased()
-        // **Tag names are searchable too, on every section.**
-        //
-        // This is how tags filter. The alternative was a tag entry in each section's filter
-        // control, which Volumes and Networks could take as a string id but Containers and
-        // Machines could not without widening their typed `Filter` enums — and a tag filter that
-        // exists on two sections out of five is the asymmetry this app keeps being asked to
-        // remove. Searching the name reaches every section through one line each, works exactly
-        // the same way everywhere, and composes with whatever filter is already on.
-        return filtered.filter {
-            $0.id.lowercased().contains(needle) || $0.status.state.lowercased().contains(needle)
-                || model.tags.tags(on: .container, $0.id)
-                    .contains { $0.name.lowercased().contains(needle) }
+    /// Which rows exist at all: standalone containers and groups, with each group's members,
+    /// through the kind, state and search filters. The rules — a grouped container appears only
+    /// inside its group, a partly running group is under both Running and Stopped — live in
+    /// `ContainerListing`, where tests pin them.
+    private var listing: [ContainerListing.Item] {
+        let needle = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else {
+            return ContainerListing.items(containers: model.containers, groups: model.groups.groups,
+                                          kind: ui.kindFilter, state: stateFilter)
         }
+        // **Tag names are searchable too, on every section.** This is how tags filter: one line
+        // per section, the same everywhere, and it composes with whatever filter is already on.
+        return ContainerListing.items(
+            containers: model.containers, groups: model.groups.groups,
+            kind: ui.kindFilter, state: stateFilter,
+            containerMatches: { container in
+                container.id.lowercased().contains(needle)
+                    || container.status.state.lowercased().contains(needle)
+                    || model.tags.tags(on: .container, container.id)
+                        .contains { $0.name.lowercased().contains(needle) }
+            },
+            groupMatches: { group in
+                group.name.lowercased().contains(needle)
+                    || model.tags.tags(on: .group, group.id)
+                        .contains { $0.name.lowercased().contains(needle) }
+            },
+            memberMatches: { member in
+                member.name.lowercased().contains(needle) || member.image.lowercased().contains(needle)
+            })
     }
 
-    /// `visible` filtered, then ordered by whatever the user clicked in the header.
-    ///
-    /// The table binds to this rather than to `visible` — a `Table` with a `ui.sortOrder`
-    /// binding does **not** reorder its rows for you, it only reports what was clicked.
-    /// Binding the header without applying the comparator gives arrows that move and rows
-    /// that never do.
-    /// The single order the table, the cards grid and the detail stepper all follow. Derived from
-    /// `sortedRows` rather than sorting `visible` a second time — two sorts of one list is how the
-    /// cards and the stepper disagreed before.
-    private var sorted: [Container] { sortedRows.map(\.container) }
+    /// The rows the table shows, in order: each top-level row, followed by its members when the
+    /// group is open. See `sortedRows`.
+    private var rows: [ContainerRow] { sortedRows }
 
-    /// Whether anything the user chose is hiding rows. Both the search field and the state
-    /// tabs can empty the table, and an empty state that only mentions ui.search would be wrong
-    /// half the time.
-    private var isFiltered: Bool { !ui.search.isEmpty || ui.filter != .all }
+    /// The containers on screen, in on-screen order — standalone ones and the members of open
+    /// groups. The detail stepper walks this, so "next" is always the next container you can see.
+    private var sorted: [Container] { rows.compactMap(\.container) }
 
-    private var visibleIDs: Set<Container.ID> { Set(visible.map(\.id)) }
+    /// Whether anything the user chose is hiding rows, so an empty state can say so.
+    private var isFiltered: Bool {
+        !ui.search.isEmpty || ui.filter != .all || ui.kindFilter != .all
+    }
+
+    private var visibleIDs: Set<ContainerRow.ID> { Set(rows.map(\.id)) }
 
     /// What a bulk action may actually touch: the selection **intersected with what is on
-    /// screen**.
-    ///
-    /// `selection` outlives the rows that produced it. Select three containers under
-    /// `All`, hide the running ones so two of them disappear, and the raw
-    /// selection still holds all three — so a bulk Delete would destroy two containers the
-    /// user cannot see and was never shown in the confirmation count. Searching hides rows
-    /// the same way, and a deleted container leaves its id behind entirely. Every bulk
-    /// path therefore acts on this, never on `selection`.
-    private var actionable: Set<Container.ID> { selection.intersection(visibleIDs) }
+    /// screen**. `selection` outlives the rows that produced it — filter, search and deletion all
+    /// hide rows without clearing their ids — so every bulk path acts on this, never `selection`.
+    private var actionable: Set<ContainerRow.ID> { selection.intersection(visibleIDs) }
 
-    /// One row's selection checkbox.
-    ///
-    /// Extracted rather than written inline in the `TableColumn`. Inline, the binding's two
-    /// closures pushed this already-large view past the type-checker's budget and the build
-    /// failed with "unable to type-check this expression in reasonable time" — which names the
-    /// symptom and not the cause. A small function with explicit types costs nothing and the
-    /// error does not come back.
-    private func selectionToggle(for id: Container.ID) -> some View {
+    /// The groups in the actionable selection.
+    private var actionableGroups: [ContainerGroup] {
+        model.groups.groups.filter { actionable.contains(ContainerRow.groupRowID($0.id)) }
+    }
+
+    /// The containers in the actionable selection: standalone rows and existing members. A
+    /// member of a selected group is left out, so selecting a group and one of its members does
+    /// not start that member twice.
+    private var actionableContainerIDs: Set<Container.ID> {
+        let ownedBySelectedGroups = Set(actionableGroups.flatMap(\.memberNames))
+        let existing = Set(model.containers.map(\.id))
+        return Set(actionable.filter { !ContainerRow.isGroupRowID($0) })
+            .intersection(existing)
+            .subtracting(ownedBySelectedGroups)
+    }
+
+    private func selectionToggle(for id: ContainerRow.ID, name: String) -> some View {
         let isOn = Binding<Bool>(
             get: { selection.contains(id) },
             set: { on in
@@ -411,20 +471,32 @@ struct ContainersView: View {
             })
         return Toggle("", isOn: isOn)
             .labelsHidden()
-            .accessibilityLabel("Select \(id)")
-            .help("Select \(id)")
+            .accessibilityLabel("Select \(name)")
+            .help("Select \(name)")
     }
 
-    /// True when every visible row is selected. Compares against what is *visible*, not the whole
-    /// model, so select-all under a filter means "all of these" rather than silently reaching rows
-    /// the filter is hiding — the same reasoning `actionable` already uses.
+    /// True when every visible row is selected — against what is *visible*, so select-all under
+    /// a filter means "all of these" rather than silently reaching rows the filter hides.
     private var allVisibleSelected: Bool {
         !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
     }
 
-    /// True while any actionable id has an action in flight — disables the bulk bar so a
-    /// second click can't fire a duplicate operation on top of the first.
-    private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .container) }
+    /// True while any actionable container has an action in flight, so a second click cannot
+    /// fire a duplicate operation on top of the first.
+    private var selectionBusy: Bool { model.isAnyBusy(actionableContainerIDs, kind: .container) }
+
+    /// How the bulk bar and the bulk menu describe the selection: "3 containers", "1 group",
+    /// "2 containers and 1 group".
+    private var selectionNoun: String {
+        let c = actionableContainerIDs.count, g = actionableGroups.count
+        let containers = "\(c) container\(c == 1 ? "" : "s")"
+        let groups = "\(g) group\(g == 1 ? "" : "s")"
+        switch (c, g) {
+        case (_, 0): return containers
+        case (0, _): return groups
+        default: return "\(containers) and \(groups)"
+        }
+    }
 
     /// Per-row action buttons, in an **Actions** column — the pattern Docker Desktop uses and
     /// the one the owner asked for: small, always-visible, icon-only controls on the row they
@@ -450,29 +522,28 @@ struct ContainersView: View {
     /// smaller pieces, and it renders and customises identically.
     @TableColumnBuilder<ContainerRow, KeyPathComparator<ContainerRow>>
     private var trailingColumns: some TableColumnContent<ContainerRow, KeyPathComparator<ContainerRow>> {
+                // A group's CPU and memory are its members' sum, so a group row answers "how
+                // much is this whole stack using" — the question you have about a stack.
                 TableColumn("CPU", value: \.cpu) { row in
-                    let c = row.container
-                    Text(model.cpuLabel(for: c.id))
+                    Text(AppModel.cpuLabel(row.cpu < 0 ? nil : row.cpu))
                         .monospacedDigit()
-                        .foregroundStyle(model.cpuPercent(for: c.id) == nil ? .tertiary : .secondary)
+                        .foregroundStyle(row.cpu < 0 ? .tertiary : .secondary)
                         .lineLimit(1)
                 }
                 .width(min: 56, ideal: 68)
                 .customizationID("cpu")
 
                 TableColumn("Memory", value: \.memory) { row in
-                    let c = row.container
-                    Text(model.memoryLabel(for: c.id))
+                    Text(AppModel.memoryLabel(row.memory < 0 ? nil : row.memory))
                         .monospacedDigit()
-                        .foregroundStyle(model.memoryBytes(for: c.id) == nil ? .tertiary : .secondary)
+                        .foregroundStyle(row.memory < 0 ? .tertiary : .secondary)
                         .lineLimit(1)
                 }
                 .width(min: 68, ideal: 84)
                 .customizationID("memory")
 
                 TableColumn("IP / Network", value: \.ipSortKey) { row in
-                    let c = row.container
-                    Text(Self.ipNetworkLabel(c))
+                    Text(ipNetworkLabel(row))
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
                 }
@@ -480,14 +551,9 @@ struct ContainersView: View {
                 .customizationID("ip")
 
                 // Hidden by default (see `ui.columnCustomization`): with one host it reads
-                // "This Mac" on every row, and a column identical in every row is pure
-                // width. The cross-host *dimension* stays — the data is on the row and the
-                // column is one header-menu click away — it just stops costing space until
-                // Phase 3 gives it something to say.
-                // **Not sortable, and not an omission.** Every row reads "This Mac" until Phase 2
-                // brings peers, and a column with one distinct value cannot be ordered — a header
-                // that highlights and reorders nothing is worse than one that does not respond.
-                // It gains a `value:` the moment a row carries a real host.
+                // "This Mac" on every row, and a column identical in every row is pure width.
+                // **Not sortable, and not an omission** — a column with one distinct value cannot
+                // be ordered. It gains a `value:` the moment a row carries a real host.
                 TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
                     .width(min: 80, ideal: 100)
                     .customizationID("host")
@@ -495,7 +561,21 @@ struct ContainersView: View {
                 // Last. Sized to its content rather than fixed, so it compresses with
                 // everything else instead of forcing the table wider than the window.
                 TableColumn("Actions") { row in
-                    rowActions(for: row.container)
+                    switch row.kind {
+                    case .group:
+                        if let group = row.group { groupRowActions(for: group) }
+                    case .container, .member:
+                        if let container = row.container {
+                            rowActions(for: container)
+                        } else {
+                            // A member the group has not created yet has nothing to act on; its
+                            // group's own Start is what creates it.
+                            Text("Not created")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .help("Starting the group creates this container")
+                        }
+                    }
                 }
                 .width(min: 118, ideal: 128)
                 .customizationID("actions")
@@ -572,34 +652,172 @@ struct ContainersView: View {
     /// The context menu for a right-click that landed on one or more rows.
     ///
     /// `ids` comes from the table itself, so everything in it is on screen by construction —
-    /// this is the one bulk path that does not need intersecting with `visible`.
+    /// this is the one bulk path that does not need intersecting with what is visible.
     @ViewBuilder
-    private func tableContextMenu(for ids: Set<Container.ID>) -> some View {
+    private func tableContextMenu(for ids: Set<ContainerRow.ID>) -> some View {
         if ids.isEmpty {
-            // Right-click on empty space still deserves the primary action rather than an
-            // empty menu that looks like a bug.
-            Button("Run a Container…") { showingRun = true }
-        } else if ids.count == 1,
-                  let container = visible.first(where: { $0.id == ids.first }) {
-            actions(for: container)
+            // Right-click on empty space still deserves the primary actions rather than an
+            // empty menu that looks like a bug — the same two the toolbar's "+" offers.
+            addMenuItems
+        } else if ids.count == 1, let id = ids.first, let row = rowsByID[id] {
+            switch row.kind {
+            case .group:
+                if let group = row.group { groupMenu(for: group) }
+            case .container, .member:
+                if let container = row.container {
+                    actions(for: container)
+                } else if let group = row.group {
+                    // A member not created yet: its group is the thing you can act on.
+                    groupMenu(for: group)
+                }
+            }
         } else {
-            let busy = model.isAnyBusy(ids, kind: .container)
-            Button("Start \(ids.count)") { Task { await model.performBulk(.start, on: ids) } }
+            let containers = Set(ids.filter { !ContainerRow.isGroupRowID($0) })
+                .intersection(Set(model.containers.map(\.id)))
+            let groups = model.groups.groups.filter { ids.contains(ContainerRow.groupRowID($0.id)) }
+            let busy = model.isAnyBusy(containers, kind: .container)
+            Button("Start \(ids.count)") { Task { await startSelected(containers, groups) } }
                 .disabled(busy)
-            Button("Stop \(ids.count)") { Task { await model.performBulk(.stop, on: ids) } }
+            Button("Stop \(ids.count)") { Task { await stopSelected(containers, groups) } }
                 .disabled(busy)
-            Button("Restart \(ids.count)") { Task { await model.performBulk(.restart, on: ids) } }
+            Button("Restart \(ids.count)") { Task { await restartSelected(containers, groups) } }
                 .disabled(busy)
             Divider()
             Button("Delete \(ids.count)…", role: .destructive) {
                 selection = ids            // so the confirmation counts what was right-clicked
-                // Unconditional, and `DeletePolicy.requiresConfirmation` returns true for `.bulk`
-                // no matter what the preference says. The `confirmBulkActions` setting that used to
-                // suggest otherwise had no consumer and is gone.
                 confirmingBulkDelete = true
             }
             .disabled(busy)
         }
+    }
+
+    /// "Run Container…" and "New Group…": the two ways to add to this list, in the toolbar's "+"
+    /// menu, the empty-space right-click and the empty state alike.
+    @ViewBuilder
+    private var addMenuItems: some View {
+        Button("Run Container…") { showingRun = true }
+        Button("New Group…") { editingGroup = .new }
+    }
+
+    private var rowsByID: [ContainerRow.ID: ContainerRow] {
+        Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    // MARK: Bulk lifecycle across containers and groups
+
+    /// Containers first, then groups, each the way its own row would do it. A group is started
+    /// with its own ordered start (`startGroup`), never as a bag of containers, because order is
+    /// the one thing a group is for.
+    private func startSelected(_ containers: Set<Container.ID>, _ groups: [ContainerGroup]) async {
+        if !containers.isEmpty { await model.performBulk(.start, on: containers) }
+        if !groups.isEmpty { await model.startGroups(groups.filter(canStart)) }
+    }
+
+    private func stopSelected(_ containers: Set<Container.ID>, _ groups: [ContainerGroup]) async {
+        if !containers.isEmpty { await model.performBulk(.stop, on: containers) }
+        if !groups.isEmpty { await model.stopGroups(groups.filter(canStop)) }
+    }
+
+    private func restartSelected(_ containers: Set<Container.ID>, _ groups: [ContainerGroup]) async {
+        if !containers.isEmpty { await model.performBulk(.restart, on: containers) }
+        for group in groups where canStop(group) { await model.restartGroup(group) }
+    }
+
+    // MARK: Group rows
+
+    private func canStart(_ group: ContainerGroup) -> Bool {
+        let state = model.state(of: group)
+        return state != .empty && state != .running
+    }
+
+    private func canStop(_ group: ContainerGroup) -> Bool {
+        let state = model.state(of: group)
+        return state != .empty && state != .stopped && state != .notCreated
+    }
+
+    /// Start and Stop together, then the overflow, then the bin — the same arrangement and the
+    /// same width as a container row's controls, so the column does not jump between kinds.
+    /// Both lifecycle buttons rather than one that swaps, because a partly running group needs
+    /// both.
+    @ViewBuilder
+    private func groupRowActions(for group: ContainerGroup) -> some View {
+        HStack(spacing: 2) {
+            // Labels name the group, as the retired Groups screen's did: VoiceOver reads the label,
+            // and a row of buttons all called "Delete" does not say which row they act on.
+            IconActionButton(systemImage: "play.fill", label: "Start \(group.name)",
+                             help: model.state(of: group) == .empty
+                                 ? "Add a service before starting this group"
+                                 : "Start every service in \(group.name)",
+                             disabled: !canStart(group)) {
+                Task { await model.startGroup(group) }
+            }
+            IconActionButton(systemImage: "stop.fill", label: "Stop \(group.name)",
+                             help: "Stop every running service in \(group.name)",
+                             disabled: !canStop(group)) {
+                Task { await model.stopGroup(group) }
+            }
+
+            // The **same** builder the right-click menu uses, which `check-menu-parity.sh` holds
+            // every row to.
+            Menu {
+                groupMenu(for: group)
+            } label: {
+                RowOverflowLabel()
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More actions for \(group.name)")
+
+            Divider().frame(height: 14)
+
+            // The bin asks which delete you mean; the menu names each one directly.
+            IconActionButton(systemImage: "trash", label: "Delete \(group.name)",
+                             help: "Delete \(group.name)", destructive: true) {
+                pendingGroupDelete = GroupDeleteRequest(group: group, mode: .ask)
+            }
+        }
+    }
+
+    /// A group row's menu, shared by its `⋯` and a right-click.
+    @ViewBuilder
+    private func groupMenu(for group: ContainerGroup) -> some View {
+        // First, above everything: the thing this row opens. A group's detail is its form.
+        Button("Edit…") { editingGroup = .existing(group.id) }
+        Divider()
+        Button("Start") { Task { await model.startGroup(group) } }
+            .disabled(!canStart(group))
+        Button("Stop") { Task { await model.stopGroup(group) } }
+            .disabled(!canStop(group))
+        Button("Restart") { Task { await model.restartGroup(group) } }
+            .disabled(!canStop(group))
+        Divider()
+        TagMenu(store: model.tags, subject: TagSubject(kind: .group, id: group.id)) {
+            tagSheet = TagSheetTarget([TagSubject(kind: .group, id: group.id)])
+        }
+        Divider()
+        CopyMenu([
+            ("Name", group.name),
+            ("Services", group.members.isEmpty ? nil : group.memberNames.joined(separator: " ")),
+            ("Images", group.members.isEmpty ? nil : group.members.map(\.image).joined(separator: " ")),
+            ("Network", group.network ?? "default"),
+        ])
+        Divider()
+        // Two deletes, named for exactly what each removes (the owner, 5 October).
+        Button("Delete Group…", role: .destructive) {
+            pendingGroupDelete = GroupDeleteRequest(group: group, mode: .groupOnly)
+        }
+        Button("Delete Group and Containers…", role: .destructive) {
+            pendingGroupDelete = GroupDeleteRequest(group: group, mode: .withContainers)
+        }
+        .disabled(existingMembers(of: group).isEmpty)
+    }
+
+    /// The members of a group that exist as containers right now — what "Delete Group and
+    /// Containers" would remove.
+    private func existingMembers(of group: ContainerGroup) -> [String] {
+        let existing = Set(model.containers.map(\.id))
+        return group.memberNames.filter(existing.contains)
     }
 
     /// Start/stop/restart/delete for one container. Attached to both the table rows and
@@ -706,6 +924,9 @@ struct ContainersView: View {
         Group {
             if showingRun {
                 runScreen
+            } else if let target = editingGroup {
+                // Embedded, like every other create form (`CLAUDE.md`, 9 August).
+                GroupFormView(model: model, target: target) { editingGroup = nil }
             } else if let target = detailTarget {
                 detailScreen(target)
             } else {
@@ -718,7 +939,8 @@ struct ContainersView: View {
                                   entries: activityEntries,
                                   isExpanded: Binding(get: { ui.activityExpanded },
                                                       set: { ui.activityExpanded = $0 }),
-                                  open: { openDetail($0) })
+                                  open: { openActivitySubject($0) },
+                                  canOpen: { canOpenActivitySubject($0) })
                 }
             }
         }
@@ -735,16 +957,13 @@ struct ContainersView: View {
         // "Open in Flotilla" from the menu-bar popover names a subject, not just a section.
         // One-shot: cleared on consumption so a rebuild does not reopen it.
         .onChange(of: model.pendingDetailSubject) { _, subject in
-            // Only this section's own requests. See `AppModel.requestDetail`.
-            guard let subject, model.pendingDetailKind == .container else { return }
-            detailTarget = DetailTarget(id: subject, tab: requestedTab)
-            model.clearPendingDetail()
+            // Only this section's own requests — containers, and since 5 October groups, which
+            // the menu bar names by name. See `AppModel.requestDetail`.
+            guard let subject else { return }
+            consumeDetailRequest(subject)
         }
         .onAppear {
-            if let subject = model.pendingDetailSubject, model.pendingDetailKind == .container {
-                detailTarget = DetailTarget(id: subject, tab: requestedTab)
-                model.clearPendingDetail()
-            }
+            if let subject = model.pendingDetailSubject { consumeDetailRequest(subject) }
         }
         // "Run…" in the menu-bar popover. One-shot: consumed and cleared, so the sheet does
         // not reopen every time this view is rebuilt.
@@ -783,27 +1002,137 @@ struct ContainersView: View {
                  : "This cannot be undone.")
         }
         .confirmationDialog(
-            "Delete \(actionable.count) container\(actionable.count == 1 ? "" : "s")?",
+            "Delete \(selectionNoun)?",
             isPresented: $confirmingBulkDelete,
             titleVisibility: .visible
         ) {
-            Button("Delete \(actionable.count) Container\(actionable.count == 1 ? "" : "s")", role: .destructive) {
-                Task { await model.performBulk(.delete, on: actionable) }
+            Button("Delete \(selectionNoun)", role: .destructive) {
+                let containers = actionableContainerIDs, groups = actionableGroups
+                Task {
+                    if !containers.isEmpty { await model.performBulk(.delete, on: containers) }
+                    for group in groups { model.deleteGroup(group) }
+                }
+            }
+            // Only when groups are in the selection: their containers go too, which the button
+            // above deliberately does not do.
+            if !actionableGroups.isEmpty, !actionableGroups.flatMap(existingMembers).isEmpty {
+                Button("Delete Including the Groups' Containers", role: .destructive) {
+                    let groups = actionableGroups
+                    let containers = actionableContainerIDs.union(groups.flatMap(existingMembers))
+                    Task {
+                        await model.performBulk(.delete, on: containers)
+                        for group in groups { model.deleteGroup(group) }
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            // Naming the running count matters: the CLI refuses a running container, so the
-            // delete escalates to `--force` and that should be stated before it happens, not
-            // discovered from an error afterwards.
-            Text(runningInSelection > 0
-                 ? "\(runningInSelection) of them \(runningInSelection == 1 ? "is" : "are") running and will be stopped first. This cannot be undone."
-                 : "This cannot be undone.")
+            Text(bulkDeleteMessage)
         }
+        .confirmationDialog(
+            pendingGroupDelete.map(groupDeleteTitle) ?? "",
+            isPresented: Binding(get: { pendingGroupDelete != nil },
+                                 set: { if !$0 { pendingGroupDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingGroupDelete
+        ) { request in
+            let members = existingMembers(of: request.group)
+            if request.mode != .withContainers {
+                Button("Delete Group Only", role: .destructive) {
+                    model.deleteGroup(request.group)
+                    pendingGroupDelete = nil
+                }
+            }
+            if request.mode != .groupOnly, !members.isEmpty {
+                Button("Delete Group and \(members.count) Container\(members.count == 1 ? "" : "s")",
+                       role: .destructive) {
+                    let group = request.group
+                    Task {
+                        await model.performBulk(.delete, on: Set(members))
+                        model.deleteGroup(group)
+                    }
+                    pendingGroupDelete = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingGroupDelete = nil }
+        } message: { request in
+            Text(groupDeleteMessage(request))
+        }
+    }
+
+    // MARK: Delete wording
+
+    private func groupDeleteTitle(_ request: GroupDeleteRequest) -> String {
+        switch request.mode {
+        case .withContainers: "Delete the group “\(request.group.name)” and its containers?"
+        case .ask, .groupOnly: "Delete the group “\(request.group.name)”?"
+        }
+    }
+
+    /// Names every container a delete would remove — the owner's condition for offering it.
+    private func groupDeleteMessage(_ request: GroupDeleteRequest) -> String {
+        let members = existingMembers(of: request.group)
+        let keep = "Deleting the group only removes the grouping: its containers stay, as standalone rows, and running ones keep running."
+        guard !members.isEmpty else { return keep + " None of its containers exists yet." }
+        let named = "This would delete: " + members.joined(separator: ", ") + "."
+        let running = members.filter { name in model.containers.first { $0.id == name }?.isRunning == true }
+        let stopNote = running.isEmpty ? "" : " Running ones are stopped first."
+        switch request.mode {
+        case .groupOnly: return keep
+        case .withContainers: return named + stopNote + " This cannot be undone."
+        case .ask: return keep + "\n\nOr delete the containers too. " + named + stopNote + " That cannot be undone."
+        }
+    }
+
+    private var bulkDeleteMessage: String {
+        var parts: [String] = []
+        if runningInSelection > 0 {
+            parts.append("\(runningInSelection) of the containers \(runningInSelection == 1 ? "is" : "are") running and will be stopped first.")
+        }
+        if !actionableGroups.isEmpty {
+            parts.append("Deleting a group removes only the grouping; its containers stay unless you delete them too.")
+        }
+        parts.append("This cannot be undone.")
+        return parts.joined(separator: " ")
+    }
+
+    // MARK: Requests and activity
+
+    /// Opens what a menu-bar "Open in Flotilla" named, and clears the request either way — a
+    /// request for something since deleted must not wait to be applied to the next one.
+    private func consumeDetailRequest(_ subject: String) {
+        switch model.pendingDetailKind {
+        case .container:
+            detailTarget = DetailTarget(id: subject, tab: requestedTab)
+            model.clearPendingDetail()
+        case .group:
+            // The menu bar names a group by name; the form is addressed by id.
+            if let group = model.groups.groups.first(where: { $0.name == subject }) {
+                editingGroup = .existing(group.id)
+            }
+            model.clearPendingDetail()
+        default:
+            break
+        }
+    }
+
+    /// A feed row names a container or a group. A container opens its detail; a group opens its
+    /// form, which is the only detail a group has.
+    private func openActivitySubject(_ subject: String) {
+        if model.containers.contains(where: { $0.id == subject }) {
+            openDetail(subject)
+        } else if let group = model.groups.groups.first(where: { $0.name == subject }) {
+            editingGroup = .existing(group.id)
+        }
+    }
+
+    private func canOpenActivitySubject(_ subject: String) -> Bool {
+        model.containers.contains { $0.id == subject } || model.groups.groups.contains { $0.name == subject }
     }
 
     /// How many of the containers about to be deleted are running.
     private var runningInSelection: Int {
-        actionable.compactMap { id in model.containers.first { $0.id == id } }.count { $0.isRunning }
+        actionableContainerIDs.compactMap { id in model.containers.first { $0.id == id } }.count { $0.isRunning }
     }
 
     /// **The shared band, not a copy of it.** This screen used to hand-roll the same
@@ -818,7 +1147,7 @@ struct ContainersView: View {
     /// now; each section supplies only what is genuinely its own.
     private var toolbar: some View {
         SectionToolbar(search: $ui.search,
-                       searchPrompt: "Search containers…",
+                       searchPrompt: "Search containers and groups…",
                        updated: model.lastRefresh,
                        leading: {
             // Head of the leading cluster, so it sits above the table's checkbox column. Only
@@ -830,7 +1159,7 @@ struct ContainersView: View {
                                      }))
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all containers" : "Select all containers")
+                .accessibilityLabel(allVisibleSelected ? "Deselect all" : "Select all")
                 .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             Picker("View", selection: $ui.presentation) {
@@ -853,8 +1182,10 @@ struct ContainersView: View {
 
             filterButton
         }, trailing: {
-            ToolbarIconButton(systemImage: "plus", label: "Run a container…") {
-                showingRun = true
+            // A menu since groups joined this list (the owner, 5 October): two ways to add to it,
+            // under the one glyph that means "add".
+            ToolbarIconMenu(systemImage: "plus", label: "Run a container or create a group") {
+                addMenuItems
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh now") {
                 Task { await model.reload() }
@@ -871,7 +1202,8 @@ struct ContainersView: View {
     /// selection, so a row you selected and then filtered away is still in the set — and tagging
     /// something the user cannot see is the same mistake the bulk delete bars guard against.
     private var selectedTagSubjects: [TagSubject] {
-        actionable.sorted().map { TagSubject(kind: .container, id: $0) }
+        actionableContainerIDs.sorted().map { TagSubject(kind: .container, id: $0) }
+            + actionableGroups.map { TagSubject(kind: .group, id: $0.id) }
     }
 
     @ViewBuilder
@@ -882,38 +1214,30 @@ struct ContainersView: View {
         // controls genuinely cannot do, so that is all it appears for.
         if actionable.count > 1 {
             HStack(spacing: 12) {
-                Text("\(actionable.count) selected")
+                Text("\(selectionNoun) selected")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
-                // Tags first in the cluster, before the lifecycle controls, and separated by a
-                // divider: it is the one action here that changes nothing about what the
-                // selection *is*. Same menu the row offers, asking the three-state question a
-                // multi-row selection actually poses — see `BulkTagMenu`.
+                // Tags first in the cluster, before the lifecycle controls: it is the one action
+                // here that changes nothing about what the selection *is*.
                 BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
                     tagSheet = TagSheetTarget(selectedTagSubjects)
                 }
                 Divider().frame(height: 14)
-                // The same `iconButton` and the same glyphs as the rows, not words. The rows
-                // carry `play.fill` / `stop.fill` / `arrow.clockwise` / `trash`; this bar used
-                // text, so the identical four actions looked like different controls depending
-                // on whether you acted on one container or five. Icons in dense chrome with the
-                // word kept as tooltip and accessibility label is the rule everywhere else in
-                // the app, and this band was the exception.
-                iconButton("play.fill", "Start",
-                           help: "Start \(actionable.count) containers", busy: selectionBusy) {
-                    Task { await model.performBulk(.start, on: actionable) }
+                // The rows' glyphs, not words — the same four actions must not look like
+                // different controls depending on how many things you selected. A group in the
+                // selection is started and stopped the way its own row would do it.
+                let containers = actionableContainerIDs, groups = actionableGroups
+                iconButton("play.fill", "Start", help: "Start \(selectionNoun)", busy: selectionBusy) {
+                    Task { await startSelected(containers, groups) }
                 }
-                iconButton("stop.fill", "Stop",
-                           help: "Stop \(actionable.count) containers", busy: selectionBusy) {
-                    Task { await model.performBulk(.stop, on: actionable) }
+                iconButton("stop.fill", "Stop", help: "Stop \(selectionNoun)", busy: selectionBusy) {
+                    Task { await stopSelected(containers, groups) }
                 }
-                iconButton("arrow.clockwise", "Restart",
-                           help: "Restart \(actionable.count) containers", busy: selectionBusy) {
-                    Task { await model.performBulk(.restart, on: actionable) }
+                iconButton("arrow.clockwise", "Restart", help: "Restart \(selectionNoun)", busy: selectionBusy) {
+                    Task { await restartSelected(containers, groups) }
                 }
-                iconButton("trash", "Delete",
-                           help: "Delete \(actionable.count) containers",
+                iconButton("trash", "Delete", help: "Delete \(selectionNoun)",
                            busy: selectionBusy, destructive: true) {
                     confirmingBulkDelete = true
                 }
@@ -929,14 +1253,18 @@ struct ContainersView: View {
     /// Across all containers rather than the visible ones: a filter is about what you are
     /// looking at, and a container that just died is exactly the thing you want to be told
     /// about even if the current filter hides it.
+    /// Groups' events too, since groups live here now: starting a stack is activity on this
+    /// screen.
     private var activityEntries: [ActivityStrip.Entry] {
-        model.containers
-            .flatMap { container in
-                model.events(for: container.id, kind: .container).map {
-                    ActivityStrip.Entry(id: $0.id, subject: container.id, event: $0)
-                }
+        let containerEntries = model.containers.flatMap { container in
+            model.events(for: container.id, kind: .container).map {
+                ActivityStrip.Entry(id: $0.id, subject: container.id, event: $0)
             }
-            .sorted { $0.event.date > $1.event.date }
+        }
+        let groupEntries = model.events(ofKind: .group).map {
+            ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0)
+        }
+        return (containerEntries + groupEntries).sorted { $0.event.date > $1.event.date }
     }
 
     @ViewBuilder
@@ -956,7 +1284,7 @@ struct ContainersView: View {
                 description: Text(reason)
             )
 
-        case .loaded where visible.isEmpty:
+        case .loaded where rows.isEmpty:
             // An empty state that carries the primary action, per `FEATURES.md`. Until the
             // run sheet existed there was nothing to offer here; now "no containers" has an
             // obvious next step, and a filtered-empty list can undo the thing hiding rows
@@ -965,17 +1293,21 @@ struct ContainersView: View {
                 Label(isFiltered ? "No matches" : "No containers", systemImage: "tray")
             } description: {
                 Text(isFiltered
-                     ? "No container matches the current filter."
-                     : "Nothing is running on this Mac yet.")
+                     ? "Nothing matches the current filter."
+                     : "Nothing is running on this Mac yet. Run a container, or create a group to start several together.")
             } actions: {
                 if isFiltered {
                     Button("Clear Filter") {
                         ui.search = ""
                         ui.filter = .all
+                        ui.kindFilter = .all
                     }
                 } else {
-                    Button("Run a Container…") { showingRun = true }
-                        .buttonStyle(.borderedProminent)
+                    HStack {
+                        Button("Run a Container…") { showingRun = true }
+                            .buttonStyle(.borderedProminent)
+                        Button("New Group…") { editingGroup = .new }
+                    }
                 }
             }
             // Fills the pane, the same way the loading branch above and the table below do.
@@ -1011,217 +1343,387 @@ struct ContainersView: View {
     /// by id. SwiftUI has no custom-comparator column either (checked the macOS 26 SDK: there is
     /// no `sortUsing:` initialiser), so the only way to sort on them is to put them on the row.
     struct ContainerRow: Identifiable {
-        let container: Container
-        /// **`-1` means unsampled, not idle.** The cell still renders an em dash by asking the
-        /// model, exactly as before; this value exists only to sort with. Coalescing to 0 would
-        /// file "we have not measured this yet" among the genuinely idle containers, which is the
-        /// unknown-versus-zero mistake this column was written to avoid in the first place.
+        /// Since 5 October a row is a standalone container, a group, or a member under an open
+        /// group (to-do item 4). One type, because `Table` has one value type; a branch on
+        /// `kind` in each cell, because the three genuinely differ.
+        enum Kind { case container, group, member }
+
+        let kind: Kind
+        /// The container behind the row: the container itself, or a member's if it exists yet.
+        /// `nil` for a group, and for a member the group has not created.
+        let container: Container?
+        /// The group, for a group row and for each of its members.
+        let group: ContainerGroup?
+        let member: GroupMember?
+        let groupState: GroupState?
+        /// **`-1` means unsampled, not idle.** The cell renders a dash for it; this value exists
+        /// only to sort with. For a group it is the sum over sampled members.
         let cpu: Double
         let memory: Int64
+        let id: String
 
-        var id: String { container.id }
+        // MARK: Sort keys, one per sortable column, valid for every kind
 
-        /// The lowest published **host** port, or `Int.max` when nothing is published, so the
-        /// containers that publish nothing gather at one end instead of interleaving. Numeric
-        /// rather than the display string, because as text "8080" sorts before "9".
-        var portSortKey: Int { container.publishedPorts.map(\.hostPort).min() ?? .max }
+        let name: String
+        let stateRank: Int
+        let kindLabel: String
+        let imageSortKey: String
+        let creationSortKey: String
+        /// The lowest published host port, or `Int.max` when nothing is published, so those
+        /// gather at one end. Numeric, because as text "8080" sorts before "9".
+        let portSortKey: Int
+        /// Octets zero-padded, so `.9` sorts before `.10`.
+        let ipSortKey: String
 
-        /// Octets zero-padded to three digits, so `192.168.64.9` sorts before `192.168.64.10`.
-        /// Sorting the display string would put `.10` first, which looks like a bug to anyone
-        /// reading an address list.
-        var ipSortKey: String {
-            guard let ip = container.ipv4 else { return "" }
-            return ip.split(separator: ".")
-                .map { String(format: "%03d", Int($0) ?? 0) }
-                .joined(separator: ".")
+        /// A group's row id is namespaced, because a group and a container could otherwise share a
+        /// name; a container's and a member's id is the container name, which is unique, since a
+        /// grouped container never also appears as a standalone row.
+        static func groupRowID(_ groupID: String) -> String { "group:" + groupID }
+        static func isGroupRowID(_ id: String) -> Bool { id.hasPrefix("group:") }
+
+        init(container: Container, kind: Kind = .container, group: ContainerGroup? = nil,
+             member: GroupMember? = nil, cpu: Double, memory: Int64) {
+            self.kind = kind
+            self.container = container
+            self.group = group
+            self.member = member
+            self.groupState = nil
+            self.cpu = cpu
+            self.memory = memory
+            self.id = container.id
+            self.name = container.id
+            self.stateRank = container.sortRank * 2
+            self.kindLabel = "Container"
+            self.imageSortKey = container.imageReference
+            self.creationSortKey = container.creationSortKey
+            self.portSortKey = container.publishedPorts.map(\.hostPort).min() ?? .max
+            self.ipSortKey = Self.paddedIP(container.ipv4)
+        }
+
+        /// A member the group has not created yet.
+        init(uncreated member: GroupMember, in group: ContainerGroup) {
+            self.kind = .member
+            self.container = nil
+            self.group = group
+            self.member = member
+            self.groupState = nil
+            self.cpu = -1
+            self.memory = -1
+            self.id = member.name
+            self.name = member.name
+            self.stateRank = GroupState.notCreated.sortRank
+            self.kindLabel = "Container"
+            self.imageSortKey = member.image
+            self.creationSortKey = "9999"
+            self.portSortKey = .max
+            self.ipSortKey = ""
+        }
+
+        init(group: ContainerGroup, state: GroupState, cpu: Double, memory: Int64) {
+            self.kind = .group
+            self.container = nil
+            self.group = group
+            self.member = nil
+            self.groupState = state
+            self.cpu = cpu
+            self.memory = memory
+            self.id = Self.groupRowID(group.id)
+            self.name = group.name
+            self.stateRank = state.sortRank
+            self.kindLabel = "Group"
+            self.imageSortKey = ""
+            self.creationSortKey = "9999"
+            self.portSortKey = .max
+            self.ipSortKey = ""
+        }
+
+        private static func paddedIP(_ ip: String?) -> String {
+            guard let ip else { return "" }
+            return ip.split(separator: ".").map { String(format: "%03d", Int($0) ?? 0) }.joined(separator: ".")
         }
     }
 
-    /// `visible`, decorated with the sampled figures, then ordered by whatever header was clicked.
+    private func containerRow(_ container: Container, kind: ContainerRow.Kind = .container,
+                              group: ContainerGroup? = nil, member: GroupMember? = nil) -> ContainerRow {
+        ContainerRow(container: container, kind: kind, group: group, member: member,
+                     cpu: model.cpuPercent(for: container.id) ?? -1,
+                     memory: model.memoryBytes(for: container.id) ?? -1)
+    }
+
+    /// The listing, as rows: top-level rows sorted by whatever header was clicked, and each open
+    /// group's members under it, **sorted by the same header** (the owner, 5 October). A group
+    /// never splits apart: its members always sit directly under it.
     private var sortedRows: [ContainerRow] {
-        visible.map {
-            ContainerRow(container: $0,
-                         cpu: model.cpuPercent(for: $0.id) ?? -1,
-                         memory: model.memoryBytes(for: $0.id) ?? -1)
+        var top: [ContainerRow] = []
+        var children: [ContainerRow.ID: [ContainerRow]] = [:]
+        for item in listing {
+            switch item {
+            case .container(let container):
+                top.append(containerRow(container))
+            case .group(let group, let members, let expandForSearch):
+                let memberRows = members.map { m in
+                    m.container.map { containerRow($0, kind: .member, group: group, member: m.member) }
+                        ?? ContainerRow(uncreated: m.member, in: group)
+                }
+                let sampledCPU = memberRows.map(\.cpu).filter { $0 >= 0 }
+                let sampledMemory = memberRows.map(\.memory).filter { $0 >= 0 }
+                let row = ContainerRow(group: group, state: model.state(of: group),
+                                       cpu: sampledCPU.isEmpty ? -1 : sampledCPU.reduce(0, +),
+                                       memory: sampledMemory.isEmpty ? -1 : sampledMemory.reduce(0, +))
+                top.append(row)
+                if ui.expandedGroupIDs.contains(group.id) || expandForSearch {
+                    children[row.id] = memberRows.sorted(using: ui.sortOrder)
+                }
+            }
         }
-        .sorted(using: ui.sortOrder)
+        return top.sorted(using: ui.sortOrder).flatMap { [$0] + (children[$0.id] ?? []) }
     }
 
     private var table: some View {
         VStack(spacing: 0) {
-            Table(sortedRows, selection: $selection, sortOrder: $ui.sortOrder,
+            Table(rows, selection: $selection, sortOrder: $ui.sortOrder,
                   columnCustomization: $ui.columnCustomization) {
-                // **Dot only, and that is a decision — UI-01, closed as won't-do 2026-08-23.**
-                //
-                // The 2026-08-20 audit raised this as High: `design-ux.md` asks for dot + symbol +
-                // text, and a colour-only indicator is unreadable to anyone who cannot separate the
-                // hues. The owner's call was to keep the dot, and the accessibility objection is
-                // answered without widening the column: `.help` and `.accessibilityLabel` both
-                // carry the CLI's own state string, so the information is available to a
-                // screen reader and on hover — it is not encoded in colour alone.
-                //
-                // Recorded here rather than only in `research/AUDIT-RESPONSE.md` so the next review
-                // finds the reasoning at the code it is about instead of re-raising it.
-                //
-                // The word matters more here than for machines, because `stateColor` folds several
-                // states into one colour: "exited (137)" and "dead" are both danger red. So the
-                // tooltip carries the CLI's own string rather than a tidied-up version of it.
-                // **Column one carries the selection checkbox and the state dot together.**
-                //
-                // A checkbox is here because plain `Table` selection hides multi-select: picking
-                // several rows needs ⌘- or ⇧-click and nothing on screen says so. A tester asked
-                // for it directly after a bulk delete — "add a first column with a checkbox to
-                // select. And a select all checkbox at the top of the column."
-                //
-                // Two things it is not. It is not its own column, because
-                // `TableColumnBuilder` accepts at most **ten** and this table already had ten; an
-                // eleventh fails with "extra argument in call", and wrapping in a `Group` to nest
-                // past the limit then breaks the builder's type inference for every column inside
-                // it. And the select-all is not in this column's header, because **no
-                // `TableColumn` initialiser takes a view for its header** — only a string or a
-                // `Text` — so a control cannot go in a header cell at all. It sits at the head of
-                // the toolbar's leading cluster instead, directly above this column.
-                TableColumn("", value: \.container.sortRank) { (row: ContainerRow) in
+                // **Column one carries the selection checkbox and the state dot together** —
+                // `TableColumnBuilder` accepts at most ten columns. Dot only for state, with the
+                // CLI's own string on hover and for VoiceOver (UI-01, closed as won't-do
+                // 2026-08-23). A group's dot is green, grey or half-filled for partly running.
+                TableColumn("", value: \.stateRank) { (row: ContainerRow) in
                     HStack(spacing: 6) {
-                        selectionToggle(for: row.container.id)
-                        Circle()
-                            .fill(row.container.stateColor)
-                            .frame(width: 8, height: 8)
-                            .help(row.container.status.state.capitalized)
-                            .accessibilityLabel(row.container.status.state.capitalized)
+                        selectionToggle(for: row.id, name: row.name)
+                        switch row.kind {
+                        case .group:
+                            if let state = row.groupState { GroupStateDot(state: state) }
+                        case .member:
+                            ServiceStateDot(container: row.container)
+                        case .container:
+                            if let c = row.container {
+                                Circle()
+                                    .fill(c.stateColor)
+                                    .frame(width: 8, height: 8)
+                                    .help(c.status.state.capitalized)
+                                    .accessibilityLabel(c.status.state.capitalized)
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .width(min: 52, ideal: 56, max: 64)
+                .width(min: 52, ideal: 64, max: 80)
                 .customizationID("state")
 
-                TableColumn("Name", value: \.container.id) { row in
-                    let c = row.container
-                    // Clicking the name opens the container, the way Docker Desktop does.
-                    // A plain `Button` inside a `Table` row swallows row selection, so this
-                    // is a link-styled button with the selection behaviour left intact:
-                    // `.buttonStyle(.link)` keeps the click local to the text.
-                    Button {
-                        openDetail(c.id)
-                    } label: {
-                        Text(c.id).lineLimit(1)
-                    }
-                    .buttonStyle(.link)
-                    // A selected row is filled with the system accent, and a link-blue name on a
-                    // blue fill vanishes, so the colour has to know. See `Theme.rowName`.
-                    .foregroundStyle(Theme.rowName(selected: selection.contains(c.id)))
-                    .help("Open \(c.id)")
+                TableColumn("Name", value: \.name) { row in
+                    nameCell(row)
                 }
 
-                // Next to the name, the way Finder puts a tag beside a filename: the whole point
-                // is that you recognise the row without reading it, which only works if the pill
-                // is where your eye already is.
-                //
-                // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**,
-                // and a row's tags live in `TagStore`, not on the model — so a sortable column
-                // here would mean denormalising the user's tags onto the runtime's own types.
-                // Hideable instead, through the same column menu every other column uses.
+                // The indicator column the owner asked for: a group and a container read apart
+                // at a glance, with the caret as the second cue.
+                TableColumn("Type", value: \.kindLabel) { row in
+                    Label(row.kindLabel, systemImage: row.kind == .group ? Section.groupSymbol : "shippingbox")
+                        .labelStyle(.titleAndIcon)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .width(min: 80, ideal: 100)
+                .customizationID("type")
+
+                // Next to the name, the way Finder puts a tag beside a filename. Unsorted: a row's
+                // tags live in `TagStore`, not on the model.
                 TableColumn("Tags") { row in
-                    TagPillRow(tags: model.tags.tags(on: .container, row.container.id),
-                               compact: true)
+                    if row.kind == .group, let group = row.group {
+                        TagPillRow(tags: model.tags.tags(on: .group, group.id), compact: true)
+                    } else {
+                        TagPillRow(tags: model.tags.tags(on: .container, row.id), compact: true)
+                    }
                 }
                 .width(min: 60, ideal: 130)
                 .customizationID("tags")
 
-                TableColumn("Image", value: \.container.imageReference) { row in
-                    let c = row.container
-                    Text(Self.imageLabel(c.configuration.image.reference))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .help(c.configuration.image.reference)
+                TableColumn("Image", value: \.imageSortKey) { row in
+                    imageCell(row)
                 }
                 .width(min: 90, ideal: 150)
                 .customizationID("image")
-                TableColumn("Created", value: \.container.creationSortKey) { row in
-                    let c = row.container
-                    Text(Self.createdLabel(c.configuration.creationDate))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .help(Self.createdTooltip(c.configuration.creationDate))
+                TableColumn("Created", value: \.creationSortKey) { row in
+                    if let c = row.container {
+                        Text(Self.createdLabel(c.configuration.creationDate))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .help(Self.createdTooltip(c.configuration.creationDate))
+                    } else {
+                        Text("—").foregroundStyle(.tertiary)
+                    }
                 }
                 .width(min: 80, ideal: 100)
                 .customizationID("created")
                 TableColumn("Ports", value: \.portSortKey) { row in
-                    let c = row.container
-                    // An em dash, not a blank cell: "publishes nothing" and "we couldn't
-                    // read this" must not look the same.
-                    Text(c.portSummary ?? "—")
+                    // An em dash, not a blank cell: "publishes nothing" and "we couldn't read
+                    // this" must not look the same.
+                    let summary = row.container?.portSummary
+                    Text(summary ?? "—")
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .foregroundStyle(c.portSummary == nil ? .tertiary : .secondary)
-                        .help(c.portSummary ?? "No published ports")
+                        .foregroundStyle(summary == nil ? .tertiary : .secondary)
+                        .help(summary ?? "No published ports")
                 }
                 .width(min: 80, ideal: 110)
                 .customizationID("ports")
-                // CPU and Memory, which the approved mockup's table has had all along and
-                // this table never did. nil renders as a dash, never 0% — an unsampled
-                // container is not an idle one, and a table that says 0% and then jumps is
-                // lying twice.
                 trailingColumns
             }
-            // On the Table, not on a cell: `.contextMenu` inside a `TableColumn` only covers
-            // that one cell, so right-clicking a row anywhere but the name did nothing at all.
-            // `forSelectionType:` also hands us the whole right-clicked selection, which is
-            // what makes bulk actions reachable from the menu.
-            .contextMenu(forSelectionType: Container.ID.self) { ids in
+            // On the Table, not on a cell: `.contextMenu` inside a `TableColumn` covers one cell.
+            .contextMenu(forSelectionType: ContainerRow.ID.self) { ids in
                 tableContextMenu(for: ids)
             } primaryAction: { ids in
-                // Double-click opens the detail, matching the cards — but only when the
-                // activation names exactly ONE row.
-                //
-                // `ids` is a `Set` and this table multi-selects, so with several rows selected
-                // `ids.first` is an arbitrary member: double-clicking one of them could open a
-                // different container than the one under the pointer. Opening nothing is the
-                // honest response to an ambiguous activation. (Found by Grok 4.6 in review,
-                // 2026-08-18, in code that had already been through review and me.)
-                guard ids.count == 1, let id = ids.first,
-                      let container = visible.first(where: { $0.id == id }) else { return }
-                openDetail(container.id)
+                // Double-click opens — a container's detail, a group's form — but only when the
+                // activation names exactly ONE row: with several selected, `ids.first` is an
+                // arbitrary member. (Found by Grok 4.6 in review, 2026-08-18.)
+                guard ids.count == 1, let id = ids.first, let row = rowsByID[id] else { return }
+                if row.kind == .group, let group = row.group {
+                    editingGroup = .existing(group.id)
+                } else if let container = row.container {
+                    openDetail(container.id)
+                }
             }
             .frame(maxHeight: .infinity)
         }
     }
 
-    /// The Cards toggle. Previously a status dot, a name, an image and a host label — no
-    /// controls at all, and none of the usage figures the mockup shows, which is exactly what
-    /// the owner flagged. `ContainerCard` now carries the row's content plus its own action
-    /// cluster and a CPU sparkline.
+    /// The name, by kind.
     ///
-    /// Actions arrive as closures rather than the card reaching into `AppModel`: it keeps
-    /// every mutation on the one path through `ContainerCLI`, and keeps the card previewable.
+    /// - A **container** is a link to its detail, the way Docker Desktop does it.
+    /// - A **group** has the caret that opens it, then its name, which opens its form. The caret is
+    ///   a button of its own, so a click on the name never means two things.
+    /// - A **member** is indented under its group and links to its container — or, if the group
+    ///   has not created it yet, is plain text, not a link to a page about nothing.
+    @ViewBuilder
+    private func nameCell(_ row: ContainerRow) -> some View {
+        switch row.kind {
+        case .container:
+            Button { openDetail(row.id) } label: { Text(row.name).lineLimit(1) }
+                .buttonStyle(.link)
+                // A selected row is filled with the system accent, and a link-blue name on a blue
+                // fill vanishes, so the colour has to know. See `Theme.rowName`.
+                .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
+                .help("Open \(row.name)")
+        case .group:
+            if let group = row.group {
+                HStack(spacing: 4) {
+                    caret(for: group)
+                    Button(group.name) { editingGroup = .existing(group.id) }
+                        .buttonStyle(.link)
+                        .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
+                        .lineLimit(1)
+                        .help("Edit \(group.name)")
+                }
+            }
+        case .member:
+            HStack(spacing: 4) {
+                Color.clear.frame(width: 20, height: 16)
+                if row.container != nil {
+                    Button(row.name) { openDetail(row.id) }
+                        .buttonStyle(.link)
+                        .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
+                        .lineLimit(1)
+                        .help("Open \(row.name)")
+                } else {
+                    Text(row.name)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help("Not created yet — starting “\(row.group?.name ?? "")” creates it")
+                }
+            }
+        }
+    }
+
+    /// The disclosure caret. A group with no services has none — an empty disclosure is the
+    /// control-that-does-nothing failure in miniature — but keeps the space, so names line up.
+    @ViewBuilder
+    private func caret(for group: ContainerGroup) -> some View {
+        if group.members.isEmpty {
+            Color.clear.frame(width: 16, height: 16)
+        } else {
+            let open = ui.expandedGroupIDs.contains(group.id)
+            Button {
+                if open { ui.expandedGroupIDs.remove(group.id) } else { ui.expandedGroupIDs.insert(group.id) }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(open ? "Hide the containers in \(group.name)" : "Show the containers in \(group.name)")
+            .help(open ? "Hide containers" : "Show \(group.members.count) containers")
+        }
+    }
+
+    @ViewBuilder
+    private func imageCell(_ row: ContainerRow) -> some View {
+        if row.kind == .group, let group = row.group {
+            // What the group is made of, not one image: a count, with every image on hover.
+            Text(group.members.isEmpty ? "No services" : "\(group.members.count) services")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .help(group.members.map { "\($0.name) — \($0.image)" }.joined(separator: "\n"))
+        } else {
+            let reference = row.container?.configuration.image.reference ?? row.member?.image ?? ""
+            Text(Self.imageLabel(reference))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(row.container == nil ? .secondary : .primary)
+                .help(reference)
+        }
+    }
+
+    /// A container's IP and network; a group's network, which all its members join.
+    private func ipNetworkLabel(_ row: ContainerRow) -> String {
+        if row.kind == .group, let group = row.group { return group.network ?? "default" }
+        guard let container = row.container else { return "—" }
+        return Self.ipNetworkLabel(container)
+    }
+
+    /// The Cards toggle: a card per standalone container and a card per group, in the table's
+    /// top-level order. A group's card shows a chip per member, and clicking a chip opens that
+    /// container (the owner, 5 October).
     private var cards: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
-                // `sorted`, not `visible`: the table and the detail stepper both order by
-                // `ui.sortOrder`, and the cards ignoring it meant the grid showed model order
-                // while the stepper walked sort order. That broke the stepper's own stated
-                // invariant — it walks the containers *as currently shown* — so in Cards the
-                // "next" container was not the next card, and "N of M" was a position in a list
-                // you were not looking at.
-                ForEach(sorted) { container in
-                    ContainerCard(
-                        container: container,
-                        cpuPercent: model.cpuPercent(for: container.id),
-                        memoryBytes: model.memoryBytes(for: container.id),
-                        history: model.cpuHistory(for: container.id),
-                        isBusy: model.isBusy(container.id, kind: .container),
-                        tags: model.tags.tags(on: .container, container.id),
-                        onStart: { Task { await model.perform(.start, on: container) } },
-                        onStop: { Task { await model.perform(.stop, on: container) } },
-                        onRestart: { Task { await model.perform(.restart, on: container) } },
-                        onDetails: { openDetail(container.id) },
-                        onDelete: { requestDelete(container) },
-                        menuContent: { actions(for: container) }
-                    )
-                    // Same menu as the table row, the card's own `⋯`, and a right-click — one
-                    // builder reaches all four, so the two presentations offer identical
-                    // capabilities. A toggle that changes what you can *do* is a trap.
-                    .contextMenu { actions(for: container) }
+        let topLevel = rows.filter { $0.kind != .member }
+        let members = Dictionary(listing.compactMap { item -> (String, [ContainerListing.Member])? in
+            if case .group(let group, let members, _) = item { return (group.id, members) }
+            return nil
+        }, uniquingKeysWith: { first, _ in first })
+        return ScrollView {
+            // Top-aligned: a group card is shorter than a container card, and the grid's default
+            // centring floated it halfway down its row.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)],
+                      alignment: .leading, spacing: 12) {
+                ForEach(topLevel) { row in
+                    if row.kind == .group, let group = row.group, let state = row.groupState {
+                        GroupCard(group: group, state: state, members: members[group.id] ?? [],
+                                  tags: model.tags.tags(on: .group, group.id),
+                                  onEdit: { editingGroup = .existing(group.id) },
+                                  onOpenMember: { openDetail($0) }) {
+                            groupRowActions(for: group)
+                        }
+                        .contextMenu { groupMenu(for: group) }
+                    } else if let container = row.container {
+                        ContainerCard(
+                            container: container,
+                            cpuPercent: model.cpuPercent(for: container.id),
+                            memoryBytes: model.memoryBytes(for: container.id),
+                            history: model.cpuHistory(for: container.id),
+                            isBusy: model.isBusy(container.id, kind: .container),
+                            tags: model.tags.tags(on: .container, container.id),
+                            onStart: { Task { await model.perform(.start, on: container) } },
+                            onStop: { Task { await model.perform(.stop, on: container) } },
+                            onRestart: { Task { await model.perform(.restart, on: container) } },
+                            onDetails: { openDetail(container.id) },
+                            onDelete: { requestDelete(container) },
+                            menuContent: { actions(for: container) }
+                        )
+                        // Same menu as the table row and the card's own `⋯`: one builder.
+                        .contextMenu { actions(for: container) }
+                    }
                 }
             }
             .padding(12)

@@ -10,10 +10,18 @@ import Foundation
 enum Section: String, CaseIterable, Identifiable, Hashable {
     // Dashboard first: it is the overview you land on, and every other section is a
     // drill-down from something it shows.
-    case dashboard, activity, logs, containers, groups, images, volumes, networks, machines,
+    // No `groups`: groups are rows in Containers since 5 October (to-do item 4), the way Docker
+    // Desktop lists a Compose stack, rather than a section of their own.
+    case dashboard, activity, logs, containers, images, volumes, networks, machines,
          clusters, settings
 
     var id: Self { self }
+
+    /// The glyph for a group, wherever one is drawn — a group row, a group card. Kept from the
+    /// retired Groups section. Not a `square.stack.3d.*`: Images already uses that family, and a
+    /// group of containers is not a stack of layers. Verified present, per the
+    /// `ellipsis.vertical` incident.
+    static let groupSymbol = "rectangle.3.group"
 
     var title: String {
         switch self {
@@ -21,7 +29,6 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .activity: "Activity"
         case .logs: "Logs"
         case .containers: "Containers"
-        case .groups: "Groups"
         case .images: "Images"
         case .volumes: "Volumes"
         case .networks: "Networks"
@@ -39,10 +46,6 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .activity: "clock.arrow.circlepath"
         case .containers: "shippingbox"
         // Verified present, per the `ellipsis.vertical` incident.
-        // Not a `square.stack.3d.*`: Images already uses that family, and a group of
-        // containers is not a stack of layers. Verified present, per the `ellipsis.vertical`
-        // incident.
-        case .groups: "rectangle.3.group"
         case .images: "square.stack.3d.down.right"
         case .volumes: "cylinder.split.1x2"
         case .networks: "network"

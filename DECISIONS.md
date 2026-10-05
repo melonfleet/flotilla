@@ -1239,3 +1239,30 @@ A stored or managed light-only value for dark is refused and falls back to Flesh
 that. Measured: Canary over the wash is 1.4:1 bar-to-body, the closest pair in the set, and leans on
 the bar's divider.
 
+## Q24 — Groups live in the Containers list (settled 2026-10-05)
+
+**The owner's design**, after Docker Desktop's handling of Compose stacks: one list for groups and
+containers, with the separate Groups section removed. Eight decisions, made one by one:
+
+1. A grouped container appears **only inside its group**, never also at top level.
+2. A group row shows "2 of 3 running" and a **half-filled dot** when some members are running,
+   green when all are, and grey when none are. It never uses the warning amber.
+3. **Delete on a group row offers both** "Delete Group Only", which keeps its containers as
+   standalone rows, and "Delete Group and Containers", which **names every container** it removes.
+4. Groups **sort among containers**; a group's members stay together under it, sorted by the same
+   column.
+5. **"+" became a menu**: Run Container… and New Group…. Both open their usual embedded forms.
+6. In **Cards view**, a group is one card with a chip per member.
+7. The **menu bar keeps both boxes**, Containers and Groups. Only the main window merged.
+8. A **kind filter** (All / Groups / Containers) sits beside the state filter. "Containers only"
+   lists every container flat, which is what this screen showed before groups joined it.
+
+The rules for which rows appear and where live in `ContainerListing` (FlotillaCore), under ten
+tests. A row is now a container, a group, or a member, with its own sort keys. A group's row id is
+namespaced (`group:<id>`); a container's and a member's id is the container name, which stays
+unique because a grouped container is never also a standalone row.
+
+**Found on screen, not in the tests:** `GroupState.partial` also covers "none running, but only
+some exist", and the first half-dot drew that as half green. The dot and the sort rank now look at
+how many members are actually running.
+

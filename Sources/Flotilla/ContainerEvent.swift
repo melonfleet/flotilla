@@ -39,7 +39,8 @@ extension ActivityKind {
     var section: Section {
         switch self {
         case .container: .containers
-        case .group: .groups
+        // Groups are rows in Containers now, so a group's activity opens there.
+        case .group: .containers
         case .cluster: .clusters
         case .machine: .machines
         case .image: .images

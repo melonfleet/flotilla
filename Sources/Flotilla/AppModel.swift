@@ -498,13 +498,19 @@ final class AppModel {
 
     /// A dash, never "0%". "We have not sampled this yet" and "this container is idle" are
     /// different facts and must not share a rendering.
-    func cpuLabel(for id: String) -> String {
-        guard let percent = cpuPercents[id] else { return "—" }
+    func cpuLabel(for id: String) -> String { Self.cpuLabel(cpuPercents[id]) }
+
+    func memoryLabel(for id: String) -> String { Self.memoryLabel(memoryUsage[id]) }
+
+    /// The one rendering of a CPU figure, shared by a container row and a group row's sum so the
+    /// two never disagree about how "12%" is written.
+    static func cpuLabel(_ percent: Double?) -> String {
+        guard let percent else { return "—" }
         return percent < 10 ? String(format: "%.1f%%", percent) : String(format: "%.0f%%", percent)
     }
 
-    func memoryLabel(for id: String) -> String {
-        guard let bytes = memoryUsage[id] else { return "—" }
+    static func memoryLabel(_ bytes: Int64?) -> String {
+        guard let bytes else { return "—" }
         return ByteCountFormatStyle(style: .memory).format(bytes)
     }
 

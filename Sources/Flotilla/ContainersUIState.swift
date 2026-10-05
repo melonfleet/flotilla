@@ -23,7 +23,14 @@ final class ContainersUIState {
 
     var presentation: ContainersView.Presentation = .list
     var filter: ContainersView.Filter = .all
+    /// Groups, containers or both — the merged list's second filter (5 October). `.containers`
+    /// lists every container flat, which is what this screen showed before groups joined it.
+    var kindFilter: ContainerListing.KindFilter = .all
     var search = ""
+
+    /// Groups the user has opened, by group id. Here for the reason everything else is: the section
+    /// view is rebuilt on every sidebar change, and an open group would silently close.
+    var expandedGroupIDs: Set<String> = []
 
     /// Whether the recent-activity band at the bottom of the list is open. Here rather than in
     /// the view for the same reason everything else is: the section view is rebuilt on every
@@ -40,8 +47,10 @@ final class ContainersUIState {
     /// The state column remains sortable, so running-first is one click away. Q2's ordering of
     /// the table by relevance was a reasonable guess that using the thing disproved.
     /// Comparators over `ContainersView.ContainerRow`, not `Container` — the row carries the
-    /// sampled CPU and memory figures, which is what makes those two columns sortable at all.
-    var sortOrder = [KeyPathComparator(\ContainersView.ContainerRow.container.id)]
+    /// sampled CPU and memory figures, which is what makes those two columns sortable at all, and
+    /// since 5 October it is a group or a member as often as a container, so it carries its own
+    /// sort keys for all three.
+    var sortOrder = [KeyPathComparator(\ContainersView.ContainerRow.name)]
 
     /// Which columns are shown, in what order and at what width.
     ///

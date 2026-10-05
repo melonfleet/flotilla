@@ -529,7 +529,9 @@ must preserve all of the following:
     and `GroupBook` live in `FlotillaCore`; `GroupStore` persists them plist-native under
     `containerGroups`, never through `SettingsStore` — the same split, and the same
     argument, as tags. Start issues the same `container run` per member the Run form
-    issues for one, so a group adds **no** command to the allowlist. Do not add
+    issues for one, so a group adds **no** command to the allowlist. **Since Q24
+    (2026-10-05) a group is a row in Containers**, expandable to its members; there is no
+    Groups section, and `ContainerListing` decides which rows appear. Do not add
     `depends_on`, health gating, restart policy or Compose import: each needs a supervisor
     that outlives the command, and `PLAN.md` rules that out.
 18. **`container` has no `--` convention — anywhere (Q21).** It executes the token and

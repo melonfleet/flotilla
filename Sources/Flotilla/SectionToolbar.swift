@@ -120,6 +120,36 @@ struct ToolbarIconButton: View {
     }
 }
 
+/// A toolbar control that opens a menu: one glyph, several related actions behind it.
+///
+/// Added for Containers' "+", which became a menu of **Run Container…** and **New Group…** when
+/// groups joined that list (the owner's call, 5 October): two ways to add something to one list,
+/// under the one glyph that means "add". It draws with `ToolbarMenuGlyph`, the window bar's
+/// links-menu glyph, so it has the same hover wash and size as every `ToolbarIconButton` beside
+/// it.
+///
+/// **`.tint`, not `.foregroundStyle`**, for the reason `AppLinksMenu` records: a borderless `Menu`
+/// paints its label with the tint and ignores a foreground set on it.
+struct ToolbarIconMenu<Content: View>: View {
+    let systemImage: String
+    let label: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        Menu {
+            content
+        } label: {
+            ToolbarMenuGlyph(systemImage: systemImage)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .tint(.primary)
+        .fixedSize()
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
 /// The glass capsule a group of actions sits in.
 ///
 /// The mockup's `GlassEffectContainer`, and the reason it is shared: it was written out four
