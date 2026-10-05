@@ -11,7 +11,7 @@ import FlotillaCore
 /// what it previews.
 ///
 /// Two rows rather than one list, because Auto switches appearance: the user picks a pair, and
-/// the window moves between them at sunset. Both rows offer the same four themes. See `ThemeName`.
+/// the window moves between them at sunset. Light offers six themes and dark four. See `LightTheme`.
 struct ThemePickerRow: View {
     enum Appearance { case light, dark }
 
@@ -47,16 +47,29 @@ struct ThemePickerRow: View {
     }
 
     private var options: [Option] {
-        let key = appearance == .light ? SettingsKeys.lightTheme : SettingsKeys.darkTheme
-        let current = appearance == .light ? model.themeChoice.light : model.themeChoice.dark
-        return ThemeName.allCases.map { theme in
-            Option(id: theme.rawValue, title: theme.title,
-                   palette: theme.palette(dark: appearance == .dark),
-                   isDefault: theme == key.defaultValue,
-                   isSelected: theme == current,
-                   choose: { try? store.set(theme, for: key) })
+        switch appearance {
+        case .light:
+            LightTheme.allCases.map { theme in
+                Option(id: theme.rawValue, title: theme.title, palette: theme.palette,
+                       isDefault: theme == SettingsKeys.lightTheme.defaultValue,
+                       isSelected: theme == model.themeChoice.light,
+                       choose: { try? store.set(theme, for: SettingsKeys.lightTheme) })
+            }
+        case .dark:
+            DarkTheme.allCases.map { theme in
+                Option(id: theme.rawValue, title: theme.title, palette: theme.palette,
+                       isDefault: theme == SettingsKeys.darkTheme.defaultValue,
+                       isSelected: theme == model.themeChoice.dark,
+                       choose: { try? store.set(theme, for: SettingsKeys.darkTheme) })
+            }
         }
     }
+
+    /// Cards at a fixed size, wrapping onto a second row rather than shrinking — six light themes
+    /// do not fit across the pane, and a sketch scaled down to fit stops showing the bar's ink.
+    private let columns = [GridItem(.adaptive(minimum: ThemeSketch.size.width,
+                                              maximum: ThemeSketch.size.width),
+                                    spacing: 12, alignment: .topLeading)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -69,7 +82,7 @@ struct ThemePickerRow: View {
                 }
                 Text(caption).font(.caption).foregroundStyle(.secondary)
             }
-            HStack(alignment: .top, spacing: 12) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                 ForEach(options) { option in
                     ThemeCard(title: option.title, palette: option.palette,
                               isDark: appearance == .dark, isDefault: option.isDefault,

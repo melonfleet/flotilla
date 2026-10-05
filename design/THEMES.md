@@ -22,7 +22,7 @@ Everything else is fixed per appearance, the same in every theme:
 The brand stays on the toolbar, the body, charts and status colours, the wordmark and the app icon.
 Everywhere else, Flotilla looks and behaves like standard macOS.
 
-## The four themes
+## The themes
 
 **Four themes, the same four in light and dark** (the owner, 26 September — revised the same day
 from a first draft of three light and three dark). Each is named after its bar, and the bar is the
@@ -34,6 +34,15 @@ same brand colour in both appearances; only the body changes.
 | **Flesh** | flesh `#FC4A6B` | seed | cream `#FBF7F0` | seed |
 | **Cantaloupe** | cantaloupe `#EE7B4D` | seed | cream `#FBF7F0` | seed |
 | **Canary** | canary `#F2C94C` | seed | white `#FFFFFF` (the bar's existing divider separates them) | seed |
+| **Canary Honeydew** *(light only)* | canary `#F2C94C` | seed | honeydew wash `#E5F4DC` | — |
+| **Flesh Honeydew** *(light only)* | flesh `#FC4A6B` | seed | honeydew wash `#E5F4DC` | — |
+
+**Six light themes, four dark** (5 October). The two honeydew themes are light-only: every dark body
+is seed, so a dark form would only repeat dark Canary or dark Flesh. They come from the owner's design
+references, pastel commuter tumblers whose saturated lid sits over a pastel body with a thin rim
+between, which maps onto bar, body and divider. A theme is named after its bar, plus its body when
+that body is not the bar's usual one. `LightTheme` and `DarkTheme` are separate types so the dark
+setting cannot hold a light-only theme.
 
 **Defaults:** Cantaloupe for light, Flesh for dark — the look the app shipped with. Both pickers
 offer all four, so choosing Stripe for both is a valid pair.
@@ -66,6 +75,8 @@ WCAG ratios. Text needs 4.5:1; non-text marks, such as status dots and chart lin
 | Flesh, light | 4.9 | 3.1 | success 3.2 |
 | Cantaloupe, light | 5.9 | 2.6 | success 3.2 |
 | Canary, light | 10.3 | 1.6 (hence the divider) | success 3.4 |
+| Canary Honeydew, light | 10.3 | **1.4** (closest pair; relies on the divider) | success 3.0 |
+| Flesh Honeydew, light | 4.9 | 2.9 | success 3.0 |
 | All four, dark | 4.9–10.3 | 4.9–10.3 | danger 5.2 |
 
 Two measurements shaped the design. **Full-strength honeydew hid the green status colours**

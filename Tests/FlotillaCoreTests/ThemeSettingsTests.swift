@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import FlotillaCore
 
-// The theme pair (`design/THEMES.md`): four themes, the same four in light and dark, with a light
-// choice and a dark choice stored separately so Auto can switch between them. The colours live in
+// The theme pair (`design/THEMES.md`): six light themes and four dark, with a light choice and a
+// dark choice stored separately so Auto can switch between them. The colours live in
 // the app target; FlotillaCore only owns which theme is chosen, which is what a managed profile
 // and an export need to agree on.
 
@@ -18,29 +18,60 @@ import Testing
 @Test func lightAndDarkThemesAreIndependent() throws {
     let store = SettingsStore()
     // The same four names exist in both slots. Choosing the dark Stripe must not touch the light one.
-    try store.set(ThemeName.stripe, for: SettingsKeys.darkTheme)
+    try store.set(DarkTheme.stripe, for: SettingsKeys.darkTheme)
     #expect(store[SettingsKeys.darkTheme] == .stripe)
     #expect(store[SettingsKeys.lightTheme] == .cantaloupe)
 
-    try store.set(ThemeName.canary, for: SettingsKeys.lightTheme)
+    try store.set(LightTheme.canary, for: SettingsKeys.lightTheme)
     #expect(store[SettingsKeys.lightTheme] == .canary)
     #expect(store[SettingsKeys.darkTheme] == .stripe)
 }
 
 @Test func theSameThemeCanBeChosenForBoth() throws {
     let store = SettingsStore()
-    try store.set(ThemeName.stripe, for: SettingsKeys.lightTheme)
-    try store.set(ThemeName.stripe, for: SettingsKeys.darkTheme)
+    try store.set(LightTheme.stripe, for: SettingsKeys.lightTheme)
+    try store.set(DarkTheme.stripe, for: SettingsKeys.darkTheme)
     #expect(store[SettingsKeys.lightTheme] == .stripe)
     #expect(store[SettingsKeys.darkTheme] == .stripe)
 }
 
 @Test func themesStoreTheirBrandTokenNotADisplayString() {
-    // An exported profile should read `stripe`, not "Stripe" or a translation of it.
-    #expect(ThemeName.stripe.settingValue == .string("stripe"))
-    #expect(ThemeName.flesh.settingValue == .string("flesh"))
-    // Declaration order is picker order, and both pickers offer all four.
-    #expect(ThemeName.allowedRawValues == ["stripe", "flesh", "cantaloupe", "canary"])
+    // An exported profile should read `canaryHoneydew`, not "Canary Honeydew".
+    #expect(LightTheme.canaryHoneydew.settingValue == .string("canaryHoneydew"))
+    #expect(DarkTheme.flesh.settingValue == .string("flesh"))
+    // Declaration order is picker order. Light has six; dark has four.
+    #expect(LightTheme.allowedRawValues ==
+            ["stripe", "flesh", "cantaloupe", "canary", "canaryHoneydew", "fleshHoneydew"])
+    #expect(DarkTheme.allowedRawValues == ["stripe", "flesh", "cantaloupe", "canary"])
+}
+
+@Test func theFourSharedThemesKeepTheirStoredNamesInBothLists() {
+    // A preference saved before the honeydew themes existed must still decode in either slot.
+    for raw in ["stripe", "flesh", "cantaloupe", "canary"] {
+        #expect(LightTheme(rawValue: raw) != nil)
+        #expect(DarkTheme(rawValue: raw) != nil)
+    }
+}
+
+@Test func aLightOnlyThemeIsRefusedForDarkAndDarkFallsBackToFlesh() throws {
+    let store = SettingsStore()
+    // The honeydew variants have no dark form. Writing one to the dark key must fail outright...
+    for raw in ["canaryHoneydew", "fleshHoneydew"] {
+        #expect(throws: SettingsError.self) {
+            try store.setRaw(.string(raw), forKeyNamed: SettingsKeys.darkTheme.name)
+        }
+    }
+    #expect(store[SettingsKeys.darkTheme] == .flesh)
+    // ...and the light key takes them.
+    try store.setRaw(.string("fleshHoneydew"), forKeyNamed: SettingsKeys.lightTheme.name)
+    #expect(store[SettingsKeys.lightTheme] == .fleshHoneydew)
+}
+
+@Test func aManagedProfileNamingALightOnlyThemeForDarkIsIgnored() {
+    // An administrator's typo, or a profile written for light, must not leave dark unresolvable.
+    let managed = StaticManagedPreferences(defaults: [SettingsKeys.darkTheme.name: .string("canaryHoneydew")])
+    let store = SettingsStore(managed: managed)
+    #expect(store[SettingsKeys.darkTheme] == .flesh)
 }
 
 @Test func aRetiredOrUnknownThemeIsRejected() {
@@ -75,5 +106,7 @@ import Testing
 }
 
 @Test func everyThemeHasADisplayTitle() {
-    #expect(ThemeName.allCases.map(\.title) == ["Stripe", "Flesh", "Cantaloupe", "Canary"])
+    #expect(LightTheme.allCases.map(\.title) ==
+            ["Stripe", "Flesh", "Cantaloupe", "Canary", "Canary Honeydew", "Flesh Honeydew"])
+    #expect(DarkTheme.allCases.map(\.title) == ["Stripe", "Flesh", "Cantaloupe", "Canary"])
 }

@@ -137,7 +137,7 @@ enum Theme {
     /// Dark keeps its 0.85 alpha: the window's own dark ground shows through a little, which is
     /// what stops a flat near-black reading as a hole next to the sidebar.
     static func contentBackground(_ choice: ThemeChoice) -> Color {
-        dynamic(light: choice.light.palette(dark: false).body, dark: choice.dark.palette(dark: true).body,
+        dynamic(light: choice.light.palette.body, dark: choice.dark.palette.body,
                 lightAlpha: 1, darkAlpha: 0.85)
     }
 
@@ -146,7 +146,7 @@ enum Theme {
     /// Docker's reference strip is a solid colour, and the bar had none at all — it showed
     /// `contentBackground`, which is why it read as part of the content rather than as chrome.
     static func titleBar(_ choice: ThemeChoice) -> Color {
-        dynamic(light: choice.light.palette(dark: false).bar, dark: choice.dark.palette(dark: true).bar)
+        dynamic(light: choice.light.palette.bar, dark: choice.dark.palette.bar)
     }
 
     /// What reads on `titleBar`: **seed, on all four bars.**
@@ -156,7 +156,7 @@ enum Theme {
     /// — and white on canary would be invisible. Seed holds 4.9:1 at worst. The ink stays a per-theme
     /// value in `ThemePalette` so a future bar that needs white is one line.
     static func onTitleBar(_ choice: ThemeChoice) -> Color {
-        dynamic(light: choice.light.palette(dark: false).onBar, dark: choice.dark.palette(dark: true).onBar)
+        dynamic(light: choice.light.palette.onBar, dark: choice.dark.palette.onBar)
     }
 
     /// Cards, tables and popovers sitting on the content background. Opaque on purpose — the

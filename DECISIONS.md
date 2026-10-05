@@ -1224,3 +1224,18 @@ About and the menu-bar popover keep the full lockup.
 A watermelon `o` in "Flotilla" was tried and **rejected** the same day. In the bar's single ink its
 four rings merge into a solid dot at 17pt and the word reads "Fl•tilla"; the owner asked for an
 ordinary `o`. The variant was deleted rather than kept as an option.
+
+### Q23 amended — six light themes, four dark (2026-10-05)
+
+The owner added two light-only themes on the honeydew wash, **Canary Honeydew** and **Flesh Honeydew**,
+from a set of pastel tumblers (saturated lid, pastel body). Dark stays at four: every dark body is
+seed, so dark forms would only repeat dark Canary and dark Flesh, and the owner could not think of
+more dark combinations.
+
+So the shared `ThemeName` enum is split back into **`LightTheme` (six) and `DarkTheme` (four)**. With
+one type, the dark key would have accepted a light-only theme, which a managed profile could set and
+nothing could draw. The four shared themes keep their raw values, so stored preferences carry over.
+A stored or managed light-only value for dark is refused and falls back to Flesh; three tests hold
+that. Measured: Canary over the wash is 1.4:1 bar-to-body, the closest pair in the set, and leans on
+the bar's divider.
+

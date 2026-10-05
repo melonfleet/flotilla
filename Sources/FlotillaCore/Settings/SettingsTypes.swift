@@ -47,17 +47,40 @@ public enum AppearancePreference: String, SettingEnum, Codable {
     public static var selectable: [AppearancePreference] { [.auto, .light, .dark] }
 }
 
-/// One of the four themes. The same four exist in light and in dark, and the user picks one for
-/// each: the light theme and the dark theme are two settings keys holding a value of this type.
+/// The theme drawn whenever the app is **light**: six of them.
 ///
 /// A theme changes exactly two things — the window bar and the content background — and is named
-/// after its bar (`design/THEMES.md`). There are two pickers rather than one because Auto switches
-/// appearance at sunset, so the user chooses a pair and Auto moves between them. Picking Stripe
-/// for both is a pair too.
+/// after its bar, plus its body when that body is not the bar's usual one (`design/THEMES.md`).
+/// So `canary` is the canary bar on white, and `canaryHoneydew` is the same bar on the honeydew
+/// wash.
 ///
-/// The case names are the brand tokens, not display strings, so an exported profile says
-/// `stripe` rather than something a translation could change. Declaration order is picker order.
-public enum ThemeName: String, SettingEnum, Codable {
+/// **Two types, not one, and that is the point.** Light has six themes and dark has four (the
+/// owner, 5 October: the two honeydew variants are light-only). With one shared enum, both keys
+/// would accept all six, and a managed profile could store `canaryHoneydew` for dark — a theme with
+/// no dark form. Separate types make the dark key refuse it at the settings layer, with no check
+/// anyone has to remember.
+///
+/// The raw values are the brand tokens, so an exported profile says `stripe`, and the four themes
+/// both lists share keep the raw values they have always had. Declaration order is picker order.
+public enum LightTheme: String, SettingEnum, Codable {
+    case stripe, flesh, cantaloupe, canary, canaryHoneydew, fleshHoneydew
+
+    public var title: String {
+        switch self {
+        case .stripe: "Stripe"
+        case .flesh: "Flesh"
+        case .cantaloupe: "Cantaloupe"
+        case .canary: "Canary"
+        case .canaryHoneydew: "Canary Honeydew"
+        case .fleshHoneydew: "Flesh Honeydew"
+        }
+    }
+}
+
+/// The theme drawn whenever the app is **dark**: four of them. See `LightTheme` for why this is a
+/// separate type. Every dark body is seed, so a dark "honeydew" variant would only repeat dark
+/// Canary or dark Flesh.
+public enum DarkTheme: String, SettingEnum, Codable {
     case stripe, flesh, cantaloupe, canary
 
     public var title: String {

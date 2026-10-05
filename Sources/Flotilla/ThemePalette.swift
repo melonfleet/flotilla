@@ -29,37 +29,45 @@ struct ThemePalette: Equatable {
     static let honeydewWash = 0xE5F4DC
 }
 
-extension ThemeName {
-    /// This theme's colours in light or dark.
+extension LightTheme {
+    /// This theme's colours.
     ///
-    /// **Every bar takes seed ink**, in both appearances: white measures 2.5:1 at best on these
-    /// four bars (stripe), and seed holds 4.9:1 at worst (flesh). Every dark body is seed; the light
-    /// bodies pair each bar with a neutral or wash that keeps the status colours above 3:1.
-    func palette(dark: Bool) -> ThemePalette {
-        if dark {
-            return ThemePalette(bar: bar, onBar: ThemePalette.seed, body: ThemePalette.seed)
-        }
+    /// **Every bar takes seed ink**: white measures 2.5:1 at best on these bars (stripe), and seed
+    /// holds 4.9:1 at worst (flesh). Each body keeps the status colours above 3:1.
+    var palette: ThemePalette {
         switch self {
-        // The green bar over the green-tinted wash — the pairing the Rind theme had.
+        // The green bar over the green-tinted wash.
         case .stripe:
-            return ThemePalette(bar: bar, onBar: ThemePalette.seed, body: ThemePalette.honeydewWash)
-        case .flesh, .cantaloupe:
-            return ThemePalette(bar: bar, onBar: ThemePalette.seed, body: ThemePalette.cream)
+            return ThemePalette(bar: ThemePalette.stripe, onBar: ThemePalette.seed, body: ThemePalette.honeydewWash)
+        case .flesh:
+            return ThemePalette(bar: ThemePalette.flesh, onBar: ThemePalette.seed, body: ThemePalette.cream)
+        case .cantaloupe:
+            return ThemePalette(bar: ThemePalette.cantaloupe, onBar: ThemePalette.seed, body: ThemePalette.cream)
         // Canary over white is 1.6:1 bar-to-body. The bar's own `Divider` is what separates them:
-        // it is there for every theme, and this is the one that depends on it.
+        // it is there for every theme, and this is one that depends on it.
         case .canary:
-            return ThemePalette(bar: bar, onBar: ThemePalette.seed, body: ThemePalette.white)
+            return ThemePalette(bar: ThemePalette.canary, onBar: ThemePalette.seed, body: ThemePalette.white)
+        // The two light-only themes (5 October), from the owner's tumbler references: a saturated
+        // lid over a pastel body. Canary over the wash is the closest pair in the set, 1.4:1
+        // bar-to-body, so this one leans on the divider hardest. Flesh over the wash is 2.9:1.
+        case .canaryHoneydew:
+            return ThemePalette(bar: ThemePalette.canary, onBar: ThemePalette.seed, body: ThemePalette.honeydewWash)
+        case .fleshHoneydew:
+            return ThemePalette(bar: ThemePalette.flesh, onBar: ThemePalette.seed, body: ThemePalette.honeydewWash)
         }
     }
+}
 
-    /// The bar is the same brand colour in light and dark; only the body and its surroundings change.
-    private var bar: Int {
-        switch self {
+extension DarkTheme {
+    /// Every dark theme is its bar over seed, with seed ink on the bar.
+    var palette: ThemePalette {
+        let bar: Int = switch self {
         case .stripe: ThemePalette.stripe
         case .flesh: ThemePalette.flesh
         case .cantaloupe: ThemePalette.cantaloupe
         case .canary: ThemePalette.canary
         }
+        return ThemePalette(bar: bar, onBar: ThemePalette.seed, body: ThemePalette.seed)
     }
 }
 
@@ -71,8 +79,8 @@ extension ThemeName {
 /// the few views that paint the bar and background, and they build their colours afresh — so a
 /// choice in Settings repaints the window at once, with no relaunch.
 struct ThemeChoice: Equatable {
-    var light: ThemeName
-    var dark: ThemeName
+    var light: LightTheme
+    var dark: DarkTheme
 
     /// What a fresh install draws: the look the app shipped with.
     static let `default` = ThemeChoice(light: SettingsKeys.lightTheme.defaultValue,
