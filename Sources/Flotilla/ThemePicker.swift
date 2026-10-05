@@ -11,7 +11,8 @@ import FlotillaCore
 /// what it previews.
 ///
 /// Two rows rather than one list, because Auto switches appearance: the user picks a pair, and
-/// the window moves between them at sunset. Light offers six themes and dark four. See `LightTheme`.
+/// the window moves between them at sunset. Light offers eight themes, cream and honeydew, and
+/// dark four. See `LightTheme`.
 struct ThemePickerRow: View {
     enum Appearance { case light, dark }
 
@@ -65,11 +66,14 @@ struct ThemePickerRow: View {
         }
     }
 
-    /// Cards at a fixed size, wrapping onto a second row rather than shrinking — six light themes
-    /// do not fit across the pane, and a sketch scaled down to fit stops showing the bar's ink.
-    private let columns = [GridItem(.adaptive(minimum: ThemeSketch.size.width,
-                                              maximum: ThemeSketch.size.width),
-                                    spacing: 12, alignment: .topLeading)]
+    /// Four to a row, at a fixed size — one column per brand bar (the owner, 5 October). Light's
+    /// eight come out as a cream row with the honeydew row under it, each bar above its own
+    /// honeydew form, and dark's four as one row. Fixed rather than adaptive: an adaptive grid put
+    /// five or six on a row in a wide pane, which broke the rows apart; and a sketch scaled down to
+    /// fit stops showing the bar's ink.
+    private let columns = Array(repeating: GridItem(.fixed(ThemeSketch.size.width), spacing: 12,
+                                                    alignment: .topLeading),
+                                count: 4)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

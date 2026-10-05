@@ -1244,6 +1244,24 @@ A stored or managed light-only value for dark is refused and falls back to Flesh
 that. Measured: Canary over the wash is 1.4:1 bar-to-body, the closest pair in the set, and leans on
 the bar's divider.
 
+### Q23 amended again — twelve themes, one background per row (2026-10-05)
+
+The owner, later the same day: **three rows of four**. Cream: Stripe, Flesh, Cantaloupe, Canary.
+Honeydew: the same four bars on the wash. Dark: unchanged. That is eight light and four dark.
+
+It changes two existing themes:
+
+- **Stripe moves from the wash to cream.** The old Stripe is now **Stripe Honeydew**. No shipped
+  build has themes (they arrived 2026-09-26, after beta 1), so there is no migration code. The one
+  saved `stripe`, on the owner's dev Mac, was moved to `stripeHoneydew` by hand.
+- **Canary moves from white to cream.** It measures 1.5:1 bar-to-body, between its old 1.6 on white
+  and Canary Honeydew's 1.4. Like those, it relies on the bar's divider. White is no longer a body.
+
+**Cantaloupe Honeydew** is new. The four shared raw values are unchanged. The picker is now a fixed
+grid of four columns, so each bar sits above its honeydew form, and a test pins that order.
+Re-measuring found **success on the wash at 2.95:1**, a hair under 3:1 (previously rounded to 3.0).
+That is left as an open question rather than changed here, because it is shared by every theme.
+
 ## Q24 — Groups live in the Containers list (settled 2026-10-05)
 
 **The owner's design**, after Docker Desktop's handling of Compose stacks: one list for groups and

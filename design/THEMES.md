@@ -1,6 +1,6 @@
 # Themes
 
-**Status: specified and built 26 September 2026.** Code: `Sources/Flotilla/ThemePalette.swift` (the six
+**Status: specified and built 26 September 2026; twelve themes 5 October.** Code: `Sources/Flotilla/ThemePalette.swift` (the twelve
 themes), `Theme.swift` (the tokens), `ThemePicker.swift` (Settings), and `LightTheme`/`DarkTheme` in
 `FlotillaCore`.
 The palette's source of truth is [`branding.md`](branding.md). This file decides how the palette is applied.
@@ -24,28 +24,36 @@ Everywhere else, Flotilla looks and behaves like standard macOS.
 
 ## The themes
 
-**Four themes, the same four in light and dark** (the owner, 26 September — revised the same day
-from a first draft of three light and three dark). Each is named after its bar, and the bar is the
-same brand colour in both appearances; only the body changes.
+**Four bars, the same four everywhere** (the owner, 26 September — revised the same day from a
+first draft of three light and three dark). Each theme is named after its bar, and the bar is the
+same brand colour in every row; only the body changes.
 
 | Theme | Bar | Bar ink | Light body | Dark body |
 |---|---|---|---|---|
-| **Stripe** | stripe `#7CB342` | seed | honeydew wash `#E5F4DC` (honeydew at 30% over white) | seed `#241F1A` |
-| **Flesh** | flesh `#FC4A6B` | seed | cream `#FBF7F0` | seed |
-| **Cantaloupe** | cantaloupe `#EE7B4D` | seed | cream `#FBF7F0` | seed |
-| **Canary** | canary `#F2C94C` | seed | white `#FFFFFF` (the bar's existing divider separates them) | seed |
-| **Canary Honeydew** *(light only)* | canary `#F2C94C` | seed | honeydew wash `#E5F4DC` | — |
-| **Flesh Honeydew** *(light only)* | flesh `#FC4A6B` | seed | honeydew wash `#E5F4DC` | — |
+| **Stripe** | stripe `#7CB342` | seed | cream `#FBF7F0` | seed `#241F1A` |
+| **Flesh** | flesh `#FC4A6B` | seed | cream | seed |
+| **Cantaloupe** | cantaloupe `#EE7B4D` | seed | cream | seed |
+| **Canary** | canary `#F2C94C` | seed | cream (the bar's existing divider separates them) | seed |
+| **Stripe Honeydew** *(light only)* | stripe | seed | honeydew wash `#E5F4DC` (honeydew at 30% over white) | — |
+| **Flesh Honeydew** *(light only)* | flesh | seed | honeydew wash | — |
+| **Cantaloupe Honeydew** *(light only)* | cantaloupe | seed | honeydew wash | — |
+| **Canary Honeydew** *(light only)* | canary | seed | honeydew wash | — |
 
-**Six light themes, four dark** (5 October). The two honeydew themes are light-only: every dark body
-is seed, so a dark form would only repeat dark Canary or dark Flesh. They come from the owner's design
-references, pastel commuter tumblers whose saturated lid sits over a pastel body with a thin rim
-between, which maps onto bar, body and divider. A theme is named after its bar, plus its body when
-that body is not the bar's usual one. `LightTheme` and `DarkTheme` are separate types so the dark
-setting cannot hold a light-only theme.
+**Twelve themes: three rows of four, one background per row** (the owner, 5 October). Light has a
+cream row and a honeydew row; dark has one row on seed. Each row holds the same four bars in the same
+order, and the picker lays them out four to a row, so every bar sits above its own honeydew form.
+This replaced the first honeydew step earlier the same day (six light: two honeydew themes added
+beside four with mixed bodies). It moved **Stripe off the wash**, where it had been since it was
+built, so the old Stripe is now Stripe Honeydew. It also moved **Canary off white**.
+
+The honeydew row is light-only: every dark body is seed, so a dark form would only repeat the dark
+row. It comes from the owner's design references: pastel commuter tumblers with a saturated lid over a
+pastel body and a thin rim between, which maps onto bar, body and divider. A theme is named after its
+bar, plus "Honeydew" when its body is the wash. `LightTheme` and `DarkTheme` are separate types, so
+the dark setting cannot hold a light-only theme.
 
 **Defaults:** Cantaloupe for light, Flesh for dark — the look the app shipped with. Both pickers
-offer all four, so choosing Stripe for both is a valid pair.
+offer every theme in their row, so choosing Stripe for both is a valid pair.
 
 **Every bar takes seed ink.** White measures 2.5:1 at best on these four bars (stripe), under the
 4.5:1 the wordmark needs; seed holds 4.9:1 at worst (flesh). The ink is still a per-theme value in
@@ -71,13 +79,20 @@ WCAG ratios. Text needs 4.5:1; non-text marks, such as status dots and chart lin
 
 | Theme | Bar ink (seed) | Bar vs body | Weakest status colour on body |
 |---|---|---|---|
-| Stripe, light | 6.5 | 2.2 | success 3.0 |
-| Flesh, light | 4.9 | 3.1 | success 3.2 |
-| Cantaloupe, light | 5.9 | 2.6 | success 3.2 |
-| Canary, light | 10.3 | 1.6 (hence the divider) | success 3.4 |
-| Canary Honeydew, light | 10.3 | **1.4** (closest pair; relies on the divider) | success 3.0 |
-| Flesh Honeydew, light | 4.9 | 2.9 | success 3.0 |
+| Stripe, light (cream) | 6.5 | 2.3 | success 3.2 |
+| Flesh, light (cream) | 4.9 | 3.1 | success 3.2 |
+| Cantaloupe, light (cream) | 5.9 | 2.6 | success 3.2 |
+| Canary, light (cream) | 10.3 | **1.5** (relies on the divider) | success 3.2 |
+| Stripe Honeydew | 6.5 | 2.2 | success 2.95 |
+| Flesh Honeydew | 4.9 | 2.9 | success 2.95 |
+| Cantaloupe Honeydew | 5.9 | 2.4 | success 2.95 |
+| Canary Honeydew | 10.3 | **1.4** (closest pair; relies on the divider) | success 2.95 |
 | All four, dark | 4.9–10.3 | 4.9–10.3 | danger 5.2 |
+
+The status column depends only on the body, so each row shares one figure. Re-measured on
+5 October to two decimal places, **success on the honeydew wash is 2.95:1**. That is a hair under
+the 3:1 a status mark needs; it had been recorded as 3.0. It is not fixed here: deepening
+success changes it in every theme, so it is a separate decision.
 
 Two measurements shaped the design. **Full-strength honeydew hid the green status colours**
 (online 2.5:1, success 2.1:1), which is why Stripe's light body is a 30% wash. And **white bar ink
@@ -106,5 +121,5 @@ honeydew wash, holds 3.5:1.
   per-use review, not a blind swap.
 - The theme identifiers and their settings keys belong in `FlotillaCore` settings, Foundation-only;
   the colours stay in the app target.
-- Verify every screen in all eight variants (four themes, light and dark) on a real launch before
+- Verify every screen in all twelve variants (eight light, four dark) on a real launch before
   shipping.

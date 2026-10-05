@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import FlotillaCore
 
-// The theme pair (`design/THEMES.md`): six light themes and four dark, with a light choice and a
+// The theme pair (`design/THEMES.md`): eight light themes and four dark, with a light choice and a
 // dark choice stored separately so Auto can switch between them. The colours live in
 // the app target; FlotillaCore only owns which theme is chosen, which is what a managed profile
 // and an export need to agree on.
@@ -39,9 +39,10 @@ import Testing
     // An exported profile should read `canaryHoneydew`, not "Canary Honeydew".
     #expect(LightTheme.canaryHoneydew.settingValue == .string("canaryHoneydew"))
     #expect(DarkTheme.flesh.settingValue == .string("flesh"))
-    // Declaration order is picker order. Light has six; dark has four.
+    // Declaration order is picker order. Light has eight; dark has four.
     #expect(LightTheme.allowedRawValues ==
-            ["stripe", "flesh", "cantaloupe", "canary", "canaryHoneydew", "fleshHoneydew"])
+            ["stripe", "flesh", "cantaloupe", "canary",
+             "stripeHoneydew", "fleshHoneydew", "cantaloupeHoneydew", "canaryHoneydew"])
     #expect(DarkTheme.allowedRawValues == ["stripe", "flesh", "cantaloupe", "canary"])
 }
 
@@ -56,7 +57,7 @@ import Testing
 @Test func aLightOnlyThemeIsRefusedForDarkAndDarkFallsBackToFlesh() throws {
     let store = SettingsStore()
     // The honeydew variants have no dark form. Writing one to the dark key must fail outright...
-    for raw in ["canaryHoneydew", "fleshHoneydew"] {
+    for raw in ["stripeHoneydew", "fleshHoneydew", "cantaloupeHoneydew", "canaryHoneydew"] {
         #expect(throws: SettingsError.self) {
             try store.setRaw(.string(raw), forKeyNamed: SettingsKeys.darkTheme.name)
         }
@@ -107,6 +108,17 @@ import Testing
 
 @Test func everyThemeHasADisplayTitle() {
     #expect(LightTheme.allCases.map(\.title) ==
-            ["Stripe", "Flesh", "Cantaloupe", "Canary", "Canary Honeydew", "Flesh Honeydew"])
+            ["Stripe", "Flesh", "Cantaloupe", "Canary",
+             "Stripe Honeydew", "Flesh Honeydew", "Cantaloupe Honeydew", "Canary Honeydew"])
     #expect(DarkTheme.allCases.map(\.title) == ["Stripe", "Flesh", "Cantaloupe", "Canary"])
+}
+
+@Test func theHoneydewRowLinesUpUnderTheCreamRow() {
+    // The picker lays light out four to a row (the owner, 5 October): cream on top, honeydew
+    // under it. That only reads as two rows if the second four are the first four's bars, in the
+    // same order, and the first four are exactly the dark list.
+    let all = LightTheme.allCases.map(\.rawValue)
+    let cream = Array(all.prefix(4)), honeydew = Array(all.dropFirst(4))
+    #expect(cream == DarkTheme.allCases.map(\.rawValue))
+    #expect(honeydew == cream.map { $0 + "Honeydew" })
 }

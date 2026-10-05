@@ -3,7 +3,7 @@ import FlotillaCore
 
 /// The two colours a theme is made of, and the ink that reads on the bar.
 ///
-/// **The single table for all six themes.** `Theme`'s bar, bar-text and background tokens read
+/// **The single table for all twelve themes.** `Theme`'s bar, bar-text and background tokens read
 /// it, and so do the sketches in Settings, so a preview can never disagree with the window it
 /// previews. The values and the contrast measurements behind them are in `design/THEMES.md`.
 struct ThemePalette: Equatable {
@@ -21,7 +21,6 @@ struct ThemePalette: Equatable {
     static let canary = 0xF2C94C
     static let flesh = 0xFC4A6B
     static let seed = 0x241F1A
-    static let white = 0xFFFFFF
     /// `cream`, the suite's warm neutral — the light background the app shipped with.
     static let cream = 0xFBF7F0
     /// Honeydew `#A7D98C` at 30% over white. Full-strength honeydew drops the online and success
@@ -30,31 +29,31 @@ struct ThemePalette: Equatable {
 }
 
 extension LightTheme {
-    /// This theme's colours.
+    /// This theme's colours: its brand bar over its row's body.
+    ///
+    /// **One body per row** (the owner, 5 October): the first four themes sit on cream, the
+    /// honeydew four on the wash. That moved Stripe off the wash, which it had been on since it was
+    /// built (the old Stripe is now Stripe Honeydew), and Canary off white.
     ///
     /// **Every bar takes seed ink**: white measures 2.5:1 at best on these bars (stripe), and seed
-    /// holds 4.9:1 at worst (flesh). Each body keeps the status colours above 3:1.
+    /// holds 4.9:1 at worst (flesh). Each body keeps the status colours at 3:1 or within a hair of
+    /// it (success on the wash, 2.95:1).
+    ///
+    /// Canary is the closest pair on both bodies, 1.5:1 bar-to-body on cream and 1.4:1 on the wash.
+    /// The bar's own `Divider` is what separates them: it is there for every theme, and these two
+    /// depend on it.
     var palette: ThemePalette {
-        switch self {
-        // The green bar over the green-tinted wash.
-        case .stripe:
-            return ThemePalette(bar: ThemePalette.stripe, onBar: ThemePalette.seed, body: ThemePalette.honeydewWash)
-        case .flesh:
-            return ThemePalette(bar: ThemePalette.flesh, onBar: ThemePalette.seed, body: ThemePalette.cream)
-        case .cantaloupe:
-            return ThemePalette(bar: ThemePalette.cantaloupe, onBar: ThemePalette.seed, body: ThemePalette.cream)
-        // Canary over white is 1.6:1 bar-to-body. The bar's own `Divider` is what separates them:
-        // it is there for every theme, and this is one that depends on it.
-        case .canary:
-            return ThemePalette(bar: ThemePalette.canary, onBar: ThemePalette.seed, body: ThemePalette.white)
-        // The two light-only themes (5 October), from the owner's tumbler references: a saturated
-        // lid over a pastel body. Canary over the wash is the closest pair in the set, 1.4:1
-        // bar-to-body, so this one leans on the divider hardest. Flesh over the wash is 2.9:1.
-        case .canaryHoneydew:
-            return ThemePalette(bar: ThemePalette.canary, onBar: ThemePalette.seed, body: ThemePalette.honeydewWash)
-        case .fleshHoneydew:
-            return ThemePalette(bar: ThemePalette.flesh, onBar: ThemePalette.seed, body: ThemePalette.honeydewWash)
+        let bar: Int = switch self {
+        case .stripe, .stripeHoneydew: ThemePalette.stripe
+        case .flesh, .fleshHoneydew: ThemePalette.flesh
+        case .cantaloupe, .cantaloupeHoneydew: ThemePalette.cantaloupe
+        case .canary, .canaryHoneydew: ThemePalette.canary
         }
+        let body: Int = switch self {
+        case .stripe, .flesh, .cantaloupe, .canary: ThemePalette.cream
+        case .stripeHoneydew, .fleshHoneydew, .cantaloupeHoneydew, .canaryHoneydew: ThemePalette.honeydewWash
+        }
+        return ThemePalette(bar: bar, onBar: ThemePalette.seed, body: body)
     }
 }
 

@@ -27,7 +27,7 @@ public enum SettingsKeys {
     /// shipped with, so nobody's window changes colour on upgrade.
     public static let lightTheme = SettingsKey<LightTheme>(
         "lightTheme", default: .cantaloupe,
-        summary: "Window bar and background when the app draws light: stripe, flesh, cantaloupe, canary, canaryHoneydew or fleshHoneydew."
+        summary: "Window bar and background when the app draws light: stripe, flesh, cantaloupe or canary on cream, or stripeHoneydew, fleshHoneydew, cantaloupeHoneydew or canaryHoneydew on the honeydew wash."
     )
 
     /// The dark half of the theme pair. Defaults to Flesh, the bar dark mode already had.

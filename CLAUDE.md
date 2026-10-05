@@ -492,7 +492,8 @@ must preserve all of the following:
 11. **Appearance:** onboarding asks the user; `Auto` is preselected and means
     follow the system. Light and dark are equally supported. **Themes (Q23,
     2026-09-26):** a theme changes only the window bar and the content background,
-    and the user picks a light theme and a dark theme. Controls follow **macOS**:
+    and the user picks a light theme and a dark theme: eight light (four bars on
+    cream, the same four on the honeydew wash) and four dark. Controls follow **macOS**:
     system accent for buttons, selection and focus, system link colour for links.
     The melon stays on the bar, the background, charts, status and the wordmark.
     Never introduce a colour from outside the palette, and never put the accent

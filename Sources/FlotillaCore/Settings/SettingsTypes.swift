@@ -47,23 +47,26 @@ public enum AppearancePreference: String, SettingEnum, Codable {
     public static var selectable: [AppearancePreference] { [.auto, .light, .dark] }
 }
 
-/// The theme drawn whenever the app is **light**: six of them.
+/// The theme drawn whenever the app is **light**: eight of them, in two rows of four.
 ///
 /// A theme changes exactly two things — the window bar and the content background — and is named
-/// after its bar, plus its body when that body is not the bar's usual one (`design/THEMES.md`).
-/// So `canary` is the canary bar on white, and `canaryHoneydew` is the same bar on the honeydew
-/// wash.
+/// after its bar, plus its body when that body is the honeydew wash (`design/THEMES.md`). The owner,
+/// 5 October: **one background per row.** The first four are the four brand bars on cream; the
+/// second four are the same four bars, in the same order, on the honeydew wash. So `canary` is the
+/// canary bar on cream, and `canaryHoneydew` is the same bar on the wash.
 ///
-/// **Two types, not one, and that is the point.** Light has six themes and dark has four (the
-/// owner, 5 October: the two honeydew variants are light-only). With one shared enum, both keys
-/// would accept all six, and a managed profile could store `canaryHoneydew` for dark — a theme with
-/// no dark form. Separate types make the dark key refuse it at the settings layer, with no check
-/// anyone has to remember.
+/// **Two types, not one, and that is the point.** Light has eight themes and dark has four (the
+/// owner, 5 October: the honeydew row is light-only). With one shared enum, both keys would accept
+/// all eight, and a managed profile could store `canaryHoneydew` for dark — a theme with no dark
+/// form. Separate types make the dark key refuse it at the settings layer, with no check anyone
+/// has to remember.
 ///
 /// The raw values are the brand tokens, so an exported profile says `stripe`, and the four themes
-/// both lists share keep the raw values they have always had. Declaration order is picker order.
+/// both lists share keep the raw values they have always had. Declaration order is picker order,
+/// and the picker lays it out four to a row, so the honeydew row lines up under the cream one.
 public enum LightTheme: String, SettingEnum, Codable {
-    case stripe, flesh, cantaloupe, canary, canaryHoneydew, fleshHoneydew
+    case stripe, flesh, cantaloupe, canary
+    case stripeHoneydew, fleshHoneydew, cantaloupeHoneydew, canaryHoneydew
 
     public var title: String {
         switch self {
@@ -71,8 +74,10 @@ public enum LightTheme: String, SettingEnum, Codable {
         case .flesh: "Flesh"
         case .cantaloupe: "Cantaloupe"
         case .canary: "Canary"
-        case .canaryHoneydew: "Canary Honeydew"
+        case .stripeHoneydew: "Stripe Honeydew"
         case .fleshHoneydew: "Flesh Honeydew"
+        case .cantaloupeHoneydew: "Cantaloupe Honeydew"
+        case .canaryHoneydew: "Canary Honeydew"
         }
     }
 }
