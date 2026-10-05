@@ -1262,6 +1262,29 @@ grid of four columns, so each bar sits above its honeydew form, and a test pins 
 Re-measuring found **success on the wash at 2.95:1**, a hair under 3:1 (previously rounded to 3.0).
 That is left as an open question rather than changed here, because it is shared by every theme.
 
+### Q23 amended a third time — the matte finish (2026-10-05)
+
+The owner wanted the theme colours less bright: matte, like anti-glare glass or the powder-coated
+tumblers. Five finishes were prototyped on a throwaway branch and captured for Cantaloupe, Stripe
+and Flesh in light and dark:
+
+- chroma −15%;
+- chroma −30%;
+- a static grain;
+- chroma −15% with grain;
+- a frosted bar.
+
+**Chosen: chroma −15%, no grain.** Every theme's bar and body keep 85% of their OKLCH chroma
+(`OKLab.matte`), with lightness and hue unchanged, so contrast moves by 0.06 at most. Bar ink stays
+brand seed, and status, chart, tag and link colours are not finished.
+
+- **It is the look, not a setting**, so there is no toggle that would double the themes.
+- **Frost was ruled out on measurement:** dark frost put seed ink at 3.3–4.1:1 on the bar, under the
+  4.5 the wordmark needs.
+- **Grain** cost the status colours a little (3.17 → 3.06) and was not chosen.
+
+The values are tabled in `design/THEMES.md` and pinned by `OKLabTests`.
+
 ## Q24 — Groups live in the Containers list (settled 2026-10-05)
 
 **The owner's design**, after Docker Desktop's handling of Compose stacks: one list for groups and

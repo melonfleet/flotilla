@@ -1,6 +1,6 @@
 # Themes
 
-**Status: specified and built 26 September 2026; twelve themes 5 October.** Code: `Sources/Flotilla/ThemePalette.swift` (the twelve
+**Status: specified and built 26 September 2026; twelve themes and the matte finish 5 October.** Code: `Sources/Flotilla/ThemePalette.swift` (the twelve
 themes), `Theme.swift` (the tokens), `ThemePicker.swift` (Settings), and `LightTheme`/`DarkTheme` in
 `FlotillaCore`.
 The palette's source of truth is [`branding.md`](branding.md). This file decides how the palette is applied.
@@ -62,6 +62,38 @@ offer every theme in their row, so choosing Stripe for both is a valid pair.
 Raised panels and hairlines do **not** vary by theme: every light body works under white cards and
 every dark theme shares seed. Dark cards are seed lifted 6% towards white, `#312D28`.
 
+## The matte finish
+
+**Every theme's bar and body are the brand colour with 15% of its OKLCH chroma removed** (the owner,
+5 October). The colours stay the same hues, just softer, like the powder-coated tumblers the themes
+come from, and the app looks less bright. Lightness is kept, so every contrast figure below moves by
+0.06 at most. The tables above name the brand tokens; this is what the window draws:
+
+| Token | Brand | Matte (drawn) |
+|---|---|---|
+| stripe | `#7CB342` | `#82B155` |
+| flesh | `#FC4A6B` | `#EF5C72` |
+| cantaloupe | `#EE7B4D` | `#E4825C` |
+| canary | `#F2C94C` | `#EDCA67` |
+| cream | `#FBF7F0` | `#FAF7F1` |
+| honeydew wash | `#E5F4DC` | `#E6F3DF` |
+| seed (dark body) | `#241F1A` | `#231F1B` |
+
+- **Bar and body only.** The bar ink stays brand seed, so text is as dark as it can be. Status, chart,
+  tag and link colours are fixed per appearance, as before, and are not finished.
+- **Not a setting.** It is the look, the same for every theme.
+- **Chosen from screenshots.** Five finishes were captured for Cantaloupe, Stripe and Flesh in light
+  and dark (`~/melonfleet/experiments/matte-2026-10-05/`, outside the repo):
+  - chroma −15%;
+  - chroma −30%;
+  - a static grain texture;
+  - chroma −15% with grain;
+  - a frosted bar.
+
+  Frost was ruled out: in dark it dropped seed ink on the bar to 3.3–4.1:1, under the 4.5 the
+  wordmark needs. The owner picked chroma −15% without grain.
+- The conversion is `OKLab` in `FlotillaCore`, and `OKLabTests` pins every value in this table.
+
 ## Choosing a theme
 
 - **Settings → Appearance** has two pickers: **Light theme** and **Dark theme**. Each shows every
@@ -73,24 +105,25 @@ every dark theme shares seed. Dark cards are seed lifted 6% towards white, `#312
   **Cantaloupe** (light) and **Flesh** (dark).
 - Precedent: VS Code's preferred light and dark colour themes.
 
-## Measured contrast (26 September 2026)
+## Measured contrast (5 October 2026, with the matte finish)
 
 WCAG ratios. Text needs 4.5:1; non-text marks, such as status dots and chart lines, need 3:1.
 
 | Theme | Bar ink (seed) | Bar vs body | Weakest status colour on body |
 |---|---|---|---|
-| Stripe, light (cream) | 6.5 | 2.3 | success 3.2 |
-| Flesh, light (cream) | 4.9 | 3.1 | success 3.2 |
-| Cantaloupe, light (cream) | 5.9 | 2.6 | success 3.2 |
+| Stripe, light (cream) | 6.5 | 2.4 | success 3.2 |
+| Flesh, light (cream) | 5.0 | 3.1 | success 3.2 |
+| Cantaloupe, light (cream) | 6.0 | 2.6 | success 3.2 |
 | Canary, light (cream) | 10.3 | **1.5** (relies on the divider) | success 3.2 |
-| Stripe Honeydew | 6.5 | 2.2 | success 2.95 |
-| Flesh Honeydew | 4.9 | 2.9 | success 2.95 |
-| Cantaloupe Honeydew | 5.9 | 2.4 | success 2.95 |
-| Canary Honeydew | 10.3 | **1.4** (closest pair; relies on the divider) | success 2.95 |
-| All four, dark | 4.9–10.3 | 4.9–10.3 | danger 5.2 |
+| Stripe Honeydew | 6.5 | 2.2 | success 2.94 |
+| Flesh Honeydew | 5.0 | 2.8 | success 2.94 |
+| Cantaloupe Honeydew | 6.0 | 2.4 | success 2.94 |
+| Canary Honeydew | 10.3 | **1.4** (closest pair; relies on the divider) | success 2.94 |
+| All four, dark | 5.0–10.3 | 5.0–10.3 | danger 5.2 |
 
 The status column depends only on the body, so each row shares one figure. Re-measured on
-5 October to two decimal places, **success on the honeydew wash is 2.95:1**. That is a hair under
+5 October to two decimal places, **success on the honeydew wash is 2.94:1** (2.95 before the
+matte finish). That is a hair under
 the 3:1 a status mark needs; it had been recorded as 3.0. It is not fixed here: deepening
 success changes it in every theme, so it is a separate decision.
 

@@ -15,7 +15,7 @@ struct ThemePalette: Equatable {
     /// The content background.
     let body: Int
 
-    // The brand tokens, from `design/branding.md`.
+    // The brand tokens, from `design/branding.md`. Themes draw them through `matte(bar:body:)`.
     static let stripe = 0x7CB342
     static let cantaloupe = 0xEE7B4D
     static let canary = 0xF2C94C
@@ -26,6 +26,14 @@ struct ThemePalette: Equatable {
     /// Honeydew `#A7D98C` at 30% over white. Full-strength honeydew drops the online and success
     /// dots to 2.5:1 and 2.1:1, below the 3:1 a status mark needs; the wash holds 3.6 and 3.0.
     static let honeydewWash = 0xE5F4DC
+
+    /// A theme from its brand bar and body, **with the matte finish**: both lose 15% of their
+    /// OKLCH chroma (`OKLab.matte`), so they read softer without moving lightness, and therefore
+    /// without moving contrast (the owner's pick from A/B screenshots, 5 October). The ink is not
+    /// finished: seed is nearly neutral already, and text should stay as dark as it can be.
+    static func matte(bar: Int, body: Int) -> ThemePalette {
+        ThemePalette(bar: OKLab.matte(bar), onBar: seed, body: OKLab.matte(body))
+    }
 }
 
 extension LightTheme {
@@ -37,7 +45,7 @@ extension LightTheme {
     ///
     /// **Every bar takes seed ink**: white measures 2.5:1 at best on these bars (stripe), and seed
     /// holds 4.9:1 at worst (flesh). Each body keeps the status colours at 3:1 or within a hair of
-    /// it (success on the wash, 2.95:1).
+    /// it (success on the wash, 2.94:1).
     ///
     /// Canary is the closest pair on both bodies, 1.5:1 bar-to-body on cream and 1.4:1 on the wash.
     /// The bar's own `Divider` is what separates them: it is there for every theme, and these two
@@ -53,7 +61,7 @@ extension LightTheme {
         case .stripe, .flesh, .cantaloupe, .canary: ThemePalette.cream
         case .stripeHoneydew, .fleshHoneydew, .cantaloupeHoneydew, .canaryHoneydew: ThemePalette.honeydewWash
         }
-        return ThemePalette(bar: bar, onBar: ThemePalette.seed, body: body)
+        return .matte(bar: bar, body: body)
     }
 }
 
@@ -66,7 +74,7 @@ extension DarkTheme {
         case .cantaloupe: ThemePalette.cantaloupe
         case .canary: ThemePalette.canary
         }
-        return ThemePalette(bar: bar, onBar: ThemePalette.seed, body: ThemePalette.seed)
+        return .matte(bar: bar, body: ThemePalette.seed)
     }
 }
 
