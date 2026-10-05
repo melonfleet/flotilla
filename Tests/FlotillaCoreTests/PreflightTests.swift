@@ -254,3 +254,12 @@ private let expectedKernel =
         Issue.record("expected needsRestart, got \(result)"); return
     }
 }
+
+@Test func theKernelDownloadLineIsShortenedToTheFileAndTheSite() {
+    // The line 1.5.0 really prints on stderr (captured 5 October).
+    let line = "Installing the recommended kernel from https://github.com/kata-containers/kata-containers/releases/download/3.32.0/kata-static-3.32.0-arm64.tar.zst..."
+    #expect(ContainerCLI.kernelDownloadSummary(line)
+            == "Downloading kata-static-3.32.0-arm64.tar.zst from github.com")
+    // Anything without a URL is the CLI's own words, unchanged.
+    #expect(ContainerCLI.kernelDownloadSummary("Unpacking the kernel") == "Unpacking the kernel")
+}

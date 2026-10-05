@@ -72,6 +72,11 @@ struct ImagesView: View {
                     }
                     content
                 }
+                // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
+                // unreachable section is a `ContentUnavailableView`, which takes only its own
+                // height, and the strip below then rode up under it, halfway up the window (the
+                // owner, on an empty Volumes, 5 October). Machines already did this.
+                .frame(maxHeight: .infinity, alignment: .top)
                 // Same band as Containers and Machines. See `ResourceUIState.activityExpanded`
                 // for why it is collapsible: on this section it is usually empty.
                 .safeAreaInset(edge: .bottom, spacing: 0) {

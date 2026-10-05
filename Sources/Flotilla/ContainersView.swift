@@ -1283,6 +1283,9 @@ struct ContainersView: View {
                 systemImage: "exclamationmark.triangle",
                 description: Text(reason)
             )
+            // Fills the pane like the empty state below, so the activity strip stays at the
+            // bottom when the runtime is unreachable too.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded where rows.isEmpty:
             // An empty state that carries the primary action, per `FEATURES.md`. Until the

@@ -187,7 +187,7 @@ struct DashboardView: View {
         TimelineView(.periodic(from: install.started, by: 1)) { context in
             let seconds = max(0, Int(context.date.timeIntervalSince(install.started)))
             HStack(spacing: 6) {
-                Text(install.line ?? "Starting the download…")
+                Text(install.line.map(ContainerCLI.kernelDownloadSummary) ?? "Starting the download…")
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text("\(seconds) s").monospacedDigit()

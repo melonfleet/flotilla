@@ -206,6 +206,21 @@ public struct ContainerCLI: Sendable {
         try execute(["system", "kernel", "set", "--recommended"], onLine: onLine)
     }
 
+    /// The CLI's kernel-install line, shortened for a banner: the file and the site, not the
+    /// whole URL (the owner, 5 October). 1.5.0 prints `Installing the recommended kernel from
+    /// https://github.com/…/kata-static-3.32.0-arm64.tar.zst...`, which is two-thirds URL. A line
+    /// with no URL in it comes back unchanged, so a reworded CLI degrades to its own words.
+    public static func kernelDownloadSummary(_ line: String) -> String {
+        guard let token = line.split(separator: " ").first(where: { $0.hasPrefix("https://") || $0.hasPrefix("http://") }) else {
+            return line
+        }
+        var text = String(token)
+        while text.hasSuffix(".") { text.removeLast() }   // the CLI's trailing "..."
+        guard let url = URL(string: text), let host = url.host, !url.lastPathComponent.isEmpty,
+              url.lastPathComponent != "/" else { return line }
+        return "Downloading \(url.lastPathComponent) from \(host)"
+    }
+
     /// Stops the `container` services.
     ///
     /// Every running container goes down with them, so this is never something to do on the app's
