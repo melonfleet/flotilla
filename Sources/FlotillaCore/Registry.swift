@@ -312,6 +312,11 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                       anonymousPullWorks: true, hasAccounts: false),
     ]
 
+    /// Why an HTTP registry cannot be signed in to. One sentence, shared by the table, the Add form
+    /// and the manage form. See `RegistryRow.canSignIn` for the measurement behind it.
+    public static let httpSignInRefusal =
+        "container 1.5 won't send a password over HTTP, so a registry that needs one has to use HTTPS."
+
     /// The host a registry's credential is actually **stored** under, which is not always the
     /// host you signed in to.
     ///

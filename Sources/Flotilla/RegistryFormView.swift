@@ -65,9 +65,6 @@ struct RegistryFormView: View {
     @State private var password = ""
     @State private var working = false
     @State private var signInError: String?
-    /// Manage mode: an HTTP-only registry the user added remembers it; a login with no list entry
-    /// can say so here.
-    @State private var manageUsesHTTP = false
     @State private var confirmingSignOut = false
 
     @State private var edits = FormEditTracker()
@@ -118,7 +115,18 @@ struct RegistryFormView: View {
         return nil
     }
 
-    private var canSignIn: Bool { (need ?? .optional) != .notNeeded }
+    /// Whether this registry is reached over plain HTTP — which, since `container` 1.5.0, means it
+    /// cannot be signed in to at all. See `RegistryRow.canSignIn` for the measurement.
+    private var plaintext: Bool {
+        if let managed { return managed.usesHTTP }
+        if let chosen { return chosen.usesHTTP }
+        return isCustom && usesHTTP
+    }
+
+    /// The registry has accounts, but this Mac cannot use them over HTTP.
+    private var httpBlocksSignIn: Bool { plaintext && (need ?? .optional) != .notNeeded }
+
+    private var canSignIn: Bool { (need ?? .optional) != .notNeeded && !plaintext }
 
     private var guidance: (hint: String?, token: String?, docs: String?) {
         if let managed {
@@ -133,20 +141,17 @@ struct RegistryFormView: View {
         !username.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty
     }
 
-    /// Whether this sign-in goes over plain HTTP.
-    private var plaintext: Bool {
-        if managed != nil { return manageUsesHTTP }
-        if let chosen { return chosen.usesHTTP }
-        return usesHTTP
-    }
-
     private var canSubmit: Bool {
         guard !working else { return false }
         if managed != nil { return hasCredentials && model.runtimeUsable }
         guard choice != nil else { return false }
         guard chosen != nil || (!trimmedHost.isEmpty && hostProblem == nil) else { return false }
+        // A required registry over HTTP can never be signed in to, so it cannot be added either:
+        // it would be a row nothing can pull from.
+        if need == .required, plaintext { return false }
         // The owner's rule: a registry that needs a sign-in is not added without one.
         if need == .required { return hasCredentials && model.runtimeUsable }
+        if plaintext { return true }
         if hasCredentials { return model.runtimeUsable }
         return true
     }
@@ -155,7 +160,7 @@ struct RegistryFormView: View {
         if managed != nil { return managed?.isSignedIn == true ? "Switch Account" : "Sign In" }
         switch need {
         case .required: return "Sign In and Add"
-        case .optional: return hasCredentials ? "Add and Sign In" : "Add"
+        case .optional: return hasCredentials && !plaintext ? "Add and Sign In" : "Add"
         case .notNeeded, nil: return "Add"
         }
     }
@@ -183,10 +188,7 @@ struct RegistryFormView: View {
             Divider()
             footer
         }
-        .onAppear {
-            manageUsesHTTP = managed?.known?.usesHTTP ?? false
-            edits.open(editSignature)
-        }
+        .onAppear { edits.open(editSignature) }
         .confirmationDialog("Sign out of “\(managed?.name ?? server)”?",
                             isPresented: $confirmingSignOut, titleVisibility: .visible) {
             Button("Sign Out", role: .destructive) { signOut() }
@@ -287,8 +289,7 @@ struct RegistryFormView: View {
                       detail: "Remembered for this registry, unlike the Pull form's one-off "
                           + "switch: a development registry that has no TLS today will not have "
                           + "any tomorrow either.",
-                      warning: "Over HTTP your password is sent in the clear. Only for a "
-                          + "registry on your own machine or network.")) {
+                      warning: "Over HTTP nothing can sign in: " + KnownRegistry.httpSignInRefusal)) {
             Picker("", selection: $usesHTTP) {
                 Text("HTTPS").tag(false)
                 Text("HTTP").tag(true)
@@ -298,13 +299,7 @@ struct RegistryFormView: View {
             .fixedSize()
         }
 
-        if usesHTTP {
-            Label("Your password will be sent unencrypted.",
-                  systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(Theme.warning)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        // No warning here: the sign-in section below says what HTTP means for signing in, once.
 
         FormField("Signing in",
                   help: FieldHelp(
@@ -406,22 +401,19 @@ struct RegistryFormView: View {
                     .onSubmit { if canSubmit { submit() } }
             }
 
-            // A login made in a terminal to a registry with no list entry may be HTTP-only; one in
-            // the list already knows.
-            if let managed, !managed.isListed {
-                Toggle("This registry has no TLS (http)", isOn: $manageUsesHTTP)
-            }
-            if plaintext {
-                Label("Your password will be sent unencrypted. Only for a registry on your own "
-                      + "machine or network.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(Theme.warning)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             if !model.runtimeUsable {
                 Text("Signing in needs the container runtime, which isn't available right now.")
                     .font(.caption).foregroundStyle(Theme.warning)
             }
+        } else if httpBlocksSignIn {
+            // Not a greyed-out sign-in that can only fail: the runtime will not do it.
+            FormSectionHeader(title: "Sign in", note: "Not possible over HTTP.")
+            Text(KnownRegistry.httpSignInRefusal
+                 + (need == .required && isAdd
+                    ? " Switch Connect using to HTTPS to add it."
+                    : " Images that need no account still pull."))
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         } else if need == .notNeeded {
             // Not a greyed-out sign-in: there is no account to grey out.
             FormSectionHeader(title: "Signing in", note: "Not needed here.")
@@ -525,9 +517,11 @@ struct RegistryFormView: View {
     private func railSignInLine(_ need: SignInNeed) -> String {
         switch need {
         case .required:
+            if plaintext { return "Can't be added over HTTP — it needs a sign-in." }
             return hasCredentials ? "Signing in as \(username), then adding"
                                   : "Sign in to add it — this registry needs an account."
         case .optional:
+            if plaintext { return "No sign-in over HTTP; images that need no account pull." }
             return hasCredentials ? "Signing in as \(username)"
                                   : "Not signing in yet — you can do it any time."
         case .notNeeded:
@@ -566,6 +560,8 @@ struct RegistryFormView: View {
     private var disabledReason: String? {
         guard !canSubmit, !working else { return nil }
         if let hostProblem { return hostProblem }
+        // A required registry over HTTP: the sign-in section already says why, so not twice.
+        if isAdd, need == .required, plaintext { return nil }
         if isAdd, choice != nil, need == .required, !hasCredentials, !server.isEmpty {
             return "Enter a username and password or token — this registry is added once you have signed in."
         }
@@ -617,7 +613,7 @@ struct RegistryFormView: View {
             model.addRegistry(known: known)
         } else {
             model.addRegistry(host: row.id, name: "", summary: "", kind: RegistryKind.inferred(fromHost: row.id),
-                              usesHTTP: manageUsesHTTP, signInRequired: true)
+                              usesHTTP: false, signInRequired: true)
         }
     }
 

@@ -107,6 +107,23 @@ struct RegistrySectionTests {
         #expect(rows[1].statusText == "Not signed in")
     }
 
+    @Test("an HTTP registry cannot be signed in to, and says why")
+    func httpRegistriesHaveNoSignIn() throws {
+        // container 1.5.0 refuses a credential challenge over plain HTTP, even on localhost
+        // (measured 5 October with a correct password). A Sign In there could only fail.
+        var book = RegistryBook()
+        try book.add(host: "localhost:5001", name: "", usesHTTP: true)
+        try book.add(host: "registry.internal", name: "")
+        let rows = book.rows(logins: [])
+        let http = try #require(rows.first { $0.id == "localhost:5001" })
+        let https = try #require(rows.first { $0.id == "registry.internal" })
+        #expect(!http.canSignIn)
+        #expect(http.signInUnavailableReason == KnownRegistry.httpSignInRefusal)
+        #expect(http.statusText == "Can't sign in over HTTP")
+        #expect(https.canSignIn)
+        #expect(https.signInUnavailableReason == nil)
+    }
+
     @Test("registries are their own activity and tag kind")
     func registryKind() {
         let subject = TagSubject(kind: .registry, id: "ghcr.io")

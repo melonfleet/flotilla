@@ -349,7 +349,7 @@ struct RegistriesView: View {
             TableColumn("Sign-in", value: \.signInSortKey) { row in
                 Text(row.signInNeed.title)
                     .foregroundStyle(row.signInNeed == .required ? .primary : .secondary)
-                    .help(signInHelp(row.signInNeed))
+                    .help(row.signInUnavailableReason ?? signInHelp(row.signInNeed))
             }
             .width(min: 70, ideal: 90)
             .customizationID("signIn")

@@ -1342,6 +1342,10 @@ Decisions, all the owner's unless marked:
 - **One embedded form for adding and for managing** (mine): clicking a registry opens it to sign in,
   switch account or sign out. It replaced the Settings pane's sign-in sheet, the last modal among
   the create forms.
+- **No sign-in over HTTP** (found testing, 5 October). `container` 1.5.0 refuses a credential
+  challenge over plain HTTP, even on `localhost` (measured with a correct password; it worked on
+  1.4.1). So an HTTP registry shows "Can't sign in over HTTP" and has no Sign In, and a required
+  registry cannot be added over HTTP. The Add form says so once, in place of the sign-in fields.
 - **Unchanged from Q20:** a catalogue, not a capability list. The password goes through stdin and
   never argv, and Flotilla stores no credential. A login made in a terminal to a registry that
   isn't in your list still shows, marked "not in your list", with Add to List.

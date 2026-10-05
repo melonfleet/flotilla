@@ -79,6 +79,16 @@ button, and an allowlist row for `system kernel set --recommended` only. Buildin
 CLI bug: `kernel set` fails if `<appRoot>/kernels` is missing ("The file “vmlinux-…” doesn't
 exist", about the temp file). Flotilla creates the empty folder first.
 
+**Signing in to an HTTP registry no longer works at all.** Found testing the Registries section
+against a throwaway `registry:2` on `localhost:5001` with htpasswd auth. With a correct password,
+`container registry login --scheme http` fails with "refusing insecure credential exchange:
+registry localhost issued an authentication challenge over an insecure connection". The check is
+in `apple/containerization` (`RegistryClient.swift`): any non-HTTPS base that answers with an
+authentication challenge is refused, with no exemption for `localhost`. The same sign-in worked on
+1.4.1, which is how `Fixtures/registries.json` was captured on 13 September. It applies to pulls as
+well, so an HTTP registry is only usable anonymously. Flotilla now offers no Sign In for an HTTP
+registry and will not add a required one over HTTP (DECISIONS Q26).
+
 ## Fixtures
 
 **The value-pinned set stays on 1.4.1.** The `SmokeTests` assertions (six containers, a

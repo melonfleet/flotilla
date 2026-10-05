@@ -44,8 +44,25 @@ public struct RegistryRow: Identifiable, Equatable, Sendable {
     /// hand-added one gets.
     public var signInNeed: SignInNeed { known?.signInNeed ?? .required }
 
-    /// Whether this registry has an account to sign in to at all.
-    public var canSignIn: Bool { signInNeed != .notNeeded }
+    /// Whether this registry is reached over plain HTTP.
+    public var usesHTTP: Bool { known?.usesHTTP ?? false }
+
+    /// Whether this Mac can sign in to it at all.
+    ///
+    /// **Not over HTTP, since `container` 1.5.0.** The runtime's registry client refuses to send a
+    /// credential to a registry that challenges for one over a non-HTTPS connection —
+    /// "refusing insecure credential exchange" (`apple/containerization`,
+    /// `RegistryClient.swift`), with no exemption, not even for `localhost`. Measured on
+    /// 5 October against a local `registry:2` with a correct password; the same sign-in worked on
+    /// 1.4.1, which is how `Fixtures/registries.json` was captured. So an HTTP registry gets no
+    /// Sign In, rather than one that can only fail.
+    public var canSignIn: Bool { signInNeed != .notNeeded && !usesHTTP }
+
+    /// Why there is no Sign In, when the registry has accounts but this Mac cannot use them.
+    public var signInUnavailableReason: String? {
+        guard signInNeed != .notNeeded, usesHTTP else { return nil }
+        return KnownRegistry.httpSignInRefusal
+    }
 
     /// What to put in the two fields. The catalogue's own wording where there is one; otherwise
     /// the cloud-CLI recipe, matched on the host — which is how a per-account registry the
@@ -63,6 +80,7 @@ public struct RegistryRow: Identifiable, Equatable, Sendable {
     public var statusText: String {
         if let username, !username.isEmpty { return "Signed in as \(username)" }
         if isSignedIn { return "Signed in" }
+        if signInUnavailableReason != nil { return "Can't sign in over HTTP" }
         return canSignIn ? "Not signed in" : "No account"
     }
 
