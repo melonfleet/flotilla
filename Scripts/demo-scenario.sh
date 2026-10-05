@@ -119,7 +119,9 @@ up() {
   # storefront: the running group.
   run_container storefront-web run -d --network shop-net -p 127.0.0.1:8080:80 \
     -v "$ASSETS/site:/usr/share/caddy:ro" "$CADDY"
-  run_container storefront-api run -d --network shop-net -p 127.0.0.1:8000:8000 \
+  # 8090, not 8000: the fleet's good-night sweep frees :8000 for its console, which stopped
+  # this container the first night (5 October).
+  run_container storefront-api run -d --network shop-net -p 127.0.0.1:8090:8000 \
     -v shop-uploads:/uploads "$API_IMAGE"
   # PGDATA in a subfolder: a new volume is not empty (it has lost+found), and Postgres refuses to
   # initialise a data directory that is.
@@ -198,7 +200,7 @@ groups = [
         member("demo.m.web", "storefront-web", "docker.io/library/caddy:2-alpine",
                ports=["127.0.0.1:8080:80"], volumes=[f"{assets}/site:/usr/share/caddy:ro"]),
         member("demo.m.api", "storefront-api", "acme/storefront-api:1.0",
-               ports=["127.0.0.1:8000:8000"], volumes=["shop-uploads:/uploads"]),
+               ports=["127.0.0.1:8090:8000"], volumes=["shop-uploads:/uploads"]),
         member("demo.m.db", "storefront-db", "docker.io/library/postgres:17-alpine",
                volumes=["shop-db-data:/var/lib/postgresql/data"]),
         member("demo.m.cache", "storefront-cache", "docker.io/library/redis:7-alpine"),
