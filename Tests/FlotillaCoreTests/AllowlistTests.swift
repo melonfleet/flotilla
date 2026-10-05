@@ -49,6 +49,14 @@ private func requireRejected(
         ["system", "start", "--app-root", "/tmp/x"],      // host paths are not grammar
         ["system", "stop", "--prefix", "com.example."],   // naming a launchd service is not ours
         ["system", "stop", "--debug"],
+        // `system kernel set` takes one flag, `--recommended`. Every other flag chooses what the
+        // host boots, from a file or a URL, and is refused. (Bare `set` passes the grammar, since
+        // the allowlist has no way to require a flag; the only caller always sends it.)
+        ["system", "kernel", "set", "--tar", "https://example.com/kernel.tar"],
+        ["system", "kernel", "set", "--binary", "/tmp/vmlinux"],
+        ["system", "kernel", "set", "--recommended", "--force"],
+        ["system", "kernel", "set", "--recommended", "--arch", "amd64"],
+        ["system", "kernel", "set", "--digest", "sha256:abc"],
     ]
 
     for args in rejected {
@@ -75,6 +83,7 @@ private func requireRejected(
         "machine run", "machine stop", "machine inspect", "machine logs",
         "system start",
         "system stop",
+        "system kernel set",
         // The whole registry family, not only the login: `list` enumerates every registry this
         // Mac holds credentials for, and `logout` destroys them. See the rows for the review.
         "registry list", "registry login", "registry logout",
@@ -135,6 +144,7 @@ private func requireRejected(
         ["machine", "inspect"],
         ["machine", "logs", "-n", "100"],
         ["system", "start", "--disable-kernel-install", "--timeout", "60"],
+        ["system", "kernel", "set", "--recommended"],
     ]
     for args in wellFormed {
         guard case .success = Allowlist.validate(args) else {
@@ -559,9 +569,11 @@ private func requireRejected(
         "build",
         "volume create", "volume delete", "volume rm", "volume prune",
         "network create", "network delete", "network rm", "network prune",
-        // The only mutating `system` leaf: it changes machine state (it launches services).
+        // The mutating `system` leaves: they launch or stop services, or install the kernel
+        // every container boots with.
         "system start",
         "system stop",
+        "system kernel set",
         // Both write the Mac's credential store — one puts a password in it, the other takes
         // one out. `registry list` only reads it, and is below.
         "registry login", "registry logout",
@@ -754,6 +766,8 @@ private func requireRejected(
         AllowedCase(["system", "stop"], mutates: true, timeout: 120),
         AllowedCase(["system", "start", "--disable-kernel-install", "--timeout", "60"],
                     mutates: true, timeout: 120),
+        // It downloads, so ten minutes rather than two.
+        AllowedCase(["system", "kernel", "set", "--recommended"], mutates: true, timeout: 600),
 
         // The registry family. `login` carries `--password-stdin` and **no password flag at
         // all** — the secret reaches the child through its stdin, never through argv, which is

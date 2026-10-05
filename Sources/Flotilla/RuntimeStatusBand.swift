@@ -110,6 +110,11 @@ struct RuntimeStatusBand: View {
                     .disabled(!enablement.stopRestart)
             }
 
+            // Always present, greyed out unless there is no kernel, like the lifecycle items above:
+            // a menu whose items come and go teaches nothing.
+            Button("Install Recommended Kernel") { Task { await model.installKernel() } }
+                .disabled(!needsKernel)
+
             Divider()
             Button("Settings…") { model.pendingSection = .settings }
 
@@ -146,9 +151,13 @@ struct RuntimeStatusBand: View {
     /// `.missing` and `.tooOld` disable everything, because there is no runtime on this Mac to
     /// drive, and so does a nil verdict: preflight has not finished, and offering a control before
     /// knowing what it would do is how you get a Stop that starts things.
+    private var needsKernel: Bool {
+        if case .needsKernel = model.preflight { true } else { false }
+    }
+
     private var enablement: (start: Bool, stopRestart: Bool) {
         switch model.preflight {
-        case .ok, .needsRestart:      (start: false, stopRestart: true)
+        case .ok, .needsRestart, .needsKernel: (start: false, stopRestart: true)
         case .serviceStopped:         (start: true, stopRestart: false)
         case .unusable:               (start: true, stopRestart: true)
         case .missing, .tooOld, nil:  (start: false, stopRestart: false)
@@ -208,6 +217,8 @@ struct RuntimeStatusBand: View {
             ("Container system stopped", "container \(version)", Theme.warning)
         case .needsRestart(let cli, let service, _):
             ("Restart needed after upgrade", "CLI \(cli), service \(service)", Theme.warning)
+        case .needsKernel(let version, _, _):
+            ("No kernel installed", "container \(version)", Theme.warning)
         case .tooOld(let found, let required):
             ("container \(found) is too old", "needs \(required)", Theme.warning)
         case .missing:

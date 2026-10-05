@@ -120,17 +120,40 @@ struct DashboardView: View {
         // "not running" wording, and a button that fixes it. The red triangle stays for the
         // states where something really is wrong.
         let stopped: Bool = if case .serviceStopped = model.preflight { true } else { false }
+        // A missing kernel is the same kind of state: not a fault, one button from working.
+        let noKernel: Bool = if case .needsKernel = model.preflight { true } else { false }
+        let fixable = stopped || noKernel
+        // The kernel install reports here rather than in a progress panel (the owner, 5 October):
+        // the banner already says what is wrong, so it is the natural place to say it is being
+        // fixed — and a failure stays here, beside the button that tries again.
+        let install = noKernel ? model.kernelInstall : nil
+        let installing = install != nil && install?.failure == nil && model.startingRuntime
+        let installFailure = install?.failure
         return HStack(spacing: 10) {
-            Image(systemName: stopped ? "pause.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(stopped ? Theme.warning : Theme.danger)
+            Image(systemName: stopped ? "pause.circle.fill"
+                  : noKernel ? "arrow.down.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(fixable ? Theme.warning : Theme.danger)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.startingRuntime
-                     ? "Starting the container runtime…"
+                Text(installing ? "Installing the kernel…"
+                     : installFailure != nil ? "The kernel didn't install"
+                     : model.startingRuntime ? "Starting the container runtime…"
                      : stopped ? "The container runtime isn't running"
+                     : noKernel ? "No kernel is installed"
                                : "The container runtime is not available")
                     .font(.headline)
-                Text(reason).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if installing, let install {
+                    kernelInstallDetail(install)
+                } else if let installFailure {
+                    // The CLI's own words, selectable and in full on hover: a download that
+                    // failed is most often the network, and the message is how anyone tells.
+                    Text(installFailure).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                        .help(installFailure)
+                } else {
+                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer()
             if model.startingRuntime {
@@ -140,14 +163,38 @@ struct DashboardView: View {
                 // is why the spinner above exists rather than a button that looks inert.
                 Button("Start") { Task { await model.startRuntime() } }
                     .buttonStyle(.borderedProminent)
+            } else if noKernel {
+                // Says what it does and that it downloads, because it does: a click should not
+                // start a transfer the label did not mention.
+                Button(installFailure == nil ? "Download Kernel" : "Try Again") {
+                    Task { await model.installKernel() }
+                }
+                .buttonStyle(.borderedProminent)
             }
             Button("Retry") { Task { await model.reload() } }
                 .disabled(model.startingRuntime)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background((stopped ? Theme.warning : Theme.danger).opacity(0.10),
+        .background((fixable ? Theme.warning : Theme.danger).opacity(0.10),
                     in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// What the CLI says it is fetching, and for how long. There is no percentage to show: 1.5.0
+    /// prints one line and then nothing until it finishes, so a bar would be invented. The seconds
+    /// are real, and they are what says "still working" during a twenty-second download.
+    private func kernelInstallDetail(_ install: AppModel.KernelInstall) -> some View {
+        TimelineView(.periodic(from: install.started, by: 1)) { context in
+            let seconds = max(0, Int(context.date.timeIntervalSince(install.started)))
+            HStack(spacing: 6) {
+                Text(install.line ?? "Starting the download…")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("\(seconds) s").monospacedDigit()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: Tiles

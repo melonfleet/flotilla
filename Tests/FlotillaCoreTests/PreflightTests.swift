@@ -185,3 +185,72 @@ private func preflight(
     #expect(FileManager.default.isExecutableFile(atPath: found))
     #expect(Preflight.locateOnPath("definitely-not-a-real-binary-flotilla-test") == nil)
 }
+
+// MARK: Kernel (5 October)
+//
+// A fresh `container` install has no kernel. `system status` says `running`, and every container
+// and machine fails to start until `container system kernel set --recommended` has been run. The
+// status here is the captured 1.5.0 payload, so the path being checked is the one the real CLI
+// reports, not one typed in.
+
+private func capturedStatus() throws -> String {
+    let url = try #require(Bundle.module.url(forResource: "system-status", withExtension: "json",
+                                             subdirectory: "Fixtures/container-1.5.0"))
+    return try String(contentsOf: url, encoding: .utf8)
+}
+
+private func kernelPreflight(status: String, existing: Set<String>) -> Preflight {
+    let host = ScriptedHost { args in
+        if args.starts(with: ["system", "version"]) {
+            return CommandResult(stdout: versionJSON("1.5.0"), stderr: "", exitCode: 0)
+        }
+        if args.starts(with: ["system", "status"]) {
+            return CommandResult(stdout: status, stderr: "", exitCode: 0)
+        }
+        return CommandResult(stdout: "", stderr: "unexpected", exitCode: 1)
+    }
+    return Preflight(cli: ContainerCLI(host: host, wirePolicy: .localOwner),
+                     locate: { _ in "/usr/local/bin/container" },
+                     fileExists: { existing.contains($0) })
+}
+
+private let expectedKernel =
+    "/Users/example/Library/Application Support/com.apple.container/kernels/default.kernel-arm64"
+
+@Test func theKernelPathComesFromTheStatusTheCLIReports() throws {
+    let status = try JSONDecoder.flotilla.decode(SystemStatus.self, from: Data(try capturedStatus().utf8))
+    #expect(Preflight.kernelPath(for: status) == expectedKernel)
+}
+
+@Test func noKernelIsItsOwnVerdictAndNamesTheFileItLookedFor() throws {
+    let result = kernelPreflight(status: try capturedStatus(), existing: []).run()
+    #expect(result == .needsKernel(version: "1.5.0", path: "/usr/local/bin/container",
+                                   expected: expectedKernel))
+    #expect(!result.isOK)
+    #expect(result.detectedVersion == "1.5.0")
+}
+
+@Test func anInstalledKernelIsOK() throws {
+    let result = kernelPreflight(status: try capturedStatus(), existing: [expectedKernel]).run()
+    #expect(result == .ok(version: "1.5.0", path: "/usr/local/bin/container"))
+}
+
+@Test func aStatusThatDoesNotSayWhereTheKernelLivesIsNotJudged() {
+    // No appRoot or architecture: Flotilla cannot know, so it must not claim the kernel is gone
+    // and offer a download nobody needs. The other tests' minimal status has neither.
+    let result = kernelPreflight(status: #"{"status":"running"}"#, existing: []).run()
+    #expect(result == .ok(version: "1.5.0", path: "/usr/local/bin/container"))
+}
+
+@Test func aSkewedServiceIsRestartedBeforeItsKernelIsJudged() throws {
+    // Both wrong at once: the restart is the cheaper repair, and the next preflight checks the
+    // kernel. The captured skew payload has an appRoot and an architecture, so the kernel check
+    // would have fired if it came first.
+    let url = try #require(Bundle.module.url(forResource: "system-status-version-skew",
+                                             withExtension: "json", subdirectory: "Fixtures"))
+    let skewed = try String(contentsOf: url, encoding: .utf8)
+    let result = kernelPreflight(status: skewed, existing: []).run()
+    guard case .needsRestart = result else {
+        Issue.record("expected needsRestart, got \(result)"); return
+    }
+}

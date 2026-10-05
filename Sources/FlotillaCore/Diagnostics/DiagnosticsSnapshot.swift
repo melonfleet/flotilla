@@ -216,6 +216,8 @@ extension PreflightResult {
             .serviceStopped(version: version, path: redactor.redact(path), status: status)
         case .needsRestart(let cli, let service, let path):
             .needsRestart(cli: cli, service: service, path: redactor.redact(path))
+        case .needsKernel(let version, let path, let expected):
+            .needsKernel(version: version, path: redactor.redact(path), expected: redactor.redact(expected))
         case .tooOld(let found, let required): .tooOld(found: found, required: required)
         case .unusable(let reason): .unusable(reason: redactor.redact(reason))
         }

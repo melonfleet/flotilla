@@ -6,8 +6,12 @@ import Foundation
 /// eventually, the Wire layer.
 ///
 /// **Not this file's job:** the guided install (needs user authorisation and the system
-/// installer — the app owner's, macOS-only; see `DECISIONS.md` "never silent/privileged") and
-/// kernel-install detection (no CLI operation for it yet).
+/// installer — the app owner's, macOS-only; see `DECISIONS.md` "never silent/privileged").
+///
+/// **Kernel detection is this file's job now** (5 October). The note here used to say there was
+/// no CLI operation for it, which is still true — `system property list` prints the kernel
+/// configuration whether or not a kernel exists — but the kernel is a file, and the file can be
+/// checked without running anything. See `kernelPath(for:)`.
 public struct Preflight: Sendable {
     /// The version floor below which Flotilla will not consider `container` usable.
     /// `1.0.0` is the version every fixture in this repo was captured against.
@@ -19,13 +23,18 @@ public struct Preflight: Sendable {
     /// a real `PATH` search; tests inject a fake so this runs without a `container`
     /// install (or any install at all, on Linux).
     private let locate: @Sendable (String) -> String?
+    /// Whether a file exists at a path, following symlinks. Injected for the same reason as
+    /// `locate`: the kernel check must be testable on a machine with no `container`, and on Linux.
+    private let fileExists: @Sendable (String) -> Bool
 
     public init(cli: ContainerCLI,
                 minimumVersion: VersionTriple = Preflight.defaultMinimumVersion,
-                locate: @escaping @Sendable (String) -> String? = { Preflight.locateBinary($0) }) {
+                locate: @escaping @Sendable (String) -> String? = { Preflight.locateBinary($0) },
+                fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) {
         self.cli = cli
         self.minimumVersion = minimumVersion
         self.locate = locate
+        self.fileExists = fileExists
     }
 
     /// Runs the checklist once. Synchronous and side-effect-free beyond the `container`
@@ -75,7 +84,32 @@ public struct Preflight: Sendable {
                                  path: path)
         }
 
+        // Running, the right build, and nothing to run containers *with*. Checked after the skew
+        // because a restart is the cheaper repair and a skewed service may not answer for its
+        // kernel honestly; once restarted, the next preflight gets here.
+        if let expected = Self.kernelPath(for: status), !fileExists(expected) {
+            return .needsKernel(version: component.version, path: path, expected: expected)
+        }
+
         return .ok(version: component.version, path: path)
+    }
+
+    /// Where `container` keeps the kernel it boots containers and machines with, or `nil` when the
+    /// status does not say enough to know.
+    ///
+    /// `<appRoot>/kernels/default.kernel-<arch>`: a symlink that `system kernel set` points at the
+    /// kernel it installed (on this Mac, `vmlinux-6.18.35-197-debug` beside it). Measured on
+    /// 1.5.0, 5 October. `fileExists` follows the link, so a link left pointing at a deleted kernel
+    /// counts as no kernel, which is the truth.
+    ///
+    /// **`nil` means "do not judge"**, never "missing": a status without `appRoot` or an
+    /// architecture (the flat stopped-service payload, or a future format) must not make Flotilla
+    /// claim the kernel is gone and offer a download nobody needs.
+    public static func kernelPath(for status: SystemStatus) -> String? {
+        guard let root = status.appRoot, !root.isEmpty,
+              let arch = status.host?.architecture, !arch.isEmpty else { return nil }
+        let base = root.hasSuffix("/") ? root : root + "/"
+        return base + "kernels/default.kernel-" + arch
     }
 
     /// Where `container` is installed, searched after `PATH`.

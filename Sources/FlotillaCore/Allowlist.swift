@@ -1002,6 +1002,20 @@ public enum Allowlist {
             // stronger version of the same reason.
             CommandSpec(["system", "stop"], mutates: true, timeoutHint: 120,
                         exposure: .localOnly(reason: "stopping the host's own runtime services, and every container with them, is the owner's decision")),
+            // Installs the kernel every container and machine boots with — what a fresh install
+            // lacks (`PreflightResult.needsKernel`, 5 October). **`--recommended` only.** The CLI
+            // also takes `--binary`, `--tar` (a path *or a URL*), `--digest`, `--arch` and
+            // `--force`. Each of those would let a caller choose what the host boots, and the only
+            // caller is a button that installs Apple's recommendation, so default-deny refuses
+            // them without anyone having to remember to. `--recommended` downloads (about 20 s on
+            // a good link, measured), hence the long hint.
+            //
+            // Not the step `system start`'s comment says Flotilla never takes *on its own*: this
+            // runs only when the user presses the button, and it is user-level — files under the
+            // user's own Application Support, no administrator.
+            CommandSpec(["system", "kernel", "set"], mutates: true, timeoutHint: 600,
+                        flags: [FlagSpec(long: "recommended")],
+                        exposure: .localOnly(reason: "choosing the kernel the host boots every container with is the owner's decision")),
 
             // MARK: k8s — local Kubernetes development clusters
             //
@@ -1499,7 +1513,13 @@ public enum Allowlist {
     }
 
     /// Longest match first, so `image pull` wins over a hypothetical `image`.
+    ///
+    /// Three levels since `system kernel set` (5 October), the first spec that deep. Still exact:
+    /// a third word matches only a spec registered at exactly that path, so no shorter spec gains
+    /// a subcommand by it.
     private static func resolve(_ args: [String]) throws -> CommandSpec {
+        if args.count >= 3, !args[1].hasPrefix("-"), !args[2].hasPrefix("-"),
+           let three = spec(for: [args[0], args[1], args[2]]) { return three }
         if args.count >= 2, !args[1].hasPrefix("-"), let two = spec(for: [args[0], args[1]]) { return two }
         if let one = spec(for: [args[0]]) { return one }
         // Report both levels so "image push" doesn't look like "image is unknown".

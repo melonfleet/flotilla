@@ -196,6 +196,16 @@ public struct ContainerCLI: Sendable {
                      "--timeout", String(timeoutSeconds)])
     }
 
+    /// Installs Apple's recommended kernel, which a fresh `container` install has none of
+    /// (`PreflightResult.needsKernel`). Downloads it, so it is slow: about 20 s measured, and the
+    /// allowlist allows ten minutes. `onLine` gets the CLI's own words as they arrive — on 1.5.0,
+    /// one stderr line naming what it is fetching and from where. Only ever called from a button:
+    /// see the allowlist row for why nothing but `--recommended` is accepted.
+    @discardableResult
+    public func installRecommendedKernel(onLine: (@Sendable (String) -> Void)? = nil) throws -> CommandResult {
+        try execute(["system", "kernel", "set", "--recommended"], onLine: onLine)
+    }
+
     /// Stops the `container` services.
     ///
     /// Every running container goes down with them, so this is never something to do on the app's

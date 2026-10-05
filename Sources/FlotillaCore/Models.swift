@@ -872,6 +872,15 @@ public enum PreflightResult: Codable, Sendable, Equatable {
     /// One `container system stop && start` fixes it, so this is offered like `.serviceStopped`
     /// — a state the app can repair — rather than reported like a fault.
     case needsRestart(cli: String, service: String, path: String)
+    /// Installed, new enough, service running and the right build — and **no kernel**, so no
+    /// container or machine can start.
+    ///
+    /// What a fresh install looks like (measured on 1.5.0, 5 October, on a Mac that had never had
+    /// `container`): `system status` says `running` and every `run` fails until
+    /// `container system kernel set --recommended` downloads one. `expected` is the file whose
+    /// absence was the evidence, so the diagnosis can be checked rather than taken on trust.
+    /// Repairable like `.needsRestart`: one command, offered as a button the user presses.
+    case needsKernel(version: String, path: String, expected: String)
     /// Present but not usable: wrong architecture, unreadable version, an API that will not
     /// answer even once started.
     case unusable(reason: String)
@@ -884,6 +893,7 @@ public enum PreflightResult: Codable, Sendable, Equatable {
         case .ok(let version, _): version
         case .serviceStopped(let version, _, _): version
         case .needsRestart(let cli, _, _): cli
+        case .needsKernel(let version, _, _): version
         case .tooOld(let found, _): found
         case .missing, .unusable: nil
         }
@@ -897,6 +907,8 @@ public enum PreflightResult: Codable, Sendable, Equatable {
         case .serviceStopped(let version, _, let status): "container \(version) installed, service \(status)"
         case .needsRestart(let cli, let service, _):
             "container \(cli) installed but the running service is \(service) — restart it"
+        case .needsKernel(let version, _, _):
+            "container \(version) running, but no kernel is installed — nothing can start"
         case .tooOld(let found, let required): "container \(found) is older than the required \(required)"
         case .unusable(let reason): "container is unusable: \(reason)"
         }

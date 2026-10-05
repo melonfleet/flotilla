@@ -1285,6 +1285,35 @@ brand seed, and status, chart, tag and link colours are not finished.
 
 The values are tabled in `design/THEMES.md` and pinned by `OKLabTests`.
 
+## Q25 — A missing kernel is detected and offered as a download (settled 2026-10-05)
+
+A fresh `container` install has no kernel. `system status` says `running`, Flotilla said ready, and
+every container and machine failed to start until `container system kernel set --recommended` was
+run. Found on the new Mac's first install of 1.5.0.
+
+- **Detected from the file**, not from the CLI: `<appRoot>/kernels/default.kernel-<arch>`, using
+  the `appRoot` and architecture `system status` reports. `system property list` cannot tell; it
+  prints the kernel configuration either way. A status that lacks either value is **not judged**,
+  so Flotilla never claims a kernel is gone on evidence it does not have.
+- **Its own verdict, `PreflightResult.needsKernel`**, checked after version skew, since a restart is
+  the cheaper repair. It is shown like a stopped service: warning colour, not a fault, with a
+  **Download Kernel** button on the Dashboard banner and "Install Recommended Kernel" in the
+  runtime menu (always present, greyed out otherwise).
+- **Progress shows in the banner, not a panel** (the owner): a spinner, the CLI's own line
+  naming what it fetches, and the seconds elapsed. There is no percentage, because 1.5.0 prints one
+  line and then nothing. A failure stays in the banner, in the CLI's words, with Try Again.
+- **Only on a click.** This is the step `system start`'s allowlist row says Flotilla never takes
+  *on its own*, and it still never does. It is user-level (files in the user's own Application
+  Support folder, no administrator), and it says that it downloads before it does.
+- **The allowlist takes `--recommended` and nothing else.** `--tar` (a path or a URL), `--binary`,
+  `--digest`, `--arch` and `--force` would each let a caller choose what the host boots.
+  `Allowlist.resolve` now matches three-word paths for it, exactly.
+- **Flotilla creates an empty `kernels` folder first if there is none.** 1.5.0's `kernel set`
+  downloads and unpacks, then fails to move the file into a missing folder with "The file
+  “vmlinux-…” doesn't exist", which names the temp file, not the folder. Measured: the same command
+  succeeds in 17 s once the empty folder exists. A fresh install has the folder; this is for a Mac
+  where someone deleted it.
+
 ## Q24 — Groups live in the Containers list (settled 2026-10-05)
 
 **The owner's design**, after Docker Desktop's handling of Compose stacks: one list for groups and

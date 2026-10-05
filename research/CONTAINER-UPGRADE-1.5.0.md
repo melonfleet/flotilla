@@ -74,6 +74,11 @@ installed kernel is `<appRoot>/kernels/default.kernel-<arch>`. That's a startup 
 could make without running anything. It's logged as its own to-do because it's a feature, not part
 of the bump.
 
+**Built the same day** (DECISIONS Q25): `PreflightResult.needsKernel`, a Download Kernel
+button, and an allowlist row for `system kernel set --recommended` only. Building it found a
+CLI bug: `kernel set` fails if `<appRoot>/kernels` is missing ("The file “vmlinux-…” doesn't
+exist", about the temp file). Flotilla creates the empty folder first.
+
 ## Fixtures
 
 **The value-pinned set stays on 1.4.1.** The `SmokeTests` assertions (six containers, a

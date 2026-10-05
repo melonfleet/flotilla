@@ -683,6 +683,61 @@ final class AppModel {
         }
     }
 
+    /// Downloads and installs Apple's recommended kernel, then re-checks and reloads — the repair
+    /// for `PreflightResult.needsKernel`, which is every fresh install.
+    ///
+    /// **Progress is shown in the Dashboard banner, not a panel** (the owner, 5 October: a modal
+    /// over the whole window for something the banner already describes looked worse). The banner
+    /// reads `kernelInstall` for the spinner, the CLI's own line and the elapsed time, and keeps
+    /// a failure on screen with the button still there to try again. Only ever from a button:
+    /// nothing calls this on its own.
+    func installKernel() async {
+        guard !startingRuntime else { return }
+        startingRuntime = true
+        kernelInstall = KernelInstall(started: Date())
+        defer { startingRuntime = false }
+
+        let expected: String? = if case .needsKernel(_, _, let path) = preflight { path } else { nil }
+        do {
+            try await Task.detached { [cli] in
+                // `kernel set` assumes `<appRoot>/kernels` exists. If it does not, the CLI
+                // downloads and unpacks the kernel, then fails to move it into place with "The
+                // file “vmlinux-…” doesn't exist" — about the temp file, not the missing folder.
+                // Measured on 1.5.0, 5 October, with the folder removed; the same command
+                // succeeds in 17 s once an empty folder is there. A fresh install has the folder,
+                // so this is for a Mac where someone deleted it. An empty directory where the CLI
+                // expects one, nothing more.
+                if let expected {
+                    let folder = URL(fileURLWithPath: expected).deletingLastPathComponent()
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                }
+                try cli.installRecommendedKernel(onLine: { line in
+                    Task { @MainActor [weak self] in self?.kernelInstall?.line = line }
+                })
+            }.value
+            kernelInstall = nil
+            recordActivity(ContainerEvent(date: Date(), from: "missing", to: "installed",
+                                          kind: .runtime, subject: hostLabel,
+                                          action: "Kernel installed"))
+        } catch {
+            // Kept on the banner until the next attempt: a failure that vanished on the reload
+            // below would leave the user looking at the same banner with no idea it was tried.
+            kernelInstall = KernelInstall(started: kernelInstall?.started ?? Date(),
+                                          failure: "\(error)")
+        }
+        await reload()
+    }
+
+    /// The kernel install the Dashboard banner is showing: running (`failure == nil`) or failed.
+    struct KernelInstall: Equatable {
+        let started: Date
+        /// The CLI's latest line, which on 1.5.0 names the archive and where it comes from.
+        var line: String?
+        var failure: String?
+    }
+
+    private(set) var kernelInstall: KernelInstall?
+
     /// Stops the `container` services.
     ///
     /// Every running container goes down with them and does not come back, which is why the only
@@ -757,6 +812,13 @@ final class AppModel {
             // reports healthy and nothing new will start. Measured on the 1.0.0 → 1.4.1 upgrade.
             return "`container` was upgraded to \(cli) but the running service is still "
                 + "\(service). Nothing new can start until it restarts."
+        case .needsKernel:
+            // What a fresh install looks like: everything says running and nothing can start.
+            // Stands alone on the screens that show only this line, and does not repeat the
+            // Dashboard's headline ("No kernel is installed") where both appear. No backticks:
+            // `Text(String)` does not render Markdown, so they showed literally.
+            return "Containers and machines can't start without one. "
+                + "Download the kernel Apple's container tool recommends to fix it."
         case .tooOld(let found, let required):
             return "`container` \(found) is too old — \(required) or newer is required."
         case .unusable(let reason):
