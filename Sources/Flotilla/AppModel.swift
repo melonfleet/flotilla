@@ -102,6 +102,13 @@ final class AppModel {
         self.notifier = Notifier(categories: Self.notificationSettings(from: resolved.store))
         self.errorLog = ErrorLog(settings: resolved.store)
         observeSettings()
+        // At launch too, not only on change. This was missing: `appearance` was read here but only
+        // *applied* by `reloadAppearance()`, after a settings edit, so a saved Light or Dark was
+        // ignored on every launch and the window followed the system until something in Settings
+        // changed. Auto hid it, since Auto follows the system anyway. Found 5 October, when a
+        // relaunch with `appearance = dark` drew light. No window exists yet; the app-level value
+        // is what each new window inherits.
+        applyAppKitAppearance()
         // At launch, not only on change: the preference and the system state can already disagree
         // before the app runs — a fresh install with `launchAtLogin` seeded by a managed profile,
         // or a user who removed Flotilla in System Settings ▸ Login Items since last time.
