@@ -1314,6 +1314,38 @@ run. Found on the new Mac's first install of 1.5.0.
   succeeds in 17 s once the empty folder exists. A fresh install has the folder; this is for a Mac
   where someone deleted it.
 
+## Q26 — Registries is a sidebar section, under Images (settled 2026-10-05)
+
+The owner asked for registries to move out of Settings and to work like every other section.
+Decisions, all the owner's unless marked:
+
+- **Under Images in the sidebar**, because that is where images come from. **The Settings ▸
+  Registries tab is gone**, and nothing about registries stays in Settings. The default registry is
+  set from the table (Set as Default), so there are not two controls for one value.
+- **The same table setup as every other section:**
+  - list and cards, search (name, server, account, tags) and a filter (All, Signed in, Not
+    signed in, Sign-in required, Added by you);
+  - sortable, hideable columns (Tags, Server, Sign-in, Status, Type);
+  - row menus that match the context menu;
+  - multi-select with bulk Tag, Sign Out and Remove;
+  - the activity band. Registries became their own `ActivityKind` and tag kind, `.registry`.
+    Sign-ins used to be filed under `.image`, which put them in the Images band.
+- **Each registry says whether signing in is optional or required** (`SignInNeed`: Not needed,
+  Optional, Required). For the catalogue this is set per entry. It is *not* `anonymousPullWorks`,
+  which marks registries with no private tier and is false for Docker Hub and GHCR, so mapping it
+  would have called them "required". Only Red Hat's authenticated registry is required.
+- **A required registry is not added until you have signed in.** The button reads "Sign In and
+  Add", stays off until both fields are filled, and signs in first, so a wrong password adds
+  nothing. Optional ones add on their own, or "Add and Sign In".
+- **A hand-added registry asks** ("Signing in is required", on by default). Flotilla makes no
+  network request of its own to find out.
+- **One embedded form for adding and for managing** (mine): clicking a registry opens it to sign in,
+  switch account or sign out. It replaced the Settings pane's sign-in sheet, the last modal among
+  the create forms.
+- **Unchanged from Q20:** a catalogue, not a capability list. The password goes through stdin and
+  never argv, and Flotilla stores no credential. A login made in a terminal to a registry that
+  isn't in your list still shows, marked "not in your list", with Add to List.
+
 ## Q24 — Groups live in the Containers list (settled 2026-10-05)
 
 **The owner's design**, after Docker Desktop's handling of Compose stacks: one list for groups and

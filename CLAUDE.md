@@ -514,8 +514,10 @@ must preserve all of the following:
     `design/branding.md`. Images deliberately have no tags: "tag" already means an
     image reference's tag there.
 15. **Registries are a catalogue, not a capability list (Q20).** `container`
-    pulls from any OCI registry; the Settings → Registries screen exists to save
-    you typing a hostname and to show which registries this Mac is signed in to.
+    pulls from any OCI registry; the Registries section (sidebar, under Images,
+    since Q26) exists to save you typing a hostname and to show which registries
+    this Mac is signed in to. Each says whether signing in is optional or
+    required (`SignInNeed`), and a required one is not added until you sign in.
     A built-in row needs a single account-independent host — per-account
     registries (ECR, ACR, Artifact Registry) are added by hand, never shipped as
     template rows. `registry login/logout/list` are **local-only**, the password

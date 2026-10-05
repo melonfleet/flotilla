@@ -34,6 +34,8 @@ struct MainWindowView: View {
         sortOrder: [KeyPathComparator(\ContainerNetwork.id)])
     @State private var imagesUI = ResourceUIState<ContainerImage>(
         sortOrder: [KeyPathComparator(\ContainerImage.reference)])
+    @State private var registriesUI = ResourceUIState<RegistryRow>(
+        sortOrder: [KeyPathComparator(\RegistryRow.nameSortKey)])
 
     @State private var selection: Section? = .dashboard
 
@@ -105,6 +107,9 @@ struct MainWindowView: View {
                 // Activity is what *changed*, Logs is what things *said*.
                 row(.logs, count: nil)
                 row(.images, count: model.imagesState == .loaded ? model.images.count : nil)
+                // Under Images, where images come from (the owner, 5 October). The list is local,
+                // so its count is always known.
+                row(.registries, count: model.registryRows.count)
             }
 
             // Volumes and Networks, by contrast, really are container-only, and that was worth
@@ -245,6 +250,8 @@ struct MainWindowView: View {
             ContainersView(model: model, ui: containersUI)
         case .images:
             ImagesView(model: model, ui: imagesUI)
+        case .registries:
+            RegistriesView(model: model, ui: registriesUI)
         case .volumes:
             VolumesView(model: model, ui: volumesUI)
         case .networks:

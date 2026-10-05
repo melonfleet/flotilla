@@ -70,7 +70,10 @@ final class RegistryStore {
                              summary: entry["summary"] ?? "",
                              isUserAdded: true,
                              kind: entry["kind"].flatMap(RegistryKind.init(rawValue:)),
-                             usesHTTP: entry["scheme"] == "http")
+                             usesHTTP: entry["scheme"] == "http",
+                             // Absent in a list written before the Add form asked: required,
+                             // the same default a new one gets.
+                             signInRequired: entry["signIn"] != SignInNeed.optional.rawValue)
     }
 
     var lastError: String?
@@ -96,10 +99,12 @@ final class RegistryStore {
     /// Adds one the catalogue does not know.
     @discardableResult
     func add(host: String, name: String, summary: String = "",
-             kind: RegistryKind? = nil, usesHTTP: Bool = false) -> KnownRegistry? {
+             kind: RegistryKind? = nil, usesHTTP: Bool = false,
+             signInRequired: Bool = true) -> KnownRegistry? {
         do {
             let registry = try book.add(host: host, name: name, summary: summary,
-                                        kind: kind, usesHTTP: usesHTTP)
+                                        kind: kind, usesHTTP: usesHTTP,
+                                        signInRequired: signInRequired)
             persist()
             return registry
         } catch {
@@ -122,7 +127,8 @@ final class RegistryStore {
         guard let defaults else { return }
         defaults.set(book.registries.map {
             ["host": $0.id, "name": $0.name, "summary": $0.summary,
-             "kind": $0.kind.rawValue, "scheme": $0.usesHTTP ? "http" : "https"]
+             "kind": $0.kind.rawValue, "scheme": $0.usesHTTP ? "http" : "https",
+             "signIn": $0.signInNeed.rawValue]
         }, forKey: Self.key)
         // The retired keys from the two designs this replaced. Removed rather than left behind:
         // a stale `hiddenRegistries` in someone's plist is a fact about a feature that no longer

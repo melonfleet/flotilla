@@ -31,6 +31,39 @@ public struct RegistryLogin: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// How much a registry needs you to sign in, as the Registries section shows it.
+///
+/// **The owner's three answers** (5 October), and the reason `anonymousPullWorks` could not carry
+/// them: that flag marks registries with *no private tier at all*, so it is false for Docker Hub
+/// and GHCR — where public images pull anonymously and a sign-in is genuinely optional. Mapping it
+/// to "optional" would have called Docker Hub "required", which is the opposite of true.
+///
+/// - `notNeeded`: there are no accounts to sign in to (Microsoft's registry, `registry.k8s.io`).
+/// - `optional`: public images pull anonymously; signing in reaches private ones or raises limits.
+/// - `required`: nothing pulls without an account, so the Add form will not add it until you have
+///   signed in (the owner's rule).
+public enum SignInNeed: String, Sendable, Codable, CaseIterable {
+    case notNeeded, optional, required
+
+    public var title: String {
+        switch self {
+        case .notNeeded: "Not needed"
+        case .optional: "Optional"
+        case .required: "Required"
+        }
+    }
+
+    /// Sorts the way the column reads: required first, because it is the one that asks for
+    /// something.
+    public var sortRank: Int {
+        switch self {
+        case .required: 0
+        case .optional: 1
+        case .notNeeded: 2
+        }
+    }
+}
+
 /// A registry the Registries screen offers by name.
 ///
 /// **This is a catalogue, not a capability list, and the distinction is the whole design.**
@@ -154,6 +187,22 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
         hasAccounts ? (ownCredentialHint ?? kind.credentialHint) : nil
     }
 
+    /// Whether signing in is required, where this row says so rather than taking the default.
+    /// The catalogue sets it for the one registry that serves nothing anonymously; a registry the
+    /// user added carries what they answered in the Add form.
+    private let ownSignInRequired: Bool?
+
+    /// How much this registry needs a sign-in. See `SignInNeed`.
+    ///
+    /// No accounts means `notNeeded`, whatever else is set. Otherwise the row's own answer, and
+    /// `optional` when it has none: every catalogue registry with accounts but one serves public
+    /// images anonymously.
+    public var signInNeed: SignInNeed {
+        guard hasAccounts else { return .notNeeded }
+        if let ownSignInRequired { return ownSignInRequired ? .required : .optional }
+        return .optional
+    }
+
     public init(id: String, name: String, summary: String,
                 anonymousPullWorks: Bool = false,
                 hasAccounts: Bool = true,
@@ -163,7 +212,8 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                 usesHTTP: Bool = false,
                 tokenURL: String? = nil,
                 browseURL: String? = nil,
-                credentialHint: String? = nil) {
+                credentialHint: String? = nil,
+                signInRequired: Bool? = nil) {
         self.id = id
         self.name = name
         self.summary = summary
@@ -178,6 +228,7 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
         self.ownTokenURL = tokenURL
         self.browseURL = browseURL
         self.ownCredentialHint = credentialHint
+        self.ownSignInRequired = signInRequired
     }
 
     /// The registries Flotilla knows how to describe.
@@ -248,7 +299,10 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                       credentialHint: "A registry service account — its username looks like "
                         + "12345678|name, and its token is the password. Everything here is "
                         + "behind a subscription; registry.access.redhat.com carries the "
-                        + "unauthenticated images."),
+                        + "unauthenticated images.",
+                      // The one catalogue registry that serves nothing anonymously: measured, an
+                      // anonymous manifest fetch returns 401 here and 200 on its sibling below.
+                      signInRequired: true),
         // Red Hat's **unauthenticated** sibling, and a genuinely separate host and credential.
         // Measured: an anonymous manifest fetch for `ubi9/ubi` returns 200, where the same
         // request to `registry.redhat.io` returns 401. Worth a row precisely because someone
@@ -418,18 +472,25 @@ public struct RegistryBook: Sendable, Equatable {
     }
 
     /// Adds one the catalogue does not know: a private, self-hosted or per-account registry.
+    ///
+    /// `signInRequired` is the user's answer in the Add form, and **defaults to true**: Flotilla
+    /// cannot know whether a registry it has never heard of serves anything anonymously, and it
+    /// does not ask the registry (the owner, 5 October — no network request of Flotilla's own).
+    /// Required is the safe guess, since the form then makes you sign in before adding.
     @discardableResult
     public mutating func add(host rawHost: String, name rawName: String,
                              summary: String = "",
                              kind: RegistryKind? = nil,
-                             usesHTTP: Bool = false) throws -> KnownRegistry {
+                             usesHTTP: Bool = false,
+                             signInRequired: Bool = true) throws -> KnownRegistry {
         let host = try normalised(host: rawHost)
         let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         // Falls back to the host rather than refusing: the name is for recognising the row, and
         // for a self-hosted registry the host *is* how you recognise it.
         let registry = KnownRegistry(id: host, name: trimmed.isEmpty ? host : trimmed,
                                      summary: summary.trimmingCharacters(in: .whitespacesAndNewlines),
-                                     isUserAdded: true, kind: kind, usesHTTP: usesHTTP)
+                                     isUserAdded: true, kind: kind, usesHTTP: usesHTTP,
+                                     signInRequired: signInRequired)
         registries.append(registry)
         return registry
     }

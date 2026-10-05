@@ -208,6 +208,11 @@ private struct FlotillaCommands: Commands {
                 .keyboardShortcut("b", modifiers: [.command, .control])
                 .disabled(!model.runtimeUsable)
 
+            // Not gated on the runtime: the list is Flotilla's own, and a registry that needs no
+            // sign-in can be added with the runtime down.
+            Button("Add Registry…") { present(model.requestRegistryForm) }
+                .keyboardShortcut("g", modifiers: [.command, .control])
+
             Divider()
 
             Button("New Volume…") { present(model.requestVolumeForm) }

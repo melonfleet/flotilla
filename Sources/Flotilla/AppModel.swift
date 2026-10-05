@@ -793,6 +793,11 @@ final class AppModel {
 
     /// Shared with `refreshVolumes`/`refreshNetworks`: they fail the same runtime check
     /// containers do, and repeating the diagnosis text in three places would let them drift.
+    /// The same diagnosis, for `AppModelRegistries`, which lives in another file.
+    static func registryUnavailableReason(for result: PreflightResult) -> String? {
+        unavailableReason(for: result)
+    }
+
     private static func unavailableReason(for result: PreflightResult) -> String? {
         switch result {
         case .ok:
@@ -1536,6 +1541,32 @@ final class AppModel {
     }
 
     var pendingNetworkForm = false
+
+    /// Ask the Registries section to open its Add form.
+    func requestRegistryForm() {
+        pendingSection = .registries
+        pendingRegistryForm = true
+    }
+
+    var pendingRegistryForm = false
+
+    // MARK: Registries section state
+    //
+    // Stored here rather than in `AppModelRegistries.swift` because an extension cannot hold
+    // stored properties. The logins are the runtime's; the list itself is `registries`.
+
+    private(set) var registryLogins: [RegistryLogin] = []
+    private(set) var registriesState: LoadState = .idle
+    private(set) var registriesLastRefresh: Date?
+
+    /// For `AppModelRegistries`, which owns the loading.
+    func setRegistryLogins(_ logins: [RegistryLogin], state: LoadState) {
+        registryLogins = logins
+        registriesState = state
+        if state == .loaded { registriesLastRefresh = Date() }
+    }
+
+    func setRegistriesState(_ state: LoadState) { registriesState = state }
 
     /// Presentation state lives here because Help commands outlive the Settings view.
     ///

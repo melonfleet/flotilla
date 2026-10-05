@@ -12,7 +12,9 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
     // drill-down from something it shows.
     // No `groups`: groups are rows in Containers since 5 October (to-do item 4), the way Docker
     // Desktop lists a Compose stack, rather than a section of their own.
-    case dashboard, activity, logs, containers, images, volumes, networks, machines,
+    // `registries` sits under Images (the owner, 5 October): it is where images come from, and
+    // it moved out of Settings because it is something you manage, not something you set once.
+    case dashboard, activity, logs, containers, images, registries, volumes, networks, machines,
          clusters, settings
 
     var id: Self { self }
@@ -30,6 +32,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .logs: "Logs"
         case .containers: "Containers"
         case .images: "Images"
+        case .registries: "Registries"
         case .volumes: "Volumes"
         case .networks: "Networks"
         case .machines: "Machines"
@@ -47,6 +50,8 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .containers: "shippingbox"
         // Verified present, per the `ellipsis.vertical` incident.
         case .images: "square.stack.3d.down.right"
+        // The glyph the Settings tab used, so nobody has to relearn it.
+        case .registries: "shippingbox.and.arrow.backward"
         case .volumes: "cylinder.split.1x2"
         case .networks: "network"
         case .machines: "server.rack"

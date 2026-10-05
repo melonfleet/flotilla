@@ -33,6 +33,6 @@ Both commands require exactly one visible selection. With none or more than one,
 
 ## Conflict ledger
 
-The existing File commands are ⌃⌘R Run Container, ⌃⌘M New Machine, ⌃⌘P Pull Image, ⌃⌘B Build Image, ⌃⌘V New Volume, and ⌃⌘N New Network. None of the proposed shortcuts is an exact collision. ⌘R is deliberately close to ⌃⌘R, however: an extra Control key would open Run rather than refresh, so that near-collision should be tested before accepting the proposal.
+The existing File commands are ⌃⌘R Run Container, ⌃⌘M New Machine, ⌃⌘P Pull Image, ⌃⌘B Build Image, ⌃⌘G Add Registry, ⌃⌘V New Volume, and ⌃⌘N New Network. None of the proposed shortcuts is an exact collision. ⌘R is deliberately close to ⌃⌘R, however: an extra Control key would open Run rather than refresh, so that near-collision should be tested before accepting the proposal.
 
 ⌘F and ⌘R intentionally reuse standard macOS Find and Reload bindings for the same meanings; ⌘[ intentionally follows the standard Back convention. Return is contextual and must never override a form's default button. Keep ⌘W for Close, ⌘, for Settings, and ⌘N for the system's generic New action. Bare arrow keys remain table navigation. Do not assign ⌘Delete at all. The proposed ⌃⌘L and ⌃⌘T do not collide with the six existing File commands or those standard bindings.

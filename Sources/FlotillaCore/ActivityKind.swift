@@ -36,6 +36,12 @@ public enum ActivityKind: String, CaseIterable, Identifiable, Hashable, Sendable
     /// and an automatic action Flotilla takes on its own must leave a trace somewhere the user
     /// can find it.
     case runtime
+    /// A registry in the Registries section: signed in to, signed out of, added or removed
+    /// (5 October, when it became a section). Its own kind so its band shows its own events, and
+    /// so a tag on the registry `ghcr.io` keys on the registry, not on an image. Registry sign-ins
+    /// used to be filed under `.image`, which put them in the Images band, two screens from the
+    /// list they were about.
+    case registry
 
     public var id: Self { self }
 }

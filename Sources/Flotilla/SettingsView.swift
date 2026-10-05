@@ -216,7 +216,8 @@ struct SettingsView: View {
     private enum Tab: String, CaseIterable, Identifiable, Hashable {
         // Tags sits between Resources and Updates: it is about the things the app manages,
         // like Resources, rather than about the app itself.
-        case general, resources, tags, registries, updates, advanced
+        // No `registries`: it is a sidebar section under Images since 5 October.
+        case general, resources, tags, updates, advanced
         var id: Self { self }
 
         var title: String {
@@ -224,7 +225,6 @@ struct SettingsView: View {
             case .general: "General"
             case .resources: "Resources"
             case .tags: "Tags"
-            case .registries: "Registries"
             case .updates: "Updates"
             case .advanced: "Advanced"
             }
@@ -235,7 +235,6 @@ struct SettingsView: View {
             case .general: "gearshape"
             case .resources: "cpu"
             case .tags: "tag"
-            case .registries: "shippingbox.and.arrow.backward"
             case .updates: "arrow.down.circle"
             case .advanced: "slider.horizontal.3"
             }
@@ -334,28 +333,17 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func pane(for tab: Tab) -> some View {
-        // **Registries is not wrapped in the `Form`, and that is not an inconsistency.** Its Add
-        // screen is a real form with the guidance rail — the same shape as New Volume and New
-        // Network — and those are *embedded screens that replace the list*, per the 9 August
-        // modal-versus-embedded decision. A form nested inside a grouped `Form` is neither, and
-        // as a sheet it came out ~400pt wide, which is under `FormScaffold`'s rail threshold: the
-        // rail simply did not appear, which is the entire point of the screen. So this tab
-        // supplies its own container and swaps it for the form.
-        if case .registries = tab {
-            RegistriesPane(model: model, store: model.registries)
-        } else {
-            Form {
-                switch tab {
-                case .general: generalPane
-                case .resources: resourcesPane
-                case .tags: TagManagerPane(model: model, store: model.tags)
-                case .updates: updatesPane
-                case .advanced: advancedPane
-                case .registries: EmptyView()   // handled above
-                }
+        Form {
+            switch tab {
+            case .general: generalPane
+            case .resources: resourcesPane
+            case .tags: TagManagerPane(model: model, store: model.tags)
+            case .updates: updatesPane
+            case .advanced: advancedPane
             }
-            .formStyle(.grouped)
-            // Lets the app's own content wash through. A grouped `Form` paints an opaque background
+        }
+        .formStyle(.grouped)
+        // Lets the app's own content wash through. A grouped `Form` paints an opaque background
         // of its own, so Settings was the one screen in the app that did not sit on the honeydew
         // every other section sits on — white page, grey cards, against honeydew page and white
         // cards everywhere else.
@@ -366,8 +354,7 @@ struct SettingsView: View {
         // looks like it is doing something. The rows read very slightly recessed against the
         // page rather than raised, which is SwiftUI's relationship and not one this can change
         // from here.
-            .scrollContentBackground(.hidden)
-        }
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: General
@@ -484,10 +471,9 @@ struct SettingsView: View {
                 SettingRow(store: store, key: SettingsKeys.defaultContainerMemoryMB, title: "Memory") { binding in
                     Stepper(value: binding, in: 128...131_072, step: 128) { Text("\(binding.wrappedValue) MB") }
                 }
-                // "Default registry" used to live here as a free-text field. It is on the
-                // Registries pane now, where the list of registries it can name actually is —
-                // the owner's call, and it was the right one: a text box that had to be typed
-                // correctly sat two tabs away from the screen holding every valid answer.
+                // "Default registry" used to live here as a free-text field, then on a Settings ▸
+                // Registries pane. It is set from the Registries section's table now (Set as
+                // Default), beside the list of registries it can name.
             }
 
     }
