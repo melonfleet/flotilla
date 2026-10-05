@@ -46,9 +46,9 @@ struct ContainerCard<MenuContent: View>: View {
                 .frame(height: 28)
             actionCluster
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+        // The app's one card surface (5 October). It was a soft tint with no border, unlike
+        // every other section's card.
+        .cardSurface()
         .onTapGesture(count: 2) { onDetails() }
     }
 

@@ -136,9 +136,9 @@ enum Theme {
     ///
     /// Dark keeps its 0.85 alpha: the window's own dark ground shows through a little, which is
     /// what stops a flat near-black reading as a hole next to the sidebar.
-    static func contentBackground(_ choice: ThemeChoice) -> Color {
+    static func contentBackground(_ choice: ThemeChoice, opaque: Bool = false) -> Color {
         dynamic(light: choice.light.palette.body, dark: choice.dark.palette.body,
-                lightAlpha: 1, darkAlpha: 0.85)
+                lightAlpha: 1, darkAlpha: opaque ? 1 : 0.85)
     }
 
     /// The window bar's own ground for the chosen themes.

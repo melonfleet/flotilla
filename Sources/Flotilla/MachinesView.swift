@@ -510,14 +510,11 @@ struct MachinesView: View {
     /// to the row — name is the link, the overflow menu and the bin are both present. A toggle
     /// that changes what you can do is a trap, and losing the copy menu here was a bug once.
     private var cards: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 12)], spacing: 12) {
-                ForEach(displayed) { machine in
-                    machineCard(machine)
-                        .contextMenu { machineMenu(for: machine) }
-                }
+        ResourceCardGrid {
+            ForEach(displayed) { machine in
+                machineCard(machine)
+                    .contextMenu { machineMenu(for: machine) }
             }
-            .padding(12)
         }
     }
 
@@ -531,18 +528,29 @@ struct MachinesView: View {
                     .lineLimit(1)
                     .help("Open \(machine.id)")
                 if machine.isDefault == true {
+                    // The same grey badge every other card uses ("default" on a registry,
+                    // "built-in" on a network). It was the accent purple here alone.
                     Text("default")
                         .font(.caption2)
                         .fixedSize()
                         .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Theme.accentTint, in: Capsule())
-                        .foregroundStyle(Theme.accent)
+                        .background(.quaternary, in: Capsule())
+                        .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }
 
             Text(machine.status.capitalized)
                 .font(.caption).foregroundStyle(.secondary)
+
+            // Tags, as the table row already showed them and every other card does. The row is
+            // kept when empty so both machines' fields sit on the same line.
+            let tags = model.tags.tags(on: .machine, machine.id)
+            if tags.isEmpty {
+                TagPillRow(tags: [CardSurface.placeholderTag], limit: 1).hidden()
+            } else {
+                TagPillRow(tags: tags, limit: 4)
+            }
 
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
                 GridRow {
@@ -562,9 +570,7 @@ struct MachinesView: View {
             Divider()
             rowActions(for: machine)
         }
-        .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.30), in: RoundedRectangle(cornerRadius: 9))
+        .cardSurface()
     }
 
     private var table: some View {

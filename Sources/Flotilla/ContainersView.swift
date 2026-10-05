@@ -1698,11 +1698,9 @@ struct ContainersView: View {
             if case .group(let group, let members, _) = item { return (group.id, members) }
             return nil
         }, uniquingKeysWith: { first, _ in first })
-        return ScrollView {
-            // Top-aligned: a group card is shorter than a container card, and the grid's default
-            // centring floated it halfway down its row.
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)],
-                      alignment: .leading, spacing: 12) {
+        // The shared grid: top-aligned, the same columns as every section, and every card the
+        // height of the tallest, so a group card no longer sits shorter than its neighbours.
+        return ResourceCardGrid {
                 ForEach(topLevel) { row in
                     if row.kind == .group, let group = row.group, let state = row.groupState {
                         GroupCard(group: group, state: state, members: members[group.id] ?? [],
@@ -1731,8 +1729,6 @@ struct ContainersView: View {
                         .contextMenu { actions(for: container) }
                     }
                 }
-            }
-            .padding(12)
         }
     }
 

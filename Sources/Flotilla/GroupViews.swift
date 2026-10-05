@@ -190,13 +190,9 @@ struct GroupCard<Actions: View>: View {
             Divider()
             actions
         }
-        // `ContainerCard`'s own surface, not `ResourceCard`'s: the two sit side by side in this
-        // grid, and a white bordered card beside a soft tinted one read as two different apps
-        // (measured on screen, 5 October). The other sections' cards use `ResourceCard`'s white —
-        // a difference between screens that predates this, and is not fixed here.
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+        // The app's one card surface, the same as the container cards beside it and every other
+        // section's (the owner, 5 October: one card style, not two).
+        .cardSurface()
     }
 }
 

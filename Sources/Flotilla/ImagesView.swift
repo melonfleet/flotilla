@@ -289,6 +289,8 @@ struct ImagesView: View {
                              ("Digest", Self.shortDigest(image)),
                              ("Size", image.displaySize.map(Self.byteCount)),
                              ("Created", RelativeDate.relative(image.configuration.creationDate))],
+                    // Images have no tags (CLAUDE.md: "tag" already means an image reference's).
+                    showsTags: false,
                     onOpen: { detailTarget = DetailTarget(id: image.reference) }
                 ) {
                     rowActions(for: image)
@@ -881,6 +883,19 @@ struct ImagesView: View {
     /// `:` after the last `/` is the tag (so a registry port, e.g. `host:5000/name`,
     /// isn't mistaken for one).
     fileprivate nonisolated static func split(_ reference: String) -> (repository: String, tag: String) {
+        // A digest is not a tag. `kindest/node@sha256:<64 hex>` used to split at the digest's own
+        // colon, giving the repository "kindest/node@sha256" and a 64-character "tag" — which, as
+        // a card's badge, filled the window (5 October). Split at `@` first; a reference with a
+        // tag as well keeps the tag, and one with only a digest shows its short form.
+        if let at = reference.firstIndex(of: "@") {
+            let named = split(String(reference[..<at]))
+            let digest = reference[reference.index(after: at)...]
+            let hex = digest.split(separator: ":").last.map(String.init) ?? String(digest)
+            let hasTag = reference[..<at].lastIndex(of: ":").map { colon in
+                !reference[reference.index(after: colon)..<at].contains("/")
+            } ?? false
+            return (named.repository, hasTag ? named.tag : "@" + hex.prefix(12))
+        }
         let searchStart = reference.lastIndex(of: "/").map { reference.index(after: $0) } ?? reference.startIndex
         guard let colon = reference[searchStart...].lastIndex(of: ":") else {
             return (reference, "latest")

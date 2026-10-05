@@ -333,6 +333,8 @@ struct ClustersView: View {
                         ("Address", cluster.address.isEmpty ? nil : cluster.address),
                         ("Ports", cluster.ports.isEmpty ? nil : cluster.ports.joined(separator: ", ")),
                     ],
+                    // Clusters are not tagged, so no empty pill row.
+                    showsTags: false,
                     onOpen: nil
                 ) {
                     rowActions(for: cluster)

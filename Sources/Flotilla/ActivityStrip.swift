@@ -58,7 +58,11 @@ struct ActivityStrip: View {
         // `safeAreaInset` (Machines) it sat on the window background. Same view, two shades,
         // which is exactly what the owner spotted. An explicit background makes placement
         // irrelevant.
-        .background(Theme.contentBackground(themes))
+        //
+        // **Opaque**, in dark too. The content wash is 85% in dark, which is right for a page
+        // and wrong for a band that content scrolls under: the cards behind it showed through
+        // its text (seen on Images, 5 October).
+        .background(Theme.contentBackground(themes, opaque: true))
     }
 
     private var header: some View {
