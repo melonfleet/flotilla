@@ -1089,10 +1089,8 @@ extension ContainerCLI {
         return try execute(args)
     }
 
-    @discardableResult
-    public func startCluster(_ name: String) throws -> CommandResult {
-        try execute(["k8s", "start", "--name", name])
-    }
+    // No `startCluster`: `container` 1.5.0 removed `k8s start` (apple/container#2290). A stopped
+    // cluster is recovered by deleting and recreating it — see `AppModel.recreateCluster`.
 
     @discardableResult
     public func deleteCluster(_ name: String) throws -> CommandResult {

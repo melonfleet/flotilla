@@ -1266,3 +1266,31 @@ unique because a grouped container is never also a standalone row.
 some exist", and the first half-dot drew that as half green. The dot and the sort rank now look at
 how many members are actually running.
 
+### Q22 amended — `container` 1.5 has no restart, so Start became Recreate (2026-10-05)
+
+`container` 1.5.0 removed `k8s start` (apple/container#2290, merged 2026-09-21). Restarts were
+unreliable, especially after the node got a new IP. The 1.5.0 release notes and the tagged
+`docs/kubernetes.md` ("Recovering a stopped cluster") both give the same recovery: `k8s delete`,
+then `k8s create`. Starting the node container directly is not a substitute, because it skips the
+Kubernetes repair, readiness and kubeconfig steps. Research by Iris; every claim above was checked
+against GitHub before this was built.
+
+So:
+
+- **Start is gone from Clusters, the allowlist, `ContainerCLI` and `AppModel`.** Default-deny
+  means the `k8s start` spec goes with the command, and a test now holds that it is refused.
+- **Recreate replaces it**, offered for a cluster that is not running. It is one operation with one
+  progress panel: delete, then create with the same name, CPUs and memory. The memory comes back
+  from `k8s list`'s `4096 MB` as the flag's `4096M`; anything unparseable falls back to the CLI's
+  default rather than sending a value the allowlist would refuse.
+- **It always asks, and the confirmation says why it exists** before saying what it costs: there is
+  no restart in 1.5, and everything inside the cluster is lost. A custom node image or CNI cannot be
+  kept, because nothing this app can read records them; the confirmation says the defaults are used.
+- **`--node-image` must name a tag** (apple/container#2271): 1.5.0 refuses an untagged or digest-only
+  node image with `invalidArgument` before provisioning, because the tag now also picks the
+  Kubernetes version `kubeadm` installs. That needed a new value shape, `taggedImageReference`,
+  checked on the last path component so a registry port is not mistaken for a tag. Every other image
+  field still accepts an untagged reference.
+- **Not done:** `k8s create --cni <path>` (apple/container#2254) is an opportunity, not a fix, and is
+  left for later.
+

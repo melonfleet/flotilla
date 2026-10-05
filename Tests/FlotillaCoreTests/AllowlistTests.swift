@@ -97,7 +97,7 @@ private func requireRejected(
     // command describes itself as EXPERIMENTAL and Apple's documentation does not, and a read
     // that enumerates the owner's clusters is the reconnaissance half of the same surface.
     let k8s: Set<String> = [
-        "k8s create", "k8s start", "k8s delete", "k8s rm", "k8s list", "k8s ls",
+        "k8s create", "k8s delete", "k8s rm", "k8s list", "k8s ls",
         "k8s load-image", "k8s write-config",
     ]
 
@@ -567,7 +567,7 @@ private func requireRejected(
         "registry login", "registry logout",
         // Every k8s mutation boots, stops or destroys virtual machines, except `write-config`,
         // which writes a file on this Mac that other tools read. All six are host changes.
-        "k8s create", "k8s start", "k8s delete", "k8s rm", "k8s load-image", "k8s write-config",
+        "k8s create", "k8s delete", "k8s rm", "k8s load-image", "k8s write-config",
     ]
     let actualMutating = Set(Allowlist.commands.filter(\.mutates).map(\.name))
     #expect(actualMutating == expectedMutating)
@@ -697,7 +697,6 @@ private func requireRejected(
                                 "--node-image", "docker.io/kindest/node:v1.35.5",
                                 "--scheme", "https", "--max-concurrent-downloads", "3"],
                     mutates: true, timeout: 1800),
-        AllowedCase(["k8s", "start", "--name", "k8s-dev"], mutates: true, timeout: 600),
         AllowedCase(["k8s", "delete", "--name", "k8s-dev"], mutates: true, timeout: 300),
         AllowedCase(["k8s", "rm", "--name", "k8s-dev"], mutates: true, timeout: 300),
         AllowedCase(["k8s", "list"], mutates: false),

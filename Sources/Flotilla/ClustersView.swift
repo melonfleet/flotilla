@@ -19,6 +19,9 @@ struct ClustersView: View {
     @State private var selection = Set<K8sNode.ID>()
     @State private var showingCreate = false
     @State private var pendingDelete: K8sNode?
+    /// A recreate awaiting confirmation. Recreate deletes the cluster and everything in it, so it
+    /// always asks, whatever `confirmDestructiveActions` says — the same rule bulk deletes follow.
+    @State private var pendingRecreate: K8sNode?
     /// The cluster being loaded into, or nil for the list. An embedded screen like the create
     /// form, not a dialog — see `LoadImageView`.
     @State private var loadImageTarget: K8sNode?
@@ -76,6 +79,37 @@ struct ClustersView: View {
         } message: {
             Text("Everything running in it goes with it. This cannot be undone.")
         }
+        .confirmationDialog(
+            "Recreate the cluster “\(pendingRecreate?.node ?? "")”?",
+            isPresented: Binding(get: { pendingRecreate != nil },
+                                 set: { if !$0 { pendingRecreate = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingRecreate
+        ) { cluster in
+            Button("Delete and Recreate", role: .destructive) {
+                Task { await model.recreateCluster(cluster) }
+                pendingRecreate = nil
+            }
+            Button("Cancel", role: .cancel) { pendingRecreate = nil }
+        } message: { cluster in
+            Text(Self.recreateMessage(for: cluster))
+        }
+    }
+
+    /// What a recreate keeps and what it loses, said before anything happens.
+    ///
+    /// The reason comes first: a user who has only ever pressed Start needs to know why that is
+    /// gone, or Recreate reads as Flotilla being heavy-handed rather than `container` 1.5 having
+    /// no restart.
+    static func recreateMessage(for cluster: K8sNode) -> String {
+        var kept = ["the name"]
+        if let cpus = cluster.cpus { kept.append("\(cpus) CPU\(cpus == 1 ? "" : "s")") }
+        if cluster.memoryFlag != nil { kept.append(cluster.memory) }
+        return "container 1.5 can't restart a stopped cluster. Apple's way back is to delete it and "
+            + "create it again, which is what this does, keeping \(kept.joined(separator: ", ")).\n\n"
+            + "Everything inside the cluster is lost: deployments, pods, loaded images and stored data. "
+            + "Its kubectl context is written again. A custom node image or CNI is not kept; the "
+            + "defaults are used. Creating can take several minutes. This cannot be undone."
     }
 
     /// Said once, at the top, in the section's own words.
@@ -173,7 +207,7 @@ struct ClustersView: View {
             } description: {
                 Text(isFiltered
                      ? "No cluster matches the current search."
-                     : "A cluster is a single-node Kubernetes running in its own VM. You reach it with kubectl; Flotilla creates it, starts it and loads images into it.")
+                     : "A cluster is a single-node Kubernetes running in its own VM. You reach it with kubectl; Flotilla creates it, loads images into it, and recreates it if it stops.")
             } actions: {
                 if isFiltered {
                     Button("Clear Search") { ui.search = "" }
@@ -303,22 +337,23 @@ struct ClustersView: View {
         }
     }
 
-    /// Start, then overflow, then bin — the arrangement every other section uses.
+    /// Recreate, then overflow, then bin — the arrangement every other section uses.
     ///
-    /// **No Stop.** `container k8s` has `create`, `start` and `delete` and nothing between: there
-    /// is no command that stops a cluster without destroying it, so a Stop button here would have
-    /// nothing to call. Delete is the only way down.
+    /// **No Start, and no Stop.** `container` 1.5.0 removed `k8s start` (apple/container#2290), and
+    /// there was never a command that stops a cluster without destroying it. So the first button
+    /// is Recreate, offered for a cluster that is not running: delete and create again, which is
+    /// Apple's documented recovery. It asks first, because it destroys what is inside.
     @ViewBuilder
     private func rowActions(for cluster: K8sNode) -> some View {
         let busy = model.isBusy(cluster.node, kind: .cluster)
         HStack(spacing: 2) {
-            IconActionButton(systemImage: "play.fill",
-                             label: "Start \(cluster.node)",
+            IconActionButton(systemImage: "arrow.triangle.2.circlepath",
+                             label: "Recreate \(cluster.node)",
                              help: cluster.isRunning
-                                 ? "\(cluster.node) is already running"
-                                 : "Start \(cluster.node)",
+                                 ? "\(cluster.node) is running. Recreate is for a stopped cluster."
+                                 : "Delete \(cluster.node) and create it again — container 1.5 cannot restart it",
                              busy: busy, disabled: cluster.isRunning) {
-                Task { await model.startCluster(cluster) }
+                pendingRecreate = cluster
             }
 
             Menu {
@@ -347,6 +382,8 @@ struct ClustersView: View {
     private func menu(for cluster: K8sNode) -> some View {
         Button("Load Image…") { loadImageTarget = cluster }
             .disabled(!cluster.isRunning)
+        Button("Recreate…") { pendingRecreate = cluster }
+            .disabled(cluster.isRunning)
         // No result dialog. What it wrote and how to use it are reported in the progress panel
         // that already appears — one surface for the operation instead of a panel that closes
         // and a second card that opens saying the same thing.

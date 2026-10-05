@@ -92,7 +92,7 @@ struct NewClusterView: View {
             FormField("Node image",
                       help: FieldHelp(
                           "The Kubernetes version, as a kind node image.",
-                          detail: "Left empty, the CLI uses its own digest-pinned default — which is how you get a reproducible version rather than whatever is newest.",
+                          detail: "Left empty, the CLI uses its own digest-pinned default — which is how you get a reproducible version rather than whatever is newest. If you set one, it needs a tag: since container 1.5 the tag also picks the Kubernetes version, and an untagged or digest-only image is refused.",
                           example: "docker.io/kindest/node:v1.35.5"),
                       problem: nodeImageProblem,
                       optional: true) {
@@ -154,8 +154,14 @@ struct NewClusterView: View {
 
     private var nodeImageProblem: String? {
         guard let chosenNodeImage else { return nil }
-        return Allowlist.accepts(chosenNodeImage, as: .imageReference)
-            ? nil : "“\(chosenNodeImage)” is not an image reference. \(ValueShape.imageReference.rule)"
+        // The same shape the allowlist checks `--node-image` against. Checking a looser one here
+        // let `kindest/node` pass the field while Create stayed disabled with nothing on screen
+        // saying why — the control that refuses without explaining itself.
+        guard Allowlist.accepts(chosenNodeImage, as: .imageReference) else {
+            return "“\(chosenNodeImage)” is not an image reference. \(ValueShape.imageReference.rule)"
+        }
+        return Allowlist.accepts(chosenNodeImage, as: .taggedImageReference)
+            ? nil : "“\(chosenNodeImage)” has no tag. \(ValueShape.taggedImageReference.rule)"
     }
 
     private var validation: Result<ValidatedCommand, AllowlistError> {

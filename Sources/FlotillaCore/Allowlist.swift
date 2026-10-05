@@ -26,6 +26,13 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     case identifier
     /// `[registry[:port]/]name[:tag][@sha256:…]`.
     case imageReference
+    /// An `imageReference` that **names a tag**: `name:tag`, optionally `@sha256:…` after it.
+    ///
+    /// For `k8s create --node-image` only. `container` 1.5.0 refuses an untagged or digest-only
+    /// node image with `invalidArgument` before it provisions anything (apple/container#2271), because
+    /// the tag now also chooses the Kubernetes version `kubeadm` installs. The allowlist must be at
+    /// least as strict as the CLI, or the form offers a create that can only fail.
+    case taggedImageReference
     /// `[bindIP:]hostPort:containerPort[/tcp|/udp]`.
     case portMapping
     /// `KEY=VALUE`.
@@ -163,7 +170,7 @@ extension ValueShape {
         // Names, and closed sets. These have to survive: an audit line that hides *which*
         // container was deleted, *which* image was pulled, or *which* `machine set` setting was
         // changed records that something happened and withholds the only interesting part.
-        case .identifier, .imageReference, .machineSetting, .homeMountMode,
+        case .identifier, .imageReference, .taggedImageReference, .machineSetting, .homeMountMode,
              .progressType, .registryScheme, .registryHost, .signal, .platform, .outputFormat,
              .machineOutputFormat:
             // `registryHost` belongs here, and the judgement is worth stating: it is the one
@@ -197,6 +204,8 @@ extension ValueShape {
             "Use letters, numbers, dots, dashes or underscores, starting with a letter or number. No spaces."
         case .imageReference:
             "Expected something like docker.io/library/alpine:latest — no spaces."
+        case .taggedImageReference:
+            "Expected an image with a tag, such as kindest/node:v1.35.5. A digest alone is not enough: the tag chooses the Kubernetes version."
         case .portMapping:
             "Expected hostPort:containerPort, optionally /tcp or /udp — for example 8080:80."
         case .envAssignment:
@@ -1023,11 +1032,14 @@ public enum Allowlist {
                                 // your own network.
                                 FlagSpec(long: "scheme", value: .registryScheme),
                                 FlagSpec(long: "max-concurrent-downloads", value: .count),
-                                FlagSpec(long: "node-image", value: .imageReference)],
+                                // Tagged: 1.5.0 refuses an untagged or digest-only node image.
+                                FlagSpec(long: "node-image", value: .taggedImageReference)],
                         exposure: .localOnly(reason: "creating a Kubernetes cluster boots virtual machines on this Mac")),
-            CommandSpec(["k8s", "start"], mutates: true, timeoutHint: 600,
-                        flags: [FlagSpec(long: "name", value: .identifier)],
-                        exposure: .localOnly(reason: "starting a Kubernetes cluster boots virtual machines on this Mac")),
+            // **No `k8s start`.** `container` 1.5.0 removed it (apple/container#2290): restarts were
+            // unreliable, especially after the node got a new IP, and Apple's documented recovery for
+            // a stopped cluster is to delete it and create it again. Default-deny means the spec goes
+            // with the command — a grammar for a subcommand that no longer exists is a promise the
+            // allowlist cannot keep.
             CommandSpec(["k8s", "delete"], mutates: true, timeoutHint: 300,
                         flags: [FlagSpec(long: "name", value: .identifier)],
                         exposure: .localOnly(reason: "deleting a Kubernetes cluster destroys its virtual machines and everything in them")),
@@ -1566,6 +1578,9 @@ public enum Allowlist {
             return isIdentifier(value) ? nil : bad
         case .imageReference:
             return checkImageReference(value, context: context) ?? nil
+        case .taggedImageReference:
+            if checkImageReference(value, context: context) != nil { return bad }
+            return Self.namesTag(value) ? nil : bad
         case .portMapping:
             return isPortMapping(value) ? nil : bad
         case .envAssignment:
@@ -1625,6 +1640,16 @@ public enum Allowlist {
     static func isIdentifier(_ value: String) -> Bool {
         guard (1...128).contains(value.count), let first = value.first, isASCIIAlphanumeric(first) else { return false }
         return value.allSatisfy { isASCIIAlphanumeric($0) || $0 == "_" || $0 == "." || $0 == "-" }
+    }
+
+    /// Whether an image reference carries a tag. Looks only at the **last** path component, with
+    /// any `@digest` removed, so a registry port is not mistaken for one: `localhost:5000/node`
+    /// has a colon and no tag; `localhost:5000/node:v1` has both.
+    static func namesTag(_ reference: String) -> Bool {
+        let withoutDigest = reference.split(separator: "@", maxSplits: 1).first.map(String.init) ?? reference
+        let last = withoutDigest.split(separator: "/").last.map(String.init) ?? withoutDigest
+        guard let colon = last.lastIndex(of: ":") else { return false }
+        return last.index(after: colon) < last.endIndex
     }
 
     private static func checkImageReference(_ value: String, context: String) -> AllowlistError? {

@@ -26,6 +26,24 @@ public struct K8sNode: Sendable, Equatable, Identifiable, Hashable {
 
     public var isRunning: Bool { state.caseInsensitiveCompare("running") == .orderedSame }
 
+    /// The node's memory as `k8s create --memory` takes it: the list prints `4096 MB`, the flag wants
+    /// `4096M`. `nil` when the column holds something else, so a recreate falls back to the CLI's
+    /// default rather than sending a value the allowlist would refuse.
+    ///
+    /// Exists for Recreate (5 October): `container` 1.5.0 removed `k8s start`, and its documented
+    /// recovery for a stopped cluster is delete-then-create, which should keep the size it had.
+    public var memoryFlag: String? {
+        let parts = memory.split(separator: " ")
+        guard parts.count == 2, let amount = Int(parts[0]), amount > 0 else { return nil }
+        switch parts[1].uppercased() {
+        case "KB": return "\(amount)K"
+        case "MB": return "\(amount)M"
+        case "GB": return "\(amount)G"
+        case "TB": return "\(amount)T"
+        default: return nil
+        }
+    }
+
     public init(cluster: String, node: String, roles: [String], state: String,
                 cpus: Int?, memory: String, address: String, ports: [String]) {
         self.cluster = cluster

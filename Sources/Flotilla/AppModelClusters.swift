@@ -120,10 +120,59 @@ extension AppModel {
         handle.release()
     }
 
-    func startCluster(_ cluster: K8sNode) async {
-        await perform(on: cluster, title: "Start", action: "Started") { cli in
-            try cli.startCluster(cluster.node)
-        }
+    /// Deletes a cluster and creates it again with the same name, CPUs and memory.
+    ///
+    /// **This replaces Start**, which `container` 1.5.0 removed (apple/container#2290): restarting
+    /// a stopped cluster was unreliable, especially after the node came back on a new IP, and
+    /// Apple's documented recovery is exactly this — `k8s delete`, then `k8s create`. Starting the
+    /// node container directly is *not* a substitute; it skips the Kubernetes repair, readiness and
+    /// kubeconfig steps.
+    ///
+    /// **Destructive, and the caller must have said so.** Everything inside the cluster is lost.
+    /// What carries over is only what `k8s list` reports: the name, CPU count and memory. A custom
+    /// node image or CNI manifest is not recorded anywhere this app can read, so the new cluster
+    /// uses the CLI's defaults, and the confirmation says that before anything happens.
+    ///
+    /// One progress panel for both halves, so a recreate reads as one operation, and so the create
+    /// half never starts if the delete failed.
+    @discardableResult
+    func recreateCluster(_ cluster: K8sNode) async -> Bool {
+        let name = cluster.node
+        let cpus = cluster.cpus
+        let memory = cluster.memoryFlag
+        guard !isBusy(name, kind: .cluster) else { return false }
+        markBusy(name, kind: .cluster)
+        defer { clearBusy(name, kind: .cluster) }
+
+        let ok = await withProgress(
+            title: "Recreate the cluster “\(name)”",
+            command: "container k8s delete --name \(name)  then  "
+                + Self.createClusterPreview(name: name, cpus: cpus, memory: memory,
+                                            nodeImage: nil, autoRemove: false),
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                let deleting = progress.begin("Deleting \(name)")
+                _ = try await Task.detached { [cli] in try cli.deleteCluster(name) }.value
+                progress.finish(deleting, detail: nil)
+
+                let creating = progress.begin("Creating \(name) again")
+                try await runCreate(name: name, cpus: cpus, memory: memory, nodeImage: nil,
+                                    autoRemove: false) { line in
+                    progress.update(creating, detail: line.summary)
+                }
+                progress.finish(creating, detail: nil)
+                recordActivity(ContainerEvent(date: Date(), from: cluster.state, to: "running",
+                                              kind: .cluster, subject: name, action: "Recreated"))
+                return "\(name) recreated"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refreshClusters()
+                return clusters.contains { $0.node == name && $0.isRunning }
+            }
+        )
+        await refreshClusters()
+        return ok
     }
 
     func deleteCluster(_ cluster: K8sNode) async {
