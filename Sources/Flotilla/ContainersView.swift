@@ -588,19 +588,19 @@ struct ContainersView: View {
 
         HStack(spacing: 2) {
             if running {
-                iconButton("stop.fill", "Stop", help: "Stop \(container.id)", busy: busy) {
+                iconButton("stop.fill", "Stop \(container.id)", busy: busy) {
                     Task { await model.perform(.stop, on: container) }
                 }
-                iconButton("arrow.clockwise", "Restart", help: "Restart \(container.id)", busy: busy) {
+                iconButton("arrow.clockwise", "Restart \(container.id)", busy: busy) {
                     Task { await model.perform(.restart, on: container) }
                 }
             } else {
-                iconButton("play.fill", "Start", help: "Start \(container.id)", busy: busy) {
+                iconButton("play.fill", "Start \(container.id)", busy: busy) {
                     Task { await model.perform(.start, on: container) }
                 }
                 // Keeps the column a stable width whichever state the row is in, so the
                 // buttons don't jump sideways as containers start and stop.
-                iconButton("arrow.clockwise", "Restart", help: "Restart \(container.id)", busy: true) {}
+                iconButton("arrow.clockwise", "Restart \(container.id)", busy: true) {}
                     .hidden()
             }
 
@@ -621,7 +621,7 @@ struct ContainersView: View {
 
             Divider().frame(height: 14)
 
-            iconButton("trash", "Delete", help: "Delete \(container.id)", busy: busy, destructive: true) {
+            iconButton("trash", "Delete \(container.id)", busy: busy, destructive: true) {
                 requestDelete(container)
             }
         }
@@ -639,13 +639,16 @@ struct ContainersView: View {
         }
     }
 
+    /// `label` names the row — "Stop web", not "Stop" — and is both what VoiceOver reads and the
+    /// tooltip, the shape `MachinesView` already had. A bare verb was announced identically on
+    /// every row, so nobody listening could tell which container a button acted on.
     private func iconButton(
-        _ symbol: String, _ label: String, help: String,
+        _ symbol: String, _ label: String,
         busy: Bool, destructive: Bool = false, action: @escaping () -> Void
     ) -> some View {
         // Delegates to the shared button so the containers rows, the machines rows and the
         // section toolbars all give the same feedback. See `IconActionButton`.
-        IconActionButton(systemImage: symbol, label: label, help: help,
+        IconActionButton(systemImage: symbol, label: label, help: label,
                          busy: busy, destructive: destructive, action: action)
     }
 
@@ -1228,16 +1231,16 @@ struct ContainersView: View {
                 // different controls depending on how many things you selected. A group in the
                 // selection is started and stopped the way its own row would do it.
                 let containers = actionableContainerIDs, groups = actionableGroups
-                iconButton("play.fill", "Start", help: "Start \(selectionNoun)", busy: selectionBusy) {
+                iconButton("play.fill", "Start \(selectionNoun)", busy: selectionBusy) {
                     Task { await startSelected(containers, groups) }
                 }
-                iconButton("stop.fill", "Stop", help: "Stop \(selectionNoun)", busy: selectionBusy) {
+                iconButton("stop.fill", "Stop \(selectionNoun)", busy: selectionBusy) {
                     Task { await stopSelected(containers, groups) }
                 }
-                iconButton("arrow.clockwise", "Restart", help: "Restart \(selectionNoun)", busy: selectionBusy) {
+                iconButton("arrow.clockwise", "Restart \(selectionNoun)", busy: selectionBusy) {
                     Task { await restartSelected(containers, groups) }
                 }
-                iconButton("trash", "Delete", help: "Delete \(selectionNoun)",
+                iconButton("trash", "Delete \(selectionNoun)",
                            busy: selectionBusy, destructive: true) {
                     confirmingBulkDelete = true
                 }

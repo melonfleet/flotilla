@@ -42,6 +42,13 @@ extension AppModel {
         for cluster in current {
             guard let was = before[cluster.node] else { continue }
             guard was.caseInsensitiveCompare(cluster.state) != .orderedSame else { continue }
+            // **Not while Flotilla is acting on it.** Every cluster action records its own entry
+            // ("Recreated", "Deleted") and refreshes before it clears the busy mark, so the change
+            // the refresh sees is that action — and recording it again said "Started stopped →
+            // running" under "Recreated", an action nobody took (seen 5 October). Containers and
+            // machines are the other way round: their start and stop record nothing themselves,
+            // the poll *is* the record, so this skip is for clusters only.
+            guard !isBusy(cluster.node, kind: .cluster) else { continue }
             recordActivity(ContainerEvent(date: Date(), from: was, to: cluster.state,
                                           kind: .cluster, subject: cluster.node))
         }

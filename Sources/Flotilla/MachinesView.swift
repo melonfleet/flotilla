@@ -718,7 +718,7 @@ struct MachinesView: View {
                 // Placeholder so the Actions column keeps one width whichever state the row is
                 // in — the same trick the containers rows use, and for the same reason: buttons
                 // that shift sideways as machines start and stop are hard to hit.
-                iconButton("arrow.clockwise", "Restart", busy: true) {}
+                iconButton("arrow.clockwise", "Restart \(machine.id)", busy: true) {}
                     .hidden()
             }
 
