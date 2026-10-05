@@ -174,10 +174,12 @@ struct AboutView: View {
 
     private var storage: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Preferences are stored in the `dev.melonfleet.Flotilla` UserDefaults domain, "
+            // `LocalizedStringKey`, so the backticks render as code: a `+`-joined literal is a
+            // plain `String`, which `Text` shows verbatim (the same rule `FieldHelp` follows).
+            Text(LocalizedStringKey("Preferences are stored in the `dev.melonfleet.Flotilla` UserDefaults domain, "
                 + "on this Mac only — one key per setting, so `defaults read "
                 + "dev.melonfleet.Flotilla` shows every choice you have made and "
-                + "`defaults write` sets one.")
+                + "`defaults write` sets one."))
             Text("A configuration profile can seed or lock any of them through "
                 + "/Library/Managed Preferences, which always outranks the values above.")
                 .foregroundStyle(.secondary)

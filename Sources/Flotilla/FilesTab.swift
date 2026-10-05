@@ -278,7 +278,7 @@ struct FilesTab: View {
             entries = []
             // The commonest cause by far is an image with no shell, and the raw error
             // ("executable file not found") does not say that.
-            failure = "\(error)\n\nBrowsing runs `ls` inside the container. An image built "
+            failure = "\(error)\n\nBrowsing runs ls inside the container. An image built "
                 + "without a shell — distroless or scratch — cannot be browsed, though "
                 + "individual files can still be copied out if you know the path."
         }

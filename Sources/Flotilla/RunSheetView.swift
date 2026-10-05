@@ -218,10 +218,12 @@ struct RunSheetView: View {
     private var prefillBanner: some View {
         if prefilled {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Copied the image, name, ports and resource limits. **Environment "
-                      + "variables and volumes were not copied** — `container inspect` "
-                      + "does not separate the ones you set from the ones the image "
-                      + "defines, so add any you need below.",
+                // Markdown, so the bold and the code render; joined with `+`, they showed as
+                // asterisks and backticks.
+                Label(LocalizedStringKey("Copied the image, name, ports and resource limits. "
+                      + "**Environment variables and volumes were not copied** — "
+                      + "`container inspect` does not separate the ones you set from the ones "
+                      + "the image defines, so add any you need below."),
                       systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(Theme.warning)
                     .fixedSize(horizontal: false, vertical: true)

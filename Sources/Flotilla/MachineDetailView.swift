@@ -304,12 +304,12 @@ private struct MachineShellTab: View {
                 ContentUnavailableView {
                     Label("Terminal", systemImage: "terminal")
                 } description: {
-                    Text(MachinesView.isRunning(machine)
+                    Text(LocalizedStringKey(MachinesView.isRunning(machine)
                          ? "Opens a login shell inside the machine “\(machine.id)”. This is the "
                            + "VM itself, not a container — changes here affect every container "
                            + "running in it."
                          : "The machine is stopped. Opening a shell will start it first, which "
-                           + "`machine run` does automatically.")
+                           + "`machine run` does automatically."))
                 } actions: {
                     Button(MachinesView.isRunning(machine) ? "Open shell" : "Start and open shell") {
                         open()
@@ -427,8 +427,8 @@ private struct MachineSettingsTab: View {
                 // immediately while the VM kept running on 2. So the honest message is "saved,
                 // not yet in effect", and a dialog demanding a stop first would invent a
                 // restriction the CLI does not have.
-                Label("Changes apply when the machine next starts. `container` has no way to "
-                      + "resize a running machine.", systemImage: "info.circle")
+                Label(LocalizedStringKey("Changes apply when the machine next starts. `container` "
+                      + "has no way to resize a running machine."), systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary)
 
                 // The list will show the new numbers the moment this is applied, while the

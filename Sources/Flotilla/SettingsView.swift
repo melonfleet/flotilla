@@ -48,7 +48,9 @@ private struct SettingRow<V: SettingRepresentable, Control: View>: View {
                             .background(Capsule().fill(.quaternary))
                     }
                 }
-                Text(locked ? "Managed by your organization." : key.summary)
+                // Markdown, so a summary's `container ls` renders as code rather than as
+                // backticks: a `String` reaches `Text` verbatim.
+                Text(LocalizedStringKey(locked ? "Managed by your organization." : key.summary))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let unbuiltReason {
@@ -399,7 +401,7 @@ struct SettingsView: View {
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
-                                Text("Always on — \(category.summary)")
+                                Text(LocalizedStringKey("Always on — " + category.summary))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -590,8 +592,8 @@ struct SettingsView: View {
             }
 
             Label(
-                "None of these touch your containers, images or volumes — those belong to the "
-                    + "`container` runtime, not to Flotilla.",
+                LocalizedStringKey("None of these touch your containers, images or volumes — "
+                    + "those belong to the `container` runtime, not to Flotilla."),
                 systemImage: "info.circle"
             )
             .font(.caption)

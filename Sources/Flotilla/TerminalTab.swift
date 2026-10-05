@@ -238,8 +238,8 @@ struct TerminalTab: View {
                 ContentUnavailableView {
                     Label("Terminal", systemImage: "terminal")
                 } description: {
-                    Text("Opens `sh` inside “\(container.id)” as root. "
-                         + "Anything you run here affects the container, not this Mac.")
+                    Text(LocalizedStringKey("Opens `sh` inside “\(container.id)” as root. "
+                         + "Anything you run here affects the container, not this Mac."))
                 } actions: {
                     Button("Open shell") { openShell() }
                         .buttonStyle(.borderedProminent)

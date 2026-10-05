@@ -470,10 +470,10 @@ struct MachinesView: View {
                 // `ubuntu:24.04` used to be the second example here. It does not boot as a
                 // machine — see `MachineCreateSheet.suggestions`. Naming an image that fails is
                 // worse than naming none.
-                Text("Containers run inside a Linux virtual machine. `container` creates one on "
-                     + "demand, and you can also create and size them yourself — a machine is "
-                     + "built from a container image, such as `alpine:3.22`, rather than an "
-                     + "installer disc.")
+                Text(LocalizedStringKey("Containers run inside a Linux virtual machine. "
+                     + "`container` creates one on demand, and you can also create and size them "
+                     + "yourself — a machine is built from a container image, such as "
+                     + "`alpine:3.22`, rather than an installer disc."))
             } actions: {
                 Button("Create a machine…") { showingCreate = true }
                     .buttonStyle(.borderedProminent)

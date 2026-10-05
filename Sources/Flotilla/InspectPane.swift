@@ -131,8 +131,8 @@ struct InspectPane: View {
     private var redactionNote: some View {
         HStack(spacing: 6) {
             Image(systemName: "eye.slash").font(.caption2)
-            Text("Secrets are redacted. Values shown as `<redacted:…>` are present on this Mac "
-                 + "but hidden here and in Copy JSON.")
+            Text(LocalizedStringKey("Secrets are redacted. Values shown as `<redacted:…>` are "
+                 + "present on this Mac but hidden here and in Copy JSON."))
                 .font(.caption2)
         }
         .foregroundStyle(.tertiary)

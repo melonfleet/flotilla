@@ -679,7 +679,7 @@ final class AppModel {
             startingRuntime = false
             // The CLI's own words. The likeliest real failure is a missing kernel, which we
             // deliberately do not install, and its message says exactly that.
-            state = .unavailable("Couldn't start the `container` service — \(error)")
+            state = .unavailable("Couldn't start the container service — \(error)")
         }
     }
 
@@ -762,7 +762,7 @@ final class AppModel {
             await reload()
         } catch {
             startingRuntime = false
-            state = .unavailable("Couldn't stop the `container` services — \(error)")
+            state = .unavailable("Couldn't stop the container services — \(error)")
         }
     }
 
@@ -787,7 +787,7 @@ final class AppModel {
             await reload()
         } catch {
             startingRuntime = false
-            state = .unavailable("Couldn't restart the `container` services — \(error)")
+            state = .unavailable("Couldn't restart the container services — \(error)")
         }
     }
 
@@ -808,14 +808,14 @@ final class AppModel {
             // a GUI-launched app's PATH has no `/usr/local/bin`, so the search that backed the
             // claim could not have found it. A diagnosis the reader can check is worth more than
             // a shorter one.
-            return "Apple's `container` CLI wasn't found in: "
+            return "Apple's container CLI wasn't found in: "
                 + Preflight.searchedDirectories().joined(separator: ", ")
         case .serviceStopped(_, _, let status):
-            return "Apple's `container` service isn't running (\(status))."
+            return "Apple's container service isn't running (\(status))."
         case .needsRestart(let cli, let service, _):
             // Names both builds, because the symptom without them is inexplicable: everything
             // reports healthy and nothing new will start. Measured on the 1.0.0 → 1.4.1 upgrade.
-            return "`container` was upgraded to \(cli) but the running service is still "
+            return "container was upgraded to \(cli) but the running service is still "
                 + "\(service). Nothing new can start until it restarts."
         case .needsKernel:
             // What a fresh install looks like: everything says running and nothing can start.
@@ -825,7 +825,7 @@ final class AppModel {
             return "Containers and machines can't start without one. "
                 + "Download the kernel Apple's container tool recommends to fix it."
         case .tooOld(let found, let required):
-            return "`container` \(found) is too old — \(required) or newer is required."
+            return "container \(found) is too old — \(required) or newer is required."
         case .unusable(let reason):
             // Name the fix, not just the fault. The commonest cause by far is the API
             // service simply not being started, and the user should not have to go
@@ -835,7 +835,7 @@ final class AppModel {
                 || reason.lowercased().contains("connection")
                 ? "\n\nStart it with:  container system start"
                 : ""
-            return "`container` is installed but not usable — \(reason)\(remedy)"
+            return "container is installed but not usable — \(reason)\(remedy)"
         }
     }
 
@@ -948,7 +948,7 @@ final class AppModel {
 
     func refreshVolumes() async {
         guard runtimeUsable else {
-            volumesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "`container` is unavailable.")
+            volumesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
             return
         }
         volumesState = .loading
@@ -1006,7 +1006,7 @@ final class AppModel {
 
     func refreshNetworks() async {
         guard runtimeUsable else {
-            networksState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "`container` is unavailable.")
+            networksState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
             return
         }
         networksState = .loading
@@ -1073,7 +1073,7 @@ final class AppModel {
 
     func refreshImages() async {
         guard runtimeUsable else {
-            imagesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "`container` is unavailable.")
+            imagesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
             return
         }
         imagesState = .loading

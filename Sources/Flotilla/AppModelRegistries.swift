@@ -22,7 +22,7 @@ extension AppModel {
     func refreshRegistries() async {
         guard runtimeUsable else {
             setRegistriesState(.unavailable(preflight.flatMap(Self.registryUnavailableReason)
-                                            ?? "`container` is unavailable."))
+                                            ?? "container is unavailable."))
             return
         }
         if registriesState != .loaded { setRegistriesState(.loading) }

@@ -223,7 +223,7 @@ extension AppModel {
                 progress.note("  kubectl --context \(cluster.node) get nodes")
                 progress.note("")
                 progress.note("The file has no current context, so kubectl needs --context.")
-                progress.note("~/.kube/config already has this cluster too: `k8s create` writes")
+                progress.note("~/.kube/config already has this cluster too: k8s create writes")
                 progress.note("it when the cluster is made, and has no flag to prevent that.")
                 return "Written to \(destination.lastPathComponent)"
             }
@@ -313,6 +313,6 @@ private final class StreamHandle: @unchecked Sendable {
 struct ClusterCreateFailure: Error, CustomStringConvertible {
     let exitCode: Int32
     var description: String {
-        "`container k8s create` exited with status \(exitCode). The lines above are what it said."
+        "container k8s create exited with status \(exitCode). The lines above are what it said."
     }
 }

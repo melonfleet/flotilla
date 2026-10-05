@@ -39,12 +39,12 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
             // useless in an alert, so `message` is already reduced to the salient line by
             // `ContainerCLI.failureMessage`.
             message.isEmpty
-                ? "`container \(command)` failed (exit \(exitCode))."
+                ? "container \(command) failed (exit \(exitCode))."
                 : message
         case .timedOut(let command, let seconds):
-            "`container \(command)` was still running after \(Int(seconds))s and was stopped."
+            "container \(command) was still running after \(Int(seconds))s and was stopped."
         case .runtimeNotFound(let searched):
-            "Apple's `container` CLI was not found in: \(searched.joined(separator: ", "))"
+            "Apple's container CLI was not found in: \(searched.joined(separator: ", "))"
         case .unsupported(let reason):
             reason
         }

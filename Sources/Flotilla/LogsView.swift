@@ -442,7 +442,7 @@ struct LogsView: View {
                                 Text(line.receivedAt.map(Self.timestamp) ?? "\u{2014}")
                                     .font(.system(size: 11).monospacedDigit())
                                     .foregroundStyle(.secondary)
-                                    .help("When Flotilla received this line. `container logs` "
+                                    .help("When Flotilla received this line. container logs "
                                           + "has no timestamps of its own.")
                             }
                             // Sized for the whole `2026-09-13 12:04:50`, not the time

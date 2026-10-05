@@ -250,8 +250,9 @@ struct MachineFormView: View {
             Divider()
                 .padding(.vertical, 2)
 
-            Text("A machine cannot join a network or mount a volume — `container machine create` "
-                 + "has no option for either. Only the home-directory mount above.")
+            Text(LocalizedStringKey("A machine cannot join a network or mount a volume — "
+                 + "`container machine create` has no option for either. Only the home-directory "
+                 + "mount above."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

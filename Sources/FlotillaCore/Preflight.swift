@@ -47,10 +47,10 @@ public struct Preflight: Sendable {
         do {
             versions = try cli.versions()
         } catch {
-            return .unusable(reason: "could not read `container system version`: \(error)")
+            return .unusable(reason: "could not read container system version: \(error)")
         }
         guard let component = versions.first(where: { $0.appName == "container" }) else {
-            return .unusable(reason: "`container system version` did not report a `container` component")
+            return .unusable(reason: "container system version did not report a container component")
         }
         guard let found = VersionTriple(parsing: component.version) else {
             return .unusable(reason: "could not parse version '\(component.version)'")
@@ -66,7 +66,7 @@ public struct Preflight: Sendable {
         do {
             status = try cli.systemStatus()
         } catch {
-            return .unusable(reason: "could not read `container system status`: \(error)")
+            return .unusable(reason: "could not read container system status: \(error)")
         }
         // **Its own case, not `.unusable`.** "Installed but the service is stopped" is the
         // single commonest state after a reboot, it is one command from working, and the app can
