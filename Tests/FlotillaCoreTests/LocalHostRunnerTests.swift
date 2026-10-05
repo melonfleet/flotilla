@@ -329,6 +329,35 @@ private final class StreamRecorder: @unchecked Sendable {
     #expect(end.ok)
 }
 
+@Test func cancellingAStreamEndsItEvenWhenAGrandchildHoldsThePipe() throws {
+    // The Linux CI failure, reproduced on any platform (5 October). The test above failed on
+    // Linux on every push since it was written, and passed here. On Linux, dash forks the last
+    // command of `-c` rather than exec-ing it, and Foundation's `terminate()` signals only the
+    // child, so `sleep` outlives `sh` holding stdout and stderr open for thirty seconds. On Darwin
+    // the signal reaches the whole group and the grandchild goes too, which is why it never
+    // showed here. This grandchild leaves the group (`setpgrp`) so it survives the TERM on both.
+    // (Perl because macOS has no `setsid` command; CI's `swift:6.1` is Ubuntu, where it is in
+    // the base system.)
+    //
+    // `run` already bounds this wait with `drainGrace`; a stream must too, or cancelling a follow
+    // leaves the viewer waiting for an end that a stray process controls.
+    let recorder = StreamRecorder()
+    let stream = try runner().stream(
+        // The grandchild says "up" itself, after `setpgrp`, so the cancel cannot land before it
+        // exists — an earlier draft printed from `sh` and raced the fork.
+        ["-c", "perl -e '$| = 1; setpgrp(0, 0); print qq(up\\n); exec qw(sleep 30)' & wait"],
+        onLine: { recorder.line($0, $1) },
+        onEnd: { recorder.finish($0) }
+    )
+    #expect(recorder.wait { !recorder.texts.isEmpty })
+
+    stream.cancel()
+    #expect(recorder.wait { recorder.ending != nil })
+    let end = try #require(recorder.ending)
+    #expect(end.cancelled)
+    #expect(end.ok)
+}
+
 @Test func aStreamThatEndsOnItsOwnReportsTheExitCode() throws {
     let recorder = StreamRecorder()
     let stream = try runner().stream(

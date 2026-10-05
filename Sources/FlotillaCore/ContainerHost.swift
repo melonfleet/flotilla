@@ -465,8 +465,14 @@ public struct LocalHost: ContainerHost {
             thread.start()
         }
 
+        // Woken by whichever comes first: both readers reaching EOF, or a cancel finishing its
+        // escalation. See the watcher.
+        let settled = DispatchSemaphore(value: 0)
+        draining.notify(queue: .global()) { settled.signal() }
+
         let state = CommandStream.State()
         state.arm { [limits] in
+            defer { settled.signal() }
             guard process.isRunning else { return }
             process.terminate()
             // `container` stops on TERM; this is the allowance for that, after which it is reaped
@@ -478,10 +484,32 @@ public struct LocalHost: ContainerHost {
 
         // One more thread to report the end. It waits on the drains rather than on the child, so
         // a line written just before exit is delivered before the viewer is told it stopped.
-        let watcher = Thread {
-            draining.wait()
-            process.waitUntilExit()
-            onEnd(CommandStreamEnd(exitCode: process.terminationStatus, cancelled: state.isCancelled))
+        //
+        // **But not forever once cancelled** (5 October). The readers end at EOF, and a grandchild
+        // that inherited a pipe can hold it open after the child is dead — `run` learned this and
+        // bounds the wait with `drainGrace`; this did not, and failed the Linux CI on every push
+        // from the day it was written. On Linux, Foundation's `terminate()` signals only the
+        // child and dash forks the last command of `sh -c` instead of exec-ing it, so `sleep`
+        // kept the pipes for thirty seconds. On Darwin the TERM reaches the whole group, which
+        // hid it. A cancelled stream now gives the readers `drainGrace`, then reports its end.
+        let watcher = Thread { [limits] in
+            settled.wait()
+            if draining.wait(timeout: .now() + limits.drainGrace) == .timedOut {
+                out.abandon()
+                err.abandon()
+            }
+            // On Linux the child's exit is not reported until the last writer closes (see the
+            // portability note on `LocalHost`), so after a cancel `isRunning` can still be true
+            // here. Then there is no status to read, and asking for one would trap: report the
+            // conventional status for death by TERM. `cancelled` makes the end `ok` either way.
+            let exitCode: Int32
+            if state.isCancelled && process.isRunning {
+                exitCode = 128 + SIGTERM
+            } else {
+                process.waitUntilExit()
+                exitCode = process.terminationStatus
+            }
+            onEnd(CommandStreamEnd(exitCode: exitCode, cancelled: state.isCancelled))
         }
         watcher.name = "flotilla.stream.end"
         watcher.stackSize = 512 * 1024
