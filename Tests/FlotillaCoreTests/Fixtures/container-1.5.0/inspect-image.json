@@ -1,0 +1,80 @@
+[
+  {
+    "configuration" : {
+      "creationDate" : "2026-06-02T15:21:29Z",
+      "descriptor" : {
+        "digest" : "sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95",
+        "mediaType" : "application/vnd.oci.image.index.v1+json",
+        "size" : 703
+      },
+      "name" : "docker.io/kindest/node@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95"
+    },
+    "id" : "ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95",
+    "variants" : [
+      {
+        "config" : {
+          "architecture" : "arm64",
+          "config" : {
+            "Entrypoint" : [
+              "/usr/local/bin/entrypoint",
+              "/sbin/init"
+            ],
+            "Env" : [
+              "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+              "container=docker",
+              "HTTP_PROXY=",
+              "HTTPS_PROXY=",
+              "NO_PROXY="
+            ],
+            "StopSignal" : "SIGRTMIN+3",
+            "WorkingDir" : "/"
+          },
+          "created" : "2026-06-02T10:21:29.815341381-05:00",
+          "history" : [
+            {
+              "comment" : "buildkit.dockerfile.v0",
+              "created" : "2026-06-01T17:47:43.332882885Z",
+              "created_by" : "COPY / / # buildkit"
+            },
+            {
+              "comment" : "buildkit.dockerfile.v0",
+              "created" : "2026-06-01T17:47:43.332882885Z",
+              "created_by" : "ENV container=docker",
+              "empty_layer" : true
+            },
+            {
+              "comment" : "buildkit.dockerfile.v0",
+              "created" : "2026-06-01T17:47:43.332882885Z",
+              "created_by" : "STOPSIGNAL SIGRTMIN+3",
+              "empty_layer" : true
+            },
+            {
+              "comment" : "buildkit.dockerfile.v0",
+              "created" : "2026-06-01T17:47:43.332882885Z",
+              "created_by" : "ENTRYPOINT [\"/usr/local/bin/entrypoint\" \"/sbin/init\"]",
+              "empty_layer" : true
+            },
+            {
+              "created" : "2026-06-02T10:21:29.815341381-05:00",
+              "created_by" : "infinity"
+            }
+          ],
+          "os" : "linux",
+          "rootfs" : {
+            "diff_ids" : [
+              "sha256:f6214eef09b9390c9b529e82f25b48bdd333d2b1d13445327cc8975085ef94a3",
+              "sha256:595733cae035343e06e222d3375b14cbc012712d216cf1cd73a0b8ad1972695d"
+            ],
+            "type" : "layers"
+          }
+        },
+        "digest" : "sha256:625f4633a546aba1e159ab56e52f9111b1b5044a165cc64ffe46d15d3dd0b0bf",
+        "platform" : {
+          "architecture" : "arm64",
+          "os" : "linux"
+        },
+        "size" : 343245491
+      }
+    ]
+  }
+]

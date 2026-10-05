@@ -1,0 +1,131 @@
+[
+  {
+    "configuration" : {
+      "capAdd" : [
+        "ALL"
+      ],
+      "capDrop" : [
+
+      ],
+      "creationDate" : "2026-10-05T11:52:04Z",
+      "dns" : {
+        "nameservers" : [
+
+        ],
+        "options" : [
+
+        ],
+        "searchDomains" : [
+
+        ]
+      },
+      "id" : "fx-k8s",
+      "image" : {
+        "descriptor" : {
+          "digest" : "sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95",
+          "mediaType" : "application/vnd.oci.image.index.v1+json",
+          "size" : 703
+        },
+        "reference" : "docker.io/kindest/node@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95"
+      },
+      "initProcess" : {
+        "arguments" : [
+          "/sbin/init"
+        ],
+        "environment" : [
+          "HTTP_PROXY=",
+          "container=docker",
+          "no_proxy=192.168.0.0/16,10.244.0.0/16,10.96.0.0/12",
+          "NO_PROXY=192.168.0.0/16,10.244.0.0/16,10.96.0.0/12",
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "HTTPS_PROXY="
+        ],
+        "executable" : "/usr/local/bin/entrypoint",
+        "rlimits" : [
+
+        ],
+        "supplementalGroups" : [
+
+        ],
+        "terminal" : false,
+        "user" : {
+          "id" : {
+            "gid" : 0,
+            "uid" : 0
+          }
+        },
+        "workingDirectory" : "/"
+      },
+      "labels" : {
+        "com.apple.container.plugin" : "k8s",
+        "com.apple.container.resource.role" : "control-plane,worker"
+      },
+      "maskedPaths" : [
+
+      ],
+      "mounts" : [
+
+      ],
+      "networks" : [
+        {
+          "network" : "default",
+          "options" : {
+            "hostname" : "fx-k8s",
+            "mtu" : 1280
+          }
+        }
+      ],
+      "platform" : {
+        "architecture" : "arm64",
+        "os" : "linux"
+      },
+      "publishedPorts" : [
+        {
+          "containerPort" : 6443,
+          "count" : 1,
+          "hostAddress" : "0.0.0.0",
+          "hostPort" : 6445,
+          "proto" : "tcp"
+        }
+      ],
+      "publishedSockets" : [
+
+      ],
+      "readOnly" : false,
+      "readonlyPaths" : [
+
+      ],
+      "resources" : {
+        "cpuOverhead" : 1,
+        "cpus" : 2,
+        "memoryInBytes" : 4294967296
+      },
+      "rosetta" : true,
+      "runtimeHandler" : "container-runtime-linux",
+      "ssh" : false,
+      "stopSignal" : "SIGRTMIN+3",
+      "sysctls" : {
+
+      },
+      "useInit" : false,
+      "virtualization" : false
+    },
+    "id" : "fx-k8s",
+    "status" : {
+      "networks" : [
+        {
+          "hostname" : "fx-k8s",
+          "ipv4Address" : "192.168.64.5/24",
+          "ipv4Gateway" : "192.168.64.1",
+          "ipv6Address" : "fd80:229d:6ef7:9bb:f0f8:9cff:fe9c:1626/64",
+          "macAddress" : "f2:f8:9c:9c:16:26",
+          "mtu" : 1280,
+          "network" : "default",
+          "variant" : "reserved"
+        }
+      ],
+      "startedDate" : "2026-10-05T11:52:05Z",
+      "state" : "running"
+    }
+  }
+]

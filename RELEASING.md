@@ -76,7 +76,7 @@ keychain, and a `.p8` sitting in Downloads is a signing key sitting in Downloads
 ## Releasing
 
 ```bash
-git tag -a v0.1.0 -m "v0.1.0"
+git tag -a v1.5.0.0 -m "v1.5.0.0"
 Scripts/release.sh
 ```
 
@@ -90,7 +90,7 @@ check a tester's Mac performs. The result is `dist/Flotilla-<version>.zip`.
 Useful variants:
 
 ```bash
-Scripts/release.sh --version 0.1.1     # name it explicitly instead of from the tag
+Scripts/release.sh --version 1.5.0.1   # name it explicitly instead of from the tag
 Scripts/release.sh --skip-notarize     # signed, not notarised — for checking the signing half alone
 Scripts/release.sh --allow-dirty       # for testing the pipeline itself, never for a real build
 ```
@@ -139,19 +139,19 @@ test "Launch at login" on a `release.sh` build rather than a `make-app.sh` one.
 
 ## Test builds: naming and versioning
 
-`Scripts/make-pkg.sh --version 1.0.0-beta.1` produces a signed, notarised, stapled `.pkg`.
+`Scripts/make-pkg.sh --version 1.5.0.0-beta.2` produces a signed, notarised, stapled `.pkg`.
 This is what goes to a test Mac. Zips are not distributed.
 
 | Label | Means |
 |---|---|
-| `1.0.0-alpha.N` | early test build; expect breakage |
-| `1.0.0-beta.N` | feature complete, hunting bugs |
-| `1.0.0-rc.N` | release candidate — ship it if nothing turns up |
-| `1.0.0` | the release |
+| `1.5.0.0-alpha.N` | early test build; expect breakage |
+| `1.5.0.0-beta.N` | feature complete, hunting bugs |
+| `1.5.0.0-rc.N` | release candidate — ship it if nothing turns up |
+| `1.5.0.0` | the release |
 
 **One label, two versions**, because they answer different questions:
 
-- **The label** — `1.0.0-beta.1` — is the filename, the About panel, and what a tester quotes back
+- **The label** — `1.5.0.0-beta.2` — is the filename, the About panel, and what a tester quotes back
   to you.
 - **The package version** is the **commit count**, and it is what Apple's `installer` compares.
 

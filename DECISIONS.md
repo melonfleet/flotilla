@@ -541,6 +541,11 @@ claim a revision on a version that has none, while `1.4.1.0` and `1.4.1` still c
 1.4.1, no Flotilla revision yet — where `1.0.0` said only "first". A pre-release of a revisioned
 build still sorts before it, which is the ordering the update check needs.
 
+**Amended 2026-10-05: the beta is now `v1.5.0.0-beta.2`.** `container` 1.5.0 shipped before beta 2
+was packaged, and Flotilla was verified against it (`research/CONTAINER-UPGRADE-1.5.0.md`), so the
+tag names 1.5.0 instead of 1.4.1. It is applied when beta 2 is packaged, not before: a tag on an
+unpackaged commit would stamp that version on every dev build made after it.
+
 What this touched: `SemanticVersion` accepts and orders a fourth component (five is still not a
 version); `Scripts/make-app.sh`'s positive shape guard accepts `X.Y.Z.R` with the same optional
 pre-release suffixes; `Scripts/release.sh` names the shape in its error. `CFBundleVersion` is

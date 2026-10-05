@@ -1,5 +1,8 @@
 # Apple `container` 1.0.0 → 1.4.1
 
+> **Superseded as the current baseline:** 1.4.1 → 1.5.0 is in
+> [CONTAINER-UPGRADE-1.5.0.md](CONTAINER-UPGRADE-1.5.0.md) (2026-10-05).
+
 **Research date:** 2026-09-11  
 **Flotilla baseline:** `container CLI version 1.0.0 (build: release, commit: ee848e3)`  
 **Latest release:** 1.4.1, released 2026-09-09  

@@ -22,12 +22,24 @@
 # USAGE
 #   Scripts/capture-fixtures.sh            # capture what this Mac can
 #   Scripts/capture-fixtures.sh --dry-run  # print what it would capture, write nothing
+#   Scripts/capture-fixtures.sh --out Tests/FlotillaCoreTests/Fixtures/container-1.5.0
+#                                          # capture a decode-only set beside the pinned one
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/Tests/FlotillaCoreTests/Fixtures"
 DRY=false
-[ "${1:-}" = "--dry-run" ] && DRY=true
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY=true ;;
+    # The value-pinned set in Fixtures/ stays on the version its tests' numbers came from; a newer
+    # CLI is captured beside it and only has to decode (the 1.5.0 bump, 5 October).
+    --out) shift; case "$1" in /*) OUT="$1" ;; *) OUT="$PWD/$1" ;; esac ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+$DRY || mkdir -p "$OUT"
 
 command -v container >/dev/null || {
   echo "no \`container\` on PATH — this must run on a Mac with the CLI installed" >&2
@@ -173,6 +185,13 @@ if ! $DRY; then
     echo "- **CLI:** \`$VERSION\`"
     echo "- **Captured:** $(date -u +%Y-%m-%d)"
     echo "- **Account name anonymised to** \`example\`."
+    # Said in the set itself, so a missing file reads as "not captured" rather than as lost.
+    if [ ${#skipped[@]} -gt 0 ]; then
+      echo
+      echo "Not captured this time — each needs something the Mac did not have:"
+      echo
+      for s in "${skipped[@]}"; do echo "- $s"; done
+    fi
   } > "$OUT/CAPTURED.md"
   echo "▸ wrote $captured fixtures and CAPTURED.md"
 else

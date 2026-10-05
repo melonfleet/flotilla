@@ -20,14 +20,17 @@
 #
 # VERSIONING
 #
-#   1.0.0-alpha.N   early test builds; expect breakage
-#   1.0.0-beta.N    feature complete, hunting bugs
-#   1.0.0-rc.N      release candidate; ship this if nothing turns up
-#   1.0.0           the release
+#   1.5.0.0-alpha.N   early test builds; expect breakage
+#   1.5.0.0-beta.N    feature complete, hunting bugs
+#   1.5.0.0-rc.N      release candidate; ship this if nothing turns up
+#   1.5.0.0           the release
+#
+# Four parts, `<container version>.<Flotilla revision>` (DECISIONS.md, 2026-09-12). The guard below
+# also takes three, which is how every release before that was named.
 #
 # Two versions come out of one label, because they answer different questions:
 #
-#   the LABEL       1.0.0-beta.1 — the filename, the About panel, what a tester quotes back to you
+#   the LABEL       1.5.0.0-beta.2 — the filename, the About panel, what a tester quotes back to you
 #   the PKG VERSION the commit count — what Apple's installer compares NUMERICALLY
 #
 # The label cannot be the package version. `installer` orders packages numerically, and
@@ -65,7 +68,7 @@ case "$VERSION" in
     [0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
     [0-9]*.[0-9]*.[0-9]*-rc.[0-9]*|\
     [0-9]*.[0-9]*.[0-9]*) : ;;
-    *) fail "version '$VERSION' is not X.Y.Z or X.Y.Z-{alpha,beta,rc}.N — see the header." ;;
+    *) fail "version '$VERSION' is not X.Y.Z.R or X.Y.Z.R-{alpha,beta,rc}.N — see the header." ;;
 esac
 
 # What the installer compares. Monotonic by construction; see the header for why the label cannot

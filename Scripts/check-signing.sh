@@ -74,7 +74,8 @@ if git describe --tags --abbrev=0 >/dev/null 2>&1; then
     pass "git tag present: $(git describe --tags --abbrev=0)"
 else
     todo "No git tag. A release needs one — 0.0.0 is useless to a tester."
-    echo "      git tag -a v1.0.0 -m 'v1.0.0'"
+    # Four parts: <container version>.<Flotilla revision> (DECISIONS.md, 2026-09-12).
+    echo "      git tag -a v1.5.0.0 -m 'v1.5.0.0'"
 fi
 
 echo

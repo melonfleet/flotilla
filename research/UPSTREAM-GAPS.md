@@ -4,8 +4,12 @@ Things Flotilla deliberately does **not** offer because Apple's CLI has no way t
 Each entry says how it was established, and what we would build the day it changes. Re-check this
 file whenever `container` is updated; every item has a one-line test.
 
-**Pinned to:** `container CLI version 1.4.1 (build: release, commit: 9a8917c)`
-**Last checked:** 2026-09-12 on 1.4.1 — **all six still hold**, re-run against the live CLI, not
+**Pinned to:** `container CLI version 1.5.0 (build: release, commit: d265d66)`
+**Last checked:** 2026-10-05 on 1.5.0 — **all six still hold**, every one-line test re-run against
+the live CLI; item 4 by stopping the only machine and running a container, which started and took
+an address on the machine's own subnet. The core help is byte-for-byte 1.4.1's
+([CONTAINER-UPGRADE-1.5.0.md](CONTAINER-UPGRADE-1.5.0.md)).
+**Previously:** 2026-09-12 on 1.4.1 — all six held, re-run against the live CLI, not
 the docs. Two results changed wording rather than substance and are noted under their items:
 machines now take an address on the *container* subnet (item 4), and `set-default`'s leaf help
 still says nothing about what it affects even though the tagged reference does (item 6).
