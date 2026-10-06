@@ -851,3 +851,31 @@ private final class ProgressBox: @unchecked Sendable {
         _ = try Allowlist.validated(["system", "stop"], wirePolicy: .localOwner)
     }
 }
+
+/// A host whose first `machine run` fails the way a new machine's first boot does on 1.5.
+private final class FirstBootHost: ContainerHost, @unchecked Sendable {
+    private(set) var runs = 0
+    let message: String
+    init(message: String) { self.message = message }
+    func run(_ args: [String]) throws -> CommandResult {
+        runs += 1
+        return runs == 1
+            ? CommandResult(stdout: "", stderr: message, exitCode: 1)
+            : CommandResult(stdout: "", stderr: "", exitCode: 0)
+    }
+}
+
+@Test("a new machine's first-boot failure is retried once; any other failure is not")
+func startMachineRetriesTheFirstBootQuirk() throws {
+    let quirk = FirstBootHost(message: "Error: The operation couldn’t be completed. Operation not supported on socket")
+    try ContainerCLI(host: quirk, wirePolicy: .localOwner).startMachine("alma")
+    #expect(quirk.runs == 2)
+
+    let device = FirstBootHost(message: "Error: The operation couldn’t be completed. Operation not supported by device")
+    try ContainerCLI(host: device, wirePolicy: .localOwner).startMachine("alma")
+    #expect(device.runs == 2)
+
+    let real = FirstBootHost(message: "Error: machine alma not found")
+    #expect(throws: (any Error).self) { try ContainerCLI(host: real, wirePolicy: .localOwner).startMachine("alma") }
+    #expect(real.runs == 1)
+}

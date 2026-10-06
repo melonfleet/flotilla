@@ -993,7 +993,25 @@ public struct ContainerCLI: Sendable {
         // So boot by running something trivial instead. `/bin/true` exists in any POSIX
         // userland, exits 0 immediately, and needs no terminal.
         args += ["--", "/bin/true"]
-        return try execute(args)
+        // **The first `machine run` after `machine create` fails, and stops the machine**
+        // (container 1.5.0, measured 6 October on Alpine 3.22 and AlmaLinux 9 and 10).
+        // `create` already boots the machine; the first run without a terminal then exits 1 with
+        // "Operation not supported on socket" or "…by device" and leaves it **stopped**, and the
+        // next run boots it again. With a PTY that first run works. Flotilla's own Start is only
+        // offered for a stopped machine, so it rarely meets this — the demo script did, on
+        // 5 October, and blamed the boot order. One retry, on exactly that message, gives the
+        // right end state either way; anything else is a real failure and is reported as one.
+        do {
+            return try execute(args)
+        } catch let error as ContainerCLIError where Self.isFirstBootQuirk(error) {
+            return try execute(args)
+        }
+    }
+
+    static func isFirstBootQuirk(_ error: ContainerCLIError) -> Bool {
+        guard case .commandFailed(_, _, let message) = error else { return false }
+        return message.contains("Operation not supported on socket")
+            || message.contains("Operation not supported by device")
     }
 
     /// `machine restart` — synthesised, exactly as `restart(_:)` is for containers, because

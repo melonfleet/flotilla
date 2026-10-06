@@ -43,6 +43,19 @@ struct ResourceSuggestionsTests {
         #expect(ClusterSuggestion.catalogue[0].details[1].1 == "1.35.5")
     }
 
+    @Test("every machine suggestion's command is accepted, and no stock Ubuntu or Debian")
+    func machines() {
+        #expect(MachineSuggestion.catalogue.map(\.id) == ["alpine", "alma9", "alma10"])
+        for suggestion in MachineSuggestion.catalogue {
+            #expect(!suggestion.image.contains("ubuntu") && !suggestion.image.contains("debian"))
+            #expect(!suggestion.image.hasSuffix(":latest"))
+            let args = ContainerCLI.createMachineArguments(
+                image: suggestion.image, name: suggestion.baseName, cpus: suggestion.cpus,
+                memory: "\(suggestion.memoryGB)G")
+            #expect(accepted(args), "\(args)")
+        }
+    }
+
     @Test("a suggested name moves past what exists")
     func names() {
         #expect(ResourceSuggestions.uniqueName("app", taken: []) == "app")

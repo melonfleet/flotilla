@@ -56,6 +56,8 @@ struct MachinesView: View {
     @State private var selection = Set<ContainerMachine.ID>()
     @State private var detailTarget: DetailTarget?
     @State private var showingCreate = false
+    @State private var showingSuggestions = false
+    @State private var createPrefill: MachineSuggestion?
     @State private var confirmingDelete: ContainerMachine?
     @State private var confirmingBulkDelete = false
 
@@ -97,7 +99,18 @@ struct MachinesView: View {
             // Create is a screen now, not a sheet — see `MachineFormView`. Checked before the
             // detail so "New Machine" from inside a detail still lands somewhere sensible.
             if showingCreate {
-                MachineFormView(model: model) { showingCreate = false }
+                MachineFormView(model: model, prefill: createPrefill) {
+                    showingCreate = false
+                    createPrefill = nil
+                }
+            } else if showingSuggestions {
+                ResourceSuggestionsGallery(
+                    intro: "Machine images that boot on container 1.5 — each was booted and "
+                        + "logged in to before it was offered. Use one to open New Machine with "
+                        + "it filled in.",
+                    items: MachineSuggestion.catalogue,
+                    use: useSuggestion,
+                    dismiss: { showingSuggestions = false })
             } else if let target = detailTarget {
                 detailScreen(target)
             } else {
@@ -230,6 +243,12 @@ struct MachinesView: View {
     /// the one section where you could not switch to cards, filter by state, or choose columns.
     /// A section that quietly offers less than its neighbours reads as unfinished rather than
     /// as a deliberate simplification.
+    private func useSuggestion(_ suggestion: MachineSuggestion) {
+        createPrefill = suggestion
+        showingSuggestions = false
+        showingCreate = true
+    }
+
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search machines…",
@@ -264,8 +283,10 @@ struct MachinesView: View {
 
             filterButton
         }, trailing: {
-            ToolbarIconButton(systemImage: "plus", label: "Create a machine…") {
-                showingCreate = true
+            ToolbarIconMenu(systemImage: "plus", label: "Create a machine") {
+                Button("New Machine…") { createPrefill = nil; showingCreate = true }
+                Divider()
+                Button("Suggestions…") { showingSuggestions = true }
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh machines") {
                 Task { await model.refreshMachines() }
@@ -475,8 +496,15 @@ struct MachinesView: View {
                      + "yourself — a machine is built from a container image, such as "
                      + "`alpine:3.22`, rather than an installer disc."))
             } actions: {
-                Button("Create a machine…") { showingCreate = true }
-                    .buttonStyle(.borderedProminent)
+                VStack(spacing: 14) {
+                    Button("Create a machine…") { createPrefill = nil; showingCreate = true }
+                        .buttonStyle(.borderedProminent)
+                    SuggestionQuickPicks(
+                        picks: MachineSuggestion.catalogue.map { suggestion in
+                            (suggestion.title, { useSuggestion(suggestion) })
+                        },
+                        more: { showingSuggestions = true })
+                }
             }
 
         // A filter that matches nothing is not the same as having no machines, and must not

@@ -134,3 +134,47 @@ public struct ClusterSuggestion: ResourceSuggestion, Equatable {
                           nodeImage: nodeImage135, disposable: true),
     ]
 }
+
+// MARK: Machines
+
+public struct MachineSuggestion: ResourceSuggestion, Equatable {
+    public let id: String
+    public let title: String
+    public let summary: String
+    public let baseName: String
+    public let image: String
+    public let cpus: Int
+    public let memoryGB: Int
+    /// What PID 1 is — the thing Apple requires of a machine image, and what tells them apart.
+    public let initSystem: String
+
+    public var details: [(String, String)] {
+        [("Image", image.replacingOccurrences(of: "docker.io/library/", with: "")
+                       .replacingOccurrences(of: "docker.io/", with: "")),
+         ("Resources", "\(cpus) CPUs, \(memoryGB) GB memory"),
+         ("Init", initSystem)]
+    }
+
+    /// Each **booted and logged in to** on container 1.5.0 before shipping (6 October): created,
+    /// booted, `/etc/os-release` read, a login shell opened as the Mac's user, stopped and booted
+    /// again. Stock Ubuntu and Debian are absent because they cannot be machines — Apple needs
+    /// `/sbin/init` in the image (`research/MACHINES-SPEC.md`). AlmaLinux is pinned to a dated
+    /// build; Iris's research named older ones, and these are the newest. Written as the machine
+    /// form's own verified list writes them, so the form recognises them as verified.
+    public static let catalogue: [MachineSuggestion] = [
+        MachineSuggestion(id: "alpine", title: "Alpine",
+                          summary: "A small, quick shell or build box.",
+                          baseName: "alpine-box", image: "alpine:3.22",
+                          cpus: 2, memoryGB: 2, initSystem: "BusyBox init"),
+        MachineSuggestion(id: "alma9", title: "AlmaLinux 9",
+                          summary: "A stable, RHEL-compatible development VM.",
+                          baseName: "alma9-dev",
+                          image: "almalinux/9-init:9.8-20261002",
+                          cpus: 4, memoryGB: 4, initSystem: "systemd"),
+        MachineSuggestion(id: "alma10", title: "AlmaLinux 10",
+                          summary: "The current RHEL-compatible generation.",
+                          baseName: "alma10-dev",
+                          image: "almalinux/10-init:10.2-20261002",
+                          cpus: 4, memoryGB: 4, initSystem: "systemd"),
+    ]
+}

@@ -1582,3 +1582,25 @@ image `container` 1.5 itself defaults to, pinned by tag and digest.
   writes `~/.kube/config` and may switch kubectl's current context, which is the owner's working
   setup. Its command is the CLI's own default spelled out, and every suggestion's argv is tested
   against the Allowlist.
+
+### Q28 continued — Suggestions for Machines, and a machine's first run (2026-10-06)
+
+As decided: **Alpine 3.22 and AlmaLinux 9 and 10**, each boot-and-login tested on container 1.5.0
+before shipping, any failure to be dropped. None was. For each: pulled, created, booted,
+`/etc/os-release` read, PID 1 checked (BusyBox init on Alpine, systemd on AlmaLinux), a login shell
+opened as the Mac's user in the home directory, stopped, booted again. AlmaLinux is pinned to the
+newest dated `-init` builds (`9.8-20261002`, `10.2-20261002`) — Iris's research named older ones.
+Alpine 2 CPUs / 2 GB; AlmaLinux 4 / 4 GB (Lima's dev-VM default, as Iris suggested). Stock Ubuntu
+and Debian stay out: Apple needs `/sbin/init` in the image.
+
+Same shape as the other sections: "+" ▸ Suggestions…, quick picks in the empty state, and "Use…"
+opens New Machine filled in. The machine form's own verified list gained both AlmaLinux builds, and
+three texts that said "only Alpine boots" were corrected; a verified AlmaLinux image no longer
+draws the "most images do not boot" warning (another AlmaLinux tag still does — it was not booted).
+
+**Found while testing — a machine's first run after create.** `machine create` boots the machine;
+on 1.5 the first `machine run` without a terminal then fails ("Operation not supported on socket" /
+"…by device") **and stops the machine**, and the next run boots it. Flotilla's Start is only
+offered for a stopped machine, so it rarely meets this, but `startMachine` now retries once on
+exactly that message (tested). The demo script met it on 5 October and blamed the boot order; its
+comment and command are corrected.

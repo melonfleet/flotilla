@@ -158,10 +158,12 @@ up() {
   for m in "${MACHINES[@]}"; do
     quiet container machine inspect "$m" || container machine create --name "$m" --cpus 2 --memory 2G "$ALPINE" >/dev/null
   done
-  # ci-runner stopped, then dev-box booted, in that order: booting dev-box first left it stopped
-  # by the time the script finished (seen on the first run, 5 October).
+  # `machine create` boots a machine, and on container 1.5 the first `machine run` after it fails
+  # and *stops* the machine (measured 6 October) — which is what left dev-box stopped on 5 October,
+  # not the order. So: stop ci-runner, and boot dev-box with one retry, as Flotilla's Start does.
   quiet container machine stop ci-runner || true
-  container machine run --name dev-box -- /bin/true >/dev/null 2>&1 || true
+  container machine run --name dev-box -- /bin/true >/dev/null 2>&1 \
+    || container machine run --name dev-box -- /bin/true >/dev/null 2>&1 || true
   say "  ${MACHINES[*]}"
 
   if [ "$with_cluster" -eq 1 ]; then

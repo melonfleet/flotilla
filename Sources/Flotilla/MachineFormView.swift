@@ -20,7 +20,8 @@ import FlotillaCore
 /// otherwise draw the wrong conclusion from a familiar-looking field.
 ///
 /// The second thing, which cost an hour to find out: **the choice of image is much narrower than
-/// it looks.** In practice only Alpine boots — see `suggestions` for what was tried. The field
+/// it looks.** Of the stock distributions only Alpine boots; AlmaLinux's `-init` images do too,
+/// because they ship the init system Apple requires — see `suggestions` for what was tried. The field
 /// still accepts anything, because the constraint is the runtime's and may lift, but the form
 /// says so up front rather than letting a pull succeed and a boot fail.
 struct MachineFormView: View {
@@ -41,7 +42,7 @@ struct MachineFormView: View {
         [image, name, homeMount, "\(cpus)", "\(memoryGB)"].joined(separator: "\u{1}")
     }
 
-    init(model: AppModel, dismiss: @escaping () -> Void) {
+    init(model: AppModel, prefill: MachineSuggestion? = nil, dismiss: @escaping () -> Void) {
         self.model = model
         self.dismiss = dismiss
         // **Not** half the host, which is what `machine create` defaults to.
@@ -56,6 +57,14 @@ struct MachineFormView: View {
         // host, so nothing is taken away — the difference is which end you start from.
         _cpus = State(initialValue: min(2, ProcessInfo.processInfo.processorCount))
         _memoryGB = State(initialValue: min(4, max(1, Self.hostMemoryGB())))
+        // A suggestion (Q28) fills the form, still capped at what this Mac has.
+        if let prefill {
+            _image = State(initialValue: prefill.image)
+            _name = State(initialValue: ResourceSuggestions.uniqueName(
+                prefill.baseName, taken: Set(model.machines.map(\.id))))
+            _cpus = State(initialValue: min(prefill.cpus, ProcessInfo.processInfo.processorCount))
+            _memoryGB = State(initialValue: min(prefill.memoryGB, max(1, Self.hostMemoryGB())))
+        }
     }
 
     /// Suggestions, not a closed list — the field takes any image reference.
@@ -75,9 +84,14 @@ struct MachineFormView: View {
     /// recorded `alpine:latest` as failing. It had not — the boot was still settling when the
     /// probe ran. Re-running it showed the machine running. Do not add or remove an entry here
     /// on one measurement.
+    ///
+    /// AlmaLinux joined on 6 October: Apple needs `/sbin/init`, and AlmaLinux publishes `-init`
+    /// images that have it. Both booted, and both gave a login shell, on container 1.5.0.
     private static let suggestions: [(reference: String, note: String)] = [
         ("alpine:3.22", "verified — apk, musl libc"),
         ("alpine:latest", "verified — tracks the newest Alpine"),
+        ("almalinux/9-init:9.8-20261002", "verified — systemd, dnf, RHEL 9 compatible"),
+        ("almalinux/10-init:10.2-20261002", "verified — systemd, dnf, RHEL 10 compatible"),
     ]
 
     var body: some View {
@@ -115,8 +129,8 @@ struct MachineFormView: View {
                       help: FieldHelp(
                           "A machine boots from a container image, not an installer.",
                           detail: "The image supplies the userland; the kernel comes from Apple's runtime. That is why this pulls from Docker Hub, and why a machine's disk reads tens of megabytes rather than gigabytes.",
-                          example: "alpine:3.22    verified\nalpine:latest  verified",
-                          warning: "In practice only Alpine boots. Ubuntu, Debian, Fedora and BusyBox each pull around 100 MB, create a machine record, and then fail to boot.")) {
+                          example: "alpine:3.22                      verified\nalpine:latest                    verified\nalmalinux/9-init:9.8-20261002    verified\nalmalinux/10-init:10.2-20261002  verified",
+                          warning: "Stock Ubuntu, Debian, Fedora and BusyBox each pull around 100 MB, create a machine record, and then fail to boot: a machine image needs an init system. Alpine does, and so do AlmaLinux's -init images.")) {
                 TextField("alpine:3.22", text: $image)
                     .textFieldStyle(.roundedBorder)
                     .monospaced()
@@ -294,8 +308,13 @@ struct MachineFormView: View {
 
     /// Matches on the repository, not the whole reference, so `alpine:3.19` counts as known
     /// good too — the tag is not what decides it.
+    /// Any Alpine tag, or exactly a verified AlmaLinux build — another AlmaLinux tag has not been
+    /// booted, so it still gets the warning. `docker.io/` is the same image spelled in full.
     private static func isKnownGood(_ reference: String) -> Bool {
-        reference == "alpine" || reference.hasPrefix("alpine:")
+        let short = reference.replacingOccurrences(of: "docker.io/library/", with: "")
+            .replacingOccurrences(of: "docker.io/", with: "")
+        return short == "alpine" || short.hasPrefix("alpine:")
+            || suggestions.contains { $0.reference == short }
     }
 
     private var trimmedImage: String { image.trimmingCharacters(in: .whitespaces) }
