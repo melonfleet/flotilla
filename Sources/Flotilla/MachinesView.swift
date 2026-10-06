@@ -166,6 +166,15 @@ struct MachinesView: View {
         .onAppear {
             if model.pendingMachineForm { showingCreate = true; model.pendingMachineForm = false }
         }
+        // File ▸ Suggestions ▸ Machines…. One-shot.
+        .onChange(of: model.pendingSuggestions) { _, section in
+            if section == .machines { model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true }
+        }
+        .onAppear {
+            if model.pendingSuggestions == .machines {
+                model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true
+            }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {

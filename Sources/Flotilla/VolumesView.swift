@@ -107,6 +107,15 @@ struct VolumesView: View {
         .onAppear {
             if model.pendingVolumeForm { showingCreate = true; model.pendingVolumeForm = false }
         }
+        // File ▸ Suggestions ▸ Volumes…. One-shot.
+        .onChange(of: model.pendingSuggestions) { _, section in
+            if section == .volumes { model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true }
+        }
+        .onAppear {
+            if model.pendingSuggestions == .volumes {
+                model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true
+            }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {

@@ -1556,6 +1556,30 @@ final class AppModel {
         pendingDNSForm = true
     }
 
+    /// File ▸ New Group… — the group form in Containers.
+    func requestGroupForm() {
+        pendingSection = .containers
+        pendingGroupForm = true
+    }
+
+    var pendingGroupForm = false
+
+    /// File ▸ New Cluster….
+    func requestClusterForm() {
+        pendingSection = .clusters
+        pendingClusterForm = true
+    }
+
+    var pendingClusterForm = false
+
+    /// File ▸ Suggestions ▸ …: a section's Suggestions gallery (Q28).
+    func requestSuggestions(_ section: Section) {
+        pendingSection = section
+        pendingSuggestions = section
+    }
+
+    var pendingSuggestions: Section?
+
     var pendingDNSForm = false
 
     /// File ▸ Export Configuration… / Import…, shown over the selected section (Q29).

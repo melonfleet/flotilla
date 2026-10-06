@@ -83,6 +83,15 @@ struct NetworksView: View {
         .onAppear {
             if model.pendingNetworkForm { showingCreate = true; model.pendingNetworkForm = false }
         }
+        // File ▸ Suggestions ▸ Networks…. One-shot.
+        .onChange(of: model.pendingSuggestions) { _, section in
+            if section == .networks { model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true }
+        }
+        .onAppear {
+            if model.pendingSuggestions == .networks {
+                model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true
+            }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {

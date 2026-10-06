@@ -73,6 +73,21 @@ struct ClustersView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshClusters() }
+        // File ▸ New Cluster… and File ▸ Suggestions ▸ Clusters…. One-shot.
+        .onChange(of: model.pendingClusterForm) { _, requested in
+            if requested { model.pendingClusterForm = false; showingSuggestions = false; createPrefill = nil; showingCreate = true }
+        }
+        .onChange(of: model.pendingSuggestions) { _, section in
+            if section == .clusters { model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true }
+        }
+        .onAppear {
+            if model.pendingClusterForm {
+                model.pendingClusterForm = false; showingSuggestions = false; createPrefill = nil; showingCreate = true
+            }
+            if model.pendingSuggestions == .clusters {
+                model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true
+            }
+        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {

@@ -202,15 +202,25 @@ private struct FlotillaCommands: Commands {
         // top-level menu: a tester looking for New/Run follows the platform's File convention.
         // Control-Command plus each action's initial is deliberate: bare Command-M and Command-P
         // are the system Minimize and Print commands, while bare Command-N belongs to File's
-        // generic New action. One consistent modifier pair keeps all six mnemonic without
-        // stealing those established shortcuts.
+        // generic New action. One consistent modifier pair keeps them all mnemonic without
+        // stealing those established shortcuts — New Group is ⌃⌘O ("group" shares G with
+        // Registry) and New Cluster ⌃⌘K (Kubernetes). New DNS Domain has none: ⌃⌘D is the
+        // system's Look Up.
         CommandGroup(after: .newItem) {
             Button("Run Container…") { present(model.requestRunSheet) }
                 .keyboardShortcut("r", modifiers: [.command, .control])
                 .disabled(!model.runtimeUsable)
 
+            // Not gated on the runtime: a group is Flotilla's own record until it is started.
+            Button("New Group…") { present(model.requestGroupForm) }
+                .keyboardShortcut("o", modifiers: [.command, .control])
+
             Button("New Machine…") { present(model.requestMachineForm) }
                 .keyboardShortcut("m", modifiers: [.command, .control])
+                .disabled(!model.runtimeUsable)
+
+            Button("New Cluster…") { present(model.requestClusterForm) }
+                .keyboardShortcut("k", modifiers: [.command, .control])
                 .disabled(!model.runtimeUsable)
 
             Divider()
@@ -237,6 +247,23 @@ private struct FlotillaCommands: Commands {
             Button("New Network…") { present(model.requestNetworkForm) }
                 .keyboardShortcut("n", modifiers: [.command, .control])
                 .disabled(!model.runtimeUsable)
+
+            // Not gated on the runtime: a domain is macOS's resolver file, which needs only the
+            // administrator prompt.
+            // No shortcut: ⌃⌘D is the system-wide Look Up, and this is a rare, password-gated action.
+            Button("New DNS Domain…") { present(model.requestDNSForm) }
+
+            Divider()
+
+            // The same galleries as each section's "+" ▸ Suggestions… (Q28).
+            Menu("Suggestions") {
+                Button("Stacks…") { present { model.requestSuggestions(.containers) } }
+                Button("Volumes…") { present { model.requestSuggestions(.volumes) } }
+                Button("Networks…") { present { model.requestSuggestions(.networks) } }
+                Button("Machines…") { present { model.requestSuggestions(.machines) } }
+                Button("Clusters…") { present { model.requestSuggestions(.clusters) } }
+            }
+            .disabled(!model.runtimeUsable)
         }
 
         // Diagnostics belongs in Help because it is needed when the runtime is unavailable;

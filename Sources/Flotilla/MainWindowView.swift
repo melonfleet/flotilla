@@ -349,6 +349,9 @@ struct MainWindowView: View {
         }
         .onChange(of: model.pendingSection) { _, requested in
             guard let requested else { return }
+            // A menu request is for the form it names: an open Export or Import screen, which
+            // sits over every section, would otherwise hide it.
+            model.configurationScreen = nil
             selection = requested
             model.pendingSection = nil
         }

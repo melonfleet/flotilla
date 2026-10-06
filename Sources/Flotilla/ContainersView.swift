@@ -698,6 +698,21 @@ struct ContainersView: View {
         }
     }
 
+    private func openNewGroupFromMenu() {
+        model.pendingGroupForm = false
+        showingRun = false
+        showingSuggestions = false
+        editingGroup = .new
+    }
+
+    private func openSuggestionsFromMenu() {
+        model.pendingSuggestions = nil
+        showingRun = false
+        editingGroup = nil
+        suggestionPick = nil
+        showingSuggestions = true
+    }
+
     /// "Run Container…" and "New Group…": the two ways to add to this list, in the toolbar's "+"
     /// menu, the empty-space right-click and the empty state alike.
     @ViewBuilder
@@ -988,6 +1003,17 @@ struct ContainersView: View {
         }
         .onAppear {
             if model.pendingRunSheet { showingRun = true; model.pendingRunSheet = false }
+        }
+        // File ▸ New Group… and File ▸ Suggestions ▸ Stacks…. One-shot, like the run sheet.
+        .onChange(of: model.pendingGroupForm) { _, requested in
+            if requested { openNewGroupFromMenu() }
+        }
+        .onChange(of: model.pendingSuggestions) { _, section in
+            if section == .containers { openSuggestionsFromMenu() }
+        }
+        .onAppear {
+            if model.pendingGroupForm { openNewGroupFromMenu() }
+            if model.pendingSuggestions == .containers { openSuggestionsFromMenu() }
         }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. One observation covers all three ways the visible set
