@@ -378,6 +378,25 @@ never silently install or upgrade Apple's privileged package.
 
 ## Later
 
+### Under consideration — modern integrations (the owner, 6 October)
+
+Not decided; Iris is researching (`experiments/modern-features-2026-10-06/`).
+
+- **MCP and other current integrations.** An optional Model Context Protocol
+  server so AI assistants can read fleet state and, only with the user's
+  approval, act through Flotilla — every call crossing the same `Allowlist`,
+  `MountPolicy` and `WirePolicy` as the UI, local-only by default, with nothing
+  privileged and nothing silent. Survey what comparable tools now ship before
+  choosing.
+- **An optional Flotilla assistant (Experimental section).** A small model,
+  downloaded on request and never bundled, that knows `container` and Flotilla
+  and answers "how do I build X" with the correct commands or Flotilla steps.
+  It runs on the Mac, so no prompt leaves it — the no-phone-home promise
+  applies. Open questions: model size and licence, fine-tuning versus retrieval
+  over our own docs and captured `--help`, how answers are checked against the
+  `Allowlist` before they are shown, and whether it may pre-fill a form (never
+  run anything itself).
+
 ### Host-run policies and streaming
 
 - Add live log and stats streams over persistent connections.
