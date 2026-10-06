@@ -56,6 +56,18 @@ struct ResourceSuggestionsTests {
         }
     }
 
+    @Test("every DNS suggestion is a domain the admin path accepts, and none is .local")
+    func dns() throws {
+        #expect(DNSSuggestion.catalogue.map(\.baseName) == ["test", "internal", "host.container.internal"])
+        for suggestion in DNSSuggestion.catalogue {
+            #expect(LocalDNS.reservedProblem(suggestion.baseName) == nil)
+            let command = try ContainerCLI.dnsCreateCommand(domain: suggestion.baseName,
+                                                            localhost: suggestion.hostAddress).get()
+            #expect(command.arguments.last == suggestion.baseName)
+            #expect(suggestion.details.count == 3)   // every card the same shape
+        }
+    }
+
     @Test("a suggested name moves past what exists")
     func names() {
         #expect(ResourceSuggestions.uniqueName("app", taken: []) == "app")

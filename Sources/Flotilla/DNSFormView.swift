@@ -22,6 +22,8 @@ enum DNSFormTarget: Identifiable, Hashable {
 struct DNSFormView: View {
     let model: AppModel
     let target: DNSFormTarget
+    /// Set when a suggestion opened the form (Q28): its domain and kind fill the fields.
+    var prefill: DNSSuggestion? = nil
     let dismiss: () -> Void
 
     enum Kind: String, CaseIterable, Identifiable {
@@ -117,6 +119,11 @@ struct DNSFormView: View {
             // Suggested, not imposed: with no domain in use, the first one is almost certainly
             // meant for containers.
             if isAdd { useForContainers = model.containerDNSDomain == nil }
+            if isAdd, let prefill {
+                kind = prefill.hostAddress == nil ? .containers : .hostAlias
+                domain = prefill.baseName
+                address = prefill.hostAddress ?? ""
+            }
             edits.open(editSignature)
         }
         .containerDomainConfirmation($pendingChange, model: model) { change in

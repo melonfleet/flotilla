@@ -1670,3 +1670,16 @@ Mine, for the owner to see:
 - **Format fixes found by reading a real export:** every list and flag is optional when read (a
   hand-written file need only say what it uses) and omitted when empty; and an omitted host folder
   is described by its destination, never its source path.
+
+### Q28 continued — Suggestions for DNS, and the File menu (2026-10-06)
+
+- **DNS gets Suggestions too** (the owner's choice): `test` and `internal` for container names
+  (both reserved — `.test` by RFC 6761, `.internal` by ICANN for private use in 2024 — so neither
+  can ever be a real internet domain), and the host alias `host.container.internal` → 203.0.113.113,
+  Apple's documented way for a container to reach a service on the Mac. The first two are
+  alternatives: one domain at a time names containers, and the gallery says so. "Use…" opens New
+  Domain filled in; creating one still goes through the administrator prompt.
+- **The File menu caught up** (the owner noticed it had not): New Group… ⌃⌘O, New Cluster… ⌃⌘K,
+  New DNS Domain… (no shortcut — ⌃⌘D is the system's Look Up), and File ▸ Suggestions with each
+  section's gallery, DNS included. A menu request closes an open Export or Import screen so the
+  form it asked for is what shows.

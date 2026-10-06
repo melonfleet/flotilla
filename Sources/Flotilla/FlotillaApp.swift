@@ -262,8 +262,8 @@ private struct FlotillaCommands: Commands {
                 Button("Networks…") { present { model.requestSuggestions(.networks) } }
                 Button("Machines…") { present { model.requestSuggestions(.machines) } }
                 Button("Clusters…") { present { model.requestSuggestions(.clusters) } }
+                Button("DNS Domains…") { present { model.requestSuggestions(.dns) } }
             }
-            .disabled(!model.runtimeUsable)
         }
 
         // Diagnostics belongs in Help because it is needed when the runtime is unavailable;

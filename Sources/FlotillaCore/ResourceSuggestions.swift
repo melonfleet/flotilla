@@ -178,3 +178,38 @@ public struct MachineSuggestion: ResourceSuggestion, Equatable {
                           cpus: 4, memoryGB: 4, initSystem: "systemd"),
     ]
 }
+
+// MARK: DNS domains
+
+public struct DNSSuggestion: ResourceSuggestion, Equatable {
+    public let id: String
+    public let title: String
+    public let summary: String
+    /// The domain itself. Not moved to `-2` like other names: a domain that exists is the same
+    /// domain, and the form says so.
+    public let baseName: String
+    /// Set for a host alias.
+    public let hostAddress: String?
+
+    public var details: [(String, String)] {
+        [("Kind", hostAddress == nil ? "Container names" : "Host alias"),
+         ("Example", hostAddress.map { "\(baseName) → this Mac, via \($0)" } ?? "web.\(baseName)"),
+         ("Safe because", hostAddress == nil
+             ? "reserved — never a real internet domain"
+             : "an address reserved for examples")]   // Apple's documented one (RFC 5737)
+    }
+
+    /// The owner's choice, 6 October. Container-name domains are alternatives — the runtime
+    /// names containers under one domain at a time.
+    public static let catalogue: [DNSSuggestion] = [
+        DNSSuggestion(id: "test", title: "test",
+                      summary: "Container names like web.test.",
+                      baseName: "test", hostAddress: nil),     // RFC 6761
+        DNSSuggestion(id: "internal", title: "internal",
+                      summary: "Container names like web.internal.",
+                      baseName: "internal", hostAddress: nil), // ICANN, for private use, 2024
+        DNSSuggestion(id: "host", title: "host.container.internal",
+                      summary: "Reach a service on this Mac from a container.",
+                      baseName: "host.container.internal", hostAddress: "203.0.113.113"),
+    ]
+}

@@ -26,6 +26,8 @@ struct DNSView: View {
 
     @State private var selection = Set<LocalDNSDomain.ID>()
     @State private var form: DNSFormTarget?
+    @State private var formPrefill: DNSSuggestion?
+    @State private var showingSuggestions = false
     @State private var pendingDelete: [LocalDNSDomain] = []
     @State private var pendingChange: ContainerDomainChange?
     @State private var working = false
@@ -37,8 +39,19 @@ struct DNSView: View {
     var body: some View {
         Group {
             if let form {
-                DNSFormView(model: model, target: form) { self.form = nil }
-                    .id(form)
+                DNSFormView(model: model, target: form, prefill: formPrefill) {
+                    self.form = nil
+                    formPrefill = nil
+                }
+                .id(form)
+            } else if showingSuggestions {
+                ResourceSuggestionsGallery(
+                    intro: "Domains that are safe to use on a Mac — none can ever be a real internet "
+                        + "domain. Use one to open New Domain with it filled in. Only one domain at a "
+                        + "time names containers.",
+                    items: DNSSuggestion.catalogue,
+                    use: useSuggestion,
+                    dismiss: { showingSuggestions = false })
             } else {
                 VStack(spacing: 0) {
                     toolbar
@@ -67,6 +80,15 @@ struct DNSView: View {
         }
         .onAppear {
             if model.pendingDNSForm { form = .add; model.pendingDNSForm = false }
+        }
+        // File ▸ Suggestions ▸ DNS Domains…. One-shot.
+        .onChange(of: model.pendingSuggestions) { _, section in
+            if section == .dns { model.pendingSuggestions = nil; form = nil; showingSuggestions = true }
+        }
+        .onAppear {
+            if model.pendingSuggestions == .dns {
+                model.pendingSuggestions = nil; form = nil; showingSuggestions = true
+            }
         }
         .alert("Action failed",
                isPresented: Binding(get: { actionError != nil },
@@ -126,7 +148,11 @@ struct DNSView: View {
                 filters: Self.filters)
         }, trailing: {
             if working { ProgressView().controlSize(.small) }
-            ToolbarIconButton(systemImage: "plus", label: "New domain…") { form = .add }
+            ToolbarIconMenu(systemImage: "plus", label: "New domain") {
+                Button("New Domain…") { formPrefill = nil; form = .add }
+                Divider()
+                Button("Suggestions…") { showingSuggestions = true }
+            }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh domains") {
                 Task { await model.refreshDNS() }
             }
@@ -248,8 +274,15 @@ struct DNSView: View {
                 if isFiltered {
                     Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
                 } else {
-                    Button("New Domain…") { form = .add }
-                        .buttonStyle(.borderedProminent)
+                    VStack(spacing: 14) {
+                        Button("New Domain…") { formPrefill = nil; form = .add }
+                            .buttonStyle(.borderedProminent)
+                        SuggestionQuickPicks(
+                            picks: DNSSuggestion.catalogue.map { suggestion in
+                                (suggestion.title, { useSuggestion(suggestion) })
+                            },
+                            more: { showingSuggestions = true })
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -441,6 +474,12 @@ struct DNSView: View {
     }
 
     // MARK: Actions
+
+    private func useSuggestion(_ suggestion: DNSSuggestion) {
+        formPrefill = suggestion
+        showingSuggestions = false
+        form = .add
+    }
 
     /// The password prompt that follows is a confirmation of its own, so a single delete follows
     /// the delete policy like every other section; several always ask.
