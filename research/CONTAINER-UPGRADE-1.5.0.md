@@ -89,6 +89,26 @@ authentication challenge is refused, with no exemption for `localhost`. The same
 well, so an HTTP registry is only usable anonymously. Flotilla now offers no Sign In for an HTTP
 registry and will not add a required one over HTTP (DECISIONS Q26).
 
+**Networks can stop carrying traffic after the service restarts (observed 6 October, not yet
+reported upstream).** After `container system stop` / `start`:
+
+1. containers on the custom networks that existed before the restart (`shop-net`) could not reach
+   their gateway or each other, and their published ports did not answer. The `default` network and
+   networks created after the restart worked.
+2. After those custom networks were deleted and recreated, the **`default` network** broke instead.
+   A brand-new container on it, publishing `127.0.0.1:8099:80`, did not answer on the port, and
+   another container on `default` could not fetch it by name. A new container on a newly created
+   network worked (`:8098` → 200).
+
+The runtime's port-forwarder process was listening each time, so the fault is in the network path,
+not the forward. This matters to Flotilla, whose Restart button and network Delete can trigger it,
+and a container that "is running" but cannot be reached is the hardest kind of fault to read. The
+demo now gives every group its own network. To do: reduce it to a minimal reproduction, check it
+against apple/container's issues, and report it (TODO.md).
+
+**Container DNS names work, once the domain is configured** (also 6 October; DECISIONS, groups
+section). Containers created *before* `[dns] domain` was set did not get names; recreated ones did.
+
 ## Fixtures
 
 **The value-pinned set stays on 1.4.1.** The `SmokeTests` assertions (six containers, a

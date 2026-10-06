@@ -976,6 +976,22 @@ side. Not proven further: finishing the proof needs `[dns] domain` in `config.to
 CLI write path — `system property` has only `list`) and probably a runtime restart, which would
 stop every running container on the machine.
 
+**Proven on 2026-10-06 (`container` 1.5.0): with both halves, it does work.** The half that was
+missing is `~/.config/container/config.toml` → `[dns]` `domain = "flotilla"`, then a service restart
+(no CLI write path; the restart stops every container). With that and the admin-created resolver:
+
+| From → to | Result |
+|---|---|
+| Default network → `dns-a.flotilla` or bare `dns-a` | resolves and connects |
+| Custom network → bare `dns-b` (same network) | **resolves and connects** — Compose-style |
+| Mac → `dns-a.flotilla` | resolves (IPv4) |
+| Custom network → `dns-a.flotilla` on *another* network | resolves, connection refused (isolation) |
+
+Apple's `docs/networking.md` warns that bare names on custom networks do not work
+(apple/container#1809); on 1.5.0 they do once the domain is configured. Names come back IPv6-first,
+and an IPv4-only listener is still reached by name. Gateway wiring (below) remains the fallback for a
+Mac with no domain configured.
+
 **What does work, and is worth telling users:** each network's gateway `.1` reaches the host, so
 a container finds another container's **published port** there — `192.168.64.1:8080` — and it
 works **across isolated networks** (a container on `test3` opened a connection to a container on

@@ -31,8 +31,10 @@ PREF_KEYS=(containerGroups tagDefinitions tagAssignments registries)
 
 MACHINES=(dev-box ci-runner)
 CLUSTER="dev-cluster"
-NETWORKS=(shop-net analytics-net)
+NETWORKS=(shop-net analytics-net docs-net)
 VOLUMES=(shop-db-data shop-uploads analytics-data)
+# The containers that are running in the demo; the rest are stopped on purpose.
+RUNNING=(storefront-web storefront-api storefront-db storefront-cache docs-site build-runner)
 
 CADDY="docker.io/library/caddy:2-alpine"
 PYTHON="docker.io/library/python:3.13-alpine"
@@ -110,6 +112,7 @@ up() {
   say "networks and volumes"
   quiet container network inspect shop-net || container network create --label "$LABEL" --subnet 192.168.70.0/24 shop-net >/dev/null
   quiet container network inspect analytics-net || container network create --label "$LABEL" --subnet 192.168.71.0/24 analytics-net >/dev/null
+  quiet container network inspect docs-net || container network create --label "$LABEL" --subnet 192.168.72.0/24 docs-net >/dev/null
   for volume in "${VOLUMES[@]}"; do
     quiet container volume inspect "$volume" || container volume create --label "$LABEL" -s 1G "$volume" >/dev/null
   done
@@ -131,8 +134,11 @@ up() {
     -v shop-db-data:/var/lib/postgresql/data "$POSTGRES"
   run_container storefront-cache run -d --network shop-net "$REDIS"
   # docs: partly running.
-  run_container docs-site run -d -p 127.0.0.1:8081:80 -v "$ASSETS/docs:/usr/share/caddy:ro" "$CADDY"
-  run_container docs-search create "$PYTHON" python -m http.server 7700
+  # docs has its own network like the other two groups. On the default network its published port
+  # stopped answering after the service had been restarted and other networks recreated (an
+  # upstream networking fault seen 6 October; see research/CONTAINER-UPGRADE-1.5.0.md).
+  run_container docs-site run -d --network docs-net -p 127.0.0.1:8081:80 -v "$ASSETS/docs:/usr/share/caddy:ro" "$CADDY"
+  run_container docs-search create --network docs-net "$PYTHON" python -m http.server 7700
   # analytics: stopped.
   run_container analytics-worker create --network analytics-net -v analytics-data:/data \
     "$PYTHON" python -c "import time; time.sleep(10**9)"
@@ -140,6 +146,13 @@ up() {
   # Standalone.
   run_container build-runner run -d "$ALPINE" sleep 1000000000
   run_container scratch-shell create "$ALPINE" sleep 1000000000
+  # Running again after a restart of the container service, which stops everything: `up` puts the
+  # demo back the way it is meant to look, not only creates what is missing.
+  for name in "${RUNNING[@]}"; do
+    if [ "$(container inspect "$name" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["status"]["state"])' 2>/dev/null)" != "running" ]; then
+      quiet container start "$name" && say "  $name started"
+    fi
+  done
 
   say "machines"
   for m in "${MACHINES[@]}"; do
@@ -152,7 +165,12 @@ up() {
   say "  ${MACHINES[*]}"
 
   if [ "$with_cluster" -eq 1 ]; then
-    if has_cluster; then
+    if has_cluster && container k8s list 2>/dev/null | grep -w "$CLUSTER" | grep -qw stopped; then
+      # 1.5 has no `k8s start`: a stopped cluster is recreated, as Flotilla's own Recreate does.
+      say "cluster $CLUSTER is stopped; recreating it"
+      container k8s delete --name "$CLUSTER" >/dev/null
+      container k8s create --name "$CLUSTER" --cpus 2 --memory 4G >/dev/null
+    elif has_cluster; then
       say "cluster $CLUSTER exists"
     else
       say "cluster $CLUSTER (the node image is 2.4 GB the first time; this takes a few minutes)"
@@ -205,7 +223,7 @@ groups = [
                volumes=["shop-db-data:/var/lib/postgresql/data"]),
         member("demo.m.cache", "storefront-cache", "docker.io/library/redis:7-alpine"),
     ]},
-    {"id": "demo.docs", "name": "docs", "members": [
+    {"id": "demo.docs", "name": "docs", "network": "docs-net", "members": [
         member("demo.m.docs-site", "docs-site", "docker.io/library/caddy:2-alpine",
                ports=["127.0.0.1:8081:80"], volumes=[f"{assets}/docs:/usr/share/caddy:ro"]),
         member("demo.m.docs-search", "docs-search", "docker.io/library/python:3.13-alpine",
