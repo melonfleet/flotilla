@@ -332,7 +332,7 @@ final class AppModel {
 
     /// Model identifier, never the serial or hardware UUID — those identify the machine and
     /// a support bundle must not.
-    private var systemInfo: DiagnosticsSnapshot.SystemInfo {
+    var systemInfo: DiagnosticsSnapshot.SystemInfo {
         var model: String?
         var size = 0
         if sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 0 {

@@ -23,13 +23,13 @@ struct RuntimeStatusBand: View {
     /// Which of the two destructive items is being confirmed, and whether the dialog is up.
     ///
     /// Two properties for one idea, deliberately. The obvious single-property spelling —
-    /// `confirming: LifecycleAction?` with `isPresented:` a computed `Binding` over
+    /// `confirming: RuntimeLifecycleAction?` with `isPresented:` a computed `Binding` over
     /// `confirming != nil` — **does not present the dialog at all**: measured, by clicking Stop
     /// and finding no sheet in the accessibility tree while the same menu's Settings item fired
     /// normally. Swapping the computed binding for a real `@State` `Bool` was the only change
     /// that made it appear. So the flag stays real, and `ask(_:)` is the only thing that sets
     /// either — nothing else may, or they drift and the dialog asks the wrong question.
-    @State private var confirming: LifecycleAction = .stop
+    @State private var confirming: RuntimeLifecycleAction = .stop
     @State private var showingConfirmation = false
 
     var body: some View {
@@ -137,6 +137,31 @@ struct RuntimeStatusBand: View {
         .disabled(model.startingRuntime)
     }
 
+    private var needsKernel: Bool {
+        if case .needsKernel = model.preflight { true } else { false }
+    }
+
+    /// The only writer of the confirmation state — see the note on `confirming`.
+    private func ask(_ action: RuntimeLifecycleAction) {
+        confirming = action
+        showingConfirmation = true
+    }
+
+    private func perform(_ action: RuntimeLifecycleAction) {
+        switch action {
+        case .stop: Task { await model.stopRuntime() }
+        case .restart: Task { await model.restartRuntime() }
+        }
+    }
+
+    private var enablement: (start: Bool, stopRestart: Bool) { RuntimeStatus.enablement(model.preflight) }
+
+    private var status: (title: String, detail: String?, tint: Color) { RuntimeStatus.describe(model.preflight) }
+}
+
+/// What the runtime is doing and what may be done to it, from the one preflight verdict — shared by
+/// the sidebar band and the Hosts table so the two cannot say different things.
+enum RuntimeStatus {
     /// Which lifecycle items are live, from the one verdict the rest of the app already trusts.
     ///
     /// Stop and Restart move together because they are the same requirement: both begin by
@@ -151,12 +176,8 @@ struct RuntimeStatusBand: View {
     /// `.missing` and `.tooOld` disable everything, because there is no runtime on this Mac to
     /// drive, and so does a nil verdict: preflight has not finished, and offering a control before
     /// knowing what it would do is how you get a Stop that starts things.
-    private var needsKernel: Bool {
-        if case .needsKernel = model.preflight { true } else { false }
-    }
-
-    private var enablement: (start: Bool, stopRestart: Bool) {
-        switch model.preflight {
+    static func enablement(_ preflight: PreflightResult?) -> (start: Bool, stopRestart: Bool) {
+        switch preflight {
         case .ok, .needsRestart, .needsKernel: (start: false, stopRestart: true)
         case .serviceStopped:         (start: true, stopRestart: false)
         case .unusable:               (start: true, stopRestart: true)
@@ -164,53 +185,10 @@ struct RuntimeStatusBand: View {
         }
     }
 
-    /// The two items that take the services down. Both ask first, and both ask in their own
-    /// words: "every running container stops" is the whole story for Stop, and only half of it
-    /// for Restart, where what matters is that they do not come back on their own.
-    private enum LifecycleAction {
-        case stop, restart
-
-        var question: String {
-            switch self {
-            case .stop: "Stop the container system?"
-            case .restart: "Restart the container system?"
-            }
-        }
-
-        var verb: String {
-            switch self {
-            case .stop: "Stop"
-            case .restart: "Restart"
-            }
-        }
-
-        var consequence: String {
-            switch self {
-            case .stop:
-                "Every running container stops with it. Nothing new can start until you start it again."
-            case .restart:
-                "Every running container stops with it, and does not come back on its own."
-            }
-        }
-    }
-
-    /// The only writer of the confirmation state — see the note on `confirming`.
-    private func ask(_ action: LifecycleAction) {
-        confirming = action
-        showingConfirmation = true
-    }
-
-    private func perform(_ action: LifecycleAction) {
-        switch action {
-        case .stop: Task { await model.stopRuntime() }
-        case .restart: Task { await model.restartRuntime() }
-        }
-    }
-
     /// What the band says, straight from the preflight the rest of the app already acts on — so it
     /// cannot claim the runtime is fine while the container list explains that it is not.
-    private var status: (title: String, detail: String?, tint: Color) {
-        switch model.preflight {
+    static func describe(_ preflight: PreflightResult?) -> (title: String, detail: String?, tint: Color) {
+        switch preflight {
         case .ok(let version, _):
             ("Container system running", "container \(version)", Theme.online)
         case .serviceStopped(let version, _, _):
@@ -227,6 +205,36 @@ struct RuntimeStatusBand: View {
             ("container is not usable", nil, Theme.danger)
         case nil:
             ("Checking the container system…", nil, .secondary)
+        }
+    }
+}
+
+/// The two items that take the services down. Both ask first, and both ask in their own
+/// words: "every running container stops" is the whole story for Stop, and only half of it
+/// for Restart, where what matters is that they do not come back on their own.
+enum RuntimeLifecycleAction {
+    case stop, restart
+
+    var question: String {
+        switch self {
+        case .stop: "Stop the container system?"
+        case .restart: "Restart the container system?"
+        }
+    }
+
+    var verb: String {
+        switch self {
+        case .stop: "Stop"
+        case .restart: "Restart"
+        }
+    }
+
+    var consequence: String {
+        switch self {
+        case .stop:
+            "Every running container stops with it. Nothing new can start until you start it again."
+        case .restart:
+            "Every running container stops with it, and does not come back on its own."
         }
     }
 }

@@ -18,6 +18,7 @@ extension ActivityKind {
         case .runtime: "Runtime"
         case .registry: "Registries"
         case .dns: "DNS"
+        case .host: "Hosts"
         }
     }
 
@@ -36,6 +37,7 @@ extension ActivityKind {
         case .runtime: "gearshape.2"
         case .registry: Section.registries.systemImage
         case .dns: Section.dns.systemImage
+        case .host: Section.hosts.systemImage
         }
     }
 
@@ -54,6 +56,7 @@ extension ActivityKind {
         case .runtime: .hosts
         case .registry: .registries
         case .dns: .dns
+        case .host: .hosts
         }
     }
 }

@@ -38,6 +38,8 @@ struct MainWindowView: View {
         sortOrder: [KeyPathComparator(\RegistryRow.nameSortKey)])
     @State private var dnsUI = ResourceUIState<LocalDNSDomain>(
         sortOrder: [KeyPathComparator(\LocalDNSDomain.nameSortKey)])
+    @State private var hostsUI = ResourceUIState<HostRow>(
+        sortOrder: [KeyPathComparator(\HostRow.nameSortKey)])
 
     @State private var selection: Section? = .overview
 
@@ -244,7 +246,7 @@ struct MainWindowView: View {
             OverviewView(model: model) { selection = $0 }
         case .hosts:
             // Each host's landing page is the per-Mac dashboard (6 October).
-            HostsView(model: model) { selection = $0 }
+            HostsView(model: model, ui: hostsUI) { selection = $0 }
         case .containers:
             ContainersView(model: model, ui: containersUI)
         case .images:

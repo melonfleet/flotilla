@@ -127,39 +127,3 @@ struct OverviewView: View {
         }
     }
 }
-
-/// Hosts — every Mac Flotilla manages, each with its own landing page. Today that is This Mac,
-/// whose page is the per-Mac dashboard that used to be the app's front page.
-struct HostsView: View {
-    let model: AppModel
-    let go: (Section) -> Void
-    @State private var openHost: String?
-
-    var body: some View {
-        if openHost != nil {
-            VStack(spacing: 0) {
-                FormHeader(title: model.hostLabel, systemImage: Section.hosts.systemImage,
-                           hasUnsavedChanges: false, onBack: { openHost = nil })
-                Divider()
-                DashboardView(model: model, go: go)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        } else {
-            ResourceCardGrid {
-                ResourceCard(
-                    title: model.hostLabel,
-                    badge: "this Mac",
-                    fields: [("Status", model.runtimeUsable ? "Connected" : "Runtime unavailable"),
-                             ("Containers", "\(model.containers.filter(AppModel.isRunning).count) running of \(model.containers.count)"),
-                             ("Machines", "\(model.machines.count)")],
-                    showsTags: false,
-                    onOpen: { openHost = model.hostLabel }
-                ) {
-                    Button("Open") { openHost = model.hostLabel }
-                        .controlSize(.small)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-    }
-}

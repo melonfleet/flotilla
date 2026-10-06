@@ -223,7 +223,11 @@ to change.
   sidebar edge.
 - Replace Dashboard with Overview. Overview shows fleet numbers only: connected
   hosts and their states, resource totals and things needing attention.
-- Add Hosts immediately, initially containing only **This Mac**.
+- Add Hosts immediately, initially containing only **This Mac**. It has the same
+  setup as every other section (the owner, 6 October): table and cards, search,
+  filter, hideable sortable columns, select-all, row menus, tags, Add and
+  Refresh, and the activity band. Add and Remove are present but disabled, with
+  the reason, until Phase B.
 - Make the This Mac landing page the current per-Mac dashboard. Its CPU, memory,
   disk, runtime and local resource information does not belong on fleet
   Overview.
@@ -279,7 +283,8 @@ Turn the local resource surfaces into fleet surfaces.
 - Overview shows real connected-host states, resource totals and attention
   counts.
 - Hosts provides per-host status, identity, versions, settings, trust,
-  last-seen time, disk use and resource counts.
+  last-seen time, disk use and resource counts, as columns in the same table.
+  Add Host (the pairing flow) and Remove become live here.
 - Activity records actions performed from this admin Mac, including host
   addition and removal, deployments and cross-host operations.
 - Logs is global, with a Host column. It fetches bounded tails when viewed rather

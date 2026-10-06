@@ -46,6 +46,10 @@ public enum ActivityKind: String, CaseIterable, Identifiable, Hashable, Sendable
     /// containers are named under. Its own kind so the section's band shows its own events, and so
     /// a tag on the domain `flotilla` is not a tag on a container that happens to be called that.
     case dns
+    /// A Mac in the Hosts section (6 October): tagged like any other row, and — once host mode
+    /// lands — added, removed and deployed to. Its own kind so a tag on the host `studio` is not a
+    /// tag on a container of that name. The runtime's own starts and stops stay `.runtime`.
+    case host
 
     public var id: Self { self }
 }
