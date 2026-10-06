@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import Foundation
 import FlotillaCore
 
@@ -24,6 +25,12 @@ struct GroupFormView: View {
     @State private var memberIsNew = false
     @State private var edits = FormEditTracker()
     @State private var saveError: String?
+    /// The group's Keychain-held values as read on open, by secret name.
+    @State private var storedSecrets: [String: String] = [:]
+    /// New values generated here, written to the Keychain on Save and not before.
+    @State private var pendingSecrets: [String: String] = [:]
+    @State private var revealed = Set<String>()
+    @State private var confirmingRegenerate: String?
 
     init(model: AppModel, target: GroupFormTarget, dismiss: @escaping () -> Void) {
         self.model = model
@@ -66,6 +73,11 @@ struct GroupFormView: View {
             }
         }
         .onAppear { edits.open(editSignature) }
+        .task { await loadSecrets() }
+        // The picker reads `model.networks`, which the poll loop fills only every sixth tick and
+        // the Networks section on visit — so a form opened soon after launch said "No networks
+        // yet" and greyed the picker out with three networks on the Mac (found 6 October).
+        .task { if model.networksState != .loaded { await model.refreshNetworks() } }
     }
 
     // MARK: The group itself
@@ -88,7 +100,7 @@ struct GroupFormView: View {
     }
 
     private var editSignature: String {
-        ([draft.name, draft.network ?? ""]
+        ([draft.name, draft.network ?? "", pendingSecrets.keys.sorted().joined(separator: ",")]
             + draft.members.map { "\($0.id)\u{2}\($0.name)\u{2}\($0.image)\u{2}\($0.ports.joined(separator: ","))" })
             .joined(separator: "\u{1}")
     }
@@ -132,7 +144,100 @@ struct GroupFormView: View {
                     note: "Started in this order, top to bottom, and stopped in reverse.")
                 servicesList
             }
+
+            if !secretNames.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    FormSectionHeader(
+                        title: "Passwords",
+                        note: "Kept in this Mac’s Keychain, not in Flotilla’s settings or in an export.")
+                    ForEach(secretNames, id: \.self) { secret in
+                        secretRow(secret)
+                    }
+                }
+            }
         }
+        .confirmationDialog("Generate a new “\(confirmingRegenerate ?? "")”?",
+                            isPresented: Binding(get: { confirmingRegenerate != nil },
+                                                 set: { if !$0 { confirmingRegenerate = nil } }),
+                            titleVisibility: .visible) {
+            Button("Generate New") {
+                if let secret = confirmingRegenerate {
+                    pendingSecrets[secret] = GroupSecrets.generatePassword()
+                }
+                confirmingRegenerate = nil
+            }
+            Button("Cancel", role: .cancel) { confirmingRegenerate = nil }
+        } message: {
+            Text("Saved when you press Save. A database that already exists keeps the password it "
+                 + "was set up with — the new one only takes effect for containers created "
+                 + "afterwards, with fresh volumes.")
+        }
+    }
+
+    // MARK: Passwords
+
+    private var secretNames: [String] { GroupSecrets.secretNames(in: draft) }
+
+    private func secretValue(_ secret: String) -> String? {
+        pendingSecrets[secret] ?? storedSecrets[secret]
+    }
+
+    private func secretRow(_ secret: String) -> some View {
+        let users = draft.members.flatMap { member in
+            member.secretEnv.filter { $0.secret == secret }.map { "\(member.name): \($0.name)" }
+        }
+        let value = secretValue(secret)
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(secret).fontWeight(.medium)
+                Text(users.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            if let value {
+                Text(revealed.contains(secret) ? value : String(repeating: "•", count: 12))
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                    .foregroundStyle(pendingSecrets[secret] != nil ? Theme.info : .secondary)
+                    .help(pendingSecrets[secret] != nil ? "New — saved when you press Save" : "")
+                IconActionButton(systemImage: revealed.contains(secret) ? "eye.slash" : "eye",
+                                 label: revealed.contains(secret) ? "Hide \(secret)" : "Show \(secret)",
+                                 help: revealed.contains(secret) ? "Hide" : "Show") {
+                    if revealed.contains(secret) { revealed.remove(secret) } else { revealed.insert(secret) }
+                }
+                IconActionButton(systemImage: "doc.on.doc", label: "Copy \(secret)",
+                                 help: "Copy the password") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(value, forType: .string)
+                }
+                IconActionButton(systemImage: "arrow.triangle.2.circlepath",
+                                 label: "Generate a new \(secret)", help: "Generate a new password…") {
+                    confirmingRegenerate = secret
+                }
+            } else {
+                Text("Not in the Keychain")
+                    .font(.caption).foregroundStyle(Theme.warning)
+                Button("Generate") { pendingSecrets[secret] = GroupSecrets.generatePassword() }
+                    .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func loadSecrets() async {
+        let groupID = draft.id
+        let names = secretNames
+        guard !names.isEmpty else { return }
+        storedSecrets = await Task.detached {
+            var found: [String: String] = [:]
+            for name in names {
+                if let value = KeychainSecrets.value(group: groupID, secret: name) { found[name] = value }
+            }
+            return found
+        }.value
     }
 
     @ViewBuilder
@@ -292,6 +397,12 @@ struct GroupFormView: View {
         committed.name = draft.name.trimmingCharacters(in: .whitespaces)
         do {
             try model.groups.commit(committed)
+            for (secret, value) in pendingSecrets
+            where !KeychainSecrets.set(value, group: committed.id, secret: secret,
+                                       label: "Flotilla: \(committed.name) — \(secret)") {
+                saveError = "The group was saved, but the Keychain refused the password “\(secret)”."
+                return
+            }
             dismiss()
         } catch {
             saveError = (error as? GroupBook.GroupError)?.description ?? String(describing: error)
@@ -396,6 +507,17 @@ struct GroupMemberFormView: View {
                       help: FieldHelp("One KEY=VALUE per line.", example: "POSTGRES_PASSWORD=secret"),
                       optional: true) {
                 linesEditor($env, placeholder: "KEY=VALUE")
+            }
+
+            if !member.secretEnv.isEmpty {
+                FormField("From the Keychain",
+                          help: FieldHelp("Variables whose values are generated passwords.",
+                                          detail: "The values are kept in this Mac’s Keychain and filled in when the service is created. See Passwords on the group’s screen.")) {
+                    Text(member.secretEnv.map { "\($0.name) ← \($0.secret)" }.joined(separator: "\n"))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
 
             FormField("Volumes",

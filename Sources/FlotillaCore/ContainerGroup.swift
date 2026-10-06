@@ -41,11 +41,16 @@ public struct GroupMember: Codable, Sendable, Equatable, Identifiable, Hashable 
     /// service (Q21 amended, 6 October). The container's own port, not a published one: a
     /// database is usually not published at all.
     public var readyPort: Int?
+    /// Environment variables whose **values live in the Keychain**, not here — a generated
+    /// database password, say. Only the variable and the secret's name are stored; the value is
+    /// read at Start (`GroupSecrets`). Two members may name the same secret, which is how an app
+    /// and its database agree on a password nobody typed.
+    public var secretEnv: [SecretEnv]
 
     public init(id: String = UUID().uuidString, name: String, image: String,
                 ports: [String] = [], env: [String] = [], volumes: [String] = [],
                 command: [String] = [], cpus: Int? = nil, memory: String? = nil,
-                readyPort: Int? = nil) {
+                readyPort: Int? = nil, secretEnv: [SecretEnv] = []) {
         self.id = id
         self.name = name
         self.image = image
@@ -56,6 +61,7 @@ public struct GroupMember: Codable, Sendable, Equatable, Identifiable, Hashable 
         self.cpus = cpus
         self.memory = memory
         self.readyPort = readyPort
+        self.secretEnv = secretEnv
     }
 }
 
@@ -171,6 +177,7 @@ public struct GroupBook: Sendable, Equatable {
         case emptyImage
         case invalidImage(String)
         case invalidReadyPort(Int)
+        case invalidSecretEnv(String)
 
         public var description: String {
             switch self {
@@ -192,6 +199,8 @@ public struct GroupBook: Sendable, Equatable {
                 "“\(image)” is not a valid image reference. \(ValueShape.imageReference.rule)"
             case .invalidReadyPort(let port):
                 "\(port) is not a port. Use a number from 1 to 65535."
+            case .invalidSecretEnv(let name):
+                "“\(name)” can't be a Keychain-held variable: use a variable name and a secret name made of letters, numbers, dots, dashes or underscores, and don't set it in Environment as well."
             }
         }
     }
@@ -423,6 +432,7 @@ public struct GroupBook: Sendable, Equatable {
         if let port = member.readyPort, !(1...65535).contains(port) {
             throw GroupError.invalidReadyPort(port)
         }
+        if let bad = GroupSecrets.problem(with: member) { throw GroupError.invalidSecretEnv(bad) }
     }
 }
 
@@ -437,6 +447,12 @@ extension GroupMember {
     /// by — with it, so the next Start would be creating something new rather than starting
     /// something back up.
     public func runOptions(network: String?) -> ContainerCLI.RunOptions {
+        runOptions(network: network, env: GroupSecrets.previewEnv(for: self))
+    }
+
+    /// The same, with the environment supplied — `GroupSecrets.resolvedEnv` at Start, so the
+    /// Keychain-held values reach `run` and nowhere else.
+    public func runOptions(network: String?, env: [String]) -> ContainerCLI.RunOptions {
         ContainerCLI.RunOptions(name: name, ports: ports, env: env, volumes: volumes,
                                 detach: true, rm: false, cpus: cpus, memory: memory,
                                 network: network)

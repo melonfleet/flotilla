@@ -155,6 +155,9 @@ extension AppModel {
     /// nothing does.
     private func startMembers(of group: ContainerGroup, progress: OperationProgress,
                               skippingRunning: Bool) async throws -> [String] {
+        // Every Keychain-held value is read **before** anything starts, so a missing one stops the
+        // group cleanly rather than half way through.
+        let values = try await secretValues(for: group, progress: progress)
         var started: [String] = []
         for (index, member) in group.members.enumerated() {
             let step = progress.begin("Starting \(member.name)")
@@ -165,7 +168,8 @@ extension AppModel {
                     if existingContainerNames.contains(member.name) {
                         _ = try await Task.detached { [cli] in try cli.start(member.name) }.value
                     } else {
-                        let options = member.runOptions(network: group.network)
+                        let env = try GroupSecrets.resolvedEnv(for: member, values: values)
+                        let options = member.runOptions(network: group.network, env: env)
                         _ = try await Task.detached { [cli] in
                             try cli.run(image: member.image, options: options,
                                         command: member.command)
@@ -185,6 +189,29 @@ extension AppModel {
             }
         }
         return started
+    }
+
+    /// The group's Keychain-held values, by secret name. Only fetched when some member is about
+    /// to be *created* — starting an existing container passes no environment at all.
+    private func secretValues(for group: ContainerGroup,
+                              progress: OperationProgress) async throws -> [String: String] {
+        let needed = group.members.filter { !existingContainerNames.contains($0.name) }
+            .flatMap(\.secretEnv).map(\.secret)
+        guard !needed.isEmpty else { return [:] }
+        let step = progress.begin("Reading passwords from the Keychain")
+        var values: [String: String] = [:]
+        for secret in Set(needed) {
+            let groupID = group.id
+            guard let value = await Task.detached(operation: {
+                KeychainSecrets.value(group: groupID, secret: secret)
+            }).value else {
+                progress.finish(step, detail: "missing", failed: true)
+                throw GroupSecrets.MissingSecret(secret: secret)
+            }
+            values[secret] = value
+        }
+        progress.finish(step, detail: nil)
+        return values
     }
 
     /// Holds the group until `member` accepts connections on `port`, or says why it gave up.
@@ -320,6 +347,11 @@ extension AppModel {
     /// can come back, and a group you just deleted cannot.
     func deleteGroup(_ group: ContainerGroup) {
         tags.clearTags(on: TagSubject(kind: .group, id: group.id))
+        // Its passwords go with it: nothing else can name them once the group is gone. The
+        // containers' volumes still hold whatever the database was initialised with.
+        for secret in GroupSecrets.secretNames(in: group) {
+            KeychainSecrets.delete(group: group.id, secret: secret)
+        }
         groups.deleteGroup(group.id)
         recordActivity(ContainerEvent(date: Date(), from: "present", to: "absent",
                                       kind: .group, subject: group.name, action: "Deleted"))

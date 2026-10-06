@@ -1496,3 +1496,26 @@ health gating", chose to **amend Q21 narrowly**:
 - **Ready means a TCP connect.** Right for the official Postgres, MySQL and MariaDB images, which
   run first-start setup with TCP off.
 - Skipped after the **last** member, which holds nothing back.
+
+### Q21 amended — a group's passwords live in the Keychain (2026-10-06)
+
+Decided with the owner for Suggestions: stacks generate their passwords, keep them in the
+Keychain, and show them on the group with Copy; never in the preferences file or an export.
+
+- **A member's `secretEnv`** names a variable and a secret (`MARIADB_PASSWORD` ← `db-password`).
+  Two members naming the same secret is how WordPress and MariaDB agree on a password nobody typed.
+  The preferences file stores those names only; the values are generic-password items under
+  `dev.melonfleet.Flotilla.group-secret`, keyed by group id (a rename keeps them) and secret name.
+- **Read at Start, before anything runs**, and only for members about to be *created* — starting an
+  existing container passes no environment. A missing value stops the group cleanly with a message
+  saying where to set one. Previews show `NAME=<Keychain: secret>`, and the Start panel's audit
+  line hides it as it hides every env value.
+- **Generated** as 24 letters and digits (~143 bits): no `@ : / '` to break a `DATABASE_URL` or a
+  config file. A new value made on the group screen is written **on Save**, like everything else
+  there, and the dialog says a database that already exists keeps its old password.
+- **Deleting a group deletes its Keychain items.** Live-tested 6 October: generated, saved,
+  started — the container's environment matched the Keychain value, the preferences held zero
+  copies of it, and deleting the group removed the item.
+- Known, and the same as every env value today: the value reaches `container run` in argv.
+- Development builds are ad-hoc signed, so macOS asks once before a rebuilt app reads an item an
+  older build wrote. Developer ID builds have a stable identity and do not.

@@ -156,6 +156,10 @@ final class GroupStore {
         if let cpus = member.cpus { row["cpus"] = cpus }
         if let memory = member.memory { row["memory"] = memory }
         if let readyPort = member.readyPort { row["readyPort"] = readyPort }
+        // Names only — the values are in the Keychain (`KeychainSecrets`).
+        if !member.secretEnv.isEmpty {
+            row["secretEnv"] = member.secretEnv.map { ["name": $0.name, "secret": $0.secret] }
+        }
         return row
     }
 
@@ -190,7 +194,11 @@ final class GroupStore {
                     command: raw["command"] as? [String] ?? [],
                     cpus: raw["cpus"] as? Int,
                     memory: raw["memory"] as? String,
-                    readyPort: raw["readyPort"] as? Int)
+                    readyPort: raw["readyPort"] as? Int,
+                    secretEnv: (raw["secretEnv"] as? [[String: String]] ?? []).compactMap { entry in
+                        guard let name = entry["name"], let secret = entry["secret"] else { return nil }
+                        return SecretEnv(name: name, secret: secret)
+                    })
                 try? book.addMember(member, to: group.id)
             }
         }
