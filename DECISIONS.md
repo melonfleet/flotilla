@@ -1421,3 +1421,54 @@ So:
 - **Not done:** `k8s create --cni <path>` (apple/container#2254) is an opportunity, not a fix, and is
   left for later.
 
+
+## Q27 — DNS is a section, under Networks (settled 2026-10-06)
+
+The owner asked whether Flotilla should have a DNS section, as a competitor does, so users can keep
+several local domains for different projects. A proof on `container` 1.5.0 came first (the table in
+Q21's section, above): containers resolve each other by bare name on the default network **and on
+custom networks**, and this Mac resolves `name.domain`, once **two halves** are in place —
+
+1. **macOS's resolver**: `sudo container system dns create <domain>` writes
+   `/etc/resolver/containerization.<domain>`. It needs root.
+2. **The runtime naming containers**: `config.toml`'s `[dns] domain`, read when the service starts.
+   There is no CLI for it. Only one domain at a time, and only containers created afterwards get names.
+
+Decisions, the owner's unless marked:
+
+- **Under Networks in the sidebar**, with the same table setup as every other section: list and
+  cards, search, a filter (All, For containers, Host aliases), hideable columns (Tags, Kind,
+  Address, Status), row menus that match the context menu, multi-select delete, tags and the
+  activity band. DNS is its own `ActivityKind` and tag kind, `.dns`.
+- **Each row shows both halves**, and says plainly when only one is there (mine). A domain
+  `config.toml` names with no resolver file is a row, "Containers only — not on this Mac", with
+  Set Up on This Mac. The notes above the table offer the missing half.
+- **Creating or deleting a domain uses the macOS administrator prompt** — "macOS admin prompt
+  (Recommended)". It is never silent, the form's rail shows the exact `sudo container …` command
+  first with a Copy button, and several deletions share one prompt. What may run as root is
+  narrower than anything else in the app (mine, as a security boundary):
+  - only `system dns create|delete`, through the `Allowlist` like every other command, with new
+    value shapes `dnsDomain` and `ipv4Address`. All three `dns` specs are local-only.
+  - **only the installed `/usr/local/bin/container`, and only while it and its directory are owned
+    by root and writable by no one else** (`AdminExecutable`). A symlink is refused, not followed.
+    **Never** the configurable `containerBinaryPath`: anything that can write Flotilla's
+    preferences could otherwise have its own program run with the owner's password.
+  - each argument single-quoted for the shell, the line escaped for AppleScript (`AdminScript`,
+    tested), run in-process with `NSAppleScript` so the prompt names Flotilla. Cancel (-128) is not
+    an error.
+- **"Use for Containers" edits `config.toml` and restarts the runtime, after a clear warning** —
+  "Yes, with a clear warning (Recommended)". The dialog says every running container stops (with
+  the count), only containers created afterwards get names, the old domain's names stop working,
+  and that a network which stops carrying traffic after the restart is fixed by recreating it (the
+  fault in `research/CONTAINER-UPGRADE-1.5.0.md`). With the runtime stopped, the file is written
+  and nothing restarts.
+- **This pulls `config.toml` editing forward from Phase 3** (decision 8, Q7), for this one key.
+  `ContainerConfigFile` is not a TOML parser on purpose: it changes the `[dns] domain` line, adds
+  it, or removes it, and leaves every other byte as it was — comments, ordering, other tables, and
+  a `domain` key in any other table.
+- **`.local` is refused** (mine, found writing the form's examples). macOS resolves `.local` with
+  Bonjour; a resolver file for it would send every printer, AirPlay and `name.local` lookup to the
+  container runtime.
+- **A host alias** (`dns create --localhost <ipv4> <domain>`) is offered as the second kind, prefilled
+  with Apple's documented example (`host.container.internal`, `203.0.113.113`, an address reserved
+  for documentation). It never names containers.

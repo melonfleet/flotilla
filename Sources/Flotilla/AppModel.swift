@@ -1550,6 +1550,34 @@ final class AppModel {
 
     var pendingRegistryForm = false
 
+    /// Ask the DNS section to open its New Domain form.
+    func requestDNSForm() {
+        pendingSection = .dns
+        pendingDNSForm = true
+    }
+
+    var pendingDNSForm = false
+
+    // MARK: DNS section state
+    //
+    // Stored here for the same reason as the registries' below. Loading is `AppModelDNS`'s.
+
+    private(set) var dnsDomains: [LocalDNSDomain] = []
+    /// `config.toml`'s `[dns] domain`, read with the rows — the domain containers are named under.
+    private(set) var containerDNSDomain: String?
+    private(set) var dnsState: LoadState = .idle
+    private(set) var dnsLastRefresh: Date?
+
+    /// For `AppModelDNS`, which owns the loading.
+    func setDNS(_ domains: [LocalDNSDomain], containerDomain: String?, state: LoadState) {
+        dnsDomains = domains
+        containerDNSDomain = containerDomain
+        dnsState = state
+        if state == .loaded { dnsLastRefresh = Date() }
+    }
+
+    func setDNSState(_ state: LoadState) { dnsState = state }
+
     // MARK: Registries section state
     //
     // Stored here rather than in `AppModelRegistries.swift` because an extension cannot hold

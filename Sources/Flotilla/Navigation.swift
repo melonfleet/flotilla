@@ -14,8 +14,10 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
     // Desktop lists a Compose stack, rather than a section of their own.
     // `registries` sits under Images (the owner, 5 October): it is where images come from, and
     // it moved out of Settings because it is something you manage, not something you set once.
-    case dashboard, activity, logs, containers, images, registries, volumes, networks, machines,
-         clusters, settings
+    // `dns` sits under Networks (6 October): a local domain is how containers are found by name,
+    // which is a networking question — and the competitor that prompted it files it there too.
+    case dashboard, activity, logs, containers, images, registries, volumes, networks, dns,
+         machines, clusters, settings
 
     var id: Self { self }
 
@@ -35,6 +37,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .registries: "Registries"
         case .volumes: "Volumes"
         case .networks: "Networks"
+        case .dns: "DNS"
         case .machines: "Machines"
         case .clusters: "Clusters"
         case .settings: "Settings"
@@ -54,6 +57,8 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .registries: "shippingbox.and.arrow.backward"
         case .volumes: "cylinder.split.1x2"
         case .networks: "network"
+        // A name pointing the way. Verified present, per the `ellipsis.vertical` incident.
+        case .dns: "signpost.right.and.left"
         case .machines: "server.rack"
         case .clusters: "circle.hexagongrid"
         case .settings: "gearshape"

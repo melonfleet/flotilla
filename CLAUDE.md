@@ -484,7 +484,9 @@ must preserve all of the following:
    including volumes, networks, settings registry, security baseline,
    diagnostics/support bundle, and full per-category notifications.
 8. **`config.toml` (Q7):** read in Phase 1, edit locally in Phase 3, and edit
-   remotely only if evidence shows it is necessary.
+   remotely only if evidence shows it is necessary. **Amended by Q27 (2026-10-06):** the DNS
+   section edits the one key `[dns] domain` now, through `ContainerConfigFile`, which changes that
+   line and no other byte.
 9. **Identity (Q8):** bundle identifier and namespace root are fixed at
    `dev.melonfleet.Flotilla` / `dev.melonfleet.*`.
 10. **Sandboxing (Q9):** no App Sandbox for v1. Hardened runtime, Developer ID
@@ -546,6 +548,13 @@ must preserve all of the following:
     September, where it meant the Run form's Command field had never worked — because the
     tests check the argv we *build*, not what the CLI *accepts*. A preview must render the
     **validated** argv, never `ContainerCLI.runArguments`.
+
+19. **Root runs one thing, one way (Q27).** The DNS section's `system dns create|delete` are the
+    only commands Flotilla runs as an administrator: behind the macOS password prompt, never
+    silently, Allowlist-validated, quoted by `AdminScript`, and **only** with the installed
+    `/usr/local/bin/container` while it and its directory are root-owned and writable by no one
+    else (`AdminExecutable`). Never the configurable `containerBinaryPath`. Do not add another
+    privileged command without the owner's say-so.
 
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.

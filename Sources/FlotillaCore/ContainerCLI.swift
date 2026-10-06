@@ -120,6 +120,30 @@ public struct ContainerCLI: Sendable {
                                                from: Data(try succeeding(args).stdout.utf8))
     }
 
+    /// The local DNS domains, as `container system dns list` reports them: bare names. The details
+    /// — which is a host alias, whether macOS's resolver knows it — come from the resolver files;
+    /// see `LocalDNS`.
+    public func dnsDomainNames() throws -> [String] {
+        try JSONDecoder.flotilla.decode([String].self, from: Data(
+            try succeeding(["system", "dns", "list", "--format", "json"]).stdout.utf8))
+    }
+
+    /// The validated `system dns create`, for the administrator path to run. **Not executed here**:
+    /// it needs root, and Flotilla only ever runs it through the macOS authorisation prompt
+    /// (`AdminCommandRunner` in the app). Validation is the same `Allowlist` every other command
+    /// crosses, so the prompt can only ever run this one shape.
+    public static func dnsCreateCommand(domain: String, localhost: String? = nil)
+        -> Result<ValidatedCommand, AllowlistError> {
+        var args = ["system", "dns", "create"]
+        if let localhost { args += ["--localhost", localhost] }
+        return Allowlist.validate(args + [domain])
+    }
+
+    /// The validated `system dns delete`. See `dnsCreateCommand`.
+    public static func dnsDeleteCommand(domain: String) -> Result<ValidatedCommand, AllowlistError> {
+        Allowlist.validate(["system", "dns", "delete", domain])
+    }
+
     /// Signs in to a registry.
     ///
     /// **The password is written to the child's stdin and never appears in argv.** That is not a

@@ -42,6 +42,10 @@ public enum ActivityKind: String, CaseIterable, Identifiable, Hashable, Sendable
     /// used to be filed under `.image`, which put them in the Images band, two screens from the
     /// list they were about.
     case registry
+    /// A local DNS domain in the DNS section (6 October): created, deleted, or made the one
+    /// containers are named under. Its own kind so the section's band shows its own events, and so
+    /// a tag on the domain `flotilla` is not a tag on a container that happens to be called that.
+    case dns
 
     public var id: Self { self }
 }

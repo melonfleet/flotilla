@@ -36,6 +36,8 @@ struct MainWindowView: View {
         sortOrder: [KeyPathComparator(\ContainerImage.reference)])
     @State private var registriesUI = ResourceUIState<RegistryRow>(
         sortOrder: [KeyPathComparator(\RegistryRow.nameSortKey)])
+    @State private var dnsUI = ResourceUIState<LocalDNSDomain>(
+        sortOrder: [KeyPathComparator(\LocalDNSDomain.nameSortKey)])
 
     @State private var selection: Section? = .dashboard
 
@@ -122,6 +124,8 @@ struct MainWindowView: View {
                 row(.containers, count: model.state == .loaded ? model.containers.count : nil)
                 row(.volumes, count: model.volumesState == .loaded ? model.volumes.count : nil)
                 row(.networks, count: model.networksState == .loaded ? model.networks.count : nil)
+                // Under Networks (6 October): how containers find each other by name.
+                row(.dns, count: model.dnsState == .loaded ? model.dnsDomains.count : nil)
             }
 
             // Its own group: a machine is the VM containers run inside, not another resource
@@ -256,6 +260,8 @@ struct MainWindowView: View {
             VolumesView(model: model, ui: volumesUI)
         case .networks:
             NetworksView(model: model, ui: networksUI)
+        case .dns:
+            DNSView(model: model, ui: dnsUI)
         case .machines:
             MachinesView(model: model, ui: machinesUI)
         case .clusters:

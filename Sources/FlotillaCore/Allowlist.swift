@@ -125,6 +125,12 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     /// accepting either shape wherever one is expected would let an IPv6 prefix through to
     /// `--subnet` (and vice versa), which the CLI would then reject far less clearly.
     case cidrV6
+    /// A local DNS domain for `container system dns create|delete`: `flotilla`,
+    /// `host.container.internal`. Lowercase letters, digits and hyphens in dot-separated labels;
+    /// no port, no trailing dot, and not an IPv4 address (6 October, the DNS section).
+    case dnsDomain
+    /// A bare IPv4 address, for `dns create --localhost`.
+    case ipv4Address
     /// `key=value` for `--label` / `--opt` / `--option`.
     case keyValue
     /// One of the CLI's `--format` values.
@@ -181,6 +187,9 @@ extension ValueShape {
         // Numbers, sizes and network shapes. Configuration rather than content. A port mapping
         // can carry a bind address, which is precisely what an auditor wants to see.
         case .portMapping, .durationSeconds, .memorySize, .count, .cidr, .cidrV6:
+            false
+        // A domain name and an address: configuration, and the part an auditor needs.
+        case .dnsDomain, .ipv4Address:
             false
         }
     }
@@ -244,6 +253,10 @@ extension ValueShape {
             "Expected an IPv4 range in CIDR form — for example 10.0.0.0/24."
         case .cidrV6:
             "Expected an IPv6 prefix in CIDR form — for example fd00:1234::/64."
+        case .dnsDomain:
+            "Expected a domain such as flotilla or host.container.internal — lowercase letters, numbers and hyphens, separated by dots."
+        case .ipv4Address:
+            "Expected an IPv4 address such as 203.0.113.113."
         case .keyValue:
             "Expected key=value."
         case .outputFormat:
@@ -1013,6 +1026,20 @@ public enum Allowlist {
             // Not the step `system start`'s comment says Flotilla never takes *on its own*: this
             // runs only when the user presses the button, and it is user-level — files under the
             // user's own Application Support, no administrator.
+            // MARK: system dns — local DNS domains (the DNS section, 6 October)
+            //
+            // `list` reads; `create` and `delete` need an administrator, so Flotilla only ever runs
+            // them through the macOS authorisation prompt, never silently (DECISIONS). Both are
+            // local-only: a peer has no business changing this Mac's resolver.
+            CommandSpec(["system", "dns", "list"], mutates: false, flags: [format],
+                        exposure: .localOnly(reason: "this Mac's own resolver configuration is not a peer's to enumerate")),
+            CommandSpec(["system", "dns", "create"], mutates: true,
+                        flags: [FlagSpec(long: "localhost", value: .ipv4Address)],
+                        operands: OperandSpec(shape: .dnsDomain, min: 1, max: 1),
+                        exposure: .localOnly(reason: "changing this Mac's DNS resolver needs an administrator and is the owner's decision")),
+            CommandSpec(["system", "dns", "delete"], mutates: true,
+                        operands: OperandSpec(shape: .dnsDomain, min: 1, max: 1),
+                        exposure: .localOnly(reason: "changing this Mac's DNS resolver needs an administrator and is the owner's decision")),
             CommandSpec(["system", "kernel", "set"], mutates: true, timeoutHint: 600,
                         flags: [FlagSpec(long: "recommended")],
                         exposure: .localOnly(reason: "choosing the kernel the host boots every container with is the owner's decision")),
@@ -1641,6 +1668,10 @@ public enum Allowlist {
             return isCIDR(value) ? nil : bad
         case .cidrV6:
             return isCIDRV6(value) ? nil : bad
+        case .dnsDomain:
+            return isDNSDomain(value) ? nil : bad
+        case .ipv4Address:
+            return isIPv4(value) ? nil : bad
         case .keyValue:
             return isKeyValue(value) ? nil : bad
         case .outputFormat:
@@ -1993,6 +2024,20 @@ public enum Allowlist {
             guard (1...63).contains(label.count) else { return false }
             guard !label.hasPrefix("-"), !label.hasSuffix("-") else { return false }
             return label.allSatisfy { isASCIIAlphanumeric($0) || $0 == "-" }
+        }
+    }
+
+    /// A local DNS domain. Lowercase on purpose: the runtime files it under
+    /// `/etc/resolver/containerization.<domain>`, and two spellings of one domain would be two
+    /// files. Not an IPv4 address, which would parse as four numeric labels.
+    private static func isDNSDomain(_ value: String) -> Bool {
+        guard (1...253).contains(value.count), !isIPv4(value),
+              !value.hasPrefix("."), !value.hasSuffix(".") else { return false }
+        let labels = value.split(separator: ".", omittingEmptySubsequences: false)
+        return labels.allSatisfy { label in
+            guard (1...63).contains(label.count), !label.hasPrefix("-"), !label.hasSuffix("-")
+            else { return false }
+            return label.allSatisfy { ($0.isASCII && ($0.isLowercase || $0.isNumber)) || $0 == "-" }
         }
     }
 

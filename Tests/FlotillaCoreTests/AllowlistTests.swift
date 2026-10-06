@@ -84,6 +84,7 @@ private func requireRejected(
         "system start",
         "system stop",
         "system kernel set",
+        "system dns list", "system dns create", "system dns delete",
         // The whole registry family, not only the login: `list` enumerates every registry this
         // Mac holds credentials for, and `logout` destroys them. See the rows for the review.
         "registry list", "registry login", "registry logout",
@@ -574,6 +575,8 @@ private func requireRejected(
         "system start",
         "system stop",
         "system kernel set",
+        // The resolver files under /etc/resolver, through the admin prompt.
+        "system dns create", "system dns delete",
         // Both write the Mac's credential store — one puts a password in it, the other takes
         // one out. `registry list` only reads it, and is below.
         "registry login", "registry logout",
@@ -591,6 +594,7 @@ private func requireRejected(
         "volume list", "volume inspect",
         "network list", "network inspect",
         "system status", "system version", "system df",
+        "system dns list",
         // Reads the credential store without changing it. Local-only all the same: see the
         // exposure test, and the rows.
         "registry list",
@@ -768,6 +772,10 @@ private func requireRejected(
                     mutates: true, timeout: 120),
         // It downloads, so ten minutes rather than two.
         AllowedCase(["system", "kernel", "set", "--recommended"], mutates: true, timeout: 600),
+        AllowedCase(["system", "dns", "list", "--format", "json"], mutates: false),
+        AllowedCase(["system", "dns", "create", "--localhost", "203.0.113.113", "host.container.internal"],
+                    mutates: true),
+        AllowedCase(["system", "dns", "delete", "flotilla"], mutates: true),
 
         // The registry family. `login` carries `--password-stdin` and **no password flag at
         // all** — the secret reaches the child through its stdin, never through argv, which is

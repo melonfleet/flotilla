@@ -17,6 +17,7 @@ extension ActivityKind {
         case .network: "Networks"
         case .runtime: "Runtime"
         case .registry: "Registries"
+        case .dns: "DNS"
         }
     }
 
@@ -34,6 +35,7 @@ extension ActivityKind {
         case .network: "network"
         case .runtime: "gearshape.2"
         case .registry: Section.registries.systemImage
+        case .dns: Section.dns.systemImage
         }
     }
 
@@ -51,6 +53,7 @@ extension ActivityKind {
         // The runtime banner lives on the dashboard, so that is where a runtime row leads.
         case .runtime: .dashboard
         case .registry: .registries
+        case .dns: .dns
         }
     }
 }
