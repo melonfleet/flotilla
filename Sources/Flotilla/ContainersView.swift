@@ -104,6 +104,10 @@ struct ContainersView: View {
     /// The group form, embedded like every other create form, when "+ ▸ New Group…" or a group's
     /// Edit opened it. Groups have lived in this list since 5 October (to-do item 4).
     @State private var editingGroup: GroupFormTarget?
+    /// Suggestions (Q28), embedded like every form. The stack is set when a quick pick in the
+    /// empty state opens one straight away.
+    @State private var showingSuggestions = false
+    @State private var suggestionPick: StackSuggestion?
 
     /// A group delete awaiting confirmation, and which kind. The owner's rule: a group row's
     /// Delete offers *both* "the group only" and "the group and its containers", and the second
@@ -700,6 +704,8 @@ struct ContainersView: View {
     private var addMenuItems: some View {
         Button("Run Container…") { showingRun = true }
         Button("New Group…") { editingGroup = .new }
+        Divider()
+        Button("Suggestions…") { suggestionPick = nil; showingSuggestions = true }
     }
 
     private var rowsByID: [ContainerRow.ID: ContainerRow] {
@@ -930,6 +936,10 @@ struct ContainersView: View {
             } else if let target = editingGroup {
                 // Embedded, like every other create form (`CLAUDE.md`, 9 August).
                 GroupFormView(model: model, target: target) { editingGroup = nil }
+            } else if showingSuggestions {
+                SuggestionsView(model: model,
+                                dismiss: { showingSuggestions = false; suggestionPick = nil },
+                                chosen: suggestionPick)
             } else if let target = detailTarget {
                 detailScreen(target)
             } else {
@@ -1309,10 +1319,31 @@ struct ContainersView: View {
                         ui.kindFilter = .all
                     }
                 } else {
-                    HStack {
-                        Button("Run a Container…") { showingRun = true }
-                            .buttonStyle(.borderedProminent)
-                        Button("New Group…") { editingGroup = .new }
+                    VStack(spacing: 14) {
+                        HStack {
+                            Button("Run a Container…") { showingRun = true }
+                                .buttonStyle(.borderedProminent)
+                            Button("New Group…") { editingGroup = .new }
+                        }
+                        // A few Suggestions, as decided: an empty list is where a ready-made
+                        // stack is most useful.
+                        VStack(spacing: 4) {
+                            Text("Or start from a suggestion:")
+                                .font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 12) {
+                                ForEach(StackSuggestion.catalogue.prefix(3)) { stack in
+                                    Button(stack.title) {
+                                        suggestionPick = stack
+                                        showingSuggestions = true
+                                    }
+                                    .buttonStyle(.link)
+                                    .foregroundStyle(Theme.link)
+                                }
+                                Button("More…") { suggestionPick = nil; showingSuggestions = true }
+                                    .buttonStyle(.link)
+                                    .foregroundStyle(Theme.link)
+                            }
+                        }
                     }
                 }
             }

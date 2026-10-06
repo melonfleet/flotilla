@@ -112,13 +112,17 @@ public struct ContainerGroup: Codable, Sendable, Equatable, Identifiable, Hashab
     /// names a `readyPort`, which Start then waits for. Without one, the UI must not suggest
     /// otherwise.
     public var members: [GroupMember]
+    /// What to do with it once it is running — set by Suggestions ("Sign in to pgAdmin as…"),
+    /// shown on the group's screen. Never a secret: it names passwords, it does not hold them.
+    public var notes: [String]
 
     public init(id: String = UUID().uuidString, name: String,
-                network: String? = nil, members: [GroupMember] = []) {
+                network: String? = nil, members: [GroupMember] = [], notes: [String] = []) {
         self.id = id
         self.name = name
         self.network = network
         self.members = members
+        self.notes = notes
     }
 
     public var memberNames: [String] { members.map(\.name) }
@@ -342,6 +346,11 @@ public struct GroupBook: Sendable, Equatable {
         groups[index].name = name
     }
 
+    public mutating func setNotes(_ notes: [String], on id: String) {
+        guard let index = groups.firstIndex(where: { $0.id == id }) else { return }
+        groups[index].notes = notes
+    }
+
     public mutating func setNetwork(_ network: String?, on id: String) throws {
         guard let index = groups.firstIndex(where: { $0.id == id }) else { throw GroupError.unknownGroup }
         groups[index].network = network?.isEmpty == true ? nil : network
@@ -363,6 +372,9 @@ public struct GroupBook: Sendable, Equatable {
         try candidate.restoreGroup(id: draft.id, name: name, network: draft.network)
         for member in draft.members {
             try candidate.addMember(member, to: draft.id)
+        }
+        if let index = candidate.groups.firstIndex(where: { $0.id == draft.id }) {
+            candidate.groups[index].notes = draft.notes
         }
         // Only now does the real book change: a draft that fails validation half way through
         // leaves the stored group exactly as it was.

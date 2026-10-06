@@ -1519,3 +1519,45 @@ Keychain, and show them on the group with Copy; never in the preferences file or
 - Known, and the same as every env value today: the value reaches `container run` in argv.
 - Development builds are ad-hoc signed, so macOS asks once before a rebuilt app reads an item an
   older build wrote. Developer ID builds have a stable identity and do not.
+
+## Q28 — Suggestions: ready-made stacks, created as groups (settled 2026-10-06)
+
+The owner named the feature "Suggestions" (5 October) and settled its shape on 6 October, with
+Iris's research (`experiments/stack-research-2026-10-05`). This entry covers Containers; Volumes,
+Networks, Machines and Clusters follow.
+
+- **Five stacks, Iris's top five, pinned:** PostgreSQL 18.6 + pgAdmin 9.18, WordPress 7.1 + MariaDB
+  12.3, Redis 8.10 + RedisInsight 3.8, MySQL 9.7 + phpMyAdmin 5.2, Prometheus v3.13.4 + Grafana 13.2.
+  No nginx. **Every one was created, started and exercised on this Mac before shipping** (6 October),
+  and two of the research's assumptions did not survive that:
+  - **Prometheus publishes only full versions** — `v3.13` does not exist; `v3.13.4` does.
+  - **Redis cannot use a named volume.** A fresh volume holds `lost+found`, so the image's entrypoint
+    declines to fix ownership ("Unknown file './lost+found'… Permissions will not be modified") and
+    Redis, running as `redis`, cannot write its AOF. So only images that set up their data directory
+    as root get a volume (Postgres, MariaDB, MySQL, WordPress); the rest keep data in the container,
+    which survives Stop and Start but not Delete, and their notes say so.
+  - RedisInsight adds the preset Redis **only after its own terms are accepted in the browser**
+    (read in its source). Flotilla does not accept them for you; the note says to.
+- **Where:** the Containers "+" menu ("Suggestions…") and the empty Containers list (three quick
+  picks and "More…"). An embedded gallery of `ResourceCard`s, then a form per stack.
+- **What the form lets you choose** (the owner, 6 October: fields to pre-select, bound to the stack
+  once built): the name (the prefix for every container, volume and the network), the network (a new
+  `<name>-net`, or an existing one), each web page's port on this Mac (127.0.0.1 only, suggested as
+  one nothing uses — containers, groups not running, and anything else listening), and per-stack
+  settings with working defaults (database, user, pgAdmin's sign-in email). **The domain is shown,
+  not chosen**, because it cannot be per stack: measured 6 October, `container run --dns-domain`
+  only sets the container's search domain — the container still registers under the Mac's one
+  domain — and it breaks bare names inside that container.
+- **Wiring — "names if set up, else gateway"** (the owner's choice). With a domain in use for
+  containers, services reach each other by bare name on the stack's network. Without one, each
+  database is published on the network's **gateway** (never `0.0.0.0`) on a free port near
+  30000 + its own, and the app is pointed there. Both were live-tested: WordPress → `wordpress-db` by
+  name; phpMyAdmin → MySQL at `192.168.66.1:33306`, refused on the Mac's LAN address.
+- **Creating** pulls missing images first (the step that fails, and the one that leaves nothing
+  behind), then makes the network, reads its gateway, plans, creates volumes, generates passwords
+  into the Keychain and saves the group with its notes. A failure says which step, and lists exactly
+  what was left in place. The stack is **left ready to start**, as decided; Start uses Q21's ready
+  wait so each database is up before its app.
+- **Bug found building it:** the gallery's description used `fixedSize(vertical:)` and opening the
+  screen blanked the whole window — bar, sidebar and all. Same family as "one unbounded child can
+  scroll the whole window"; found by bisecting.

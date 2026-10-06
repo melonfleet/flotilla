@@ -1210,7 +1210,7 @@ final class AppModel {
     }
 
     /// One readable line per progress report, for the operation panel.
-    private static func pullLine(_ progress: ImagePullProgress) -> String {
+    static func pullLine(_ progress: ImagePullProgress) -> String {
         var parts = ["[\(progress.step)/\(progress.stepCount)]",
                      progress.phase == .fetching ? "Fetching" : "Unpacking"]
         if let platform = progress.platform { parts.append(platform) }

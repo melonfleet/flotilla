@@ -138,6 +138,19 @@ struct GroupFormView: View {
                 .disabled(model.networks.isEmpty)
             }
 
+            if !draft.notes.isEmpty {
+                // From Suggestions: how to use what was made. Names passwords, never holds one.
+                VStack(alignment: .leading, spacing: 8) {
+                    FormSectionHeader(title: "Getting started")
+                    ForEach(draft.notes, id: \.self) { note in
+                        Label(note, systemImage: "info.circle")
+                            .font(.callout)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
             VStack(alignment: .leading, spacing: 14) {
                 FormSectionHeader(
                     title: "Services",
@@ -278,7 +291,7 @@ struct GroupFormView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let port = member.readyPort, index < draft.members.count - 1 {
-                    Label("Next waits for port \(port)", systemImage: "hourglass")
+                    Label("Next waits for port \(String(port))", systemImage: "hourglass")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

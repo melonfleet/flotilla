@@ -144,6 +144,7 @@ final class GroupStore {
             "members": group.members.map(encode(_:)),
         ]
         if let network = group.network { row["network"] = network }
+        if !group.notes.isEmpty { row["notes"] = group.notes }
         return row
     }
 
@@ -201,6 +202,7 @@ final class GroupStore {
                     })
                 try? book.addMember(member, to: group.id)
             }
+            book.setNotes(row["notes"] as? [String] ?? [], on: group.id)
         }
         return book
     }
