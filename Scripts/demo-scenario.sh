@@ -204,6 +204,11 @@ with open(out, "wb") as f: plistlib.dump(backup, f)
 os.chmod(out, 0o600)
 PY
   fi
+  # The database password where Flotilla keeps group passwords: the login Keychain, keyed by
+  # group id and secret name (`KeychainSecrets`). `down` deletes it.
+  security add-generic-password -U -s dev.melonfleet.Flotilla.group-secret \
+    -a demo.storefront/db-password -l "Flotilla: storefront — db-password" \
+    -w "$(cat "$STATE/postgres-password")" >/dev/null
   say "writing the demo's groups, tags and registries"
   python3 - "$DOMAIN" "$STATE/prefs-backup.plist" "$ASSETS" <<'PY'
 import plistlib, subprocess, sys
@@ -221,8 +226,13 @@ groups = [
                ports=["127.0.0.1:8080:80"], volumes=[f"{assets}/site:/usr/share/caddy:ro"]),
         member("demo.m.api", "storefront-api", "acme/storefront-api:1.0",
                ports=["127.0.0.1:8090:8000"], volumes=["shop-uploads:/uploads"]),
+        # The same settings the container was run with, so Start can rebuild it (6 October:
+        # the record had none, and a rebuilt database would have had no password). The password
+        # is a Keychain secret, written below, never a value in the preferences.
         member("demo.m.db", "storefront-db", "docker.io/library/postgres:17-alpine",
-               volumes=["shop-db-data:/var/lib/postgresql/data"]),
+               env=["POSTGRES_DB=shop", "PGDATA=/var/lib/postgresql/data/pgdata"],
+               secretEnv=[{"name": "POSTGRES_PASSWORD", "secret": "db-password"}],
+               volumes=["shop-db-data:/var/lib/postgresql/data"], readyPort=5432),
         member("demo.m.cache", "storefront-cache", "docker.io/library/redis:7-alpine"),
     ]},
     {"id": "demo.docs", "name": "docs", "network": "docs-net", "members": [
@@ -356,6 +366,8 @@ PY
       quiet container image delete "$image" && say "  $image" || true
     done
   fi
+  security delete-generic-password -s dev.melonfleet.Flotilla.group-secret \
+    -a demo.storefront/db-password >/dev/null 2>&1 || true
   rm -f "$STATE/postgres-password"
   rmdir "$STATE" 2>/dev/null || true
   say "done"

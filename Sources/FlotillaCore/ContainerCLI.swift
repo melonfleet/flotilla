@@ -565,6 +565,25 @@ public struct ContainerCLI: Sendable {
     /// Pair it with `Allowlist.validated(_:mountPolicy:)` to show the user a command that
     /// is not merely plausible but accepted: an invalid mount or port should be visible in
     /// the sheet before anyone presses Run.
+    /// `container create`: a container made but **not started** — what importing a `.flotilla`
+    /// file does (Q29). The same options as `run`; `detach` and `rm` are dropped, as they only
+    /// describe a start.
+    @discardableResult
+    public func createContainer(image: String, options: RunOptions = RunOptions(),
+                                command: [String] = []) throws -> CommandResult {
+        try execute(Self.createArguments(image: image, options: options, command: command))
+    }
+
+    public static func createArguments(image: String, options: RunOptions = RunOptions(),
+                                       command: [String] = []) -> [String] {
+        var created = options
+        created.detach = false
+        created.rm = false
+        var args = runArguments(image: image, options: created, command: command)
+        args[0] = "create"
+        return args
+    }
+
     public static func runArguments(
         image: String, options: RunOptions = RunOptions(), command: [String] = []
     ) -> [String] {

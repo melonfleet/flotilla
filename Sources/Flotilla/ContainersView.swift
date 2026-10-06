@@ -801,6 +801,9 @@ struct ContainersView: View {
         Button("Restart") { Task { await model.restartGroup(group) } }
             .disabled(!canStop(group))
         Divider()
+        // Q29: the group, its network and the volumes it mounts, as a file to share.
+        Button("Save to File…") { Task { await model.saveGroupToFile(group) } }
+        Divider()
         TagMenu(store: model.tags, subject: TagSubject(kind: .group, id: group.id)) {
             tagSheet = TagSheetTarget([TagSubject(kind: .group, id: group.id)])
         }

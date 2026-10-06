@@ -44,6 +44,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pruneEmptyFormatMenu()
     }
 
+    /// A `.flotilla` file double-clicked in Finder (Q29): its import review, in the main window.
+    /// Nothing is built from here — the review screen is where the user decides.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: { $0.pathExtension == ConfigurationFile.fileExtension }),
+              let model = model ?? Self.pendingModel else { return }
+        model.openConfigurationFile(url)
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }?.makeKeyAndOrderFront(nil)
+    }
+
     /// Removes the Format menu, which the command audit emptied but could not delete.
     ///
     /// `CommandGroup(replacing:)` with an empty body empties a menu; it does not remove it. After
@@ -161,9 +171,14 @@ private struct FlotillaCommands: Commands {
                 .keyboardShortcut(",", modifiers: .command)
         }
 
-        // Flotilla manages runtime objects rather than documents. It has no generic import,
-        // export, page-layout or print operation for these stock File-menu groups to address.
-        CommandGroup(replacing: .importExport) {}
+        // Configuration files (Q29): what to build, never content. Page layout and print still
+        // have nothing to address.
+        CommandGroup(replacing: .importExport) {
+            Button("Import Configuration…") { present(model.requestImport) }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+            Button("Export Configuration…") { present(model.requestExport) }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+        }
         CommandGroup(replacing: .printItem) {}
 
         // Search on the data screens is an app-level filter, not the responder-chain Find panel,

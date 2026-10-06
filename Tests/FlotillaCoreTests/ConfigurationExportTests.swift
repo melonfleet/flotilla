@@ -83,6 +83,9 @@ struct ConfigurationExportTests {
         #expect(members[0].digest?.hasPrefix("sha256:") == true)
         #expect(members[1].volumes.isEmpty)
         #expect(!String(decoding: try result.file.encoded(), as: UTF8.self).contains("/Users/"))
+        // Nor in what the export screen says it left out: it names the destination only.
+        let folder = try #require(result.omissions.first { $0.subject == "storefront-web" })
+        #expect(folder.reason.contains("/usr/share/caddy") && !folder.reason.contains("/Users/"))
     }
 
     @Test("which variable names count as secrets")

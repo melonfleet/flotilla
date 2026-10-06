@@ -1639,3 +1639,32 @@ Mine, for the owner to see:
   file outright. Parsing runs nothing; import is a review the user confirms.
 - **Images by reference and digest**, so the importer can pull the same bytes. A network's subnet is
   not exported: the runtime chose it, and on another Mac it may clash.
+
+### Q29 continued — export and import in the app (2026-10-06)
+
+- **Export:** File ▸ Export Configuration… (⇧⌘E) opens an embedded checklist over the selected
+  section — everything ticked, a live list of what will be left out in the rail — and a group's
+  row menu and screen have "Save to File…", which saves the group with its network and the volumes
+  it mounts. Both write the same `.flotilla` file.
+- **Import:** File ▸ Import Configuration… (⇧⌘I), or a double-click in Finder — the bundle now
+  declares `dev.melonfleet.flotilla-configuration` and owns `.flotilla`. The review screen lists
+  everything, new or "already on this Mac"; each clash is skip, rename or replace, and Import stays
+  off until all are decided. Passwords are generated unless typed. Replace ends in a confirmation
+  naming each thing deleted, and "its data is lost" for a volume.
+- **Nothing is started.** Containers are created stopped — which needed `container create`, added to
+  the Allowlist with exactly `run`'s audited flags less `--detach`, `--rm` and `--progress` (the
+  CLI's two option lists diffed on 1.5.0), and local-only. Groups are saved ready to start.
+- **Order:** replacements, then pulls (only of images not here), then networks, volumes, machines,
+  clusters, containers, groups (passwords into the Keychain), tags (merged by name), registries
+  (never a sign-in; the panel says which to sign in to), and DNS last, behind one administrator
+  prompt. A failure names the step and exactly what was already built.
+- **Live-tested 6 October:** the demo's `storefront` group saved to a file with no `/Users/` path
+  and no password in it; a renamed copy opened from Finder straight into its review screen; an
+  import with an unpullable image stopped at the pull with nothing built; the corrected import built
+  the network, both volumes and the group, and once started its web and API answered on the new
+  ports. Its database did not start — the demo's own group record had never carried Postgres's
+  settings, so `Scripts/demo-scenario.sh` now writes them (the password as a Keychain secret,
+  removed by `down`).
+- **Format fixes found by reading a real export:** every list and flag is optional when read (a
+  hand-written file need only say what it uses) and omitted when empty; and an omitted host folder
+  is described by its destination, never its source path.

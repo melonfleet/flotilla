@@ -182,6 +182,29 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          narrows to .accessory for menu-bar-only users before any scene exists. -->
     <key>LSUIElement</key>                  <$LSUIELEMENT/>
     <key>NSHighResolutionCapable</key>      <true/>
+    <!-- `.flotilla` configuration files (Q29): Flotilla owns the type, so a double-click opens
+         its import review. JSON inside, so it conforms to public.json. -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+      <dict>
+        <key>UTTypeIdentifier</key>         <string>dev.melonfleet.flotilla-configuration</string>
+        <key>UTTypeDescription</key>        <string>Flotilla Configuration</string>
+        <key>UTTypeConformsTo</key>         <array><string>public.json</string></array>
+        <key>UTTypeTagSpecification</key>
+        <dict>
+          <key>public.filename-extension</key> <array><string>flotilla</string></array>
+        </dict>
+      </dict>
+    </array>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleTypeName</key>         <string>Flotilla Configuration</string>
+        <key>CFBundleTypeRole</key>         <string>Viewer</string>
+        <key>LSHandlerRank</key>            <string>Owner</string>
+        <key>LSItemContentTypes</key>       <array><string>dev.melonfleet.flotilla-configuration</string></array>
+      </dict>
+    </array>
     <!-- Names the colorset in Assets.car, when one was compiled. AppKit reads this for
          sidebar selection and focus rings; SwiftUI's .tint() does not reach them. -->
     <!-- No telemetry, no account, no phone-home (FEATURES.md). Nothing here requests a

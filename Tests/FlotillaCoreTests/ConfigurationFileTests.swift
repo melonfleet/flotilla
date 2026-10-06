@@ -99,6 +99,20 @@ struct ConfigurationFileTests {
         #expect(fails(shellInName))
     }
 
+    @Test("a hand-written file needs only what it uses; empty lists are not written")
+    func minimalFiles() throws {
+        let file = try ConfigurationFile.parse(Data(#"""
+            {"version": 2, "networks": [{"name": "app"}],
+             "groups": [{"name": "g", "members": [{"name": "web", "image": "nginx:1.27"}]}]}
+            """#.utf8))
+        #expect(file.groups[0].members[0].ports.isEmpty)
+        #expect(file.networks[0].hostOnly == false)
+        let text = String(decoding: try file.encoded(), as: UTF8.self)
+        #expect(!text.contains("[\n\n"))       // no empty arrays
+        #expect(!text.contains("hostOnly"))       // false is the default and not written
+        #expect(try ConfigurationFile.parse(Data(text.utf8)) == file)
+    }
+
     @Test("a file over the size limit is refused before parsing")
     func sizeLimit() {
         var limits = ConfigurationFile.Limits()

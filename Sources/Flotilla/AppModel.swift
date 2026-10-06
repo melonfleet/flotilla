@@ -1558,6 +1558,9 @@ final class AppModel {
 
     var pendingDNSForm = false
 
+    /// File ▸ Export Configuration… / Import…, shown over the selected section (Q29).
+    var configurationScreen: ConfigurationScreen?
+
     // MARK: DNS section state
     //
     // Stored here for the same reason as the registries' below. Loading is `AppModelDNS`'s.

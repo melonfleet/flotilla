@@ -87,7 +87,13 @@ struct GroupFormView: View {
             FormHeader(title: isNew ? "New Group" : "Edit Group",
                        systemImage: "rectangle.3.group",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: dismiss)
+                       onBack: dismiss) {
+                // The saved group, not the draft: a file should describe what exists.
+                if !isNew, let saved = model.groups.group(draft.id) {
+                    Button("Save to File…") { Task { await model.saveGroupToFile(saved) } }
+                        .help("Save this group as a .flotilla file to share or rebuild elsewhere")
+                }
+            }
             Divider()
             FormScaffold {
                 form

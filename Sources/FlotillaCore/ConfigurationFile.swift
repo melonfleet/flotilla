@@ -645,3 +645,181 @@ extension ServiceSpec {
                   volumes: spec.volumes, cpus: spec.cpus, memory: spec.memory)
     }
 }
+
+
+// MARK: - Lenient reading, tidy writing
+//
+// A shared file is often written or trimmed by hand, so every list and flag is optional when read
+// — absent means empty or false — and left out when written if it is empty or false. Synthesised
+// `Codable` would require every key, refusing a hand-written `{"name": "web", "image": "nginx"}`.
+
+private extension KeyedDecodingContainer {
+    func list<T: Decodable>(_ key: Key) throws -> [T] { try decodeIfPresent([T].self, forKey: key) ?? [] }
+    func flag(_ key: Key) throws -> Bool { try decodeIfPresent(Bool.self, forKey: key) ?? false }
+}
+
+private extension KeyedEncodingContainer {
+    mutating func list<T: Encodable>(_ value: [T], _ key: Key) throws {
+        if !value.isEmpty { try encode(value, forKey: key) }
+    }
+    mutating func flag(_ value: Bool, _ key: Key) throws { if value { try encode(true, forKey: key) } }
+}
+
+extension NetworkSpec {
+    enum CodingKeys: String, CodingKey { case name, hostOnly, subnet, labels }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(name: try c.decode(String.self, forKey: .name), hostOnly: try c.flag(.hostOnly),
+                  subnet: try c.decodeIfPresent(String.self, forKey: .subnet), labels: try c.list(.labels))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.flag(hostOnly, .hostOnly)
+        try c.encodeIfPresent(subnet, forKey: .subnet)
+        try c.list(labels, .labels)
+    }
+}
+
+extension VolumeSpec {
+    enum CodingKeys: String, CodingKey { case name, size, labels }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(name: try c.decode(String.self, forKey: .name),
+                  size: try c.decodeIfPresent(String.self, forKey: .size), labels: try c.list(.labels))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(size, forKey: .size)
+        try c.list(labels, .labels)
+    }
+}
+
+extension ClusterSpec {
+    enum CodingKeys: String, CodingKey { case name, cpus, memory, nodeImage, disposable }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(name: try c.decode(String.self, forKey: .name),
+                  cpus: try c.decodeIfPresent(Int.self, forKey: .cpus),
+                  memory: try c.decodeIfPresent(String.self, forKey: .memory),
+                  nodeImage: try c.decodeIfPresent(String.self, forKey: .nodeImage),
+                  disposable: try c.flag(.disposable))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(cpus, forKey: .cpus)
+        try c.encodeIfPresent(memory, forKey: .memory)
+        try c.encodeIfPresent(nodeImage, forKey: .nodeImage)
+        try c.flag(disposable, .disposable)
+    }
+}
+
+extension ServiceSpec {
+    enum CodingKeys: String, CodingKey {
+        case name, image, digest, ports, env, secretEnv, volumes, command, cpus, memory, network, readyPort
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(name: try c.decode(String.self, forKey: .name),
+                  image: try c.decode(String.self, forKey: .image),
+                  digest: try c.decodeIfPresent(String.self, forKey: .digest),
+                  ports: try c.list(.ports), env: try c.list(.env), secretEnv: try c.list(.secretEnv),
+                  volumes: try c.list(.volumes), command: try c.list(.command),
+                  cpus: try c.decodeIfPresent(Int.self, forKey: .cpus),
+                  memory: try c.decodeIfPresent(String.self, forKey: .memory),
+                  network: try c.decodeIfPresent(String.self, forKey: .network),
+                  readyPort: try c.decodeIfPresent(Int.self, forKey: .readyPort))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(image, forKey: .image)
+        try c.encodeIfPresent(digest, forKey: .digest)
+        try c.list(ports, .ports)
+        try c.list(env, .env)
+        try c.list(secretEnv, .secretEnv)
+        try c.list(volumes, .volumes)
+        try c.list(command, .command)
+        try c.encodeIfPresent(cpus, forKey: .cpus)
+        try c.encodeIfPresent(memory, forKey: .memory)
+        try c.encodeIfPresent(network, forKey: .network)
+        try c.encodeIfPresent(readyPort, forKey: .readyPort)
+    }
+}
+
+extension GroupSpec {
+    enum CodingKeys: String, CodingKey { case name, network, notes, members }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(name: try c.decode(String.self, forKey: .name),
+                  network: try c.decodeIfPresent(String.self, forKey: .network),
+                  notes: try c.list(.notes), members: try c.list(.members))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(network, forKey: .network)
+        try c.list(notes, .notes)
+        try c.list(members, .members)
+    }
+}
+
+extension TagsSpec {
+    enum CodingKeys: String, CodingKey { case definitions, assignments }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(definitions: try c.list(.definitions), assignments: try c.list(.assignments))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.list(definitions, .definitions)
+        try c.list(assignments, .assignments)
+    }
+}
+
+extension RegistriesSpec.Entry {
+    enum CodingKeys: String, CodingKey { case host, name, usesHTTP, signInRequired }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(host: try c.decode(String.self, forKey: .host),
+                  name: try c.decodeIfPresent(String.self, forKey: .name),
+                  usesHTTP: try c.flag(.usesHTTP), signInRequired: try c.flag(.signInRequired))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(host, forKey: .host)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.flag(usesHTTP, .usesHTTP)
+        try c.flag(signInRequired, .signInRequired)
+    }
+}
+
+extension RegistriesSpec {
+    enum CodingKeys: String, CodingKey { case entries, defaultRegistry }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(entries: try c.list(.entries),
+                  defaultRegistry: try c.decodeIfPresent(String.self, forKey: .defaultRegistry))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.list(entries, .entries)
+        try c.encodeIfPresent(defaultRegistry, forKey: .defaultRegistry)
+    }
+}
+
+extension DNSSpec {
+    enum CodingKeys: String, CodingKey { case domains, containerDomain }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(domains: try c.list(.domains),
+                  containerDomain: try c.decodeIfPresent(String.self, forKey: .containerDomain))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.list(domains, .domains)
+        try c.encodeIfPresent(containerDomain, forKey: .containerDomain)
+    }
+}

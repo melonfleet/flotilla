@@ -241,6 +241,22 @@ struct MainWindowView: View {
     /// section maps to.
     @ViewBuilder
     private var detailContent: some View {
+        // Export and import belong to no section, so they sit over whichever is selected (Q29).
+        if let screen = model.configurationScreen {
+            switch screen {
+            case .export:
+                ExportConfigurationView(model: model) { model.configurationScreen = nil }
+            case .importFile(let url):
+                ImportConfigurationView(model: model, url: url) { model.configurationScreen = nil }
+                    .id(url)
+            }
+        } else {
+            sectionContent
+        }
+    }
+
+    @ViewBuilder
+    private var sectionContent: some View {
         switch selection ?? .dashboard {
         case .activity:
             ActivityView(model: model, ui: activityUI) { selection = $0 }

@@ -123,7 +123,10 @@ public enum ConfigurationExport {
                 omissions += left
                 let named = member.volumes.filter { !$0.hasPrefix("/") }
                 for folder in member.volumes where folder.hasPrefix("/") {
-                    omissions.append(Omission(subject: member.name, reason: folderReason(folder)))
+                    // The destination, never the source: the source is a path under the user's home.
+                    let parts = folder.split(separator: ":", omittingEmptySubsequences: false)
+                    let destination = parts.count > 1 ? String(parts[1]) : "a folder"
+                    omissions.append(Omission(subject: member.name, reason: folderReason(destination)))
                 }
                 env = env.sorted()
                 members.append(ServiceSpec(name: member.name, image: member.image,
@@ -219,7 +222,7 @@ public enum ConfigurationExport {
 
     /// The spellings one image goes by: `docker.io/library/postgres:17-alpine` is also
     /// `postgres:17-alpine` and `library/postgres:17-alpine`.
-    static func aliases(_ reference: String) -> [String] {
+    public static func aliases(_ reference: String) -> [String] {
         var names = [reference]
         if reference.hasPrefix("docker.io/library/") {
             names.append(String(reference.dropFirst("docker.io/library/".count)))

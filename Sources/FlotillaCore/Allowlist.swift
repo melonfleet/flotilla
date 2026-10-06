@@ -805,6 +805,27 @@ public enum Allowlist {
                         operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
                         trailing: .command(maxTokens: 24)),
 
+            // `create`: `run` without starting (6 October), for importing a `.flotilla` file —
+            // a group arrives ready to start, and a standalone container should too. The CLI's
+            // `create` takes exactly `run`'s options less `--progress` (diffed against both
+            // `--help` outputs on 1.5.0); `--detach` and `--rm` are left out because they mean
+            // nothing for a container that is not started. Local-only: only import uses it.
+            CommandSpec(["create"], mutates: true, timeoutHint: 600,
+                        flags: [FlagSpec(long: "name", value: .identifier),
+                                FlagSpec(long: "env", short: "e", value: .envAssignment,
+                                         repeatable: true, maxRepeats: 24),
+                                FlagSpec(long: "publish", short: "p", value: .portMapping,
+                                         repeatable: true, maxRepeats: 16),
+                                FlagSpec(long: "volume", short: "v", value: .mountSpec,
+                                         repeatable: true, maxRepeats: 16),
+                                FlagSpec(long: "cpus", short: "c", value: .count),
+                                FlagSpec(long: "memory", short: "m", value: .memorySize),
+                                FlagSpec(long: "network", value: .identifier),
+                                FlagSpec(long: "platform", value: .platform)],
+                        operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
+                        trailing: .command(maxTokens: 24),
+                        exposure: .localOnly(reason: "creating containers from an imported file is the owner's own action")),
+
             // MARK: images
             CommandSpec(["image", "list"], mutates: false, flags: [format, quiet]),
             CommandSpec(["image", "inspect"], mutates: false,

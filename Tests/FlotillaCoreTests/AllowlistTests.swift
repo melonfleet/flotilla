@@ -84,7 +84,7 @@ private func requireRejected(
         "system start",
         "system stop",
         "system kernel set",
-        "system dns list", "system dns create", "system dns delete",
+        "system dns list", "system dns create", "system dns delete", "create",
         // The whole registry family, not only the login: `list` enumerates every registry this
         // Mac holds credentials for, and `logout` destroys them. See the rows for the review.
         "registry list", "registry login", "registry logout",
@@ -576,7 +576,7 @@ private func requireRejected(
         "system stop",
         "system kernel set",
         // The resolver files under /etc/resolver, through the admin prompt.
-        "system dns create", "system dns delete",
+        "system dns create", "system dns delete", "create",
         // Both write the Mac's credential store — one puts a password in it, the other takes
         // one out. `registry list` only reads it, and is below.
         "registry login", "registry logout",
@@ -772,6 +772,13 @@ private func requireRejected(
                     mutates: true, timeout: 120),
         // It downloads, so ten minutes rather than two.
         AllowedCase(["system", "kernel", "set", "--recommended"], mutates: true, timeout: 600),
+        AllowedCase(["create", "--name", "web", "--env", "A=b", "--publish", "127.0.0.1:8080:80",
+                     "--volume", "data:/data", "--network", "shop-net", "nginx:1.27",
+                     "--", "nginx", "-g", "daemon off;"],
+                    canonical: ["create", "--name", "web", "--env", "A=b", "--publish", "127.0.0.1:8080:80",
+                                "--volume", "data:/data", "--network", "shop-net", "nginx:1.27",
+                                "nginx", "-g", "daemon off;"],
+                    mutates: true, timeout: 600),
         AllowedCase(["system", "dns", "list", "--format", "json"], mutates: false),
         AllowedCase(["system", "dns", "create", "--localhost", "203.0.113.113", "host.container.internal"],
                     mutates: true),
