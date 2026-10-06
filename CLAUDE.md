@@ -538,8 +538,11 @@ must preserve all of the following:
     issues for one, so a group adds **no** command to the allowlist. **Since Q24
     (2026-10-05) a group is a row in Containers**, expandable to its members; there is no
     Groups section, and `ContainerListing` decides which rows appear. Do not add
-    `depends_on`, health gating, restart policy or Compose import: each needs a supervisor
-    that outlives the command, and `PLAN.md` rules that out.
+    `depends_on`, ongoing health checks, restart policy or Compose import: each needs a
+    supervisor that outlives the command, and `PLAN.md` rules that out. **Amended 2026-10-06
+    (Q21, the owner's call):** a member may name a `readyPort`, and a Start or Restart the user
+    clicked waits for it (up to two minutes, `Readiness`) before starting the next member.
+    Nothing watches afterwards; that line still holds.
 18. **`container` has no `--` convention — anywhere (Q21).** It executes the token and
     fails with "failed to find target executable --". The separator is required on the way
     **in**, or `Allowlist` reads a trailing `-la` as an unknown flag; it is stripped from

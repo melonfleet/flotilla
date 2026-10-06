@@ -1472,3 +1472,27 @@ Decisions, the owner's unless marked:
 - **A host alias** (`dns create --localhost <ipv4> <domain>`) is offered as the second kind, prefilled
   with Apple's documented example (`host.container.internal`, `203.0.113.113`, an address reserved
   for documentation). It never names containers.
+
+### Q21 amended — Start can wait for a service to be ready (2026-10-06)
+
+Building Suggestions needed it: a stack's app started a second after its database fails, because
+the database is still running its first-start setup. The owner chose "start the database, wait
+until its port accepts connections, then the rest", and, asked how that squares with Q21's "no
+health gating", chose to **amend Q21 narrowly**:
+
+- **A member may name a `readyPort`** — the port *inside* the container, published or not. During
+  a Start or Restart **the user clicked**, the next member waits until that port accepts a TCP
+  connection at the container's own address (`Readiness`, `TCPProbe`). Measured 6 October: the Mac
+  connects to a container's port directly, on a custom network, unpublished; a closed port is
+  refused at once, so polling once a second is cheap.
+- **Bounded by the command that asked for it.** Up to two minutes; the container list is re-read
+  every fifth poll so a service that exits is noticed. Nothing watches afterwards, nothing
+  restarts, and if Flotilla quits half way the remaining members simply are not started. The rest
+  of Q21 stands: no `depends_on`, no ongoing health checks, no restart policy, no Compose import.
+- **It says so when it gives up**, naming the service and port, and says the services after it
+  were not started. Live-tested: a Postgres that exits (no password set) is reported as "stopped
+  before it accepted connections"; a healthy one releases the next member about a second after
+  Postgres logs "ready to accept connections".
+- **Ready means a TCP connect.** Right for the official Postgres, MySQL and MariaDB images, which
+  run first-start setup with TCP off.
+- Skipped after the **last** member, which holds nothing back.

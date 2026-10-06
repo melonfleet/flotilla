@@ -155,6 +155,7 @@ final class GroupStore {
         if !member.command.isEmpty { row["command"] = member.command }
         if let cpus = member.cpus { row["cpus"] = cpus }
         if let memory = member.memory { row["memory"] = memory }
+        if let readyPort = member.readyPort { row["readyPort"] = readyPort }
         return row
     }
 
@@ -188,7 +189,8 @@ final class GroupStore {
                     volumes: raw["volumes"] as? [String] ?? [],
                     command: raw["command"] as? [String] ?? [],
                     cpus: raw["cpus"] as? Int,
-                    memory: raw["memory"] as? String)
+                    memory: raw["memory"] as? String,
+                    readyPort: raw["readyPort"] as? Int)
                 try? book.addMember(member, to: group.id)
             }
         }

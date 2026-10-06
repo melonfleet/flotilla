@@ -38,32 +38,8 @@ extension AppModel {
             command: groupCommandPreview(group, starting: true),
             work: { [weak self] progress in
                 guard let self else { return "" }
-                var started: [String] = []
-                for member in group.members {
-                    let step = progress.begin("Starting \(member.name)")
-                    if runningContainerNames.contains(member.name) {
-                        progress.finish(step, detail: "already running")
-                        continue
-                    }
-                    do {
-                        if existingContainerNames.contains(member.name) {
-                            _ = try await Task.detached { [cli] in try cli.start(member.name) }.value
-                        } else {
-                            let options = member.runOptions(network: group.network)
-                            _ = try await Task.detached { [cli] in
-                                try cli.run(image: member.image, options: options,
-                                            command: member.command)
-                            }.value
-                        }
-                    } catch {
-                        // Named plainly: which member, and what was already up when it stopped.
-                        progress.finish(step, detail: "failed")
-                        throw GroupRunFailure(member: member.name, started: started,
-                                              underlying: String(describing: error))
-                    }
-                    started.append(member.name)
-                    progress.finish(step, detail: nil)
-                }
+                let started = try await startMembers(of: group, progress: progress,
+                                                     skippingRunning: true)
                 await refresh()
                 let summary = started.isEmpty
                     ? "Every service was already running"
@@ -156,27 +132,8 @@ extension AppModel {
                 }
                 await refresh()
 
-                var started: [String] = []
-                for member in group.members {
-                    let step = progress.begin("Starting \(member.name)")
-                    do {
-                        if existingContainerNames.contains(member.name) {
-                            _ = try await Task.detached { [cli] in try cli.start(member.name) }.value
-                        } else {
-                            let options = member.runOptions(network: group.network)
-                            _ = try await Task.detached { [cli] in
-                                try cli.run(image: member.image, options: options,
-                                            command: member.command)
-                            }.value
-                        }
-                    } catch {
-                        progress.finish(step, detail: "failed")
-                        throw GroupRunFailure(member: member.name, started: started,
-                                              underlying: String(describing: error))
-                    }
-                    started.append(member.name)
-                    progress.finish(step, detail: nil)
-                }
+                let started = try await startMembers(of: group, progress: progress,
+                                                     skippingRunning: false)
                 await refresh()
                 let summary = "Restarted \(started.count) of \(group.members.count)"
                 recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
@@ -185,6 +142,86 @@ extension AppModel {
             }
         )
         await refresh()
+    }
+
+    /// Starts each member in listed order, waiting where a member names a `readyPort` (Q21
+    /// amended, 6 October). Shared by Start and Restart so the two cannot disagree about order.
+    ///
+    /// **Start is not always `run`.** A member whose container already exists — the usual case
+    /// after the group has been stopped once — is *started*, because `container run` would refuse
+    /// the name as taken.
+    ///
+    /// The wait is skipped after the **last** member: it exists to hold back what comes next, and
+    /// nothing does.
+    private func startMembers(of group: ContainerGroup, progress: OperationProgress,
+                              skippingRunning: Bool) async throws -> [String] {
+        var started: [String] = []
+        for (index, member) in group.members.enumerated() {
+            let step = progress.begin("Starting \(member.name)")
+            if skippingRunning, runningContainerNames.contains(member.name) {
+                progress.finish(step, detail: "already running")
+            } else {
+                do {
+                    if existingContainerNames.contains(member.name) {
+                        _ = try await Task.detached { [cli] in try cli.start(member.name) }.value
+                    } else {
+                        let options = member.runOptions(network: group.network)
+                        _ = try await Task.detached { [cli] in
+                            try cli.run(image: member.image, options: options,
+                                        command: member.command)
+                        }.value
+                    }
+                } catch {
+                    // Named plainly: which member, and what was already up when it stopped.
+                    progress.finish(step, detail: "failed", failed: true)
+                    throw GroupRunFailure(member: member.name, started: started,
+                                          underlying: String(describing: error))
+                }
+                started.append(member.name)
+                progress.finish(step, detail: nil)
+            }
+            if let port = member.readyPort, index < group.members.count - 1 {
+                try await waitUntilReady(member, port: port, started: started, progress: progress)
+            }
+        }
+        return started
+    }
+
+    /// Holds the group until `member` accepts connections on `port`, or says why it gave up.
+    private func waitUntilReady(_ member: GroupMember, port: Int, started: [String],
+                                progress: OperationProgress) async throws {
+        let step = progress.begin("Waiting for \(member.name) on port \(port)")
+        await refresh()
+        guard let host = Readiness.address(fromIPv4: containers.first { $0.name == member.name }?.ipv4)
+        else {
+            progress.finish(step, detail: "no address", failed: true)
+            throw GroupReadyFailure(member: member.name, port: port, outcome: .stopped,
+                                    started: started)
+        }
+        var polls = 0
+        let outcome = await Readiness.wait(
+            sleep: { try? await Task.sleep(for: .seconds($0)) },
+            isRunning: { [weak self] in
+                // The list is re-read every fifth poll: often enough to notice a database that
+                // exited on bad settings, rarely enough not to spawn a process every second.
+                guard let self else { return false }
+                polls += 1
+                guard polls % 5 == 0 else { return true }
+                await self.refresh()
+                return self.runningContainerNames.contains(member.name)
+            },
+            probe: {
+                await Task.detached { TCPProbe.accepts(host: host, port: port) }.value
+            })
+        switch outcome {
+        case .ready:
+            progress.finish(step, detail: "ready")
+        case .timedOut, .stopped:
+            progress.finish(step, detail: outcome == .stopped ? "stopped" : "no answer",
+                            failed: true)
+            throw GroupReadyFailure(member: member.name, port: port, outcome: outcome,
+                                    started: started)
+        }
     }
 
     /// What the progress panel shows as the command, since a group is several of them.
@@ -232,6 +269,30 @@ struct GroupRunFailure: Error, CustomStringConvertible {
         let prefix = "“\(member)” would not start. \(underlying)"
         guard !started.isEmpty else { return prefix }
         return "\(prefix)\n\nStill running from this group: \(started.joined(separator: ", "))."
+    }
+}
+
+/// A member started but never became ready. The rest of the group was not started, and the
+/// message says so rather than leaving it to be inferred from what is missing.
+struct GroupReadyFailure: Error, CustomStringConvertible {
+    let member: String
+    let port: Int
+    let outcome: Readiness.Outcome
+    let started: [String]
+
+    var description: String {
+        let what = switch outcome {
+        case .stopped:
+            "“\(member)” stopped before it accepted connections on port \(port). Its logs say why."
+        default:
+            "“\(member)” didn't accept connections on port \(port) within "
+                + "\(Int(Readiness.defaultTimeout / 60)) minutes. It's still running; check its logs."
+        }
+        let tail = " The services after it weren't started."
+        // A member that stopped is not "running from this group", however it started.
+        let running = outcome == .stopped ? started.filter { $0 != member } : started
+        guard !running.isEmpty else { return what + tail }
+        return what + tail + "\n\nRunning from this group: \(running.joined(separator: ", "))."
     }
 }
 

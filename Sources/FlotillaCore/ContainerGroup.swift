@@ -36,10 +36,16 @@ public struct GroupMember: Codable, Sendable, Equatable, Identifiable, Hashable 
     public var command: [String]
     public var cpus: Int?
     public var memory: String?
+    /// The port inside the container that answers once this service is ready — 5432 for
+    /// Postgres. When set, Start waits for it to accept connections before starting the next
+    /// service (Q21 amended, 6 October). The container's own port, not a published one: a
+    /// database is usually not published at all.
+    public var readyPort: Int?
 
     public init(id: String = UUID().uuidString, name: String, image: String,
                 ports: [String] = [], env: [String] = [], volumes: [String] = [],
-                command: [String] = [], cpus: Int? = nil, memory: String? = nil) {
+                command: [String] = [], cpus: Int? = nil, memory: String? = nil,
+                readyPort: Int? = nil) {
         self.id = id
         self.name = name
         self.image = image
@@ -49,6 +55,7 @@ public struct GroupMember: Codable, Sendable, Equatable, Identifiable, Hashable 
         self.command = command
         self.cpus = cpus
         self.memory = memory
+        self.readyPort = readyPort
     }
 }
 
@@ -62,10 +69,15 @@ public struct GroupMember: Codable, Sendable, Equatable, Identifiable, Hashable 
 ///
 /// Deliberately absent, and each for its own reason:
 ///
-/// - **No dependency graph and no health gating.** "Start the database, wait until it answers,
-///   then start the app" needs a supervisor that keeps watching after the last command returns.
-///   That supervisor is the thing `PLAN.md` rules out, and half of one — a fixed sleep, or a
-///   readiness check that gives up — is worse than none, because it looks like it works.
+/// - **No dependency graph and no ongoing health checks.** A supervisor that keeps watching after
+///   the last command returns is the thing `PLAN.md` rules out.
+///
+///   **Amended 6 October (Q21, the owner's call):** a service may name a `readyPort`, and *a Start
+///   the user clicked* waits for that port to accept connections before starting the next
+///   service — with a time limit and a message naming the service and port when it runs out.
+///   That is bounded by the command that asked for it: nothing watches afterwards, nothing
+///   restarts, and if Flotilla quits half way the remaining services simply are not started. It
+///   is a check that says so when it gives up, not a fixed sleep that looks like it works.
 /// - **No restart policy.** Same reason, plus `Q18`: Flotilla cannot currently observe that a
 ///   container failed, so a policy keyed on failure would be keyed on nothing.
 /// - **No `docker-compose.yml` import.** A Compose file describes `depends_on`, health checks and
@@ -90,9 +102,9 @@ public struct ContainerGroup: Codable, Sendable, Equatable, Identifiable, Hashab
     public var name: String
     /// `--network` for every member. `nil` leaves it unset, and `container` picks `default`.
     public var network: String?
-    /// Start order. The one thing ordering buys without a supervisor: a database listed first is
-    /// *launched* first, which is not the same as being *ready* first, and the UI must not
-    /// suggest otherwise.
+    /// Start order. A database listed first is *launched* first; it is *ready* first only if it
+    /// names a `readyPort`, which Start then waits for. Without one, the UI must not suggest
+    /// otherwise.
     public var members: [GroupMember]
 
     public init(id: String = UUID().uuidString, name: String,
@@ -158,6 +170,7 @@ public struct GroupBook: Sendable, Equatable {
         case duplicateMemberName(String, inGroup: String)
         case emptyImage
         case invalidImage(String)
+        case invalidReadyPort(Int)
 
         public var description: String {
             switch self {
@@ -177,6 +190,8 @@ public struct GroupBook: Sendable, Equatable {
                 "Each service needs an image."
             case .invalidImage(let image):
                 "“\(image)” is not a valid image reference. \(ValueShape.imageReference.rule)"
+            case .invalidReadyPort(let port):
+                "\(port) is not a port. Use a number from 1 to 65535."
             }
         }
     }
@@ -405,6 +420,9 @@ public struct GroupBook: Sendable, Equatable {
         guard !member.image.isEmpty else { throw GroupError.emptyImage }
         guard Allowlist.accepts(member.image, as: .imageReference)
         else { throw GroupError.invalidImage(member.image) }
+        if let port = member.readyPort, !(1...65535).contains(port) {
+            throw GroupError.invalidReadyPort(port)
+        }
     }
 }
 

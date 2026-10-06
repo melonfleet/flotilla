@@ -172,6 +172,11 @@ struct GroupFormView: View {
                 Text(member.image)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let port = member.readyPort, index < draft.members.count - 1 {
+                    Label("Next waits for port \(port)", systemImage: "hourglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             IconActionButton(systemImage: "chevron.up", label: "Move \(member.name) earlier",
@@ -314,6 +319,7 @@ struct GroupMemberFormView: View {
     @State private var command = ""
     @State private var cpus = ""
     @State private var memory = ""
+    @State private var readyPort = ""
 
     init(model: AppModel, member: GroupMember, isNew: Bool,
          problem: @escaping (String) -> String?,
@@ -333,6 +339,7 @@ struct GroupMemberFormView: View {
         _command = State(initialValue: member.command.joined(separator: " "))
         _cpus = State(initialValue: member.cpus.map(String.init) ?? "")
         _memory = State(initialValue: member.memory ?? "")
+        _readyPort = State(initialValue: member.readyPort.map(String.init) ?? "")
     }
 
     var body: some View {
@@ -379,7 +386,7 @@ struct GroupMemberFormView: View {
             FormField("Ports",
                       help: FieldHelp(
                           "Published to this Mac, one per line.",
-                          detail: "Also how the other services reach this one: there is no name resolution between containers, so an app finds a database at the network's gateway and this host port.",
+                          detail: "Other services in the group don't need a published port. With a domain in use for containers (the DNS section), they reach this one by its name; without one, at the network's gateway and this host port.",
                           example: "5432:5432\n127.0.0.1:8080:80"),
                       optional: true) {
                 linesEditor($ports, placeholder: "5432:5432")
@@ -416,6 +423,20 @@ struct GroupMemberFormView: View {
                 TextField("python -m app", text: $command)
                     .textFieldStyle(.roundedBorder)
                     .monospaced()
+            }
+
+            FormField("Ready when port answers",
+                      help: FieldHelp(
+                          "Holds the next service until this port accepts connections.",
+                          detail: "The port inside the container — 5432 for Postgres, 3306 for MySQL or MariaDB — whether or not it is published. Start waits up to two minutes and says which service it was waiting for if it gives up. Left empty, the next service starts straight away.",
+                          example: "5432",
+                          warning: "Only Start and Restart wait. Nothing watches the service afterwards or restarts it."),
+                      problem: readyPortProblem,
+                      optional: true) {
+                TextField("5432", text: $readyPort)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+                    .frame(width: 100)
             }
 
             VStack(alignment: .leading, spacing: 14) {
@@ -460,6 +481,7 @@ struct GroupMemberFormView: View {
         made.cpus = Int(cpus.trimmingCharacters(in: .whitespaces))
         let trimmedMemory = memory.trimmingCharacters(in: .whitespaces)
         made.memory = trimmedMemory.isEmpty ? nil : trimmedMemory
+        made.readyPort = Int(readyPort.trimmingCharacters(in: .whitespaces))
         return made
     }
 
@@ -473,6 +495,16 @@ struct GroupMemberFormView: View {
         let made = built
         return !made.name.isEmpty && !made.image.isEmpty
             && problem(made.name) == nil && imageProblem(made.image) == nil
+            && readyPortProblem == nil
+    }
+
+    private var readyPortProblem: String? {
+        let text = readyPort.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        guard let port = Int(text), (1...65535).contains(port) else {
+            return "Use a port number from 1 to 65535."
+        }
+        return nil
     }
 
     private var preview: some View {
