@@ -48,33 +48,26 @@ struct WindowBar: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                // Beside the logo, where Docker keeps its own — and it has to live here now:
-                // with the title bar hidden there is no toolbar to hang a `ToolbarItem` on.
-                Button {
-                    railed.toggle()
-                } label: {
-                    Image(systemName: "sidebar.leading")
-                        .frame(width: 18, height: 18)
-                }
-                .buttonStyle(IconActionButtonStyle())
-                .help(railed ? "Show the sidebar labels" : "Collapse the sidebar to icons")
-                .accessibilityLabel(railed ? "Expand sidebar" : "Collapse sidebar to icons")
+                // The sidebar toggle moved to the middle of the sidebar's edge (6 October); this
+                // keeps the wordmark the same distance from the traffic lights it had beside it.
+                Color.clear.frame(width: 18, height: 1)
 
-                Wordmark(size: 17, monochrome: Theme.onTitleBar(themes), lockup: .appName)
+                // The owner's bar (6 October): the full lockup in white, straight on the bar.
+                Wordmark(size: 16, lockup: .bar)
                     .fixedSize()          // a lockup, never wrapped
 
                 Spacer(minLength: 12)
 
-                AppLinksMenu()
-                // Beside the gear, because it is the same kind of thing — an app-level control,
-                // not a control for whatever section you happen to be on. It is also *in*
-                // Settings; this is the shortcut, and both write the one stored preference.
-                AppearanceToggleButton(model: model)
-                SettingsToolbarButton {
-                    // Through the model, not a captured binding. `pendingSection` already exists
-                    // for exactly this — the menu-bar popover drives the window's selection the
-                    // same way — and it keeps this view ignorant of how navigation is stored.
-                    model.pendingSection = .settings
+                // The three app-level controls share one capsule, the way a section's actions do.
+                BarGlass {
+                    AppLinksMenu()
+                    // Beside the gear, because it is the same kind of thing — an app-level
+                    // control. It is also *in* Settings; both write the one stored preference.
+                    AppearanceToggleButton(model: model)
+                    SettingsToolbarButton {
+                        // Through the model: `pendingSection` drives the window's selection.
+                        model.pendingSection = .settings
+                    }
                 }
             }
             .padding(.leading, trafficLightInset)
@@ -98,6 +91,25 @@ struct WindowBar: View {
         // *looks* like the place you would grab to move the window — and controls inside it keep
         // their own clicks, since a gesture on the container does not swallow a button's hit.
         .background(WindowDragArea())
+    }
+}
+
+/// A light frosted capsule on the window bar, the same on every theme: rendered in the light
+/// scheme whatever the appearance, so dark mode does not swap it for dark glass, and with the
+/// soft ink for everything inside it.
+private struct BarGlass<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GlassEffectContainer(spacing: 6) {
+            HStack(spacing: 4) { content }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .glassEffect(.regular.tint(.white.opacity(0.2)), in: .capsule)
+        }
+        .environment(\.barInk, Theme.barSoftInk)
+        .environment(\.colorScheme, .light)
+        .fixedSize()
     }
 }
 

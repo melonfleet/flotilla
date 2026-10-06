@@ -17,7 +17,7 @@ import FlotillaCore
 /// 3. **Nothing is remembered.** The result lives in the view for as long as the window is open.
 enum UpdateCheck {
     /// Whether this process has already asked. The automatic check is **once per launch**, so
-    /// this is what stops "at launch" quietly becoming "every time the Dashboard appears".
+    /// this is what stops "at launch" quietly becoming "every time This Mac's page appears".
     @MainActor static var hasCheckedThisLaunch = false
 
     /// The last answer, so leaving the Dashboard and coming back shows what was already learned

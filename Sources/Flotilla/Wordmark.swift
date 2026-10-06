@@ -40,7 +40,10 @@ struct Wordmark: View {
     /// **A melon `o` in "Flotilla" was tried and rejected the same day.** In the bar's single ink
     /// its four rings merge into a solid dot at 17pt and the word reads "Fl•tilla"; the owner asked
     /// for an ordinary `o`. Do not reintroduce it on the bar.
-    enum Lockup { case full, appName }
+    /// `.bar`: the window bar's lockup (the owner, 6 October) — `melonfleet` bold in rind green,
+    /// a rule, then `flotilla` lowercase in a light weight, all in fixed colours because it sits on
+    /// a light glass capsule that looks the same on every theme.
+    enum Lockup { case full, appName, bar }
     var lockup: Lockup = .full
 
     @Environment(\.colorScheme) private var colorScheme
@@ -95,7 +98,38 @@ struct Wordmark: View {
         case .appName:
             Text("Flotilla").font(brandFont).foregroundStyle(appInk)
                 .accessibilityLabel("Flotilla")
+        case .bar: barLockup
         }
+    }
+
+    private func brandFont(weight: Font.Weight, face: String) -> Font {
+        NSFont(name: face, size: size) != nil
+            ? .custom(face, size: size)
+            : .system(size: size, weight: weight)
+    }
+
+    /// rind `#1B5E20`, the brand's own wordmark green.
+    static let rindGreen = Color(red: 0x1B / 255, green: 0x5E / 255, blue: 0x20 / 255)
+
+    private var barLockup: some View {
+        let bold = brandFont(weight: .bold, face: "Ubuntu Bold")
+        // White straight on the bar (the owner, 6 October, after trying it on glass). A faint
+        // shadow keeps it legible on the pale canary bar, where white alone measures 1.6:1.
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("mel").font(bold).foregroundStyle(.white)
+            melon
+            Text("nfleet").font(bold).foregroundStyle(.white)
+            RoundedRectangle(cornerRadius: size * 0.035)
+                .fill(.white.opacity(0.6))
+                .frame(width: max(1, size * 0.06), height: size)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - size * (11.0 / 72.0) }
+                .padding(.horizontal, size * 0.32)
+            Text("flotilla").font(brandFont(weight: .light, face: "Ubuntu Light"))
+                .foregroundStyle(.white)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 1.2, y: 0.5)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("melonfleet flotilla")
     }
 
     private var fullLockup: some View {

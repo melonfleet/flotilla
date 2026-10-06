@@ -1708,3 +1708,27 @@ The owner's answers:
   group, so a Suggestions stack created without a DNS domain now gets a network with a fixed
   `--subnet` — the first `192.168.N.0/24` from N = 100 that no network or interface uses — which a
   restart cannot move. Name-wired stacks need no address and are unchanged.
+
+## Q31 — The fleet redesign: navigation and the window bar (settled 2026-10-06)
+
+The owner re-phased the project around fleet mode (PLAN.md, rewritten the same day). Phase A, built:
+
+- **Sidebar: one flat list, thin dividers, no headings** — Overview | Containers, Images,
+  Registries, Volumes, Networks, DNS, Machines, Clusters | Hosts | Activity, Logs. Containers first,
+  as Docker does: this is a containers application. Supersedes the grouped sidebar (Containers /
+  Virtualisation headings) and Activity/Logs at the top.
+- **Collapsed to icons by default**, remembered once changed (`@AppStorage("sidebarRailed")`); the
+  toggle is a small handle in the middle of the sidebar's edge, not in the window bar.
+  `check-defaults.sh` now guards the new default.
+- **Overview replaces Dashboard**: fleet numbers only — hosts and their state, totals across hosts,
+  what needs attention (runtime down, a disconnected network, containers in an unknown state). It
+  loads the lists it counts rather than showing zeros on a fresh launch.
+- **Hosts** is new: one card per host — today only This Mac — whose page is the old per-Mac
+  dashboard, with Back. Runtime activity now leads there.
+- **Window bar** (reverses Q23's "the bar shows Flotilla alone"): the lockup `melonfleet` bold
+  (with the watermelon o) | `flotilla` lowercase light, **in white** straight on the bar with a
+  faint shadow — the owner tried it on light glass and preferred white. Measured: white alone is
+  1.6:1 on the canary bar; the shadow keeps it legible, and canary is the weakest theme for it. The
+  links, appearance and settings buttons share one **light glass capsule** (white tint 20%) with a
+  soft ink (seed at 72%) instead of near-black, rendered in the light scheme so it is the same on
+  every theme.

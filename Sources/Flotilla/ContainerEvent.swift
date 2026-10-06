@@ -51,7 +51,7 @@ extension ActivityKind {
         case .volume: .volumes
         case .network: .networks
         // The runtime banner lives on the dashboard, so that is where a runtime row leads.
-        case .runtime: .dashboard
+        case .runtime: .hosts
         case .registry: .registries
         case .dns: .dns
         }

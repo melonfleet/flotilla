@@ -16,8 +16,11 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
     // it moved out of Settings because it is something you manage, not something you set once.
     // `dns` sits under Networks (6 October): a local domain is how containers are found by name,
     // which is a networking question — and the competitor that prompted it files it there too.
-    case dashboard, activity, logs, containers, images, registries, volumes, networks, dns,
-         machines, clusters, settings
+    // `overview` replaced `dashboard` and `hosts` arrived on 6 October (the owner's fleet
+    // redesign): Overview is fleet numbers only; each host's page — the old dashboard — is under
+    // Hosts.
+    case overview, activity, logs, containers, images, registries, volumes, networks, dns,
+         machines, clusters, hosts, settings
 
     var id: Self { self }
 
@@ -29,7 +32,8 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .dashboard: "Dashboard"
+        case .overview: "Overview"
+        case .hosts: "Hosts"
         case .activity: "Activity"
         case .logs: "Logs"
         case .containers: "Containers"
@@ -46,7 +50,9 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
-        case .dashboard: "gauge.with.dots.needle.bottom.50percent"
+        // Verified present, per the `ellipsis.vertical` incident.
+        case .overview: "square.grid.2x2"
+        case .hosts: "desktopcomputer"
         // Verified to exist before use, per the `ellipsis.vertical` incident.
         case .logs: "text.alignleft"
         case .activity: "clock.arrow.circlepath"

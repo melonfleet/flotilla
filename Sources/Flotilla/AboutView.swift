@@ -99,8 +99,8 @@ struct AboutView: View {
                     + (launchCheckEnabled
                        ? "\"Check for new releases at launch\" is ON, so this runs once each "
                          + "time Flotilla starts, and whenever you click the version in the "
-                         + "Dashboard's corner. Turn it off in Settings → Updates."
-                       : "It runs only when you click the version in the Dashboard's corner — "
+                         + "corner of This Mac's page in Hosts. Turn it off in Settings → Updates."
+                       : "It runs only when you click the version in the corner of This Mac's page in Hosts — "
                          + "never at launch, unless you turn on \"Check for new releases at "
                          + "launch\" in Settings → Updates.")
             )

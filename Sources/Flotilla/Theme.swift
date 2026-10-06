@@ -34,6 +34,11 @@ import FlotillaCore
 ///   `Color(red:green:blue:)` freezes one appearance into the other — the same class of mistake
 ///   as hardcoding a `preferredColorScheme`.
 enum Theme {
+    /// The window bar's soft ink (the owner, 6 October): seed at 72% — the bar's text and glyphs,
+    /// on their light glass capsules, without the near-black he found too heavy. Fixed across
+    /// every theme because the capsule behind it is.
+    static let barSoftInk = Color(red: 0x24 / 255, green: 0x1F / 255, blue: 0x1A / 255).opacity(0.72)
+
 
     // MARK: Brand — quoted from branding.md
 

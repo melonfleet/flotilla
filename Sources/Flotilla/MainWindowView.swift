@@ -39,7 +39,7 @@ struct MainWindowView: View {
     @State private var dnsUI = ResourceUIState<LocalDNSDomain>(
         sortOrder: [KeyPathComparator(\LocalDNSDomain.nameSortKey)])
 
-    @State private var selection: Section? = .dashboard
+    @State private var selection: Section? = .overview
 
     /// Icons-only mode — what collapsing the sidebar means here.
     ///
@@ -47,7 +47,9 @@ struct MainWindowView: View {
     /// for this window: with the navigation gone every section is two clicks away behind a
     /// button that looks like it broke the app. The owner asked for a rail instead, so the intent
     /// is **reinterpreted** rather than the control removed — see `columnVisibility`.
-    @State private var railed = false
+    ///
+    /// **Collapsed by default** (the owner, 6 October), and remembered once changed.
+    @AppStorage("sidebarRailed") private var railed = true
 
     /// Pinned to `.all`, deliberately.
     ///
@@ -100,55 +102,29 @@ struct MainWindowView: View {
             // built from an OCI image out of the same store a container runs from — the
             // machine's `alpine:3.22` and the image list's `alpine:3.22` are the same digest.
             // Filing Images under "Containers" said otherwise.
+            // One flat list with thin dividers between its blocks (the owner, 6 October):
+            // Overview | what containers are made of and run on | Hosts | what happened.
+            // Containers first, as Docker does — this is a containers application.
             SwiftUI.Section {
-                row(.dashboard, count: nil)
-                // Activity spans every kind below, so it belongs in the ungrouped block with
-                // Dashboard and Images rather than under any one section's heading.
-                row(.activity, count: model.activity.isEmpty ? nil : model.activity.count)
-                // Beside Activity, and above the per-kind groups, because it spans every kind:
-                // Activity is what *changed*, Logs is what things *said*.
-                row(.logs, count: nil)
-                row(.images, count: model.imagesState == .loaded ? model.images.count : nil)
-                // Under Images, where images come from (the owner, 5 October). The list is local,
-                // so its count is always known.
-                row(.registries, count: model.registryRows.count)
+                row(.overview, count: nil)
             }
-
-            // Volumes and Networks, by contrast, really are container-only, and that was worth
-            // checking against the CLI rather than assuming: `container run` takes `--volume`
-            // and `--network`, and `machine create` takes **neither** — a machine's storage is
-            // its disk image plus `--home-mount`, and its address comes from the runtime's own
-            // vmnet bridge rather than from a network you created. So they stay here, under the
-            // thing they actually attach to.
-            group("Containers") {
+            SwiftUI.Section {
                 row(.containers, count: model.state == .loaded ? model.containers.count : nil)
+                row(.images, count: model.imagesState == .loaded ? model.images.count : nil)
+                row(.registries, count: model.registryRows.count)
                 row(.volumes, count: model.volumesState == .loaded ? model.volumes.count : nil)
                 row(.networks, count: model.networksState == .loaded ? model.networks.count : nil)
-                // Under Networks (6 October): how containers find each other by name.
                 row(.dns, count: model.dnsState == .loaded ? model.dnsDomains.count : nil)
-            }
-
-            // Its own group: a machine is the VM containers run inside, not another resource
-            // alongside them. Grouping it with images and volumes would imply otherwise.
-            group("Virtualisation") {
                 row(.machines, count: model.machinesState == .loaded ? model.machines.count : nil)
-                // Beside Machines, because a cluster *is* a virtual machine — a kind node booted
-                // by `container k8s`. Not under Containers: nothing you run from this app goes
-                // into one, you reach it with kubectl.
                 row(.clusters, count: model.clustersState == .loaded ? model.clusters.count : nil)
             }
-
-            // **No Hosts group until Phase 2.** The mockup shows eight hosts; there was exactly
-            // one, and a single unselectable row is not navigation — it is a status readout
-            // wearing navigation's clothes, which is the "control that drives nothing" this
-            // project keeps re-learning. `hostRow`'s own docstring conceded as much.
-            //
-            // Nothing is lost: the dashboard's Hosts card carries the same dot with more detail
-            // (containers *and* machines running), the runtime banner explains an unhealthy
-            // runtime where you can act on it, the menu-bar popover shows This Mac with live
-            // CPU and memory, and the sidebar footer states the mode and pairing posture
-            // continuously. Bring the group back when there are peers to switch between and the
-            // row has somewhere to go — the owner's call, 18 August.
+            SwiftUI.Section {
+                row(.hosts, count: 1)
+            }
+            SwiftUI.Section {
+                row(.activity, count: model.activity.isEmpty ? nil : model.activity.count)
+                row(.logs, count: nil)
+            }
 
             // **No System group.** Settings moved to the gear at the window's trailing edge
             // (`WindowBar`), on the owner's reasoning that the left nav should list the things you
@@ -170,6 +146,22 @@ struct MainWindowView: View {
         // visible without being asked for, and out of the way of the things you manage.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             RuntimeStatusBand(model: model, railed: railed)
+        }
+        // The collapse control, in the middle of the sidebar's edge (the owner, 6 October) —
+        // moved from the window bar, where it sat beside the logo.
+        .overlay(alignment: .trailing) {
+            Button { railed.toggle() } label: {
+                Image(systemName: railed ? "chevron.compact.right" : "chevron.compact.left")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14, height: 40)
+                    .background(.regularMaterial, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 2)
+            .help(railed ? "Show the sidebar labels" : "Collapse the sidebar to icons")
+            .accessibilityLabel(railed ? "Expand sidebar" : "Collapse sidebar to icons")
         }
     }
 
@@ -220,22 +212,6 @@ struct MainWindowView: View {
         .tag(section)
     }
 
-    /// A sidebar group, with its heading dropped in rail mode.
-    ///
-    /// Not cosmetic: at 64pt the headings render as "Contai…" and "Virtual…" — headings that no
-    /// longer name anything. The **grouping** survives without them, because the sections still
-    /// draw as separated blocks, so the rail keeps the structure and loses only the words.
-    @ViewBuilder
-    private func group<Content: View>(
-        _ title: String, @ViewBuilder content: () -> Content
-    ) -> some View {
-        if railed {
-            SwiftUI.Section { content() }
-        } else {
-            SwiftUI.Section(title) { content() }
-        }
-    }
-
     /// The section itself, shared by both shells so there is one switch on the selection rather
     /// than one per navigation mode — two copies would be free to disagree about which view a
     /// section maps to.
@@ -257,15 +233,18 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private var sectionContent: some View {
-        switch selection ?? .dashboard {
+        switch selection ?? .overview {
         case .activity:
             ActivityView(model: model, ui: activityUI) { selection = $0 }
         case .logs:
             LogsView(model: model, ui: logsUI)
-        case .dashboard:
-            // The tiles drill down, so the dashboard needs to drive the sidebar selection —
-            // a panel that shows you a problem but cannot take you to it is a poster.
-            DashboardView(model: model) { selection = $0 }
+        case .overview:
+            // The tiles drill down, so Overview drives the sidebar selection — a panel that
+            // shows you a problem but cannot take you to it is a poster.
+            OverviewView(model: model) { selection = $0 }
+        case .hosts:
+            // Each host's landing page is the per-Mac dashboard (6 October).
+            HostsView(model: model) { selection = $0 }
         case .containers:
             ContainersView(model: model, ui: containersUI)
         case .images:

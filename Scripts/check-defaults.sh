@@ -29,10 +29,10 @@ require() {   # require <file> <exact line, trimmed>
     fi
 }
 
-require Sources/Flotilla/MainWindowView.swift    '@State private var selection: Section? = .dashboard'
+require Sources/Flotilla/MainWindowView.swift    '@State private var selection: Section? = .overview'
 # The window opens with its labels showing. A `railed = true` default is the icons-only
 # screenshot scaffold, and it looks exactly like a broken sidebar.
-require Sources/Flotilla/MainWindowView.swift    '@State private var railed = false'
+require Sources/Flotilla/MainWindowView.swift    '@AppStorage("sidebarRailed") private var railed = true'
 require Sources/Flotilla/MachinesView.swift      '@State private var showingCreate = false'
 require Sources/Flotilla/MachinesUIState.swift   'var presentation: MachinesView.Presentation = .list'
 require Sources/Flotilla/ContainersUIState.swift 'var presentation: ContainersView.Presentation = .list'
