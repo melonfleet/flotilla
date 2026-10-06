@@ -1643,7 +1643,9 @@ Mine, for the owner to see:
 ### Q29 continued — export and import in the app (2026-10-06)
 
 - **Export:** File ▸ Export Configuration… (⇧⌘E) opens an embedded checklist over the selected
-  section — everything ticked, a live list of what will be left out in the rail — and a group's
+  section — **nothing ticked to start, with Select All and Clear All at the top and no per-section
+  All/None** (the owner, 6 October) — and a live list of what will be left out in the rail, worked
+  out from whatever is ticked — and a group's
   row menu and screen have "Save to File…", which saves the group with its network and the volumes
   it mounts. Both write the same `.flotilla` file.
 - **Import:** File ▸ Import Configuration… (⇧⌘I), or a double-click in Finder — the bundle now

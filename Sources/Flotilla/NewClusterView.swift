@@ -41,7 +41,7 @@ struct NewClusterView: View {
         .onAppear {
             if let prefill {
                 name = ResourceSuggestions.uniqueName(prefill.baseName,
-                                                      taken: Set(model.clusters.map(\.cluster)))
+                                                      taken: Set(model.clusters.map(\.name)))
                 limitResources = true
                 cpus = String(prefill.cpus)
                 memory = prefill.memory

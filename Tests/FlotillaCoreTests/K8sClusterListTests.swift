@@ -130,3 +130,13 @@ private func fixture(_ name: String) throws -> String {
     #expect(node?.cpus == 4)
     #expect(node?.memory == "2048 MB")
 }
+
+@Test("a cluster is named by its cluster column, or by its node when that is empty")
+func clusterName() {
+    let single = K8sNode(cluster: "", node: "dev-cluster", roles: ["control-plane"], state: "running",
+                         cpus: 2, memory: "4096 MB", address: "192.168.64.11", ports: [])
+    #expect(single.name == "dev-cluster")
+    let named = K8sNode(cluster: "dev", node: "dev-control-plane", roles: ["control-plane"], state: "running",
+                        cpus: 2, memory: "4096 MB", address: "192.168.64.11", ports: [])
+    #expect(named.name == "dev")
+}

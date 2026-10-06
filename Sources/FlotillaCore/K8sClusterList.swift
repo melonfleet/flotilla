@@ -24,6 +24,11 @@ public struct K8sNode: Sendable, Equatable, Identifiable, Hashable {
 
     public var id: String { cluster.isEmpty ? node : "\(cluster)/\(node)" }
 
+    /// The cluster's name: the `cluster` column, or the node's when that is empty — as it is for
+    /// the single-node clusters 1.5 makes, whose node is named after the cluster. Reading
+    /// `cluster` alone gave the export screen a blank row (6 October).
+    public var name: String { cluster.isEmpty ? node : cluster }
+
     public var isRunning: Bool { state.caseInsensitiveCompare("running") == .orderedSame }
 
     /// The node's memory as `k8s create --memory` takes it: the list prints `4096 MB`, the flag wants

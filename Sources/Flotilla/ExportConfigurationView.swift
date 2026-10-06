@@ -3,8 +3,8 @@ import FlotillaCore
 
 /// File ▸ Export Configuration… — the checklist (DECISIONS Q29).
 ///
-/// Embedded with Back, like every form since 9 August. Everything starts ticked: "everything" is
-/// the common case, and unticking is quicker than finding what to tick. The rail says what the file
+/// Embedded with Back, like every form since 9 August. **Nothing starts ticked** (the owner, 6
+/// October), with Select All and Clear All at the top. The rail says what the file
 /// will hold and, before anything is written, **everything that will be left out** — a file that
 /// quietly builds something different on the other Mac is the failure this screen exists to avoid.
 struct ExportConfigurationView: View {
@@ -22,7 +22,14 @@ struct ExportConfigurationView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Export Configuration", systemImage: "square.and.arrow.up",
-                       hasUnsavedChanges: false, onBack: dismiss)
+                       hasUnsavedChanges: false, onBack: dismiss) {
+                // The owner's layout (6 October): nothing ticked to start, and these two at the
+                // top rather than an All/None on every section.
+                Button("Select All") { selection = everything }
+                    .disabled(inputs == nil || selection == everything)
+                Button("Clear All") { selection = ConfigurationExport.Selection() }
+                    .disabled(selection == ConfigurationExport.Selection())
+            }
             Divider()
             if let inputs {
                 FormScaffold {
@@ -47,7 +54,7 @@ struct ExportConfigurationView: View {
     /// cluster's node is the cluster.
     private func standalone(_ inputs: ConfigurationExport.Inputs) -> [Container] {
         let members = Set(inputs.groups.flatMap(\.memberNames))
-        let nodes = Set(inputs.clusters.map(\.cluster))
+        let nodes = Set(inputs.clusters.map(\.name))
         return inputs.containers.filter { !members.contains($0.id) && !nodes.contains($0.id) }
             .sorted { $0.id < $1.id }
     }
@@ -71,7 +78,7 @@ struct ExportConfigurationView: View {
              detail: { _ in "created empty" }, set: \.volumes)
         kind("Machines", ids: inputs.machines.map(\.id), titles: [:],
              detail: { id in inputs.machines.first { $0.id == id }?.image?.reference }, set: \.machines)
-        kind("Clusters", ids: Array(Set(inputs.clusters.map(\.cluster))).sorted(), titles: [:],
+        kind("Clusters", ids: Array(Set(inputs.clusters.map(\.name))).sorted(), titles: [:],
              detail: { _ in "on the default node image" }, set: \.clusters)
 
         VStack(alignment: .leading, spacing: 8) {
@@ -89,16 +96,7 @@ struct ExportConfigurationView: View {
                       set: WritableKeyPath<ConfigurationExport.Selection, Set<String>>) -> some View {
         if !ids.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    FormSectionHeader(title: title)
-                    Spacer()
-                    let all = Set(ids).isSubset(of: selection[keyPath: set])
-                    Button(all ? "None" : "All") {
-                        selection[keyPath: set] = all ? [] : Set(ids)
-                    }
-                    .buttonStyle(.link)
-                    .foregroundStyle(Theme.link)
-                }
+                FormSectionHeader(title: title)
                 ForEach(ids, id: \.self) { id in
                     Toggle(isOn: Binding(get: { selection[keyPath: set].contains(id) },
                                          set: { on in
@@ -146,6 +144,9 @@ struct ExportConfigurationView: View {
     private func summary(_ file: ConfigurationFile) -> String {
         var lines: [String] = []
         func add(_ count: Int, _ noun: String) { if count > 0 { lines.append("\(count) \(noun)\(count == 1 ? "" : "s")") } }
+        func add(_ count: Int, _ singular: String, _ plural: String) {
+            if count > 0 { lines.append("\(count) \(count == 1 ? singular : plural)") }
+        }
         add(file.groups.count, "group")
         add(file.containers.count, "container")
         add(file.networks.count, "network")
@@ -153,7 +154,7 @@ struct ExportConfigurationView: View {
         add(file.machines.count, "machine")
         add(file.clusters.count, "cluster")
         if let tags = file.tags { add(tags.definitions.count, "tag") }
-        if let registries = file.registries { add(registries.entries.count, "registry") }
+        if let registries = file.registries { add(registries.entries.count, "registry", "registries") }
         if let dns = file.dns { add(dns.domains.count, "DNS domain") }
         return lines.isEmpty ? "Nothing yet — tick something." : lines.joined(separator: "\n")
     }
@@ -177,19 +178,26 @@ struct ExportConfigurationView: View {
 
     // MARK: Actions
 
-    private func load() async {
-        let gathered = await model.gatherExportInputs()
+    /// Every box ticked — what Select All sets. Computed from what this Mac has.
+    private var everything: ConfigurationExport.Selection {
+        guard let gathered = inputs else { return ConfigurationExport.Selection() }
         var all = ConfigurationExport.Selection()
         all.groups = Set(gathered.groups.map(\.id))
         all.containers = Set(standalone(gathered).map(\.id))
         all.networks = Set(gathered.networks.filter { !$0.isBuiltin }.map(\.id))
         all.volumes = Set(gathered.volumes.map(\.name))
         all.machines = Set(gathered.machines.map(\.id))
-        all.clusters = Set(gathered.clusters.map(\.cluster))
+        all.clusters = Set(gathered.clusters.map(\.name))
         all.tags = true
         all.registries = true
         all.dns = !gathered.dnsDomains.isEmpty
-        selection = all
+        return all
+    }
+
+    /// Nothing ticked to start (the owner, 6 October): the user picks what goes in the file.
+    private func load() async {
+        let gathered = await model.gatherExportInputs()
+        selection = ConfigurationExport.Selection()
         inputs = gathered
     }
 

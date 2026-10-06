@@ -37,7 +37,7 @@ extension AppModel {
         existing.networks = Set(networks.map(\.id))
         existing.volumes = Set(volumes.map(\.name))
         existing.machines = Set(machines.map(\.id))
-        existing.clusters = Set(clusters.map(\.cluster))
+        existing.clusters = Set(clusters.map(\.name))
         existing.dnsDomains = Set(dnsDomains.filter(\.resolverInstalled).map(\.name))
         return existing
     }

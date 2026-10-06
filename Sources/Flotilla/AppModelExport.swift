@@ -31,12 +31,18 @@ extension AppModel {
             references.sorted().compactMap { try? cli.inspectImage($0) }
         }.value
 
+        // `machine list` does not say what a machine was built from; `machine inspect` does.
+        let listed = machines
+        let inspectedMachines = await Task.detached { [cli] in
+            listed.map { machine in (try? cli.inspectMachine(machine.id)) ?? machine }
+        }.value
+
         var inputs = ConfigurationExport.Inputs()
         inputs.containers = containers
         inputs.groups = groups.book.groups
         inputs.networks = networks
         inputs.volumes = volumes
-        inputs.machines = machines
+        inputs.machines = inspectedMachines
         inputs.clusters = clusters
         inputs.images = images
         inputs.tags = tags.book

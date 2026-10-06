@@ -95,11 +95,11 @@ public enum ConfigurationExport {
                                    homeMount: machine.homeMount.flatMap(HomeMountMode.init(rawValue:)))
             }
 
-        let clusterNames = Set(inputs.clusters.map(\.cluster))
+        let clusterNames = Set(inputs.clusters.map(\.name))
         let clusters = clusterNames.sorted()
             .filter { selection.clusters.contains($0) }
             .map { name -> ClusterSpec in
-                let node = inputs.clusters.first { $0.cluster == name }
+                let node = inputs.clusters.first { $0.name == name }
                 return ClusterSpec(name: name, cpus: node?.cpus, memory: node?.memoryFlag)
             }
 
