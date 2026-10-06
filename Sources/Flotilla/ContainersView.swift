@@ -1327,23 +1327,11 @@ struct ContainersView: View {
                         }
                         // A few Suggestions, as decided: an empty list is where a ready-made
                         // stack is most useful.
-                        VStack(spacing: 4) {
-                            Text("Or start from a suggestion:")
-                                .font(.caption).foregroundStyle(.secondary)
-                            HStack(spacing: 12) {
-                                ForEach(StackSuggestion.catalogue.prefix(3)) { stack in
-                                    Button(stack.title) {
-                                        suggestionPick = stack
-                                        showingSuggestions = true
-                                    }
-                                    .buttonStyle(.link)
-                                    .foregroundStyle(Theme.link)
-                                }
-                                Button("More…") { suggestionPick = nil; showingSuggestions = true }
-                                    .buttonStyle(.link)
-                                    .foregroundStyle(Theme.link)
-                            }
-                        }
+                        SuggestionQuickPicks(
+                            picks: StackSuggestion.catalogue.prefix(3).map { stack in
+                                (stack.title, { suggestionPick = stack; showingSuggestions = true })
+                            },
+                            more: { suggestionPick = nil; showingSuggestions = true })
                     }
                 }
             }

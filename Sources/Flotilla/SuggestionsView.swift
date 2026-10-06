@@ -328,3 +328,61 @@ struct StackFormView: View {
         Task { await model.createStack(stack, choices: chosen) }
     }
 }
+
+/// Suggestions for Volumes, Networks and Clusters: the same gallery as Containers', where "Use…"
+/// opens the section's own create form, filled in (Q28).
+struct ResourceSuggestionsGallery<Suggestion: ResourceSuggestion>: View {
+    let intro: String
+    let items: [Suggestion]
+    let use: (Suggestion) -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FormHeader(title: "Suggestions", systemImage: "sparkles",
+                       hasUnsavedChanges: false, onBack: dismiss)
+            Divider()
+            // No `fixedSize(vertical:)` here — see `SuggestionsView`.
+            Text(intro)
+                .font(.callout).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.top, 12)
+            ResourceCardGrid {
+                ForEach(items) { item in
+                    ResourceCard(title: item.title,
+                                 fields: [("About", item.summary)] + item.details.map { ($0.0, Optional($0.1)) },
+                                 showsTags: false,
+                                 onOpen: { use(item) }) {
+                        Button("Use…") { use(item) }
+                            .controlSize(.small)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// The empty-state row every section shares: a few suggestions by name, and "More…".
+struct SuggestionQuickPicks: View {
+    /// Title and action for each pick shown.
+    let picks: [(title: String, action: () -> Void)]
+    let more: () -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("Or start from a suggestion:")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                ForEach(Array(picks.enumerated()), id: \.offset) { _, pick in
+                    Button(pick.title, action: pick.action)
+                        .buttonStyle(.link)
+                        .foregroundStyle(Theme.link)
+                }
+                Button("More…", action: more)
+                    .buttonStyle(.link)
+                    .foregroundStyle(Theme.link)
+            }
+        }
+    }
+}

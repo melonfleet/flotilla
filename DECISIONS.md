@@ -1561,3 +1561,24 @@ Networks, Machines and Clusters follow.
 - **Bug found building it:** the gallery's description used `fixedSize(vertical:)` and opening the
   screen blanked the whole window — bar, sidebar and all. Same family as "one unbounded child can
   scroll the whole window"; found by bisecting.
+
+### Q28 continued — Suggestions for Volumes, Networks and Clusters (2026-10-06)
+
+Iris's "include" lists, as decided: **Volumes** — PostgreSQL, MySQL/MariaDB and MongoDB data at a
+10 GB ceiling (sparse: allocated as used), each card saying where to mount it; **Networks** —
+Application, Frontend tier and a Host-only backend (`--internal`, named as Apple names it);
+**Clusters** — Starter (2 CPUs, 2 GB), Standard (4, 8 GB) and Disposable (`--rm`), all on the node
+image `container` 1.5 itself defaults to, pinned by tag and digest.
+
+- **No new forms.** Each is one create command, so "Use…" opens the section's **own** create form,
+  filled in, with the name moved past anything that exists. Everything stays editable, and Back
+  from an untouched filled-in form asks nothing. The "+" in each section became a menu (New… and
+  Suggestions…), and each empty state offers its suggestions by name, through one shared
+  `SuggestionQuickPicks` — Containers uses it too.
+- **Cards follow the owner's card rule**: one line of text per row, and every card of a kind has
+  the same rows (the volumes' "Older versions" row is "same path" where nothing changed).
+- **Live-tested:** the PostgreSQL volume came out at exactly 10 GiB; the backend network as
+  `hostOnly`. The Starter cluster's filled-in form was checked but **not created**: a cluster
+  writes `~/.kube/config` and may switch kubectl's current context, which is the owner's working
+  setup. Its command is the CLI's own default spelled out, and every suggestion's argv is tested
+  against the Allowlist.

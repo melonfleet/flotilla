@@ -18,6 +18,8 @@ struct ClustersView: View {
 
     @State private var selection = Set<K8sNode.ID>()
     @State private var showingCreate = false
+    @State private var showingSuggestions = false
+    @State private var createPrefill: ClusterSuggestion?
     @State private var pendingDelete: K8sNode?
     /// A recreate awaiting confirmation. Recreate deletes the cluster and everything in it, so it
     /// always asks, whatever `confirmDestructiveActions` says — the same rule bulk deletes follow.
@@ -34,7 +36,15 @@ struct ClustersView: View {
     var body: some View {
         Group {
             if showingCreate {
-                NewClusterView(model: model) { showingCreate = false }
+                NewClusterView(model: model, dismiss: { showingCreate = false; createPrefill = nil },
+                               prefill: createPrefill)
+            } else if showingSuggestions {
+                ResourceSuggestionsGallery(
+                    intro: "Single-node clusters sized for common work, on Kubernetes 1.35 with "
+                        + "the node image pinned. Use one to open New Cluster with it filled in.",
+                    items: ClusterSuggestion.catalogue,
+                    use: useSuggestion,
+                    dismiss: { showingSuggestions = false })
             } else if let target = loadImageTarget {
                 LoadImageView(model: model, cluster: target) { loadImageTarget = nil }
             } else {
@@ -149,6 +159,12 @@ struct ClustersView: View {
         .background(Theme.warning.opacity(0.10))
     }
 
+    private func useSuggestion(_ suggestion: ClusterSuggestion) {
+        createPrefill = suggestion
+        showingSuggestions = false
+        showingCreate = true
+    }
+
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search clusters…",
@@ -162,8 +178,10 @@ struct ClustersView: View {
                 columns: Self.columnSpecs,
                 filters: [])
         }, trailing: {
-            ToolbarIconButton(systemImage: "plus", label: "Create a cluster…") {
-                showingCreate = true
+            ToolbarIconMenu(systemImage: "plus", label: "Create a cluster") {
+                Button("New Cluster…") { createPrefill = nil; showingCreate = true }
+                Divider()
+                Button("Suggestions…") { showingSuggestions = true }
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh clusters") {
                 Task { await model.refreshClusters() }
@@ -217,8 +235,15 @@ struct ClustersView: View {
                 if isFiltered {
                     Button("Clear Search") { ui.search = "" }
                 } else {
-                    Button("Create Cluster") { showingCreate = true }
-                        .buttonStyle(.borderedProminent)
+                    VStack(spacing: 14) {
+                        Button("Create Cluster") { createPrefill = nil; showingCreate = true }
+                            .buttonStyle(.borderedProminent)
+                        SuggestionQuickPicks(
+                            picks: ClusterSuggestion.catalogue.map { suggestion in
+                                (suggestion.title, { useSuggestion(suggestion) })
+                            },
+                            more: { showingSuggestions = true })
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

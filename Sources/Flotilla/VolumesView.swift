@@ -25,6 +25,10 @@ struct VolumesView: View {
     /// up each render, so a deleted one becomes an explanation rather than stale data.
     @State private var detailTarget: DetailTarget?
     @State private var newVolumeName = ""
+    /// Suggestions (Q28): the gallery, and — once one is used — where its volume should be
+    /// mounted, said in the form because a volume at the wrong path stores nothing.
+    @State private var showingSuggestions = false
+    @State private var suggestedMount: String?
     @State private var newSize = ""
     @State private var newLabels: [String] = []
     @State private var newDriverOptions: [String] = []
@@ -49,6 +53,13 @@ struct VolumesView: View {
         Group {
             if showingCreate {
                 createScreen
+            } else if showingSuggestions {
+                ResourceSuggestionsGallery(
+                    intro: "Volumes sized and named for common databases. Use one to open New "
+                        + "Volume with it filled in — change anything before you create it.",
+                    items: VolumeSuggestion.catalogue,
+                    use: useSuggestion,
+                    dismiss: { showingSuggestions = false })
             } else if let target = detailTarget {
                 detailScreen(target)
             } else {
@@ -156,9 +167,8 @@ struct VolumesView: View {
                 columns: Self.columnSpecs,
                 filters: volumeFilters)
         }, trailing: {
-            ToolbarIconButton(systemImage: "plus", label: "Create a volume…") {
-                newVolumeName = ""
-                showingCreate = true
+            ToolbarIconMenu(systemImage: "plus", label: "Create a volume") {
+                addMenuItems
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh volumes") {
                 Task { await model.refreshVolumes() }
@@ -325,8 +335,15 @@ struct VolumesView: View {
                 if isFiltered {
                     Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
                 } else {
-                    Button("New Volume…") { showingCreate = true }
-                        .buttonStyle(.borderedProminent)
+                    VStack(spacing: 14) {
+                        Button("New Volume…") { openNewVolume() }
+                            .buttonStyle(.borderedProminent)
+                        SuggestionQuickPicks(
+                            picks: VolumeSuggestion.catalogue.map { suggestion in
+                                (suggestion.title, { useSuggestion(suggestion) })
+                            },
+                            more: { showingSuggestions = true })
+                    }
                 }
             }
 
@@ -775,8 +792,38 @@ struct VolumesView: View {
         .onAppear { edits.open(editSignature) }
     }
 
+    @ViewBuilder
+    private var addMenuItems: some View {
+        Button("New Volume…") { openNewVolume() }
+        Divider()
+        Button("Suggestions…") { showingSuggestions = true }
+    }
+
+    private func openNewVolume() {
+        newVolumeName = ""
+        newSize = ""
+        suggestedMount = nil
+        showingCreate = true
+    }
+
+    private func useSuggestion(_ suggestion: VolumeSuggestion) {
+        newVolumeName = ResourceSuggestions.uniqueName(suggestion.baseName,
+                                                       taken: Set(model.volumes.map(\.name)))
+        newSize = suggestion.size
+        suggestedMount = suggestion.mountPath
+        // A filled-in form is the starting point, not an edit: Back from it asks nothing.
+        edits = FormEditTracker()
+        showingSuggestions = false
+        showingCreate = true
+    }
+
     private var createForm: some View {
         VStack(alignment: .leading, spacing: 20) {
+            if let suggestedMount {
+                Label("Mount it in the container at \(suggestedMount).", systemImage: "info.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             FormField("Name",
                       help: FieldHelp(
                           "What the volume is called, and how you mount it into a container.",

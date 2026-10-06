@@ -8,6 +8,8 @@ import FlotillaCore
 struct NewClusterView: View {
     let model: AppModel
     let dismiss: () -> Void
+    /// Set when a suggestion opened the form (Q28): its values fill the fields.
+    var prefill: ClusterSuggestion?
 
     @State private var name = ""
     @State private var limitResources = false
@@ -36,7 +38,18 @@ struct NewClusterView: View {
             Divider()
             footer
         }
-        .onAppear { edits.open(editSignature) }
+        .onAppear {
+            if let prefill {
+                name = ResourceSuggestions.uniqueName(prefill.baseName,
+                                                      taken: Set(model.clusters.map(\.cluster)))
+                limitResources = true
+                cpus = String(prefill.cpus)
+                memory = prefill.memory
+                nodeImage = prefill.nodeImage
+                autoRemove = prefill.disposable
+            }
+            edits.open(editSignature)
+        }
     }
 
     private var form: some View {

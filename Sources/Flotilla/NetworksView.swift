@@ -11,6 +11,8 @@ struct NetworksView: View {
 
     @State private var search = ""
     @State private var showingCreate = false
+    @State private var showingSuggestions = false
+    @State private var createPrefill: NetworkSuggestion?
     /// Which network the detail screen is showing, and optionally which tab to open it on.
     private struct DetailTarget: Identifiable, Hashable {
         let id: String
@@ -32,7 +34,15 @@ struct NetworksView: View {
     var body: some View {
         Group {
             if showingCreate {
-                NewNetworkView(model: model) { showingCreate = false }
+                NewNetworkView(model: model, dismiss: { showingCreate = false; createPrefill = nil },
+                               prefill: createPrefill)
+            } else if showingSuggestions {
+                ResourceSuggestionsGallery(
+                    intro: "Networks for common layouts. Use one to open New Network with it "
+                        + "filled in — change anything before you create it.",
+                    items: NetworkSuggestion.catalogue,
+                    use: useSuggestion,
+                    dismiss: { showingSuggestions = false })
             } else if let target = detailTarget {
                 detailScreen(target)
             } else {
@@ -110,6 +120,12 @@ struct NetworksView: View {
         }
     }
 
+    private func useSuggestion(_ suggestion: NetworkSuggestion) {
+        createPrefill = suggestion
+        showingSuggestions = false
+        showingCreate = true
+    }
+
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search networks…",
@@ -133,8 +149,10 @@ struct NetworksView: View {
                 columns: Self.columnSpecs,
                 filters: Self.roleFilters)
         }, trailing: {
-            ToolbarIconButton(systemImage: "plus", label: "Create a network…") {
-                showingCreate = true
+            ToolbarIconMenu(systemImage: "plus", label: "Create a network") {
+                Button("New Network…") { createPrefill = nil; showingCreate = true }
+                Divider()
+                Button("Suggestions…") { showingSuggestions = true }
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh networks") {
                 Task { await model.refreshNetworks() }
@@ -303,8 +321,15 @@ struct NetworksView: View {
                 if isFiltered {
                     Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
                 } else {
-                    Button("New Network…") { showingCreate = true }
-                        .buttonStyle(.borderedProminent)
+                    VStack(spacing: 14) {
+                        Button("New Network…") { createPrefill = nil; showingCreate = true }
+                            .buttonStyle(.borderedProminent)
+                        SuggestionQuickPicks(
+                            picks: NetworkSuggestion.catalogue.map { suggestion in
+                                (suggestion.title, { useSuggestion(suggestion) })
+                            },
+                            more: { showingSuggestions = true })
+                    }
                 }
             }
 
@@ -624,6 +649,8 @@ struct NewNetworkView: View {
     /// own `isPresented` binding is the single source of truth for whether it is open, and
     /// two mechanisms for closing one thing is how a sheet gets stuck.
     let dismiss: () -> Void
+    /// Set when a suggestion opened the form (Q28): its values fill the fields.
+    var prefill: NetworkSuggestion?
 
     @State private var newNetworkName = ""
     @State private var newSubnet = ""
@@ -666,7 +693,14 @@ struct NewNetworkView: View {
             Divider()
             footer
         }
-        .onAppear { edits.open(editSignature) }
+        .onAppear {
+            if let prefill {
+                newNetworkName = ResourceSuggestions.uniqueName(prefill.baseName,
+                                                                taken: Set(model.networks.map(\.id)))
+                newInternal = prefill.hostOnly
+            }
+            edits.open(editSignature)
+        }
     }
 
     private var form: some View {
