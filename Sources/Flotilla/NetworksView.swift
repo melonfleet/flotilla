@@ -50,6 +50,8 @@ struct NetworksView: View {
                     toolbar
                     bulkActionBar
                     Divider()
+                    // apple/container#2051: a network that has lost its bridge (Q30).
+                    DisconnectedNetworksBanner(model: model)
                     content
                 }
                 // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or

@@ -965,6 +965,8 @@ struct ContainersView: View {
                     toolbar
                     bulkActionBar
                     Divider()
+                    // apple/container#2051: a network that has lost its bridge (Q30).
+                    DisconnectedNetworksBanner(model: model)
                     content
                     ActivityStrip(title: "Recent activity",
                                   entries: activityEntries,

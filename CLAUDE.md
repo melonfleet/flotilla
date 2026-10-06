@@ -340,6 +340,13 @@ that we *built* the right command; almost nothing checked the command was
   right-click → Delete with no dialog, two lines from a trash button that always asked. The audit
   missed it; reading the five sites side by side did not.
 
+- **`fixedSize(horizontal: false, vertical: true)` in a screen's top band blanks the whole window.**
+  Not the screen — the *window*: bar, sidebar and all, with nothing logged. It happened twice on 6
+  October, in the Suggestions gallery's description and in the disconnected-network banner, and
+  both times the fix was the same: let the text wrap under a `lineLimit`, and give the screen
+  `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)`. The same family as "one
+  unbounded child can scroll the whole window". Found by bisecting; a blank window with an idle
+  main thread is the signature.
 - **A deadlock regression test hangs; it does not fail.** `LocalHost` read stdout to EOF before
   touching stderr, which deadlocks any child that fills the stderr pipe buffer (64 KiB on Darwin).
   Three hundred tests were green because every one of them uses a scripted host that never opens a

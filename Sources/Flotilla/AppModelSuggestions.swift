@@ -72,9 +72,17 @@ extension AppModel {
                 }
                 if case .new = choices.network {
                     let step = progress.begin("Creating network \(networkName)")
+                    // Gateway wiring writes the gateway's address down, so the network gets a fixed
+                    // subnet that a restart cannot move (Q30). Name wiring needs no address.
+                    var options = ContainerCLI.NetworkOptions()
+                    if stackWiringDomain == nil {
+                        let used = networks.compactMap(\.subnet) + Array(HostInterfaces.ipv4Addresses())
+                        options.subnet = StackPlanner.freeSubnet(used: used)
+                    }
+                    let networkOptions = options
                     do {
                         _ = try await Task.detached { [cli] in
-                            try cli.createNetwork(networkName, options: .init())
+                            try cli.createNetwork(networkName, options: networkOptions)
                         }.value
                     } catch {
                         progress.finish(step, detail: "failed", failed: true)

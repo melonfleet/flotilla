@@ -1683,3 +1683,28 @@ Mine, for the owner to see:
   New DNS Domain… (no shortcut — ⌃⌘D is the system's Look Up), and File ▸ Suggestions with each
   section's gallery, DNS included. A menu request closes an open Export or Import screen so the
   form it asked for is what shows.
+
+## Q30 — A network can lose its bridge (apple/container#2051), and a subnet can move (settled 2026-10-06)
+
+The morning's "networks break after a service restart" reduced to a known runtime bug:
+**apple/container#2051**, open since August, **still present in 1.5.0** (reproduced with its own
+steps). Two networks can be handed the same kernel bridge; when one's last container stops, the
+bridge goes and the other network has no gateway on the Mac — its containers reach each other but
+nothing else, and its published ports are dead though the forwarder listens. Only a runtime restart
+recovers it. Full notes: research/CONTAINER-UPGRADE-1.5.0.md. A second finding: network subnets can
+move across a restart (`default` and a network made without `--subnet` swapped /24s).
+
+The owner's answers:
+
+- **Comment upstream** — posted on #2051, confirming 1.5.0, the default-network and published-port
+  symptom, and the subnet swap.
+- **Detect it and offer a restart.** `NetworkHealth.disconnected` (core, tested) flags a network
+  that has running containers but whose gateway address is on none of this Mac's interfaces
+  (`getifaddrs`); a network with nothing running has no bridge by design and is never flagged, and
+  nothing is flagged until both lists have loaded. A banner on Networks and Containers names the
+  network, says what it means, links the issue, and offers Restart container with the usual warning.
+  Live-tested by triggering the bug: it named exactly the broken network.
+- **Pin the subnet for gateway-wired stacks.** Gateway wiring writes the gateway's address into the
+  group, so a Suggestions stack created without a DNS domain now gets a network with a fixed
+  `--subnet` — the first `192.168.N.0/24` from N = 100 that no network or interface uses — which a
+  restart cannot move. Name-wired stacks need no address and are unchanged.

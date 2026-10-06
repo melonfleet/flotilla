@@ -89,22 +89,37 @@ authentication challenge is refused, with no exemption for `localhost`. The same
 well, so an HTTP registry is only usable anonymously. Flotilla now offers no Sign In for an HTTP
 registry and will not add a required one over HTTP (DECISIONS Q26).
 
-**Networks can stop carrying traffic after the service restarts (observed 6 October, not yet
-reported upstream).** After `container system stop` / `start`:
+**Networks can lose their bridge — apple/container#2051, still present in 1.5.0 (observed and
+reduced 6 October).** Each network's kernel bridge (`bridge100`, `bridge101`, …) is created when
+the network's first container starts and destroyed when its last one stops. A network is given its
+bridge *number* at its first start, and if network B first starts while network A's bridge is down,
+**both are given the same number**. When both have containers they share one bridge carrying only
+one of their gateway addresses; when either's last container stops, the bridge is destroyed under
+the other. The surviving network then has no gateway on the Mac at all — its containers still reach
+each other, but cannot reach the gateway or the internet, the Mac cannot route to them, and their
+**published ports do not answer although the port-forwarder is listening**. Only restarting the
+runtime recovers it.
 
-1. containers on the custom networks that existed before the restart (`shop-net`) could not reach
-   their gateway or each other, and their published ports did not answer. The `default` network and
-   networks created after the restart worked.
-2. After those custom networks were deleted and recreated, the **`default` network** broke instead.
-   A brand-new container on it, publishing `127.0.0.1:8099:80`, did not answer on the port, and
-   another container on `default` could not fetch it by name. A new container on a newly created
-   network worked (`:8098` → 200).
+- **What this Mac showed** before any experiment: no host address for the `default` network's
+  `192.168.64.0/24` and no route to it; the default network's containers were members of
+  `bridge100`, which carried `shop-net`'s `192.168.70.1`. That is the morning's "default network
+  broke", and the earlier "custom networks stopped carrying traffic" is the same bug the other way
+  round.
+- **Reproduced on 1.5.0** with the issue's own steps (throwaway `fx-ra`/`fx-rb`): with containers on
+  both, one bridge, carrying B's address; kill B's container and the bridge is gone, and A's
+  container's connection to `1.1.1.1:443` times out.
+- **A restart repaired it** here, as the issue says; four further attempts at ordinary use (restart;
+  restart and recreate a network; containers started in sequence and all at once) all stayed
+  healthy — it needs the specific first-start ordering.
+- **A second finding, not in the issue: network subnets can move across a restart.** `default` and a
+  custom network created without `--subnet` swapped `192.168.64.0/24` and `192.168.65.0/24`
+  (networks with containers that had run, like `shop-net`, kept theirs). Restarted containers take
+  addresses in the new subnet, so anything that wrote a **gateway address** down — Suggestions'
+  gateway wiring (Q28) — would point at the wrong network afterwards. Related, open:
+  apple/container#1836 (container IPs change on restart), #1740 (sticky IPs).
 
-The runtime's port-forwarder process was listening each time, so the fault is in the network path,
-not the forward. This matters to Flotilla, whose Restart button and network Delete can trigger it,
-and a container that "is running" but cannot be reached is the hardest kind of fault to read. The
-demo now gives every group its own network. To do: reduce it to a minimal reproduction, check it
-against apple/container's issues, and report it (TODO.md).
+Nothing to file: #2051 is open with a deterministic reproduction. A comment confirming 1.5.0 is
+worth adding — with the owner's OK. What Flotilla should do is in TODO.md.
 
 **Container DNS names work, once the domain is configured** (also 6 October; DECISIONS, groups
 section). Containers created *before* `[dns] domain` was set did not get names; recreated ones did.
