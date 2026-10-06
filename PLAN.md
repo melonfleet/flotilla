@@ -8,36 +8,40 @@ for managing containers on the local Mac and across a small fleet of remote Macs
 Each remote Mac runs the same app in host mode.
 
 Flotilla communicates Swift-to-Swift over Network.framework with mTLS. Bonjour
-handles discovery on a flat LAN; manual hostname/IP + port entry is mandatory for
-routed or segmented networks. It does not use the macOS `ssh` binary, expose a
-generic shell, or attempt to be Kubernetes.
+handles discovery on a flat LAN; manual hostname/IP and port entry is mandatory
+for routed or segmented networks. It does not use the macOS `ssh` binary, expose
+a generic remote shell, or attempt to be Kubernetes.
 
-**Status (2026-07-31):** Phase 1 is close to complete and the app is genuinely
-usable. `FlotillaCore` has the full CLI surface behind the Q1 `Allowlist` and an
-injectable `MountPolicy`, models pinned to real captured output, a settings registry
-that now persists, and stats sampling. The app ships as a real signed bundle with the
-whole navigation shell, a validated run sheet, and a container detail window.
-**183 tests pass on macOS**; the Foundation-only core still builds and tests on Linux
-via `Package@swift-6.1.swift`.
+**Status (2026-10-06):** the Phase 1 local app is essentially complete and has
+been brought up to Apple `container` 1.5.0. The Foundation-only core, local
+execution boundary, settings, diagnostics, navigation and local management
+surfaces are built. Phase B networking is not: there is still no `Wire`,
+`RemoteHost`, Network.framework transport, mTLS listener, Bonjour advertisement
+or persisted host policy store.
 
-See the Phase 1 progress note below for what remains. Phase 2 networking and the
-stateful host runtime have not been built — and per `research/ALLOWLIST-AUDIT.md` the
-allowlist is **not** yet trustworthy as the complete Phase 2 wire boundary, so that is
-a prerequisite rather than a detail.
-
-The scope below is the settled, consolidated plan from `DECISIONS.md`,
-`PHASE1.md`, and `research/FEATURES.md`. Earlier phase summaries are superseded.
+The roadmap has been re-phased around the work agreed on 6 October. Phases A and
+E can progress alongside the host and fleet work.
 
 ## Branding and appearance
 
-The approved visual language is the watermelon identity: pink for
-brand/selection, green for healthy/running, and a separate semantic error colour.
-The menu-bar symbol is monochrome. Liquid Glass belongs on chrome and control
-clusters, while data-heavy tables remain opaque.
+The approved visual language is the watermelon identity. Melon colours belong
+on the chrome, backgrounds, charts, status and wordmark. Controls follow macOS:
+the system accent supplies buttons, selection and focus, and the system link
+colour supplies links. A separate semantic error colour remains required.
 
-Appearance is chosen during first run. `Auto` is preselected and follows the
-system; light and dark are both first-class. The watermelon accent is the single
-accent colour in either appearance.
+Light and dark are both first-class. `Auto` is preselected during first run and
+follows the system. A theme changes the window bar and content background only;
+tables remain opaque, and glass is reserved for chrome and control clusters.
+
+Phase A changed the window-bar lockup to **melonfleet** in bold, with the
+watermelon o, a thin divider, and **flotilla** in lower-case light weight — in
+white, straight on the bar, with a faint shadow (the owner tried a light-glass
+capsule and preferred white). White alone measures 1.6:1 on the Canary bar; the
+shadow keeps it legible, and Canary is its weakest theme. The links, dark-mode
+and settings buttons share one translucent light-glass capsule with soft ink,
+the same on every theme. See DECISIONS Q31.
+
+The menu-bar symbol remains a monochrome template image.
 
 ## Architecture
 
@@ -48,233 +52,412 @@ Flotilla.app  (one app, client/host/both modes)
 │   ├── ContainerCLI
 │   ├── ContainerHost
 │   │   ├── LocalHost   → Process
-│   │   └── RemoteHost  → Phase 2 mTLS connection
-│   ├── Allowlist       → permitted subcommands + argument schemas
+│   │   └── RemoteHost  → Phase B mTLS connection
+│   ├── Allowlist       → permitted subcommands and argument schemas
 │   ├── MountPolicy     → allowed host bind-mount roots
+│   ├── WirePolicy      → commands a remote peer may reach
 │   ├── Settings        → typed registry and managed precedence
 │   ├── Diagnostics
-│   ├── Wire            → Phase 2 framing/messages
-│   └── Transport       → Phase 2 Network.framework/mTLS
+│   ├── Wire            → Phase B framing and messages
+│   └── Transport       → Phase B Network.framework and mTLS
 ├── Client UI
-│   ├── MenuBarExtra + main window
+│   ├── MenuBarExtra and main window
 │   ├── local and remote hosts through ContainerHost
-│   └── table-first aggregate container view
-└── Stateful host runtime
-    ├── mTLS listener + Bonjour advertisement
-    ├── peer/certificate authorization
-    ├── persisted policy and per-host settings store
-    └── validated local CLI execution
+│   └── fleet-wide resource tables
+├── Stateful host runtime
+│   ├── mTLS listener and Bonjour advertisement
+│   ├── peer and certificate authorisation
+│   ├── persisted policy and per-host settings store
+│   └── validated local CLI execution
+└── Privileged DNS helper  (Phase D)
+    ├── SMAppService daemon approved during enrolment
+    ├── DNS create/delete only
+    └── accepts only the Developer ID-signed Flotilla app
 ```
 
 Host mode is deliberately **stateful**. Its persisted policy store is required
-for per-host settings and, in Phase 4, restart/health loops that continue when the
-client laptop disconnects.
+for per-host settings and, later, restart and health loops that continue when the
+admin Mac disconnects.
 
 Every execution path uses the same boundary:
 
 1. `ContainerCLI` creates an argument array.
-2. `Allowlist` validates the subcommand and argument schema; `MountPolicy`
-   validates host paths.
+2. `Allowlist` validates the subcommand and argument schema. `MountPolicy`,
+   `ExecPolicy` and `WirePolicy` apply their separate restrictions.
 3. `LocalHost` executes locally, or `RemoteHost` sends the validated shape over
    the wire.
 4. The host validates again before spawning `container`.
 
-The Q1 wire shape is the settled middle path: **CLI args passthrough constrained
-by a default-deny subcommand allowlist**. The protocol must also bound frame
-length, concurrency, and deadlines. It never accepts an arbitrary command string,
-but it does not require a new typed RPC for every CLI operation.
+The settled wire shape is CLI argument passthrough constrained by a default-deny
+subcommand allowlist. The protocol also bounds frame length, concurrency and
+deadlines. It never accepts an arbitrary command string and does not require a
+new typed RPC for every CLI operation.
+
+A host peer must construct its `ContainerCLI` with `.remotePeer`. Before Phase B
+ships, every command receives an owner review of its
+`CommandSpec.exposure`; valid syntax alone does not make a command safe for a
+remote administrator.
 
 ## Tech stack
 
 - Swift 6.2+ and SwiftUI on macOS 26, Apple Silicon only.
-- Foundation-only `FlotillaCore`, also buildable/testable with Swift 6.1 on Linux.
+- Foundation-only `FlotillaCore`, also buildable and testable with Swift 6.1 on
+  Linux.
 - Network.framework for mTLS transport and Bonjour.
-- SwiftData for local history. The persisted host policy store is required, but
-  its storage implementation is not settled here.
-- Swift Charts once Phase 4 has real streaming data.
+- SwiftData for local history. The host policy store is required, but its storage
+  implementation is not settled here.
+- SwiftTerm for the local PTY terminal; it remains the only third-party
+  dependency and is attached to the macOS app only.
+- Swift Charts when fleet streaming supplies real continuous data.
 - Sparkle for unmanaged updates; Jamf for managed minis.
-- Keychain for identities and trust material.
-- No App Sandbox for v1; use hardened runtime, Developer ID, notarization, and
+- Keychain for identities, trust material and saved group secrets.
+- No App Sandbox for v1. Use hardened runtime, Developer ID, notarisation and
   minimal entitlements.
 
 ## Build phases
 
-### Phase 1 — Local MVP and shared foundation
+### Phase 1 — Local app and shared foundation
 
-Phase 1 is the **consolidated** scope, not the old “grid + a few buttons”
-one-liner.
+Phase 1 is essentially complete. The app now covers the local `container` 1.5.0
+surface through the common validation boundary.
 
-Core runtime:
+Core and local resource management include:
 
-- Decode real `container --format json` for containers, images, stats, system
-  status, versions, volumes, and networks where JSON exists.
-- Complete lifecycle and image operations through `ContainerCLI`: run, start,
-  stop, restart, kill, delete, pull, delete/prune/tag/inspect, plus bounded logs.
-- Add volume and network list/create/delete/inspect/prune, and the `system df`
-  disk view.
-- Keep the allowlisted args-passthrough boundary and `MountPolicy` default-deny
-  behavior on every operation.
-- Provide numeric snapshot stats in Phase 1; live sparklines wait for Phase 4.
-- Read `config.toml`-backed properties in Phase 1; do not edit the file yet.
+- Captured JSON models for containers, images, stats, system status, versions,
+  volumes and networks.
+- Container lifecycle, bounded and live logs, inspect, processes, terminal
+  execution and file browsing, download and upload.
+- Images with pull, progress, tag, delete, prune, inspect and build.
+- Volumes and networks with list, create, delete, inspect, detail and prune.
+- Machines and the provisional local-only Kubernetes cluster family.
+- Snapshot stats, `system df`, preflight, missing-kernel remediation and runtime
+  fault reporting.
+- Tags, Activity, the global Logs surface and sortable table/card resource
+  views.
+- The default-deny `Allowlist`, injectable `MountPolicy`, local-only
+  `ExecPolicy`, `WirePolicy`, command deadlines and bounded process output.
 
-App and UX:
+Work completed since the 31 July plan includes:
 
-- Ship a running-first, sortable table as the default container view, with cards
-  as an alternate toggle.
-- Keep `MenuBarExtra(.window)` shallow and provide a main window for the full
-  interface.
-- Add search/filtering, multi-select bulk actions, run sheet with live command
-  preview, logs/inspect, images, and a combined System surface for volumes and
-  networks.
-- Implement onboarding and preflight: detect CLI presence/version/service/kernel,
-  show inline remediation, and require visible user authorization for package
-  installation.
-- Support Menu bar / Dock / Both presentation and accessible light/dark UI.
+- A previewable, redacted support bundle with a user-chosen destination and no
+  upload.
+- Launch at login through `SMAppService`.
+- Separate preference and window-layout resets. Host/trust reset remains
+  disabled until host identity exists.
+- An About and Privacy view listing every network destination.
+- Clickable published ports and volume and network detail screens.
+- Progress surfaces for long operations and previews for destructive prune
+  operations.
+- Working per-category notifications.
+- Groups as saved run configurations, shown as expandable rows in Containers.
+  A user-started group may wait up to two minutes for a member's configured
+  ready port before starting the next member.
+- A real local terminal, live logs and the Files tab.
+- Image build and registry catalogue, sign-in and sign-out flows.
+- Suggestions for groups, volumes, networks, machines, clusters and DNS.
+- The DNS section: local domains, container-domain configuration and the
+  narrowly authorised administrator flow for DNS creation and deletion.
+- Versioned `.flotilla` configuration export and reviewed import for groups or a
+  whole Mac. It exports definitions, not volume data, image layers or running
+  state.
+- Detection of the `container` network-bridge fault from
+  apple/container#2051, with warnings on affected container and network
+  surfaces.
+- The 1.5.0 Kubernetes changes, missing-kernel check and HTTP-registry
+  restrictions.
 
-Settings, security, and operations:
+Phase 1 leftovers are assigned to Phase E:
 
-- Use the typed settings registry with precedence:
-  `locked` → user → managed `defaults` → built-in.
-- Represent “appearance not chosen yet” separately from “user chose Auto.”
-- Include poll intervals, CLI integration, container defaults, log limits, host
-  settings, update channel, diagnostics choice, and full per-category
-  notification toggles. Mandatory error notifications remain enabled.
-- Establish the security baseline now: hardened-runtime/notarization hygiene,
-  minimal entitlements, structured logging with no secrets, and explicit no
-  telemetry/account/activation.
-- Complete local diagnostics and a previewable, redacted support bundle with no
-  upload. Redaction must remove secrets, certificate material, identifiers, and
-  absolute user paths.
-- Define separate reset semantics for preferences, host/trust state, and window
-  layout.
+- A ⌘K command palette.
+- `is:` and `image:` search grammar.
+- Passes for Reduce Motion, Reduce Transparency and Increase Contrast.
+- A guided Apple `.pkg` installation flow. Today Flotilla links to Apple's
+  releases page and leaves installation to the user.
+- A general `config.toml` view. DNS already edits only `[dns] domain`, preserving
+  every other byte.
+- `--rosetta` and `--arch` in Run.
 
-**Current Phase 1 progress (2026-07-31).**
+Three boundaries are deliberate:
 
-Done: core models (pinned to real captures), local execution spine, allowlist,
-mount policy, settings registry with **persistence**, diagnostics components, the
-full CLI surface (mutations, volumes, networks, bounded logs, kill, inspect, prune,
-tag, `system df`), preflight, and the whole navigation shell — Containers with
-sortable/hideable columns, per-row actions, context menus everywhere, bulk actions,
-CPU/memory columns, cards with sparklines; Images; Volumes; Networks; Settings; the
-run sheet with a validated live command preview; and a container detail window with
-Overview / Processes / Logs / Inspect / Configuration.
+- Compose is not going to happen. Apple has no Compose object, and implementing
+  one would make Flotilla an orchestrator.
+- Groups are not an orchestrator beyond Q21's user-initiated, start-time ready
+  wait. There is no `depends_on`, ongoing health watch or group restart policy.
+- General interactive `exec` over the wire is not going to happen. The local
+  terminal is authorised for this Mac's owner; forwarding the same grammar to a
+  remote host would be general remote code execution.
 
-Also now real rather than declared: appearance, first-run onboarding, auto-refresh,
-the menu-bar/Dock setting, and notifications — all four were settings driving
-nothing. And there is an **app bundle** (`Scripts/make-app.sh`), which is what
-unblocked the last three.
+### Phase A — Look and navigation
 
-Still unfinished:
+Rebuild the window shell before fleet data makes the existing hierarchy harder
+to change.
 
-- **Diagnostics**: the snapshot, error log and redaction components exist; the
-  previewable redacted support-bundle flow does not.
-- **Launch at login** (`SMAppService`) — the bundle makes it possible; not wired.
-- **Separate reset semantics** for preferences, host/trust state and window layout.
-- **`config.toml`** is declared in the registry but not read.
-- **About/Privacy view** listing every network destination.
-- **⌘K palette** and the `is:`/`image:`/`host:` search grammar.
-- **Clickable ports** and detail views for volumes and networks (both are immutable,
-  so these are read-only by necessity — there is no `update` command for either).
-- **Progress for long operations** (pull has none), and prune previewing what dies.
-- **Accessibility passes**: Increase Contrast, Reduce Transparency, Reduce Motion,
-  VoiceOver wording.
-- **The Xcode project**: hardened runtime, Developer ID, notarization. The bundle
-  script is deliberately not this.
+**Built 6 October (DECISIONS Q31).**
 
-Two things that are *not* going to happen, and why, so nobody re-proposes them:
-Compose (Apple has no Compose object; building one makes Flotilla an orchestrator)
-and a general interactive `exec` in the Phase 2 grammar (it is remote code
-execution; see `research/DOCKER-PORTABILITY.md`).
+- Use the white `melonfleet | flotilla` lockup described above.
+- Put links, dark-mode and settings into one translucent light-glass capsule on
+  the right, with soft ink on every theme.
+- Replace grouped sidebar cards with a flat list and thin dividers between these
+  blocks:
 
-### Phase 2 — Stateful host mode + client mode over mTLS
+  ```text
+  Overview
+  ─────────────────
+  Containers
+  Images
+  Registries
+  Volumes
+  Networks
+  DNS
+  Machines
+  Clusters
+  ─────────────────
+  Hosts
+  ─────────────────
+  Activity
+  Logs
+  ```
 
-- Add the protocol framing, handshake and capability negotiation (design not published),
-  and explicit request lifecycle.
-- Carry CLI argument arrays only inside the Q1 allowlisted boundary. Validate on
-  both sides and enforce frame, argument, concurrency, and deadline limits.
-- Design client-to-host stdin/resize frames and binary frames now so Phase 4 exec
-  and future transfer work do not break deployed protocol versions.
-- Build the mutually-authenticated transport and per-device identities,
-  two-sided pairing, peer allowlist, immediate revocation, Bonjour discovery, and
-  manual host entry.
-- Add `RemoteHost` while keeping `ContainerCLI` semantics shared with `LocalHost`.
-- Add the persisted host policy/settings store and typed per-host settings
+- Start with the sidebar collapsed to icons.
+- Move its collapse control out of the window bar and onto the middle of the
+  sidebar edge.
+- Replace Dashboard with Overview. Overview shows fleet numbers only: connected
+  hosts and their states, resource totals and things needing attention.
+- Add Hosts immediately, initially containing only **This Mac**.
+- Make the This Mac landing page the current per-Mac dashboard. Its CPU, memory,
+  disk, runtime and local resource information does not belong on fleet
+  Overview.
+- Keep settings behind the window-bar control rather than adding it to the
+  sidebar.
+
+### Phase B — Host mode over mTLS
+
+Build the stateful host runtime and its remote client path.
+
+- Define bounded protocol framing, version and capability negotiation, explicit
+  request lifecycle and failure semantics.
+- Carry only validated CLI argument arrays. Validate on both sides and enforce
+  frame, argument, concurrency and deadline limits before spawning.
+- Reserve compatible framing for later bounded streams and binary operations
+  without exposing a generic shell.
+- Review every `CommandSpec.exposure` with the owner. A syntactically valid
+  command is not remotely available until that review admits it through
+  `WirePolicy`.
+- Build mutual TLS with a unique per-device identity, explicit two-sided pairing,
+  peer allowlists, immediate revocation and closed live sessions after
+  revocation.
+- Keep discovery separate from identity. Support Bonjour and mandatory manual
+  hostname/IP and port entry through the same trust flow.
+- Add `RemoteHost` while preserving the same `ContainerCLI` semantics used by
+  `LocalHost`.
+- Add the persisted host policy and settings store, with typed per-host
   get/set messages. Mode itself is never remotely switchable.
-- Keep host-mode UI minimal: listener state, identity/fingerprint, peers, recent
-  commands, and a control to stop accepting connections.
-- Acceptance criterion: safe Phase 1 feature parity through a remote host without
-  adding per-operation RPC types.
+- Provide a minimal host-mode UI: listener state, address, identity and
+  fingerprint, peers, recent commands and a control to stop accepting
+  connections.
+- Distinguish connecting, unreachable, untrusted and version-mismatched hosts in
+  the UI.
+- Preserve immediate local control and a manual re-pair recovery path.
 
-### Phase 3 — Fleet view
+Testing proceeds in two steps:
 
-- Aggregate containers from local and remote hosts in one table with a Host
-  column, grouping, search, staleness, and cached offline data.
-- Add fleet sidebar/status rollups, host detail, trust management, host
-  tags/groups, and per-host identity/settings overrides.
-- Implement adaptive polling; `container` has no event stream.
-- Add version-skew warnings, cross-host bulk actions, fan-out image pulls, and
-  partial-failure reporting.
-- Support safe host/settings import and export without private keys.
-- Add validated local `config.toml` editing. Remote editing remains deferred
-  unless evidence shows it is necessary.
+1. macOS VMs exercise pairing, mTLS, framing, UI, rejection, revocation and
+   version paths without launching containers.
+2. The physical M1 Mac mini exercises real remote list, create, lifecycle, logs
+   and other approved commands.
 
-### Phase 4 — Live streaming + exec + host policy loops
+The acceptance criterion is safe local-feature parity through a remote host for
+every command approved by the exposure review.
 
-- Add live log/stat streams over persistent connections and render sparklines only
-  for visible data.
-- Add interactive `container exec` with a real PTY, fresh visible authorization,
-  bounded lifetime/concurrency, and no transcript logging by default.
-- Implement restart policy and health checks on the **host peer**, backed by its
-  persisted policy store, so policies survive client disconnects.
-- Add read-only-first file browsing/download and host-aware bind-mount/port
-  editing. Upload and broader transfer can follow.
+### Phase C — Fleet-wide tables
 
-### Phase 5 — Auto-updates
+Turn the local resource surfaces into fleet surfaces.
 
-- Integrate Sparkle 2 for unmanaged Macs with HTTPS appcast, Ed25519 artifact
-  signatures, Developer ID, notarization, and release verification.
-- Separate check/download/install controls and obtain first-run consent for update
-  checks.
-- Add a host-safe update interruption point: stop new mutations, finish bounded
-  work, persist consistent state, relaunch, and re-run preflight.
+- Every resource section lists items from all connected hosts.
+- Every table gains a Host column and host filter.
+- Every create form gains a Host picker.
+- Overview shows real connected-host states, resource totals and attention
+  counts.
+- Hosts provides per-host status, identity, versions, settings, trust,
+  last-seen time, disk use and resource counts.
+- Activity records actions performed from this admin Mac, including host
+  addition and removal, deployments and cross-host operations.
+- Logs is global, with a Host column. It fetches bounded tails when viewed rather
+  than maintaining an unbounded central log store.
+- Hosts and their containers keep producing their own logs while disconnected.
+  Reconnection fetches only the requested bounded tail.
+- Cache the last successful result and show its age when a host is stale or
+  offline rather than replacing it with an empty table.
+- Use adaptive polling and back off unreachable hosts.
+- Show app, wire and `container` version skew before an incompatible action is
+  attempted.
+- Add fan-out image pulls to selected or all hosts.
+- Report per-host progress and partial failures for every fan-out operation.
+- Keep trust state distinct from connection state.
+- Support safe host and settings export without private keys. Imported
+  fingerprints remain claims to verify, not automatic trust.
+- Keep cross-host actions explicit about the hosts and objects affected.
+
+### Phase D — Pushed infrastructure
+
+Build pushed infrastructure in three layers. Each layer must be useful without
+assuming the next one exists.
+
+#### Layer 1 — Shared definitions
+
+- Define network, volume and domain definitions once on the admin Mac.
+- Preview changes before pushing the same definitions to selected hosts.
+- Report drift, per-host results and partial failures.
+- Treat volumes as empty definitions. This does not move volume data.
+- Treat identically named networks as separate private networks on each Mac.
+- Give every host its own address block and every network an explicit subnet
+  from it — for example one `/20` per host from an inventoried `10.240.0.0/12`,
+  checked against LAN, VPN and Kubernetes ranges first (Iris, 6 October). This
+  replaces the interim pick from `192.168.100.0/24` upward that gateway-wired
+  Suggestions use today, and keeps a future routed overlay possible.
+
+#### Layer 2 — Fleet DNS
+
+- Give fleet resources names that resolve on every enrolled host.
+- Resolve a local container to its local address.
+- Resolve a container on another host through that host's published ports,
+  tracked by Flotilla.
+- Detect missing or stale published-port mappings and report them rather than
+  returning a misleading address.
+- Install a privileged host helper as an `SMAppService` daemon.
+- Ask the host owner to approve it once during enrolment.
+- Limit it to DNS create and delete operations.
+- Accept requests only from Flotilla's Developer ID-signed app.
+- Do not turn it into a general privileged command runner.
+
+This narrowly amends decision 19. Direct app execution remains limited to the
+existing password-prompted DNS commands; the helper exists only so enrolled
+hosts can maintain fleet DNS without a person approving every individual
+change. Developer ID signing is therefore a dependency.
+
+#### Layer 3 — Cross-host network, if feasible
+
+Research a true cross-host overlay in
+`experiments/cross-host-network-2026-10-06`.
+
+Do not promise or ship an overlay unless the experiment establishes a secure,
+supportable design. In `container` 1.5, container networks are private to each
+Mac. Without Layer 3, all cross-host container traffic uses host-published ports,
+including traffic reached through fleet DNS.
+
+### Phase E — Release preparation
+
+Phase E can run alongside Phases B–D, although the Phase D helper depends on its
+signing work.
+
+- Check signing on the M3 development Mac. One `check-signing` step requires the
+  owner's Apple credentials.
+- Move the app to an Xcode project.
+- Configure the hardened runtime, minimal entitlements, Developer ID signing,
+  notarisation and stapling.
+- Sign and verify every nested executable and dependency.
+- Package a beta only after clean-install and upgrade checks pass.
+  `v1.5.0.0-beta.2` was the planned tag; reconsider the label before creating
+  it.
+- Rewrite the test plan around the new phases, physical-host boundary,
+  privileged helper and release gates.
+- Add wiki links to form rails only for the release candidate. They are
+  deliberately held until then so unfinished documentation does not become UI.
+- Capture current demo screenshots after the Phase A shell is settled.
+- Complete the Phase 1 leftovers: ⌘K, `is:`/`image:` search, the accessibility
+  passes, guided `.pkg` installation, a general `config.toml` view and
+  `--rosetta`/`--arch` in Run.
+
+The package installer must remain visible and user-authorised. Flotilla must
+never silently install or upgrade Apple's privileged package.
+
+## Later
+
+### Host-run policies and streaming
+
+- Add live log and stats streams over persistent connections.
+- Bound every stream, stop or pause work that is not visible, and prevent a
+  fleet-sized set of per-container streams from becoming self-inflicted load.
+- Add real sparklines and a Stats view only when the displayed data comes from
+  those streams.
+- Implement restart policy and health checks on the host peer, backed by its
+  persisted policy store, so they continue when the admin Mac disconnects.
+- Include retries, backoff, timeouts, thresholds and a history that explains why
+  the host acted.
+- Extend file, bind-mount and port workflows to remote hosts through explicit,
+  bounded operations with host-aware paths. Do not reuse a generic remote
+  terminal to obtain that access.
+
+### Sparkle auto-updates
+
+- Integrate Sparkle 2 for unmanaged Macs with an HTTPS appcast, Ed25519 artefact
+  signatures, Developer ID and notarisation.
+- Separate check, download and install controls and obtain first-run consent for
+  update checks.
+- Add a host-safe interruption point: stop accepting new mutations, finish
+  bounded work, persist consistent state, relaunch and rerun preflight.
+- Verify archive, signatures, notarisation, stapling, clean installation,
+  previous-version upgrade, appcast version monotonicity and fallback.
 - Use named-host canaries and an explicit reinstall rollback runbook.
+- Keep the previous notarised artefact available. Sparkle has no downgrade
+  mechanism.
 - Jamf, not Sparkle, remains the update authority on managed minis.
 
-### Phase 6 — Jamf / configuration profiles
+### Jamf and configuration profiles
 
-- Deliver unique per-device identity and managed settings without changing the
+- Deliver a unique per-device identity and managed settings without changing the
   transport.
-- Use two managed tiers: `defaults` to seed editable values and `locked` to
-  override and disable editing.
-- Manage mode, listener/Bonjour settings, trust anchors, peer allowlist, identity
-  label, update policy, diagnostics policy, minimum client version, and fleet
-  defaults.
-- Show effective value, source, validation errors, and lock state in diagnostics.
+- Use two managed tiers: `defaults` seeds editable values and `locked` overrides
+  and disables editing.
+- Manage mode, listener and Bonjour settings, trust anchors, peer allowlists,
+  identity label, update policy, diagnostics policy, minimum client version and
+  fleet defaults.
+- Show the effective value, source, validation errors and lock state in
+  diagnostics.
+- Never let a reset alter the managed domain.
+- Use a unique per-device identity rather than one shared certificate.
 - Test app-before-profile, profile-before-app, renewal overlap, removal,
-  revocation, restart, and segmented-network behavior on staged managed hardware.
+  revocation, restart, locked-screen, logout and segmented-network behaviour on
+  staged managed hardware.
+- Treat loss of a managed identity as an error, not permission to generate an
+  unmanaged replacement.
 
-## Critical environment constraint — nested virtualization
+## Critical environment constraint — nested virtualisation
 
-The development laptop is M2 Max. Running a `container` Linux micro-VM inside a
-UTM macOS guest requires nested virtualization unavailable on that host.
+The development Mac is an M3 Max. Nested virtualisation is supported there for
+Linux guests only. A macOS VM in UTM still cannot run the Linux micro-VMs used by
+Apple `container`.
 
-- Phase 1 runs natively on the laptop.
-- UTM guests can test UI, Bonjour, mTLS, wire framing, and authorization without
-  launching real containers.
-- Full remote lifecycle tests use a physical Apple Silicon Mac, currently the M1
-  Mac mini, as the host peer.
-- Manual host entry covers routed/VLAN networks where mDNS cannot cross.
+- Local development and real local containers run natively on the M3 Max.
+- macOS VMs test mTLS, pairing, wire framing, UI, rejection, revocation and
+  version-skew paths.
+- Real remote lifecycle tests use the physical M1 Mac mini as the host peer.
+- Manual host entry remains mandatory because mDNS does not cross routed
+  networks, VLANs or subnets.
 
 ## Verification
 
-- On macOS: `swift build`, `swift test`, then launch with `swift run Flotilla`.
-- On Linux/Swift 6.1: `swift build` and `swift test`; SwiftPM selects the portable
-  manifest and excludes the SwiftUI app.
-- Phase 1: verify local list/run/stop/logs and system features natively against
-  the installed `container` CLI.
-- Phase 2: verify discovery, manual add, bilateral pairing, allowlist rejection,
-  limits, revocation, state persistence, and remote Phase 1 parity.
-- Phase 3+: verify aggregate results and stale/offline behavior across multiple
-  physical or virtual peers.
-- Phase 6: verify both managed tiers and identity/profile lifecycle on a staged
-  Jamf-managed mini.
+- On macOS: run `swift build` and `swift test`, build the app bundle, then launch
+  and exercise it with a clean GUI-style `PATH`.
+- On Linux with Swift 6.1: run `swift build` and `swift test`; SwiftPM selects the
+  portable manifest and excludes the SwiftUI app.
+- Phase 1: verify local list, create, lifecycle, terminal, files, logs, build,
+  registry, DNS, export/import and system features against `container` 1.5.0.
+- Phase A: inspect every light and dark theme at supported window sizes. Measure
+  the white lockup and the button capsule on Canary and verify the collapsed sidebar, edge toggle,
+  Overview and This Mac navigation.
+- Phase B: verify discovery, manual entry, bilateral pairing, validation,
+  exposure rejection, limits, revocation, persistence and version negotiation
+  in macOS VMs, then approved remote operations on the M1 mini.
+- Phase C: verify host columns and filters, create-host selection, stale cached
+  data, reconnect tails, version skew, fan-out progress and partial failures
+  across virtual and physical peers.
+- Phase D: verify identical definitions, drift and failure reporting; DNS
+  resolution for local and remote containers; helper signature checks and
+  operation limits; and published-port behaviour without an overlay.
+- Phase E: verify `codesign`, hardened-runtime entitlements, `spctl`,
+  notarisation, stapling, clean installation, upgrade and beta artefact
+  contents.
+- Later: verify host policies survive admin disconnection and restart, streams
+  stay bounded, Sparkle uses named canaries, and both managed-settings tiers and
+  identity lifecycles work on a staged Jamf-managed mini.
