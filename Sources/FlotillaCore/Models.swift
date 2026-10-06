@@ -34,6 +34,41 @@ public struct Container: Codable, Identifiable, Sendable, Equatable {
         /// Host→container port mappings from `--publish`. Absent on older output and
         /// `[]` for a container that publishes nothing, so both decode to empty.
         public var publishedPorts: [PublishedPort]?
+        /// What runs, as the container was created — the image's entrypoint and command unless
+        /// overridden, and its environment **merged with the image's own**. The exporter
+        /// subtracts the image's defaults to recover what was actually chosen.
+        public var initProcess: InitProcess?
+        public var mounts: [Mount]?
+        public var networks: [NetworkAttachment]?
+
+        public struct InitProcess: Codable, Sendable, Equatable {
+            public var executable: String?
+            public var arguments: [String]?
+            public var environment: [String]?
+        }
+
+        /// One mount. `type` is an object with a single key naming the kind: `volume` (with the
+        /// volume's `name`) or `virtiofs` — a folder on this Mac (captured 6 October, 1.5.0).
+        public struct Mount: Codable, Sendable, Equatable {
+            public var destination: String
+            public var options: [String]?
+            public var source: String?
+            public var type: MountType?
+
+            public struct MountType: Codable, Sendable, Equatable {
+                public var volume: VolumeMount?
+                public var virtiofs: Empty?
+                public struct VolumeMount: Codable, Sendable, Equatable { public var name: String? }
+                public struct Empty: Codable, Sendable, Equatable {}
+            }
+
+            public var volumeName: String? { type?.volume?.name }
+            public var isReadOnly: Bool { options?.contains("ro") == true }
+        }
+
+        public struct NetworkAttachment: Codable, Sendable, Equatable {
+            public var network: String
+        }
 
         public struct ImageRef: Codable, Sendable, Equatable {
             public var reference: String
@@ -144,6 +179,20 @@ public struct ContainerImage: Codable, Identifiable, Sendable {
         public var digest: String?
         public var size: Int64?
         public var platform: Platform?
+        /// `image inspect` only: the OCI image config, whose `config` holds the defaults a
+        /// container starts from.
+        public var config: ImageConfig?
+
+        public struct ImageConfig: Codable, Sendable {
+            public var config: RunConfig?
+        }
+
+        /// The OCI spelling — capitalised keys.
+        public struct RunConfig: Codable, Sendable {
+            public var Env: [String]?
+            public var Entrypoint: [String]?
+            public var Cmd: [String]?
+        }
     }
 
     public var reference: String { configuration.name }

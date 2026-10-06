@@ -512,7 +512,7 @@ extension Flotillafile {
         return true
     }
 
-    private static func isMountSpec(_ value: String) -> Bool {
+    static func isMountSpec(_ value: String) -> Bool {
         let parts = value.split(separator: ":", omittingEmptySubsequences: false)
         guard (2...3).contains(parts.count) else { return false }
 

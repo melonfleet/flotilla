@@ -1604,3 +1604,38 @@ on 1.5 the first `machine run` without a terminal then fails ("Operation not sup
 offered for a stopped machine, so it rarely meets this, but `startMachine` now retries once on
 exactly that message (tested). The demo script met it on 5 October and blamed the boot order; its
 comment and command are corrected.
+
+## Q29 — A `.flotilla` file: share a group, or export a Mac's configuration (settled 2026-10-06)
+
+The last part of Suggestions (save a group, share it) designed together with the "configuration
+export and import" item, as agreed. **A configuration export, not a migration** (the owner,
+5 October): the file says what to build; no volume data, image layers or container state move.
+
+The owner's answers, 6 October:
+
+- **One format for both** — a shared group and a whole-Mac export are the same kind of file:
+  `ConfigurationFile`, version 2 of the Flotillafile. Version 1 files still read.
+- **`.flotilla`**, JSON inside, registered so a double-click opens Flotilla's import review.
+- **What an export can hold**, each a checkbox: containers, groups, networks, volumes (as empty
+  definitions), machines, clusters, and — of the extras offered — **tags, the registry list and
+  DNS domains**. Not Flotilla's own settings.
+- **Saving one group:** "Save to File…" on its row menu and group screen, and the full checklist
+  under File ▸ Export Configuration…; both write the same format.
+- **On import, a name that already exists is decided per item** — skip, rename or replace. Replace
+  deletes the existing thing first; for a volume that is its data, so the review screen says so and
+  a final confirmation names everything being replaced.
+
+Mine, for the owner to see:
+
+- **Left out, always, and listed on the export screen** (`ConfigurationExport.Omission`): secret
+  values (a variable that looks like one is written as a name — the importer asks or generates —
+  matching the earlier decision), **folders on this Mac** (a host mount names a path under the
+  user's home, and would not exist on the other Mac), the image's own environment and command
+  (the CLI reports them merged; only what was chosen on top is written — measured on the demo's
+  Postgres), and what the runtime made itself (the `default` network, a cluster's node container,
+  group members repeated as containers).
+- **Untrusted input, as Flotillafile was:** unknown keys refused at every depth, every value checked
+  against the Allowlist's shapes, every list and the file bounded, a host-folder mount refused in a
+  file outright. Parsing runs nothing; import is a review the user confirms.
+- **Images by reference and digest**, so the importer can pull the same bytes. A network's subnet is
+  not exported: the runtime chose it, and on another Mac it may clash.

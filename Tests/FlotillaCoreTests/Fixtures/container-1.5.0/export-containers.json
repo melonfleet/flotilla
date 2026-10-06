@@ -1,0 +1,234 @@
+[
+  {
+    "configuration": {
+      "capAdd": [],
+      "capDrop": [],
+      "creationDate": "2026-10-06T06:55:21Z",
+      "dns": {
+        "domain": "flotilla",
+        "nameservers": [],
+        "options": [],
+        "searchDomains": []
+      },
+      "id": "storefront-db",
+      "image": {
+        "descriptor": {
+          "digest": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+          "mediaType": "application/vnd.oci.image.index.v1+json",
+          "size": 10301
+        },
+        "reference": "docker.io/library/postgres:17-alpine"
+      },
+      "initProcess": {
+        "arguments": [
+          "postgres"
+        ],
+        "environment": [
+          "PGDATA=/var/lib/postgresql/data/pgdata",
+          "POSTGRES_PASSWORD=example-password",
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "GOSU_VERSION=1.19",
+          "PG_VERSION=17.11",
+          "PG_SHA256=dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979",
+          "LANG=en_US.utf8",
+          "PG_MAJOR=17",
+          "DOCKER_PG_LLVM_DEPS=llvm21-dev \t\tclang21",
+          "POSTGRES_DB=shop"
+        ],
+        "executable": "docker-entrypoint.sh",
+        "rlimits": [],
+        "supplementalGroups": [],
+        "terminal": false,
+        "user": {
+          "id": {
+            "gid": 0,
+            "uid": 0
+          }
+        },
+        "workingDirectory": "/"
+      },
+      "labels": {
+        "demo": "flotilla"
+      },
+      "mounts": [
+        {
+          "destination": "/var/lib/postgresql/data",
+          "options": [],
+          "source": "/Users/example/Library/Application Support/com.apple.container/volumes/shop-db-data/volume.img",
+          "type": {
+            "volume": {
+              "cache": {
+                "on": {}
+              },
+              "format": "ext4",
+              "name": "shop-db-data",
+              "sync": {
+                "fsync": {}
+              }
+            }
+          }
+        }
+      ],
+      "networks": [
+        {
+          "network": "shop-net",
+          "options": {
+            "hostname": "storefront-db.flotilla.",
+            "mtu": 1280
+          }
+        }
+      ],
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux"
+      },
+      "publishedPorts": [],
+      "publishedSockets": [],
+      "readOnly": false,
+      "resources": {
+        "cpuOverhead": 1,
+        "cpus": 4,
+        "memoryInBytes": 1073741824
+      },
+      "rosetta": false,
+      "runtimeHandler": "container-runtime-linux",
+      "ssh": false,
+      "stopSignal": "SIGINT",
+      "sysctls": {},
+      "useInit": false,
+      "virtualization": false
+    },
+    "id": "storefront-db",
+    "status": {
+      "networks": [
+        {
+          "hostname": "storefront-db.flotilla.",
+          "ipv4Address": "192.168.70.4/24",
+          "ipv4Gateway": "192.168.70.1",
+          "ipv6Address": "fd47:847d:e0b7:5a24:f495:20ff:fe44:412c/64",
+          "macAddress": "f6:95:20:44:41:2c",
+          "mtu": 1280,
+          "network": "shop-net",
+          "variant": "reserved"
+        }
+      ],
+      "startedDate": "2026-10-06T06:55:22Z",
+      "state": "running"
+    }
+  },
+  {
+    "configuration": {
+      "capAdd": [],
+      "capDrop": [],
+      "creationDate": "2026-10-06T06:55:19Z",
+      "dns": {
+        "domain": "flotilla",
+        "nameservers": [],
+        "options": [],
+        "searchDomains": []
+      },
+      "id": "storefront-web",
+      "image": {
+        "descriptor": {
+          "digest": "sha256:d44355d3c2149dc580ce2cac735955d1c08d3d00882c30489c241aa51a5c10d9",
+          "mediaType": "application/vnd.oci.image.index.v1+json",
+          "size": 8987
+        },
+        "reference": "docker.io/library/caddy:2-alpine"
+      },
+      "initProcess": {
+        "arguments": [
+          "run",
+          "--config",
+          "/etc/caddy/Caddyfile",
+          "--adapter",
+          "caddyfile"
+        ],
+        "environment": [
+          "CADDY_VERSION=v2.11.6",
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "XDG_DATA_HOME=/data",
+          "XDG_CONFIG_HOME=/config"
+        ],
+        "executable": "caddy",
+        "rlimits": [],
+        "supplementalGroups": [],
+        "terminal": false,
+        "user": {
+          "id": {
+            "gid": 0,
+            "uid": 0
+          }
+        },
+        "workingDirectory": "/srv"
+      },
+      "labels": {
+        "demo": "flotilla"
+      },
+      "mounts": [
+        {
+          "destination": "/usr/share/caddy",
+          "options": [
+            "ro"
+          ],
+          "source": "/Users/example/melonfleet/Flotilla/Scripts/demo/site",
+          "type": {
+            "virtiofs": {}
+          }
+        }
+      ],
+      "networks": [
+        {
+          "network": "shop-net",
+          "options": {
+            "hostname": "storefront-web.flotilla.",
+            "mtu": 1280
+          }
+        }
+      ],
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux"
+      },
+      "publishedPorts": [
+        {
+          "containerPort": 80,
+          "count": 1,
+          "hostAddress": "127.0.0.1",
+          "hostPort": 8080,
+          "proto": "tcp"
+        }
+      ],
+      "publishedSockets": [],
+      "readOnly": false,
+      "resources": {
+        "cpuOverhead": 1,
+        "cpus": 4,
+        "memoryInBytes": 1073741824
+      },
+      "rosetta": false,
+      "runtimeHandler": "container-runtime-linux",
+      "ssh": false,
+      "sysctls": {},
+      "useInit": false,
+      "virtualization": false
+    },
+    "id": "storefront-web",
+    "status": {
+      "networks": [
+        {
+          "hostname": "storefront-web.flotilla.",
+          "ipv4Address": "192.168.70.2/24",
+          "ipv4Gateway": "192.168.70.1",
+          "ipv6Address": "fd47:847d:e0b7:5a24:f05b:83ff:fe4e:d488/64",
+          "macAddress": "f2:5b:83:4e:d4:88",
+          "mtu": 1280,
+          "network": "shop-net",
+          "variant": "reserved"
+        }
+      ],
+      "startedDate": "2026-10-06T06:55:20Z",
+      "state": "running"
+    }
+  }
+]
