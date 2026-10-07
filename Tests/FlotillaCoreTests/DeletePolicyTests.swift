@@ -66,7 +66,7 @@ import Testing
     // Pinned deliberately. A new setting arriving unwired should force a decision here rather than
     // joining a list nobody reads — and a setting that gets *built* should have to remove itself.
     #expect(Set(SettingsRegistry.notBuilt.map(\.name)) == [
-        "mode", "hostListenPort", "bonjourEnabled", "identityKeychainLabel",
+        "identityKeychainLabel",
         "SUEnableAutomaticChecks", "SUAutomaticallyUpdate", "SUScheduledCheckInterval",
         "updateChannel",
     ])

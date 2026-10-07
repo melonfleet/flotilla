@@ -296,6 +296,13 @@ struct MainWindowView: View {
                 // matters, because the window's height is set by that band's divider lining up
                 // with the Utilisation table.
                 .padding(.top, -sidebarCardLift)
+                // Pairing by code: the four words, on whichever screen is open. On the split view
+                // rather than beside the operation sheet below, so two sheets never share a view.
+                // Dismissed any other way, the answer is no — pairing must never hang waiting.
+                .sheet(item: Binding(get: { model.hostMode.wordsPrompt },
+                                     set: { if $0 == nil { model.hostMode.wordsPrompt?.reply(false) } })) { prompt in
+                    PairingWordsSheet(prompt: prompt)
+                }
         }
         // Up into the traffic-light row, so the bar IS the top of the window rather than a
         // second band under it. `.hiddenTitleBar` stops the title bar being *drawn* but SwiftUI

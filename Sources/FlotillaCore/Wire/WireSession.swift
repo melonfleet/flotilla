@@ -88,8 +88,9 @@ public struct WireHostSession: Sendable {
             return [try handle(request)]
 
         case (.ready, .pairStart), (.ready, .pairProof), (.ready, .pairResult), (.ready, .pairConfirm):
-            // Pairing is for strangers. A trusted caller has nothing to pair.
-            guard !trusted else { throw WireError.unexpected(message.frameType) }
+            // Open to a trusted caller too: an admin this host already trusts (its enrolment key
+            // named it) may still need to enrol, if it removed this host and wants it back.
+            // Pairing grants nothing a trusted caller does not already have.
             return [.pairing(message)]
 
         case (.ready, .cancel(let cancel)):

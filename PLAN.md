@@ -292,8 +292,23 @@ command, a wrong code counted, the host owner saying the words do not match,
 enrolment into the approval list, and revocation. They found a race: the admin
 declared pairing done before the host had saved the trust, so a quick
 reconnect could be refused; the admin now finishes on the host's
-acknowledgement. Next, B3b: host mode in Settings, Add Host and the approval
-list in Hosts, `RemoteHost`, Bonjour browsing, then the VMs and the M1 mini.
+acknowledgement.
+
+**B3b built 7 October** (app): Settings ▸ Host Mode (the owner's choice) — how
+this Mac is used (Admin / Host / Admin and host, the existing `mode` key, now
+live), its identity, the listener's status, port and Bonjour, the pairing code
+with its countdown, the enrolment key from a profile or pasted, the admin Macs
+it trusts, and on an admin the fleet enrolment key (create, reveal, copy,
+replace). First run now asks how the Mac will be used beside appearance, unless a
+profile sets it. Hosts lists every Mac in the `PeerBook` with its state, a
+banner and filter for Macs waiting for approval, Approve / Turn Away / Remove
+Access / Remove, and a page for each host; Add Host pairs a found or typed Mac by
+code or enrolment key, and both Macs show the four words. An admin with a key
+asks each newly found host once to enrol. `enrolmentKey` joined the managed
+settings. No `.mobileconfig` export (the owner: not now). Live on this Mac: the
+listener on 7868, the code, and Add Host reaching its own listener over TLS and
+refusing to pair with itself. Next: `RemoteHost`, then pairing two real Macs —
+a macOS VM, then the M1 mini.
 
 - Define bounded protocol framing, version and capability negotiation, explicit
   request lifecycle and failure semantics.

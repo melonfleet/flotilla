@@ -6,7 +6,7 @@ import FlotillaCore
 /// control; everything else — including a `defaults`-seeded value the user may still
 /// change — stays editable. `key.summary` is the registry's own description, so this
 /// never invents wording that could drift from the declared key.
-private struct SettingRow<V: SettingRepresentable, Control: View>: View {
+struct SettingRow<V: SettingRepresentable, Control: View>: View {
     let store: SettingsStore
     let key: SettingsKey<V>
     let title: String
@@ -219,7 +219,7 @@ struct SettingsView: View {
         // Tags sits between Resources and Updates: it is about the things the app manages,
         // like Resources, rather than about the app itself.
         // No `registries`: it is a sidebar section under Images since 5 October.
-        case general, resources, tags, updates, advanced
+        case general, resources, tags, hostMode, updates, advanced
         var id: Self { self }
 
         var title: String {
@@ -227,6 +227,7 @@ struct SettingsView: View {
             case .general: "General"
             case .resources: "Resources"
             case .tags: "Tags"
+            case .hostMode: "Host Mode"
             case .updates: "Updates"
             case .advanced: "Advanced"
             }
@@ -237,6 +238,7 @@ struct SettingsView: View {
             case .general: "gearshape"
             case .resources: "cpu"
             case .tags: "tag"
+            case .hostMode: "antenna.radiowaves.left.and.right"
             case .updates: "arrow.down.circle"
             case .advanced: "slider.horizontal.3"
             }
@@ -340,6 +342,7 @@ struct SettingsView: View {
             case .general: generalPane
             case .resources: resourcesPane
             case .tags: TagManagerPane(model: model, store: model.tags)
+            case .hostMode: HostModePane(model: model)
             case .updates: updatesPane
             case .advanced: advancedPane
             }

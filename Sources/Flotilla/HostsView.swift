@@ -1,38 +1,59 @@
 import SwiftUI
+import AppKit
+import Network
 import FlotillaCore
+import FlotillaTrust
 
-/// One Mac in the Hosts section. Today the only row is This Mac; host mode adds the rest, and
-/// every column here is one a remote host can answer too.
+/// One Mac in the Hosts section: This Mac, or a host in the `PeerBook` — paired, waiting for the
+/// owner's approval, turned away or removed. Every column is one a remote host can answer; the
+/// counts a remote host cannot give until Phase C reads them read "—", not zero.
 struct HostRow: Identifiable, Hashable {
-    /// The key tags and the activity band use. This Mac's is fixed; a paired host's will be its
-    /// enrolment identity, never its name, which the owner can change.
+    /// This Mac's is fixed; a host's is its fingerprint, never its name, which the owner can change.
     let id: String
     let name: String
     let isThisMac: Bool
+    /// The host's entry in the book; `nil` for This Mac.
+    let peer: Peer?
     let status: String
-    /// Whether the runtime is usable — the "Connected" filter, and the dot.
+    /// Whether it is usable now — This Mac's runtime is up, or a host is paired.
     let connected: Bool
-    let containersRunning: Int
-    let containersTotal: Int
-    let machines: Int
-    let macOS: String
+    let containersRunning: Int?
+    let containersTotal: Int?
+    let machines: Int?
+    let macOS: String?
     let containerVersion: String?
     let modelIdentifier: String?
 
     static let thisMacID = "this-mac"
 
+    var isPending: Bool { peer?.status == .pending }
     var nameSortKey: String { name.lowercased() }
-    var statusSortKey: String { (connected ? "0" : "1") + status }
-    var containersSortKey: Int { containersRunning }
-    var macOSSortKey: String { macOS }
+    var statusSortKey: String { (isPending ? "0" : connected ? "1" : "2") + status }
+    var containersSortKey: Int { containersRunning ?? -1 }
+    var machinesSortKey: Int { machines ?? -1 }
+    var macOSSortKey: String { macOS ?? "" }
     var containerSortKey: String { containerVersion ?? "" }
     var modelSortKey: String { modelIdentifier ?? "" }
 
-    var containersText: String { "\(containersRunning) running of \(containersTotal)" }
+    var containersText: String {
+        guard let containersRunning, let containersTotal else { return "—" }
+        return "\(containersRunning) running of \(containersTotal)"
+    }
+    var machinesText: String { machines.map(String.init) ?? "—" }
+
+    /// The words for a host's state in the book.
+    static func statusText(_ status: Peer.Status) -> String {
+        switch status {
+        case .pending: "Waiting for approval"
+        case .approved: "Paired"
+        case .rejected: "Turned away"
+        case .revoked: "Access removed"
+        }
+    }
 }
 
 extension AppModel {
-    /// Every host Flotilla manages. One until host mode (PLAN.md Phase B).
+    /// This Mac, then every host in the book.
     var hostRows: [HostRow] {
         let version: String? = switch preflight {
         case .ok(let version, _), .serviceStopped(let version, _, _), .needsKernel(let version, _, _):
@@ -42,28 +63,34 @@ extension AppModel {
         case .missing, .unusable, nil: nil
         }
         let system = systemInfo
-        return [HostRow(id: HostRow.thisMacID,
-                        name: hostLabel,
-                        isThisMac: true,
-                        status: RuntimeStatus.describe(preflight).title,
-                        connected: runtimeUsable,
-                        containersRunning: containers.filter(AppModel.isRunning).count,
-                        containersTotal: containers.count,
-                        machines: machines.count,
-                        macOS: system.osVersion,
-                        containerVersion: version,
-                        modelIdentifier: system.modelIdentifier)]
+        let thisMac = HostRow(id: HostRow.thisMacID, name: hostLabel, isThisMac: true, peer: nil,
+                              status: RuntimeStatus.describe(preflight).title,
+                              connected: runtimeUsable,
+                              containersRunning: containers.filter(AppModel.isRunning).count,
+                              containersTotal: containers.count,
+                              machines: machines.count,
+                              macOS: system.osVersion,
+                              containerVersion: version,
+                              modelIdentifier: system.modelIdentifier)
+        let hosts = hostMode.hosts.map { peer in
+            HostRow(id: peer.fingerprint.hex, name: peer.displayName, isThisMac: false, peer: peer,
+                    status: HostRow.statusText(peer.status), connected: peer.isTrusted,
+                    containersRunning: nil, containersTotal: nil, machines: nil,
+                    macOS: peer.details.macOSVersion, containerVersion: nil,
+                    modelIdentifier: peer.details.model)
+        }
+        return [thisMac] + hosts
     }
 }
 
 /// Hosts — every Mac Flotilla manages, with the same table setup as every other section (the
 /// owner, 6 October): list and cards, search, filter, sortable and hideable columns, row menus that
-/// match the context menu, multi-select, tags, Add and Refresh, and the activity band. A host's page
-/// is the per-Mac dashboard that used to be the app's front page.
+/// match the context menu, multi-select, tags, Add and Refresh, and the activity band.
 ///
-/// **Add is shown and disabled** until host mode exists — the control the section will have, saying
-/// why it cannot be used yet, rather than a button that does nothing. Remove is the same for This
-/// Mac, which is the admin machine and is never removed.
+/// **Add** pairs a new host (B3b): by the code it shows, or with the fleet enrolment key. Macs that
+/// asked to join with the key wait here for the owner's approval — a banner says how many — and
+/// nothing is trusted until approved. This Mac's page is the per-Mac dashboard; a paired host's is
+/// what it said about itself when it paired, until Phase C brings its containers here.
 struct HostsView: View {
     let model: AppModel
     let ui: ResourceUIState<HostRow>
@@ -71,24 +98,29 @@ struct HostsView: View {
 
     @State private var selection = Set<HostRow.ID>()
     @State private var openHost: HostRow.ID?
+    @State private var showingAdd = false
     @State private var tagSheet: TagSheetTarget?
+    @State private var pendingForget: HostRow?
     /// A real `Bool` beside the action, for the reason `RuntimeStatusBand` records: a computed
     /// binding over an optional did not present the dialog at all.
     @State private var confirming: RuntimeLifecycleAction = .stop
     @State private var showingConfirmation = false
 
-    private static let addHelp = "Adding another Mac arrives with host mode"
     private static let removeHelp = "This Mac is the admin machine — it can’t be removed"
+    private var hostMode: HostModeController { model.hostMode }
 
     var body: some View {
         Group {
-            if let id = openHost {
+            if showingAdd {
+                AddHostView(model: model) { showingAdd = false }
+            } else if let id = openHost {
                 hostPage(id)
             } else {
                 VStack(spacing: 0) {
                     toolbar
                     bulkActionBar
                     Divider()
+                    approvalBanner
                     content
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
@@ -97,7 +129,9 @@ struct HostsView: View {
                                   entries: activityEntries,
                                   isExpanded: Binding(get: { ui.activityExpanded },
                                                       set: { ui.activityExpanded = $0 }),
-                                  open: { _ in openHost = HostRow.thisMacID },
+                                  open: { subject in
+                                      openHost = model.hostRows.first { $0.name == subject }?.id ?? HostRow.thisMacID
+                                  },
                                   canOpen: { _ in true })
                 }
             }
@@ -115,17 +149,58 @@ struct HostsView: View {
         } message: {
             Text(confirming.consequence)
         }
+        .confirmationDialog("Remove “\(pendingForget?.name ?? "")”?",
+                            isPresented: Binding(get: { pendingForget != nil }, set: { if !$0 { pendingForget = nil } }),
+                            titleVisibility: .visible, presenting: pendingForget) { row in
+            Button("Remove", role: .destructive) {
+                if let peer = row.peer { hostMode.remove(peer.fingerprint) }
+                selection.remove(row.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { row in
+            Text(row.peer?.isTrusted == true
+                 ? "This Mac stops managing it. To manage it again, pair it again."
+                 : "It is forgotten, and can ask to join again.")
+        }
     }
 
+    @ViewBuilder
     private func hostPage(_ id: HostRow.ID) -> some View {
+        let row = model.hostRows.first { $0.id == id }
         VStack(spacing: 0) {
-            FormHeader(title: model.hostRows.first { $0.id == id }?.name ?? model.hostLabel,
+            FormHeader(title: row?.name ?? model.hostLabel,
                        systemImage: Section.hosts.systemImage,
                        hasUnsavedChanges: false, onBack: { openHost = nil })
             Divider()
-            DashboardView(model: model, go: go)
+            if let peer = row?.peer {
+                PeerDetailView(peer: peer, model: model) { openHost = nil }
+            } else {
+                DashboardView(model: model, go: go)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: Approvals
+
+    @ViewBuilder
+    private var approvalBanner: some View {
+        let waiting = hostMode.hosts.filter { $0.status == .pending }
+        if !waiting.isEmpty {
+            HStack(spacing: 8) {
+                Label(waiting.count == 1
+                      ? "\(waiting[0].displayName) is waiting for your approval."
+                      : "\(waiting.count) Macs are waiting for your approval.",
+                      systemImage: "person.badge.key")
+                    .font(.caption).foregroundStyle(Theme.warning)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if ui.filterID != "pending" {
+                    Button("Show Them") { ui.filterID = "pending" }.controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+        }
     }
 
     // MARK: Toolbar
@@ -154,8 +229,10 @@ struct HostsView: View {
                 filters: Self.filters)
         }, trailing: {
             if model.startingRuntime { ProgressView().controlSize(.small) }
-            ToolbarIconButton(systemImage: "plus", label: "Add a host", help: Self.addHelp,
-                              disabled: true) {}
+            ToolbarIconButton(systemImage: "plus", label: "Add a host",
+                              help: hostMode.isAdmin ? "Pair another Mac"
+                                                     : "This Mac is a host. Make it an admin in Settings ▸ Host Mode to add Macs.",
+                              disabled: !hostMode.isAdmin) { showingAdd = true }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh hosts") {
                 Task {
                     await model.reload()
@@ -173,6 +250,7 @@ struct HostsView: View {
     private static let filters: [ResourceFilterOption] = [
         .init(id: "all", title: "All", systemImage: "circle.grid.2x2"),
         .init(id: "connected", title: "Connected", systemImage: "checkmark.circle"),
+        .init(id: "pending", title: "Waiting for approval", systemImage: "person.badge.key"),
         .init(id: "attention", title: "Needs attention", systemImage: "exclamationmark.triangle"),
     ]
 
@@ -184,7 +262,8 @@ struct HostsView: View {
         var rows = model.hostRows
         switch ui.filterID {
         case "connected": rows = rows.filter(\.connected)
-        case "attention": rows = rows.filter { !$0.connected }
+        case "pending": rows = rows.filter(\.isPending)
+        case "attention": rows = rows.filter { !$0.connected && !$0.isPending }
         default: break
         }
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -193,6 +272,7 @@ struct HostsView: View {
                 row.name.lowercased().contains(query)
                     || row.status.lowercased().contains(query)
                     || (row.modelIdentifier?.lowercased().contains(query) ?? false)
+                    || (row.peer?.details.serialNumber?.lowercased().contains(query) ?? false)
                     || model.tags.tags(on: .host, row.id)
                         .contains { $0.name.lowercased().contains(query) }
             }
@@ -229,11 +309,16 @@ struct HostsView: View {
     @ViewBuilder
     private var bulkActionBar: some View {
         if selectedRows.count > 1 {
+            let pending = selectedRows.compactMap(\.peer).filter { $0.status == .pending }
             HStack(spacing: 12) {
                 Text("\(selectedRows.count) selected")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
+                if !pending.isEmpty {
+                    Button("Approve \(pending.count)") { pending.forEach { hostMode.approve($0.fingerprint) } }
+                        .controlSize(.small)
+                }
                 BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
                     tagSheet = TagSheetTarget(selectedTagSubjects)
                 }
@@ -244,7 +329,7 @@ struct HostsView: View {
         }
     }
 
-    /// The runtime's starts and stops, and — with host mode — hosts added and removed.
+    /// The runtime's starts and stops, and hosts paired, approved and removed.
     private var activityEntries: [ActivityStrip.Entry] {
         (model.events(ofKind: .runtime) + model.events(ofKind: .host))
             .sorted { $0.date > $1.date }
@@ -309,14 +394,14 @@ struct HostsView: View {
             .width(min: 100, ideal: 130)
             .customizationID("containers")
 
-            TableColumn("Machines", value: \.machines) { row in
-                Text("\(row.machines)").monospacedDigit().foregroundStyle(.secondary)
+            TableColumn("Machines", value: \.machinesSortKey) { row in
+                Text(row.machinesText).monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 60, ideal: 76)
             .customizationID("machines")
 
             TableColumn("macOS", value: \.macOSSortKey) { row in
-                Text(row.macOS).monospacedDigit().foregroundStyle(.secondary)
+                Text(row.macOS ?? "—").monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 60, ideal: 76)
             .customizationID("macos")
@@ -354,10 +439,10 @@ struct HostsView: View {
             ForEach(displayedRows) { row in
                 ResourceCard(
                     title: row.name,
-                    badge: row.isThisMac ? "this Mac" : nil,
+                    badge: row.isThisMac ? "this Mac" : (row.isPending ? "waiting" : nil),
                     fields: [("Status", row.status),
                              ("Containers", row.containersText),
-                             ("Machines", "\(row.machines)"),
+                             ("Machines", row.machinesText),
                              ("macOS", row.macOS),
                              ("container", row.containerVersion)],
                     tags: model.tags.tags(on: .host, row.id),
@@ -390,27 +475,41 @@ struct HostsView: View {
             IconActionButton(systemImage: "trash",
                              label: "Remove \(row.name)",
                              help: row.isThisMac ? Self.removeHelp : "Remove \(row.name)",
-                             disabled: row.isThisMac, destructive: true) {}
+                             disabled: row.isThisMac, destructive: true) {
+                pendingForget = row
+            }
             Spacer(minLength: 0)
         }
     }
 
-    /// The runtime items match the sidebar band's menu word for word, and are greyed out by the
-    /// same rule rather than coming and going.
+    /// This Mac's runtime items match the sidebar band's menu word for word; a host's items are its
+    /// trust — approve, turn away, remove access.
     @ViewBuilder
     private func menu(for row: HostRow) -> some View {
-        let enablement = RuntimeStatus.enablement(model.preflight)
         Button("Open") { openHost = row.id }
         Divider()
-        Button("Start Container System") { Task { await model.startRuntime() } }
-            .disabled(!enablement.start || model.startingRuntime)
-        Button("Stop Container System…") { ask(.stop) }
-            .disabled(!enablement.stopRestart || model.startingRuntime)
-        if case .needsRestart = model.preflight {
-            Button("Restart Container System") { Task { await model.restartRuntime() } }
+        if let peer = row.peer {
+            switch peer.status {
+            case .pending:
+                Button("Approve") { hostMode.approve(peer.fingerprint) }
+                Button("Turn Away") { hostMode.reject(peer.fingerprint) }
+            case .approved:
+                Button("Remove Access") { hostMode.revoke(peer.fingerprint) }
+            case .rejected, .revoked:
+                Button("Approve") { hostMode.approve(peer.fingerprint) }
+            }
         } else {
-            Button("Restart Container System…") { ask(.restart) }
+            let enablement = RuntimeStatus.enablement(model.preflight)
+            Button("Start Container System") { Task { await model.startRuntime() } }
+                .disabled(!enablement.start || model.startingRuntime)
+            Button("Stop Container System…") { ask(.stop) }
                 .disabled(!enablement.stopRestart || model.startingRuntime)
+            if case .needsRestart = model.preflight {
+                Button("Restart Container System") { Task { await model.restartRuntime() } }
+            } else {
+                Button("Restart Container System…") { ask(.restart) }
+                    .disabled(!enablement.stopRestart || model.startingRuntime)
+            }
         }
         Divider()
         TagMenu(store: model.tags, subject: TagSubject(kind: .host, id: row.id)) {
@@ -420,9 +519,11 @@ struct HostsView: View {
         CopyMenu([("Name", row.name),
                   ("macOS version", row.macOS),
                   ("container version", row.containerVersion),
-                  ("Model", row.modelIdentifier)])
+                  ("Model", row.modelIdentifier),
+                  ("Serial number", row.peer?.details.serialNumber),
+                  ("Fingerprint", row.peer?.fingerprint.hex)])
         Divider()
-        Button("Remove…", role: .destructive) {}
+        Button("Remove…", role: .destructive) { pendingForget = row }
             .disabled(row.isThisMac)
             .help(row.isThisMac ? Self.removeHelp : "")
     }
@@ -440,22 +541,81 @@ struct HostsView: View {
     }
 }
 
-/// A host's status, the same in the table and the sidebar band.
+/// A host's status: This Mac's runtime, or a host's place in the book.
 struct HostStatusLabel: View {
     let model: AppModel
     let row: HostRow
 
     var body: some View {
-        let status = RuntimeStatus.describe(model.preflight)
         HStack(spacing: 6) {
-            if model.startingRuntime {
+            if row.isThisMac, model.startingRuntime {
                 ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 8, height: 8)
             } else {
-                Circle().fill(status.tint).frame(width: 7, height: 7)
+                Circle().fill(tint).frame(width: 7, height: 7)
             }
             Text(row.status).lineLimit(1)
         }
         .font(.caption)
-        .help(status.detail ?? row.status)
+        .help(row.isThisMac ? (RuntimeStatus.describe(model.preflight).detail ?? row.status) : row.status)
+    }
+
+    private var tint: Color {
+        if row.isThisMac { return RuntimeStatus.describe(model.preflight).tint }
+        switch row.peer?.status {
+        case .approved: return Theme.online
+        case .pending: return Theme.warning
+        default: return .secondary
+        }
+    }
+}
+
+/// A paired or waiting host's page, until Phase C brings its containers here: what it said about
+/// itself, how it was trusted, and the actions on that trust.
+struct PeerDetailView: View {
+    let peer: Peer
+    let model: AppModel
+    let close: () -> Void
+
+    var body: some View {
+        Form {
+            SwiftUI.Section("This host") {
+                LabeledContent("Status", value: HostRow.statusText(peer.status))
+                LabeledContent("Computer name", value: peer.details.computerName)
+                if let model = peer.details.model { LabeledContent("Model", value: model) }
+                if let serial = peer.details.serialNumber { LabeledContent("Serial number", value: serial) }
+                if let macOS = peer.details.macOSVersion { LabeledContent("macOS", value: macOS) }
+                LabeledContent("Fingerprint") {
+                    Text(HostModePane.shortFingerprint(peer.fingerprint))
+                        .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                }
+                LabeledContent("Joined by", value: peer.method == .enrolmentKey ? "Fleet enrolment key" : "Pairing code")
+                LabeledContent("Asked", value: peer.requestedAt.formatted(date: .abbreviated, time: .shortened))
+                if let decided = peer.decidedAt {
+                    LabeledContent("Decided", value: decided.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+            SwiftUI.Section {
+                HStack {
+                    Spacer()
+                    switch peer.status {
+                    case .pending:
+                        Button("Turn Away") { model.hostMode.reject(peer.fingerprint) }
+                        Button("Approve") { model.hostMode.approve(peer.fingerprint) }
+                            .buttonStyle(.borderedProminent)
+                    case .approved:
+                        Button("Remove Access") { model.hostMode.revoke(peer.fingerprint) }
+                    case .rejected, .revoked:
+                        Button("Approve") { model.hostMode.approve(peer.fingerprint) }
+                    }
+                }
+            } footer: {
+                if peer.status == .pending {
+                    Text("Approve only a Mac you recognise — check the serial number against your inventory.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 }

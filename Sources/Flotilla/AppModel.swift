@@ -47,6 +47,8 @@ final class AppModel {
     /// unmanaged-Mac case (`DECISIONS.md` Q4) — a managed source is wired in once the
     /// app reads `/Library/Managed Preferences` for real.
     let settingsStore: SettingsStore
+    /// Host mode: identity, peers, listener, pairing (PLAN.md Phase B).
+    let hostMode: HostModeController
 
     /// The user's tags, and what they are on.
     ///
@@ -101,6 +103,7 @@ final class AppModel {
         self.showsDockIcon = resolved.store[SettingsKeys.showDockIcon]
         self.notifier = Notifier(categories: Self.notificationSettings(from: resolved.store))
         self.errorLog = ErrorLog(settings: resolved.store)
+        self.hostMode = HostModeController(settings: resolved.store, containerHost: cli.host)
         observeSettings()
         // At launch too, not only on change. This was missing: `appearance` was read here but only
         // *applied* by `reloadAppearance()`, after a settings edit, so a saved Light or Dark was
@@ -113,6 +116,8 @@ final class AppModel {
         // before the app runs — a fresh install with `launchAtLogin` seeded by a managed profile,
         // or a user who removed Flotilla in System Settings ▸ Login Items since last time.
         syncLoginItem()
+        hostMode.recordActivity = { [weak self] event in self?.recordActivity(event) }
+        hostMode.apply()
     }
 
     // MARK: Appearance
@@ -207,6 +212,8 @@ final class AppModel {
         restartStatsPolling()
         // Categories may have been toggled.
         notifier.updateCategories(Self.notificationSettings(from: settingsStore))
+        // The mode, the port or Bonjour may have changed. Idempotent when nothing did.
+        hostMode.apply()
     }
 
     private static func themeChoice(from store: SettingsStore) -> ThemeChoice {

@@ -181,25 +181,33 @@ public enum SettingsKeys {
     // `reference/jamf-config-profile.md` requires these keys to be managed-readable
     // from the start.
 
-    /// **Not built.** Its only reader is the diagnostics snapshot, which reports the setting back
-    /// to whoever set it — a mirror, not a consumer. Selecting `host` or `both` opens no listener,
-    /// because Phase 2 has not been written and is explicitly out of scope.
+    /// How this Mac is used (Phase B, 7 October): `client` is shown as **Admin** — it manages this
+    /// Mac and others — `host` lets an admin Mac manage it, `both` does both. The stored values
+    /// keep the names `reference/jamf-config-profile.md` documents. Asked at first run unless a
+    /// profile sets it; never switchable by a peer. Applied live — `HostModeController.apply()`
+    /// starts or stops the listener — as are the port and Bonjour below.
     public static let mode = SettingsKey<RunMode>(
-        "mode", default: .client, scope: .host, requiresRestart: true,
-        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
-        summary: "Run as a client, as a host peer, or both."
+        "mode", default: .client, scope: .host,
+        summary: "Admin (manage Macs from here), host (be managed by an admin Mac), or both."
     )
 
+    /// 7868 since 7 October (the owner's choice); it was a placeholder 7443 while nothing listened.
     public static let hostListenPort = SettingsKey<Int>(
-        "hostListenPort", default: 7443, scope: .host, requiresRestart: true,
-        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
+        "hostListenPort", default: Int(WireProtocol.defaultPort), scope: .host,
         summary: "The port host mode listens on."
     )
 
     public static let bonjourEnabled = SettingsKey<Bool>(
-        "bonjourEnabled", default: true, scope: .host, requiresRestart: true,
-        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
+        "bonjourEnabled", default: true, scope: .host,
         summary: "Let other Macs on this network find this host. Adding one by address works regardless."
+    )
+
+    /// The fleet enrolment key a configuration profile hands a host (PLAN.md Phase B). Sensitive:
+    /// it lets a Mac *ask* to join, so it is never exported or put in diagnostics. A key pasted by
+    /// hand lives in the Keychain instead, not here.
+    public static let enrolmentKey = SettingsKey<String>(
+        "enrolmentKey", default: "", scope: .host, isSensitive: true,
+        summary: "The fleet enrolment key from the admin Mac. Set by a configuration profile; never exported."
     )
 
     /// **Not built**, and worth being explicit about why the wording matters: there is no TLS
@@ -337,6 +345,7 @@ public enum SettingsRegistry {
         SettingsKeys.peerAllowlist.descriptor,
         SettingsKeys.trustAnchorFingerprints.descriptor,
         SettingsKeys.checkForNewReleasesOnLaunch.descriptor,
+        SettingsKeys.enrolmentKey.descriptor,
         SettingsKeys.automaticUpdateChecks.descriptor,
         SettingsKeys.automaticallyDownloadUpdates.descriptor,
         SettingsKeys.updateCheckIntervalSeconds.descriptor,

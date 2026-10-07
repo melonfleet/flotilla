@@ -122,7 +122,7 @@ import Testing
 
 @Test func unsetKeysFallThroughToTheBuiltInDefault() {
     let store = SettingsStore()
-    #expect(store[SettingsKeys.hostListenPort] == 7443)
+    #expect(store[SettingsKeys.hostListenPort] == 7868)
     #expect(store[SettingsKeys.defaultRegistryDomain] == "docker.io")
     #expect(store.source(of: SettingsKeys.hostListenPort) == .builtIn)
 }

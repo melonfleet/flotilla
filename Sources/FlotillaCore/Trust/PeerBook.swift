@@ -3,7 +3,7 @@ import Foundation
 /// What a Mac says about itself when it asks to join — shown to the owner at approval so it can be
 /// checked against the inventory (the owner, 7 October). Self-reported, so it informs the decision
 /// and never makes it: the fingerprint is the identity.
-public struct PeerDetails: Sendable, Equatable, Codable {
+public struct PeerDetails: Sendable, Hashable, Codable {
     public var computerName: String
     public var model: String?
     public var serialNumber: String?
@@ -21,7 +21,7 @@ public struct PeerDetails: Sendable, Equatable, Codable {
 }
 
 /// One Mac this Mac knows: on the admin Mac, a host; on a host, its admin.
-public struct Peer: Sendable, Equatable, Codable, Identifiable {
+public struct Peer: Sendable, Hashable, Codable, Identifiable {
     public enum Role: String, Sendable, Codable { case admin, host }
 
     public enum Status: String, Sendable, Codable {
