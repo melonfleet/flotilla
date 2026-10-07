@@ -24,6 +24,8 @@ struct DNSFormView: View {
     let target: DNSFormTarget
     /// Set when a suggestion opened the form (Q28): its domain and kind fill the fields.
     var prefill: DNSSuggestion? = nil
+    /// The Mac a new domain is created on (D3); a domain's own page is on the Mac its row is.
+    var initialHost: HostRef = .local
     let dismiss: () -> Void
 
     enum Kind: String, CaseIterable, Identifiable {
@@ -42,6 +44,7 @@ struct DNSFormView: View {
     @State private var confirmingDelete = false
     /// "Set Up on This Mac…" with the DNS helper on — see `dnsSetUpConfirmation`.
     @State private var pendingSetUp: String?
+    @State private var host: HostRef = .local
 
     @State private var edits = FormEditTracker()
 
@@ -49,9 +52,25 @@ struct DNSFormView: View {
     /// address from the range reserved for documentation (RFC 5737), so it is never a real host.
     static let exampleHostAlias = (domain: "host.container.internal", address: "203.0.113.113")
 
-    private var managed: LocalDNSDomain? {
-        guard case .manage(let name) = target else { return nil }
-        return model.dnsDomains.first { $0.id == name }
+    private var managedRow: HostedDNS? {
+        guard case .manage(let id) = target else { return nil }
+        return model.hostedDNS(id)
+    }
+
+    private var managed: LocalDNSDomain? { managedRow?.domain }
+
+    /// The Mac this form acts on.
+    private var mac: HostRef { managedRow?.host ?? host }
+    /// "this Mac", or the host's name.
+    private var place: String { model.dnsPlace(mac) }
+    private var Place: String { mac.isLocal ? "This Mac" : place }
+    /// No password prompt follows: the helper here, or any host's.
+    private var noPrompt: Bool { model.dnsChangesSkipPassword(on: mac) }
+
+    /// This Mac and every host whose DNS can be changed from here.
+    private var hostChoices: [(ref: HostRef, name: String)] {
+        [(HostRef.local, model.hostLabel)]
+            + model.hostMode.trustedHosts.map { (HostRef.peer($0.fingerprint), $0.displayName) }
     }
 
     private var isAdd: Bool { target == .add }
@@ -73,8 +92,8 @@ struct DNSFormView: View {
             return ValueShape.dnsDomain.rule
         }
         if let reserved = LocalDNS.reservedProblem(trimmedDomain) { return reserved }
-        if model.dnsDomains.contains(where: { $0.name == trimmedDomain && $0.resolverInstalled }) {
-            return "“\(trimmedDomain)” already exists."
+        if model.dnsDomains(on: mac).contains(where: { $0.name == trimmedDomain && $0.resolverInstalled }) {
+            return "“\(trimmedDomain)” already exists on \(place)."
         }
         return nil
     }
@@ -89,7 +108,8 @@ struct DNSFormView: View {
     }
 
     private var canCreate: Bool {
-        guard !working, !trimmedDomain.isEmpty, domainProblem == nil, addressProblem == nil
+        guard !working, !trimmedDomain.isEmpty, domainProblem == nil, addressProblem == nil,
+              model.dnsChangeProblem(on: mac) == nil
         else { return false }
         if kind == .hostAlias, trimmedAddress.isEmpty { return false }
         if case .success = command { return true }
@@ -120,7 +140,8 @@ struct DNSFormView: View {
         .onAppear {
             // Suggested, not imposed: with no domain in use, the first one is almost certainly
             // meant for containers.
-            if isAdd { useForContainers = model.containerDNSDomain == nil }
+            if isAdd { host = initialHost }
+            if isAdd { useForContainers = model.containerDNSDomain(on: host) == nil }
             if isAdd, let prefill {
                 kind = prefill.hostAddress == nil ? .containers : .hostAlias
                 domain = prefill.baseName
@@ -128,16 +149,16 @@ struct DNSFormView: View {
             }
             edits.open(editSignature)
         }
-        .containerDomainConfirmation($pendingChange, model: model) { change in
+        .containerDomainConfirmation($pendingChange, model: model, host: mac) { change in
             if isAdd { create(thenUse: true) } else { apply(change) }
         }
-        .dnsSetUpConfirmation($pendingSetUp) { _ in createManaged() }
+        .dnsSetUpConfirmation($pendingSetUp, place: place) { _ in createManaged() }
         .confirmationDialog("Delete the local domain “\(managed?.name ?? "")”?",
                             isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button(model.dnsHelperEnabled ? "Delete" : "Delete…", role: .destructive) { deleteManaged() }
+            Button(noPrompt ? "Delete" : "Delete…", role: .destructive) { deleteManaged() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(DNSCopy.deleteMessage(managed.map { [$0] } ?? [], helper: model.dnsHelperEnabled))
+            Text(DNSCopy.deleteMessage(managed.map { [$0] } ?? [], helper: noPrompt, place: place))
         }
     }
 
@@ -145,6 +166,26 @@ struct DNSFormView: View {
 
     @ViewBuilder
     private var addFields: some View {
+        if hostChoices.count > 1 {
+            FormField("Create on",
+                      help: FieldHelp("Which Mac the domain is added to.",
+                                      detail: "A domain belongs to one Mac's DNS settings. On a host, its own DNS "
+                                          + "helper makes the change, so it must be switched on there.")) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("", selection: $host) {
+                        ForEach(hostChoices, id: \.ref) { Text($0.name).tag($0.ref) }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    if let blocked = model.dnsChangeProblem(on: host) {
+                        Label(blocked, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(Theme.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
         FormField("Kind",
                   help: FieldHelp(
                       "What the domain is for.",
@@ -202,7 +243,7 @@ struct DNSFormView: View {
                           detail: "One domain at a time names containers. Choosing it restarts "
                               + "container, which stops every running container, and only "
                               + "containers created afterwards get names.",
-                          warning: model.containerDNSDomain.map {
+                          warning: model.containerDNSDomain(on: mac).map {
                               "Containers are named under “\($0)” now; turning this on replaces it."
                           })) {
                 Toggle("Name containers under this domain", isOn: $useForContainers)
@@ -210,7 +251,9 @@ struct DNSFormView: View {
             }
         }
 
-        Text(model.dnsHelperEnabled
+        Text(!mac.isLocal
+             ? "Creating a domain changes \(place)’s DNS settings, through its own DNS helper."
+             : noPrompt
              ? "Creating a domain changes this Mac’s DNS settings, through Flotilla’s DNS helper."
              : "Creating a domain changes this Mac’s DNS settings, so macOS asks for an "
                + "administrator password.")
@@ -229,19 +272,22 @@ struct DNSFormView: View {
     @ViewBuilder
     private var manageFields: some View {
         if let managed {
-            FormField("Kind", help: FieldHelp(DNSCopy.addressHelp(managed))) {
+            FormField("Kind", help: FieldHelp(DNSCopy.addressHelp(managed, place: place))) {
                 Text(DNSCopy.kindTitle(managed))
             }
             FormField("Address") {
-                Text(DNSCopy.address(managed))
+                Text(DNSCopy.address(managed, place: place))
                     .font(.system(size: 12, design: .monospaced))
                     .textSelection(.enabled)
             }
-            FormField("Status", help: FieldHelp(DNSCopy.statusHelp(managed))) {
-                DNSStatusLabel(row: managed)
+            FormField("Status", help: FieldHelp(DNSCopy.statusHelp(managed, place: place))) {
+                DNSStatusLabel(row: managed, place: place)
+            }
+            if !mac.isLocal {
+                FormField("Host") { Text(place) }
             }
             if managed.resolverInstalled {
-                FormField("On this Mac",
+                FormField("On \(place)",
                           help: FieldHelp("Where macOS reads it from.",
                                           detail: "Written by container as root. Delete removes it.")) {
                     Text(DNSResolverFile.directory + "/" + DNSResolverFile.filenamePrefix + managed.name)
@@ -255,19 +301,24 @@ struct DNSFormView: View {
                 FormSectionHeader(title: "Containers",
                                   note: "One domain at a time names containers.")
                 HStack(spacing: 8) {
-                    if managed.registersContainers {
+                    if let blocked = model.dnsChangeProblem(on: mac) {
+                    Label(blocked, systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(Theme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if managed.registersContainers {
                         Button("Stop Using for Containers…") { pendingChange = .stop(managed.name) }
                     } else {
                         Button("Use for Containers…") { pendingChange = .use(managed.name) }
                             .disabled(!managed.resolverInstalled)
                     }
                     if !managed.resolverInstalled {
-                        Button("Set Up on This Mac…") {
-                            if model.dnsHelperEnabled { pendingSetUp = managed.name } else { createManaged() }
+                        Button("Set Up on \(Place)…") {
+                            if noPrompt { pendingSetUp = managed.name } else { createManaged() }
                         }
                     }
                 }
-                .disabled(working)
+                .disabled(working || model.dnsChangeProblem(on: mac) != nil)
             }
 
             if let problem {
@@ -278,7 +329,7 @@ struct DNSFormView: View {
         } else {
             ContentUnavailableView("Domain unavailable",
                                    systemImage: "questionmark.square.dashed",
-                                   description: Text("It is no longer set up on this Mac."))
+                                   description: Text("It is no longer set up on that Mac."))
         }
     }
 
@@ -287,7 +338,7 @@ struct DNSFormView: View {
     private var railPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
             if isAdd {
-                Label("Runs as administrator", systemImage: "lock.shield")
+                Label(mac.isLocal ? "Runs as administrator" : "Runs on \(place), by its DNS helper", systemImage: "lock.shield")
                     .font(.caption).foregroundStyle(Theme.info)
                 if trimmedDomain.isEmpty {
                     Text("Type a domain to see the command.")
@@ -323,7 +374,7 @@ struct DNSFormView: View {
                 Label("In the table as", systemImage: Section.dns.systemImage)
                     .font(.caption).foregroundStyle(Theme.info)
                 Text(managed.name).font(.system(size: 13, weight: .medium))
-                Text(DNSCopy.statusText(managed))
+                Text(DNSCopy.statusText(managed, place: place))
                     .font(.caption).foregroundStyle(.tertiary)
             }
         }
@@ -337,7 +388,7 @@ struct DNSFormView: View {
                 Button("Cancel", action: dismiss)
                     .keyboardShortcut(.cancelAction)
                 // "…" when something follows — the password prompt, or the restart warning.
-                Button(model.dnsHelperEnabled && !(kind == .containers && useForContainers)
+                Button(noPrompt && !(kind == .containers && useForContainers)
                        ? "Create" : "Create…", action: submit)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
@@ -345,7 +396,7 @@ struct DNSFormView: View {
             } else {
                 if managed?.resolverInstalled == true {
                     Button("Delete…", role: .destructive) { confirmingDelete = true }
-                        .disabled(working)
+                        .disabled(working || model.dnsChangeProblem(on: mac) != nil)
                 }
                 Button("Done", action: dismiss)
                     .keyboardShortcut(.defaultAction)
@@ -374,10 +425,10 @@ struct DNSFormView: View {
         let localhost = kind == .hostAlias ? trimmedAddress : nil
         working = true
         Task {
-            let result = await model.createDNSDomain(name, localhost: localhost)
+            let result = await model.createDNSDomain(name, localhost: localhost, on: mac)
             switch result {
             case nil:
-                if thenUse, case .failed(let message)? = await model.setContainerDNSDomain(name) {
+                if thenUse, case .failed(let message)? = await model.setContainerDNSDomain(name, on: mac) {
                     working = false
                     problem = "The domain was created, but containers aren’t named under it: \(message)"
                     return
@@ -398,7 +449,7 @@ struct DNSFormView: View {
         working = true
         problem = nil
         Task {
-            let result = await model.createDNSDomain(managed.name, localhost: nil)
+            let result = await model.createDNSDomain(managed.name, localhost: nil, on: mac)
             working = false
             if case .failed(let message)? = result { problem = message }
         }
@@ -408,7 +459,7 @@ struct DNSFormView: View {
         working = true
         problem = nil
         Task {
-            let result = await model.setContainerDNSDomain(change.newDomain)
+            let result = await model.setContainerDNSDomain(change.newDomain, on: mac)
             working = false
             if case .failed(let message)? = result { problem = message }
         }
@@ -419,7 +470,7 @@ struct DNSFormView: View {
         working = true
         problem = nil
         Task {
-            let result = await model.deleteDNSDomains([managed.name])
+            let result = await model.deleteDNSDomains([managed.name], on: mac)
             working = false
             switch result {
             case nil: dismiss()

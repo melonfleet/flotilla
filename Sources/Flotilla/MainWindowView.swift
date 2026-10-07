@@ -36,8 +36,8 @@ struct MainWindowView: View {
         sortOrder: [KeyPathComparator(\HostedImage.reference)])
     @State private var registriesUI = ResourceUIState<RegistryRow>(
         sortOrder: [KeyPathComparator(\RegistryRow.nameSortKey)])
-    @State private var dnsUI = ResourceUIState<LocalDNSDomain>(
-        sortOrder: [KeyPathComparator(\LocalDNSDomain.nameSortKey)])
+    @State private var dnsUI = ResourceUIState<HostedDNS>(
+        sortOrder: [KeyPathComparator(\HostedDNS.nameSortKey)])
     @State private var hostsUI = ResourceUIState<HostRow>(
         sortOrder: [KeyPathComparator(\HostRow.nameSortKey)])
 
@@ -345,6 +345,7 @@ struct MainWindowView: View {
             imagesUI.columnCustomization[visibility: "host"] = visibility
             volumesUI.columnCustomization[visibility: "host"] = visibility
             networksUI.columnCustomization[visibility: "host"] = visibility
+            dnsUI.columnCustomization[visibility: "host"] = visibility
             logsUI.columnCustomization[visibility: "host"] = visibility
             // On hosts says nothing with no hosts, so it follows the same rule.
             volumesUI.columnCustomization[visibility: "spread"] = visibility

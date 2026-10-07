@@ -232,6 +232,37 @@ struct WireStreamTests {
         }
     }
 
+    @Test func outputOfACommandThatEndsBeforeAnyCreditStillArrives() throws {
+        var (hostSession, client) = try connected()
+        let (outgoing, credit) = try client.follow(["logs", "-n", "50", "--follow", "web"])
+        _ = try hostSession.receive(outgoing.message)
+        // The command writes and exits before the admin's credit has arrived.
+        hostSession.followOutput(outgoing.id, channel: .stdout, line: Data("one\n".utf8))
+        hostSession.followOutput(outgoing.id, channel: .stdout, line: Data("two\n".utf8))
+        #expect(hostSession.followEnded(outgoing.id, exitCode: 0, reason: nil).isEmpty)
+        var lines = ""
+        var ended: WireMessage.StreamEnd?
+        for event in try hostSession.receive(credit) {
+            guard case .send(let message) = event else { continue }
+            for got in try client.receive(message) {
+                if case .streamData(_, _, let data) = got { lines += String(decoding: data, as: UTF8.self) }
+                if case .streamEnded(let end) = got { ended = end }
+            }
+        }
+        #expect(lines == "one\ntwo\n")
+        #expect(ended?.exitCode == 0 && ended?.dropped == nil)
+    }
+
+    @Test func stoppingAFollowThatIsOnlyWaitingForCreditEndsItAtOnce() throws {
+        var (hostSession, _) = try connected()
+        _ = try hostSession.receive(.follow(.init(id: 1, arguments: ["logs", "-n", "5", "--follow", "web"])))
+        hostSession.followOutput(1, channel: .stdout, line: Data("one\n".utf8))
+        _ = hostSession.followEnded(1, exitCode: 0, reason: nil)
+        let events = try hostSession.receive(.cancel(.init(id: 1)))
+        guard case .send(.streamEnd(let end))? = events.last else { Issue.record("not ended"); return }
+        #expect(end.dropped == 1)
+    }
+
     @Test func creditForAFollowJustEndedIsIgnoredButForNoneIsAViolation() throws {
         var (hostSession, _) = try connected()
         _ = try hostSession.receive(.follow(.init(id: 1, arguments: ["logs", "-n", "5", "--follow", "web"])))

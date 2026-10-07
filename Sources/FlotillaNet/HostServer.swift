@@ -25,10 +25,25 @@ public protocol HostServerDelegate: AnyObject, Sendable {
     func enrolmentAnswered(_ outcome: WireMessage.PairOutcome, message: String)
     /// A trusted admin's command, for the host's own record (Activity).
     func ran(_ command: ValidatedCommand, for admin: PeerFingerprint)
+    /// A trusted admin's host call (D3), already validated. Answer exactly once: JSON (or nothing)
+    /// on success, or why not. Called on a connection's queue; implementations hop to their own.
+    func perform(_ call: HostCall, for admin: PeerFingerprint,
+                 reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void)
+}
+
+/// Why a host would not, or could not, do what a host call asked.
+public struct HostCallFailure: Error, Sendable {
+    public var code: WireFailureCode
+    public var message: String
+    public init(_ code: WireFailureCode, _ message: String) { self.code = code; self.message = message }
 }
 
 extension HostServerDelegate {
     public func ran(_ command: ValidatedCommand, for admin: PeerFingerprint) {}
+    public func perform(_ call: HostCall, for admin: PeerFingerprint,
+                        reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
+        reply(.failure(HostCallFailure(.refused, "This host doesn't take that request.")))
+    }
 }
 
 /// Host mode's listener (PLAN.md Phase B, B3): accepts TLS connections on the host-mode port, gives
@@ -343,6 +358,7 @@ final class HostConnectionHandler: @unchecked Sendable {
         case .startUpload(let id, let upload): startUpload(id, upload)
         case .uploadChunk(let id, let data): write(id, data)
         case .uploadFinished(let id, let sha256): finishUpload(id, sha256)
+        case .hostCall(let id, let call): perform(id, call)
         case .abortUpload(let id): discardUpload(id)
         }
     }
@@ -576,6 +592,36 @@ final class HostConnectionHandler: @unchecked Sendable {
         }
     }
 
+    /// A host call (D3): counted against the host's command slots — it may start the DNS helper or
+    /// restart the runtime — and answered on this connection's queue. Like a request, a cancel only
+    /// means the admin stops waiting.
+    private func perform(_ id: UInt32, _ call: HostCall) {
+        guard let admin = connection.peerFingerprint, let delegate = server.delegate else {
+            if let reply = session?.fail(id, code: .internalError, message: "This host isn't ready.") { connection.send(reply) }
+            return
+        }
+        guard server.reserveRun() else {
+            if let reply = session?.fail(id, code: .busy, message: "This host is already running as many commands as it allows.") {
+                connection.send(reply)
+            }
+            return
+        }
+        let server = self.server
+        let once = HostCallOnce()
+        delegate.perform(call, for: admin) { [weak self] outcome in
+            guard once.claim() else { return }
+            server.releaseRun()
+            guard let self else { return }
+            self.connection.queue.async {
+                let reply: WireMessage? = switch outcome {
+                case .success(let json): self.session?.complete(id, with: CommandResult(stdout: json, stderr: "", exitCode: 0))
+                case .failure(let failure): self.session?.fail(id, code: failure.code, message: failure.message)
+                }
+                if let reply { self.connection.send(reply) }
+            }
+        }
+    }
+
     /// Runs off the connection's queue — a long pull must not stall pings — and reports back on it.
     /// A cancelled command is answered at once and its eventual result discarded: `ContainerHost`
     /// cannot stop a child mid-run (Q15), so the honest answer is that the caller stopped waiting.
@@ -769,4 +815,11 @@ final class IncomingUpload: @unchecked Sendable {
             try? FileManager.default.removeItem(atPath: path)
         }
     }
+}
+
+/// A delegate's reply may come once only; a second would free a command slot twice.
+private final class HostCallOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool { lock.withLock { defer { claimed = true }; return !claimed } }
 }

@@ -22,8 +22,9 @@ import Foundation
 // Everything here is pure, so it is tested without a runtime, an administrator or the files.
 
 /// One local DNS domain, as Flotilla shows it.
-public struct LocalDNSDomain: Identifiable, Equatable, Sendable {
-    public enum Kind: Equatable, Sendable {
+/// Codable because a host sends its rows to the admin Mac (D3, `HostDNSStatus`).
+public struct LocalDNSDomain: Identifiable, Equatable, Sendable, Codable {
+    public enum Kind: Equatable, Sendable, Codable {
         /// Containers are looked up under it (`web.flotilla`).
         case containers
         /// It resolves to the Mac itself, through the given address, for reaching host services.

@@ -57,6 +57,10 @@ struct HostFollow: Sendable, Equatable {
     var pendingBytes = 0
     var dropped: UInt64 = 0
     var reportedDropped: UInt64 = 0
+    /// The command has ended but output is still waiting for credit: its end is sent once that is
+    /// out (or the admin stops the follow). Measured 8 October: a command that ended before the
+    /// admin's first credit arrived lost every line, counted as dropped.
+    var ending: (exitCode: Int32?, reason: String?)?
 
     static func == (a: HostFollow, b: HostFollow) -> Bool {
         a.credit == b.credit && a.seq == b.seq && a.pendingBytes == b.pendingBytes && a.dropped == b.dropped
@@ -160,6 +164,7 @@ extension WireHostSession {
         let (sum, overflow) = follow.credit.addingReportingOverflow(credit.bytes)
         follow.credit = overflow ? streamLimits.maxOutstandingCredit : min(sum, streamLimits.maxOutstandingCredit)
         follows[credit.id] = follow
+        if follow.ending != nil { return finishEnding(credit.id, flushing: true).map { .send($0) } }
         return flush(credit.id).map { .send($0) }
     }
 
@@ -227,19 +232,35 @@ extension WireHostSession {
     /// Everything every follow's credit allows, batched — called on a short tick rather than per
     /// line, so a chatty command becomes a few large frames, not many small ones.
     public mutating func flushFollows() -> [WireMessage] {
-        follows.keys.sorted().flatMap { flush($0) }
+        follows.keys.sorted().flatMap { id in
+            follows[id]?.ending != nil ? finishEnding(id, flushing: true) : flush(id)
+        }
     }
 
     /// Whether any follow has output waiting.
     public var followsPending: Bool { follows.values.contains { !$0.pending.isEmpty || $0.dropped > $0.reportedDropped } }
 
-    /// A followed command has stopped. What credit allows is sent; the rest is counted as dropped.
+    /// A followed command has stopped. What credit allows is sent now; if output is still waiting,
+    /// the end waits with it — for credit, or for the admin to stop the follow — within the same
+    /// buffer bound a running follow has.
     public mutating func followEnded(_ id: UInt32, exitCode: Int32?, reason: String?) -> [WireMessage] {
-        var out = flush(id)
-        guard let follow = follows.removeValue(forKey: id) else { return out }
+        guard var follow = follows[id] else { return [] }
+        follow.ending = (exitCode, reason)
+        follows[id] = follow
+        return finishEnding(id, flushing: true)
+    }
+
+    /// Sends what credit allows of an ended follow, then its end once nothing is waiting — or at
+    /// once, counting what is left as dropped, when `flushing` is false.
+    mutating func finishEnding(_ id: UInt32, flushing: Bool) -> [WireMessage] {
+        var out = flushing ? flush(id) : []
+        guard let follow = follows[id], let ending = follow.ending else { return out }
+        guard !flushing || follow.pending.isEmpty else { return out }
+        follows.removeValue(forKey: id)
         remember(id, in: &endedFollows)
         let dropped = follow.dropped + UInt64(follow.pending.count)
-        out.append(.streamEnd(.init(id: id, exitCode: exitCode, reason: reason, dropped: dropped > 0 ? dropped : nil)))
+        out.append(.streamEnd(.init(id: id, exitCode: ending.exitCode, reason: ending.reason,
+                                    dropped: dropped > 0 ? dropped : nil)))
         return out
     }
 

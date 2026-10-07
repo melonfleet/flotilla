@@ -12,9 +12,13 @@ public enum WireProtocol {
     /// Version 2 (PLAN.md Phase D, D2) adds bounded streams — following a host's logs and sending
     /// it an image (research/WIRE-STREAMS-D2.md). Their frames are refused on a version-1
     /// connection, so a version-1 peer is unaffected.
-    public static let supportedVersions: ClosedRange<UInt16> = 1...2
+    /// Version 3 (D3) adds typed host calls — DNS on a host, through its own helper
+    /// (research/FLEET-DNS-D3.md, DECISIONS Q36).
+    public static let supportedVersions: ClosedRange<UInt16> = 1...3
     /// The first version that carries streams.
     public static let streamsVersion: UInt16 = 2
+    /// The first version that carries host calls.
+    public static let hostCallsVersion: UInt16 = 3
     /// The owner's choice, 7 October. Changeable in Settings.
     public static let defaultPort: UInt16 = 7868
 
@@ -106,8 +110,10 @@ public enum WireFrameType: UInt8, Sendable, CaseIterable {
     case ping = 20, pong = 21
     case close = 30
     // Bounded streams, version 2 (D2). A version-1 session refuses them as unexpected, which is
-    // the point: they arrive only on a connection that negotiated them. 45–49 stay reserved.
+    // the point: they arrive only on a connection that negotiated them.
     case follow = 40, streamData = 41, streamEnd = 42, streamCredit = 43, upload = 44
+    // Host calls, version 3 (D3). 46–49 stay reserved.
+    case hostCall = 45
 }
 
 /// One frame: a type, a JSON header, and raw bytes. Command output rides in `payload` as bytes, so
@@ -215,6 +221,10 @@ public enum WireError: Error, Equatable, Sendable, CustomStringConvertible {
     /// A stream message that breaks its rules — out of sequence, beyond its credit, past its
     /// declared size, for a stream that does not exist. Closes the connection.
     case streamViolation(String)
+    /// A host call on a connection that did not negotiate version 3.
+    case hostCallsUnsupported
+    /// A host call its own rules refuse, caught before it is sent.
+    case hostCallRefused(String)
 
     public var description: String {
         switch self {
@@ -232,6 +242,8 @@ public enum WireError: Error, Equatable, Sendable, CustomStringConvertible {
         case .closed: "the connection is closed"
         case .streamsUnsupported: "this host's Flotilla is too old to stream — update it"
         case .streamViolation(let why): "stream error: \(why)"
+        case .hostCallsUnsupported: "this host's Flotilla is too old for that — update it"
+        case .hostCallRefused(let why): why
         }
     }
 }

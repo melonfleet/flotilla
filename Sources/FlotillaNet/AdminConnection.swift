@@ -167,6 +167,27 @@ public final class AdminConnection: @unchecked Sendable {
 
     public func close() { connection.close(nil) }
 
+    /// A host call (D3): the answer is an ordinary result, JSON in its stdout, or a failure.
+    /// Refused at once if the host predates host calls; never queued, there are only ever a few.
+    public func call(_ call: HostCall) async throws -> CommandResult {
+        try await withCheckedThrowingContinuation { continuation in
+            connection.queue.async { [self] in
+                if let reason = closedReason { return continuation.resume(throwing: RemoteHostError.closed(reason)) }
+                do {
+                    let outgoing = try session.call(call)
+                    pending[outgoing.id] = { continuation.resume(with: $0) }
+                    deadlines[outgoing.id] = timer(after: outgoing.deadline) { [weak self] in
+                        self?.session.abandon(outgoing.id)
+                        self?.settle(outgoing.id, .failure(RemoteHostError.timedOut))
+                    }
+                    connection.send(outgoing.message)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Whether the host negotiated streams (version 2). `false` before the welcome.
     public var canStream: Bool { connection.queue.sync { session.canStream } }
 

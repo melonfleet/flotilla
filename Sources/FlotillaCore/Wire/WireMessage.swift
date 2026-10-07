@@ -59,6 +59,7 @@ public enum WireMessage: Sendable, Equatable {
     case streamEnd(StreamEnd)
     case streamCredit(StreamCredit)
     case upload(Upload)
+    case hostCall(HostCallRequest)
 
     public struct Hello: Sendable, Equatable, Codable {
         public var minVersion: UInt16
@@ -333,6 +334,7 @@ public enum WireMessage: Sendable, Equatable {
         case .streamEnd: .streamEnd
         case .streamCredit: .streamCredit
         case .upload: .upload
+        case .hostCall: .hostCall
         case .pairStart: .pairStart
         case .pairChallenge: .pairChallenge
         case .pairProof: .pairProof
@@ -376,6 +378,7 @@ public enum WireMessage: Sendable, Equatable {
         case .streamEnd(let m): return WireFrame(type: .streamEnd, header: try json(m))
         case .streamCredit(let m): return WireFrame(type: .streamCredit, header: try json(m))
         case .upload(let m): return WireFrame(type: .upload, header: try json(m))
+        case .hostCall(let m): return WireFrame(type: .hostCall, header: try json(m))
         case .streamData(let m):
             return WireFrame(type: .streamData,
                              header: try json(StreamData.Header(id: m.id, seq: m.seq, channel: m.channel)),
@@ -422,6 +425,7 @@ public enum WireMessage: Sendable, Equatable {
         case .streamEnd: self = .streamEnd(try json(StreamEnd.self))
         case .streamCredit: self = .streamCredit(try json(StreamCredit.self))
         case .upload: self = .upload(try json(Upload.self))
+        case .hostCall: self = .hostCall(try json(HostCallRequest.self))
         case .streamData:
             let header = try json(StreamData.Header.self)
             self = .streamData(StreamData(id: header.id, seq: header.seq, channel: header.channel,

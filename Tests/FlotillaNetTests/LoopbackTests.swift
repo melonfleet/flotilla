@@ -55,6 +55,15 @@ struct LoopbackTests {
         func isBlocked(_ fingerprint: PeerFingerprint) -> Bool { locked { blocked.contains(fingerprint) } }
 
         func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
+
+        /// Host calls the host was asked to perform, and what it answers.
+        var calls: [HostCall] = []
+        var callAnswer: Result<String, HostCallFailure> = .success("")
+        func perform(_ call: HostCall, for admin: PeerFingerprint,
+                     reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
+            let answer = locked { calls.append(call); return callAnswer }
+            reply(answer)
+        }
     }
 
     /// A listening host and an identity for the admin, torn down afterwards.
@@ -494,6 +503,40 @@ struct LoopbackTests {
             #expect(String(describing: error).contains("1.3.1"))
         }
         #expect(rig.host.loaded.isEmpty)
+    }
+}
+
+extension LoopbackTests {
+    @Test func aHostCallReachesTheHostAndItsAnswerComesBack() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let status = HostDNSStatus(domains: [], containerDomain: "mini.fleet.internal", helper: .enabled)
+        let json = String(decoding: try JSONEncoder().encode(status), as: UTF8.self)
+        rig.delegate.locked { rig.delegate.callAnswer = .success(json) }
+        let host = remote(rig)
+        defer { host.close() }
+        let result = try await host.call(.dnsStatus)
+        #expect(try JSONDecoder().decode(HostDNSStatus.self, from: Data(result.stdout.utf8)) == status)
+
+        rig.delegate.locked { rig.delegate.callAnswer = .failure(HostCallFailure(.refused, "helper is off")) }
+        do {
+            _ = try await host.call(.dnsCreate(domain: "mini.fleet.internal", localhost: nil))
+            Issue.record("a refused call succeeded")
+        } catch {
+            #expect(String(describing: error).contains("helper is off"))
+        }
+        #expect(rig.delegate.locked { rig.delegate.calls } == [.dnsStatus, .dnsCreate(domain: "mini.fleet.internal", localhost: nil)])
+    }
+
+    @Test func aHostCallTheHelperWouldRefuseNeverReachesTheHost() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let host = remote(rig)
+        defer { host.close() }
+        await #expect(throws: (any Error).self) { _ = try await host.call(.dnsCreate(domain: "printers.local", localhost: nil)) }
+        #expect(rig.delegate.locked { rig.delegate.calls }.isEmpty)
     }
 }
 

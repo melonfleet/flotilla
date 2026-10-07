@@ -5,6 +5,7 @@ import Observation
 // stays Foundation-only.
 import AppKit
 import FlotillaCore
+import FlotillaNet
 
 /// UI-facing state for the app shell.
 ///
@@ -117,6 +118,10 @@ final class AppModel {
         // or a user who removed Flotilla in System Settings ▸ Login Items since last time.
         syncLoginItem()
         hostMode.recordActivity = { [weak self] event in self?.recordActivity(event) }
+        hostMode.performHostCall = { [weak self] call in
+            guard let self else { return .failure(HostCallFailure(.internalError, "This host isn't ready.")) }
+            return await self.performHostCall(call)
+        }
         hostMode.apply()
     }
 

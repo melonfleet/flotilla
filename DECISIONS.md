@@ -1828,3 +1828,20 @@ The owner's answers, 7 October:
 Live-tested: a network pushed to all three hosts landed on 10.240.16.0/24, 10.240.32.0/24 and
 10.240.48.0/24; a 64 MB volume pushed to all three; both then bulk-deleted from all four Macs. A
 container on a 10.240.0.0/24 network on This Mac took 10.240.0.2 and answered from the Mac.
+
+## Q36 — Phase D layer 2: DNS on every Mac, per-host zones (settled 2026-10-07)
+
+The owner's answers, 7 October, to research/FLEET-DNS-D3.md's questions:
+
+- **Build order: DNS on every Mac (Part A) and per-host zones (Part B) now; names that resolve
+  across Macs (Part C) after both are live-tested.**
+- **Part C's mechanism, when it comes: Flotilla answers.** A small DNS responder inside Flotilla,
+  loopback only, answers other Macs' zones with that Mac's address, and only for containers that
+  publish a port there. The helper writes resolver files pointing at it. This widens decision 19 a
+  second time, and is agreed in principle; its exact typed operations are reviewed when built.
+- **A DNS change on a host is confirmed on the admin Mac only.** The host's owner approves its
+  helper once; after that the admin owns the host (Q33). A host whose helper is not switched on
+  refuses DNS changes and says so — it never falls back to a password prompt nobody is there to
+  answer.
+- **The fleet domain defaults to `fleet.internal`** (`.internal` is reserved for private use), and
+  can be changed on the admin Mac. Each Mac's zone is `<its label>.<fleet domain>`.

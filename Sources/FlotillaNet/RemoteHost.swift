@@ -169,6 +169,22 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
         return try box.get()
     }
 
+    /// A host call (D3) — the host's DNS, through its own helper. Errors arrive in words.
+    public func call(_ call: HostCall) async throws -> CommandResult {
+        let open: AdminConnection = try await withCheckedThrowingContinuation { continuation in
+            connection { continuation.resume(with: $0) }
+        }
+        do {
+            return try await open.call(call)
+        } catch {
+            if case .closed? = error as? RemoteHostError { forget(open) }
+            if case WireError.hostCallsUnsupported? = error as? WireError {
+                throw RemoteHostError.protocolError("That Mac's Flotilla is too old for this. Update it first.")
+            }
+            throw error
+        }
+    }
+
     /// Sends the archive at `file` to the host, which checks it and loads it itself (PLAN.md
     /// Phase D, D2). `progress` reports bytes sent, from the connection's queue. The answer is the
     /// host's own `image load` result.

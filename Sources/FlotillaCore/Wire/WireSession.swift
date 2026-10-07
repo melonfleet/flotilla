@@ -43,6 +43,9 @@ public struct WireHostSession: Sendable {
         case uploadFinished(id: UInt32, sha256: String)
         /// Delete whatever has arrived for this upload.
         case abortUpload(id: UInt32)
+        /// Host calls (version 3): perform this already-validated call, then answer with
+        /// `complete` (JSON in stdout) or `fail`.
+        case hostCall(id: UInt32, call: HostCall)
     }
 
     public let peer: WirePeerInfo
@@ -116,7 +119,11 @@ public struct WireHostSession: Sendable {
 
         case (.ready, .cancel(let cancel)):
             // A cancel that crosses its own result is normal, not a fault.
-            if follows[cancel.id] != nil { return [.stopFollow(id: cancel.id)] }
+            if let follow = follows[cancel.id] {
+                // A follow whose command has already ended is only waiting for credit: end it now.
+                if follow.ending != nil { return finishEnding(cancel.id, flushing: false).map { .send($0) } }
+                return [.stopFollow(id: cancel.id)]
+            }
             if let upload = uploads[cancel.id] {
                 // Once every byte is in, the loader is running and cannot be stopped: its result
                 // will arrive, and claiming "cancelled" would say otherwise (Iris's review).
@@ -129,6 +136,8 @@ public struct WireHostSession: Sendable {
             return try handleFollow(follow)
         case (.ready, .upload(let upload)):
             return try handleUpload(upload)
+        case (.ready, .hostCall(let request)):
+            return try handleHostCall(request)
         case (.ready, .streamCredit(let credit)):
             guard streamsNegotiated else { throw WireError.unexpected(.streamCredit) }
             return try handleCredit(credit)

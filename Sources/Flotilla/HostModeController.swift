@@ -81,6 +81,10 @@ final class HostModeController {
     /// The same for images, volumes and networks — fetched on the same ask, so a host costs one
     /// round of reads per interval whichever sections are open.
     private(set) var imageSnapshots: [PeerFingerprint: FleetSnapshot<ContainerImage>] = [:]
+    /// Each host's DNS rows (D3), and the rest of what its `.dnsStatus` said — the domain its
+    /// containers are named under and whether its helper is switched on.
+    private(set) var dnsSnapshots: [PeerFingerprint: FleetSnapshot<LocalDNSDomain>] = [:]
+    private(set) var dnsStatus: [PeerFingerprint: HostDNSStatus] = [:]
     private(set) var volumeSnapshots: [PeerFingerprint: FleetSnapshot<ContainerVolume>] = [:]
     private(set) var networkSnapshots: [PeerFingerprint: FleetSnapshot<ContainerNetwork>] = [:]
     @ObservationIgnored private var backoff: [PeerFingerprint: HostBackoff] = [:]
@@ -105,6 +109,8 @@ final class HostModeController {
     /// How long before a Mac that refused is asked again — its profile may arrive later.
     static let autoEnrolRetry: TimeInterval = 120
     @ObservationIgnored var recordActivity: ((ContainerEvent) -> Void)?
+    /// Host side (D3): performs an admin's host call — set by `AppModel`, which owns the DNS code.
+    @ObservationIgnored var performHostCall: ((HostCall) async -> Result<String, HostCallFailure>)?
     /// The name the listener is advertising, so a rename of this Mac can be noticed.
     @ObservationIgnored private var advertisedName: String?
     @ObservationIgnored private var renameTimer: Timer?
@@ -549,6 +555,8 @@ final class HostModeController {
         live.removeValue(forKey: fingerprint)
         containerSnapshots.removeValue(forKey: fingerprint)
         imageSnapshots.removeValue(forKey: fingerprint)
+        dnsSnapshots.removeValue(forKey: fingerprint)
+        dnsStatus.removeValue(forKey: fingerprint)
         volumeSnapshots.removeValue(forKey: fingerprint)
         networkSnapshots.removeValue(forKey: fingerprint)
         backoff.removeValue(forKey: fingerprint)
@@ -575,6 +583,7 @@ final class HostModeController {
     /// The paired, trusted hosts and what each last said about its containers.
     var fleetContainers: [(host: Peer, snapshot: FleetSnapshot<Container>)] { fleet(containerSnapshots) }
     var fleetImages: [(host: Peer, snapshot: FleetSnapshot<ContainerImage>)] { fleet(imageSnapshots) }
+    var fleetDNS: [(host: Peer, snapshot: FleetSnapshot<LocalDNSDomain>)] { fleet(dnsSnapshots) }
     var fleetVolumes: [(host: Peer, snapshot: FleetSnapshot<ContainerVolume>)] { fleet(volumeSnapshots) }
     var fleetNetworks: [(host: Peer, snapshot: FleetSnapshot<ContainerNetwork>)] { fleet(networkSnapshots) }
 
@@ -644,6 +653,7 @@ final class HostModeController {
             case .success(let list): networkSnapshots[fingerprint, default: FleetSnapshot()].succeeded(list, at: at)
             case .failure(let error): networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
             }
+            await refreshDNS(fingerprint, remote: remote)
         }
         let now = Date()
         switch outcome {
@@ -677,6 +687,29 @@ final class HostModeController {
                 save()
             }
         }
+    }
+
+    /// A host's DNS (D3). A host whose Flotilla predates host calls says so in its rows' place.
+    func refreshDNS(_ fingerprint: PeerFingerprint, remote: RemoteHost? = nil) async {
+        guard let remote = remote ?? remoteHost(for: fingerprint) else { return }
+        let at = Date()
+        do {
+            let result = try await remote.call(.dnsStatus)
+            let status = try JSONDecoder().decode(HostDNSStatus.self, from: Data(result.stdout.utf8))
+            dnsStatus[fingerprint] = status
+            dnsSnapshots[fingerprint, default: FleetSnapshot()].succeeded(status.domains, at: at)
+        } catch {
+            dnsSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
+        }
+    }
+
+    /// Asks a host to do something to its DNS, then reads its DNS again.
+    func dnsCall(_ call: HostCall, on fingerprint: PeerFingerprint) async throws {
+        guard let remote = remoteHost(for: fingerprint) else {
+            throw RemoteHostError.unreachable("That host isn't paired, or can't be found on the network.")
+        }
+        defer { Task { await self.refreshDNS(fingerprint, remote: remote) } }
+        _ = try await remote.call(call)
     }
 
     /// A remote failure in a sentence. The common one on a Mac without `container` is the CLI's own
@@ -793,6 +826,13 @@ final class HostModeController {
         record(name(admin), "Ran " + command.auditDescription)
     }
 
+    /// An admin's host call: recorded when it changes something, then performed by the model.
+    fileprivate func perform(_ call: HostCall, admin: PeerFingerprint) async -> Result<String, HostCallFailure> {
+        guard let performHostCall else { return .failure(HostCallFailure(.internalError, "This host isn't ready.")) }
+        if call.mutates { record(name(admin), call.auditDescription.prefix(1).uppercased() + call.auditDescription.dropFirst()) }
+        return await performHostCall(call)
+    }
+
     private func refreshBridge() {
         bridge.update(trustedAdmins: Set(book.approved.filter { $0.role == .admin }.map(\.fingerprint)),
                       blockedAdmins: Set(admins.filter { book.isBlocked($0.fingerprint) }.map(\.fingerprint)),
@@ -894,5 +934,15 @@ final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
 
     func ran(_ command: ValidatedCommand, for admin: PeerFingerprint) {
         Task { @MainActor in self.controller?.ran(command, admin: admin) }
+    }
+
+    func perform(_ call: HostCall, for admin: PeerFingerprint,
+                 reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
+        Task { @MainActor in
+            guard let controller = self.controller else {
+                return reply(.failure(HostCallFailure(.internalError, "This host isn't ready.")))
+            }
+            reply(await controller.perform(call, admin: admin))
+        }
     }
 }

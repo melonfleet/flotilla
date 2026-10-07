@@ -202,6 +202,13 @@ public enum SettingsKeys {
         summary: "Let other Macs on this network find this host. Adding one by address works regardless."
     )
 
+    /// The domain every Mac's zone sits under (D3, DECISIONS Q36): `mini.fleet.internal`. Chosen on
+    /// the admin Mac; `.internal` is reserved for private use.
+    public static let fleetDNSDomain = SettingsKey<String>(
+        "fleetDNSDomain", default: FleetZones.defaultFleetDomain,
+        summary: "The domain each Mac's DNS zone sits under, such as fleet.internal."
+    )
+
     /// The fleet enrolment key a configuration profile hands a host (PLAN.md Phase B). Sensitive:
     /// it lets a Mac *ask* to join, so it is never exported or put in diagnostics. A key pasted by
     /// hand lives in the Keychain instead, not here.
@@ -341,6 +348,7 @@ public enum SettingsRegistry {
         SettingsKeys.mode.descriptor,
         SettingsKeys.hostListenPort.descriptor,
         SettingsKeys.bonjourEnabled.descriptor,
+        SettingsKeys.fleetDNSDomain.descriptor,
         SettingsKeys.identityKeychainLabel.descriptor,
         SettingsKeys.peerAllowlist.descriptor,
         SettingsKeys.trustAnchorFingerprints.descriptor,
