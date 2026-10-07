@@ -1,7 +1,7 @@
 import Foundation
 
 /// Result of running one `container` CLI invocation.
-public struct CommandResult: Sendable {
+public struct CommandResult: Sendable, Equatable {
     public let stdout: String
     public let stderr: String
     public let exitCode: Int32

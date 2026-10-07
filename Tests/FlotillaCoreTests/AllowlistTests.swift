@@ -84,14 +84,14 @@ private func requireRejected(
         "system start",
         "system stop",
         "system kernel set",
-        "system dns list", "system dns create", "system dns delete", "create",
+        "system dns list", "system dns create", "system dns delete",
         // The whole registry family, not only the login: `list` enumerates every registry this
         // Mac holds credentials for, and `logout` destroys them. See the rows for the review.
         "registry list", "registry login", "registry logout",
     ]
     let exposed: Set<String> = [
         "ls", "list", "inspect", "stats", "exec", "copy", "logs",
-        "start", "stop", "kill", "delete", "rm", "prune", "run",
+        "start", "stop", "kill", "delete", "rm", "prune", "run", "create",
         "image list", "image inspect", "image pull", "image delete", "image rm",
         "image prune", "image tag", "build",
         "volume list", "volume inspect", "volume create", "volume delete", "volume rm",

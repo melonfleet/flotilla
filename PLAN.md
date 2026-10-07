@@ -238,6 +238,18 @@ to change.
 
 Build the stateful host runtime and its remote client path.
 
+**B1 built 7 October** (`Sources/FlotillaCore/Wire/`, `WireTests`): frames are
+`[UInt32 length][UInt8 type][UInt32 header length][JSON header][raw payload]`,
+with command output as raw bytes so escaping cannot inflate it, and a declared
+length over the limit refused before it is buffered. Messages: hello, welcome,
+reject, request, cancel, result, failure, ping, pong, close; types 40–49 reserved
+for bounded streams. `WireHostSession` and `WireClientSession` are transport-free
+state machines: version negotiation, limits intersected to the stricter side,
+per-connection concurrency, deadlines a caller may shorten but never lengthen,
+and every request re-validated on the host by the `Allowlist` as a
+`.remotePeer` under the host's own `MountPolicy`. The client bounds what it
+accepts too. `create` became exposed per the owner's review. Next: B2.
+
 - Define bounded protocol framing, version and capability negotiation, explicit
   request lifecycle and failure semantics.
 - Carry only validated CLI argument arrays. Validate on both sides and enforce

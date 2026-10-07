@@ -809,7 +809,10 @@ public enum Allowlist {
             // a group arrives ready to start, and a standalone container should too. The CLI's
             // `create` takes exactly `run`'s options less `--progress` (diffed against both
             // `--help` outputs on 1.5.0); `--detach` and `--rm` are left out because they mean
-            // nothing for a container that is not started. Local-only: only import uses it.
+            // nothing for a container that is not started.
+            // Exposed since 7 October (the owner's Phase B review: reads and lifecycle
+            // first). It was local-only while its only caller was import; it is `run`
+            // without the start, under the same MountPolicy and flag shapes.
             CommandSpec(["create"], mutates: true, timeoutHint: 600,
                         flags: [FlagSpec(long: "name", value: .identifier),
                                 FlagSpec(long: "env", short: "e", value: .envAssignment,
@@ -823,8 +826,7 @@ public enum Allowlist {
                                 FlagSpec(long: "network", value: .identifier),
                                 FlagSpec(long: "platform", value: .platform)],
                         operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
-                        trailing: .command(maxTokens: 24),
-                        exposure: .localOnly(reason: "creating containers from an imported file is the owner's own action")),
+                        trailing: .command(maxTokens: 24)),
 
             // MARK: images
             CommandSpec(["image", "list"], mutates: false, flags: [format, quiet]),
