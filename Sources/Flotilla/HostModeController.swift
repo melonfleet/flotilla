@@ -468,6 +468,13 @@ final class HostModeController {
             save()
         case .failure(let error):
             live[fingerprint] = LiveStatus(state: .failed(Self.describe(error)), checkedAt: Date())
+            // Connected but a command failed — a host without `container` — still says who it is.
+            // Measured 7 October: a renamed VM kept its old name because only success refreshed it.
+            if let info = remote.hostInfo,
+               book.refresh(fingerprint, computerName: info.name, macOSVersion: info.macOSVersion) {
+                record(info.name, "Name or version updated")
+                save()
+            }
         }
     }
 
