@@ -380,7 +380,15 @@ never silently install or upgrade Apple's privileged package.
 
 ### Under consideration — modern integrations (the owner, 6 October)
 
-Not decided; Iris is researching (`experiments/modern-features-2026-10-06/`).
+Not decided. Iris's research (`experiments/modern-features-2026-10-06/iris-report.md`)
+recommends, in order: a read-only `flotilla` CLI companion; App Intents for
+Shortcuts and Spotlight; Quick Look for `.flotilla` files; a read-only `stdio`
+MCP server, then MCP-prepared actions the app shows and the user approves; then
+widgets. Defer webhooks and a local REST API; do not build an extension
+marketplace or a cloud assistant. For the assistant: start with Apple's
+on-device Foundation Models plus retrieval over our own docs and captured
+`--help`, with citations; offer a downloadable 3–4B model only if evaluation
+shows the system model falls short. Her 15 open questions are the owner's.
 
 - **MCP and other current integrations.** An optional Model Context Protocol
   server so AI assistants can read fleet state and, only with the user's
