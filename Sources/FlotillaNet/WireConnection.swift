@@ -112,8 +112,18 @@ public final class WireConnection: @unchecked Sendable {
         queue.async { [self] in limits = limits.intersection(agreed) }
     }
 
+    /// Closes after everything already sent has gone. Sends on one connection are delivered in
+    /// order, so an empty final message flushes them: a refusal followed by a hang-up arrives as a
+    /// refusal (measured 7 October — cancelling at once dropped the reason, and the other side saw
+    /// only a closed connection). Bounded, in case the peer stops reading.
     public func close(_ reason: String? = nil) {
-        queue.async { [self] in finish(reason) }
+        queue.async { [self] in
+            guard !finished else { return }
+            // Whichever comes first; `finish` runs once.
+            queue.asyncAfter(deadline: .now() + 2) { [weak self] in self?.finish(reason) }
+            connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
+                            completion: .contentProcessed { [weak self] _ in self?.finish(reason) })
+        }
     }
 
     // MARK: Internals

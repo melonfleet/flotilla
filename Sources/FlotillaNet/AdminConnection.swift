@@ -13,6 +13,8 @@ public enum RemoteHostError: Error, Equatable, Sendable, CustomStringConvertible
     case closed(String?)
     case notTrusted
     case protocolError(String)
+    /// Pairing ended without a pairing — the host's own reason, or the owner's answer.
+    case pairingFailed(String)
 
     public var description: String {
         switch self {
@@ -23,6 +25,7 @@ public enum RemoteHostError: Error, Equatable, Sendable, CustomStringConvertible
         case .closed(let why): "The connection closed\(why.map { ": \($0)" } ?? ".")"
         case .notTrusted: "This host hasn't been paired with this Mac."
         case .protocolError(let why): "The host broke the protocol: \(why)"
+        case .pairingFailed(let why): why
         }
     }
 }
@@ -157,7 +160,7 @@ public final class AdminConnection: @unchecked Sendable {
                     guard let self else { return }
                     switch event {
                     case .send(let message): self.connection.send(message)
-                    case .failed(let why): self.finishPairing(.failure(RemoteHostError.protocolError(why)))
+                    case .failed(let why): self.finishPairing(.failure(RemoteHostError.pairingFailed(why)))
                     case .paired(let fingerprint, let details): self.finishPairing(.success(.paired(fingerprint, details)))
                     case .enrolmentRequested(let fingerprint, let hostDetails):
                         Task {

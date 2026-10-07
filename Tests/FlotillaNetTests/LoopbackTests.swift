@@ -193,6 +193,25 @@ struct LoopbackTests {
         #expect(rig.delegate.locked { rig.delegate.answers } == [.pending])
     }
 
+    @Test func aHostWithoutTheKeySaysWhyBeforeHangingUp() async throws {
+        // Measured 7 October with a VM: the refusal was sent and the connection cancelled at once,
+        // so the reason never arrived and the admin reported a protocol violation.
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        let admin = rig.admin()
+        defer { admin.close() }
+        _ = try await admin.connect()
+        do {
+            _ = try await admin.pair(details: PeerDetails(computerName: "admin"),
+                                     method: .enrolmentKey(EnrolmentKey.generate(for: rig.adminIdentity.fingerprint)),
+                                     confirmWords: { _, _ in false }, recordEnrolment: { _, _ in .blocked })
+            Issue.record("paired without a key")
+        } catch {
+            #expect("\(error)".contains("wasn’t set up to enrol") || "\(error)".contains("wasn't set up to enrol"),
+                    "got: \(error)")
+        }
+    }
+
     @Test func revokingClosesTheLiveConnection() async throws {
         let rig = try await rig()
         defer { rig.tearDown() }
