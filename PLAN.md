@@ -248,7 +248,20 @@ state machines: version negotiation, limits intersected to the stricter side,
 per-connection concurrency, deadlines a caller may shorten but never lengthen,
 and every request re-validated on the host by the `Allowlist` as a
 `.remotePeer` under the host's own `MountPolicy`. The client bounds what it
-accepts too. `create` became exposed per the owner's review. Next: B2.
+accepts too. `create` became exposed per the owner's review.
+
+**B2a built 7 October** (`Sources/FlotillaCore/Trust/`, `TrustTests`): the
+enrolment key (`FLT1-` + 60 Crockford base32 characters: version, the admin
+fingerprint's first 128 bits, a 128-bit secret, CRC-32 for typos); the
+eight-character pairing code (ten minutes, five tries); the 256-word list for
+the four fingerprint words; `PeerBook` (pending → approved / rejected,
+approved → revoked, rejected stays blocked, seven-day expiry, plist-native);
+and both pairing handshakes as state machines over five new frame types
+(4–8), with HMAC transcripts binding both TLS fingerprints and both nonces so
+a machine in the middle breaks the proofs. Cryptography is injected
+(`PairingCrypto`); B2b supplies CryptoKit, the Keychain identity, the stored
+book and the approval screens. B3 needs a certificate for each Mac's key;
+`swift-certificates` is the proposed dependency, for the owner to decide.
 
 - Define bounded protocol framing, version and capability negotiation, explicit
   request lifecycle and failure semantics.

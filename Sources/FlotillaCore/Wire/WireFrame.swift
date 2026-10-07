@@ -74,6 +74,8 @@ public struct WireLimits: Sendable, Equatable, Codable {
 /// What a frame is. The raw values are the protocol: never renumber one.
 public enum WireFrameType: UInt8, Sendable, CaseIterable {
     case hello = 1, welcome = 2, reject = 3
+    /// Pairing and enrolment (B2), before a peer is trusted: see `PairingAdminSession`.
+    case pairStart = 4, pairChallenge = 5, pairProof = 6, pairResult = 7, pairConfirm = 8
     case request = 10, cancel = 11, result = 12, failure = 13
     case ping = 20, pong = 21
     case close = 30

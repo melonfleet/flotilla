@@ -49,6 +49,11 @@ public enum WireMessage: Sendable, Equatable {
     case ping(Ping)
     case pong(Ping)
     case close(Close)
+    case pairStart(PairStart)
+    case pairChallenge(PairChallenge)
+    case pairProof(PairProof)
+    case pairResult(PairResult)
+    case pairConfirm(PairConfirm)
 
     public struct Hello: Sendable, Equatable, Codable {
         public var minVersion: UInt16
@@ -171,8 +176,72 @@ public enum WireMessage: Sendable, Equatable {
         public init(reason: String) { self.reason = reason }
     }
 
+    // MARK: Pairing (B2)
+
+    public enum PairMethod: String, Sendable, Codable { case enrolmentKey = "enrolment-key", pairingCode = "pairing-code" }
+
+    /// Admin → host: how it means to pair, its nonce, and what it says about itself.
+    public struct PairStart: Sendable, Equatable, Codable {
+        public var method: PairMethod
+        public var nonce: Data
+        public var details: PeerDetails
+        public init(method: PairMethod, nonce: Data, details: PeerDetails) {
+            self.method = method
+            self.nonce = nonce
+            self.details = details
+        }
+    }
+
+    /// Host → admin, code pairing only: the host's nonce, so the admin's proof is fresh.
+    public struct PairChallenge: Sendable, Equatable, Codable {
+        public var nonce: Data
+        public init(nonce: Data) { self.nonce = nonce }
+    }
+
+    /// Either way: an HMAC over the transcript, keyed by the shared secret or code. The host's
+    /// carries its nonce (enrolment) and its details.
+    public struct PairProof: Sendable, Equatable, Codable {
+        public var mac: Data
+        public var nonce: Data?
+        public var details: PeerDetails?
+        public init(mac: Data, nonce: Data? = nil, details: PeerDetails? = nil) {
+            self.mac = mac
+            self.nonce = nonce
+            self.details = details
+        }
+    }
+
+    public enum PairOutcome: String, Sendable, Codable {
+        /// Enrolment: proved, and waiting for the owner's approval on the admin Mac.
+        case pending
+        case approved
+        case refused
+        /// Turned away or revoked before.
+        case blocked
+    }
+
+    public struct PairResult: Sendable, Equatable, Codable {
+        public var outcome: PairOutcome
+        public var message: String
+        public init(outcome: PairOutcome, message: String) {
+            self.outcome = outcome
+            self.message = message
+        }
+    }
+
+    /// Code pairing: this side's owner compared the words and said yes (or no).
+    public struct PairConfirm: Sendable, Equatable, Codable {
+        public var confirmed: Bool
+        public init(confirmed: Bool) { self.confirmed = confirmed }
+    }
+
     public var frameType: WireFrameType {
         switch self {
+        case .pairStart: .pairStart
+        case .pairChallenge: .pairChallenge
+        case .pairProof: .pairProof
+        case .pairResult: .pairResult
+        case .pairConfirm: .pairConfirm
         case .hello: .hello
         case .welcome: .welcome
         case .reject: .reject
@@ -202,6 +271,11 @@ public enum WireMessage: Sendable, Equatable {
         case .ping(let m): return WireFrame(type: .ping, header: try json(m))
         case .pong(let m): return WireFrame(type: .pong, header: try json(m))
         case .close(let m): return WireFrame(type: .close, header: try json(m))
+        case .pairStart(let m): return WireFrame(type: .pairStart, header: try json(m))
+        case .pairChallenge(let m): return WireFrame(type: .pairChallenge, header: try json(m))
+        case .pairProof(let m): return WireFrame(type: .pairProof, header: try json(m))
+        case .pairResult(let m): return WireFrame(type: .pairResult, header: try json(m))
+        case .pairConfirm(let m): return WireFrame(type: .pairConfirm, header: try json(m))
         case .result(let m):
             let header = Result.Header(id: m.id, exitCode: m.exitCode, stdoutBytes: m.stdout.count,
                                        stdoutTruncated: m.stdoutTruncated, stderrTruncated: m.stderrTruncated)
@@ -234,6 +308,11 @@ public enum WireMessage: Sendable, Equatable {
         case .ping: self = .ping(try json(Ping.self))
         case .pong: self = .pong(try json(Ping.self))
         case .close: self = .close(try json(Close.self))
+        case .pairStart: self = .pairStart(try json(PairStart.self))
+        case .pairChallenge: self = .pairChallenge(try json(PairChallenge.self))
+        case .pairProof: self = .pairProof(try json(PairProof.self))
+        case .pairResult: self = .pairResult(try json(PairResult.self))
+        case .pairConfirm: self = .pairConfirm(try json(PairConfirm.self))
         case .result:
             let header = try json(Result.Header.self)
             guard header.stdoutBytes >= 0, header.stdoutBytes <= frame.payload.count else {
