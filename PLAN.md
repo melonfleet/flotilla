@@ -516,6 +516,15 @@ assuming the next one exists.
   replaces the interim pick from `192.168.100.0/24` upward that gateway-wired
   Suggestions use today, and keeps a future routed overlay possible.
 
+Order (7 October): **D1** layer 1 below; **D2** bounded wire streams, then images sent from the
+admin Mac (save → stream → load) and live logs from hosts; **D3** layer 2 — the DNS helper on
+hosts, per-host DNS zones, fleet names; **D4** layer 3's research reviewed with the owner.
+
+**D1 — built (DECISIONS Q35).** Push to Hosts… on This Mac's networks and volumes, with a per-host
+preview and results and an On hosts column that marks drift; a /20 per Mac from 10.240.0.0/12,
+shown on each host's page; pushed networks and gateway-wired Suggestions take /24s from it.
+Live-tested across all three hosts. Not built: editing a Mac's block by hand.
+
 #### Layer 2 — Fleet DNS
 
 - Give fleet resources names that resolve on every enrolled host.

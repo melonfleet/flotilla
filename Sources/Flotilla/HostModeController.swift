@@ -123,7 +123,8 @@ final class HostModeController {
 
     /// Imported hosts the book does not hold yet, in the order they were imported.
     private(set) var importedHosts: [ImportedHost] = []
-    @ObservationIgnored private let importedDefaults: UserDefaults
+    /// Where imported hosts and address blocks are kept — this Mac's own bookkeeping, never trust.
+    @ObservationIgnored private let localStore: UserDefaults
     static let importedHostsKey = "importedHosts"
 
     /// Adds a file's hosts as rows to pair. Returns how many were new — one already in the book or
@@ -158,16 +159,41 @@ final class HostModeController {
         Set(book.peers.map(\.fingerprint.hex) + importedHosts.map(\.fingerprint.hex))
     }
 
+    // MARK: Address blocks (PLAN.md Phase D; DECISIONS Q35)
+
+    /// Each Mac's own `/20`, keyed `local` for This Mac and by fingerprint hex for a host.
+    /// Assigned the first time it is needed and kept; a removed host's block is given back.
+    private(set) var addressBlocks: [String: IPv4Block] = [:]
+    static let addressBlocksKey = "addressBlocks"
+    static func blockKey(_ host: HostRef) -> String {
+        switch host {
+        case .local: "local"
+        case .peer(let fingerprint): fingerprint.hex
+        }
+    }
+
+    /// Brings the plan up to date: a block for This Mac and every trusted host, none overlapping
+    /// `avoid` — this Mac's interfaces and every network subnet any Mac reported.
+    func updateAddressPlan(avoiding avoid: [IPv4Block]) {
+        let macs = ["local"] + trustedHosts.map(\.fingerprint.hex)
+        let planned = AddressPlan.assign(macs, existing: addressBlocks, avoid: avoid)
+        guard planned != addressBlocks else { return }
+        addressBlocks = planned
+        localStore.set(try? PropertyListEncoder().encode(planned), forKey: Self.addressBlocksKey)
+    }
+
     private func saveImported() {
-        importedDefaults.set(try? PropertyListEncoder().encode(importedHosts), forKey: Self.importedHostsKey)
+        localStore.set(try? PropertyListEncoder().encode(importedHosts), forKey: Self.importedHostsKey)
     }
 
     init(settings: SettingsStore, containerHost: ContainerHost,
          bookStore: PeerBookStore = PeerBookStore(), keyStore: EnrolmentKeyStore = .standard,
-         identityStore: DeviceIdentityStore = .standard, importedDefaults: UserDefaults = .standard) {
-        self.importedDefaults = importedDefaults
-        importedHosts = importedDefaults.data(forKey: Self.importedHostsKey)
+         identityStore: DeviceIdentityStore = .standard, localStore: UserDefaults = .standard) {
+        self.localStore = localStore
+        importedHosts = localStore.data(forKey: Self.importedHostsKey)
             .flatMap { try? PropertyListDecoder().decode([ImportedHost].self, from: $0) } ?? []
+        addressBlocks = localStore.data(forKey: Self.addressBlocksKey)
+            .flatMap { try? PropertyListDecoder().decode([String: IPv4Block].self, from: $0) } ?? [:]
         self.settings = settings
         self.containerHost = containerHost
         self.bookStore = bookStore

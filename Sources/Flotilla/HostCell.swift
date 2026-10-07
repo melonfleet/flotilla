@@ -57,3 +57,25 @@ struct ContainerSkewNote: View {
         }
     }
 }
+
+/// The On hosts cell (PLAN.md Phase D): on how many hosts This Mac's network or volume exists, and a
+/// mark when any copy differs from it. Empty when no host has answered.
+struct SpreadCell: View {
+    let spread: FleetPush.Spread
+
+    var body: some View {
+        if spread.asked > 0 {
+            HStack(spacing: 4) {
+                Text("\(spread.present) of \(spread.asked)")
+                    .monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+                if spread.differing > 0 {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2).foregroundStyle(Theme.warning)
+                        .help("\(spread.differing) host\(spread.differing == 1 ? "’s copy differs" : "s’ copies differ") from This Mac’s")
+                        .accessibilityLabel("\(spread.differing) differ")
+                }
+            }
+            .help("On \(spread.present) of the \(spread.asked) hosts that answered")
+        }
+    }
+}

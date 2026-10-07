@@ -23,6 +23,33 @@ enum HostInterfaces {
         }
         return result
     }
+
+    /// This Mac's IPv4 interface ranges — the office LAN, a VPN — so an address block is never
+    /// handed out on top of one (PLAN.md Phase D).
+    static func ipv4Ranges() -> [IPv4Block] {
+        var result: [IPv4Block] = []
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return result }
+        defer { freeifaddrs(list) }
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        func numeric(_ address: UnsafeMutablePointer<sockaddr>) -> String? {
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count),
+                              nil, 0, NI_NUMERICHOST) == 0 else { return nil }
+            return String(cString: host)
+        }
+        while let entry = cursor {
+            if let address = entry.pointee.ifa_addr, address.pointee.sa_family == sa_family_t(AF_INET),
+               let mask = entry.pointee.ifa_netmask,
+               let ip = numeric(address), let maskText = numeric(mask),
+               let prefix = IPv4Block.prefix(ofMask: maskText), let block = IPv4Block("\(ip)/\(prefix)"),
+               !ip.hasPrefix("127.") {
+                result.append(block)
+            }
+            cursor = entry.pointee.ifa_next
+        }
+        return result
+    }
 }
 
 extension AppModel {

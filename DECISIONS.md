@@ -1805,3 +1805,26 @@ The owner's answers, 7 October, to PLAN.md Phase C's "safe host and settings exp
 Live-tested: a hand-made file naming a "Spoof test" host at the mini's Bonjour name with a made-up
 fingerprint imported as an unpaired row; Pair was refused with "presented a different key" before
 any pairing message, and the row was removed.
+
+## Q35 — Phase D layer 1: pushing networks and volumes, and each Mac's address block (settled 2026-10-07)
+
+The owner's answers, 7 October:
+
+- **This Mac's item is the definition.** A network or volume is created on This Mac as before, then
+  **Push to Hosts…** on its row: pick hosts, see what each would do — create it, already the same,
+  differs, not answering — push, and read a line per host. An **On hosts** column on This Mac's
+  rows says "2 of 3" and marks a host whose copy differs. No new section and no separate store.
+- **A differing copy is reported, never replaced.** Replacing a volume deletes its data and
+  replacing a network detaches its containers; that stays a decision on that Mac's own row.
+  Volumes are pushed as empty definitions — no data moves.
+- **Every Mac gets its own /20 from 10.240.0.0/12, automatically** — room for 256 Macs with sixteen
+  /24 networks each — skipping any range on this Mac's interfaces or already used by any Mac's
+  networks. Kept once given; a removed host's block is given back. A pushed network gets the first
+  free /24 in that Mac's block, so two Macs' networks of one name never overlap (which a routed
+  overlay in layer 3 would need). Shown on each host's page; editing a block by hand is not built
+  yet. Gateway-wired Suggestions on This Mac now take their subnet from This Mac's block too, with
+  the old 192.168.100.0/24-upward pick as the fallback.
+
+Live-tested: a network pushed to all three hosts landed on 10.240.16.0/24, 10.240.32.0/24 and
+10.240.48.0/24; a 64 MB volume pushed to all three; both then bulk-deleted from all four Macs. A
+container on a 10.240.0.0/24 network on This Mac took 10.240.0.2 and answered from the Mac.

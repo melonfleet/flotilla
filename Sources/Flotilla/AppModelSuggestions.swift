@@ -76,8 +76,13 @@ extension AppModel {
                     // subnet that a restart cannot move (Q30). Name wiring needs no address.
                     var options = ContainerCLI.NetworkOptions()
                     if stackWiringDomain == nil {
+                        // From This Mac's own address block (PLAN.md Phase D; Q35), so the stack's
+                        // network never overlaps one pushed to or from another Mac. The old pick
+                        // from 192.168.100.0/24 upward stays as the fallback for a Mac with no
+                        // block free.
+                        updateAddressPlan()
                         let used = networks.compactMap(\.subnet) + Array(HostInterfaces.ipv4Addresses())
-                        options.subnet = StackPlanner.freeSubnet(used: used)
+                        options.subnet = pushSubnet(on: .local)?.description ?? StackPlanner.freeSubnet(used: used)
                     }
                     let networkOptions = options
                     do {

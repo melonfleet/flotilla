@@ -24,6 +24,8 @@ struct NetworksView: View {
     /// The network whose detail screen is showing, or nil for the list.
     @State private var detailTarget: DetailTarget?
     @State private var pendingDelete: HostedNetwork?
+    /// This Mac's network being pushed to hosts (PLAN.md Phase D).
+    @State private var pushing: ContainerNetwork?
     @State private var confirmingBulkDelete = false
 
     /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
@@ -35,7 +37,9 @@ struct NetworksView: View {
 
     var body: some View {
         Group {
-            if showingCreate {
+            if let network = pushing {
+                PushDefinitionView(model: model, subject: .network(network)) { pushing = nil }
+            } else if showingCreate {
                 NewNetworkView(model: model, dismiss: { showingCreate = false; createPrefill = nil },
                                prefill: createPrefill, initialHost: ui.hostFilter ?? .local)
             } else if showingSuggestions {
@@ -195,7 +199,7 @@ struct NetworksView: View {
     private static let columnSpecs: [(id: String, title: String)] = [
         ("tags", "Tags"),
         ("mode", "Mode"), ("subnet", "Subnet"), ("gateway", "Gateway"), ("created", "Created"),
-        ("host", "Host"),
+        ("host", "Host"), ("spread", "On hosts"),
     ]
 
     /// Built-in versus your own. Fixed rather than derived, because the distinction is always
@@ -524,6 +528,16 @@ struct NetworksView: View {
             .width(min: 80, ideal: 110)
             .customizationID("host")
 
+            // How far This Mac's network has been pushed (PLAN.md Phase D) — and whether a host's
+            // copy has drifted from it.
+            TableColumn("On hosts") { row in
+                if row.host.isLocal, !row.network.isBuiltin {
+                    SpreadCell(spread: model.spread(of: row.network))
+                }
+            }
+            .width(min: 70, ideal: 96)
+            .customizationID("spread")
+
             TableColumn("Actions") { row in
                 rowActions(for: row)
             }
@@ -699,6 +713,10 @@ struct NetworksView: View {
         // `network ls` does not always return.
         Button("Details…") { open(row) }
         Button("Inspect") { open(row, tab: .inspect) }
+        if row.host.isLocal, !network.isBuiltin {
+            Button("Push to Hosts\u{2026}") { pushing = network }
+                .disabled(model.hostMode.trustedHosts.isEmpty)
+        }
         Divider()
         // Tags, in the same place on every row menu in the app: after the things you open and
         // before Copy. Not a destructive action, not a read of the runtime — it changes how the

@@ -203,6 +203,9 @@ struct HostsView: View {
             // without anyone pressing Refresh. Stops when the section goes.
             while !Task.isCancelled {
                 await hostMode.refreshLiveStatus()
+                // Every paired Mac has an address block once its networks are known (Q35).
+                await model.refreshNetworks()
+                model.updateAddressPlan()
                 try? await Task.sleep(for: .seconds(30))
             }
         }
@@ -658,7 +661,10 @@ struct HostsView: View {
                   ("Flotilla version", row.appVersion),
                   ("Model", row.modelIdentifier),
                   ("Serial number", row.peer?.details.serialNumber),
-                  ("Fingerprint", row.peer?.fingerprint.hex ?? row.imported?.fingerprint.hex)])
+                  ("Fingerprint", row.peer?.fingerprint.hex ?? row.imported?.fingerprint.hex),
+                  ("Address block", row.peer?.isTrusted == true || row.isThisMac
+                      ? model.addressBlock(for: row.isThisMac ? .local : .peer(row.peer!.fingerprint))?.description
+                      : nil)])
         Divider()
         Button("Remove…", role: .destructive) { pendingForget = row }
             .disabled(row.isThisMac)
@@ -737,6 +743,12 @@ struct PeerDetailView: View {
                 LabeledContent("Fingerprint") {
                     Text(HostModePane.shortFingerprint(peer.fingerprint))
                         .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                }
+                if peer.isTrusted, let block = model.addressBlock(for: .peer(peer.fingerprint)) {
+                    // Pushed networks take their subnets from here (PLAN.md Phase D; Q35).
+                    LabeledContent("Address block") {
+                        Text(block.description).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                    }
                 }
                 LabeledContent("Joined by", value: peer.method == .enrolmentKey ? "Fleet enrolment key" : "Pairing code")
                 LabeledContent("Asked", value: peer.requestedAt.formatted(date: .abbreviated, time: .shortened))

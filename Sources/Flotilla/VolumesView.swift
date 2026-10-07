@@ -37,6 +37,8 @@ struct VolumesView: View {
     /// Which Mac New Volume creates on (PLAN.md Phase C).
     @State private var newHost: HostRef = .local
     @State private var pendingDelete: HostedVolume?
+    /// This Mac's volume being pushed to hosts (PLAN.md Phase D).
+    @State private var pushing: ContainerVolume?
     @State private var confirmingBulkDelete = false
 
     /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
@@ -55,7 +57,9 @@ struct VolumesView: View {
 
     var body: some View {
         Group {
-            if showingCreate {
+            if let volume = pushing {
+                PushDefinitionView(model: model, subject: .volume(volume)) { pushing = nil }
+            } else if showingCreate {
                 createScreen
             } else if showingSuggestions {
                 ResourceSuggestionsGallery(
@@ -431,7 +435,7 @@ struct VolumesView: View {
     private static let columnSpecs: [(id: String, title: String)] = [
         ("tags", "Tags"),
         ("format", "Format"), ("driver", "Driver"), ("size", "Capacity"), ("created", "Created"),
-        ("host", "Host"),
+        ("host", "Host"), ("spread", "On hosts"),
     ]
 
     /// Prefix for a label filter's id, e.g. `label:team=infra`. Namespaced against
@@ -630,6 +634,13 @@ struct VolumesView: View {
             .width(min: 80, ideal: 110)
             .customizationID("host")
 
+            // How far This Mac's volume has been pushed (PLAN.md Phase D), and any drift.
+            TableColumn("On hosts") { row in
+                if row.host.isLocal { SpreadCell(spread: model.spread(of: row.volume)) }
+            }
+            .width(min: 70, ideal: 96)
+            .customizationID("spread")
+
             TableColumn("Actions") { row in
                 rowActions(for: row)
             }
@@ -807,6 +818,10 @@ struct VolumesView: View {
         Button("Details…") { open(row) }
         // Straight to the tab you wanted, the way the containers menu offers Logs and Inspect.
         Button("Inspect") { open(row, tab: .inspect) }
+        if row.host.isLocal {
+            Button("Push to Hosts\u{2026}") { pushing = volume }
+                .disabled(model.hostMode.trustedHosts.isEmpty)
+        }
         Divider()
         // Tags, in the same place on every row menu in the app: after the things you open and
         // before Copy. Not a destructive action, not a read of the runtime — it changes how the

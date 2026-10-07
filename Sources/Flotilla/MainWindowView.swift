@@ -346,6 +346,9 @@ struct MainWindowView: View {
             volumesUI.columnCustomization[visibility: "host"] = visibility
             networksUI.columnCustomization[visibility: "host"] = visibility
             logsUI.columnCustomization[visibility: "host"] = visibility
+            // On hosts says nothing with no hosts, so it follows the same rule.
+            volumesUI.columnCustomization[visibility: "spread"] = visibility
+            networksUI.columnCustomization[visibility: "spread"] = visibility
         }
         .onChange(of: model.pendingSection) { _, requested in
             guard let requested else { return }
