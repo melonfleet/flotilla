@@ -62,9 +62,9 @@ struct WireFrameTests {
         }
         var a = WireFrameDecoder()
         #expect(throws: WireError.self) { try a.append(frame(length: 2, type: 1, headerLength: 0)) }
-        // 40 is reserved for streams; version 1 does not speak it.
+        // 49 is still reserved: no version speaks it.
         var b = WireFrameDecoder()
-        #expect(throws: WireError.unknownFrameType(40)) { try b.append(frame(length: 5, type: 40, headerLength: 0)) }
+        #expect(throws: WireError.unknownFrameType(49)) { try b.append(frame(length: 5, type: 49, headerLength: 0)) }
         var c = WireFrameDecoder()
         #expect(throws: WireError.self) { try c.append(frame(length: 7, type: 1, headerLength: 9, body: Data([1, 2]))) }
         var d = WireFrameDecoder(limits: WireLimits(maxHeaderBytes: 4))
@@ -143,10 +143,10 @@ struct WireSessionTests {
 
     @Test func aVersionMismatchIsRejectedWithTheHostsRange() throws {
         var session = WireHostSession(peer: host)
-        let events = try session.receive(.hello(.init(versions: 2...4, peer: admin, limits: .default)))
+        let events = try session.receive(.hello(.init(versions: 3...4, peer: admin, limits: .default)))
         guard case .send(.reject(let reject)) = events.first else { Issue.record("no reject"); return }
         #expect(reject.code == .versionMismatch)
-        #expect(reject.minVersion == 1 && reject.maxVersion == 1)
+        #expect(reject.minVersion == 1 && reject.maxVersion == 2)
         #expect(events.last == .close(reason: "version mismatch"))
         #expect(session.state == .closed)
     }

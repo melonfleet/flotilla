@@ -12,7 +12,9 @@ import FlotillaCore
 enum LogViewerSource: Equatable {
     case container(String)
     case machine(String)
-    /// A paired host's container (PLAN.md Phase C): fetched in bounded tails over the wire.
+    /// A paired host's container (PLAN.md Phase C): fetched in bounded tails over the wire, and
+    /// followed live through the host's follow since D2. A host whose Flotilla predates streams
+    /// says so when Live is turned on.
     case remoteContainer(String, HostRef)
 
     var id: String {
@@ -20,13 +22,6 @@ enum LogViewerSource: Equatable {
         case .container(let id), .machine(let id): id
         case .remoteContainer(let id, let host): host.rowID(id)
         }
-    }
-
-    /// Following a log is a stream, and the wire's stream frames are reserved, not built — so a
-    /// remote container's logs are fetched, not followed, and Live says why.
-    var supportsLive: Bool {
-        if case .remoteContainer = self { return false }
-        return true
     }
 
     /// What the status bar calls the non-boot log. Both sources have a boot log as well, and
@@ -64,11 +59,12 @@ enum LogViewerSource: Equatable {
         }
     }
 
+    @MainActor
     func live(_ model: AppModel, lines: Int, boot: Bool) -> AsyncStream<LiveLogEvent> {
         switch self {
         case .container(let id): model.liveContainerLogs(id, lines: lines, bootLog: boot)
         case .machine(let id): model.liveMachineLogs(id, lines: lines, boot: boot)
-        case .remoteContainer: AsyncStream { $0.finish() }
+        case .remoteContainer(let id, let host): model.liveContainerLogs(id, lines: lines, bootLog: boot, host: host)
         }
     }
 }
@@ -179,9 +175,7 @@ struct LogViewer: View {
                 // a popover and another to find the switch. Console keeps its equivalent on the
                 // toolbar for the same reason.
                 IconActionButton(systemImage: "dot.radiowaves.left.and.right", label: "Live",
-                                 help: !source.supportsLive ? "Following logs on another Mac isn’t available yet — use Refresh"
-                                     : live ? "Stop streaming" : "Stream new lines as they are written",
-                                 disabled: !source.supportsLive,
+                                 help: live ? "Stop streaming" : "Stream new lines as they are written",
                                  active: live) {
                     live.toggle()
                 }
@@ -301,8 +295,13 @@ struct LogViewer: View {
             let text = showTimestamps
                 ? "\(Self.timeLabel(line.receivedAt ?? fetchedAt))  \(line.text)"
                 : line.text
-            return DisplayLine(id: line.index, text: text,
-                               color: line.stream == .stderr ? Theme.danger : .primary)
+            let color: Color = switch line.stream {
+            case .stdout: .primary
+            case .stderr: Theme.danger
+            // Flotilla's own word, not the container's: set apart, and said to be Flotilla's.
+            case .notice: .secondary
+            }
+            return DisplayLine(id: line.index, text: line.stream == .notice ? "[Flotilla] \(text)" : text, color: color)
         }
     }
 
@@ -378,7 +377,7 @@ struct LogViewer: View {
         error = nil
         loading = true
 
-        let inbox = LiveInbox()
+        let inbox = LiveInbox(cap: lineCap)
         let events = source.live(model, lines: requestedLines, boot: bootLog)
         let reader = Task { @MainActor in
             for await event in events { inbox.accept(event) }
@@ -434,6 +433,9 @@ struct LogViewer: View {
 @MainActor
 private final class LiveInbox {
     private var pending: [(LogLine.Stream, String)] = []
+    /// No more than the view keeps: anything older would be trimmed on the next tick anyway.
+    private let cap: Int
+    init(cap: Int) { self.cap = max(1, cap) }
     /// Set once the tail is over. The outer `Optional` is "has it stopped"; the inner one is
     /// "with a failure" — a clean end and a failed end are different, and both are ends.
     private(set) var stop: String??
@@ -442,8 +444,9 @@ private final class LiveInbox {
         switch event {
         case .line(let stream, let text):
             pending.append((stream, text))
+            if pending.count > cap { pending.removeFirst(pending.count - cap) }
         case .ended(let end):
-            stop = end.ok ? .some(nil) : .some("The log stream stopped (exit \(end.exitCode)).")
+            stop = end.ok ? .some(nil) : .some(end.reason ?? "The log stream stopped (exit \(end.exitCode)).")
         case .failed(let message):
             stop = .some(message)
         }

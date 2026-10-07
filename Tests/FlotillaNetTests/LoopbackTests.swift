@@ -16,9 +16,19 @@ struct LoopbackTests {
         private(set) var ran: [[String]] = []
         /// How long each command takes, to hold slots open.
         var delay: TimeInterval = 0
+        /// Answers for particular commands, by their leading words; anything else answers `[]`.
+        var answers: [String: CommandResult] = [:]
+        /// What `image load --input` found in the archive it was handed, read before it returns.
+        private(set) var loaded: [Data] = []
         func run(_ args: [String]) throws -> CommandResult {
-            lock.lock(); ran.append(args); let wait = delay; lock.unlock()
+            lock.lock(); ran.append(args); let wait = delay; let answers = self.answers; lock.unlock()
             if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+            if args.starts(with: ["image", "load", "--input"]), let path = args.last {
+                let data = try Data(contentsOf: URL(fileURLWithPath: path))
+                lock.withLock { loaded.append(data) }
+                return CommandResult(stdout: "Loaded images:\nexample.test/app:1\n", stderr: "", exitCode: 0)
+            }
+            for (key, answer) in answers where args.joined(separator: " ").hasPrefix(key) { return answer }
             return CommandResult(stdout: "[]\n", stderr: "", exitCode: 0)
         }
     }
@@ -393,4 +403,110 @@ struct LoopbackTests {
         let elapsed = Date().timeIntervalSince(started)
         #expect(elapsed > 2.5 && elapsed < 8, "took \(elapsed)s")
     }
+
+    // MARK: Streams (D2)
+
+    /// `container system version` as 1.5.0 printed it (captured, Tests/FlotillaCoreTests/Fixtures).
+    static func capturedVersion() throws -> String {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("FlotillaCoreTests/Fixtures/container-1.5.0/version.json")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    @Test func aHostsLogIsFollowedThroughTheSameCLICall() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        // The scripted host's `stream` runs the command and hands over its lines, then ends.
+        rig.host.answers["logs --follow"] = CommandResult(stdout: "one\ntwo\nthree\n", stderr: "warn\n", exitCode: 0)
+        let host = remote(rig)
+        defer { host.close() }
+        let cli = ContainerCLI(host: host, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
+        let lines = LineBox()
+        // The handle is held: letting it go stops the follow, as letting go of a local tail does.
+        let handle = HandleBox()
+        let end: CommandStreamEnd = try await withCheckedThrowingContinuation { continuation in
+            do {
+                handle.stream = try cli.followLogs("web", lines: 50, onLine: { stream, text in lines.add("\(stream):\(text)") },
+                                                   onEnd: { continuation.resume(returning: $0) })
+            } catch { continuation.resume(throwing: error) }
+        }
+        #expect(end.ok && !end.cancelled)
+        #expect(lines.all == ["stdout:one", "stdout:two", "stdout:three", "stderr:warn"])
+        #expect(rig.host.ran.last == ["logs", "--follow", "-n", "50", "web"])
+    }
+
+    @Test func anImageArchiveArrivesWholeAndIsLoadedByTheHost() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        rig.host.answers["system version"] = CommandResult(stdout: try Self.capturedVersion(), stderr: "", exitCode: 0)
+        // Three and a half pieces, so credit, the window and a short last piece are all exercised.
+        let bytes = (0..<(3 * (1 << 20) + 300_000)).map { UInt8(truncatingIfNeeded: $0 &* 31) }
+        let archive = FileManager.default.temporaryDirectory.appendingPathComponent("loopback-\(UUID().uuidString).tar")
+        try Data(bytes).write(to: archive)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let digest = SHA256Hex.of(Data(bytes))
+
+        let host = remote(rig)
+        defer { host.close() }
+        let result = try await host.upload(file: archive, bytes: UInt64(bytes.count), sha256: digest,
+                                           label: "example.test/app:1") { _ in }
+        #expect(result.exitCode == 0 && result.stdout.contains("example.test/app:1"))
+        #expect(rig.host.loaded == [Data(bytes)])
+        // The host built the load itself, for a file of its own, and that file is gone now.
+        let load = try #require(rig.host.ran.first { $0.starts(with: ["image", "load"]) })
+        #expect(load.count == 4 && !FileManager.default.fileExists(atPath: load[3]))
+    }
+
+    @Test func aDamagedArchiveIsRefusedAndNotLoaded() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        rig.host.answers["system version"] = CommandResult(stdout: try Self.capturedVersion(), stderr: "", exitCode: 0)
+        let archive = FileManager.default.temporaryDirectory.appendingPathComponent("loopback-\(UUID().uuidString).tar")
+        try Data(count: 100_000).write(to: archive)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let host = remote(rig)
+        defer { host.close() }
+        await #expect(throws: RemoteHostError.self) {
+            _ = try await host.upload(file: archive, bytes: 100_000, sha256: String(repeating: "0", count: 64),
+                                      label: "x") { _ in }
+        }
+        #expect(rig.host.loaded.isEmpty)
+    }
+
+    @Test func aHostWithAnOldContainerRefusesImages() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let old = try Self.capturedVersion().replacingOccurrences(of: "\"1.5.0\"", with: "\"1.3.0\"")
+        rig.host.answers["system version"] = CommandResult(stdout: old, stderr: "", exitCode: 0)
+        let archive = FileManager.default.temporaryDirectory.appendingPathComponent("loopback-\(UUID().uuidString).tar")
+        try Data(count: 1000).write(to: archive)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let host = remote(rig)
+        defer { host.close() }
+        do {
+            _ = try await host.upload(file: archive, bytes: 1000, sha256: SHA256Hex.of(Data(count: 1000)), label: "x") { _ in }
+            Issue.record("an old host accepted an image")
+        } catch {
+            #expect(String(describing: error).contains("1.3.1"))
+        }
+        #expect(rig.host.loaded.isEmpty)
+    }
+}
+
+final class HandleBox: @unchecked Sendable { var stream: CommandStream? }
+
+final class LineBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    func add(_ line: String) { lock.withLock { lines.append(line) } }
+    var all: [String] { lock.withLock { lines } }
+}
+
+import CryptoKit
+enum SHA256Hex {
+    static func of(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 }

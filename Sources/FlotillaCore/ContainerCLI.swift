@@ -342,11 +342,19 @@ public struct ContainerCLI: Sendable {
     private func streaming(_ args: [String],
                            onLine: @escaping @Sendable (LogLine.Stream, String) -> Void,
                            onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream {
+        // To another Mac a stream travels as a follow (D2), so it is held to the follow grammar —
+        // the same check the host makes — rather than the request grammar, which forbids it.
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
-                                                execPolicy: execPolicy, wirePolicy: wirePolicy)
+                                                execPolicy: execPolicy, wirePolicy: wirePolicy,
+                                                followStream: wirePolicy == .remotePeer)
         return try host.stream(validated.arguments,
                                onLine: { text, channel in
-                                   onLine(channel == .stderr ? .stderr : .stdout, text)
+                                   let stream: LogLine.Stream = switch channel {
+                                   case .stdout: .stdout
+                                   case .stderr: .stderr
+                                   case .notice: .notice
+                                   }
+                                   onLine(stream, text)
                                },
                                onEnd: onEnd)
     }
@@ -664,6 +672,18 @@ public struct ContainerCLI: Sendable {
 
     /// The argv a pull will run, for the command preview in the rail as well as for the pull
     /// itself — so what the form shows is the thing that executes, not a re-spelling of it.
+    /// `container image save --platform <p> --output <archive> <reference>` — one variant of an
+    /// image, to a tar file, for sending to a host (PLAN.md Phase D, D2). The archive's folder must
+    /// be inside this CLI's `MountPolicy`: build one scoped to that folder for this one command, as
+    /// `buildImage` does.
+    @discardableResult public func saveImage(_ reference: String, platform: String, to archive: String) throws -> CommandResult {
+        try execute(Self.saveImageArguments(reference, platform: platform, archive: archive))
+    }
+
+    public static func saveImageArguments(_ reference: String, platform: String, archive: String) -> [String] {
+        ["image", "save", "--platform", platform, "--output", archive, reference]
+    }
+
     public static func pullArguments(_ reference: String, scheme: RegistryScheme) -> [String] {
         var args = ["image", "pull"]
         if scheme != .default { args += ["--scheme", scheme.rawValue] }

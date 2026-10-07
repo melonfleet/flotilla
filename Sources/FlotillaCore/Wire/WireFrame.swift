@@ -9,7 +9,12 @@ import Foundation
 public enum WireProtocol {
     /// The versions this build speaks. A peer outside them is told so, with this range, so the UI
     /// can say which side needs updating rather than "connection failed".
-    public static let supportedVersions: ClosedRange<UInt16> = 1...1
+    /// Version 2 (PLAN.md Phase D, D2) adds bounded streams — following a host's logs and sending
+    /// it an image (research/WIRE-STREAMS-D2.md). Their frames are refused on a version-1
+    /// connection, so a version-1 peer is unaffected.
+    public static let supportedVersions: ClosedRange<UInt16> = 1...2
+    /// The first version that carries streams.
+    public static let streamsVersion: UInt16 = 2
     /// The owner's choice, 7 October. Changeable in Settings.
     public static let defaultPort: UInt16 = 7868
 
@@ -100,8 +105,9 @@ public enum WireFrameType: UInt8, Sendable, CaseIterable {
     case request = 10, cancel = 11, result = 12, failure = 13
     case ping = 20, pong = 21
     case close = 30
-    // 40–49 are reserved for bounded streams (image transfer, followed logs). A version-1 peer
-    // refuses them as unknown, which is the point: they arrive with a version that negotiates them.
+    // Bounded streams, version 2 (D2). A version-1 session refuses them as unexpected, which is
+    // the point: they arrive only on a connection that negotiated them. 45–49 stay reserved.
+    case follow = 40, streamData = 41, streamEnd = 42, streamCredit = 43, upload = 44
 }
 
 /// One frame: a type, a JSON header, and raw bytes. Command output rides in `payload` as bytes, so
@@ -204,6 +210,11 @@ public enum WireError: Error, Equatable, Sendable, CustomStringConvertible {
     case tooManyRequests(limit: Int)
     case notConnected
     case closed
+    /// A stream on a connection that did not negotiate version 2.
+    case streamsUnsupported
+    /// A stream message that breaks its rules — out of sequence, beyond its credit, past its
+    /// declared size, for a stream that does not exist. Closes the connection.
+    case streamViolation(String)
 
     public var description: String {
         switch self {
@@ -219,6 +230,8 @@ public enum WireError: Error, Equatable, Sendable, CustomStringConvertible {
         case .tooManyRequests(let n): "more than \(n) requests in flight"
         case .notConnected: "the handshake has not finished"
         case .closed: "the connection is closed"
+        case .streamsUnsupported: "this host's Flotilla is too old to stream — update it"
+        case .streamViolation(let why): "stream error: \(why)"
         }
     }
 }

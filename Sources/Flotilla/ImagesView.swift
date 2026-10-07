@@ -23,6 +23,8 @@ struct ImagesView: View {
     /// place, on the image's own Mac. Nothing is launched from here; the sheet's validated
     /// preview still gates it.
     @State private var runImage: RunTarget?
+    /// One of This Mac's images, on its way to hosts (PLAN.md Phase D, D2).
+    @State private var sendingImage: ContainerImage?
 
     /// Which image the detail screen is showing, and optionally which tab to open it on.
     private struct DetailTarget: Identifiable, Hashable {
@@ -53,6 +55,8 @@ struct ImagesView: View {
             // forms you fill in and save.
             if let target = runImage {
                 RunSheetView(model: model, initialImage: target.reference, initialHost: target.host) { runImage = nil }
+            } else if let image = sendingImage {
+                SendImageView(model: model, image: image) { sendingImage = nil }
             } else if let mode = newImageMode {
                 NewImageView(model: model, initialMode: mode, initialHost: ui.hostFilter ?? .local) { newImageMode = nil }
             } else if let image = taggingImage {
@@ -645,6 +649,10 @@ struct ImagesView: View {
         Divider()
         Button("Run…") { runImage = RunTarget(reference: image.reference, host: row.host) }
             .disabled(busy)
+        if row.host.isLocal {
+            Button("Send to Hosts\u{2026}") { sendingImage = image }
+                .disabled(model.hostMode.trustedHosts.isEmpty)
+        }
         Divider()
         Button("Tag…") {
             tagTarget = ""

@@ -50,6 +50,11 @@ public enum ValueShape: String, Sendable, Equatable, CaseIterable {
     /// grant than `copy`'s single file and must cross `MountPolicy` for the same reason
     /// `.copyEndpoint`'s host side does — grammar is not authorisation.
     case hostBuildPath
+    /// The tar archive an image travels in between Macs (PLAN.md Phase D, D2): `image save -o` on
+    /// the admin Mac, `image load -i` on a host. Always a file **Flotilla placed in its own
+    /// transfer directory** — never a path a peer named. Crosses `MountPolicy` like a build path,
+    /// and its directory must exist now (the file need not: `save` creates it).
+    case transferArchive
     /// `container build --progress`: `auto`, `plain` or `tty`. A closed set, taken from the
     /// captured help, not a free string.
     case progressType
@@ -171,7 +176,7 @@ extension ValueShape {
             true
         // Host paths. These carry the account name, and often the sensitive part *is* the path —
         // `--volume /Users/someone/.ssh:/keys` says more than it looks like it does.
-        case .mountSpec, .absolutePath, .copyEndpoint, .hostBuildPath:
+        case .mountSpec, .absolutePath, .copyEndpoint, .hostBuildPath, .transferArchive:
             true
         // Names, and closed sets. These have to survive: an audit line that hides *which*
         // container was deleted, *which* image was pulled, or *which* `machine set` setting was
@@ -227,6 +232,8 @@ extension ValueShape {
             "Expected container:/path or an absolute path on this Mac."
         case .hostBuildPath:
             "Expected an absolute path on this Mac that the mount policy permits the build to read."
+        case .transferArchive:
+            "Expected an archive in Flotilla's own transfer folder."
         case .progressType:
             "Expected auto, plain or tty."
         case .registryScheme:
@@ -424,6 +431,14 @@ public struct CommandSpec: Sendable, Equatable {
     /// closes it where it is actually stated, so a row can offer a tail to the owner without
     /// offering one to the wire.
     public let wireForbiddenFlags: [String]
+    /// Long flag names required on **every** path, the owner's included — for a command whose
+    /// default would read or write somewhere Flotilla did not choose (`image save` without `-o`
+    /// writes the archive to stdout, `image load` without `-i` reads stdin).
+    public let requiredFlags: [String]
+    /// Long flag names a remote caller may use **only in a follow stream**, where they are then
+    /// required (PLAN.md Phase D, D2). `logs` lists `follow`: a plain request still may not follow
+    /// (`wireForbiddenFlags`), and a follow request must. Empty means the command cannot be followed.
+    public let wireStreamFlags: [String]
 
     public init(_ path: [String],
                 mutates: Bool,
@@ -433,7 +448,11 @@ public struct CommandSpec: Sendable, Equatable {
                 trailing: TrailingPolicy = .forbidden,
                 exposure: Exposure = .exposed,
                 wireRequiredFlags: [String] = [],
-                wireForbiddenFlags: [String] = []) {
+                wireForbiddenFlags: [String] = [],
+                requiredFlags: [String] = [],
+                wireStreamFlags: [String] = []) {
+        self.requiredFlags = requiredFlags
+        self.wireStreamFlags = wireStreamFlags
         self.path = path
         self.mutates = mutates
         self.timeoutHint = timeoutHint
@@ -760,7 +779,10 @@ public enum Allowlist {
                                 FlagSpec(long: "follow", short: "f")],
                         operands: OperandSpec(shape: .identifier, min: 1, max: 1),
                         wireRequiredFlags: ["n"],
-                        wireForbiddenFlags: ["follow"]),
+                        wireForbiddenFlags: ["follow"],
+                        // Allowed to a peer only as a follow stream, which the host bounds and can
+                        // stop (research/WIRE-STREAMS-D2.md) — never in a request that waits for EOF.
+                        wireStreamFlags: ["follow"]),
 
             // MARK: containers — mutate
             // Exactly one operand. Verified: `container start idle cache` is refused with
@@ -855,6 +877,22 @@ public enum Allowlist {
             CommandSpec(["image", "prune"], mutates: true, timeoutHint: 120, flags: [all]),
             CommandSpec(["image", "tag"], mutates: true,
                         operands: OperandSpec(shape: .imageReference, min: 2, max: 2)),
+            // Sending an image to a host (PLAN.md Phase D, D2; research/WIRE-STREAMS-D2.md),
+            // audited against reference/cli-help/container-image-{save,load}-1.5.0-help.txt.
+            // **Both local-only**: the admin Mac saves for itself, and a host loads an archive it
+            // received into a file of its own choosing — a peer never names a path on another Mac.
+            // `--output` / `--input` are required so the CLI never reads or writes stdin/stdout
+            // here, and `load --force` ("even if the archive contains invalid files") is absent.
+            CommandSpec(["image", "save"], mutates: false, timeoutHint: 1800,
+                        flags: [FlagSpec(long: "output", short: "o", value: .transferArchive),
+                                FlagSpec(long: "platform", value: .platform)],
+                        operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
+                        exposure: .localOnly(reason: "an archive is written to a folder on the Mac that saves it; a peer never names one"),
+                        requiredFlags: ["output", "platform"]),
+            CommandSpec(["image", "load"], mutates: true, timeoutHint: 1800,
+                        flags: [FlagSpec(long: "input", short: "i", value: .transferArchive)],
+                        exposure: .localOnly(reason: "a host loads an archive it received itself; a peer never names a file on another Mac"),
+                        requiredFlags: ["input"]),
 
             // MARK: registry
             //
@@ -1227,9 +1265,11 @@ public enum Allowlist {
                                 limits: Limits = .default,
                                 mountPolicy: MountPolicy = .denyHostPaths,
                                 execPolicy: ExecPolicy = .processListOnly,
-                                wirePolicy: WirePolicy = .localOwner) -> Result<ValidatedCommand, AllowlistError> {
+                                wirePolicy: WirePolicy = .localOwner,
+                                followStream: Bool = false) -> Result<ValidatedCommand, AllowlistError> {
         do { return .success(try validated(args, limits: limits, mountPolicy: mountPolicy,
-                                           execPolicy: execPolicy, wirePolicy: wirePolicy)) }
+                                           execPolicy: execPolicy, wirePolicy: wirePolicy,
+                                           followStream: followStream)) }
         catch let error as AllowlistError { return .failure(error) }
         catch { return .failure(.emptyCommand) } // unreachable: nothing else is thrown
     }
@@ -1240,11 +1280,14 @@ public enum Allowlist {
     ///   flipping it would refuse the app's own machine controls with no peer to protect. Phase 2's
     ///   host peer must construct its `ContainerCLI` with `.remotePeer`, and `research/
     ///   ALLOWLIST-AUDIT.md` records that as a launch requirement rather than a nicety.
+    /// - Parameter followStream: the request is a wire **follow** (D2): the spec's `wireStreamFlags`
+    ///   are then required rather than forbidden, and a command without any cannot be followed.
     public static func validated(_ args: [String],
                                  limits: Limits = .default,
                                  mountPolicy: MountPolicy = .denyHostPaths,
                                  execPolicy: ExecPolicy = .processListOnly,
-                                 wirePolicy: WirePolicy = .localOwner) throws -> ValidatedCommand {
+                                 wirePolicy: WirePolicy = .localOwner,
+                                 followStream: Bool = false) throws -> ValidatedCommand {
         guard !args.isEmpty else { throw AllowlistError.emptyCommand }
         try screen(args, limits: limits)
 
@@ -1346,13 +1389,30 @@ public enum Allowlist {
         // Bounded-output flags, checked once the flags are known. A remote caller that omits
         // `-n` on `logs` is asking the host peer to read an entire log into memory and put it on
         // the wire; the local owner doing the same is just reading their own log.
+        // Required on every path: the CLI's default would read or write somewhere Flotilla did not
+        // choose (stdin or stdout for `image save` and `image load`).
+        for required in spec.requiredFlags where !presentLongFlags.contains(required) {
+            throw AllowlistError.flagRequiredOverWire(command: spec.name, flag: required)
+        }
+        if followStream {
+            // A follow (D2) is only for a command that declares how it streams, and it must
+            // actually ask to — otherwise it is a request with a stream's lifetime and no stream.
+            guard !spec.wireStreamFlags.isEmpty else {
+                throw AllowlistError.flagForbiddenOverWire(command: spec.name, flag: "follow")
+            }
+            for flag in spec.wireStreamFlags where !presentLongFlags.contains(flag) {
+                throw AllowlistError.flagRequiredOverWire(command: spec.name, flag: flag)
+            }
+        }
         if wirePolicy == .remotePeer {
             for required in spec.wireRequiredFlags where !presentLongFlags.contains(required) {
                 throw AllowlistError.flagRequiredOverWire(command: spec.name, flag: required)
             }
             // Checked *after* the required flags, so the message a peer gets names the bound it
-            // is missing before the one it is evading.
+            // is missing before the one it is evading. A follow stream lifts exactly the flags
+            // its spec streams with, and no other.
             for forbidden in spec.wireForbiddenFlags where presentLongFlags.contains(forbidden) {
+                if followStream, spec.wireStreamFlags.contains(forbidden) { continue }
                 throw AllowlistError.flagForbiddenOverWire(command: spec.name, flag: forbidden)
             }
         }
@@ -1633,7 +1693,7 @@ public enum Allowlist {
     /// would be a way to ask "is this path allowed?" and get a misleading yes.
     public static func accepts(_ value: String, as shape: ValueShape) -> Bool {
         switch shape {
-        case .mountSpec, .absolutePath, .copyEndpoint, .hostBuildPath:
+        case .mountSpec, .absolutePath, .copyEndpoint, .hostBuildPath, .transferArchive:
             return false
         default:
             return check(value, as: shape, context: "value", mountPolicy: .denyHostPaths) == nil
@@ -1663,6 +1723,8 @@ public enum Allowlist {
             return checkCopyEndpoint(value, context: context, mountPolicy: mountPolicy)
         case .hostBuildPath:
             return checkHostBuildPath(value, context: context, mountPolicy: mountPolicy)
+        case .transferArchive:
+            return checkTransferArchive(value, context: context, mountPolicy: mountPolicy)
         case .progressType:
             return ["auto", "plain", "tty"].contains(value) ? nil : bad
         case .registryScheme:
@@ -1911,6 +1973,27 @@ public enum Allowlist {
         // containment decision is made about the same string the guard above proved exists.
         let resolved = URL(fileURLWithPath: value).resolvingSymlinksInPath().path
         guard mountPolicy.allowsHostPath(resolved), mountPolicy.allowsHostPath(value) else {
+            return .hostPathNotPermitted(context: context, path: value)
+        }
+        return nil
+    }
+
+    /// An image archive in Flotilla's transfer folder. The **directory** must exist and, resolved,
+    /// sit inside a root the policy permits; the file itself may be about to be created. Built by
+    /// the app for one command with `MountPolicy.roots([that folder])` — under the default
+    /// `.denyHostPaths` every archive path is refused.
+    private static func checkTransferArchive(_ value: String, context: String,
+                                             mountPolicy: MountPolicy) -> AllowlistError? {
+        let bad = AllowlistError.invalidValue(context: context, value: value, shape: .transferArchive)
+        guard value.hasPrefix("/"), value.hasSuffix(".tar") else { return bad }
+        if let error = checkAbsolutePath(value, context: context) { return error }
+        let directory = (value as NSString).deletingLastPathComponent
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return .hostPathNotPermitted(context: context, path: value)
+        }
+        let resolved = URL(fileURLWithPath: directory).resolvingSymlinksInPath().path
+        guard mountPolicy.allowsHostPath(resolved), mountPolicy.allowsHostPath(directory) else {
             return .hostPathNotPermitted(context: context, path: value)
         }
         return nil

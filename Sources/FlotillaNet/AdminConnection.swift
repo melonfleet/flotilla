@@ -51,6 +51,11 @@ public final class AdminConnection: @unchecked Sendable {
     private var waiting: [(arguments: [String], timeout: TimeInterval?,
                            completion: @Sendable (Result<CommandResult, Error>) -> Void)] = []
     private var deadlines: [UInt32: DispatchSourceTimer] = [:]
+    /// Follows being read (D2): where each one's output and end go.
+    private var follows: [UInt32: (data: @Sendable (WireMessage.StreamChannel, Data) -> Void,
+                                   end: @Sendable (WireMessage.StreamEnd) -> Void)] = [:]
+    /// Uploads being sent (D2): the file, and how far it has got.
+    private var uploads: [UInt32: OutgoingUpload] = [:]
     private var pingTimer: DispatchSourceTimer?
     private var connectTimer: DispatchSourceTimer?
     private var reachTimer: DispatchSourceTimer?
@@ -162,6 +167,90 @@ public final class AdminConnection: @unchecked Sendable {
 
     public func close() { connection.close(nil) }
 
+    /// Whether the host negotiated streams (version 2). `false` before the welcome.
+    public var canStream: Bool { connection.queue.sync { session.canStream } }
+
+    // MARK: Streams (PLAN.md Phase D, D2; research/WIRE-STREAMS-D2.md)
+
+    /// Follows `arguments` on the host — only `logs --follow`, which the host checks again.
+    /// `onData` and `onEnd` are called on this connection's queue; `onEnd` exactly once, including
+    /// when the connection drops. Returns a stop, or throws if the host can't stream.
+    public func follow(_ arguments: [String],
+                       onData: @escaping @Sendable (WireMessage.StreamChannel, Data) -> Void,
+                       onEnd: @escaping @Sendable (WireMessage.StreamEnd) -> Void) throws -> @Sendable () -> Void {
+        // It waits on the connection's queue, so it must never be called from it.
+        dispatchPrecondition(condition: .notOnQueue(connection.queue))
+        return try connection.queue.sync { [self] in
+            if let reason = closedReason { throw RemoteHostError.closed(reason) }
+            let (outgoing, credit) = try session.follow(arguments)
+            follows[outgoing.id] = (onData, onEnd)
+            connection.send(outgoing.message)
+            connection.send(credit)
+            let id = outgoing.id
+            return { [weak self] in
+                guard let self else { return }
+                self.connection.queue.async {
+                    guard let entry = self.follows.removeValue(forKey: id) else { return }
+                    if let cancel = self.session.stopFollow(id) { self.connection.send(cancel) }
+                    entry.end(.init(id: id, reason: "stopped"))
+                }
+            }
+        }
+    }
+
+    /// Sends the archive at `file` (`bytes` long, with this SHA-256) to the host, which loads it
+    /// itself. `progress` reports bytes sent, on this connection's queue. The answer is the host's
+    /// `image load` result.
+    public func upload(file: URL, bytes: UInt64, sha256: String, label: String,
+                       progress: @escaping @Sendable (UInt64) -> Void) async throws -> CommandResult {
+        try await withCheckedThrowingContinuation { continuation in
+            connection.queue.async { [self] in
+                if let reason = closedReason { return continuation.resume(throwing: RemoteHostError.closed(reason)) }
+                do {
+                    let handle = try FileHandle(forReadingFrom: file)
+                    let outgoing = try session.upload(bytes: bytes, sha256: sha256, label: label)
+                    uploads[outgoing.id] = OutgoingUpload(handle: handle, declared: bytes, progress: progress)
+                    pending[outgoing.id] = { [weak self] result in
+                        self?.uploads.removeValue(forKey: outgoing.id).map { try? $0.handle.close() }
+                        continuation.resume(with: result)
+                    }
+                    connection.send(outgoing.message)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Sends as much of an upload as its credit allows, then its end once every byte is out.
+    private func pump(_ id: UInt32) {
+        guard var upload = uploads[id] else { return }
+        do {
+            while upload.sent < upload.declared {
+                let remaining = upload.declared - upload.sent
+                let room = min(session.uploadCredit(id), UInt64(session.uploadChunkCeiling), remaining)
+                // Only the last piece may be small: wait for credit rather than send a sliver.
+                let smallest = min(UInt64(session.streamLimits.minUploadChunkBytes), UInt64(session.uploadChunkCeiling), remaining)
+                guard room > 0, room >= smallest else { break }
+                guard let data = try upload.handle.read(upToCount: Int(room)), !data.isEmpty else {
+                    throw WireError.streamViolation("the archive is shorter than it was")
+                }
+                connection.send(try session.uploadChunk(id, data))
+                upload.sent += UInt64(data.count)
+                upload.progress(upload.sent)
+            }
+            if upload.sent == upload.declared, !upload.ended {
+                connection.send(try session.uploadEnd(id))
+                upload.ended = true
+            }
+            uploads[id] = upload
+        } catch {
+            if let cancel = session.cancel(id) { connection.send(cancel) }
+            session.abandon(id)
+            settle(id, .failure(error))
+        }
+    }
+
     // MARK: Pairing
 
     public enum PairingOutcome: Sendable, Equatable {
@@ -251,6 +340,14 @@ public final class AdminConnection: @unchecked Sendable {
                     connectCompletion?(.failure(RemoteHostError.rejected(reject)))
                     connectCompletion = nil
                     connection.close(reject.message)
+                case .streamData(let id, let channel, let data):
+                    follows[id]?.data(channel, data)
+                    // Read, so the host may send as much again.
+                    if let more = session.grant(id, bytes: UInt64(data.count)) { connection.send(more) }
+                case .streamEnded(let end):
+                    follows.removeValue(forKey: end.id)?.end(end)
+                case .uploadCredit(let id):
+                    pump(id)
                 case .completed(let id, let result): settle(id, .success(result))
                 case .failed(let failure): settle(failure.id, .failure(RemoteHostError.failed(failure)))
                 case .send(let reply): connection.send(reply)
@@ -285,6 +382,9 @@ public final class AdminConnection: @unchecked Sendable {
         connectCompletion?(.failure(RemoteHostError.unreachable(reason ?? "closed")))
         connectCompletion = nil
         for id in Array(pending.keys) { settle(id, .failure(RemoteHostError.closed(reason))) }
+        let open = follows
+        follows.removeAll()
+        for (id, entry) in open { entry.end(.init(id: id, reason: reason ?? "The connection closed.")) }
         let stranded = waiting
         waiting.removeAll()
         for request in stranded { request.completion(.failure(RemoteHostError.closed(reason))) }
@@ -312,4 +412,13 @@ public final class AdminConnection: @unchecked Sendable {
         timer.resume()
         return timer
     }
+}
+
+/// An upload in progress on the admin side.
+private struct OutgoingUpload {
+    let handle: FileHandle
+    let declared: UInt64
+    let progress: @Sendable (UInt64) -> Void
+    var sent: UInt64 = 0
+    var ended = false
 }

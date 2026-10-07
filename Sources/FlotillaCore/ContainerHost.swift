@@ -90,8 +90,9 @@ public protocol ContainerHost: Sendable {
                 onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream
 }
 
-/// Which pipe a streamed line arrived on.
-public enum OutputChannel: Sendable { case stdout, stderr }
+/// Which pipe a streamed line arrived on — or `notice`, a line from Flotilla itself about the
+/// stream (another Mac's host saying it dropped lines), never the command's own output.
+public enum OutputChannel: Sendable { case stdout, stderr, notice }
 
 /// How a streamed command ended.
 public struct CommandStreamEnd: Sendable {
@@ -99,10 +100,14 @@ public struct CommandStreamEnd: Sendable {
     /// True when `CommandStream.cancel()` stopped it. A cancelled child dies of `SIGTERM` and
     /// reports a non-zero status for it, which is not a failure and must not be shown as one.
     public let cancelled: Bool
+    /// Why it ended, when something other than the command decided — another Mac's follow cut off
+    /// by its host, say. Shown beside the output; `nil` for an ordinary exit.
+    public let reason: String?
 
-    public init(exitCode: Int32, cancelled: Bool) {
+    public init(exitCode: Int32, cancelled: Bool, reason: String? = nil) {
         self.exitCode = exitCode
         self.cancelled = cancelled
+        self.reason = reason
     }
 
     public var ok: Bool { cancelled || exitCode == 0 }
@@ -153,6 +158,14 @@ public final class CommandStream: @unchecked Sendable {
 
     /// A stream that has already ended — what a host that cannot really stream hands back.
     public static func finished() -> CommandStream { CommandStream(state: State()) }
+
+    /// A stream whose stopping is `stop` — another Mac's follow, ended by a cancel on the wire
+    /// (PLAN.md Phase D, D2). `stop` runs at most once, on cancel or deinit.
+    public convenience init(stop: @escaping @Sendable () -> Void) {
+        let state = State()
+        state.arm(stop)
+        self.init(state: state)
+    }
 
     public var isCancelled: Bool { state.isCancelled }
 

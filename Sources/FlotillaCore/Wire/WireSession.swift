@@ -30,6 +30,19 @@ public struct WireHostSession: Sendable {
         /// A pairing message, for `PairingHostSession` — the only conversation an untrusted caller
         /// may have.
         case pairing(WireMessage)
+        /// Streams (version 2, research/WIRE-STREAMS-D2.md): start this follow, and feed its lines
+        /// to `followOutput`, its end to `followEnded`.
+        case startFollow(id: UInt32, command: ValidatedCommand)
+        /// Stop follow `id`'s child, then report through `followEnded`.
+        case stopFollow(id: UInt32)
+        /// Make room for this upload — or refuse it with `fail` — then answer with `acceptUpload`.
+        case startUpload(id: UInt32, upload: WireMessage.Upload)
+        /// Append these bytes, then report them with `uploadWrote`.
+        case uploadChunk(id: UInt32, data: Data)
+        /// Every byte has arrived: check the digest, load the archive, answer with `complete`/`fail`.
+        case uploadFinished(id: UInt32, sha256: String)
+        /// Delete whatever has arrived for this upload.
+        case abortUpload(id: UInt32)
     }
 
     public let peer: WirePeerInfo
@@ -38,12 +51,18 @@ public struct WireHostSession: Sendable {
     public private(set) var state: State = .awaitingHello
     /// This host's own limits until the handshake, then the intersection with the peer's.
     public private(set) var limits: WireLimits
-    public private(set) var inFlight: Set<UInt32> = []
+    public internal(set) var inFlight: Set<UInt32> = []
+    // Streams (WireStreams.swift).
+    var follows: [UInt32: HostFollow] = [:]
+    var uploads: [UInt32: HostUpload] = [:]
+    var retiredUploads: Set<UInt32> = []
+    var endedFollows: Set<UInt32> = []
+    public let streamLimits: WireStreamLimits
 
     private let versions: ClosedRange<UInt16>
-    private let mountPolicy: MountPolicy
-    private let execPolicy: ExecPolicy
-    private let allowlistLimits: Allowlist.Limits
+    let mountPolicy: MountPolicy
+    let execPolicy: ExecPolicy
+    let allowlistLimits: Allowlist.Limits
 
     /// `mountPolicy` may not be `.unrestricted`: a remote peer with every host path is the owner's
     /// whole disk, which is why `ContainerCLI` refuses the same combination.
@@ -52,8 +71,9 @@ public struct WireHostSession: Sendable {
                 mountPolicy: MountPolicy = .denyHostPaths,
                 execPolicy: ExecPolicy = .processListOnly,
                 allowlistLimits: Allowlist.Limits = .default,
-                trusted: Bool = true) {
+                trusted: Bool = true, streamLimits: WireStreamLimits = .default) {
         precondition(mountPolicy != .unrestricted, "a host session never grants every host path")
+        self.streamLimits = streamLimits
         self.trusted = trusted
         self.peer = peer
         self.limits = limits
@@ -78,7 +98,8 @@ public struct WireHostSession: Sendable {
             }
             limits = limits.intersection(hello.limits)
             state = .ready(version: version, peer: hello.peer)
-            return [.send(.welcome(.init(version: version, peer: peer, limits: limits, trusted: trusted)))]
+            return [.send(.welcome(.init(version: version, peer: peer, limits: limits, trusted: trusted,
+                                         versions: versions)))]
 
         case (.ready, .request(let request)):
             guard trusted else {
@@ -95,7 +116,28 @@ public struct WireHostSession: Sendable {
 
         case (.ready, .cancel(let cancel)):
             // A cancel that crosses its own result is normal, not a fault.
+            if follows[cancel.id] != nil { return [.stopFollow(id: cancel.id)] }
+            if let upload = uploads[cancel.id] {
+                // Once every byte is in, the loader is running and cannot be stopped: its result
+                // will arrive, and claiming "cancelled" would say otherwise (Iris's review).
+                if upload.ended { return [] }
+                return [.abortUpload(id: cancel.id), .cancel(id: cancel.id)]
+            }
             return inFlight.contains(cancel.id) ? [.cancel(id: cancel.id)] : []
+
+        case (.ready, .follow(let follow)):
+            return try handleFollow(follow)
+        case (.ready, .upload(let upload)):
+            return try handleUpload(upload)
+        case (.ready, .streamCredit(let credit)):
+            guard streamsNegotiated else { throw WireError.unexpected(.streamCredit) }
+            return try handleCredit(credit)
+        case (.ready, .streamData(let data)):
+            guard streamsNegotiated else { throw WireError.unexpected(.streamData) }
+            return try handleUploadData(data)
+        case (.ready, .streamEnd(let end)):
+            guard streamsNegotiated else { throw WireError.unexpected(.streamEnd) }
+            return try handleEnd(end)
 
         case (_, .ping(let ping)):
             return [.send(.pong(ping))]
@@ -139,6 +181,7 @@ public struct WireHostSession: Sendable {
     /// in flight — it was cancelled and already answered.
     public mutating func complete(_ id: UInt32, with result: CommandResult) -> WireMessage? {
         guard inFlight.remove(id) != nil else { return nil }
+        retireUpload(id)
         let cap = limits.maxOutputBytesPerStream
         let out = Data(result.stdout.utf8), err = Data(result.stderr.utf8)
         return .result(.init(id: id, exitCode: result.exitCode,
@@ -150,6 +193,7 @@ public struct WireHostSession: Sendable {
     /// Request `id` ended without a result. `nil` if it is no longer in flight.
     public mutating func fail(_ id: UInt32, code: WireFailureCode, message: String) -> WireMessage? {
         guard inFlight.remove(id) != nil else { return nil }
+        retireUpload(id)
         return .failure(.init(id: id, code: code, message: message))
     }
 }
@@ -177,6 +221,11 @@ public struct WireClientSession: Sendable {
         case closed(reason: String)
         /// A pairing message, for `PairingAdminSession`.
         case pairing(WireMessage)
+        /// Streams (version 2): output from follow `id`. Grant more credit once it is read.
+        case streamData(id: UInt32, channel: WireMessage.StreamChannel, data: Data)
+        case streamEnded(WireMessage.StreamEnd)
+        /// Upload `id` may send more — see `uploadCredit`.
+        case uploadCredit(id: UInt32)
     }
 
     /// A request ready to send, with the deadline the requesting side should hold it to.
@@ -191,13 +240,21 @@ public struct WireClientSession: Sendable {
     public let peer: WirePeerInfo
     public private(set) var state: State = .notStarted
     public private(set) var limits: WireLimits
-    public private(set) var inFlight: Set<UInt32> = []
+    public internal(set) var inFlight: Set<UInt32> = []
+    // Streams (WireStreams.swift).
+    var follows: [UInt32: ClientFollow] = [:]
+    var uploads: [UInt32: ClientUpload] = [:]
+    var stoppedFollows: Set<UInt32> = []
+    var finishedUploads: Set<UInt32> = []
+    public let streamLimits: WireStreamLimits
 
     private let versions: ClosedRange<UInt16>
-    private var nextID: UInt32 = 1
+    var nextID: UInt32 = 1
 
     public init(peer: WirePeerInfo, limits: WireLimits = .default,
-                versions: ClosedRange<UInt16> = WireProtocol.supportedVersions) {
+                versions: ClosedRange<UInt16> = WireProtocol.supportedVersions,
+                streamLimits: WireStreamLimits = .default) {
+        self.streamLimits = streamLimits
         self.peer = peer
         self.limits = limits
         self.versions = versions
@@ -217,8 +274,7 @@ public struct WireClientSession: Sendable {
         }
         // The same check the host makes, for an instant answer. The host makes it again.
         let command = try Allowlist.validated(arguments, wirePolicy: .remotePeer)
-        let id = nextID
-        nextID = nextID == .max ? 1 : nextID + 1
+        let id = takeID()
         inFlight.insert(id)
         let own = WireHostSession.deadline(hint: command.timeoutHint, requested: timeout)
         return Outgoing(id: id,
@@ -246,6 +302,13 @@ public struct WireClientSession: Sendable {
             guard versions.contains(welcome.version) else {
                 throw WireError.versionMismatch(peer: welcome.version...welcome.version)
             }
+            // A host that says what it speaks must have chosen the highest version in common —
+            // otherwise it is withholding streams it has (Iris's review). One that says nothing
+            // is an older build and is taken at its word.
+            if let low = welcome.minVersion, let high = welcome.maxVersion, low <= high,
+               WireProtocol.negotiate(versions, low...high) != welcome.version {
+                throw WireError.versionMismatch(peer: low...high)
+            }
             // Keep our own limits where the host's are looser: a host cannot widen them.
             limits = limits.intersection(welcome.limits)
             state = .ready(version: welcome.version, host: welcome.peer)
@@ -270,6 +333,9 @@ public struct WireClientSession: Sendable {
         case (.ready, .pairChallenge), (.ready, .pairProof), (.ready, .pairResult), (.ready, .pairConfirm):
             return [.pairing(message)]
 
+        case (.ready, .streamData), (.ready, .streamEnd), (.ready, .streamCredit):
+            return try receiveStream(message)
+
         case (_, .ping(let ping)):
             return [.send(.pong(ping))]
         case (_, .pong(let ping)):
@@ -286,6 +352,7 @@ public struct WireClientSession: Sendable {
     /// True if `id` was waiting for an answer; false for one we gave up on; throws for an id we
     /// never sent — a host answering questions nobody asked is not following the protocol.
     private mutating func settle(_ id: UInt32) throws -> Bool {
+        if uploads.removeValue(forKey: id) != nil { retire(upload: id) }
         if inFlight.remove(id) != nil { return true }
         if abandoned.remove(id) != nil { return false }
         throw WireError.unknownRequestID(id)

@@ -169,11 +169,129 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
         return try box.get()
     }
 
-    /// Streams (followed logs, live stats) are reserved frame types, not built yet (PLAN.md).
+    /// Sends the archive at `file` to the host, which checks it and loads it itself (PLAN.md
+    /// Phase D, D2). `progress` reports bytes sent, from the connection's queue. The answer is the
+    /// host's own `image load` result.
+    public func upload(file: URL, bytes: UInt64, sha256: String, label: String,
+                       progress: @escaping @Sendable (UInt64) -> Void) async throws -> CommandResult {
+        let open: AdminConnection = try await withCheckedThrowingContinuation { continuation in
+            connection { continuation.resume(with: $0) }
+        }
+        do {
+            return try await open.upload(file: file, bytes: bytes, sha256: sha256, label: label, progress: progress)
+        } catch {
+            if case .closed? = error as? RemoteHostError { forget(open) }
+            if case WireError.streamsUnsupported? = error as? WireError {
+                throw RemoteHostError.protocolError("That Mac's Flotilla is too old to receive images. Update it first.")
+            }
+            throw error
+        }
+    }
+
+    /// A followed command on the host (PLAN.md Phase D, D2) — `container logs --follow` there, its
+    /// lines here, through the same `ContainerCLI` path This Mac's live logs take. Returns at once;
+    /// the follow opens when the connection does, and a cancel before then stops it as it opens.
+    /// Every way it can fail arrives through `onEnd` with a reason, as a child that died would.
     public func stream(_ args: [String],
                        onLine: @escaping @Sendable (String, OutputChannel) -> Void,
                        onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream {
-        throw ContainerCLIError.unsupported("Following output on another Mac isn't available yet.")
+        let follow = RemoteFollow(onLine: onLine, onEnd: onEnd)
+        connection { [weak self] result in
+            switch result {
+            case .failure(let error): follow.fail(Self.describe(error))
+            case .success(let open):
+                // Off the connection's queue: a fresh connection calls back on it, and `follow`
+                // waits on it — measured 7 October, a deadlock on the first follow of a connection.
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        let stop = try open.follow(args, onData: { channel, data in follow.receive(channel, data) },
+                                                   onEnd: { end in follow.ended(end) })
+                        follow.arm(stop)
+                    } catch {
+                        if case .closed? = error as? RemoteHostError { self?.forget(open) }
+                        follow.fail(Self.describe(error))
+                    }
+                }
+            }
+        }
+        return CommandStream(stop: { follow.cancel() })
+    }
+
+    private static func describe(_ error: Error) -> String {
+        if case WireError.streamsUnsupported? = error as? WireError {
+            return "That Mac's Flotilla is too old to follow logs live. Update it, or turn Live off to fetch them."
+        }
+        return String(describing: error)
+    }
+}
+
+/// One follow on a host, from the caller's side: turns the host's pieces back into lines, and
+/// makes sure the caller hears exactly one end however the follow stops.
+private final class RemoteFollow: @unchecked Sendable {
+    private let lock = NSLock()
+    private let onLine: @Sendable (String, OutputChannel) -> Void
+    private let onEnd: @Sendable (CommandStreamEnd) -> Void
+    private var stop: (@Sendable () -> Void)?
+    private var cancelled = false
+    private var finished = false
+
+    init(onLine: @escaping @Sendable (String, OutputChannel) -> Void,
+         onEnd: @escaping @Sendable (CommandStreamEnd) -> Void) {
+        self.onLine = onLine
+        self.onEnd = onEnd
+    }
+
+    /// The follow is open; a cancel that came first stops it now.
+    func arm(_ stop: @escaping @Sendable () -> Void) {
+        let stopNow: Bool = lock.withLock {
+            if cancelled { return true }
+            self.stop = stop
+            return false
+        }
+        if stopNow { stop() }
+    }
+
+    func cancel() {
+        let stop: (@Sendable () -> Void)? = lock.withLock {
+            cancelled = true
+            defer { self.stop = nil }
+            return self.stop
+        }
+        if let stop { stop() } else { finish(CommandStreamEnd(exitCode: 0, cancelled: true)) }
+    }
+
+    /// A host sends whole lines, each ending in a newline, so a piece splits cleanly.
+    func receive(_ channel: WireMessage.StreamChannel, _ data: Data) {
+        guard lock.withLock({ !finished }) else { return }
+        let output: OutputChannel = switch channel {
+        case .stderr: .stderr
+        case .notice: .notice
+        case .stdout, .data: .stdout
+        }
+        var lines = String(decoding: data, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false)
+        if lines.last?.isEmpty == true { lines.removeLast() }
+        for line in lines { onLine(String(line), output) }
+    }
+
+    func ended(_ end: WireMessage.StreamEnd) {
+        let cancelled = lock.withLock { self.cancelled }
+        if let dropped = end.dropped, dropped > 0, !cancelled {
+            onLine("\(dropped) lines were dropped in all: Flotilla fell behind", .notice)
+        }
+        finish(CommandStreamEnd(exitCode: end.exitCode ?? (cancelled ? 0 : 1), cancelled: cancelled,
+                                reason: cancelled ? nil : end.reason))
+    }
+
+    func fail(_ reason: String) {
+        finish(CommandStreamEnd(exitCode: 1, cancelled: lock.withLock { cancelled }, reason: reason))
+    }
+
+    private func finish(_ end: CommandStreamEnd) {
+        let first: Bool = lock.withLock {
+            defer { finished = true }
+            return !finished
+        }
+        if first { onEnd(end) }
     }
 }
 

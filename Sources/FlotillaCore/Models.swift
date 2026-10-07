@@ -730,6 +730,9 @@ public struct ContainerMachine: Codable, Identifiable, Sendable, Equatable {
 public struct LogLine: Codable, Identifiable, Sendable, Equatable {
     public enum Stream: String, Codable, Sendable {
         case stdout, stderr
+        /// Flotilla's own word about the stream — lines dropped because it fell behind. Shown
+        /// apart from the output so it is never mistaken for the container's.
+        case notice
     }
 
     /// Sequence number within the chunk. Log lines are not unique by content, so

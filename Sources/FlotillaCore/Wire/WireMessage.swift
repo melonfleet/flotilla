@@ -54,6 +54,11 @@ public enum WireMessage: Sendable, Equatable {
     case pairProof(PairProof)
     case pairResult(PairResult)
     case pairConfirm(PairConfirm)
+    case follow(Follow)
+    case streamData(StreamData)
+    case streamEnd(StreamEnd)
+    case streamCredit(StreamCredit)
+    case upload(Upload)
 
     public struct Hello: Sendable, Equatable, Codable {
         public var minVersion: UInt16
@@ -78,12 +83,19 @@ public enum WireMessage: Sendable, Equatable {
         /// Whether the host trusts the caller's key. If not, only pairing is offered on this
         /// connection; every request is refused.
         public var trusted: Bool
+        /// The host's whole range (version 2 onward), so the admin can check it was given the
+        /// highest version both speak. Absent from an older host's welcome.
+        public var minVersion: UInt16?
+        public var maxVersion: UInt16?
 
-        public init(version: UInt16, peer: WirePeerInfo, limits: WireLimits, trusted: Bool = true) {
+        public init(version: UInt16, peer: WirePeerInfo, limits: WireLimits, trusted: Bool = true,
+                    versions: ClosedRange<UInt16>? = nil) {
             self.version = version
             self.peer = peer
             self.limits = limits
             self.trusted = trusted
+            minVersion = versions?.lowerBound
+            maxVersion = versions?.upperBound
         }
     }
 
@@ -239,8 +251,88 @@ public enum WireMessage: Sendable, Equatable {
         public init(confirmed: Bool) { self.confirmed = confirmed }
     }
 
+    // MARK: Streams (version 2; research/WIRE-STREAMS-D2.md)
+
+    /// Admin → host: run this argv and stream its output — only a command whose spec declares
+    /// `wireStreamFlags` (today `logs --follow`), validated by the host as a remote peer.
+    public struct Follow: Sendable, Equatable, Codable {
+        public var id: UInt32
+        public var arguments: [String]
+        public init(id: UInt32, arguments: [String]) { self.id = id; self.arguments = arguments }
+    }
+
+    public enum StreamChannel: String, Sendable, Codable {
+        case stdout, stderr
+        /// The host's own word about the stream — "N lines dropped" — never the command's output.
+        case notice
+        /// Upload bytes.
+        case data
+    }
+
+    /// Either way: the next piece of a stream. Bytes ride in the payload, unescaped; `seq` counts
+    /// from 0 with no gaps, so a lost or replayed piece is a protocol error, not silent corruption.
+    public struct StreamData: Sendable, Equatable {
+        public var id: UInt32
+        /// 64-bit so it cannot wrap within any stream this protocol allows (Iris's review).
+        public var seq: UInt64
+        public var channel: StreamChannel
+        public var data: Data
+        public init(id: UInt32, seq: UInt64, channel: StreamChannel, data: Data) {
+            self.id = id; self.seq = seq; self.channel = channel; self.data = data
+        }
+
+        struct Header: Codable {
+            var id: UInt32
+            var seq: UInt64
+            var channel: StreamChannel
+        }
+    }
+
+    /// The end of a stream. Host → admin when a follow stops (with the child's exit code, why, and
+    /// how many lines were dropped for want of credit); admin → host when an upload's last byte
+    /// has been sent.
+    public struct StreamEnd: Sendable, Equatable, Codable {
+        public var id: UInt32
+        public var exitCode: Int32?
+        public var reason: String?
+        public var dropped: UInt64?
+        public init(id: UInt32, exitCode: Int32? = nil, reason: String? = nil, dropped: UInt64? = nil) {
+            self.id = id; self.exitCode = exitCode; self.reason = reason; self.dropped = dropped
+        }
+    }
+
+    /// Permission to send `bytes` more on stream `id`. A sender never sends beyond its credit.
+    public struct StreamCredit: Sendable, Equatable, Codable {
+        public var id: UInt32
+        public var bytes: UInt64
+        public init(id: UInt32, bytes: UInt64) { self.id = id; self.bytes = bytes }
+    }
+
+    public enum UploadPurpose: String, Sendable, Codable {
+        /// An OCI archive from `image save`, loaded with `image load` by the host itself.
+        case imageLoad = "image-load"
+    }
+
+    /// Admin → host: about to send `bytes` bytes whose SHA-256 is `sha256`, for `purpose`. The host
+    /// accepts with credit, or refuses with a `failure`. `label` is for the host's record only.
+    public struct Upload: Sendable, Equatable, Codable {
+        public var id: UInt32
+        public var purpose: UploadPurpose
+        public var bytes: UInt64
+        public var sha256: String
+        public var label: String
+        public init(id: UInt32, purpose: UploadPurpose, bytes: UInt64, sha256: String, label: String) {
+            self.id = id; self.purpose = purpose; self.bytes = bytes; self.sha256 = sha256; self.label = label
+        }
+    }
+
     public var frameType: WireFrameType {
         switch self {
+        case .follow: .follow
+        case .streamData: .streamData
+        case .streamEnd: .streamEnd
+        case .streamCredit: .streamCredit
+        case .upload: .upload
         case .pairStart: .pairStart
         case .pairChallenge: .pairChallenge
         case .pairProof: .pairProof
@@ -280,6 +372,14 @@ public enum WireMessage: Sendable, Equatable {
         case .pairProof(let m): return WireFrame(type: .pairProof, header: try json(m))
         case .pairResult(let m): return WireFrame(type: .pairResult, header: try json(m))
         case .pairConfirm(let m): return WireFrame(type: .pairConfirm, header: try json(m))
+        case .follow(let m): return WireFrame(type: .follow, header: try json(m))
+        case .streamEnd(let m): return WireFrame(type: .streamEnd, header: try json(m))
+        case .streamCredit(let m): return WireFrame(type: .streamCredit, header: try json(m))
+        case .upload(let m): return WireFrame(type: .upload, header: try json(m))
+        case .streamData(let m):
+            return WireFrame(type: .streamData,
+                             header: try json(StreamData.Header(id: m.id, seq: m.seq, channel: m.channel)),
+                             payload: m.data)
         case .result(let m):
             let header = Result.Header(id: m.id, exitCode: m.exitCode, stdoutBytes: m.stdout.count,
                                        stdoutTruncated: m.stdoutTruncated, stderrTruncated: m.stderrTruncated)
@@ -297,9 +397,10 @@ public enum WireMessage: Sendable, Equatable {
             do { return try decoder.decode(type, from: frame.header) }
             catch { throw WireError.malformedHeader(frame.type) }
         }
-        // Only a result carries a payload. Bytes after any other header are a malformed frame,
-        // not something to ignore: a peer that sends them is not speaking this protocol.
-        if frame.type != .result, !frame.payload.isEmpty {
+        // Only a result and stream data carry a payload. Bytes after any other header are a
+        // malformed frame, not something to ignore: a peer that sends them is not speaking this
+        // protocol.
+        if frame.type != .result, frame.type != .streamData, !frame.payload.isEmpty {
             throw WireError.malformedFrame("\(frame.type) carries a payload")
         }
         switch frame.type {
@@ -317,6 +418,14 @@ public enum WireMessage: Sendable, Equatable {
         case .pairProof: self = .pairProof(try json(PairProof.self))
         case .pairResult: self = .pairResult(try json(PairResult.self))
         case .pairConfirm: self = .pairConfirm(try json(PairConfirm.self))
+        case .follow: self = .follow(try json(Follow.self))
+        case .streamEnd: self = .streamEnd(try json(StreamEnd.self))
+        case .streamCredit: self = .streamCredit(try json(StreamCredit.self))
+        case .upload: self = .upload(try json(Upload.self))
+        case .streamData:
+            let header = try json(StreamData.Header.self)
+            self = .streamData(StreamData(id: header.id, seq: header.seq, channel: header.channel,
+                                          data: frame.payload))
         case .result:
             let header = try json(Result.Header.self)
             guard header.stdoutBytes >= 0, header.stdoutBytes <= frame.payload.count else {

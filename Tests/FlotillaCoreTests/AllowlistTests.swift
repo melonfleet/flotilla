@@ -88,6 +88,9 @@ private func requireRejected(
         // The whole registry family, not only the login: `list` enumerates every registry this
         // Mac holds credentials for, and `logout` destroys them. See the rows for the review.
         "registry list", "registry login", "registry logout",
+        // An image travelling between Macs (D2): each side writes or reads an archive in a
+        // folder of its own choosing, so a peer can never send either as a request.
+        "image save", "image load",
     ]
     let exposed: Set<String> = [
         "ls", "list", "inspect", "stats", "exec", "copy", "logs",
@@ -565,6 +568,7 @@ private func requireRejected(
         "machine create", "machine set", "machine stop", "machine delete", "machine run",
         "machine set-default",
         "image pull", "image delete", "image rm", "image prune", "image tag",
+        "image load",
         // Reads a host directory tree and writes a new image. See the `build` tests below
         // for the flags that are refused outright rather than validated.
         "build",
@@ -591,6 +595,8 @@ private func requireRejected(
         "machine list", "machine inspect", "machine logs",
         "ls", "list", "inspect", "stats", "logs",
         "image list", "image inspect",
+        // Writes an archive to a folder Flotilla chose; the runtime's images are untouched.
+        "image save",
         "volume list", "volume inspect",
         "network list", "network inspect",
         "system status", "system version", "system df",
@@ -661,6 +667,14 @@ private func requireRejected(
         AllowedCase(["image", "prune", "-a"], canonical: ["image", "prune", "--all"],
                     mutates: true, timeout: 120),
         AllowedCase(["image", "tag", "alpine:latest", "alpine:mine"], mutates: true),
+        // Archives in a folder the policy below permits (D2).
+        AllowedCase(["image", "save", "-o", "/tmp/flotilla-send.tar", "--platform", "linux/arm64", "alpine:3.22"],
+                    canonical: ["image", "save", "--output", "/tmp/flotilla-send.tar", "--platform", "linux/arm64",
+                                "alpine:3.22"],
+                    mutates: false, timeout: 1800),
+        AllowedCase(["image", "load", "-i", "/tmp/flotilla-send.tar"],
+                    canonical: ["image", "load", "--input", "/tmp/flotilla-send.tar"],
+                    mutates: true, timeout: 1800),
 
         // The context directory is `/tmp/...` because the policy below permits `/tmp` — a
         // build with an explicit path is authorised by MountPolicy, never by its grammar.
@@ -1717,4 +1731,66 @@ func makeBuildFixtures() -> Bool {
     #expect(Allowlist.accepts("192.168.64.1:33306:3306/tcp", as: .portMapping))
     // A bare port is still refused — the CLI needs both halves.
     #expect(!Allowlist.accepts("8081", as: .portMapping))
+}
+
+// MARK: - D2: image transfer archives and follow streams
+
+@Test func anImageArchiveMustBeNamedAndInsideTheTransferFolder() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("flotilla-transfer-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let archive = folder.appendingPathComponent("send.tar").path
+    let policy = MountPolicy.roots([folder.path])
+
+    // Inside the folder, with the folder's policy: fine.
+    #expect((try? Allowlist.validated(["image", "load", "-i", archive], mountPolicy: policy)) != nil)
+    // The app's default policy refuses every archive path.
+    #expect(throws: AllowlistError.self) { try Allowlist.validated(["image", "load", "-i", archive]) }
+    // Out of the folder, or not a .tar, or in a folder that does not exist.
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["image", "load", "-i", "/etc/passwd"], mountPolicy: policy)
+    }
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["image", "load", "-i", folder.appendingPathComponent("x.img").path], mountPolicy: policy)
+    }
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["image", "load", "-i", folder.appendingPathComponent("gone/x.tar").path],
+                                mountPolicy: policy)
+    }
+    // Without -i the CLI reads stdin, and without -o save writes stdout: both refused, locally too.
+    #expect(throws: AllowlistError.self) { try Allowlist.validated(["image", "load"], mountPolicy: policy) }
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["image", "save", "--platform", "linux/arm64", "alpine"], mountPolicy: policy)
+    }
+    // --force is not a flag Flotilla knows.
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["image", "load", "-i", archive, "--force"], mountPolicy: policy)
+    }
+    // And a peer can send neither.
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["image", "load", "-i", archive], mountPolicy: policy, wirePolicy: .remotePeer)
+    }
+}
+
+@Test func onlyLogsCanBeFollowedAndOnlyInAFollow() throws {
+    // A plain request still may not follow…
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["logs", "-n", "100", "--follow", "web"], wirePolicy: .remotePeer)
+    }
+    // …a follow must, and keeps its bounded backlog…
+    #expect((try? Allowlist.validated(["logs", "-n", "100", "--follow", "web"], wirePolicy: .remotePeer,
+                                      followStream: true)) != nil)
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["logs", "-n", "100", "web"], wirePolicy: .remotePeer, followStream: true)
+    }
+    #expect(throws: AllowlistError.self) {
+        try Allowlist.validated(["logs", "--follow", "web"], wirePolicy: .remotePeer, followStream: true)
+    }
+    // …and nothing else can be followed at all.
+    for argv in [["ls", "--format", "json"], ["stats", "--no-stream", "--format", "json"],
+                 ["image", "pull", "alpine"], ["machine", "logs", "-n", "5", "--follow"]] {
+        #expect(throws: AllowlistError.self) {
+            try Allowlist.validated(argv, wirePolicy: .remotePeer, followStream: true)
+        }
+    }
 }

@@ -20,36 +20,54 @@ enum LiveLogEvent: Sendable {
 /// needed the view to remember to clean up in `onDisappear`, and a `container logs --follow` that
 /// outlives the window it was feeding is a process leak per tab visit.
 extension AppModel {
-    nonisolated func liveContainerLogs(_ id: String, lines: Int,
-                                       bootLog: Bool) -> AsyncStream<LiveLogEvent> {
-        liveLogs { cli, onLine, onEnd in
+    /// A container's live tail — on This Mac, or on a paired host through its follow (PLAN.md
+    /// Phase D, D2), which arrives through the same `ContainerCLI` call.
+    func liveContainerLogs(_ id: String, lines: Int, bootLog: Bool,
+                           host: HostRef = .local) -> AsyncStream<LiveLogEvent> {
+        let cli: ContainerCLI
+        do { cli = try self.cli(for: host) } catch {
+            return AsyncStream { $0.yield(.failed(String(describing: error))); $0.finish() }
+        }
+        return Self.liveLogs(cli: cli) { cli, onLine, onEnd in
             try cli.followLogs(id, lines: lines, bootLog: bootLog, onLine: onLine, onEnd: onEnd)
         }
     }
 
     nonisolated func liveMachineLogs(_ id: String, lines: Int,
                                      boot: Bool) -> AsyncStream<LiveLogEvent> {
-        liveLogs { cli, onLine, onEnd in
+        Self.liveLogs(cli: cli) { cli, onLine, onEnd in
             try cli.followMachineLogs(id, lines: lines, boot: boot, onLine: onLine, onEnd: onEnd)
         }
     }
 
-    private nonisolated func liveLogs(
+    /// Lines a tail may hold for a reader that has fallen behind. Past it the oldest go, are
+    /// counted, and the count is said in a notice — so a host writing faster than the window can
+    /// draw costs this Mac a fixed amount, however long it goes on (Iris's review, High 1).
+    nonisolated static let liveBufferLines = 5_000
+
+    private nonisolated static func liveLogs(
+        cli: ContainerCLI,
         start: @escaping @Sendable (ContainerCLI,
                                     @escaping @Sendable (LogLine.Stream, String) -> Void,
                                     @escaping @Sendable (CommandStreamEnd) -> Void) throws -> CommandStream
     ) -> AsyncStream<LiveLogEvent> {
-        AsyncStream { continuation in
+        AsyncStream(bufferingPolicy: .bufferingNewest(liveBufferLines)) { continuation in
             // Spawning is a `Process.run` and a pair of threads; off the main actor with the
             // rest of the CLI work, so turning the tail on never stutters the window.
             let pending = PendingStream()
+            let dropped = DropCount()
             continuation.onTermination = { _ in pending.cancel() }
-            let cli = self.cli
             Task.detached {
                 do {
                     let handle = try start(
                         cli,
-                        { stream, text in continuation.yield(.line(stream, text)) },
+                        { stream, text in
+                            if case .dropped = continuation.yield(.line(stream, text)) {
+                                dropped.add()
+                            } else if let count = dropped.take() {
+                                continuation.yield(.line(.notice, "\(count) lines dropped: the window fell behind"))
+                            }
+                        },
                         { end in
                             continuation.yield(.ended(end))
                             continuation.finish()
@@ -61,6 +79,20 @@ extension AppModel {
                     continuation.finish()
                 }
             }
+        }
+    }
+}
+
+/// Lines a bounded tail has had to drop since it last said so.
+private final class DropCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    func add() { lock.withLock { count += 1 } }
+    /// The count, reset — or `nil` when nothing was dropped.
+    func take() -> Int? {
+        lock.withLock {
+            defer { count = 0 }
+            return count > 0 ? count : nil
         }
     }
 }

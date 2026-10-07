@@ -528,6 +528,16 @@ table built for a fleet of dozens (the owner, 7 October): search by name, tag or
 filter (all, can be chosen, selected), Select All Shown and a count, ten rows high and scrolling —
 `HostChecklist`, shared by Push to Hosts and New Image ▸ Pull to.
 
+**D2 — built, not yet live-tested on hosts** (research/WIRE-STREAMS-D2.md, with every resolution
+of Iris's review). Wire protocol version 2: follows and uploads under credit-based flow control,
+every frame charged at least 256 bytes, 64-bit sequence numbers, the version choice checked by the
+admin. Live logs follow a host's containers in the Logs section and in container detail, with
+bounded queues that drop the oldest lines and say so. **Send to Hosts…** on This Mac's images
+saves the arm64 (else amd64) variant once and sends it to the chosen hosts at the same time; a
+host refuses unless its `container` is 1.3.1 or later, reserves disk host-wide, checks the
+SHA-256 and runs `image load` itself on a file of its own. Loopback tests cover a follow, a
+3.3 MB send, a damaged archive and the version floor. A dropped transfer starts again.
+
 #### Layer 2 — Fleet DNS
 
 - Give fleet resources names that resolve on every enrolled host.

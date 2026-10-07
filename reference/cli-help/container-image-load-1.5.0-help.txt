@@ -1,0 +1,11 @@
+OVERVIEW: Load images from an OCI compatible tar archive
+
+USAGE: container image load [--input <input>] [--force] [--debug]
+
+OPTIONS:
+  -i, --input <input>     Path to the image tar archive
+  -f, --force             Load images even if the archive contains invalid files
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

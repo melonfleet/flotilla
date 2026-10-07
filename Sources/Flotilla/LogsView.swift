@@ -237,14 +237,9 @@ struct LogsView: View {
     }
 
     /// Sources the tail would follow: the same set a fetch would read, so Live and Refresh never
-    /// disagree about what "selected" means.
-    ///
-    /// **This Mac's only.** The wire carries a command's result when it ends and has no streams yet
-    /// (frame types 40–49 are reserved for them, PLAN.md Phase D), so a host's container cannot be
-    /// followed. Left out and said so in the Live button's help, rather than quietly dropped.
-    private var liveTargets: [(String, ActivityKind)] {
-        selectedSources.filter(\.host.isLocal).map { ($0.key, $0.kind) }
-    }
+    /// disagree about what "selected" means — on every Mac since D2, through each host's follow.
+    /// A host whose Flotilla predates streams appears as a failed row saying so.
+    private var liveTargets: [LogSource] { selectedSources }
 
     /// The sources the kind and source filters leave, on every Mac.
     private var selectedSources: [LogSource] {
@@ -255,9 +250,6 @@ struct LogsView: View {
         return targets
     }
 
-    /// Selected sources on other Macs, which Live cannot follow.
-    private var remoteSelectedCount: Int { selectedSources.filter { !$0.host.isLocal }.count }
-
     /// Refused rather than degraded above the ceiling — see `LogsUIState.maxLiveSources`. A live
     /// view that silently follows eight of your twenty containers is a view that lies by
     /// omission, and the fix the user needs is the source filter, which the help names.
@@ -266,21 +258,15 @@ struct LogsView: View {
     }
 
     private var liveHelp: String {
-        if liveTargets.isEmpty {
-            return remoteSelectedCount > 0
-                ? "Only This Mac's logs can be streamed — other Macs' are fetched"
-                : "Nothing running to stream"
-        }
+        if liveTargets.isEmpty { return "Nothing running to stream" }
         if liveTargets.count > LogsUIState.maxLiveSources {
             return "Too many sources to stream (\(liveTargets.count) selected, "
                 + "\(LogsUIState.maxLiveSources) at a time) — narrow them with the filter"
         }
-        let thisMacOnly = remoteSelectedCount > 0
-            ? " (This Mac only — other Macs' logs can't be streamed yet)" : ""
         return ui.live
             ? "Stop streaming"
             : "Stream new lines from \(liveTargets.count) source"
-                + (liveTargets.count == 1 ? "" : "s") + " as they are written" + thisMacOnly
+                + (liveTargets.count == 1 ? "" : "s") + " as they are written"
     }
 
     private var isFiltered: Bool { ui.sources != .all || !ui.only.isEmpty }
@@ -604,7 +590,7 @@ struct LogsView: View {
     /// The text alone, with no opinion about width — the caller supplies that, because the
     /// `ViewThatFits` candidates need opposite answers: one intrinsic, one greedy.
     private func messageText(_ line: AggregatedLogLine, wrapped: Bool) -> some View {
-        Text(line.text)
+        Text(line.stream == .notice ? "[Flotilla] \(line.text)" : line.text)
             .font(.system(size: 11, design: .monospaced))
             // `stderr` here is the *CLI's* stderr, not the container's own: `container logs`
             // writes program output to stdout, so a line arriving on stderr is the runtime
@@ -615,8 +601,10 @@ struct LogsView: View {
             // two neighbouring oranges, so the one line you deliberately clicked would be the
             // hardest to read; `.primary` inverts with the selection and stays legible. The
             // distinction is not lost — deselect, or read the Stream column in the CSV.
-            .foregroundStyle(line.stream == .stderr && !ui.selection.contains(line.id)
-                             ? AnyShapeStyle(Theme.warning) : AnyShapeStyle(.primary))
+            .foregroundStyle(ui.selection.contains(line.id) ? AnyShapeStyle(.primary)
+                             : line.stream == .stderr ? AnyShapeStyle(Theme.warning)
+                             // Flotilla's own notice — lines dropped — not the container's output.
+                             : line.stream == .notice ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
             .textSelection(.enabled)
             .lineLimit(wrapped ? nil : 1)
             .fixedSize(horizontal: false, vertical: wrapped)
@@ -824,17 +812,17 @@ struct LogsView: View {
         chunks = []
         loading = true
 
-        let inbox = LiveAggregateInbox()
+        let inbox = LiveAggregateInbox(cap: model.settingsStore[SettingsKeys.logBufferLineCap])
         let boot = ui.scope.isBoot
         let requested = ui.lineLimit
         var readers: [Task<Void, Never>] = []
-        for (id, kind) in targets {
-            let events = kind == .machine
-                ? model.liveMachineLogs(id, lines: requested, boot: boot)
-                : model.liveContainerLogs(id, lines: requested, bootLog: boot)
+        for target in targets {
+            let events = target.kind == .machine
+                ? model.liveMachineLogs(target.key, lines: requested, boot: boot)
+                : model.liveContainerLogs(target.name, lines: requested, bootLog: boot, host: target.host)
             readers.append(Task { @MainActor in
-                for await event in events { inbox.accept(event, from: id, kind: kind) }
-                inbox.close(id, kind: kind)
+                for await event in events { inbox.accept(event, from: target) }
+                inbox.close(target.key, kind: target.kind)
             })
         }
         defer { readers.forEach { $0.cancel() } }
@@ -853,7 +841,7 @@ struct LogsView: View {
                     liveLines.append(AggregatedLogLine(source: item.source, kind: item.kind,
                                                        index: index, stream: item.stream,
                                                        text: item.text, receivedAt: item.at,
-                                                       host: .local, hostName: model.hostLabel))
+                                                       host: item.host, hostName: item.hostName))
                 }
                 // One cap across the whole feed, not per source: this is one list and what
                 // matters is how much of it is in memory.
@@ -996,6 +984,8 @@ private final class LiveAggregateInbox {
         let kind: ActivityKind
         let stream: LogLine.Stream
         let text: String
+        let host: HostRef
+        let hostName: String
         /// Recorded when the line **arrived**, not when the tick drained it. A drain can carry
         /// a hundred lines written over the preceding 120 ms, and stamping them all with the
         /// drain's own clock would flatten that into one instant — which is precisely the
@@ -1014,17 +1004,23 @@ private final class LiveAggregateInbox {
 
     var closedCount: Int { closed.count }
 
-    func accept(_ event: LiveLogEvent, from source: String, kind: ActivityKind) {
+    /// No more than the feed keeps: anything older would be trimmed on the next tick anyway.
+    private let cap: Int
+    init(cap: Int) { self.cap = max(1, cap) }
+
+    func accept(_ event: LiveLogEvent, from target: LogSource) {
+        let source = target.key, kind = target.kind
         switch event {
         case .line(let stream, let text):
             pending.append(Item(source: source, kind: kind, stream: stream, text: text,
-                                at: Date()))
+                                host: target.host, hostName: target.hostName, at: Date()))
+            if pending.count > cap { pending.removeFirst(pending.count - cap) }
         case .ended(let end):
             // A clean end is not a failure. The container exited or was stopped, which is a fact
             // worth a row — but tinting it like a broken source would cry wolf every time
             // someone stops something while watching.
             guard !end.ok else { return close(source, kind: kind) }
-            note(source, kind: kind, "stream ended (exit \(end.exitCode))")
+            note(source, kind: kind, end.reason ?? "stream ended (exit \(end.exitCode))")
         case .failed(let reason):
             note(source, kind: kind, reason)
         }
