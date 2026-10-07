@@ -19,6 +19,11 @@ let package = Package(
     // SwiftUI target entirely — is deliberately left untouched.
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.15.0"),
+        // Apple's X.509 library (with swift-asn1 and swift-crypto), for each Mac's self-signed TLS
+        // certificate in host mode — macOS has no API that creates one (the owner, 7 October).
+        // FlotillaTrust only; FlotillaCore stays dependency-free and Linux-clean.
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-asn1.git", from: "1.0.0"),
     ],
     targets: [
         // UI-free spine shared by client and host modes.
@@ -34,7 +39,7 @@ let package = Package(
         // that. Moves to an Xcode project when the app bundle, LSUIElement and signing
         // start to matter (see CLAUDE.md).
         .executableTarget(name: "Flotilla",
-                          dependencies: ["FlotillaCore", "FlotillaPrivileged",
+                          dependencies: ["FlotillaCore", "FlotillaPrivileged", "FlotillaTrust",
                                          .product(name: "SwiftTerm", package: "SwiftTerm")]),
 
         // The DNS helper (decision 19, amended 7 October): a root SMAppService daemon that runs
@@ -42,6 +47,15 @@ let package = Package(
         // FlotillaPrivileged, shared with the app. Both are macOS-only (Security, XPC), so both are
         // absent from Package@swift-6.1.swift for the same reason the app is.
         .target(name: "FlotillaPrivileged"),
+
+        // Host mode's identity (PLAN.md Phase B, B2b): each Mac's key and certificate in the
+        // Keychain, its fingerprint, and the real cryptography behind FlotillaCore's pairing rules.
+        // macOS-only (Security, CryptoKit), so absent from Package@swift-6.1.swift.
+        .target(name: "FlotillaTrust",
+                dependencies: ["FlotillaCore",
+                               .product(name: "X509", package: "swift-certificates"),
+                               .product(name: "SwiftASN1", package: "swift-asn1")]),
+        .testTarget(name: "FlotillaTrustTests", dependencies: ["FlotillaTrust", "FlotillaCore"]),
         .executableTarget(name: "FlotillaDNSHelper",
                           dependencies: ["FlotillaCore", "FlotillaPrivileged"]),
 

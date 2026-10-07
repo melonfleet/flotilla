@@ -263,6 +263,20 @@ a machine in the middle breaks the proofs. Cryptography is injected
 book and the approval screens. B3 needs a certificate for each Mac's key;
 `swift-certificates` (Apple) is the chosen dependency — the owner, 7 October.
 
+**B2b built 7 October** (`Sources/FlotillaTrust/`, `FlotillaTrustTests`, macOS
+only): each Mac's P-256 key in the login Keychain and a self-signed P-256/SHA-256
+certificate for it (subject "Flotilla", no person or computer named, twenty
+years — trust is the pinned fingerprint, not the dates); the fingerprint is
+SHA-256 of the SubjectPublicKeyInfo, computable from any certificate a peer
+presents; `PairingCrypto.system` (CryptoKit HMAC-SHA256 and SHA-256, system
+random) checked against RFC 4231 and the SHA-256 standard vector; `PeerBookStore`
+(plist under `peerBook`) and `EnrolmentKeyStore` (admin key in the Keychain,
+rotatable; host key from the profile's managed `enrolmentKey`, or pasted and
+validated). Two Keychain facts measured on the way: the login Keychain ignores
+the label given when a certificate is added (it is set afterwards), and it fails
+key creation when two keys are made at once in one process (now serialised).
+The approval screens arrive with B3, when a request can actually come in.
+
 - Define bounded protocol framing, version and capability negotiation, explicit
   request lifecycle and failure semantics.
 - Carry only validated CLI argument arrays. Validate on both sides and enforce
