@@ -103,7 +103,9 @@ struct DNSView: View {
                             isPresented: Binding(get: { !pendingDelete.isEmpty },
                                                  set: { if !$0 { pendingDelete = [] } }),
                             titleVisibility: .visible) {
-            Button(pendingDelete.count == 1 ? "Delete…" : "Delete \(pendingDelete.count)…",
+            // "…" only when the password prompt follows; with the helper this is the last step.
+            let more = model.dnsHelperEnabled ? "" : "…"
+            Button(pendingDelete.count == 1 ? "Delete\(more)" : "Delete \(pendingDelete.count)\(more)",
                    role: .destructive) {
                 let targets = pendingDelete
                 pendingDelete = []

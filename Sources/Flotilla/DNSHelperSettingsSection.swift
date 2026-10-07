@@ -28,6 +28,7 @@ struct DNSHelperSettingsSection: View {
         .onAppear { status = DNSHelper.status }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             status = DNSHelper.status
+            if status == .enabled { problem = nil }
         }
     }
 
@@ -94,7 +95,12 @@ struct DNSHelperSettingsSection: View {
         do {
             try DNSHelper.install()
         } catch {
-            problem = "Couldn't install the helper: \(error.localizedDescription)"
+            // Registration that is waiting for the owner's approval throws "Operation not
+            // permitted" and still registers (measured 7 October): the status says what happened,
+            // so only a status that did not move is a failure.
+            if DNSHelper.status == .notInstalled {
+                problem = "Couldn't install the helper: \(error.localizedDescription)"
+            }
         }
         status = DNSHelper.status
         if status == .awaitingApproval { DNSHelper.openLoginItems() }

@@ -134,7 +134,7 @@ struct DNSFormView: View {
         .dnsSetUpConfirmation($pendingSetUp) { _ in createManaged() }
         .confirmationDialog("Delete the local domain “\(managed?.name ?? "")”?",
                             isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete…", role: .destructive) { deleteManaged() }
+            Button(model.dnsHelperEnabled ? "Delete" : "Delete…", role: .destructive) { deleteManaged() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(DNSCopy.deleteMessage(managed.map { [$0] } ?? [], helper: model.dnsHelperEnabled))
@@ -336,7 +336,9 @@ struct DNSFormView: View {
             if isAdd {
                 Button("Cancel", action: dismiss)
                     .keyboardShortcut(.cancelAction)
-                Button("Create…", action: submit)
+                // "…" when something follows — the password prompt, or the restart warning.
+                Button(model.dnsHelperEnabled && !(kind == .containers && useForContainers)
+                       ? "Create" : "Create…", action: submit)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canCreate)
