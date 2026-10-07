@@ -1,5 +1,6 @@
 import Foundation
 import IOKit
+import SystemConfiguration
 import Network
 import FlotillaCore
 import FlotillaTrust
@@ -35,6 +36,9 @@ final class HostModeController {
     struct DiscoveredHost: Identifiable, Hashable {
         let name: String
         let endpoint: NWEndpoint
+        /// The fingerprint prefix the host advertises, if it does — how a renamed host is still
+        /// recognised. Matched, never trusted: the full key is checked when connecting.
+        let fingerprintHint: String?
         var id: String { name }
     }
 
@@ -76,6 +80,9 @@ final class HostModeController {
     /// How long before a Mac that refused is asked again — its profile may arrive later.
     static let autoEnrolRetry: TimeInterval = 120
     @ObservationIgnored var recordActivity: ((ContainerEvent) -> Void)?
+    /// The name the listener is advertising, so a rename of this Mac can be noticed.
+    @ObservationIgnored private var advertisedName: String?
+    @ObservationIgnored private var renameTimer: Timer?
 
     init(settings: SettingsStore, containerHost: ContainerHost,
          bookStore: PeerBookStore = PeerBookStore(), keyStore: EnrolmentKeyStore = .standard,
@@ -136,14 +143,14 @@ final class HostModeController {
     /// support bundle or an export.
     var ownDetails: PeerDetails {
         let os = ProcessInfo.processInfo.operatingSystemVersion
-        return PeerDetails(computerName: Host.current().localizedName ?? "Mac",
+        return PeerDetails(computerName: Self.computerName,
                            model: Self.sysctlString("hw.model"),
                            serialNumber: Self.serialNumber(),
                            macOSVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)")
     }
 
     var ownInfo: WirePeerInfo {
-        WirePeerInfo(name: Host.current().localizedName ?? "Mac",
+        WirePeerInfo(name: Self.computerName,
                      appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
                      macOSVersion: ownDetails.macOSVersion)
     }
@@ -158,9 +165,21 @@ final class HostModeController {
             listener = .failed(identityProblem ?? "No identity.")
             return
         }
+        let name = Self.computerName
         let configuration = HostServer.Configuration(
             identity: identity, port: port, info: ownInfo, details: ownDetails,
-            bonjourName: settings[SettingsKeys.bonjourEnabled] ? ownInfo.name : nil)
+            bonjourName: settings[SettingsKeys.bonjourEnabled] ? name : nil)
+        advertisedName = name
+        // A rename of this Mac restarts the listener, so it advertises — and introduces itself
+        // as — the new name (measured 7 October: a renamed VM kept its old name everywhere).
+        renameTimer?.invalidate()
+        renameTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isHost, Self.computerName != self.advertisedName else { return }
+                self.stopListening()
+                self.startListening()
+            }
+        }
         let server = HostServer(configuration: configuration, host: containerHost, delegate: bridge)
         server.onStateChange = { [weak self] state in
             Task { @MainActor in self?.listenerChanged(state) }
@@ -175,6 +194,8 @@ final class HostModeController {
     }
 
     private func stopListening() {
+        renameTimer?.invalidate()
+        renameTimer = nil
         server?.stop()
         server = nil
         listener = .off
@@ -371,11 +392,16 @@ final class HostModeController {
     func remoteHost(for fingerprint: PeerFingerprint) -> RemoteHost? {
         guard let peer = book[fingerprint], peer.isTrusted, peer.role == .host,
               let identity = ensureIdentity() else { return nil }
-        if let cached = remotes[fingerprint] { return cached }
-        // A host paired before addresses were remembered is found by the name it advertises.
-        let hint = peer.endpoint ?? discovered.first { $0.name == peer.details.computerName }
-            .flatMap { PeerEndpoint($0.endpoint) }
-        guard let endpoint = hint?.nwEndpoint else { return nil }
+        // Found on the network by its key, whatever it is called now; else where it was last.
+        let advertised = discovered.first { $0.fingerprintHint == WireTLS.fingerprintHint(fingerprint) }
+        let hint = advertised.flatMap { PeerEndpoint($0.endpoint) } ?? peer.endpoint
+        if let cached = remotes[fingerprint], hint == nil || PeerEndpoint(cached.endpoint) == hint { return cached }
+        remotes.removeValue(forKey: fingerprint)?.close()
+        guard let hint, let endpoint = hint.nwEndpoint else { return nil }
+        if peer.endpoint != hint {
+            book.setEndpoint(fingerprint, hint)
+            save()
+        }
         let remote = RemoteHost(endpoint: endpoint, fingerprint: fingerprint, identity: identity, info: ownInfo)
         remotes[fingerprint] = remote
         return remote
@@ -419,6 +445,11 @@ final class HostModeController {
                                            containersTotal: containers.count, machines: machines,
                                            containerVersion: version, checkedAt: Date())
             book.markSeen(fingerprint, at: Date())
+            // Whatever it calls itself now — a renamed host shows its new name here.
+            if let info = remote.hostInfo,
+               book.refresh(fingerprint, computerName: info.name, macOSVersion: info.macOSVersion) {
+                record(info.name, "Name or version updated")
+            }
             save()
         case .failure(let error):
             live[fingerprint] = LiveStatus(state: .failed(Self.describe(error)), checkedAt: Date())
@@ -444,11 +475,13 @@ final class HostModeController {
         autoEnrolTimer = Timer.scheduledTimer(withTimeInterval: Self.autoEnrolRetry / 2, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.enrolDiscovered() }
         }
-        let browser = NWBrowser(for: .bonjour(type: WireTLS.serviceType, domain: nil), using: .tcp)
+        let browser = NWBrowser(for: .bonjourWithTXTRecord(type: WireTLS.serviceType, domain: nil), using: .tcp)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = results.compactMap { result -> DiscoveredHost? in
                 guard case .service(let name, _, _, _) = result.endpoint else { return nil }
-                return DiscoveredHost(name: name, endpoint: result.endpoint)
+                var hint: String?
+                if case .bonjour(let txt) = result.metadata { hint = txt["fp"] }
+                return DiscoveredHost(name: name, endpoint: result.endpoint, fingerprintHint: hint)
             }
             Task { @MainActor in self?.discoveredChanged(found) }
         }
@@ -465,17 +498,22 @@ final class HostModeController {
     }
 
     private func discoveredChanged(_ found: [DiscoveredHost]) {
-        let own = Host.current().localizedName
-        discovered = found.filter { $0.name != own }.sorted { $0.name < $1.name }
+        let ownHint = identity.map { WireTLS.fingerprintHint($0.fingerprint) }
+        discovered = found.filter { $0.fingerprintHint != ownHint && $0.name != Self.computerName }
+            .sorted { $0.name < $1.name }
         enrolDiscovered()
     }
 
     /// Asks each found Mac this admin does not know to enrol, at most once per retry interval.
     private func enrolDiscovered() {
         guard adminKey != nil else { return }
-        let known = Set(hosts.map(\.details.computerName))
+        // Known by key when the host advertises one, by name otherwise.
+        let knownKeys = Set(hosts.map { WireTLS.fingerprintHint($0.fingerprint) })
+        let knownNames = Set(hosts.map(\.details.computerName))
         let now = Date()
-        for host in discovered where !known.contains(host.name) {
+        for host in discovered {
+            if let hint = host.fingerprintHint { if knownKeys.contains(hint) { continue } }
+            else if knownNames.contains(host.name) { continue }
             if let last = autoEnrolAttempts[host.name], now.timeIntervalSince(last) < Self.autoEnrolRetry { continue }
             autoEnrolAttempts[host.name] = now
             Task { _ = await addHost(at: host.endpoint, code: nil) }
@@ -521,6 +559,12 @@ final class HostModeController {
     }
 
     // MARK: Facts about this Mac
+
+    /// The computer name as it is now. `Host.current().localizedName` can lag a rename made while
+    /// the app runs; SystemConfiguration's answer does not.
+    static var computerName: String {
+        (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? Host.current().localizedName ?? "Mac"
+    }
 
     private static func sysctlString(_ name: String) -> String? {
         var size = 0

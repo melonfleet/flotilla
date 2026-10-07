@@ -147,7 +147,12 @@ struct HostsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task {
             await model.refreshMachines()
-            await hostMode.refreshLiveStatus()
+            // Kept current while Hosts is open: a host's state, counts and name (after a rename)
+            // without anyone pressing Refresh. Stops when the section goes.
+            while !Task.isCancelled {
+                await hostMode.refreshLiveStatus()
+                try? await Task.sleep(for: .seconds(30))
+            }
         }
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }

@@ -154,6 +154,19 @@ public struct PeerBook: Sendable, Equatable, Codable {
         peers.removeAll { $0.fingerprint == fingerprint }
     }
 
+    /// What a peer says about itself now — its computer name after a rename, its macOS after an
+    /// update. The owner's nickname, if any, is left alone. Returns whether anything changed.
+    @discardableResult
+    public mutating func refresh(_ fingerprint: PeerFingerprint, computerName: String?, macOSVersion: String?) -> Bool {
+        guard let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) else { return false }
+        var details = peers[index].details
+        if let computerName, !computerName.isEmpty { details.computerName = computerName }
+        if let macOSVersion, !macOSVersion.isEmpty { details.macOSVersion = macOSVersion }
+        guard details != peers[index].details else { return false }
+        peers[index].details = details
+        return true
+    }
+
     public mutating func rename(_ fingerprint: PeerFingerprint, to nickname: String?) {
         guard let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) else { return }
         let trimmed = nickname?.trimmingCharacters(in: .whitespacesAndNewlines)

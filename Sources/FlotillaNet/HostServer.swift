@@ -84,7 +84,11 @@ public final class HostServer: @unchecked Sendable {
         }
         let listener = try NWListener(using: parameters, on: port)
         if let name = configuration.bonjourName {
-            listener.service = NWListener.Service(name: name, type: WireTLS.serviceType)
+            // The fingerprint rides along, so an admin recognises this host by its key whatever it
+            // is called — a rename changes the name, never the key. Not secret: TLS shows it to
+            // anyone who connects.
+            listener.service = NWListener.Service(name: name, type: WireTLS.serviceType, domain: nil,
+                                                  txtRecord: WireTLS.txtRecord(for: configuration.identity.fingerprint))
         }
         listener.stateUpdateHandler = { [weak self] state in self?.listenerChanged(state) }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }

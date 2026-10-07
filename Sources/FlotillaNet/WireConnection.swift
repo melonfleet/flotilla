@@ -19,6 +19,16 @@ public enum WireTLS {
     /// The Bonjour service type, advertised by a listening host (B3b).
     public static let serviceType = "_flotilla._tcp"
 
+    /// The TXT record a host advertises: protocol version and its fingerprint's hex prefix.
+    public static func txtRecord(for fingerprint: PeerFingerprint) -> NWTXTRecord {
+        NWTXTRecord(["v": "1", "fp": fingerprintHint(fingerprint)])
+    }
+
+    /// The first 16 bytes, as hex — enough to tell hosts apart; identity is still checked on connect.
+    public static func fingerprintHint(_ fingerprint: PeerFingerprint) -> String {
+        String(fingerprint.hex.prefix(32))
+    }
+
     public static func parameters(identity: DeviceIdentity, server: Bool) -> NWParameters {
         let tls = NWProtocolTLS.Options()
         let options = tls.securityProtocolOptions

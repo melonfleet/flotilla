@@ -171,6 +171,20 @@ struct PeerBookTests {
         #expect(book.peers.count == 1)
     }
 
+    @Test func aRenamedMacUpdatesItsRecordButNotTheOwnersNickname() {
+        var book = PeerBook()
+        _ = book.requestEnrolment(mini, role: .host, details: details, at: now)
+        let changed = book.refresh(mini, computerName: "rack-2-mini", macOSVersion: "27.1")
+        #expect(changed)
+        #expect(book[mini]?.details.computerName == "rack-2-mini")
+        #expect(book[mini]?.details.serialNumber == "SERIAL")
+        let again = book.refresh(mini, computerName: "rack-2-mini", macOSVersion: "27.1")
+        #expect(!again)
+        book.rename(mini, to: "Build box")
+        book.refresh(mini, computerName: "renamed-again", macOSVersion: nil)
+        #expect(book[mini]?.displayName == "Build box")
+    }
+
     @Test func theBookIsPlistNative() throws {
         var book = PeerBook()
         _ = book.requestEnrolment(mini, role: .host, details: details, at: now)
