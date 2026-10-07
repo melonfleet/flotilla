@@ -76,6 +76,18 @@ struct HostCallTests {
         #expect(try JSONDecoder().decode(HostDNSStatus.self, from: data) == status)
     }
 
+    @Test func hostFactsNeedVersionFour() throws {
+        var (_, old) = try connected(versions: 1...3)
+        #expect(throws: WireError.hostCallsUnsupported) { try old.call(.hostFacts) }
+        var (hostSession, client) = try connected()
+        let outgoing = try client.call(.hostFacts)
+        #expect(try hostSession.receive(outgoing.message) == [.hostCall(id: outgoing.id, call: .hostFacts)])
+        let facts = HostFacts(chip: "Apple M1", cores: 8, model: "Macmini9,1", macOSVersion: "26.6.2",
+                              memoryTotalBytes: 16 << 30, memoryUsedBytes: 6 << 30, cpuPercent: 12.5,
+                              diskTotalBytes: 245_107_195_904, diskFreeBytes: 120_000_000_000)
+        #expect(try JSONDecoder().decode(HostFacts.self, from: JSONEncoder().encode(facts)) == facts)
+    }
+
     // MARK: Zones
 
     @Test func aMacsNameBecomesADNSLabel() {

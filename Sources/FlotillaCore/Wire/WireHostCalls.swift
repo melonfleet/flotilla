@@ -12,6 +12,8 @@ import Foundation
 public enum HostCall: Sendable, Equatable, Codable {
     /// The host's DNS rows, the domain its containers are named under, and its helper's state.
     case dnsStatus
+    /// The host's chip, memory and disk, for Overview (version 4).
+    case hostFacts
     /// `system dns create`, run by the host's DNS helper.
     case dnsCreate(domain: String, localhost: String?)
     /// `system dns delete`, run by the host's DNS helper.
@@ -32,7 +34,7 @@ public enum HostCall: Sendable, Equatable, Codable {
             return nil
         }
         switch self {
-        case .dnsStatus: return nil
+        case .dnsStatus, .hostFacts: return nil
         case .dnsCreate(let domain, let localhost):
             if let reserved = LocalDNS.reservedProblem(domain) { return reserved }
             if case .failure(let error) = ContainerCLI.dnsCreateCommand(domain: domain, localhost: localhost) {
@@ -50,12 +52,15 @@ public enum HostCall: Sendable, Equatable, Codable {
     }
 
     /// Whether it changes the host.
-    public var mutates: Bool { self != .dnsStatus }
+    public var mutates: Bool { self != .dnsStatus && self != .hostFacts }
+
+    /// The protocol version a host must speak to be asked this.
+    public var minimumVersion: UInt16 { self == .hostFacts ? WireProtocol.hostFactsVersion : WireProtocol.hostCallsVersion }
 
     /// How long the host may take. A runtime restart waits for every container to stop.
     public var timeout: TimeInterval {
         switch self {
-        case .dnsStatus: 30
+        case .dnsStatus, .hostFacts: 30
         case .dnsCreate, .dnsDelete: 60
         case .setContainerDNSDomain: 300
         }
@@ -65,10 +70,38 @@ public enum HostCall: Sendable, Equatable, Codable {
     public var auditDescription: String {
         switch self {
         case .dnsStatus: "read DNS settings"
+        case .hostFacts: "read its chip, memory and disk"
         case .dnsCreate(let domain, let localhost): localhost == nil ? "created DNS domain \(domain)" : "created host alias \(domain)"
         case .dnsDelete(let domains): "deleted DNS domain" + (domains.count == 1 ? " \(domains[0])" : "s \(domains.joined(separator: ", "))")
         case .setContainerDNSDomain(let domain): domain.map { "named containers under \($0)" } ?? "stopped naming containers"
         }
+    }
+}
+
+/// A host's answer to `.hostFacts`: what Overview shows for a Mac. Everything optional — a figure the
+/// host could not read is left out rather than guessed.
+public struct HostFacts: Sendable, Equatable, Codable {
+    /// `Apple M1`, from `machdep.cpu.brand_string`.
+    public var chip: String?
+    public var cores: Int?
+    /// The model identifier, `Macmini9,1`.
+    public var model: String?
+    public var macOSVersion: String?
+    public var memoryTotalBytes: Int64?
+    /// App memory plus wired plus compressed — the figure Activity Monitor calls Memory Used.
+    public var memoryUsedBytes: Int64?
+    /// The whole machine's CPU, as a percentage of every core.
+    public var cpuPercent: Double?
+    public var diskTotalBytes: Int64?
+    /// Free for important use, as Finder counts it.
+    public var diskFreeBytes: Int64?
+
+    public init(chip: String? = nil, cores: Int? = nil, model: String? = nil, macOSVersion: String? = nil,
+                memoryTotalBytes: Int64? = nil, memoryUsedBytes: Int64? = nil, cpuPercent: Double? = nil,
+                diskTotalBytes: Int64? = nil, diskFreeBytes: Int64? = nil) {
+        self.chip = chip; self.cores = cores; self.model = model; self.macOSVersion = macOSVersion
+        self.memoryTotalBytes = memoryTotalBytes; self.memoryUsedBytes = memoryUsedBytes; self.cpuPercent = cpuPercent
+        self.diskTotalBytes = diskTotalBytes; self.diskFreeBytes = diskFreeBytes
     }
 }
 
@@ -125,6 +158,9 @@ extension WireHostSession {
         if let problem = request.call.problem {
             return [.send(.failure(.init(id: request.id, code: .refused, message: problem)))]
         }
+        if case .ready(let version, _) = state, version < request.call.minimumVersion {
+            return [.send(.failure(.init(id: request.id, code: .refused, message: "Not on this connection's version.")))]
+        }
         inFlight.insert(request.id)
         return [.hostCall(id: request.id, call: request.call)]
     }
@@ -143,6 +179,7 @@ extension WireClientSession {
     public mutating func call(_ call: HostCall) throws -> Outgoing {
         guard case .ready = state else { throw state == .closed ? WireError.closed : WireError.notConnected }
         guard canHostCall else { throw WireError.hostCallsUnsupported }
+        if case .ready(let version, _) = state, version < call.minimumVersion { throw WireError.hostCallsUnsupported }
         guard inFlight.count < limits.maxConcurrentRequests else {
             throw WireError.tooManyRequests(limit: limits.maxConcurrentRequests)
         }

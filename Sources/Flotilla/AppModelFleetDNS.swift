@@ -14,6 +14,12 @@ extension AppModel {
     /// Performs an admin's host call, already validated by the wire session.
     func performHostCall(_ call: HostCall) async -> Result<String, HostCallFailure> {
         switch call {
+        case .hostFacts:
+            guard let json = try? JSONEncoder().encode(localHostFacts()) else {
+                return .failure(HostCallFailure(.internalError, "This host couldn't describe itself."))
+            }
+            return .success(String(decoding: json, as: UTF8.self))
+
         case .dnsStatus:
             await refreshDNS()
             let status = HostDNSStatus(domains: dnsDomains, containerDomain: containerDNSDomain,

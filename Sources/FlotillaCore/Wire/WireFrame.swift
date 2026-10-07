@@ -14,11 +14,14 @@ public enum WireProtocol {
     /// connection, so a version-1 peer is unaffected.
     /// Version 3 (D3) adds typed host calls — DNS on a host, through its own helper
     /// (research/FLEET-DNS-D3.md, DECISIONS Q36).
-    public static let supportedVersions: ClosedRange<UInt16> = 1...3
+    /// Version 4 adds the `.hostFacts` call — a host's chip, memory and disk, for Overview.
+    public static let supportedVersions: ClosedRange<UInt16> = 1...4
     /// The first version that carries streams.
     public static let streamsVersion: UInt16 = 2
     /// The first version that carries host calls.
     public static let hostCallsVersion: UInt16 = 3
+    /// The first version that answers `.hostFacts`.
+    public static let hostFactsVersion: UInt16 = 4
     /// The owner's choice, 7 October. Changeable in Settings.
     public static let defaultPort: UInt16 = 7868
 

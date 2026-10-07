@@ -197,6 +197,18 @@ struct HostsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // A host's name elsewhere — Overview's Hosts table — opens its page here. One-shot.
+        .onChange(of: model.pendingDetailSubject) { _, subject in
+            guard let subject, model.pendingDetailKind == .host else { return }
+            openHost = subject
+            model.clearPendingDetail()
+        }
+        .onAppear {
+            if let subject = model.pendingDetailSubject, model.pendingDetailKind == .host {
+                openHost = subject
+                model.clearPendingDetail()
+            }
+        }
         .task {
             await model.refreshMachines()
             // Kept current while Hosts is open: a host's state, counts and name (after a rename)

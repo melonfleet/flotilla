@@ -143,7 +143,7 @@ struct WireSessionTests {
 
     @Test func aVersionMismatchIsRejectedWithTheHostsRange() throws {
         var session = WireHostSession(peer: host)
-        let events = try session.receive(.hello(.init(versions: 4...5, peer: admin, limits: .default)))
+        let events = try session.receive(.hello(.init(versions: (WireProtocol.supportedVersions.upperBound + 1)...(WireProtocol.supportedVersions.upperBound + 2), peer: admin, limits: .default)))
         guard case .send(.reject(let reject)) = events.first else { Issue.record("no reject"); return }
         #expect(reject.code == .versionMismatch)
         #expect(reject.minVersion == 1 && reject.maxVersion == WireProtocol.supportedVersions.upperBound)

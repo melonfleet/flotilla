@@ -40,20 +40,27 @@ struct OverviewView: View {
 
     // MARK: Hosts
 
-    /// One line per Mac: This Mac, then every paired host, each with its state.
-    private struct HostLine: Identifiable {
+    /// One row per Mac: This Mac, then every paired host — a table, so thirty minis read as well as
+    /// three (the owner, 8 October). The name opens that Mac's page under Hosts.
+    struct HostLine: Identifiable {
+        /// `HostRow`'s id: This Mac's fixed one, or a host's fingerprint.
         let id: String
         let name: String
         let state: String
         let color: Color
         let connected: Bool
+        let facts: HostFacts?
+        let model: String?
+        let macOS: String?
     }
 
     private var hostLines: [HostLine] {
-        var lines = [HostLine(id: "local", name: model.hostLabel,
+        let local = model.localHostFacts()
+        var lines = [HostLine(id: HostRow.thisMacID, name: model.hostLabel,
                               state: model.runtimeUsable ? "connected" : "runtime unavailable",
                               color: model.runtimeUsable ? Theme.online : Theme.warning,
-                              connected: model.runtimeUsable)]
+                              connected: model.runtimeUsable, facts: local,
+                              model: local.model, macOS: local.macOSVersion)]
         for peer in model.hostMode.trustedHosts {
             let status = model.hostMode.live[peer.fingerprint]
             let (state, color, connected): (String, Color, Bool) = switch status?.state {
@@ -61,44 +68,99 @@ struct OverviewView: View {
             case .failed?: ("not answering", Theme.warning, false)
             case .checking?, nil: ("checking…", Color.secondary, false)
             }
+            let facts = model.hostMode.facts[peer.fingerprint]
             lines.append(HostLine(id: peer.fingerprint.hex, name: peer.displayName,
-                                  state: state, color: color, connected: connected))
+                                  state: state, color: color, connected: connected, facts: facts,
+                                  model: facts?.model ?? peer.details.model,
+                                  macOS: facts?.macOSVersion ?? peer.details.macOSVersion))
         }
         return lines
     }
 
     private var hosts: some View {
         let lines = hostLines
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Hosts").font(.headline)
                 Spacer()
                 Text("\(lines.filter(\.connected).count) of \(lines.count) connected")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Button { go(.hosts) } label: {
-                VStack(spacing: 0) {
-                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
-                        if index > 0 { Divider().padding(.leading, 31) }
-                        HStack(spacing: 10) {
-                            Circle().fill(line.color).frame(width: 9, height: 9)
-                            Text(line.name).font(.body.weight(.medium))
-                            Text(line.state).font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            if index == 0 {
-                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                            }
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 9)
-                    }
-                }
-                .contentShape(Rectangle())
+            hostTable(lines)
+                // As Utilisation's card: the table draws its own header and insets.
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline.opacity(0.25)))
-            }
-            .buttonStyle(.plain)
-            .help("Open Hosts")
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
         }
+    }
+
+    /// Up to ten rows, then it scrolls — the same height whatever the fleet, past ten.
+    private func hostTable(_ lines: [HostLine]) -> some View {
+        SwiftUI.Table(lines) {
+            TableColumn("Host") { line in
+                HStack(spacing: 7) {
+                    Circle().fill(line.color).frame(width: 8, height: 8)
+                        .help(line.state)
+                    Button(line.name) { model.requestDetail(kind: .host, subject: line.id) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.link)
+                        .lineLimit(1)
+                        .help("Open \(line.name)")
+                }
+            }
+            .width(min: 140, ideal: 190)
+            TableColumn("Model") { line in
+                Text(line.model ?? "—").foregroundStyle(.secondary).lineLimit(1)
+            }
+            .width(min: 80, ideal: 110)
+            TableColumn("CPU") { line in
+                Text(Self.chip(line.facts)).lineLimit(1)
+            }
+            .width(min: 120, ideal: 170)
+            TableColumn("Memory") { line in
+                Text(Self.memory(line.facts)).monospacedDigit().lineLimit(1)
+            }
+            .width(min: 100, ideal: 130)
+            TableColumn("Disk") { line in
+                Text(Self.disk(line.facts)).monospacedDigit().lineLimit(1)
+                    .help("The startup disk's capacity")
+            }
+            .width(min: 110, ideal: 150)
+            TableColumn("macOS") { line in
+                Text(line.macOS ?? "—").foregroundStyle(.secondary).monospacedDigit()
+            }
+            .width(min: 60, ideal: 80)
+        }
+        // 24 a row plus the header and its rule, measured off the rendered table.
+        .frame(height: CGFloat(min(max(lines.count, 1), 10)) * 24 + 40)
+        // Only a fleet past ten rows scrolls; below that a scroller is a promise of rows not there.
+        .scrollIndicators(lines.count > 10 ? .automatic : .never)
+    }
+
+    /// `Apple M1 · 8 cores`.
+    static func chip(_ facts: HostFacts?) -> String {
+        guard let facts else { return "—" }
+        let cores = facts.cores.map { "\($0) cores" }
+        let text = [facts.chip, cores].compactMap { $0 }.joined(separator: " · ")
+        return text.isEmpty ? "—" : text
+    }
+
+    /// What the Mac has installed — `64 GB`, `8 GB` — and nothing about how much is in use: this is
+    /// an overview (the owner, 8 October). Binary units, as Apple counts RAM.
+    static func memory(_ facts: HostFacts?) -> String {
+        guard let total = facts?.memoryTotalBytes, total > 0 else { return "—" }
+        return "\(Int((Double(total) / Double(1 << 30)).rounded())) GB"
+    }
+
+    /// The startup disk's size — `995 GB`, `2 TB` — without free space, for the same reason.
+    /// Decimal units, as Finder counts disks.
+    static func disk(_ facts: HostFacts?) -> String {
+        guard let total = facts?.diskTotalBytes, total > 0 else { return "—" }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.isAdaptive = false
+        return formatter.string(fromByteCount: total)
     }
 
     // MARK: Totals

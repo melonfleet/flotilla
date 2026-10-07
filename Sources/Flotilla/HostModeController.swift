@@ -85,6 +85,9 @@ final class HostModeController {
     /// containers are named under and whether its helper is switched on.
     private(set) var dnsSnapshots: [PeerFingerprint: FleetSnapshot<LocalDNSDomain>] = [:]
     private(set) var dnsStatus: [PeerFingerprint: HostDNSStatus] = [:]
+    /// Each host's chip, memory and disk (version 4), for Overview. Kept when a later ask fails:
+    /// the last answer is the best there is, and the table marks the host as not answering.
+    private(set) var facts: [PeerFingerprint: HostFacts] = [:]
     private(set) var volumeSnapshots: [PeerFingerprint: FleetSnapshot<ContainerVolume>] = [:]
     private(set) var networkSnapshots: [PeerFingerprint: FleetSnapshot<ContainerNetwork>] = [:]
     @ObservationIgnored private var backoff: [PeerFingerprint: HostBackoff] = [:]
@@ -557,6 +560,7 @@ final class HostModeController {
         imageSnapshots.removeValue(forKey: fingerprint)
         dnsSnapshots.removeValue(forKey: fingerprint)
         dnsStatus.removeValue(forKey: fingerprint)
+        facts.removeValue(forKey: fingerprint)
         volumeSnapshots.removeValue(forKey: fingerprint)
         networkSnapshots.removeValue(forKey: fingerprint)
         backoff.removeValue(forKey: fingerprint)
@@ -654,6 +658,10 @@ final class HostModeController {
             case .failure(let error): networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
             }
             await refreshDNS(fingerprint, remote: remote)
+            if let result = try? await remote.call(.hostFacts),
+               let answer = try? JSONDecoder().decode(HostFacts.self, from: Data(result.stdout.utf8)) {
+                facts[fingerprint] = answer
+            }
         }
         let now = Date()
         switch outcome {
