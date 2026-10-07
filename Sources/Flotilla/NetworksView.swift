@@ -858,12 +858,15 @@ struct NewNetworkView: View {
                 FormField("Create on",
                           help: FieldHelp("Which Mac the network is created on.",
                                           detail: "A network belongs to one Mac. The same name on two Macs is two separate private networks, and an empty subnet is chosen by that Mac.")) {
-                    Picker("", selection: $host) {
-                        ForEach(hostChoices, id: \.ref) { Text($0.name).tag($0.ref) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("", selection: $host) {
+                            ForEach(hostChoices, id: \.ref) { Text($0.name).tag($0.ref) }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
+                        ContainerSkewNote(model: model, hosts: [host])
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .fixedSize()
                 }
             }
             FormField("Name",

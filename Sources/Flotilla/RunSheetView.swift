@@ -264,6 +264,7 @@ struct RunSheetView: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                 }
+                ContainerSkewNote(model: model, hosts: [host])
             }
 
             FormSectionHeader(title: "Image")

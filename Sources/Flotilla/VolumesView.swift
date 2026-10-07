@@ -895,12 +895,15 @@ struct VolumesView: View {
                 FormField("Create on",
                           help: FieldHelp("Which Mac the volume is created on.",
                                           detail: "A volume belongs to one Mac: a container mounts the volumes on its own Mac.")) {
-                    Picker("", selection: $newHost) {
-                        ForEach(hostChoices, id: \.ref) { Text($0.name).tag($0.ref) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("", selection: $newHost) {
+                            ForEach(hostChoices, id: \.ref) { Text($0.name).tag($0.ref) }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
+                        ContainerSkewNote(model: model, hosts: [newHost])
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .fixedSize()
                 }
             }
             FormField("Name",

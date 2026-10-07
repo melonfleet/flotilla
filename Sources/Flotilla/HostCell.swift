@@ -35,3 +35,25 @@ enum FleetWording {
         return "On \(list)."
     }
 }
+
+/// The warning a form shows before it acts on a Mac whose `container` differs from This Mac's by a
+/// minor or major version (PLAN.md Phase C: show version skew before an incompatible action is
+/// attempted). Nothing at all when every target matches.
+struct ContainerSkewNote: View {
+    let model: AppModel
+    let hosts: [HostRef]
+
+    var body: some View {
+        let warnings = hosts.compactMap { model.containerSkewWarning($0) }
+        if !warnings.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(warnings, id: \.self) { warning in
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Theme.warning)
+                        .lineLimit(4)
+                }
+            }
+        }
+    }
+}

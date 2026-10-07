@@ -70,6 +70,8 @@ final class HostModeController {
         var containersTotal: Int?
         var machines: Int?
         var containerVersion: String?
+        /// The host's Flotilla, as its welcome said.
+        var appVersion: String? = nil
         var checkedAt: Date
     }
     private(set) var live: [PeerFingerprint: LiveStatus] = [:]
@@ -173,9 +175,16 @@ final class HostModeController {
     }
 
     var ownInfo: WirePeerInfo {
-        WirePeerInfo(name: Self.computerName,
-                     appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
-                     macOSVersion: ownDetails.macOSVersion)
+        WirePeerInfo(name: Self.computerName, appVersion: Self.appVersion, macOSVersion: ownDetails.macOSVersion)
+    }
+
+    /// This Flotilla's version with its build number — `0.0.0 (304)` — so two builds of one
+    /// release can be told apart when comparing Macs (PLAN.md Phase C: version skew).
+    static var appVersion: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        guard let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+              Int(build) != nil else { return short }
+        return "\(short) (\(build))"
     }
 
     // MARK: Listening (host)
@@ -549,7 +558,8 @@ final class HostModeController {
             live[fingerprint] = LiveStatus(state: .connected,
                                            containersRunning: containers.filter { $0.state.isRunning }.count,
                                            containersTotal: containers.count, machines: machines,
-                                           containerVersion: version, checkedAt: Date())
+                                           containerVersion: version, appVersion: remote.hostInfo?.appVersion,
+                                           checkedAt: Date())
             book.markSeen(fingerprint, at: Date())
             // Whatever it calls itself now — a renamed host shows its new name here.
             if let info = remote.hostInfo,

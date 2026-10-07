@@ -165,6 +165,17 @@ struct OverviewView: View {
                 items.append(("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts))
             }
         }
+        // Versions that differ from This Mac's: `container` by a minor release or more, which can
+        // change what a command accepts, and Flotilla by any build (PLAN.md Phase C).
+        for peer in fleet.trustedHosts {
+            let host = HostRef.peer(peer.fingerprint)
+            if let warning = model.containerSkewWarning(host) { items.append((warning, .hosts)) }
+            if let skew = model.appSkew(host), skew.level != .same,
+               let theirs = fleet.live[peer.fingerprint]?.appVersion {
+                items.append(("\(peer.displayName) runs \(skew.otherIsOlder ? "an older" : "a newer") Flotilla "
+                              + "(\(theirs); This Mac \(HostModeController.appVersion)).", .hosts))
+            }
+        }
         let waiting = fleet.hosts.filter { $0.status == .pending }.count
         if waiting > 0 {
             items.append(("\(waiting) Mac\(waiting == 1 ? " is" : "s are") waiting for your approval.", .hosts))

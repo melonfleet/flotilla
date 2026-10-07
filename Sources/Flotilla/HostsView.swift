@@ -23,6 +23,11 @@ struct HostRow: Identifiable, Hashable {
     let macOS: String?
     let containerVersion: String?
     let modelIdentifier: String?
+    /// The Mac's Flotilla, with its build number.
+    var appVersion: String? = nil
+    /// Set when the version differs from This Mac's enough to say so (PLAN.md Phase C).
+    var containerSkew: VersionSkew? = nil
+    var appSkew: VersionSkew? = nil
 
     static let thisMacID = "this-mac"
 
@@ -33,6 +38,7 @@ struct HostRow: Identifiable, Hashable {
     var machinesSortKey: Int { machines ?? -1 }
     var macOSSortKey: String { macOS ?? "" }
     var containerSortKey: String { containerVersion ?? "" }
+    var appSortKey: String { appVersion ?? "" }
     var modelSortKey: String { modelIdentifier ?? "" }
 
     var containersText: String {
@@ -53,15 +59,43 @@ struct HostRow: Identifiable, Hashable {
 }
 
 extension AppModel {
-    /// This Mac, then every host in the book.
-    var hostRows: [HostRow] {
-        let version: String? = switch preflight {
+    /// This Mac's `container` version, as preflight found it.
+    var localContainerVersion: String? {
+        switch preflight {
         case .ok(let version, _), .serviceStopped(let version, _, _), .needsKernel(let version, _, _):
             version
         case .needsRestart(let cli, _, _): cli
         case .tooOld(let found, _): found
         case .missing, .unusable, nil: nil
         }
+    }
+
+    /// How a paired host's `container` differs from This Mac's (PLAN.md Phase C). `nil` for This
+    /// Mac, or when either version is unknown.
+    func containerSkew(_ host: HostRef) -> VersionSkew? {
+        guard case .peer(let fingerprint) = host else { return nil }
+        return VersionSkew(this: localContainerVersion, other: hostMode.live[fingerprint]?.containerVersion)
+    }
+
+    /// How a paired host's Flotilla differs from this one.
+    func appSkew(_ host: HostRef) -> VersionSkew? {
+        guard case .peer(let fingerprint) = host else { return nil }
+        return VersionSkew(this: HostModeController.appVersion, other: hostMode.live[fingerprint]?.appVersion)
+    }
+
+    /// One sentence for a host whose `container` may refuse what This Mac's checks allow, or `nil`.
+    func containerSkewWarning(_ host: HostRef) -> String? {
+        guard let skew = containerSkew(host), skew.mayRefuseCommands,
+              case .peer(let fingerprint) = host,
+              let theirs = hostMode.live[fingerprint]?.containerVersion, let ours = localContainerVersion
+        else { return nil }
+        return "\(hostMode.hostName(host, local: hostLabel)) runs container \(theirs) and This Mac \(ours). "
+            + "Flotilla checks commands against \(ours), so it may refuse an option allowed here."
+    }
+
+    /// This Mac, then every host in the book.
+    var hostRows: [HostRow] {
+        let version = localContainerVersion
         let system = systemInfo
         let thisMac = HostRow(id: HostRow.thisMacID, name: hostLabel, isThisMac: true, peer: nil,
                               status: RuntimeStatus.describe(preflight).title,
@@ -71,7 +105,8 @@ extension AppModel {
                               machines: machines.count,
                               macOS: system.osVersion,
                               containerVersion: version,
-                              modelIdentifier: system.modelIdentifier)
+                              modelIdentifier: system.modelIdentifier,
+                              appVersion: HostModeController.appVersion)
         let hosts = hostMode.hosts.map { peer in
             let live = peer.isTrusted ? hostMode.live[peer.fingerprint] : nil
             let status: String = switch live?.state {
@@ -85,7 +120,10 @@ extension AppModel {
                            containersRunning: live?.containersRunning, containersTotal: live?.containersTotal,
                            machines: live?.machines,
                            macOS: peer.details.macOSVersion, containerVersion: live?.containerVersion,
-                           modelIdentifier: peer.details.model)
+                           modelIdentifier: peer.details.model,
+                           appVersion: live?.appVersion,
+                           containerSkew: containerSkew(.peer(peer.fingerprint)),
+                           appSkew: appSkew(.peer(peer.fingerprint)))
         }
         return [thisMac] + hosts
     }
@@ -275,7 +313,8 @@ struct HostsView: View {
 
     private static let columnSpecs: [(id: String, title: String)] = [
         ("tags", "Tags"), ("status", "Status"), ("containers", "Containers"),
-        ("machines", "Machines"), ("macos", "macOS"), ("container", "container"), ("model", "Model"),
+        ("machines", "Machines"), ("macos", "macOS"), ("container", "container"), ("flotilla", "Flotilla"),
+        ("model", "Model"),
     ]
 
     private static let filters: [ResourceFilterOption] = [
@@ -387,6 +426,45 @@ struct HostsView: View {
         }
     }
 
+    /// The right-hand half of the table, split out because `TableColumnBuilder` takes ten columns
+    /// and the Flotilla column made eleven — the same remedy as `ContainersView.trailingColumns`.
+    @TableColumnBuilder<HostRow, KeyPathComparator<HostRow>>
+    private var trailingColumns: some TableColumnContent<HostRow, KeyPathComparator<HostRow>> {
+            TableColumn("macOS", value: \.macOSSortKey) { row in
+                Text(row.macOS ?? "—").monospacedDigit().foregroundStyle(.secondary)
+            }
+            .width(min: 60, ideal: 76)
+            .customizationID("macos")
+
+            TableColumn("container", value: \.containerSortKey) { row in
+                versionCell(row.containerVersion, skew: row.containerSkew, warnAt: .minor,
+                            what: "container", host: row.name)
+            }
+            .width(min: 64, ideal: 80)
+            .customizationID("container")
+
+            // Shown since Phase C, so a host still on an older Flotilla is visible before it
+            // matters. A different build is worth a mark; the wire version, which actually decides
+            // whether the two can talk, is checked when they connect.
+            TableColumn("Flotilla", value: \.appSortKey) { row in
+                versionCell(row.appVersion, skew: row.appSkew, warnAt: .build,
+                            what: "Flotilla", host: row.name)
+            }
+            .width(min: 64, ideal: 82)
+            .customizationID("flotilla")
+
+            TableColumn("Model", value: \.modelSortKey) { row in
+                Text(row.modelIdentifier ?? "—").foregroundStyle(.secondary).lineLimit(1)
+            }
+            .width(min: 70, ideal: 84)
+            .customizationID("model")
+
+            TableColumn("Actions") { row in
+                rowActions(for: row)
+            }
+            .width(min: 78, ideal: 88)
+    }
+
     private var table: some View {
         SwiftUI.Table(displayedRows,
                       selection: $selection,
@@ -405,24 +483,24 @@ struct HostsView: View {
                     .lineLimit(1)
                     .help("Open \(row.name)")
             }
-            .width(min: 140, ideal: 200)
+            .width(min: 130, ideal: 170)
 
             TableColumn("Tags") { row in
                 TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true)
             }
-            .width(min: 60, ideal: 110)
+            .width(min: 60, ideal: 90)
             .customizationID("tags")
 
             TableColumn("Status", value: \.statusSortKey) { row in
                 HostStatusLabel(model: model, row: row)
             }
-            .width(min: 140, ideal: 200)
+            .width(min: 120, ideal: 160)
             .customizationID("status")
 
             TableColumn("Containers", value: \.containersSortKey) { row in
                 Text(row.containersText).monospacedDigit().foregroundStyle(.secondary)
             }
-            .width(min: 100, ideal: 130)
+            .width(min: 96, ideal: 116)
             .customizationID("containers")
 
             TableColumn("Machines", value: \.machinesSortKey) { row in
@@ -431,28 +509,7 @@ struct HostsView: View {
             .width(min: 60, ideal: 76)
             .customizationID("machines")
 
-            TableColumn("macOS", value: \.macOSSortKey) { row in
-                Text(row.macOS ?? "—").monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 60, ideal: 76)
-            .customizationID("macos")
-
-            TableColumn("container", value: \.containerSortKey) { row in
-                Text(row.containerVersion ?? "—").monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 64, ideal: 80)
-            .customizationID("container")
-
-            TableColumn("Model", value: \.modelSortKey) { row in
-                Text(row.modelIdentifier ?? "—").foregroundStyle(.secondary).lineLimit(1)
-            }
-            .width(min: 70, ideal: 90)
-            .customizationID("model")
-
-            TableColumn("Actions") { row in
-                rowActions(for: row)
-            }
-            .width(min: 78, ideal: 88)
+            trailingColumns
         }
         .frame(maxHeight: .infinity)
         .contextMenu(forSelectionType: HostRow.ID.self) { ids in
@@ -462,6 +519,25 @@ struct HostsView: View {
         } primaryAction: { ids in
             guard ids.count == 1, let id = ids.first else { return }
             openHost = id
+        }
+    }
+
+    /// A version, with a mark when it is behind or ahead of This Mac's by `warnAt` or more.
+    @ViewBuilder
+    private func versionCell(_ version: String?, skew: VersionSkew?, warnAt: VersionSkew.Level,
+                             what: String, host: String) -> some View {
+        HStack(spacing: 4) {
+            Text(version ?? "—").monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+            if let skew, skew.level >= warnAt {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.warning)
+                    .help("\(host)’s \(what) is \(skew.otherIsOlder ? "older" : "newer") than This Mac’s"
+                          + (what == "container"
+                             ? " — Flotilla checks commands against This Mac’s, so it may refuse an option allowed here."
+                             : " — update Flotilla on both Macs to the same build."))
+                    .accessibilityLabel("\(what) version differs from This Mac’s")
+            }
         }
     }
 
@@ -475,7 +551,8 @@ struct HostsView: View {
                              ("Containers", row.containersText),
                              ("Machines", row.machinesText),
                              ("macOS", row.macOS),
-                             ("container", row.containerVersion)],
+                             ("container", row.containerVersion),
+                             ("Flotilla", row.appVersion)],
                     tags: model.tags.tags(on: .host, row.id),
                     onOpen: { openHost = row.id }
                 ) {
@@ -555,6 +632,7 @@ struct HostsView: View {
         CopyMenu([("Name", row.name),
                   ("macOS version", row.macOS),
                   ("container version", row.containerVersion),
+                  ("Flotilla version", row.appVersion),
                   ("Model", row.modelIdentifier),
                   ("Serial number", row.peer?.details.serialNumber),
                   ("Fingerprint", row.peer?.fingerprint.hex)])

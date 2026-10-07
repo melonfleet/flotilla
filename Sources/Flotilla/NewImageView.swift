@@ -210,6 +210,7 @@ struct NewImageView: View {
                             .toggleStyle(.checkbox)
                             .disabled(scheme == .http && !choice.ref.isLocal)
                     }
+                    ContainerSkewNote(model: model, hosts: pullTargets)
                 }
             }
         }

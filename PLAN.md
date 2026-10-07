@@ -484,7 +484,14 @@ Progress (7 October):
   connection sat in `preparing` until the 20-second deadline, then a 60-second backoff. An attempt
   now gets 6 seconds to reach the host and is made again, up to three times; a connection that
   never came up closes at once instead of waiting out the graceful-close backstop.
-- Next: version skew, safe host and settings export.
+- **Version skew — built.** `VersionSkew` (FlotillaCore, tested on Linux) compares This Mac's
+  `container` and Flotilla with each host's; Flotilla now reports its build number (`0.0.0 (308)`).
+  Hosts has a Flotilla column and marks a differing version; Overview lists a host whose
+  `container` differs by a minor release or more, or whose Flotilla build differs; Run, Pull,
+  New Volume and New Network say so before acting on such a host, because the Allowlist is
+  audited against This Mac's `container` and options change at minor releases. A wire-protocol
+  mismatch was already refused at the handshake.
+- Next: safe host and settings export.
 
 ### Phase D — Pushed infrastructure
 
