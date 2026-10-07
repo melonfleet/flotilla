@@ -38,8 +38,15 @@ public final class AdminConnection: @unchecked Sendable {
     let crypto: PairingCrypto
     private let connection: WireConnection
     private var session: WireClientSession
-    private var connectContinuation: CheckedContinuation<WireMessage.Welcome, Error>?
-    private var pending: [UInt32: CheckedContinuation<CommandResult, Error>] = [:]
+    /// Callbacks rather than continuations underneath, so a caller that must block — `RemoteHost`'s
+    /// synchronous `ContainerHost` face — can wait on this connection's own queue without needing a
+    /// thread from Swift's cooperative pool. The async methods wrap these.
+    private var connectCompletion: (@Sendable (Result<WireMessage.Welcome, Error>) -> Void)?
+    private var pending: [UInt32: @Sendable (Result<CommandResult, Error>) -> Void] = [:]
+    /// Requests over the agreed concurrency wait here for a slot rather than failing: the limit
+    /// protects the host, and the caller should not have to know it exists.
+    private var waiting: [(arguments: [String], timeout: TimeInterval?,
+                           completion: @Sendable (Result<CommandResult, Error>) -> Void)] = []
     private var deadlines: [UInt32: DispatchSourceTimer] = [:]
     private var pingTimer: DispatchSourceTimer?
     private var pairingSession: PairingAdminSession?
@@ -63,16 +70,21 @@ public final class AdminConnection: @unchecked Sendable {
     /// Connects and shakes hands. The welcome says whether the host trusts this Mac.
     public func connect() async throws -> WireMessage.Welcome {
         try await withCheckedThrowingContinuation { continuation in
-            connection.queue.async { [self] in
-                connectContinuation = continuation
-                connection.onReady = { [weak self] in
-                    guard let self else { return }
-                    self.connection.send(self.session.hello())
-                }
-                connection.onMessage = { [weak self] message in self?.received(message) }
-                connection.onClose = { [weak self] reason in self?.closed(reason) }
-                connection.start()
+            connect { continuation.resume(with: $0) }
+        }
+    }
+
+    /// The same, calling back on this connection's queue.
+    public func connect(completion: @escaping @Sendable (Result<WireMessage.Welcome, Error>) -> Void) {
+        connection.queue.async { [self] in
+            connectCompletion = completion
+            connection.onReady = { [weak self] in
+                guard let self else { return }
+                self.connection.send(self.session.hello())
             }
+            connection.onMessage = { [weak self] message in self?.received(message) }
+            connection.onClose = { [weak self] reason in self?.closed(reason) }
+            connection.start()
         }
     }
 
@@ -80,21 +92,34 @@ public final class AdminConnection: @unchecked Sendable {
     /// Allowlist would refuse it there.
     public func run(_ arguments: [String], timeout: TimeInterval? = nil) async throws -> CommandResult {
         try await withCheckedThrowingContinuation { continuation in
-            connection.queue.async { [self] in
-                if let reason = closedReason { return continuation.resume(throwing: RemoteHostError.closed(reason)) }
-                do {
-                    let outgoing = try session.request(arguments, timeout: timeout)
-                    pending[outgoing.id] = continuation
-                    if outgoing.deadline > 0 {
-                        deadlines[outgoing.id] = timer(after: outgoing.deadline) { [weak self] in
-                            self?.session.abandon(outgoing.id)
-                            self?.settle(outgoing.id, .failure(RemoteHostError.timedOut))
-                        }
+            run(arguments, timeout: timeout) { continuation.resume(with: $0) }
+        }
+    }
+
+    /// The same, calling back on this connection's queue.
+    public func run(_ arguments: [String], timeout: TimeInterval?,
+                    completion: @escaping @Sendable (Result<CommandResult, Error>) -> Void) {
+        connection.queue.async { [self] in
+            if let reason = closedReason { return completion(.failure(RemoteHostError.closed(reason))) }
+            if case .ready = session.state, session.inFlight.count >= session.limits.maxConcurrentRequests {
+                // A command the Allowlist refuses still fails at once; only a full pipe waits.
+                do { _ = try Allowlist.validated(arguments, wirePolicy: .remotePeer) }
+                catch { return completion(.failure(error)) }
+                waiting.append((arguments, timeout, completion))
+                return
+            }
+            do {
+                let outgoing = try session.request(arguments, timeout: timeout)
+                pending[outgoing.id] = completion
+                if outgoing.deadline > 0 {
+                    deadlines[outgoing.id] = timer(after: outgoing.deadline) { [weak self] in
+                        self?.session.abandon(outgoing.id)
+                        self?.settle(outgoing.id, .failure(RemoteHostError.timedOut))
                     }
-                    connection.send(outgoing.message)
-                } catch {
-                    continuation.resume(throwing: error)
                 }
+                connection.send(outgoing.message)
+            } catch {
+                completion(.failure(error))
             }
         }
     }
@@ -178,11 +203,11 @@ public final class AdminConnection: @unchecked Sendable {
                 case .connected(let welcome):
                     connection.adopt(session.limits)
                     startPings()
-                    connectContinuation?.resume(returning: welcome)
-                    connectContinuation = nil
+                    connectCompletion?(.success(welcome))
+                    connectCompletion = nil
                 case .rejected(let reject):
-                    connectContinuation?.resume(throwing: RemoteHostError.rejected(reject))
-                    connectContinuation = nil
+                    connectCompletion?(.failure(RemoteHostError.rejected(reject)))
+                    connectCompletion = nil
                     connection.close(reject.message)
                 case .completed(let id, let result): settle(id, .success(result))
                 case .failed(let failure): settle(failure.id, .failure(RemoteHostError.failed(failure)))
@@ -203,15 +228,23 @@ public final class AdminConnection: @unchecked Sendable {
 
     private func settle(_ id: UInt32, _ result: Result<CommandResult, Error>) {
         deadlines.removeValue(forKey: id)?.cancel()
-        pending.removeValue(forKey: id)?.resume(with: result)
+        pending.removeValue(forKey: id)?(result)
+        // A slot is free: send the next waiting request.
+        if closedReason == nil, !waiting.isEmpty {
+            let next = waiting.removeFirst()
+            run(next.arguments, timeout: next.timeout, completion: next.completion)
+        }
     }
 
     private func closed(_ reason: String?) {
         closedReason = .some(reason)
         pingTimer?.cancel()
-        connectContinuation?.resume(throwing: RemoteHostError.unreachable(reason ?? "closed"))
-        connectContinuation = nil
+        connectCompletion?(.failure(RemoteHostError.unreachable(reason ?? "closed")))
+        connectCompletion = nil
         for id in Array(pending.keys) { settle(id, .failure(RemoteHostError.closed(reason))) }
+        let stranded = waiting
+        waiting.removeAll()
+        for request in stranded { request.completion(.failure(RemoteHostError.closed(reason))) }
         if let handler = pairingHandler {
             pairingHandler = nil
             handler(.failed(reason ?? "The connection closed during pairing."))

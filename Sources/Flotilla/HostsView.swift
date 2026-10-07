@@ -73,11 +73,19 @@ extension AppModel {
                               containerVersion: version,
                               modelIdentifier: system.modelIdentifier)
         let hosts = hostMode.hosts.map { peer in
-            HostRow(id: peer.fingerprint.hex, name: peer.displayName, isThisMac: false, peer: peer,
-                    status: HostRow.statusText(peer.status), connected: peer.isTrusted,
-                    containersRunning: nil, containersTotal: nil, machines: nil,
-                    macOS: peer.details.macOSVersion, containerVersion: nil,
-                    modelIdentifier: peer.details.model)
+            let live = peer.isTrusted ? hostMode.live[peer.fingerprint] : nil
+            let status: String = switch live?.state {
+            case .connected: "Connected"
+            case .checking: "Checking…"
+            case .failed(let why): why
+            case nil: HostRow.statusText(peer.status)
+            }
+            return HostRow(id: peer.fingerprint.hex, name: peer.displayName, isThisMac: false, peer: peer,
+                           status: status, connected: live?.state == .connected,
+                           containersRunning: live?.containersRunning, containersTotal: live?.containersTotal,
+                           machines: live?.machines,
+                           macOS: peer.details.macOSVersion, containerVersion: live?.containerVersion,
+                           modelIdentifier: peer.details.model)
         }
         return [thisMac] + hosts
     }
@@ -137,7 +145,10 @@ struct HostsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .task { await model.refreshMachines() }
+        .task {
+            await model.refreshMachines()
+            await hostMode.refreshLiveStatus()
+        }
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
@@ -237,6 +248,7 @@ struct HostsView: View {
                 Task {
                     await model.reload()
                     await model.refreshMachines()
+                    await hostMode.refreshLiveStatus()
                 }
             }
         })
@@ -561,6 +573,13 @@ struct HostStatusLabel: View {
 
     private var tint: Color {
         if row.isThisMac { return RuntimeStatus.describe(model.preflight).tint }
+        if let peer = row.peer, peer.isTrusted, let live = model.hostMode.live[peer.fingerprint] {
+            switch live.state {
+            case .connected: return Theme.online
+            case .checking: return .secondary
+            case .failed: return Theme.warning
+            }
+        }
         switch row.peer?.status {
         case .approved: return Theme.online
         case .pending: return Theme.warning

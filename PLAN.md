@@ -317,7 +317,19 @@ Add Host with no code enrolled it, it waited in Hosts with its serial number, an
 approval made it Paired. One gap found and fixed: automatic enrolment asked only
 when a Mac was first seen, so a host given its key later never appeared; it now
 also asks when a key is created and every two minutes for found Macs it does not
-know. Next: `RemoteHost`, so a paired host runs commands, then the M1 mini.
+know.
+
+**Remote commands built 7 October** (`RemoteHost`): a paired host is a
+`ContainerHost`, so every `ContainerCLI` call works against it unchanged with
+`wirePolicy: .remotePeer`. It pins the approved fingerprint on every connection —
+a different key at the same address gets nothing — and requires the host still
+to trust this Mac. Calls beyond the agreed concurrency queue instead of failing,
+and the blocking form waits on the connection's own queue, never Swift's
+cooperative pool (tested with forty simultaneous calls). Hosts now asks each
+paired host for its version, containers and machines. Against the VM the round
+trip is complete: the host validated `system version` as a remote peer and
+answered that the `container` CLI is not installed. Next: the M1 mini on
+macOS 26 (the owner is setting it up), for real containers.
 
 - Define bounded protocol framing, version and capability negotiation, explicit
   request lifecycle and failure semantics.

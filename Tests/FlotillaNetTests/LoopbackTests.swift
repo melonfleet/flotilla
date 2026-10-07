@@ -205,4 +205,61 @@ struct LoopbackTests {
         try await Task.sleep(for: .milliseconds(300))
         await #expect(throws: RemoteHostError.self) { try await admin.run(["ls"]) }
     }
+
+    // MARK: RemoteHost
+
+    func remote(_ rig: Rig, pinning fingerprint: PeerFingerprint? = nil) -> RemoteHost {
+        RemoteHost(endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: rig.port)!),
+                   fingerprint: fingerprint ?? rig.hostIdentity.fingerprint,
+                   identity: rig.adminIdentity, info: WirePeerInfo(name: "admin", appVersion: "test"))
+    }
+
+    @Test func aPairedHostRunsTheSameCLICallsAsThisMac() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let host = remote(rig)
+        defer { host.close() }
+        let cli = ContainerCLI(host: host, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
+        let containers = try await Task.detached { try cli.listContainers() }.value
+        #expect(containers.isEmpty)
+        #expect(rig.host.ran.count == 1 && rig.host.ran[0].first == "ls")
+        #expect(host.hostInfo?.name == "mini-test")
+    }
+
+    @Test func aDifferentKeyAtTheSameAddressGetsNothing() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        // Pinned to a fingerprint the host does not have — as if a different Mac answered.
+        let host = remote(rig, pinning: rig.adminIdentity.fingerprint)
+        defer { host.close() }
+        await #expect(throws: RemoteHostError.self) { try await host.run(["ls"], timeout: nil) }
+        #expect(rig.host.ran.isEmpty)
+    }
+
+    @Test func aHostThatNoLongerTrustsThisMacSaysSo() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        let host = remote(rig)
+        defer { host.close() }
+        await #expect(throws: RemoteHostError.notTrusted) { try await host.run(["ls"], timeout: nil) }
+        #expect(rig.host.ran.isEmpty)
+    }
+
+    @Test func fortyCallsAtOnceQueueBehindTheLimitWithoutStarvingThePool() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let host = remote(rig)
+        defer { host.close() }
+        // Blocking calls from the cooperative pool, more of them than it has threads: if any of
+        // them needed the pool to finish, this would never return.
+        let results = try await withThrowingTaskGroup(of: Int32.self) { group in
+            for _ in 0..<40 { group.addTask { try host.run(["ls"], timeout: 10).exitCode } }
+            return try await group.reduce(into: [Int32]()) { $0.append($1) }
+        }
+        #expect(results.count == 40 && results.allSatisfy { $0 == 0 })
+        #expect(rig.host.ran.count == 40)
+    }
 }

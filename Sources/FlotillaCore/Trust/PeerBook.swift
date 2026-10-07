@@ -20,6 +20,13 @@ public struct PeerDetails: Sendable, Hashable, Codable {
     }
 }
 
+/// How the admin Mac reaches a host: the name it advertises over Bonjour, or the address the owner
+/// typed. A hint for finding it, never its identity — the fingerprint is checked on every connection.
+public enum PeerEndpoint: Sendable, Hashable, Codable {
+    case bonjour(name: String)
+    case address(host: String, port: UInt16)
+}
+
 /// One Mac this Mac knows: on the admin Mac, a host; on a host, its admin.
 public struct Peer: Sendable, Hashable, Codable, Identifiable {
     public enum Role: String, Sendable, Codable { case admin, host }
@@ -46,6 +53,8 @@ public struct Peer: Sendable, Hashable, Codable, Identifiable {
     public var requestedAt: Date
     public var decidedAt: Date?
     public var lastSeen: Date?
+    /// Admin side: where the host was last reached. Optional so older books still decode.
+    public var endpoint: PeerEndpoint?
 
     public var id: PeerFingerprint { fingerprint }
     public var displayName: String { nickname ?? details.computerName }
@@ -100,7 +109,7 @@ public struct PeerBook: Sendable, Equatable, Codable {
             }
         }
         peers.append(Peer(fingerprint: fingerprint, role: role, status: .pending, method: method,
-                          details: details, nickname: nil, requestedAt: now, decidedAt: nil, lastSeen: now))
+                          details: details, nickname: nil, requestedAt: now, decidedAt: nil, lastSeen: now, endpoint: nil))
         return .addedPending
     }
 
@@ -136,7 +145,7 @@ public struct PeerBook: Sendable, Equatable, Codable {
             peers[index].lastSeen = now
         } else {
             peers.append(Peer(fingerprint: fingerprint, role: role, status: .approved, method: method,
-                              details: details, nickname: nil, requestedAt: now, decidedAt: now, lastSeen: now))
+                              details: details, nickname: nil, requestedAt: now, decidedAt: now, lastSeen: now, endpoint: nil))
         }
     }
 
@@ -149,6 +158,11 @@ public struct PeerBook: Sendable, Equatable, Codable {
         guard let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) else { return }
         let trimmed = nickname?.trimmingCharacters(in: .whitespacesAndNewlines)
         peers[index].nickname = trimmed?.isEmpty == false ? trimmed : nil
+    }
+
+    public mutating func setEndpoint(_ fingerprint: PeerFingerprint, _ endpoint: PeerEndpoint) {
+        guard let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) else { return }
+        peers[index].endpoint = endpoint
     }
 
     public mutating func markSeen(_ fingerprint: PeerFingerprint, at now: Date) {

@@ -50,6 +50,19 @@ final class HostModeController {
     private(set) var adminKey: EnrolmentKey?
     private(set) var discovered: [DiscoveredHost] = []
 
+    /// What a paired host last answered, for the Hosts columns. Absent until first asked.
+    struct LiveStatus: Equatable {
+        enum State: Equatable { case checking, connected, failed(String) }
+        var state: State
+        var containersRunning: Int?
+        var containersTotal: Int?
+        var machines: Int?
+        var containerVersion: String?
+        var checkedAt: Date
+    }
+    private(set) var live: [PeerFingerprint: LiveStatus] = [:]
+    @ObservationIgnored private var remotes: [PeerFingerprint: RemoteHost] = [:]
+
     @ObservationIgnored private let containerHost: ContainerHost
     @ObservationIgnored private let bookStore: PeerBookStore
     @ObservationIgnored private let keyStore: EnrolmentKeyStore
@@ -249,6 +262,7 @@ final class HostModeController {
         guard book.revoke(fingerprint, at: Date()) else { return }
         save()
         server?.disconnect(fingerprint)
+        dropRemote(fingerprint)
         record(name(fingerprint), "Access removed")
     }
 
@@ -258,6 +272,7 @@ final class HostModeController {
         book.remove(fingerprint)
         save()
         server?.disconnect(fingerprint)
+        dropRemote(fingerprint)
         record(label, "Removed")
     }
 
@@ -312,10 +327,15 @@ final class HostModeController {
             switch outcome {
             case .paired(let fingerprint, let details):
                 book.pairConfirmed(fingerprint, role: .host, details: details, at: Date())
+                if let hint = PeerEndpoint(endpoint) { book.setEndpoint(fingerprint, hint) }
                 save()
                 record(details.computerName, "Paired")
                 return .paired(details.computerName)
-            case .enrolment(_, let details, let result):
+            case .enrolment(let fingerprint, let details, let result):
+                if let hint = PeerEndpoint(endpoint) {
+                    book.setEndpoint(fingerprint, hint)
+                    save()
+                }
                 switch result {
                 case .alreadyApproved: return .alreadyPaired(details.computerName)
                 case .blocked: return .failed("\(details.computerName) was turned away before. Approve it from Hosts to let it in.")
@@ -342,6 +362,74 @@ final class HostModeController {
                 continuation.resume(returning: answer)
             }
         }
+    }
+
+    // MARK: Paired hosts (admin)
+
+    /// The `ContainerHost` for an approved host, or `nil` if it is not approved or cannot be
+    /// located. Reused, so a host keeps one connection.
+    func remoteHost(for fingerprint: PeerFingerprint) -> RemoteHost? {
+        guard let peer = book[fingerprint], peer.isTrusted, peer.role == .host,
+              let identity = ensureIdentity() else { return nil }
+        if let cached = remotes[fingerprint] { return cached }
+        // A host paired before addresses were remembered is found by the name it advertises.
+        let hint = peer.endpoint ?? discovered.first { $0.name == peer.details.computerName }
+            .flatMap { PeerEndpoint($0.endpoint) }
+        guard let endpoint = hint?.nwEndpoint else { return nil }
+        let remote = RemoteHost(endpoint: endpoint, fingerprint: fingerprint, identity: identity, info: ownInfo)
+        remotes[fingerprint] = remote
+        return remote
+    }
+
+    private func dropRemote(_ fingerprint: PeerFingerprint) {
+        remotes.removeValue(forKey: fingerprint)?.close()
+        live.removeValue(forKey: fingerprint)
+    }
+
+    /// Asks every approved host for its version, containers and machines — the Hosts columns.
+    /// Read-only calls, through the same Allowlist as everything else.
+    func refreshLiveStatus() async {
+        await withTaskGroup(of: Void.self) { group in
+            for peer in hosts where peer.isTrusted {
+                group.addTask { await self.refreshLiveStatus(peer.fingerprint) }
+            }
+        }
+    }
+
+    private func refreshLiveStatus(_ fingerprint: PeerFingerprint) async {
+        guard let remote = remoteHost(for: fingerprint) else {
+            live[fingerprint] = LiveStatus(state: .failed("Can't find it on the network. Add it again by address."),
+                                           checkedAt: Date())
+            return
+        }
+        var status = live[fingerprint] ?? LiveStatus(state: .checking, checkedAt: Date())
+        if status.state != .connected { status.state = .checking }
+        live[fingerprint] = status
+        let cli = ContainerCLI(host: remote, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
+        let outcome = await Task.detached { () -> Result<(String?, [Container], Int), Error> in
+            Result {
+                let version = try cli.versions().first { $0.appName.lowercased().contains("container") }?.version
+                return (version, try cli.listContainers(), try cli.machines().count)
+            }
+        }.value
+        switch outcome {
+        case .success(let (version, containers, machines)):
+            live[fingerprint] = LiveStatus(state: .connected,
+                                           containersRunning: containers.filter { $0.state.isRunning }.count,
+                                           containersTotal: containers.count, machines: machines,
+                                           containerVersion: version, checkedAt: Date())
+            book.markSeen(fingerprint, at: Date())
+            save()
+        case .failure(let error):
+            live[fingerprint] = LiveStatus(state: .failed(Self.describe(error)), checkedAt: Date())
+        }
+    }
+
+    /// A remote failure in a sentence. The common one on a Mac without `container` is the CLI's own
+    /// "not found", which arrives as the host's failure message.
+    static func describe(_ error: Error) -> String {
+        if let remote = error as? RemoteHostError { return remote.description }
+        return "\(error)"
     }
 
     // MARK: Discovery (admin)
