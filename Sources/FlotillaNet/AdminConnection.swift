@@ -52,6 +52,11 @@ public final class AdminConnection: @unchecked Sendable {
                            completion: @Sendable (Result<CommandResult, Error>) -> Void)] = []
     private var deadlines: [UInt32: DispatchSourceTimer] = [:]
     private var pingTimer: DispatchSourceTimer?
+    private var connectTimer: DispatchSourceTimer?
+    private var pairingTimer: DispatchSourceTimer?
+    static let connectTimeout: TimeInterval = 20
+    /// Long enough for two people to compare four words.
+    static let pairingTimeout: TimeInterval = 300
     private var pairingSession: PairingAdminSession?
     private var pairingHandler: ((PairingAdminSession.Event) -> Void)?
     private var pairingContinuation: CheckedContinuation<PairingOutcome, Error>?
@@ -81,6 +86,12 @@ public final class AdminConnection: @unchecked Sendable {
     public func connect(completion: @escaping @Sendable (Result<WireMessage.Welcome, Error>) -> Void) {
         connection.queue.async { [self] in
             connectCompletion = completion
+            // TCP, TLS and the welcome all inside one deadline: a host that completes TLS and then
+            // says nothing must not hold a caller for ever (Iris's review, 7 October).
+            connectTimer = timer(after: Self.connectTimeout) { [weak self] in
+                guard let self, self.connectCompletion != nil else { return }
+                self.connection.close("no welcome in time")
+            }
             connection.onReady = { [weak self] in
                 guard let self else { return }
                 self.connection.send(self.session.hello())
@@ -152,6 +163,10 @@ public final class AdminConnection: @unchecked Sendable {
                     return continuation.resume(throwing: RemoteHostError.closed(nil))
                 }
                 pairingContinuation = continuation
+                pairingTimer = timer(after: Self.pairingTimeout) { [weak self] in
+                    guard let self, self.pairingContinuation != nil else { return }
+                    self.connection.close("pairing took too long")
+                }
                 var pairing = PairingAdminSession(own: identity.fingerprint, host: host, details: details,
                                                   method: method, crypto: crypto)
                 let start = pairing.start()
@@ -192,6 +207,7 @@ public final class AdminConnection: @unchecked Sendable {
 
     /// Exactly once, on the connection's queue.
     private func finishPairing(_ result: Result<PairingOutcome, Error>) {
+        pairingTimer?.cancel()
         pairingHandler = nil
         pairingContinuation?.resume(with: result)
         pairingContinuation = nil
@@ -204,6 +220,7 @@ public final class AdminConnection: @unchecked Sendable {
             for event in try session.receive(message) {
                 switch event {
                 case .connected(let welcome):
+                    connectTimer?.cancel()
                     connection.adopt(session.limits)
                     startPings()
                     connectCompletion?(.success(welcome))

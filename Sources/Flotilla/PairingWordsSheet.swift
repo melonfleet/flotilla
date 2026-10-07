@@ -26,6 +26,14 @@ struct PairingWordsSheet: View {
             }
             .frame(maxWidth: .infinity)
 
+            if prompt.role == .admin {
+                Label("Pairing gives this admin Mac full control of this Mac’s containers, including their "
+                      + "settings, environment variables and file paths. Pair only with your own admin Mac.",
+                      systemImage: "exclamationmark.shield")
+                    .font(.callout).foregroundStyle(Theme.warning)
+                    .lineLimit(4)
+            }
+
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                 row("Mac", prompt.peer.computerName)
                 row("Model", prompt.peer.model)

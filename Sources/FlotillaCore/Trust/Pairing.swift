@@ -32,11 +32,31 @@ enum PairingTranscript {
         Array(("flotilla-pair-v1/" + label).utf8) + admin.bytes + host.bytes + Array(adminNonce) + Array(hostNonce)
     }
 
-    /// The words both screens show: from a digest of both fingerprints, sorted so each side gets
-    /// the same digest whichever it is.
-    static func words(_ a: PeerFingerprint, _ b: PeerFingerprint, crypto: PairingCrypto) -> [String] {
+    /// The words both screens show: a digest of both fingerprints (sorted, so each side gets the
+    /// same) **and both nonces**.
+    ///
+    /// The nonces are what make the words a real check (Iris's review, 7 October). Over the
+    /// fingerprints alone, a machine in the middle could generate keys until the two sessions it
+    /// runs produced the same words — about 2¹⁶ tries a side for 32 bits. With the nonces in, and
+    /// the admin committed to its nonce before it sees the host's, the middle must pick its own
+    /// nonce blind to the admin's: one guess at 2³², spent the moment the owner compares.
+    static func words(_ a: PeerFingerprint, _ b: PeerFingerprint, adminNonce: Data, hostNonce: Data,
+                      crypto: PairingCrypto) -> [String] {
         let sorted = [a.bytes, b.bytes].sorted { $0.lexicographicallyPrecedes($1) }
-        return FingerprintWords.words(for: crypto.digest(Array("flotilla-words-v1".utf8) + sorted[0] + sorted[1]))
+        return FingerprintWords.words(for: crypto.digest(Array("flotilla-words-v2".utf8) + sorted[0] + sorted[1]
+                                                         + Array(adminNonce) + Array(hostNonce)))
+    }
+
+    /// The admin's commitment to its nonce, sent first and opened in its proof.
+    static func commitment(to nonce: Data, crypto: PairingCrypto) -> Data {
+        Data(crypto.digest(Array("flotilla-commit-v1".utf8) + Array(nonce)))
+    }
+
+    /// What a Mac says about itself before the other has proved anything: its name and macOS, never
+    /// its model or serial number (Iris's review: automatic enrolment sent the admin's serial to any
+    /// Bonjour advertiser).
+    static func preAuthentication(_ details: PeerDetails) -> PeerDetails {
+        PeerDetails(computerName: details.computerName, macOSVersion: details.macOSVersion)
     }
 
     /// Constant time, so how long a wrong proof takes to refuse says nothing about how wrong it was.
@@ -104,13 +124,17 @@ public struct PairingAdminSession: Sendable {
 
     public mutating func start() -> WireMessage {
         adminNonce = Data(crypto.random(PairingTranscript.nonceBytes))
+        let shown = PairingTranscript.preAuthentication(details)
         switch method {
         case .enrolmentKey:
             state = .awaitingProof
-            return .pairStart(.init(method: .enrolmentKey, nonce: adminNonce, details: details))
+            return .pairStart(.init(method: .enrolmentKey, nonce: adminNonce, details: shown))
         case .pairingCode:
+            // A commitment, not the nonce: the host chooses its own before it can see ours.
             state = .awaitingChallenge
-            return .pairStart(.init(method: .pairingCode, nonce: adminNonce, details: details))
+            return .pairStart(.init(method: .pairingCode,
+                                    nonce: PairingTranscript.commitment(to: adminNonce, crypto: crypto),
+                                    details: shown))
         }
     }
 
@@ -141,7 +165,7 @@ public struct PairingAdminSession: Sendable {
             let mac = crypto.mac(Array(PairingCode.normalise(typed).utf8),
                                  PairingTranscript.bytes(label: "code-admin", admin: own, host: host,
                                                          adminNonce: adminNonce, hostNonce: hostNonce))
-            return [.send(.pairProof(.init(mac: Data(mac))))]
+            return [.send(.pairProof(.init(mac: Data(mac), nonce: adminNonce)))]
 
         case (.awaitingHostProof, .pairProof(let proof), .pairingCode(let typed)):
             guard let hostDetails = proof.details else { throw WireError.malformedHeader(.pairProof) }
@@ -154,7 +178,8 @@ public struct PairingAdminSession: Sendable {
             }
             self.hostDetails = hostDetails
             state = .confirming
-            return [.confirmWords(PairingTranscript.words(own, host, crypto: crypto), hostDetails)]
+            return [.confirmWords(PairingTranscript.words(own, host, adminNonce: adminNonce, hostNonce: hostNonce,
+                                                          crypto: crypto), hostDetails)]
 
         case (.confirming, .pairConfirm(let confirm), _):
             guard confirm.confirmed else {
@@ -234,8 +259,12 @@ public struct PairingHostSession: Sendable {
     let details: PeerDetails
     /// The key from this host's configuration profile, if it has one.
     let enrolmentKey: EnrolmentKey?
-    /// The code on this host's screen, if the owner asked for one and it is still usable.
-    let code: PairingCode?
+    /// The code on this host's screen **now**, asked at every step rather than copied at the start:
+    /// a code hidden, expired or used up mid-conversation stops working at once (Iris's review —
+    /// a held-open session kept a snapshot of the code past its ten minutes and five tries).
+    let currentCode: @Sendable () -> PairingCode?
+    /// Code pairing: the admin's commitment, opened by its proof.
+    var adminCommitment = Data()
     let crypto: PairingCrypto
     var adminNonce = Data()
     var hostNonce = Data()
@@ -243,21 +272,33 @@ public struct PairingHostSession: Sendable {
     var localConfirmed = false
     var remoteConfirmed = false
 
+    /// Whether the owner removed or turned away this admin. A removed admin is not let back in by
+    /// its enrolment key — only by a code pairing the owner confirms.
+    let adminBlocked: Bool
+
     public init(own: PeerFingerprint, admin: PeerFingerprint, details: PeerDetails,
-                enrolmentKey: EnrolmentKey?, code: PairingCode?, crypto: PairingCrypto) {
+                enrolmentKey: EnrolmentKey?, currentCode: @escaping @Sendable () -> PairingCode?,
+                adminBlocked: Bool = false, crypto: PairingCrypto) {
         self.own = own
         self.admin = admin
         self.details = details
         self.enrolmentKey = enrolmentKey
-        self.code = code
+        self.currentCode = currentCode
+        self.adminBlocked = adminBlocked
         self.crypto = crypto
+    }
+
+    /// Convenience for a fixed code — tests, mostly.
+    public init(own: PeerFingerprint, admin: PeerFingerprint, details: PeerDetails,
+                enrolmentKey: EnrolmentKey?, code: PairingCode?, adminBlocked: Bool = false, crypto: PairingCrypto) {
+        self.init(own: own, admin: admin, details: details, enrolmentKey: enrolmentKey,
+                  currentCode: { code }, adminBlocked: adminBlocked, crypto: crypto)
     }
 
     public mutating func receive(_ message: WireMessage, at now: Date = Date()) throws -> [Event] {
         switch (state, message) {
         case (.idle, .pairStart(let start)):
             guard start.nonce.count == PairingTranscript.nonceBytes else { throw WireError.malformedHeader(.pairStart) }
-            adminNonce = start.nonce
             adminDetails = start.details
             hostNonce = Data(crypto.random(PairingTranscript.nonceBytes))
             switch start.method {
@@ -267,15 +308,20 @@ public struct PairingHostSession: Sendable {
                 guard let key = enrolmentKey, key.names(admin) else {
                     return refuse("This Mac wasn't set up to enrol with that admin Mac.")
                 }
+                guard !adminBlocked else {
+                    return refuse("This Mac's owner removed that admin Mac. Pair again with a code shown on this Mac.")
+                }
+                adminNonce = start.nonce
                 state = .awaitingResult
                 let mac = crypto.mac(key.secret, PairingTranscript.bytes(label: "enrol-host", admin: admin, host: own,
                                                                          adminNonce: adminNonce, hostNonce: hostNonce))
                 return [.adminTrusted(admin, start.details),
                         .send(.pairProof(.init(mac: Data(mac), nonce: hostNonce, details: details)))]
             case .pairingCode:
-                guard let code, code.isUsable(at: now) else {
+                guard let code = currentCode(), code.isUsable(at: now) else {
                     return refuse("This Mac isn't showing a pairing code. Ask for a new one on this Mac.")
                 }
+                adminCommitment = start.nonce
                 state = .awaitingAdminProof
                 return [.send(.pairChallenge(.init(nonce: hostNonce)))]
             }
@@ -285,7 +331,15 @@ public struct PairingHostSession: Sendable {
             return [.enrolmentAnswered(result.outcome, result.message)]
 
         case (.awaitingAdminProof, .pairProof(let proof)):
-            guard let code else { return refuse("The pairing code is gone.") }
+            guard let code = currentCode(), code.isUsable(at: now) else {
+                return refuse("The pairing code expired or was withdrawn. Ask for a new one on this Mac.")
+            }
+            // The admin opens its commitment: the nonce it chose before it saw ours.
+            guard let opened = proof.nonce, opened.count == PairingTranscript.nonceBytes,
+                  PairingTranscript.commitment(to: opened, crypto: crypto) == adminCommitment else {
+                return refuse("The other Mac's proof didn't match what it committed to.")
+            }
+            adminNonce = opened
             let expected = crypto.mac(code.keyBytes, PairingTranscript.bytes(label: "code-admin", admin: admin, host: own,
                                                                              adminNonce: adminNonce, hostNonce: hostNonce))
             guard PairingTranscript.equal(expected, Array(proof.mac)) else {
@@ -295,7 +349,8 @@ public struct PairingHostSession: Sendable {
             let mac = crypto.mac(code.keyBytes, PairingTranscript.bytes(label: "code-host", admin: admin, host: own,
                                                                         adminNonce: adminNonce, hostNonce: hostNonce))
             return [.send(.pairProof(.init(mac: Data(mac), details: details))),
-                    .confirmWords(PairingTranscript.words(own, admin, crypto: crypto), adminDetails ?? PeerDetails(computerName: "?"))]
+                    .confirmWords(PairingTranscript.words(admin, own, adminNonce: adminNonce, hostNonce: hostNonce,
+                                                          crypto: crypto), adminDetails ?? PeerDetails(computerName: "?"))]
 
         case (.confirming, .pairConfirm(let confirm)):
             guard confirm.confirmed else {

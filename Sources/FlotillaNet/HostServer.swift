@@ -18,6 +18,8 @@ public protocol HostServerDelegate: AnyObject, Sendable {
     func trust(admin: PeerFingerprint, details: PeerDetails, method: Peer.Method)
     /// Code pairing: show the owner these words and the admin's details; call `reply` with their answer.
     func confirmWords(_ words: [String], admin: PeerDetails, reply: @escaping @Sendable (Bool) -> Void)
+    /// Whether the owner removed or turned away this admin — its enrolment key then counts for nothing.
+    func isBlocked(_ fingerprint: PeerFingerprint) -> Bool
     /// Enrolment: what the admin Mac made of this host's request.
     func enrolmentAnswered(_ outcome: WireMessage.PairOutcome, message: String)
     /// A trusted admin's command, for the host's own record (Activity).
@@ -41,6 +43,15 @@ public final class HostServer: @unchecked Sendable {
         public var mountPolicy: MountPolicy
         /// Advertise over Bonjour under this name, or not at all when `nil`.
         public var bonjourName: String?
+        /// Admission (Iris's review, 7 October): connections at once, from one address, and commands
+        /// running at once across every connection — counted until the process actually exits,
+        /// not until the caller stops waiting, so a cancel cannot free a slot early.
+        public var maxConnections = 32
+        public var maxConnectionsPerAddress = 4
+        public var maxRunningCommands = 8
+        /// How long a connection may take to finish TLS, and a pairing to finish (it waits on people).
+        public var readyTimeout: TimeInterval = 10
+        public var pairingTimeout: TimeInterval = 180
         /// This Mac's local hostname, advertised beside the name.
         public var hostname: String?
 
@@ -66,6 +77,20 @@ public final class HostServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "dev.melonfleet.Flotilla.host-server")
     private var listener: NWListener?
     private var handlers: [ObjectIdentifier: HostConnectionHandler] = [:]
+    private var addresses: [ObjectIdentifier: String] = [:]
+    private let runLock = NSLock()
+    private var running = 0
+
+    /// A slot for one command, host-wide, or `false` if all are taken.
+    func reserveRun() -> Bool {
+        runLock.withLock {
+            guard running < configuration.maxRunningCommands else { return false }
+            running += 1
+            return true
+        }
+    }
+
+    func releaseRun() { runLock.withLock { running -= 1 } }
 
     public private(set) var state: State = .stopped
     public var onStateChange: (@Sendable (State) -> Void)?
@@ -135,12 +160,23 @@ public final class HostServer: @unchecked Sendable {
         onStateChange?(new)
     }
 
+    /// Turns a connection away before anything is built for it when the host, or that address, is
+    /// at its limit — a flood of connections then costs a refused socket each, not a session.
     private func accept(_ nw: NWConnection) {
+        let address: String = if case .hostPort(let host, _) = nw.endpoint { "\(host)" } else { "\(nw.endpoint)" }
+        guard handlers.count < configuration.maxConnections,
+              addresses.values.filter({ $0 == address }).count < configuration.maxConnectionsPerAddress else {
+            nw.cancel()
+            return
+        }
         let connection = WireConnection(nw, limits: configuration.limits, label: "host-connection")
         let handler = HostConnectionHandler(connection: connection, server: self)
         let key = ObjectIdentifier(handler)
         handlers[key] = handler
-        connection.onClose = { [weak self] _ in self?.queue.async { self?.handlers[key] = nil } }
+        addresses[key] = address
+        connection.onClose = { [weak self] _ in
+            self?.queue.async { self?.handlers[key] = nil; self?.addresses[key] = nil }
+        }
         handler.start()
     }
 }
@@ -153,6 +189,7 @@ final class HostConnectionHandler: @unchecked Sendable {
     private var pairing: PairingHostSession?
     private var handshakeTimer: DispatchSourceTimer?
     private var idleTimer: DispatchSourceTimer?
+    private var pairingTimer: DispatchSourceTimer?
 
     init(connection: WireConnection, server: HostServer) {
         self.connection = connection
@@ -160,12 +197,17 @@ final class HostConnectionHandler: @unchecked Sendable {
     }
 
     func start() {
+        // TLS must finish in time, or the connection goes: a peer that opens and stalls holds nothing.
+        handshakeTimer = timer(after: server.configuration.readyTimeout) { [weak self] in
+            if self?.session == nil { self?.connection.close("TLS took too long") }
+        }
         connection.onReady = { [weak self] in self?.ready() }
         connection.onMessage = { [weak self] message in self?.received(message) }
         let previous = connection.onClose
         connection.onClose = { [weak self] reason in
             self?.handshakeTimer?.cancel()
             self?.idleTimer?.cancel()
+            self?.pairingTimer?.cancel()
             previous?(reason)
         }
         connection.start()
@@ -178,6 +220,7 @@ final class HostConnectionHandler: @unchecked Sendable {
         let trusted = server.delegate?.isTrusted(peer) ?? false
         session = WireHostSession(peer: server.configuration.info, limits: server.configuration.limits,
                                   mountPolicy: server.configuration.mountPolicy, trusted: trusted)
+        handshakeTimer?.cancel()
         handshakeTimer = timer(after: server.configuration.limits.handshakeTimeout) { [weak self] in
             if case .awaitingHello = self?.session?.state { self?.connection.close("no hello in time") }
         }
@@ -215,10 +258,19 @@ final class HostConnectionHandler: @unchecked Sendable {
     /// A cancelled command is answered at once and its eventual result discarded: `ContainerHost`
     /// cannot stop a child mid-run (Q15), so the honest answer is that the caller stopped waiting.
     private func execute(_ id: UInt32, _ command: ValidatedCommand, _ deadline: TimeInterval) {
+        guard server.reserveRun() else {
+            if let reply = session?.fail(id, code: .busy, message: "This host is already running as many commands as it allows. Try again shortly.") {
+                connection.send(reply)
+            }
+            return
+        }
+        let server = self.server
         let host = server.host
         if let admin = connection.peerFingerprint { server.delegate?.ran(command, for: admin) }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let outcome: Result<CommandResult, Error> = Result { try host.run(command.arguments, timeout: deadline) }
+            // Released when the process is done, whether or not anyone still waits for it.
+            server.releaseRun()
             guard let self else { return }
             self.connection.queue.async {
                 let reply: WireMessage?
@@ -241,7 +293,13 @@ final class HostConnectionHandler: @unchecked Sendable {
             pairing = PairingHostSession(own: server.configuration.identity.fingerprint, admin: admin,
                                          details: server.configuration.details,
                                          enrolmentKey: delegate.enrolmentKey(),
-                                         code: delegate.currentPairingCode(), crypto: server.crypto)
+                                         currentCode: { [weak delegate] in delegate?.currentPairingCode() },
+                                         adminBlocked: delegate.isBlocked(admin), crypto: server.crypto)
+            // A pairing has an end, whatever keeps the connection alive in the meantime.
+            pairingTimer = timer(after: server.configuration.pairingTimeout) { [weak self] in
+                guard let state = self?.pairing?.state, state != .done else { return }
+                self?.connection.close("pairing took too long")
+            }
         }
         guard var pairing else { return }
         do {

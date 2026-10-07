@@ -58,16 +58,37 @@ public struct WireLimits: Sendable, Equatable, Codable {
 
     public static let `default` = WireLimits()
 
-    /// The stricter of two sets, field by field.
+    /// What a peer's limits are combined with ours to give (Iris's review, 7 October).
+    ///
+    /// **Resource ceilings** — frame, header, output, concurrency — take the smaller of the two, so
+    /// neither side can widen what the other accepts. **Timers stay ours**: "smaller is stricter" is
+    /// false for a ping interval, where a peer asking for a tiny one would have us ping without
+    /// rest, and a negative deadline means nothing. A peer's ceilings are clamped into sane ranges
+    /// first, so a negative or zero size cannot reach a `prefix` or a count.
     public func intersection(_ other: WireLimits) -> WireLimits {
-        WireLimits(maxFrameBytes: min(maxFrameBytes, other.maxFrameBytes),
-                   maxHeaderBytes: min(maxHeaderBytes, other.maxHeaderBytes),
-                   maxConcurrentRequests: min(maxConcurrentRequests, other.maxConcurrentRequests),
-                   maxOutputBytesPerStream: min(maxOutputBytesPerStream, other.maxOutputBytesPerStream),
-                   handshakeTimeout: min(handshakeTimeout, other.handshakeTimeout),
-                   pingInterval: min(pingInterval, other.pingInterval),
-                   idleTimeout: min(idleTimeout, other.idleTimeout),
-                   deadlineGrace: min(deadlineGrace, other.deadlineGrace))
+        let peer = other.sanitised
+        return WireLimits(maxFrameBytes: min(maxFrameBytes, peer.maxFrameBytes),
+                          maxHeaderBytes: min(maxHeaderBytes, peer.maxHeaderBytes),
+                          maxConcurrentRequests: min(maxConcurrentRequests, peer.maxConcurrentRequests),
+                          maxOutputBytesPerStream: min(maxOutputBytesPerStream, peer.maxOutputBytesPerStream),
+                          handshakeTimeout: handshakeTimeout,
+                          pingInterval: pingInterval,
+                          idleTimeout: idleTimeout,
+                          deadlineGrace: deadlineGrace)
+    }
+
+    /// Every field forced into a range that works. Floors keep a peer from shrinking a limit to
+    /// nothing; ceilings keep the numbers within what this build was designed for.
+    public var sanitised: WireLimits {
+        func clamp<T: Comparable>(_ value: T, _ low: T, _ high: T) -> T { Swift.max(low, Swift.min(high, value)) }
+        return WireLimits(maxFrameBytes: clamp(maxFrameBytes, 64 << 10, 64 << 20),
+                          maxHeaderBytes: clamp(maxHeaderBytes, 4 << 10, 1 << 20),
+                          maxConcurrentRequests: clamp(maxConcurrentRequests, 1, 64),
+                          maxOutputBytesPerStream: clamp(maxOutputBytesPerStream, 4 << 10, 64 << 20),
+                          handshakeTimeout: clamp(handshakeTimeout, 2, 120),
+                          pingInterval: clamp(pingInterval, 5, 300),
+                          idleTimeout: clamp(idleTimeout, 15, 3600),
+                          deadlineGrace: clamp(deadlineGrace, 1, 120))
     }
 }
 
@@ -123,10 +144,14 @@ public struct WireFrame: Sendable, Equatable {
 /// Fails closed: the first malformed frame is an error and the connection must be dropped —
 /// there is no resynchronising a length-prefixed stream after a bad length.
 public struct WireFrameDecoder: Sendable {
-    public let limits: WireLimits
+    public private(set) var limits: WireLimits
     private var buffer = Data()
 
     public init(limits: WireLimits = .default) { self.limits = limits }
+
+    /// Holds incoming frames to the limits a handshake agreed, from the next frame on. Never looser
+    /// (Iris's review: only outgoing frames were held to them).
+    public mutating func adopt(_ agreed: WireLimits) { limits = limits.intersection(agreed) }
 
     /// Bytes held waiting for the rest of a frame.
     public var bufferedByteCount: Int { buffer.count }

@@ -78,7 +78,11 @@ public struct EnrolmentKey: Sendable, Equatable {
     public init(text: String) throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.uppercased().hasPrefix(Self.textPrefix) else { throw ParseError.notAnEnrolmentKey }
-        guard let bytes = Crockford32.decode(String(trimmed.dropFirst(Self.textPrefix.count))) else {
+        let encoded = String(trimmed.dropFirst(Self.textPrefix.count))
+        // Length first, so a key cut short says so rather than "typo".
+        let expectedCharacters = ((1 + 2 * Self.fieldBytes + 4) * 8 + 4) / 5
+        guard Crockford32.normalised(encoded).count == expectedCharacters else { throw ParseError.wrongLength }
+        guard let bytes = Crockford32.decode(encoded) else {
             throw ParseError.checksumMismatch
         }
         let expected = 1 + 2 * Self.fieldBytes + 4

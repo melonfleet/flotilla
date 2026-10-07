@@ -103,6 +103,17 @@ struct EnrolmentKeyTests {
         #expect(throws: EnrolmentKey.ParseError.notAnEnrolmentKey) { try EnrolmentKey(text: "CID-1234") }
     }
 
+    @Test func aTypoInTheLastCharacterIsCaught() {
+        // Iris's review: the last character carries one meaningful bit; the other four were ignored,
+        // so several different last characters decoded to the same key.
+        var generator = SeededGenerator(state: 7)
+        let text = EnrolmentKey.generate(for: admin, using: &generator).text
+        let last = text.last!
+        let others = Crockford32.alphabet.filter { $0 != last }
+        let accepted = others.filter { (try? EnrolmentKey(text: String(text.dropLast()) + String($0))) != nil }
+        #expect(accepted.isEmpty, "also accepted: \(accepted)")
+    }
+
     @Test func aPairingCodeExpiresAndRunsOutOfTries() {
         var generator = SeededGenerator(state: 3)
         let start = Date(timeIntervalSince1970: 1_000)
@@ -148,6 +159,19 @@ struct PeerBookTests {
         #expect(rejected && retry == .blocked)
         let readmitted = book.approve(mini, at: now)
         #expect(readmitted && book.isTrusted(mini))
+    }
+
+    @Test func aRemovedAdminIsNotLetBackByItsKey() {
+        var book = PeerBook()
+        let admin = fingerprint(9)
+        let admitted = book.admitByEnrolmentKey(admin, details: details, at: now)
+        #expect(admitted)
+        book.revoke(admin, at: now)
+        let again = book.admitByEnrolmentKey(admin, details: details, at: now)
+        #expect(!again && !book.isTrusted(admin) && book.isBlocked(admin))
+        // A code pairing the owner confirms — or the owner's own approval — does let it back.
+        book.pairConfirmed(admin, role: .admin, details: details, at: now)
+        #expect(book.isTrusted(admin))
     }
 
     @Test func onlyAnApprovedMacCanBeRevoked() {
@@ -337,6 +361,51 @@ struct PairingTests {
         let hostEvents = try host.receive(message)
         #expect(hostEvents.contains { if case .failed = $0 { true } else { false } })
         #expect(host.state == .failed)
+    }
+
+    @Test func aRemovedAdminCannotReEnrolWithTheKey() throws {
+        let key = EnrolmentKey.generate(for: adminPrint)
+        var admin = PairingAdminSession(own: adminPrint, host: hostPrint, details: adminDetails,
+                                        method: .enrolmentKey(key), crypto: FakeCrypto.make())
+        var host = PairingHostSession(own: hostPrint, admin: adminPrint, details: hostDetails,
+                                      enrolmentKey: key, code: nil, adminBlocked: true, crypto: FakeCrypto.make(seed: 50))
+        let (adminEvents, hostEvents) = try run(admin: &admin, host: &host, first: admin.start())
+        #expect(!hostEvents.contains { if case .adminTrusted = $0 { true } else { false } })
+        #expect(adminEvents.contains { if case .failed(let why) = $0 { why.contains("removed") } else { false } })
+    }
+
+    @Test func theCodeIsCheckedAgainWhenTheProofArrives() throws {
+        // Withdrawn between the start and the proof: the held-open session gets nothing.
+        var generator = SeededGenerator(state: 11)
+        let code = PairingCode(issuedAt: Date(), using: &generator)
+        let showing = Showing(code)
+        var admin = PairingAdminSession(own: adminPrint, host: hostPrint, details: adminDetails,
+                                        method: .pairingCode(code.value), crypto: FakeCrypto.make())
+        var host = PairingHostSession(own: hostPrint, admin: adminPrint, details: hostDetails, enrolmentKey: nil,
+                                      currentCode: { showing.code }, crypto: FakeCrypto.make(seed: 50))
+        let challenge = try host.receive(admin.start())
+        guard case .send(let message)? = challenge.first else { Issue.record(); return }
+        let proof = try admin.receive(message)
+        showing.code = nil
+        guard case .send(let proofMessage)? = proof.first else { Issue.record(); return }
+        let answer = try host.receive(proofMessage)
+        #expect(!answer.contains { if case .confirmWords = $0 { true } else { false } })
+        #expect(answer.contains { if case .close = $0 { true } else { false } })
+    }
+
+    @Test func nothingIdentifyingIsSentBeforeAProof() {
+        var admin = PairingAdminSession(own: adminPrint, host: hostPrint,
+                                        details: PeerDetails(computerName: "admin", model: "Mac15,9", serialNumber: "SECRET",
+                                                             macOSVersion: "27.0.1"),
+                                        method: .pairingCode("ABCD-EFGH"), crypto: FakeCrypto.make())
+        guard case .pairStart(let start) = admin.start() else { Issue.record(); return }
+        #expect(start.details.serialNumber == nil && start.details.model == nil)
+        #expect(start.details.computerName == "admin")
+    }
+
+    final class Showing: @unchecked Sendable {
+        var code: PairingCode?
+        init(_ code: PairingCode?) { self.code = code }
     }
 
     @Test func anExpiredCodeIsRefused() throws {

@@ -1756,3 +1756,25 @@ the admin Mac. Port 7868. Host mode is a login item in a user session; headless 
 auto-login service account until `container` supports a non-GUI launchd domain
 (apple/container#2008, #1514). Details in PLAN.md Phase B.
 
+## Q33 — The admin owns its hosts; Iris's host-mode review (settled 2026-10-07)
+
+**Ownership.** The owner's answer to the review's two policy questions: an admin Mac is the owner of
+every host it manages, and Flotilla is not for pairing with other people's Macs. So a host does not
+restrict published ports, interfaces or driver options beyond the Allowlist and its `MountPolicy`,
+and `inspect` output reaches the admin in full. In their place, a host says so where it pairs —
+Settings ▸ Host Mode and the words sheet: pairing gives that admin Mac full control of this Mac's
+containers, including their settings, environment variables and file paths.
+
+**The review** (Iris, `experiments/hostmode-review-2026-10-07/iris-report.md`) found the core
+boundary sound — a never-approved key runs nothing — and twelve defects, all confirmed and fixed:
+removal is a lasting block an enrolment key cannot undo (only Allow Again or a confirmed code
+pairing); code pairing commits to the admin's nonce before the host's is seen and folds both into
+the words, so a machine in the middle gets one blind 2⁻³² guess; the code is consulted at every step
+and wrong tries count host-wide at once; running commands are capped host-wide and counted until
+the process ends; connections are capped (32, four per address) with TLS, welcome and pairing
+deadlines; automatic enrolment is bounded; a peer's limits are sanitised and timers stay local;
+nothing identifying is sent before a proof; one words prompt at a time; the decoder adopts agreed
+limits; the enrolment key rejects non-canonical last characters. Not done, and named: a cancelled
+command still runs to its deadline (it now keeps its slot, so this costs time, not capacity) —
+real termination needs a cancellable `ContainerHost.run`.
+

@@ -14,8 +14,11 @@ struct LoopbackTests {
     final class ScriptedHost: ContainerHost, @unchecked Sendable {
         private let lock = NSLock()
         private(set) var ran: [[String]] = []
+        /// How long each command takes, to hold slots open.
+        var delay: TimeInterval = 0
         func run(_ args: [String]) throws -> CommandResult {
-            lock.lock(); ran.append(args); lock.unlock()
+            lock.lock(); ran.append(args); let wait = delay; lock.unlock()
+            if wait > 0 { Thread.sleep(forTimeInterval: wait) }
             return CommandResult(stdout: "[]\n", stderr: "", exitCode: 0)
         }
     }
@@ -38,6 +41,8 @@ struct LoopbackTests {
             reply(locked { hostSaysWordsMatch })
         }
         func enrolmentAnswered(_ outcome: WireMessage.PairOutcome, message: String) { locked { answers.append(outcome) } }
+        var blocked: Set<PeerFingerprint> = []
+        func isBlocked(_ fingerprint: PeerFingerprint) -> Bool { locked { blocked.contains(fingerprint) } }
 
         func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
     }
@@ -63,15 +68,16 @@ struct LoopbackTests {
         }
     }
 
-    func rig() async throws -> Rig {
+    func rig(configure: (inout HostServer.Configuration) -> Void = { _ in }) async throws -> Rig {
         let hostStore = DeviceIdentityStore(label: "dev.melonfleet.Flotilla.test-identity.\(UUID().uuidString)")
         let adminStore = DeviceIdentityStore(label: "dev.melonfleet.Flotilla.test-identity.\(UUID().uuidString)")
         let hostIdentity = try hostStore.loadOrCreate(), adminIdentity = try adminStore.loadOrCreate()
         let delegate = Delegate(), host = ScriptedHost()
-        let server = HostServer(configuration: .init(identity: hostIdentity, port: 0,
+        var configuration = HostServer.Configuration(identity: hostIdentity, port: 0,
                                                      info: WirePeerInfo(name: "mini-test", appVersion: "test"),
-                                                     details: PeerDetails(computerName: "mini-test", serialNumber: "TEST")),
-                                host: host, delegate: delegate)
+                                                     details: PeerDetails(computerName: "mini-test", serialNumber: "TEST"))
+        configure(&configuration)
+        let server = HostServer(configuration: configuration, host: host, delegate: delegate)
         let port: UInt16 = try await withCheckedThrowingContinuation { continuation in
             let once = Once()
             server.onStateChange = { state in
@@ -280,5 +286,56 @@ struct LoopbackTests {
         }
         #expect(results.count == 40 && results.allSatisfy { $0 == 0 })
         #expect(rig.host.ran.count == 40)
+    }
+
+    // MARK: Admission (Iris's review)
+
+    @Test func oneAddressGetsAtMostFourConnections() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        let admins = (0..<6).map { _ in rig.admin() }
+        defer { admins.forEach { $0.close() } }
+        var connected = 0
+        for admin in admins {
+            if (try? await admin.connect()) != nil { connected += 1 }
+        }
+        #expect(connected == 4)
+    }
+
+    @Test func aRunningCommandHoldsTheHostsSlotUntilItEnds() async throws {
+        let rig = try await rig { $0.maxRunningCommands = 1 }
+        defer { rig.tearDown() }
+        rig.host.delay = 1.5
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let host = remote(rig)
+        defer { host.close() }
+        // The first command occupies the host's only slot for 1.5 s.
+        let first = Task { try await host.run(["ls"], timeout: nil) }
+        try await Task.sleep(for: .milliseconds(300))
+        await #expect(throws: RemoteHostError.self) { try await host.run(["ls"], timeout: nil) }
+        _ = try await first.value
+        // Free again once it really ended.
+        _ = try await host.run(["ls"], timeout: nil)
+    }
+
+    @Test func aRemovedAdminsKeyIsRefusedOverTLS() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        let key = EnrolmentKey.generate(for: rig.adminIdentity.fingerprint)
+        rig.delegate.locked {
+            rig.delegate.key = key
+            rig.delegate.blocked = [rig.adminIdentity.fingerprint]
+        }
+        let admin = rig.admin()
+        defer { admin.close() }
+        _ = try await admin.connect()
+        do {
+            _ = try await admin.pair(details: PeerDetails(computerName: "admin"), method: .enrolmentKey(key),
+                                     confirmWords: { _, _ in false }, recordEnrolment: { _, _ in .addedPending })
+            Issue.record("a removed admin enrolled again")
+        } catch {
+            #expect("\(error)".contains("removed"), "got: \(error)")
+        }
+        #expect(rig.delegate.locked { rig.delegate.trusted.isEmpty })
     }
 }

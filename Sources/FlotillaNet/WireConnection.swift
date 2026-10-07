@@ -109,7 +109,10 @@ public final class WireConnection: @unchecked Sendable {
 
     /// Adopts the limits a handshake agreed. Never looser than the ones it started with.
     public func adopt(_ agreed: WireLimits) {
-        queue.async { [self] in limits = limits.intersection(agreed) }
+        queue.async { [self] in
+            limits = limits.intersection(agreed)
+            decoder.adopt(agreed)
+        }
     }
 
     /// Closes after everything already sent has gone. Sends on one connection are delivered in

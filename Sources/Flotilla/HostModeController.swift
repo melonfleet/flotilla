@@ -85,6 +85,10 @@ final class HostModeController {
     /// When each discovered Mac was last asked to enrol, by Bonjour name.
     @ObservationIgnored private var autoEnrolAttempts: [String: Date] = [:]
     @ObservationIgnored private var autoEnrolTimer: Timer?
+    @ObservationIgnored private var enrolmentsInFlight = 0
+    /// Bounds on automatic enrolment, so a network full of fake adverts costs little (Iris's review).
+    static let maxConcurrentEnrolments = 2
+    static let maxDiscovered = 64
     /// How long before a Mac that refused is asked again — its profile may arrive later.
     static let autoEnrolRetry: TimeInterval = 120
     @ObservationIgnored var recordActivity: ((ContainerEvent) -> Void)?
@@ -386,7 +390,10 @@ final class HostModeController {
 
     /// Shows the words and waits for the owner.
     func askWords(_ words: [String], peer: PeerDetails, role: Peer.Role) async -> Bool {
-        await withCheckedContinuation { continuation in
+        // One comparison at a time. A second arriving while the owner reads the first is refused,
+        // rather than replacing it and leaving the first waiting for ever (Iris's review).
+        guard wordsPrompt == nil else { return false }
+        return await withCheckedContinuation { continuation in
             wordsPrompt = WordsPrompt(words: words, peer: peer, role: role) { [weak self] answer in
                 self?.wordsPrompt = nil
                 continuation.resume(returning: answer)
@@ -522,8 +529,11 @@ final class HostModeController {
 
     private func discoveredChanged(_ found: [DiscoveredHost]) {
         let ownHint = identity.map { WireTLS.fingerprintHint($0.fingerprint) }
-        discovered = found.filter { $0.fingerprintHint != ownHint && $0.name != Self.computerName }
-            .sorted { $0.name < $1.name }
+        discovered = Array(found.filter { $0.fingerprintHint != ownHint && $0.name != Self.computerName }
+            .sorted { $0.name < $1.name }.prefix(Self.maxDiscovered))
+        // Forget attempts for adverts that are gone, so the record cannot grow without end.
+        let present = Set(discovered.map(\.name))
+        autoEnrolAttempts = autoEnrolAttempts.filter { present.contains($0.key) }
         enrolDiscovered()
     }
 
@@ -538,15 +548,25 @@ final class HostModeController {
             if let hint = host.fingerprintHint { if knownKeys.contains(hint) { continue } }
             else if knownNames.contains(host.name) { continue }
             if let last = autoEnrolAttempts[host.name], now.timeIntervalSince(last) < Self.autoEnrolRetry { continue }
+            guard enrolmentsInFlight < Self.maxConcurrentEnrolments else { return }
             autoEnrolAttempts[host.name] = now
-            Task { _ = await addHost(at: host.endpoint, code: nil) }
+            enrolmentsInFlight += 1
+            Task {
+                _ = await addHost(at: host.endpoint, code: nil)
+                enrolmentsInFlight -= 1
+            }
         }
     }
 
     // MARK: Bridge events (host side)
 
     fileprivate func adminTrusted(_ fingerprint: PeerFingerprint, details: PeerDetails, method: Peer.Method) {
-        book.pairConfirmed(fingerprint, role: .admin, details: details, method: method, at: Date())
+        if method == .enrolmentKey {
+            // A removed admin's key does not bring it back; only a code pairing or Allow Again does.
+            guard book.admitByEnrolmentKey(fingerprint, details: details, at: Date()) else { return }
+        } else {
+            book.pairConfirmed(fingerprint, role: .admin, details: details, method: method, at: Date())
+        }
         save()
         if method == .pairingCode { pairingCode = nil; refreshBridge() }
         record(details.computerName, method == .enrolmentKey ? "Admin Mac enrolled this Mac" : "Paired as admin")
@@ -563,6 +583,13 @@ final class HostModeController {
         refreshBridge()
     }
 
+    /// Host side: let a removed admin Mac back in — the owner's explicit decision.
+    func allowAgain(_ fingerprint: PeerFingerprint) {
+        guard book.approve(fingerprint, at: Date()) else { return }
+        save()
+        record(name(fingerprint), "Allowed again")
+    }
+
     fileprivate func enrolmentAnswered(_ outcome: WireMessage.PairOutcome, message: String) {
         enrolmentStatus = message
     }
@@ -574,6 +601,7 @@ final class HostModeController {
 
     private func refreshBridge() {
         bridge.update(trustedAdmins: Set(book.approved.filter { $0.role == .admin }.map(\.fingerprint)),
+                      blockedAdmins: Set(admins.filter { book.isBlocked($0.fingerprint) }.map(\.fingerprint)),
                       code: pairingCode, key: hostEnrolmentKey?.key)
     }
 
@@ -617,26 +645,45 @@ final class HostModeController {
 final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var trustedAdmins: Set<PeerFingerprint> = []
+    private var blockedAdmins: Set<PeerFingerprint> = []
     private var code: PairingCode?
     private var key: EnrolmentKey?
     @MainActor weak var controller: HostModeController?
 
-    func update(trustedAdmins: Set<PeerFingerprint>, code: PairingCode?, key: EnrolmentKey?) {
+    func update(trustedAdmins: Set<PeerFingerprint>, blockedAdmins: Set<PeerFingerprint>,
+                code: PairingCode?, key: EnrolmentKey?) {
         lock.lock(); defer { lock.unlock() }
         self.trustedAdmins = trustedAdmins
+        self.blockedAdmins = blockedAdmins
         self.code = code
         self.key = key
     }
+
+    func isBlocked(_ fingerprint: PeerFingerprint) -> Bool { lock.lock(); defer { lock.unlock() }; return blockedAdmins.contains(fingerprint) }
 
     func isTrusted(_ fingerprint: PeerFingerprint) -> Bool { lock.lock(); defer { lock.unlock() }; return trustedAdmins.contains(fingerprint) }
     func currentPairingCode() -> PairingCode? { lock.lock(); defer { lock.unlock() }; return code }
     func enrolmentKey() -> EnrolmentKey? { lock.lock(); defer { lock.unlock() }; return key }
 
-    func pairingCodeFailed() { Task { @MainActor in self.controller?.codeFailed() } }
+    /// Counted here, at once, under the lock — so the next proof on any connection sees it, not
+    /// whenever the main actor catches up (Iris's review: each session had its own copy).
+    func pairingCodeFailed() {
+        lock.lock()
+        if var current = code {
+            code = current.recordFailure(at: Date()) ? current : nil
+        }
+        lock.unlock()
+        Task { @MainActor in self.controller?.codeFailed() }
+    }
 
     func trust(admin: PeerFingerprint, details: PeerDetails, method: Peer.Method) {
-        // Trusted now, for the next connection, before the main actor catches up.
-        lock.lock(); trustedAdmins.insert(admin); lock.unlock()
+        // Trusted now, for the next connection, before the main actor catches up — unless the
+        // owner removed it and this is only its key talking.
+        lock.lock()
+        if method == .enrolmentKey, blockedAdmins.contains(admin) { lock.unlock(); return }
+        trustedAdmins.insert(admin)
+        blockedAdmins.remove(admin)
+        lock.unlock()
         Task { @MainActor in self.controller?.adminTrusted(admin, details: details, method: method) }
     }
 

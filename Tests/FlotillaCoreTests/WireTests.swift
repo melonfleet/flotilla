@@ -97,11 +97,25 @@ struct WireFrameTests {
     }
 
     @Test func limitsIntersectToTheStricter() {
-        let mine = WireLimits(maxConcurrentRequests: 4, maxOutputBytesPerStream: 100)
-        let theirs = WireLimits(maxConcurrentRequests: 64, maxOutputBytesPerStream: 50)
+        let mine = WireLimits(maxConcurrentRequests: 4, maxOutputBytesPerStream: 1 << 20)
+        let theirs = WireLimits(maxConcurrentRequests: 64, maxOutputBytesPerStream: 64 << 10)
         let both = mine.intersection(theirs)
         #expect(both.maxConcurrentRequests == 4)
-        #expect(both.maxOutputBytesPerStream == 50)
+        #expect(both.maxOutputBytesPerStream == 64 << 10)
+    }
+
+    @Test func aPeersNonsenseLimitsAreClampedAndItsTimersIgnored() {
+        // Iris's review: a negative output ceiling trapped in `prefix`; a tiny ping interval would
+        // have had the other side ping without rest.
+        let mine = WireLimits.default
+        let hostile = WireLimits(maxFrameBytes: -1, maxHeaderBytes: 0, maxConcurrentRequests: -5,
+                                 maxOutputBytesPerStream: -1, handshakeTimeout: -3, pingInterval: 0.001,
+                                 idleTimeout: -1, deadlineGrace: -10)
+        let both = mine.intersection(hostile)
+        #expect(both.maxOutputBytesPerStream >= 4 << 10 && both.maxConcurrentRequests >= 1)
+        #expect(both.maxFrameBytes >= 64 << 10)
+        #expect(both.pingInterval == mine.pingInterval && both.idleTimeout == mine.idleTimeout)
+        #expect(both.handshakeTimeout == mine.handshakeTimeout && both.deadlineGrace == mine.deadlineGrace)
     }
 }
 

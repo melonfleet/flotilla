@@ -67,35 +67,55 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
         }
     }
 
-    /// The open connection, or a new one — pinned and trusted, or an error.
+    /// Callers waiting for a connection that is already being made.
+    private var waiters: [@Sendable (Result<AdminConnection, Error>) -> Void] = []
+    private var connecting = false
+
+    /// The open connection, or a new one — pinned and trusted, or an error. **One attempt at a
+    /// time**: callers arriving while it is under way wait for it, rather than each opening their
+    /// own (measured 7 October — forty simultaneous first calls opened forty connections, and the
+    /// host's per-address limit reset all but four).
     private func connection(_ completion: @escaping @Sendable (Result<AdminConnection, Error>) -> Void) {
-        if let open = lock.withLock({ connection }) { return completion(.success(open)) }
+        let action: () -> Void = lock.withLock {
+            if let open = connection { return { completion(.success(open)) } }
+            waiters.append(completion)
+            if connecting { return {} }
+            connecting = true
+            return { [self] in openConnection() }
+        }
+        action()
+    }
+
+    private func openConnection() {
         let fresh = AdminConnection(endpoint: endpoint, identity: identity, info: info)
         let expected = fingerprint
         fresh.connect { [weak self] result in
-            guard let self else { return completion(.failure(RemoteHostError.closed(nil))) }
+            guard let self else { return }
+            let outcome: Result<AdminConnection, Error>
             switch result {
-            case .failure(let error): completion(.failure(error))
+            case .failure(let error): outcome = .failure(error)
             case .success(let welcome):
-                guard fresh.hostFingerprint == expected else {
+                if fresh.hostFingerprint != expected {
                     fresh.close()
-                    return completion(.failure(RemoteHostError.protocolError(
-                        "A different Mac answered at this address — its key isn't the one you approved.")))
-                }
-                guard welcome.trusted else {
+                    outcome = .failure(RemoteHostError.protocolError(
+                        "A different Mac answered at this address — its key isn't the one you approved."))
+                } else if !welcome.trusted {
                     fresh.close()
-                    return completion(.failure(RemoteHostError.notTrusted))
+                    outcome = .failure(RemoteHostError.notTrusted)
+                } else {
+                    outcome = .success(fresh)
                 }
-                // Another caller may have connected meanwhile; keep one.
-                let chosen = self.lock.withLock { () -> AdminConnection in
-                    if let existing = self.connection { return existing }
+            }
+            let waiting: [@Sendable (Result<AdminConnection, Error>) -> Void] = self.lock.withLock {
+                if case .success = outcome, case .success(let welcome) = result {
                     self.connection = fresh
                     self.welcome = welcome
-                    return fresh
                 }
-                if chosen !== fresh { fresh.close() }
-                completion(.success(chosen))
+                self.connecting = false
+                defer { self.waiters.removeAll() }
+                return self.waiters
             }
+            for waiter in waiting { waiter(outcome) }
         }
     }
 

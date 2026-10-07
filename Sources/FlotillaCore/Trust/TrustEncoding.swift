@@ -21,8 +21,10 @@ enum Crockford32 {
         return String(output)
     }
 
-    /// The bytes, or `nil` if anything is not a base32 character after normalising. Trailing bits
-    /// that do not make a whole byte are dropped, as the encoder padded them.
+    /// The bytes, or `nil` if anything is not a base32 character after normalising — or if the
+    /// trailing bits that do not make a whole byte are not zero. The encoder writes them as zero;
+    /// ignoring them let several different last characters decode to the same bytes, so a typo
+    /// there slipped past the checksum (Iris's review, 7 October).
     static func decode(_ text: String) -> [UInt8]? {
         var bytes: [UInt8] = []
         var buffer = 0, bits = 0
@@ -35,6 +37,7 @@ enum Crockford32 {
                 bytes.append(UInt8((buffer >> bits) & 0xFF))
             }
         }
+        guard buffer & ((1 << bits) - 1) == 0 else { return nil }
         return bytes
     }
 

@@ -55,10 +55,12 @@ struct HostModePane: View {
         .confirmationDialog("Stop trusting “\(pendingRemoval?.displayName ?? "")”?",
                             isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
                             titleVisibility: .visible, presenting: pendingRemoval) { peer in
-            Button("Remove", role: .destructive) { hostMode.remove(peer.fingerprint) }
+            // Revoked, not forgotten: the record is what keeps its enrolment key from letting it back.
+            Button("Remove", role: .destructive) { hostMode.revoke(peer.fingerprint) }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("That Mac can no longer manage this one, and any connection from it closes now.")
+            Text("That Mac can no longer manage this one, and any connection from it closes now. "
+                 + "Its enrolment key won’t let it back; Allow Again or a new code pairing will.")
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
         // Silent and harmless: a key in the login Keychain, so the fingerprint is there to see.
@@ -110,6 +112,12 @@ struct HostModePane: View {
                 Toggle("", isOn: binding).labelsHidden()
             }
 
+            // The owner's decision (7 October): an admin Mac is the owner of the hosts it manages, so
+            // nothing on a host is held back from it. Said here, where a host is about to pair.
+            Label("An admin Mac you pair with controls this Mac’s containers fully — including their "
+                  + "settings, environment variables and file paths. Pair only with your own admin Mac.",
+                  systemImage: "exclamationmark.shield")
+                .font(.caption).foregroundStyle(Theme.warning).lineLimit(3)
             LabeledContent("Pairing code") { pairingCode }
 
             LabeledContent("Enrolment key") { hostEnrolmentKey }
@@ -196,13 +204,19 @@ struct HostModePane: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(admin.displayName)
-                        Text(admin.method == .enrolmentKey ? "Enrolled by key" : "Paired by code")
+                        Text(admin.isTrusted ? (admin.method == .enrolmentKey ? "Enrolled by key" : "Paired by code")
+                                             : "Removed — its enrolment key no longer lets it in")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    IconActionButton(systemImage: "trash", label: "Remove \(admin.displayName)",
-                                     help: "Stop trusting this admin Mac", destructive: true) {
-                        pendingRemoval = admin
+                    if admin.isTrusted {
+                        IconActionButton(systemImage: "trash", label: "Remove \(admin.displayName)",
+                                         help: "Stop trusting this admin Mac", destructive: true) {
+                            pendingRemoval = admin
+                        }
+                    } else {
+                        Button("Allow Again") { hostMode.allowAgain(admin.fingerprint) }
+                            .controlSize(.small)
                     }
                 }
             }

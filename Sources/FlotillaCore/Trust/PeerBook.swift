@@ -80,6 +80,15 @@ public struct PeerBook: Sendable, Equatable, Codable {
 
     public func isTrusted(_ fingerprint: PeerFingerprint) -> Bool { self[fingerprint]?.isTrusted == true }
 
+    /// Turned away or removed by the owner. Nothing automatic — an enrolment key above all — may
+    /// undo that; only the owner's explicit approval or a code pairing they confirm.
+    public func isBlocked(_ fingerprint: PeerFingerprint) -> Bool {
+        switch self[fingerprint]?.status {
+        case .rejected?, .revoked?: true
+        default: false
+        }
+    }
+
     public var pending: [Peer] { peers.filter { $0.status == .pending } }
     public var approved: [Peer] { peers.filter { $0.status == .approved } }
 
@@ -124,6 +133,17 @@ public struct PeerBook: Sendable, Equatable, Codable {
         set(fingerprint, to: .rejected, from: [.pending], at: now)
     }
 
+    /// A host trusts the admin its enrolment key names — the profile the owner deployed is that
+    /// approval — **unless the owner has since removed or turned that admin away** (Iris's review,
+    /// 7 October: a removed admin re-enrolled itself at once, because the key still named it).
+    /// Returns whether the admin is trusted now.
+    @discardableResult
+    public mutating func admitByEnrolmentKey(_ fingerprint: PeerFingerprint, details: PeerDetails, at now: Date) -> Bool {
+        guard !isBlocked(fingerprint) else { return false }
+        pairConfirmed(fingerprint, role: .admin, details: details, method: .enrolmentKey, at: now)
+        return true
+    }
+
     /// Takes trust away from an approved Mac. The transport closes its sessions (B3).
     @discardableResult
     public mutating func revoke(_ fingerprint: PeerFingerprint, at now: Date) -> Bool {
@@ -132,9 +152,6 @@ public struct PeerBook: Sendable, Equatable, Codable {
 
     /// Pairing by one-time code ends with both owners confirming the words on their screens, so a
     /// Mac paired that way is approved directly — the confirmation is the approval.
-    ///
-    /// A host also uses this for the admin its enrolment key names (`method: .enrolmentKey`): the
-    /// profile the owner deployed is that approval.
     public mutating func pairConfirmed(_ fingerprint: PeerFingerprint, role: Peer.Role, details: PeerDetails,
                                        method: Peer.Method = .pairingCode, at now: Date) {
         if let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) {
