@@ -40,11 +40,12 @@ final class HostModeController {
         /// recognised. Matched, never trusted: the full key is checked when connecting.
         let fingerprintHint: String?
         let macOSVersion: String?
+        let hostname: String?
         var id: String { name }
 
-        /// What tells two Macs with the same name apart: macOS, and the first characters of the key.
+        /// What tells two Macs with the same name apart: hostname, macOS, the key's first characters.
         var distinguishing: String {
-            [macOSVersion.map { "macOS \($0)" },
+            [hostname.map { "\($0).local" }, macOSVersion.map { "macOS \($0)" },
              fingerprintHint.map { "key " + $0.prefix(8).uppercased() }].compactMap { $0 }.joined(separator: " · ")
         }
     }
@@ -173,16 +174,17 @@ final class HostModeController {
             return
         }
         let name = Self.computerName
-        let configuration = HostServer.Configuration(
+        var configuration = HostServer.Configuration(
             identity: identity, port: port, info: ownInfo, details: ownDetails,
             bonjourName: settings[SettingsKeys.bonjourEnabled] ? name : nil)
-        advertisedName = name
+        configuration.hostname = Self.localHostname
+        advertisedName = Self.nameSignature
         // A rename of this Mac restarts the listener, so it advertises — and introduces itself
         // as — the new name (measured 7 October: a renamed VM kept its old name everywhere).
         renameTimer?.invalidate()
         renameTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.isHost, Self.computerName != self.advertisedName else { return }
+                guard let self, self.isHost, Self.nameSignature != self.advertisedName else { return }
                 self.stopListening()
                 self.startListening()
             }
@@ -492,9 +494,10 @@ final class HostModeController {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = results.compactMap { result -> DiscoveredHost? in
                 guard case .service(let name, _, _, _) = result.endpoint else { return nil }
-                var hint: String?, os: String?
-                if case .bonjour(let txt) = result.metadata { hint = txt["fp"]; os = txt["os"] }
-                return DiscoveredHost(name: name, endpoint: result.endpoint, fingerprintHint: hint, macOSVersion: os)
+                var hint: String?, os: String?, host: String?
+                if case .bonjour(let txt) = result.metadata { hint = txt["fp"]; os = txt["os"]; host = txt["host"] }
+                return DiscoveredHost(name: name, endpoint: result.endpoint, fingerprintHint: hint,
+                                      macOSVersion: os, hostname: host)
             }
             Task { @MainActor in self?.discoveredChanged(found) }
         }
@@ -578,6 +581,12 @@ final class HostModeController {
     static var computerName: String {
         (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? Host.current().localizedName ?? "Mac"
     }
+
+    /// The local hostname (`name` in `name.local`), as System Settings ▸ General ▸ Sharing sets it.
+    static var localHostname: String? { SCDynamicStoreCopyLocalHostName(nil) as String? }
+
+    /// Both names, so a change to either re-advertises.
+    static var nameSignature: String { computerName + "\u{1}" + (localHostname ?? "") }
 
     private static func sysctlString(_ name: String) -> String? {
         var size = 0

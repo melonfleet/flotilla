@@ -41,6 +41,8 @@ public final class HostServer: @unchecked Sendable {
         public var mountPolicy: MountPolicy
         /// Advertise over Bonjour under this name, or not at all when `nil`.
         public var bonjourName: String?
+        /// This Mac's local hostname, advertised beside the name.
+        public var hostname: String?
 
         public init(identity: DeviceIdentity, port: UInt16 = WireProtocol.defaultPort, info: WirePeerInfo,
                     details: PeerDetails, limits: WireLimits = .default, mountPolicy: MountPolicy = .denyHostPaths,
@@ -89,7 +91,8 @@ public final class HostServer: @unchecked Sendable {
             // anyone who connects.
             listener.service = NWListener.Service(name: name, type: WireTLS.serviceType, domain: nil,
                                                   txtRecord: WireTLS.txtRecord(for: configuration.identity.fingerprint,
-                                                                               macOSVersion: configuration.details.macOSVersion))
+                                                                               macOSVersion: configuration.details.macOSVersion,
+                                                                               hostname: configuration.hostname))
         }
         listener.stateUpdateHandler = { [weak self] state in self?.listenerChanged(state) }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }

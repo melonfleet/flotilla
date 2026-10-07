@@ -21,9 +21,13 @@ public enum WireTLS {
 
     /// The TXT record a host advertises: protocol version and its fingerprint's hex prefix.
     /// Its macOS version too, so two Macs with the same name can be told apart before pairing.
-    public static func txtRecord(for fingerprint: PeerFingerprint, macOSVersion: String? = nil) -> NWTXTRecord {
+    /// And its local hostname: the name macOS's Sharing pane edits, which people rename expecting it
+    /// to be "the name" (measured 7 October — a VM's hostname was renamed, its computer name not).
+    public static func txtRecord(for fingerprint: PeerFingerprint, macOSVersion: String? = nil,
+                                 hostname: String? = nil) -> NWTXTRecord {
         var entries = ["v": "1", "fp": fingerprintHint(fingerprint)]
         if let macOSVersion { entries["os"] = macOSVersion }
+        if let hostname { entries["host"] = hostname }
         return NWTXTRecord(entries)
     }
 
