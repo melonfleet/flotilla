@@ -261,7 +261,7 @@ and both pairing handshakes as state machines over five new frame types
 a machine in the middle breaks the proofs. Cryptography is injected
 (`PairingCrypto`); B2b supplies CryptoKit, the Keychain identity, the stored
 book and the approval screens. B3 needs a certificate for each Mac's key;
-`swift-certificates` is the proposed dependency, for the owner to decide.
+`swift-certificates` (Apple) is the chosen dependency — the owner, 7 October.
 
 - Define bounded protocol framing, version and capability negotiation, explicit
   request lifecycle and failure semantics.
