@@ -33,7 +33,16 @@ struct AddHostView: View {
                     }
                     Picker("Which Mac", selection: $target) {
                         ForEach(hostMode.discovered) { host in
-                            Label(host.name, systemImage: "desktopcomputer").tag(Target?.some(.discovered(host.name)))
+                            HStack(spacing: 8) {
+                                Label(host.name, systemImage: "desktopcomputer")
+                                if !host.distinguishing.isEmpty {
+                                    Text(host.distinguishing).font(.caption).foregroundStyle(.secondary)
+                                }
+                                if let known = hostMode.knownHost(advertising: host) {
+                                    Text("paired as \(known.displayName)").font(.caption).foregroundStyle(Theme.online)
+                                }
+                            }
+                            .tag(Target?.some(.discovered(host.name)))
                         }
                         Text("By address").tag(Target?.some(.address))
                     }

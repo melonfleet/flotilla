@@ -39,7 +39,14 @@ final class HostModeController {
         /// The fingerprint prefix the host advertises, if it does — how a renamed host is still
         /// recognised. Matched, never trusted: the full key is checked when connecting.
         let fingerprintHint: String?
+        let macOSVersion: String?
         var id: String { name }
+
+        /// What tells two Macs with the same name apart: macOS, and the first characters of the key.
+        var distinguishing: String {
+            [macOSVersion.map { "macOS \($0)" },
+             fingerprintHint.map { "key " + $0.prefix(8).uppercased() }].compactMap { $0 }.joined(separator: " · ")
+        }
     }
 
     let settings: SettingsStore
@@ -387,6 +394,12 @@ final class HostModeController {
 
     // MARK: Paired hosts (admin)
 
+    /// The book's entry for a found Mac, matched by the key it advertises.
+    func knownHost(advertising host: DiscoveredHost) -> Peer? {
+        guard let hint = host.fingerprintHint else { return nil }
+        return hosts.first { WireTLS.fingerprintHint($0.fingerprint) == hint }
+    }
+
     /// The `ContainerHost` for an approved host, or `nil` if it is not approved or cannot be
     /// located. Reused, so a host keeps one connection.
     func remoteHost(for fingerprint: PeerFingerprint) -> RemoteHost? {
@@ -479,9 +492,9 @@ final class HostModeController {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = results.compactMap { result -> DiscoveredHost? in
                 guard case .service(let name, _, _, _) = result.endpoint else { return nil }
-                var hint: String?
-                if case .bonjour(let txt) = result.metadata { hint = txt["fp"] }
-                return DiscoveredHost(name: name, endpoint: result.endpoint, fingerprintHint: hint)
+                var hint: String?, os: String?
+                if case .bonjour(let txt) = result.metadata { hint = txt["fp"]; os = txt["os"] }
+                return DiscoveredHost(name: name, endpoint: result.endpoint, fingerprintHint: hint, macOSVersion: os)
             }
             Task { @MainActor in self?.discoveredChanged(found) }
         }

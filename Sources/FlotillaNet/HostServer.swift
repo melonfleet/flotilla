@@ -88,7 +88,8 @@ public final class HostServer: @unchecked Sendable {
             // is called — a rename changes the name, never the key. Not secret: TLS shows it to
             // anyone who connects.
             listener.service = NWListener.Service(name: name, type: WireTLS.serviceType, domain: nil,
-                                                  txtRecord: WireTLS.txtRecord(for: configuration.identity.fingerprint))
+                                                  txtRecord: WireTLS.txtRecord(for: configuration.identity.fingerprint,
+                                                                               macOSVersion: configuration.details.macOSVersion))
         }
         listener.stateUpdateHandler = { [weak self] state in self?.listenerChanged(state) }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }

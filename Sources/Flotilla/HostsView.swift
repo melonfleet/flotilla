@@ -109,6 +109,9 @@ struct HostsView: View {
     @State private var showingAdd = false
     @State private var tagSheet: TagSheetTarget?
     @State private var pendingForget: HostRow?
+    /// The host being given the owner's own name, and the text so far.
+    @State private var renaming: Peer?
+    @State private var newName = ""
     /// A real `Bool` beside the action, for the reason `RuntimeStatusBand` records: a computed
     /// binding over an optional did not present the dialog at all.
     @State private var confirming: RuntimeLifecycleAction = .stop
@@ -164,6 +167,17 @@ struct HostsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirming.consequence)
+        }
+        .alert("Rename “\(renaming?.details.computerName ?? "")”", isPresented: Binding(
+            get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Rename") {
+                if let peer = renaming { hostMode.rename(peer.fingerprint, to: newName) }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        } message: {
+            Text("A name for this host on this Mac only. Leave it empty to use the name the host gives itself.")
         }
         .confirmationDialog("Remove “\(pendingForget?.name ?? "")”?",
                             isPresented: Binding(get: { pendingForget != nil }, set: { if !$0 { pendingForget = nil } }),
@@ -506,6 +520,11 @@ struct HostsView: View {
         Button("Open") { openHost = row.id }
         Divider()
         if let peer = row.peer {
+            Button("Rename…") {
+                newName = peer.nickname ?? ""
+                renaming = peer
+            }
+            Divider()
             switch peer.status {
             case .pending:
                 Button("Approve") { hostMode.approve(peer.fingerprint) }

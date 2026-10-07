@@ -20,8 +20,11 @@ public enum WireTLS {
     public static let serviceType = "_flotilla._tcp"
 
     /// The TXT record a host advertises: protocol version and its fingerprint's hex prefix.
-    public static func txtRecord(for fingerprint: PeerFingerprint) -> NWTXTRecord {
-        NWTXTRecord(["v": "1", "fp": fingerprintHint(fingerprint)])
+    /// Its macOS version too, so two Macs with the same name can be told apart before pairing.
+    public static func txtRecord(for fingerprint: PeerFingerprint, macOSVersion: String? = nil) -> NWTXTRecord {
+        var entries = ["v": "1", "fp": fingerprintHint(fingerprint)]
+        if let macOSVersion { entries["os"] = macOSVersion }
+        return NWTXTRecord(entries)
     }
 
     /// The first 16 bytes, as hex — enough to tell hosts apart; identity is still checked on connect.
