@@ -28,6 +28,8 @@ struct HostRow: Identifiable, Hashable {
     /// Set when the version differs from This Mac's enough to say so (PLAN.md Phase C).
     var containerSkew: VersionSkew? = nil
     var appSkew: VersionSkew? = nil
+    /// Set for a host named in an imported file and not paired yet (Q34) — not a peer.
+    var imported: HostModeController.ImportedHost? = nil
 
     static let thisMacID = "this-mac"
 
@@ -125,7 +127,14 @@ extension AppModel {
                            containerSkew: containerSkew(.peer(peer.fingerprint)),
                            appSkew: appSkew(.peer(peer.fingerprint)))
         }
-        return [thisMac] + hosts
+        // Imported claims, until each is paired (Q34).
+        let imported = hostMode.importedHosts.map { host in
+            HostRow(id: host.fingerprint.hex, name: host.name, isThisMac: false, peer: nil,
+                    status: "Imported — not paired", connected: false,
+                    containersRunning: nil, containersTotal: nil, machines: nil,
+                    macOS: nil, containerVersion: nil, modelIdentifier: nil, imported: host)
+        }
+        return [thisMac] + hosts + imported
     }
 }
 
@@ -147,6 +156,8 @@ struct HostsView: View {
     @State private var showingAdd = false
     @State private var tagSheet: TagSheetTarget?
     @State private var pendingForget: HostRow?
+    /// An imported host being paired: Add Host, holding the key it must present.
+    @State private var pairing: HostModeController.ImportedHost?
     /// The host being given the owner's own name, and the text so far.
     @State private var renaming: Peer?
     @State private var newName = ""
@@ -160,8 +171,8 @@ struct HostsView: View {
 
     var body: some View {
         Group {
-            if showingAdd {
-                AddHostView(model: model) { showingAdd = false }
+            if showingAdd || pairing != nil {
+                AddHostView(model: model, importing: pairing) { showingAdd = false; pairing = nil }
             } else if let id = openHost {
                 hostPage(id)
             } else {
@@ -222,11 +233,14 @@ struct HostsView: View {
                             titleVisibility: .visible, presenting: pendingForget) { row in
             Button("Remove", role: .destructive) {
                 if let peer = row.peer { hostMode.remove(peer.fingerprint) }
+                if let imported = row.imported { hostMode.removeImported(imported.fingerprint) }
                 selection.remove(row.id)
             }
             Button("Cancel", role: .cancel) {}
         } message: { row in
-            Text(row.peer?.isTrusted == true
+            Text(row.imported != nil
+                 ? "It is forgotten. Import the file again to bring it back."
+                 : row.peer?.isTrusted == true
                  ? "This Mac stops managing it. To manage it again, pair it again."
                  : "It is forgotten, and can ask to join again.")
         }
@@ -477,7 +491,7 @@ struct HostsView: View {
             .width(min: 28, ideal: 30, max: 34)
 
             TableColumn("Name", value: \.nameSortKey) { row in
-                Button(row.name) { openHost = row.id }
+                Button(row.name) { open(row) }
                     .buttonStyle(.link)
                     .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
                     .lineLimit(1)
@@ -517,8 +531,9 @@ struct HostsView: View {
                 menu(for: row)
             }
         } primaryAction: { ids in
-            guard ids.count == 1, let id = ids.first else { return }
-            openHost = id
+            guard ids.count == 1, let id = ids.first,
+                  let row = model.hostRows.first(where: { $0.id == id }) else { return }
+            open(row)
         }
     }
 
@@ -554,7 +569,7 @@ struct HostsView: View {
                              ("container", row.containerVersion),
                              ("Flotilla", row.appVersion)],
                     tags: model.tags.tags(on: .host, row.id),
-                    onOpen: { openHost = row.id }
+                    onOpen: { open(row) }
                 ) {
                     rowActions(for: row)
                 }
@@ -594,9 +609,17 @@ struct HostsView: View {
     /// trust — approve, turn away, remove access.
     @ViewBuilder
     private func menu(for row: HostRow) -> some View {
-        Button("Open") { openHost = row.id }
+        if let imported = row.imported {
+            Button("Pair\u{2026}") { pairing = imported }
+                .disabled(!hostMode.isAdmin)
+        } else {
+            Button("Open") { open(row) }
+        }
         Divider()
-        if let peer = row.peer {
+        if row.imported != nil {
+            // Nothing to manage until it is paired: no trust, no runtime.
+            EmptyView()
+        } else if let peer = row.peer {
             Button("Rename…") {
                 newName = peer.nickname ?? ""
                 renaming = peer
@@ -635,11 +658,17 @@ struct HostsView: View {
                   ("Flotilla version", row.appVersion),
                   ("Model", row.modelIdentifier),
                   ("Serial number", row.peer?.details.serialNumber),
-                  ("Fingerprint", row.peer?.fingerprint.hex)])
+                  ("Fingerprint", row.peer?.fingerprint.hex ?? row.imported?.fingerprint.hex)])
         Divider()
         Button("Remove…", role: .destructive) { pendingForget = row }
             .disabled(row.isThisMac)
             .help(row.isThisMac ? Self.removeHelp : "")
+    }
+
+    /// A paired host or This Mac opens its page; an imported one goes straight to pairing, which
+    /// is the only thing there is to do with it.
+    private func open(_ row: HostRow) {
+        if let imported = row.imported { pairing = imported } else { openHost = row.id }
     }
 
     private func ask(_ action: RuntimeLifecycleAction) {

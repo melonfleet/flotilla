@@ -39,6 +39,7 @@ extension AppModel {
         existing.machines = Set(machines.map(\.id))
         existing.clusters = Set(clusters.map(\.name))
         existing.dnsDomains = Set(dnsDomains.filter(\.resolverInstalled).map(\.name))
+        existing.hosts = hostMode.knownFingerprints
         return existing
     }
 
@@ -254,6 +255,14 @@ extension AppModel {
                 await refreshDNS()
                 recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .runtime,
                                               subject: source, action: "Configuration imported"))
+                // 9. Hosts — rows to pair, never trust (Q34). Nothing connects to them here.
+                if !file.hosts.isEmpty {
+                    let added = hostMode.importHosts(file.hosts)
+                    if added > 0 {
+                        notes.append("\(added) host\(added == 1 ? " is" : "s are") in Hosts, waiting to be paired.")
+                    }
+                }
+
                 return notes.isEmpty ? "Built. Nothing was started." : "Built. " + notes.joined(separator: " ")
             })
 
@@ -300,7 +309,7 @@ extension AppModel {
             }.value
         case .cluster:
             try await Task.detached { [cli] in try cli.deleteCluster(name) }.value
-        case .dnsDomain:
+        case .dnsDomain, .host:
             break
         }
         await refresh()

@@ -491,7 +491,12 @@ Progress (7 October):
   New Volume and New Network say so before acting on such a host, because the Allowlist is
   audited against This Mac's `container` and options change at minor releases. A wire-protocol
   mismatch was already refused at the handshake.
-- Next: safe host and settings export.
+- **Host and settings export — built (DECISIONS Q34).** Hosts are a checkbox in the `.flotilla`
+  export, written as name, where and expected fingerprint — never keys or trust; on import each
+  becomes an unpaired row whose pairing is refused if a different key answers. Flotilla's settings
+  export and import from Settings ▸ Advanced as their own file. Live-tested against a spoofed host.
+- **Phase C is complete.** Known gaps carried forward: remote Live log streaming and image
+  transfer need wire streams (Phase D); per-host subnets and pushed definitions are Phase D.
 
 ### Phase D — Pushed infrastructure
 

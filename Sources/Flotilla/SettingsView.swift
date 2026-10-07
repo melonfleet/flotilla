@@ -210,6 +210,8 @@ struct SettingsView: View {
 
     private var store: SettingsStore { model.settingsStore }
     @State private var pendingReset: ResetAction?
+    /// What the last settings import did, for its report — `nil` when none is showing.
+    @State private var importReport: String?
     @State private var showingAbout = false
 
     /// Which pane is showing.
@@ -463,7 +465,91 @@ struct SettingsView: View {
             DNSHelperSettingsSection()
             logsSection
             diagnosticsSection
+            settingsFileSection
             resetSection
+    }
+
+    // MARK: Settings file (DECISIONS.md Q34)
+
+    /// Export and import of Flotilla's own settings — a file of its own, not part of a `.flotilla`
+    /// configuration (Q29 keeps those to what the runtime builds). Only what was changed from the
+    /// defaults is written, and never a sensitive key; an import applies what this version knows
+    /// and says what it did not.
+    private var settingsFileSection: some View {
+        SwiftUI.Section("Settings file") {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Copy these settings to another Mac")
+                    Text("Writes only what you have changed from the defaults. Nothing secret and no "
+                         + "host trust is ever included.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button("Export Settings\u{2026}", action: exportSettings)
+                Button("Import Settings\u{2026}", action: importSettings)
+            }
+            .padding(.vertical, 2)
+        }
+        .alert("Settings imported", isPresented: Binding(get: { importReport != nil },
+                                                          set: { if !$0 { importReport = nil } })) {
+            Button("OK") { importReport = nil }
+        } message: {
+            Text(importReport ?? "")
+        }
+    }
+
+    private func exportSettings() {
+        let panel = NSSavePanel()
+        let stamp = Date().formatted(.iso8601.year().month().day())
+        panel.nameFieldStringValue = "flotilla-settings-\(stamp).json"
+        panel.allowedContentTypes = [.json]
+        panel.isExtensionHidden = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try store.exportJSON(.userValues).write(to: url, options: .atomic)
+        } catch {
+            // Said, not swallowed: a save that silently did nothing looks like one that worked.
+            importReport = "Couldn\u{2019}t save the settings: \(error.localizedDescription)"
+        }
+    }
+
+    private func importSettings() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a settings file exported from Flotilla"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            importReport = Self.describe(try store.importJSON(Data(contentsOf: url)))
+        } catch {
+            importReport = "That file isn\u{2019}t a Flotilla settings export: \(error.localizedDescription)"
+        }
+    }
+
+    /// The import report in sentences: what changed, then each reason something did not.
+    static func describe(_ report: SettingsImportReport) -> String {
+        var lines = [report.applied.isEmpty
+            ? "Nothing was changed."
+            : "Applied \(report.applied.count) setting\(report.applied.count == 1 ? "" : "s")."]
+        if !report.skippedLocked.isEmpty {
+            lines.append("Kept because your organisation sets them: " + report.skippedLocked.joined(separator: ", ") + ".")
+        }
+        if !report.unknown.isEmpty {
+            lines.append("Not known to this version of Flotilla: " + report.unknown.joined(separator: ", ") + ".")
+        }
+        if !(report.typeMismatched + report.rejectedValues).isEmpty {
+            lines.append("Values this version can\u{2019}t use: "
+                         + (report.typeMismatched + report.rejectedValues).joined(separator: ", ") + ".")
+        }
+        if !report.skippedSensitive.isEmpty {
+            lines.append("Refused because they are never imported from a file: "
+                         + report.skippedSensitive.joined(separator: ", ") + ".")
+        }
+        if let version = report.schemaVersionMismatch {
+            lines.append("The file is from settings version \(version); this Flotilla uses \(SettingsSchema.version).")
+        }
+        return lines.joined(separator: "\n\n")
     }
 
     // MARK: Resources

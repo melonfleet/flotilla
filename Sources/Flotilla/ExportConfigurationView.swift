@@ -80,6 +80,10 @@ struct ExportConfigurationView: View {
              detail: { id in inputs.machines.first { $0.id == id }?.image?.reference }, set: \.machines)
         kind("Clusters", ids: Array(Set(inputs.clusters.map(\.name))).sorted(), titles: [:],
              detail: { _ in "on the default node image" }, set: \.clusters)
+        // Who and where, and the key each must present — never a key and never trust (Q34).
+        kind("Hosts", ids: inputs.hosts.map(\.fingerprint.hex),
+             titles: Dictionary(uniqueKeysWithValues: inputs.hosts.map { ($0.fingerprint.hex, $0.displayName) }),
+             detail: { _ in "paired again on the other Mac" }, set: \.hosts)
 
         VStack(alignment: .leading, spacing: 8) {
             FormSectionHeader(title: "Also")
@@ -156,6 +160,7 @@ struct ExportConfigurationView: View {
         if let tags = file.tags { add(tags.definitions.count, "tag") }
         if let registries = file.registries { add(registries.entries.count, "registry", "registries") }
         if let dns = file.dns { add(dns.domains.count, "DNS domain") }
+        add(file.hosts.count, "host")
         return lines.isEmpty ? "Nothing yet — tick something." : lines.joined(separator: "\n")
     }
 
@@ -191,6 +196,7 @@ struct ExportConfigurationView: View {
         all.tags = true
         all.registries = true
         all.dns = !gathered.dnsDomains.isEmpty
+        all.hosts = Set(gathered.hosts.map(\.fingerprint.hex))
         return all
     }
 

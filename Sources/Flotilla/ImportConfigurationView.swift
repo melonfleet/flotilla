@@ -92,7 +92,13 @@ struct ImportConfigurationView: View {
             let ofKind = items.filter { $0.kind == kind }
             if !ofKind.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    FormSectionHeader(title: kind.title + (ofKind.count == 1 ? "" : "s"))
+                    // Hosts carry their own explanation in the header: they arrive as rows to pair.
+                    FormSectionHeader(title: kind.title + (ofKind.count == 1 ? "" : "s"),
+                                      note: kind == .host
+                                          ? "They arrive unpaired: the file holds no trust and no keys. Pair each "
+                                              + "from Hosts — pairing is refused if a Mac presents a different key "
+                                              + "from the one in this file."
+                                          : nil)
                     ForEach(ofKind) { item in itemRow(item, file: file) }
                 }
             }
@@ -150,7 +156,9 @@ struct ImportConfigurationView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(item.name).fontWeight(.medium)
-                Text(item.clashes ? "already on this Mac" : "new")
+                Text(item.kind == .host
+                     ? (item.clashes ? "already known here — left as it is" : "added to Hosts, to pair")
+                     : (item.clashes ? "already on this Mac" : "new"))
                     .font(.caption)
                     .foregroundStyle(item.clashes ? AnyShapeStyle(Theme.warning) : AnyShapeStyle(.secondary))
                 Spacer()
@@ -243,10 +251,16 @@ struct ImportConfigurationView: View {
             Label("Will build", systemImage: "hammer")
                 .font(.caption).foregroundStyle(Theme.info)
             if let resolved {
-                let lines = [("group", resolved.groups.count), ("container", resolved.containers.count),
-                             ("network", resolved.networks.count), ("volume", resolved.volumes.count),
-                             ("machine", resolved.machines.count), ("cluster", resolved.clusters.count)]
-                    .filter { $0.1 > 0 }.map { "\($0.1) \($0.0)\($0.1 == 1 ? "" : "s")" }
+                let counts: [(String, String, Int)] = [
+                    ("group", "groups", resolved.groups.count),
+                    ("container", "containers", resolved.containers.count),
+                    ("network", "networks", resolved.networks.count),
+                    ("volume", "volumes", resolved.volumes.count),
+                    ("machine", "machines", resolved.machines.count),
+                    ("cluster", "clusters", resolved.clusters.count),
+                    ("host to pair", "hosts to pair", resolved.hosts.count),
+                ]
+                let lines: [String] = counts.filter { $0.2 > 0 }.map { "\($0.2) \($0.2 == 1 ? $0.0 : $0.1)" }
                 Text(lines.isEmpty ? "Nothing — everything is skipped." : lines.joined(separator: "\n"))
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
             }

@@ -50,6 +50,7 @@ extension AppModel {
         inputs.defaultRegistry = defaultRegistry
         inputs.dnsDomains = dnsDomains
         inputs.containerDNSDomain = containerDNSDomain
+        inputs.hosts = hostMode.trustedHosts
         return inputs
     }
 

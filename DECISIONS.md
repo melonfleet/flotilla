@@ -1778,3 +1778,30 @@ limits; the enrolment key rejects non-canonical last characters. Not done, and n
 command still runs to its deadline (it now keeps its slot, so this costs time, not capacity) —
 real termination needs a cancellable `ContainerHost.run`.
 
+
+## Q34 — Exporting hosts and settings (settled 2026-10-07)
+
+The owner's answers, 7 October, to PLAN.md Phase C's "safe host and settings export":
+
+- **Hosts are a checkbox in `.flotilla`** — File ▸ Export Configuration's checklist gains Hosts;
+  the same file, the same import review. Each host is written as its name, how to reach it (the
+  Bonjour name it advertises, or address and port) and the fingerprint of the key it should
+  present. **Never a key and never trust**: no status, no certificate, nothing that lets the
+  importing Mac talk to the host unpaired. Only trusted hosts are offered. The format stays
+  version 2 with an optional `hosts` list, so files without hosts still open in older builds; an
+  older build refuses one with hosts as an unknown field, which is the honest failure.
+- **An imported host is a row to pair** — "Imported — not paired" in Hosts, held outside the peer
+  book (the book is trust; an imported claim is none). Pair… opens Add Host with the expected key;
+  the key is checked as soon as the encrypted connection is up and **before any pairing message**,
+  so a different Mac at that address is told nothing and asked nothing. A host already known here
+  — in the book in any state, or imported before — is skipped without asking, as an existing DNS
+  domain is. Once a host is in the book, by any route, its imported row goes.
+- **Flotilla's settings get their own file** — Settings ▸ Advanced ▸ Export Settings… / Import
+  Settings…, the `SettingsExport` format the core already had: only what was changed from the
+  defaults, never a sensitive key, and an import that applies what this version knows and reports
+  the rest (locked by a profile, unknown, wrong type, refused as sensitive). **Q29 stands**: a
+  `.flotilla` file still holds no Flotilla settings.
+
+Live-tested: a hand-made file naming a "Spoof test" host at the mini's Bonjour name with a made-up
+fingerprint imported as an unpaired row; Pair was refused with "presented a different key" before
+any pairing message, and the row was removed.

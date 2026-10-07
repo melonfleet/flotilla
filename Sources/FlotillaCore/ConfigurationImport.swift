@@ -10,7 +10,7 @@ import Foundation
 public enum ConfigurationImport {
 
     public enum Kind: String, CaseIterable, Sendable, Hashable {
-        case network, volume, machine, cluster, container, group, dnsDomain
+        case network, volume, machine, cluster, container, group, dnsDomain, host
 
         public var title: String {
             switch self {
@@ -21,6 +21,7 @@ public enum ConfigurationImport {
             case .container: "Container"
             case .group: "Group"
             case .dnsDomain: "DNS domain"
+            case .host: "Host"
             }
         }
     }
@@ -38,12 +39,15 @@ public enum ConfigurationImport {
         public let name: String
         /// Something with this name is already on this Mac.
         public let clashes: Bool
-        public var id: String { "\(kind.rawValue)/\(name)" }
+        /// What identifies it when the name does not: a host's fingerprint, since two Macs can
+        /// share a name.
+        public var key: String? = nil
+        public var id: String { "\(kind.rawValue)/\(key ?? name)" }
 
         /// Whether "replace" is offered. A DNS domain that exists is the same domain — there is
-        /// nothing to replace it with.
-        public var canReplace: Bool { kind != .dnsDomain }
-        public var canRename: Bool { kind != .dnsDomain }
+        /// nothing to replace it with — and a host already in the book is the same Mac.
+        public var canReplace: Bool { kind != .dnsDomain && kind != .host }
+        public var canRename: Bool { kind != .dnsDomain && kind != .host }
     }
 
     /// What this Mac already has.
@@ -56,6 +60,8 @@ public enum ConfigurationImport {
         public var machines: Set<String> = []
         public var clusters: Set<String> = []
         public var dnsDomains: Set<String> = []
+        /// Fingerprints (hex) of every host this Mac knows, in any state, or has imported already.
+        public var hosts: Set<String> = []
         public init() {}
 
         func names(_ kind: Kind) -> Set<String> {
@@ -67,6 +73,7 @@ public enum ConfigurationImport {
             case .container: containers
             case .group: groups
             case .dnsDomain: dnsDomains
+            case .host: hosts
             }
         }
 
@@ -95,6 +102,11 @@ public enum ConfigurationImport {
             add(.group, group.name, clashes: existing.has(.group, group.name) || memberClash)
         }
         file.dns?.domains.forEach { add(.dnsDomain, $0.name) }
+        for host in file.hosts {
+            items.append(Item(kind: .host, name: host.name,
+                              clashes: existing.hosts.contains(host.fingerprint.lowercased()),
+                              key: host.fingerprint.lowercased()))
+        }
         return items
     }
 
@@ -104,7 +116,7 @@ public enum ConfigurationImport {
         var resolutions: [String: Resolution] = [:]
         for item in items {
             if !item.clashes { resolutions[item.id] = .create }
-            else if item.kind == .dnsDomain { resolutions[item.id] = .skip }
+            else if item.kind == .dnsDomain || item.kind == .host { resolutions[item.id] = .skip }
         }
         return resolutions
     }
@@ -255,6 +267,7 @@ public enum ConfigurationImport {
             dns.domains = dns.domains.filter { kept(.dnsDomain, $0.name) }
             out.dns = dns
         }
+        out.hosts = file.hosts.filter { kept(.host, $0.fingerprint.lowercased()) }
         return out
     }
 

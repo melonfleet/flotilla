@@ -27,6 +27,8 @@ public enum ConfigurationExport {
         public var tags = false
         public var registries = false
         public var dns = false
+        /// Paired hosts, by fingerprint (hex).
+        public var hosts: Set<String> = []
         public init() {}
     }
 
@@ -45,6 +47,8 @@ public enum ConfigurationExport {
         public var defaultRegistry: String?
         public var dnsDomains: [LocalDNSDomain] = []
         public var containerDNSDomain: String?
+        /// The admin's host book. Only trusted hosts are written.
+        public var hosts: [Peer] = []
         public init() {}
     }
 
@@ -186,9 +190,28 @@ public enum ConfigurationExport {
                           containerDomain: inputs.containerDNSDomain)
         }
 
+        // Hosts as claims to verify (Q34): who and where, and the key to expect — never a key, and
+        // never trust. The other admin Mac pairs each one again.
+        let hosts = inputs.hosts
+            .filter { $0.role == .host && $0.isTrusted && selection.hosts.contains($0.fingerprint.hex) }
+            .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+            .map { peer -> HostSpec in
+                var spec = HostSpec(name: String(peer.displayName.prefix(64)), fingerprint: peer.fingerprint.hex)
+                switch peer.endpoint {
+                case .bonjour(let name)?: spec.bonjourName = name
+                case .address(let host, let port)?: spec.address = host; spec.port = Int(port)
+                case nil: spec.bonjourName = peer.details.computerName
+                }
+                return spec
+            }
+        if !hosts.isEmpty {
+            omissions.append(Omission(subject: "hosts",
+                                      reason: "their trust and keys — each is paired again on the other Mac, and must present the same key"))
+        }
+
         let file = ConfigurationFile(networks: networks, volumes: volumes, machines: machines,
                                      clusters: clusters, containers: containers, groups: groups,
-                                     tags: tags, registries: registries, dns: dns)
+                                     tags: tags, registries: registries, dns: dns, hosts: hosts)
         return Result(file: file, omissions: Array(Set(omissions)).sorted { ($0.subject, $0.reason) < ($1.subject, $1.reason) })
     }
 

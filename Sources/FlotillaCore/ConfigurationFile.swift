@@ -189,6 +189,29 @@ public struct DNSSpec: Sendable, Equatable, Codable {
     }
 }
 
+/// A paired host, written as **a claim to verify** (DECISIONS Q34): its name, how to reach it, and
+/// the fingerprint of the key it should present. Never a key, and never trust — on the importing
+/// Mac it is a row to pair, and pairing is refused if the host presents a different key.
+public struct HostSpec: Sendable, Equatable, Codable {
+    public var name: String
+    /// The Bonjour name it advertises, when it was found that way.
+    public var bonjourName: String?
+    /// Its address and port, when it was added by address.
+    public var address: String?
+    public var port: Int?
+    /// SHA-256 of its public key, as 64 hex characters.
+    public var fingerprint: String
+
+    public init(name: String, bonjourName: String? = nil, address: String? = nil, port: Int? = nil,
+                fingerprint: String) {
+        self.name = name
+        self.bonjourName = bonjourName
+        self.address = address
+        self.port = port
+        self.fingerprint = fingerprint
+    }
+}
+
 public struct ConfigurationFile: Sendable, Equatable {
     public static let currentVersion = 2
     public static let fileExtension = "flotilla"
@@ -202,10 +225,15 @@ public struct ConfigurationFile: Sendable, Equatable {
     public var tags: TagsSpec?
     public var registries: RegistriesSpec?
     public var dns: DNSSpec?
+    /// Paired hosts, as claims to verify (Q34). Optional in the file, so a file without them is
+    /// still read by a Flotilla that predates them.
+    public var hosts: [HostSpec]
 
     public init(networks: [NetworkSpec] = [], volumes: [VolumeSpec] = [], machines: [MachineSpec] = [],
                 clusters: [ClusterSpec] = [], containers: [ServiceSpec] = [], groups: [GroupSpec] = [],
-                tags: TagsSpec? = nil, registries: RegistriesSpec? = nil, dns: DNSSpec? = nil) {
+                tags: TagsSpec? = nil, registries: RegistriesSpec? = nil, dns: DNSSpec? = nil,
+                hosts: [HostSpec] = []) {
+        self.hosts = hosts
         self.networks = networks
         self.volumes = volumes
         self.machines = machines
@@ -220,6 +248,7 @@ public struct ConfigurationFile: Sendable, Equatable {
     public var isEmpty: Bool {
         networks.isEmpty && volumes.isEmpty && machines.isEmpty && clusters.isEmpty
             && containers.isEmpty && groups.isEmpty && tags == nil && registries == nil && dns == nil
+            && hosts.isEmpty
     }
 }
 
@@ -317,7 +346,7 @@ extension ConfigurationFile {
     private struct Envelope: Encodable {
         let file: ConfigurationFile
         enum CodingKeys: String, CodingKey {
-            case version, networks, volumes, machines, clusters, containers, groups, tags, registries, dns
+            case version, networks, volumes, machines, clusters, containers, groups, tags, registries, dns, hosts
         }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
@@ -331,6 +360,7 @@ extension ConfigurationFile {
             try c.encodeIfPresent(file.tags, forKey: .tags)
             try c.encodeIfPresent(file.registries, forKey: .registries)
             try c.encodeIfPresent(file.dns, forKey: .dns)
+            if !file.hosts.isEmpty { try c.encode(file.hosts, forKey: .hosts) }
         }
     }
 }
@@ -395,7 +425,7 @@ extension ConfigurationFile {
     private struct Decoded: Decodable {
         let file: ConfigurationFile
         enum CodingKeys: String, CodingKey {
-            case networks, volumes, machines, clusters, containers, groups, tags, registries, dns
+            case networks, volumes, machines, clusters, containers, groups, tags, registries, dns, hosts
         }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -408,7 +438,8 @@ extension ConfigurationFile {
                 groups: try c.decodeIfPresent([GroupSpec].self, forKey: .groups) ?? [],
                 tags: try c.decodeIfPresent(TagsSpec.self, forKey: .tags),
                 registries: try c.decodeIfPresent(RegistriesSpec.self, forKey: .registries),
-                dns: try c.decodeIfPresent(DNSSpec.self, forKey: .dns))
+                dns: try c.decodeIfPresent(DNSSpec.self, forKey: .dns),
+                hosts: try c.decodeIfPresent([HostSpec].self, forKey: .hosts) ?? [])
         }
     }
 
@@ -468,6 +499,7 @@ extension ConfigurationFile {
                                    "defaultRegistry": .leaf]),
             "dns": .object(["domains": .array(.object(leaves(["name", "localhost"]))),
                             "containerDomain": .leaf]),
+            "hosts": .array(.object(leaves(["name", "bonjourName", "address", "port", "fingerprint"]))),
         ])
     }
 }
@@ -634,6 +666,35 @@ extension ConfigurationFile {
                 if let ip = domain.localhost { try shaped(ip, .ipv4Address, "dns.domains[\(i)]", "localhost") }
             }
             if let domain = dns.containerDomain { try shaped(domain, .dnsDomain, "dns", "containerDomain") }
+        }
+
+        // Hosts are claims, but still checked: a fingerprint that is not one, a name a person
+        // could not have given, or an address with a path or spaces in it is refused here.
+        try count(hosts.count, "hosts", 64)
+        try unique(hosts.map(\.fingerprint), "hosts")
+        for (i, host) in hosts.enumerated() {
+            let context = "hosts[\(i)]"
+            let printable: (String) -> Bool = { text in
+                !text.isEmpty && !text.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+            }
+            try check(printable(host.name) && host.name.count <= 64, context, "name", host.name,
+                      "Expected 1 to 64 printable characters.")
+            try check(PeerFingerprint(hex: host.fingerprint) != nil, context, "fingerprint", host.fingerprint,
+                      "Expected 64 hexadecimal characters.")
+            if let bonjour = host.bonjourName {
+                try check(printable(bonjour) && bonjour.utf8.count <= 63, context, "bonjourName", bonjour,
+                          "Expected 1 to 63 bytes of printable text.")
+            }
+            if let address = host.address {
+                let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-:[]%"))
+                try check(!address.isEmpty && address.count <= 253
+                          && address.unicodeScalars.allSatisfy { allowed.contains($0) },
+                          context, "address", address, "Expected a host name or IP address.")
+                try check((1...65535).contains(host.port ?? 0), context, "port", "\(host.port ?? 0)",
+                          "Expected a port from 1 to 65535.")
+            }
+            try check(host.bonjourName != nil || host.address != nil, context, "address", "",
+                      "Expected a Bonjour name or an address.")
         }
     }
 }

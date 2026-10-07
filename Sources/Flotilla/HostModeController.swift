@@ -109,9 +109,65 @@ final class HostModeController {
     @ObservationIgnored private var advertisedName: String?
     @ObservationIgnored private var renameTimer: Timer?
 
+    // MARK: Imported hosts (DECISIONS Q34)
+
+    /// A host named in an imported `.flotilla` file and not yet paired: who, where, and the key it
+    /// must present. **Not in the peer book** — the book is trust, and an imported claim is none;
+    /// it becomes a peer only by being paired, and pairing it is refused if the key differs.
+    struct ImportedHost: Codable, Hashable, Identifiable {
+        let name: String
+        let endpoint: PeerEndpoint
+        let fingerprint: PeerFingerprint
+        var id: String { fingerprint.hex }
+    }
+
+    /// Imported hosts the book does not hold yet, in the order they were imported.
+    private(set) var importedHosts: [ImportedHost] = []
+    @ObservationIgnored private let importedDefaults: UserDefaults
+    static let importedHostsKey = "importedHosts"
+
+    /// Adds a file's hosts as rows to pair. Returns how many were new — one already in the book or
+    /// already imported is left as it is.
+    @discardableResult
+    func importHosts(_ specs: [HostSpec]) -> Int {
+        var added = 0
+        for spec in specs {
+            guard let fingerprint = PeerFingerprint(hex: spec.fingerprint), book[fingerprint] == nil,
+                  !importedHosts.contains(where: { $0.fingerprint == fingerprint }) else { continue }
+            let endpoint: PeerEndpoint
+            if let address = spec.address, let port = spec.port.flatMap(UInt16.init(exactly:)) {
+                endpoint = .address(host: address, port: port)
+            } else if let bonjour = spec.bonjourName {
+                endpoint = .bonjour(name: bonjour)
+            } else { continue }
+            importedHosts.append(ImportedHost(name: spec.name, endpoint: endpoint, fingerprint: fingerprint))
+            record(spec.name, "Imported — not paired yet")
+            added += 1
+        }
+        saveImported()
+        return added
+    }
+
+    func removeImported(_ fingerprint: PeerFingerprint) {
+        importedHosts.removeAll { $0.fingerprint == fingerprint }
+        saveImported()
+    }
+
+    /// Every fingerprint this Mac knows, in the book or imported — the import review's clash check.
+    var knownFingerprints: Set<String> {
+        Set(book.peers.map(\.fingerprint.hex) + importedHosts.map(\.fingerprint.hex))
+    }
+
+    private func saveImported() {
+        importedDefaults.set(try? PropertyListEncoder().encode(importedHosts), forKey: Self.importedHostsKey)
+    }
+
     init(settings: SettingsStore, containerHost: ContainerHost,
          bookStore: PeerBookStore = PeerBookStore(), keyStore: EnrolmentKeyStore = .standard,
-         identityStore: DeviceIdentityStore = .standard) {
+         identityStore: DeviceIdentityStore = .standard, importedDefaults: UserDefaults = .standard) {
+        self.importedDefaults = importedDefaults
+        importedHosts = importedDefaults.data(forKey: Self.importedHostsKey)
+            .flatMap { try? PropertyListDecoder().decode([ImportedHost].self, from: $0) } ?? []
         self.settings = settings
         self.containerHost = containerHost
         self.bookStore = bookStore
@@ -339,6 +395,11 @@ final class HostModeController {
 
     private func save() {
         try? bookStore.save(book)
+        // A host now in the book is no longer an imported claim, whichever way it got there.
+        if importedHosts.contains(where: { book[$0.fingerprint] != nil }) {
+            importedHosts.removeAll { book[$0.fingerprint] != nil }
+            saveImported()
+        }
         refreshBridge()
     }
 
@@ -352,7 +413,11 @@ final class HostModeController {
     }
 
     /// Connects to a host and pairs with it — by the code it shows, or by this admin's enrolment key.
-    func addHost(at endpoint: NWEndpoint, code: String?) async -> AddHostOutcome {
+    ///
+    /// `expecting` is an imported host's fingerprint (Q34): the key it must present. Checked as soon
+    /// as the encrypted connection is up and **before** any pairing message, so a different Mac at
+    /// that address learns nothing and is asked nothing.
+    func addHost(at endpoint: NWEndpoint, code: String?, expecting: PeerFingerprint? = nil) async -> AddHostOutcome {
         guard let identity = ensureIdentity() else { return .failed(identityProblem ?? "No identity.") }
         let connection = AdminConnection(endpoint: endpoint, identity: identity, info: ownInfo)
         defer { connection.close() }
@@ -361,6 +426,10 @@ final class HostModeController {
             guard let hostPrint = connection.hostFingerprint else { return .failed("The host presented no identity.") }
             // Pairing a Mac with itself would put both halves of the words prompt on one screen.
             guard hostPrint != identity.fingerprint else { return .failed("That address is this Mac.") }
+            if let expecting, hostPrint != expecting {
+                return .failed("The Mac at that address presented a different key from the one in the imported file. "
+                               + "It may be another Mac, or this one was reinstalled. Not paired — check with its owner.")
+            }
             if welcome.trusted, book.isTrusted(hostPrint) { return .alreadyPaired(welcome.peer.name) }
             let method: PairingAdminSession.Method
             if let code, !code.trimmingCharacters(in: .whitespaces).isEmpty {

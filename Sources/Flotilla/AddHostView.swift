@@ -7,9 +7,12 @@ import FlotillaCore
 /// with both Macs showing the same four words (`PairingWordsSheet`).
 struct AddHostView: View {
     let model: AppModel
+    /// Set when pairing a host from an imported file (Q34): where it should be and the key it must
+    /// present. Pairing stops before it starts if a different key answers.
+    var importing: HostModeController.ImportedHost? = nil
     let dismiss: () -> Void
 
-    private enum Target: Hashable { case discovered(String), address }
+    private enum Target: Hashable { case discovered(String), address, imported }
 
     @State private var target: Target?
     @State private var address = ""
@@ -22,9 +25,22 @@ struct AddHostView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            FormHeader(title: "Add Host", systemImage: "plus", hasUnsavedChanges: false, onBack: dismiss)
+            FormHeader(title: importing.map { "Pair \($0.name)" } ?? "Add Host", systemImage: "plus",
+                       hasUnsavedChanges: false, onBack: dismiss)
             Divider()
             Form {
+                if let importing {
+                    SwiftUI.Section("From an imported file") {
+                        LabeledContent("Mac", value: importing.name)
+                        LabeledContent("Where", value: Self.describe(importing.endpoint))
+                        LabeledContent("Must present key") {
+                            Text(String(importing.fingerprint.hex.prefix(16)) + "…")
+                                .font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                        }
+                        Text("If the Mac that answers presents a different key, nothing is sent to it and it is not paired.")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                    }
+                } else {
                 SwiftUI.Section("Which Mac") {
                     if hostMode.discovered.isEmpty {
                         Text("No host found on this network yet. A Mac appears here once Flotilla on it is set to Host in Settings ▸ Host Mode — or type its address below.")
@@ -61,6 +77,7 @@ struct AddHostView: View {
                         }
                     }
                 }
+                }
 
                 SwiftUI.Section("Pairing") {
                     TextField("Code", text: $code, prompt: Text("ABCD-EFGH"))
@@ -84,7 +101,7 @@ struct AddHostView: View {
                 if working { ProgressView().controlSize(.small); Text("Connecting…").foregroundStyle(.secondary) }
                 Spacer()
                 Button("Cancel", action: dismiss).keyboardShortcut(.cancelAction)
-                Button("Add Host") { add() }
+                Button(importing == nil ? "Add Host" : "Pair") { add() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(endpoint == nil || working || (code.isEmpty && hostMode.adminKey == nil))
@@ -95,6 +112,7 @@ struct AddHostView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Something chosen from the start: the first Mac found, or the address field when none is.
         .onAppear {
+            if importing != nil { target = .imported }
             if target == nil { target = hostMode.discovered.first.map { .discovered($0.name) } ?? .address }
         }
     }
@@ -102,6 +120,7 @@ struct AddHostView: View {
     private var endpoint: NWEndpoint? {
         switch target {
         case .discovered(let name): return hostMode.discovered.first { $0.name == name }?.endpoint
+        case .imported: return importing?.endpoint.nwEndpoint
         case .address:
             let host = address.trimmingCharacters(in: .whitespaces)
             guard !host.isEmpty, let number = UInt16(port), let nwPort = NWEndpoint.Port(rawValue: number) else { return nil }
@@ -115,9 +134,17 @@ struct AddHostView: View {
         working = true
         outcome = nil
         Task {
-            outcome = await hostMode.addHost(at: endpoint, code: code.isEmpty ? nil : code)
+            outcome = await hostMode.addHost(at: endpoint, code: code.isEmpty ? nil : code,
+                                             expecting: importing?.fingerprint)
             working = false
             if case .paired = outcome { code = "" }
+        }
+    }
+
+    static func describe(_ endpoint: PeerEndpoint) -> String {
+        switch endpoint {
+        case .bonjour(let name): "\(name) (found by Bonjour)"
+        case .address(let host, let port): "\(host), port \(port)"
         }
     }
 
