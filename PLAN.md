@@ -70,7 +70,7 @@ Flotilla.app  (one app, client/host/both modes)
 │   ├── persisted policy and per-host settings store
 │   └── validated local CLI execution
 └── Privileged DNS helper  (Phase D)
-    ├── SMAppService daemon approved during enrolment
+    ├── SMAppService daemon approved once, on hosts and the admin Mac
     ├── DNS create/delete only
     └── accepts only the Developer ID-signed Flotilla app
 ```
@@ -263,6 +263,27 @@ Build the stateful host runtime and its remote client path.
   the UI.
 - Preserve immediate local control and a manual re-pair recovery path.
 
+Decided with the owner (7 October):
+
+- **Exposure:** a paired admin Mac starts with reads and lifecycle — lists,
+  inspect, logs, and run/create/start/stop/delete for containers, images,
+  volumes and networks. Terminal, registry sign-in, runtime start/stop,
+  machines and DNS stay this-Mac-only for Phase B and are reviewed one by one
+  later.
+- **Pairing:** the host shows a short one-time code; the owner types it on the
+  admin Mac; both sides then show the same fingerprint words to confirm.
+- **Port:** 7868 by default, changeable in Settings.
+- **Where host mode runs — headless Macs.** `container` today runs only inside
+  a logged-in user's GUI session: `system start` installs its API server as a
+  per-user LaunchAgent in `gui/<uid>`, and with nobody logged in it fails with
+  an XPC error (apple/container#2008, open, with a draft fix in #2045; #1514
+  asks for LaunchDaemon support). So host mode is a login item (SMAppService
+  agent) in that user's session, and a headless Mac mini cluster runs a
+  dedicated service account with automatic login — the usual Mac CI-farm
+  setup. Automatic login needs FileVault off on that Mac, which the setup guide
+  must say plainly. Move to a LaunchDaemon only once upstream supports a
+  non-GUI domain; measure it on the M1 mini, logged out, before relying on it.
+
 Testing proceeds in two steps:
 
 1. macOS VMs exercise pairing, mTLS, framing, UI, rejection, revocation and
@@ -335,10 +356,20 @@ assuming the next one exists.
 - Accept requests only from Flotilla's Developer ID-signed app.
 - Do not turn it into a general privileged command runner.
 
-This narrowly amends decision 19. Direct app execution remains limited to the
-existing password-prompted DNS commands; the helper exists only so enrolled
-hosts can maintain fleet DNS without a person approving every individual
-change. Developer ID signing is therefore a dependency.
+The same helper installs on the admin Mac too (the owner, 7 October): approved
+once in System Settings ▸ Login Items, after which creating or deleting a DNS
+domain asks for an in-app confirmation instead of the administrator password.
+Only `system dns create|delete` need root; the runtime restart that follows a
+container-domain change never did, so it already needs no password. Without
+the helper (unsigned builds, or the owner declines it) the password prompt
+remains the fallback.
+
+This narrowly amends decision 19: root still runs one thing, never silently,
+but the approval moves from a password per change to a one-time install
+approval plus a visible confirmation per change. The helper accepts XPC only
+from Flotilla's Developer ID-signed app, re-applies `AdminExecutable` and the
+`Allowlist`, and is never a general privileged runner. Developer ID signing is
+therefore a dependency.
 
 #### Layer 3 — Cross-host network, if feasible
 
