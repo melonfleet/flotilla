@@ -57,7 +57,11 @@ final class HostModeController {
     @ObservationIgnored private var server: HostServer?
     @ObservationIgnored private let bridge = HostDelegateBridge()
     @ObservationIgnored private var browser: NWBrowser?
-    @ObservationIgnored private var autoEnrolTried: Set<String> = []
+    /// When each discovered Mac was last asked to enrol, by Bonjour name.
+    @ObservationIgnored private var autoEnrolAttempts: [String: Date] = [:]
+    @ObservationIgnored private var autoEnrolTimer: Timer?
+    /// How long before a Mac that refused is asked again — its profile may arrive later.
+    static let autoEnrolRetry: TimeInterval = 120
     @ObservationIgnored var recordActivity: ((ContainerEvent) -> Void)?
 
     init(settings: SettingsStore, containerHost: ContainerHost,
@@ -217,7 +221,10 @@ final class HostModeController {
         do {
             adminKey = try keyStore.rotate(for: identity.fingerprint)
             record("Fleet enrolment key", existed ? "Replaced" : "Created")
+            // A new key changes every answer: ask the Macs already found again, now.
+            autoEnrolAttempts.removeAll()
             apply()
+            enrolDiscovered()
         } catch {
             identityProblem = "\(error)"
         }
@@ -339,11 +346,16 @@ final class HostModeController {
 
     // MARK: Discovery (admin)
 
-    /// Browses for hosts advertising Flotilla. While this admin has an enrolment key, each newly
-    /// found host is asked once to enrol — a host whose profile names this admin then appears in
-    /// Hosts waiting for approval; any other host refuses and is left alone.
+    /// Browses for hosts advertising Flotilla. While this admin has an enrolment key, each found
+    /// host it does not already know is asked to enrol — when found, when the key is created, and
+    /// again every couple of minutes (measured 7 October: a VM given its key after it was found
+    /// never appeared, because the only ask had come first). A host whose key names this admin
+    /// then waits in Hosts for approval; any other host refuses and is asked again later.
     private func startBrowsing() {
         guard browser == nil else { return }
+        autoEnrolTimer = Timer.scheduledTimer(withTimeInterval: Self.autoEnrolRetry / 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.enrolDiscovered() }
+        }
         let browser = NWBrowser(for: .bonjour(type: WireTLS.serviceType, domain: nil), using: .tcp)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = results.compactMap { result -> DiscoveredHost? in
@@ -357,6 +369,8 @@ final class HostModeController {
     }
 
     private func stopBrowsing() {
+        autoEnrolTimer?.invalidate()
+        autoEnrolTimer = nil
         browser?.cancel()
         browser = nil
         discovered = []
@@ -365,9 +379,17 @@ final class HostModeController {
     private func discoveredChanged(_ found: [DiscoveredHost]) {
         let own = Host.current().localizedName
         discovered = found.filter { $0.name != own }.sorted { $0.name < $1.name }
+        enrolDiscovered()
+    }
+
+    /// Asks each found Mac this admin does not know to enrol, at most once per retry interval.
+    private func enrolDiscovered() {
         guard adminKey != nil else { return }
-        for host in discovered where !autoEnrolTried.contains(host.name) {
-            autoEnrolTried.insert(host.name)
+        let known = Set(hosts.map(\.details.computerName))
+        let now = Date()
+        for host in discovered where !known.contains(host.name) {
+            if let last = autoEnrolAttempts[host.name], now.timeIntervalSince(last) < Self.autoEnrolRetry { continue }
+            autoEnrolAttempts[host.name] = now
             Task { _ = await addHost(at: host.endpoint, code: nil) }
         }
     }

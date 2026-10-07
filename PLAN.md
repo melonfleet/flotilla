@@ -307,8 +307,17 @@ code or enrolment key, and both Macs show the four words. An admin with a key
 asks each newly found host once to enrol. `enrolmentKey` joined the managed
 settings. No `.mobileconfig` export (the owner: not now). Live on this Mac: the
 listener on 7868, the code, and Add Host reaching its own listener over TLS and
-refusing to pair with itself. Next: `RemoteHost`, then pairing two real Macs —
-a macOS VM, then the M1 mini.
+refusing to pair with itself.
+
+**Two Macs, 7 October** (this laptop and a macOS 27.0.1 VM in UTM, shared
+network): Bonjour found the VM; pairing by code showed the same four words on
+both, the owner confirmed both, and each side recorded the other; the VM removed
+the laptop and the laptop removed the VM; with the fleet key pasted on the VM,
+Add Host with no code enrolled it, it waited in Hosts with its serial number, and
+approval made it Paired. One gap found and fixed: automatic enrolment asked only
+when a Mac was first seen, so a host given its key later never appeared; it now
+also asks when a key is created and every two minutes for found Macs it does not
+know. Next: `RemoteHost`, so a paired host runs commands, then the M1 mini.
 
 - Define bounded protocol framing, version and capability negotiation, explicit
   request lifecycle and failure semantics.
