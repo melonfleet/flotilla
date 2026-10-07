@@ -1,4 +1,5 @@
 import SwiftUI
+import FlotillaCore
 
 /// List / Cards, per section.
 enum ResourcePresentation: String, CaseIterable, Identifiable {
@@ -40,6 +41,11 @@ struct ResourceListControls<Row: Identifiable>: View {
     let columns: [(id: String, title: String)]
     /// Empty, or **two or more** genuine choices. One choice is not a filter.
     let filters: [ResourceFilterOption]
+    /// The Host section of the filter (PLAN.md Phase C): offered when there is a host to choose.
+    var hostFilter: Binding<HostRef?>? = nil
+    var hosts: [(ref: HostRef, name: String)] = []
+
+    private var offersHosts: Bool { hostFilter != nil && hosts.count > 1 }
 
     @State private var showingColumns = false
     @State private var showingFilter = false
@@ -65,21 +71,25 @@ struct ResourceListControls<Row: Identifiable>: View {
                              disabled: presentation != .list) { showingColumns.toggle() }
                 .popover(isPresented: $showingColumns, arrowEdge: .bottom) { columnsPopover }
 
-            if filters.count > 1 {
+            if filters.count > 1 || offersHosts {
                 IconActionButton(systemImage: "line.3.horizontal.decrease",
                                  label: "Filter",
                                  help: filterHelp,
-                                 active: filterID != "all") { showingFilter.toggle() }
+                                 active: filterID != "all" || hostFilter?.wrappedValue != nil) { showingFilter.toggle() }
                     .popover(isPresented: $showingFilter, arrowEdge: .bottom) { filterPopover }
             }
         }
     }
 
     private var filterHelp: String {
-        guard let current = filters.first(where: { $0.id == filterID }), current.id != "all" else {
-            return "Filter this list"
+        var parts: [String] = []
+        if let current = filters.first(where: { $0.id == filterID }), current.id != "all" {
+            parts.append(current.title.lowercased())
         }
-        return "Showing \(current.title.lowercased()) only"
+        if let host = hostFilter?.wrappedValue, let name = hosts.first(where: { $0.ref == host })?.name {
+            parts.append("on " + name)
+        }
+        return parts.isEmpty ? "Filter this list" : "Showing " + parts.joined(separator: ", ") + " only"
     }
 
     private var columnsPopover: some View {
@@ -104,13 +114,31 @@ struct ResourceListControls<Row: Identifiable>: View {
     }
 
     private var filterPopover: some View {
-        Picker("Show", selection: $filterID) {
-            ForEach(filters) { option in
-                Label(option.title, systemImage: option.systemImage).tag(option.id)
+        VStack(alignment: .leading, spacing: 10) {
+            if filters.count > 1 {
+                Picker("Show", selection: $filterID) {
+                    ForEach(filters) { option in
+                        Label(option.title, systemImage: option.systemImage).tag(option.id)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+            }
+            // The same Host section Containers has: an independent question, so its own group.
+            if offersHosts, let hostFilter {
+                if filters.count > 1 { Divider() }
+                Text("Host").font(.caption).foregroundStyle(.secondary)
+                Picker("Host", selection: hostFilter) {
+                    Label("All hosts", systemImage: "square.stack").tag(HostRef?.none)
+                    ForEach(hosts, id: \.ref) { host in
+                        Label(host.name, systemImage: host.ref.isLocal ? "laptopcomputer" : "desktopcomputer")
+                            .tag(HostRef?.some(host.ref))
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
             }
         }
-        .pickerStyle(.radioGroup)
-        .labelsHidden()
         .padding(14)
     }
 

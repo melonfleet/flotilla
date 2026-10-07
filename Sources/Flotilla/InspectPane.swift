@@ -18,6 +18,8 @@ struct InspectPane: View {
     let command: String
     /// What went wrong, in this subject's own words — "Couldn't inspect this volume".
     let failureTitle: String
+    /// Which Mac the record is on, for the redaction note: "This Mac", or a paired host's name.
+    var hostName = "this Mac"
     /// Fetches the raw record. Redaction happens here, not in the caller, so nothing unredacted
     /// can reach the view, the search index or the clipboard by a caller forgetting.
     let load: () async throws -> String
@@ -132,7 +134,7 @@ struct InspectPane: View {
         HStack(spacing: 6) {
             Image(systemName: "eye.slash").font(.caption2)
             Text(LocalizedStringKey("Secrets are redacted. Values shown as `<redacted:…>` are "
-                 + "present on this Mac but hidden here and in Copy JSON."))
+                 + "present on \(hostName) but hidden here and in Copy JSON."))
                 .font(.caption2)
         }
         .foregroundStyle(.tertiary)

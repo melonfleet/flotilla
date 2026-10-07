@@ -452,6 +452,17 @@ Turn the local resource surfaces into fleet surfaces.
   fingerprints remain claims to verify, not automatic trust.
 - Keep cross-host actions explicit about the hosts and objects affected.
 
+Progress (7 October):
+
+- **Containers — built.** Fleet-wide rows, Host column and filter, remote lifecycle, detail,
+  Logs tab, bulk actions, Run with a Host picker. Live-tested on the M1 mini.
+- **Images — built.** One row per image per Mac (`HostedImage`), Host column (hidden by default,
+  as in Containers) and filter, stale marker; Run opens on the image's Mac with that Mac's images
+  as suggestions; Tag, Delete, bulk delete, detail and Inspect run on the image's Mac. Prune stays
+  This Mac's. Live-tested on the mini: list across three hosts, Inspect, tag, delete.
+- Next: Volumes, Networks; then fan-out pulls, Logs' Host column, Overview totals, version skew,
+  export.
+
 ### Phase D — Pushed infrastructure
 
 Build pushed infrastructure in three layers. Each layer must be useful without

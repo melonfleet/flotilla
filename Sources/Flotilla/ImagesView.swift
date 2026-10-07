@@ -7,9 +7,9 @@ import FlotillaCore
 /// `ContainerCLI` or an argv directly.
 struct ImagesView: View {
     let model: AppModel
-    let ui: ResourceUIState<ContainerImage>
+    let ui: ResourceUIState<HostedImage>
 
-    @State private var selection = Set<ContainerImage.ID>()
+    @State private var selection = Set<HostedImage.ID>()
 
     /// Free-text filter, matched against the reference and tag. Local to the screen: unlike
     /// the containers table there is no cross-section state to preserve.
@@ -18,23 +18,26 @@ struct ImagesView: View {
     /// The merged New Image form, and which half it opened on — `nil` when it is closed.
     /// One screen where there were two: see `NewImageView`.
     @State private var newImageMode: NewImageView.Mode?
-    @State private var pendingDelete: ContainerImage?
+    @State private var pendingDelete: HostedImage?
     /// Set from the row menu's Run — presents the run sheet with this reference already in
-    /// place. Nothing is launched from here; the sheet's validated preview still gates it.
-    @State private var runImage: String?
+    /// place, on the image's own Mac. Nothing is launched from here; the sheet's validated
+    /// preview still gates it.
+    @State private var runImage: RunTarget?
 
     /// Which image the detail screen is showing, and optionally which tab to open it on.
     private struct DetailTarget: Identifiable, Hashable {
-        let id: String
+        let reference: String
+        var host: HostRef = .local
         var tab: ImageDetailTab?
+        var id: String { host.rowID(reference) }
     }
 
     /// The image whose detail screen is showing, or nil for the list. Keyed on the **reference**,
     /// which is how this section identifies an image everywhere else — `ContainerImage.id` is the
-    /// digest.
+    /// digest — and on the Mac it is on.
     @State private var detailTarget: DetailTarget?
 
-    @State private var taggingImage: ContainerImage?
+    @State private var taggingImage: HostedImage?
     @State private var tagTarget = ""
     @State private var tagError: String?
 
@@ -48,8 +51,8 @@ struct ImagesView: View {
             // Embedded form screens, in precedence order — see `FormHeader` for the 9 August
             // reversal. Prune and About stay modal: they are dialogs you acknowledge, not
             // forms you fill in and save.
-            if let reference = runImage {
-                RunSheetView(model: model, initialImage: reference) { runImage = nil }
+            if let target = runImage {
+                RunSheetView(model: model, initialImage: target.reference, initialHost: target.host) { runImage = nil }
             } else if let mode = newImageMode {
                 NewImageView(model: model, initialMode: mode) { newImageMode = nil }
             } else if let image = taggingImage {
@@ -92,7 +95,7 @@ struct ImagesView: View {
                                   // by `configuration.name` while `ContainerImage.id` is the
                                   // digest, so matching on `id` would never hit and every row
                                   // would read as dead.
-                                  open: { detailTarget = DetailTarget(id: $0) },
+                                  open: { detailTarget = DetailTarget(reference: $0) },
                                   canOpen: { reference in
                                       model.images.contains { $0.reference == reference }
                                   })
@@ -101,6 +104,13 @@ struct ImagesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshImages() }
+        // Paired hosts' images kept current while this section is open, as Containers does.
+        .task {
+            while !Task.isCancelled {
+                await model.hostMode.refreshLiveStatus()
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingPullForm) { _, requested in
             if requested { newImageMode = .pull; model.pendingPullForm = false }
@@ -136,13 +146,14 @@ struct ImagesView: View {
         }
         .sheet(isPresented: $showingPrune) { pruneSheet }
         .confirmationDialog(
-            "Delete image “\(pendingDelete.map(Self.repository) ?? "")”?",
+            "Delete image “\(pendingDelete.map { Self.repository($0.image) } ?? "")”\(pendingDelete.map(onHost) ?? "")?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                if let image = pendingDelete {
-                    Task { await model.removeImage(image) }
+                if let row = pendingDelete {
+                    leaveDetailIfShowing(row)
+                    Task { await model.removeImage(row.image, host: row.host) }
                 }
                 pendingDelete = nil
             }
@@ -157,7 +168,15 @@ struct ImagesView: View {
         ) {
             Button("Delete \(actionable.count) Image\(actionable.count == 1 ? "" : "s")",
                    role: .destructive) {
-                Task { await model.deleteImages(actionable) }
+                let rows = actionableRows
+                Task {
+                    let local = Set(rows.filter(\.host.isLocal).map(\.image.id))
+                    if !local.isEmpty { await model.deleteImages(local) }
+                    // Other Macs' images one at a time, as Containers acts on its remote rows.
+                    for row in rows where !row.host.isLocal {
+                        await model.removeImage(row.image, host: row.host)
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -180,13 +199,15 @@ struct ImagesView: View {
                 .accessibilityLabel(allVisibleSelected ? "Deselect all images" : "Select all images")
                 .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
-            ResourceListControls<ContainerImage>(
+            ResourceListControls<HostedImage>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
                 columnCustomization: Binding(get: { ui.columnCustomization },
                                              set: { ui.columnCustomization = $0 }),
                 columns: Self.columnSpecs,
-                filters: platformFilters)
+                filters: platformFilters,
+                hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
+                hosts: hostChoices)
         }, trailing: {
             // One control for one intention. It was a hammer and a download arrow — two
             // buttons for "add an image", in a section where every other action is a single
@@ -199,7 +220,8 @@ struct ImagesView: View {
             }
             Divider().frame(height: 14)
             ToolbarIconButton(systemImage: "trash.slash",
-                              label: "Delete images no container is using",
+                              label: hostChoices.count > 1 ? "Delete images no container on this Mac is using"
+                                                           : "Delete images no container is using",
                               isDestructive: true) {
                 showingPrune = true
             }
@@ -208,8 +230,20 @@ struct ImagesView: View {
 
     private static let columnSpecs: [(id: String, title: String)] = [
         ("tag", "Tag"), ("platform", "Platform"), ("digest", "Digest"),
-        ("size", "Size"), ("created", "Created"),
+        ("size", "Size"), ("created", "Created"), ("host", "Host"),
     ]
+
+    /// This Mac and every trusted host, for the filter's Host section.
+    private var hostChoices: [(ref: HostRef, name: String)] {
+        [(HostRef.local, model.hostLabel)]
+            + model.hostMode.trustedHosts.map { (HostRef.peer($0.fingerprint), $0.displayName) }
+    }
+
+    /// " on mini" for a paired host's image, nothing for This Mac's — the suffix every label and
+    /// dialog carries so a remote action never reads as a local one.
+    private func onHost(_ row: HostedImage) -> String {
+        row.host.isLocal ? "" : " on \(row.hostName)"
+    }
 
     /// One option per architecture actually present, plus All.
     ///
@@ -218,7 +252,7 @@ struct ImagesView: View {
     /// place the moment a multi-arch or an amd64 image lands — which is exactly when you want to
     /// find them, because those are the ones that will run under emulation or not at all.
     private var platformFilters: [ResourceFilterOption] {
-        let architectures = Set(model.images
+        let architectures = Set(allRows.map(\.image)
             .flatMap { $0.variants?.compactMap { $0.platform?.architecture } ?? [] }
             .filter { $0 != "unknown" })
         guard architectures.count > 1 else { return [] }
@@ -267,7 +301,7 @@ struct ImagesView: View {
                      : "Pull one to run a container from it.")
             } actions: {
                 if isFiltered {
-                    Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
+                    Button("Clear Filter") { ui.search = ""; ui.filterID = "all"; ui.hostFilter = nil }
                 } else {
                     Button("Pull an Image…") { newImageMode = .pull }
                         .buttonStyle(.borderedProminent)
@@ -281,21 +315,24 @@ struct ImagesView: View {
 
     private var cards: some View {
         ResourceCardGrid {
-            ForEach(displayedImages) { image in
+            ForEach(displayedImages) { row in
+                let image = row.image
                 ResourceCard(
                     title: Self.repository(image),
                     badge: Self.tag(image),
                     fields: [("Platform", Self.platformLabel(image)),
                              ("Digest", Self.shortDigest(image)),
                              ("Size", image.displaySize.map(Self.byteCount)),
-                             ("Created", RelativeDate.relative(image.configuration.creationDate))],
+                             ("Created", RelativeDate.relative(image.configuration.creationDate))]
+                        // Named only when there is more than one Mac to tell apart.
+                        + (hostChoices.count > 1 ? [("Host", row.hostName)] : []),
                     // Images have no tags (CLAUDE.md: "tag" already means an image reference's).
                     showsTags: false,
-                    onOpen: { detailTarget = DetailTarget(id: image.reference) }
+                    onOpen: { open(row) }
                 ) {
-                    rowActions(for: image)
+                    rowActions(for: row)
                 }
-                .contextMenu { menu(for: image) }
+                .contextMenu { menu(for: row) }
             }
         }
     }
@@ -315,37 +352,36 @@ struct ImagesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
-            TableColumn("") { image in
-                selectionToggle(for: image.id)
+            TableColumn("") { row in
+                selectionToggle(for: row.id)
             }
             .width(min: 28, ideal: 30, max: 34)
 
-            TableColumn("Repository", value: \.reference) { image in
+            TableColumn("Repository", value: \.reference) { row in
                 // The way in, as in every other table. This was plain text, because until now
                 // there was nowhere for it to go.
-                Button(Self.repository(image)) {
-                    detailTarget = DetailTarget(id: image.reference)
-                }
+                Button(Self.repository(row.image)) { open(row) }
                 .buttonStyle(.link)
-                .foregroundStyle(Theme.rowName(selected: selection.contains(image.id)))
+                .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
                 .lineLimit(1).truncationMode(.middle)
-                .help(image.reference)
+                .help(row.reference + onHost(row))
             }
             .width(min: 170, ideal: 260)
 
-            TableColumn("Tag", value: \.tagSortKey) { image in
-                Text(Self.tag(image)).foregroundStyle(.secondary).lineLimit(1)
+            TableColumn("Tag", value: \.tagSortKey) { row in
+                Text(Self.tag(row.image)).foregroundStyle(.secondary).lineLimit(1)
             }
             .width(min: 70, ideal: 96)
             .customizationID("tag")
 
-            TableColumn("Platform", value: \.platformSortKey) { image in
-                Text(Self.platformLabel(image)).foregroundStyle(.secondary).lineLimit(1)
+            TableColumn("Platform", value: \.platformSortKey) { row in
+                Text(Self.platformLabel(row.image)).foregroundStyle(.secondary).lineLimit(1)
             }
             .width(min: 84, ideal: 100)
             .customizationID("platform")
 
-            TableColumn("Digest", value: \.digestSortKey) { image in
+            TableColumn("Digest", value: \.digestSortKey) { row in
+                let image = row.image
                 // Short form. A digest is a public content hash, not a secret — see the
                 // `Redactor(excluding:)` note on the Inspect tab — but 71 characters of it in a
                 // table cell is noise, and the full value is one hover away.
@@ -357,75 +393,92 @@ struct ImagesView: View {
             .width(min: 96, ideal: 116)
             .customizationID("digest")
 
-            TableColumn("Size", value: \.sizeSortKey) { image in
-                Text(image.displaySize.map(Self.byteCount) ?? "—")
+            TableColumn("Size", value: \.sizeSortKey) { row in
+                Text(row.image.displaySize.map(Self.byteCount) ?? "—")
                     .monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 74, ideal: 90)
             .customizationID("size")
 
-            TableColumn("Created", value: \.creationSortKey) { image in
-                Text(RelativeDate.relative(image.configuration.creationDate))
+            TableColumn("Created", value: \.creationSortKey) { row in
+                Text(RelativeDate.relative(row.image.configuration.creationDate))
                     .foregroundStyle(.secondary)
-                    .help(RelativeDate.absolute(image.configuration.creationDate))
+                    .help(RelativeDate.absolute(row.image.configuration.creationDate))
             }
             .width(min: 80, ideal: 104)
             .customizationID("created")
 
-            TableColumn("Actions") { image in
-                rowActions(for: image)
+            // Which Mac the image is on, as in Containers: a host that has stopped answering keeps
+            // its rows, marked with how old they are.
+            TableColumn("Host", value: \.hostName) { row in
+                HStack(spacing: 4) {
+                    Text(row.hostName).foregroundStyle(.secondary).lineLimit(1)
+                    if let since = row.staleSince {
+                        Image(systemName: "clock.badge.exclamationmark")
+                            .foregroundStyle(Theme.warning)
+                            .help("As of \(since.formatted(.relative(presentation: .named))) — \(row.hostName) isn’t answering")
+                    }
+                }
+            }
+            .width(min: 80, ideal: 110)
+            .customizationID("host")
+
+            TableColumn("Actions") { row in
+                rowActions(for: row)
             }
             .width(min: 108, ideal: 118)
         }
         .frame(maxHeight: .infinity)
-        .contextMenu(forSelectionType: ContainerImage.ID.self) { ids in
-            if let image = model.images.first(where: { ids.contains($0.id) }) {
-                menu(for: image)
+        .contextMenu(forSelectionType: HostedImage.ID.self) { ids in
+            if let row = displayedImages.first(where: { ids.contains($0.id) }) {
+                menu(for: row)
             }
         } primaryAction: { ids in
             guard ids.count == 1,
-                  let image = model.images.first(where: { ids.contains($0.id) }) else { return }
-            detailTarget = DetailTarget(id: image.reference)
+                  let row = displayedImages.first(where: { ids.contains($0.id) }) else { return }
+            open(row)
         }
     }
 
     /// Run, tag, overflow, then bin — the same order and the same divider before the
     /// destructive control as the containers and machines rows.
     @ViewBuilder
-    private func rowActions(for image: ContainerImage) -> some View {
-        let busy = model.isBusy(image.id, kind: .image)
+    private func rowActions(for row: HostedImage) -> some View {
+        let image = row.image
+        let busy = model.isBusy(row.id, kind: .image)
+        let name = Self.repository(image) + onHost(row)
         HStack(spacing: 2) {
             IconActionButton(systemImage: "play.fill",
-                             label: "Run \(Self.repository(image))",
-                             help: "Run a container from \(image.reference)",
+                             label: "Run \(name)",
+                             help: "Run a container from \(image.reference)\(onHost(row))",
                              busy: busy) {
-                runImage = image.reference
+                runImage = RunTarget(reference: image.reference, host: row.host)
             }
             IconActionButton(systemImage: "tag",
-                             label: "Tag \(Self.repository(image))",
-                             help: "Tag \(Self.repository(image))",
+                             label: "Tag \(name)",
+                             help: "Tag \(name)",
                              busy: busy) {
                 tagTarget = ""
-                taggingImage = image
+                taggingImage = row
             }
 
             Menu {
-                menu(for: image)
+                menu(for: row)
             } label: {
                 RowOverflowLabel()
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel("More actions for \(Self.repository(image))")
+            .accessibilityLabel("More actions for \(name)")
 
             Divider().frame(height: 14)
 
             IconActionButton(systemImage: "trash",
-                             label: "Delete \(Self.repository(image))",
-                             help: "Delete \(Self.repository(image))",
+                             label: "Delete \(name)",
+                             help: "Delete \(name)",
                              busy: busy, destructive: true) {
-                requestDelete(image)
+                requestDelete(row)
             }
             Spacer(minLength: 0)
         }
@@ -463,36 +516,65 @@ struct ImagesView: View {
     /// Whether anything is currently narrowing the list. Drives the empty state's wording and
     /// its action: "no matches, clear the filter" and "none exist, make one" are different
     /// situations and only one of them is the user's mistake.
-    private var isFiltered: Bool { !ui.search.trimmingCharacters(in: .whitespaces).isEmpty || ui.filterID != "all" }
+    private var isFiltered: Bool {
+        !ui.search.trimmingCharacters(in: .whitespaces).isEmpty || ui.filterID != "all" || ui.hostFilter != nil
+    }
 
-    private var displayedImages: [ContainerImage] {
-        let visible = model.images.filter { image in
-            guard let variants = image.variants, !variants.isEmpty else { return true }
+    /// This Mac's images and every paired host's last answer, through the host filter (PLAN.md
+    /// Phase C). One image on two Macs is two rows: each is its own thing to run, tag or delete.
+    private var allRows: [HostedImage] {
+        var rows: [HostedImage] = []
+        if ui.hostFilter == nil || ui.hostFilter == .local {
+            rows += model.images.map { HostedImage(image: $0, host: .local, hostName: model.hostLabel) }
+        }
+        let now = Date()
+        for (peer, snapshot) in model.hostMode.fleetImages {
+            let host = HostRef.peer(peer.fingerprint)
+            if let only = ui.hostFilter, only != host { continue }
+            let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
+            rows += snapshot.items.map {
+                HostedImage(image: $0, host: host, hostName: peer.displayName, staleSince: stale)
+            }
+        }
+        return rows
+    }
+
+    private var displayedImages: [HostedImage] {
+        var rows = allRows.filter { row in
+            guard let variants = row.image.variants, !variants.isEmpty else { return true }
             return !variants.allSatisfy { $0.platform?.architecture == "unknown" }
         }
-        var images = visible
 
         if ui.filterID != "all" {
-            images = images.filter { image in
-                image.variants?.contains { $0.platform?.architecture == ui.filterID } ?? false
+            rows = rows.filter { row in
+                row.image.variants?.contains { $0.platform?.architecture == ui.filterID } ?? false
             }
         }
 
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
-            images = images.filter { $0.reference.lowercased().contains(query) }
+            rows = rows.filter {
+                $0.reference.lowercased().contains(query)
+                    || (!$0.host.isLocal && $0.hostName.lowercased().contains(query))
+            }
         }
 
-        return images.sorted(using: ui.sortOrder)
+        return rows.sorted(using: ui.sortOrder)
     }
 
-    private var visibleIDs: Set<ContainerImage.ID> { Set(displayedImages.map(\.id)) }
+    private var visibleIDs: Set<HostedImage.ID> { Set(displayedImages.map(\.id)) }
 
     /// Image ids remain selected when a platform or search filter hides their rows, so the batch
     /// target is always the visible intersection rather than the retained selection itself.
-    private var actionable: Set<ContainerImage.ID> { selection.intersection(visibleIDs) }
+    private var actionable: Set<HostedImage.ID> { selection.intersection(visibleIDs) }
 
-    private func selectionToggle(for id: ContainerImage.ID) -> some View {
+    private var actionableRows: [HostedImage] { displayedImages.filter { actionable.contains($0.id) } }
+
+    private func open(_ row: HostedImage, tab: ImageDetailTab? = nil) {
+        detailTarget = DetailTarget(reference: row.reference, host: row.host, tab: tab)
+    }
+
+    private func selectionToggle(for id: HostedImage.ID) -> some View {
         let isOn = Binding<Bool>(
             get: { selection.contains(id) },
             set: { on in
@@ -551,64 +633,28 @@ struct ImagesView: View {
         }
     }
 
-    private func row(for image: ContainerImage) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Self.repository(image))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                HStack(spacing: 8) {
-                    Text(Self.tag(image)).font(.caption).foregroundStyle(.secondary)
-                    if let size = image.displaySize {
-                        Text(Self.byteCount(size)).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Spacer()
-            // `IconActionButton` rather than bare `Button`s: these had a tooltip and nothing
-            // else, so hovering and clicking both looked like nothing. Same fix as the
-            // containers and machines rows — the sections must not differ in how responsive
-            // they feel.
-            IconActionButton(systemImage: "tag",
-                             label: "Tag \(Self.repository(image))",
-                             help: "Tag \(Self.repository(image))",
-                             busy: model.isBusy(image.id, kind: .image)) {
-                tagTarget = ""
-                taggingImage = image
-            }
-            IconActionButton(systemImage: "trash",
-                             label: "Delete \(Self.repository(image))",
-                             help: "Delete \(Self.repository(image))",
-                             busy: model.isBusy(image.id, kind: .image),
-                             destructive: true) {
-                requestDelete(image)
-            }
-        }
-        .padding(.vertical, 4)
-        .contextMenu { menu(for: image) }
-    }
-
     /// Parity with the row's own buttons (Tag, Delete) plus the Copy submenu, in the order
     /// `ContextMenus.swift` sets out. "Run" is here because an image you can see is an image
     /// you are likely to want to start — it opens the run sheet pre-filled rather than
     /// launching anything directly, so the command preview still gets the final say.
     @ViewBuilder
-    private func menu(for image: ContainerImage) -> some View {
-        let busy = model.isBusy(image.id, kind: .image)
+    private func menu(for row: HostedImage) -> some View {
+        let image = row.image
+        let busy = model.isBusy(row.id, kind: .image)
 
         // Guarded item by item rather than by disabling the whole menu from the row, so the
         // `⋯` button and a right-click render **identically**. The row used to wrap this in
         // `.disabled(busy)`, which greyed out the reads — Inspect, Copy — on the one surface and
         // left them live on the other.
-        Button("Details…") { detailTarget = DetailTarget(id: image.reference) }
-        Button("Inspect") { detailTarget = DetailTarget(id: image.reference, tab: .inspect) }
+        Button("Details…") { open(row) }
+        Button("Inspect") { open(row, tab: .inspect) }
         Divider()
-        Button("Run…") { runImage = image.reference }
+        Button("Run…") { runImage = RunTarget(reference: image.reference, host: row.host) }
             .disabled(busy)
         Divider()
         Button("Tag…") {
             tagTarget = ""
-            taggingImage = image
+            taggingImage = row
         }
         .disabled(busy)
         CopyMenu([
@@ -616,9 +662,9 @@ struct ImagesView: View {
             ("Repository", Self.repository(image)),
             ("Tag", Self.tag(image)),
             ("Digest", image.configuration.descriptor?.digest),
-        ])
+        ] + (row.host.isLocal ? [] : [("Host", row.hostName)]))
         Divider()
-        Button("Delete…", role: .destructive) { requestDelete(image) }
+        Button("Delete…", role: .destructive) { requestDelete(row) }
             .disabled(busy)
     }
 
@@ -627,30 +673,48 @@ struct ImagesView: View {
     @ViewBuilder
     private func detailScreen(_ target: DetailTarget) -> some View {
         VStack(spacing: 0) {
-            if let image = model.images.first(where: { $0.reference == target.id }) {
-                detailHeader(for: image)
+            if let row = hostedImage(target) {
+                detailHeader(for: row)
                 Divider()
-                ImageDetailView(model: model, image: image, requestedTab: target.tab)
-                    .id(image.reference)
+                ImageDetailView(model: model, image: row.image, host: row.host, requestedTab: target.tab)
+                    .id(row.detailKey)
             } else {
                 detailHeader(for: nil)
                 Divider()
+                // Top-aligned with neutral wording, as Containers' detail does.
                 ContentUnavailableView(
                     "Image unavailable",
                     systemImage: "questionmark.square.dashed",
-                    description: Text("\u{201C}\(target.id)\u{201D} is no longer on this Mac. It may have been deleted.")
+                    description: Text("\u{201C}\(target.reference)\u{201D} is no longer on "
+                                      + "\(model.hostMode.hostName(target.host, local: "this Mac")). It may have been deleted.")
                 )
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
     }
 
+    /// The row a detail target names: This Mac's by reference, a paired host's from its last answer.
+    private func hostedImage(_ target: DetailTarget) -> HostedImage? {
+        switch target.host {
+        case .local:
+            return model.images.first { $0.reference == target.reference }
+                .map { HostedImage(image: $0, host: .local, hostName: model.hostLabel) }
+        case .peer(let fingerprint):
+            guard let image = model.hostMode.imageSnapshots[fingerprint]?.items
+                .first(where: { $0.reference == target.reference }) else { return nil }
+            return HostedImage(image: image, host: target.host,
+                               hostName: model.hostMode.hostName(target.host, local: model.hostLabel))
+        }
+    }
+
     @ViewBuilder
-    private func detailHeader(for image: ContainerImage?) -> some View {
+    private func detailHeader(for row: HostedImage?) -> some View {
         HStack(spacing: 10) {
             IconActionButton(systemImage: "chevron.left", label: "Back to Images",
                              help: "Back to Images") { detailTarget = nil }
 
-            if let image {
+            if let row {
+                let image = row.image
                 Image(systemName: "square.stack.3d.up")
                     .font(.system(size: 19)).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 1) {
@@ -658,7 +722,7 @@ struct ImagesView: View {
                         Text(Self.repository(image)).font(.headline)
                         Text(Self.tag(image)).font(.caption).foregroundStyle(.secondary)
                     }
-                    Text(subtitle(for: image))
+                    Text(subtitle(for: row))
                         .font(.caption).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.middle)
                 }
@@ -668,8 +732,8 @@ struct ImagesView: View {
 
             Spacer()
             stepper
-            if let image {
-                ActionCluster { rowActions(for: image) }
+            if let row {
+                ActionCluster { rowActions(for: row) }
             }
         }
         .padding(.horizontal, 12)
@@ -679,11 +743,11 @@ struct ImagesView: View {
     @ViewBuilder
     private var stepper: some View {
         let order = displayedImages
-        let index = order.firstIndex { $0.reference == detailTarget?.id }
+        let index = order.firstIndex { $0.detailKey == detailTarget?.id }
         HStack(spacing: 2) {
             Button {
                 if let index, index > 0 {
-                    detailTarget = DetailTarget(id: order[index - 1].reference)
+                    open(order[index - 1])
                 }
             } label: { Image(systemName: "chevron.up") }
                 .disabled(index == nil || index == 0)
@@ -692,7 +756,7 @@ struct ImagesView: View {
 
             Button {
                 if let index, index < order.count - 1 {
-                    detailTarget = DetailTarget(id: order[index + 1].reference)
+                    open(order[index + 1])
                 }
             } label: { Image(systemName: "chevron.down") }
                 .disabled(index == nil || index == order.count - 1)
@@ -707,8 +771,10 @@ struct ImagesView: View {
         }
     }
 
-    private func subtitle(for image: ContainerImage) -> String {
-        var parts = [Self.platformLabel(image)]
+    private func subtitle(for row: HostedImage) -> String {
+        let image = row.image
+        var parts = row.host.isLocal ? [] : [row.hostName]
+        parts.append(Self.platformLabel(image))
         if let size = image.displaySize { parts.append(Self.byteCount(size)) }
         parts.append(Self.shortDigest(image))
         return parts.joined(separator: " \u{00B7} ")
@@ -723,7 +789,7 @@ struct ImagesView: View {
     /// the owner made about the pull form: *"it doesn't look like any of the other forms… it
     /// needs to be to the left aligned and also has the information rail to the right."* Pull
     /// was fixed and this one was never looked at, because nothing pointed at it.
-    private func tagScreen(for image: ContainerImage) -> some View {
+    private func tagScreen(for image: HostedImage) -> some View {
         VStack(spacing: 0) {
             FormHeader(title: "Tag Image", systemImage: "tag",
                        hasUnsavedChanges: !trimmedTag.isEmpty,
@@ -739,7 +805,7 @@ struct ImagesView: View {
         }
     }
 
-    private func tagForm(for image: ContainerImage) -> some View {
+    private func tagForm(for image: HostedImage) -> some View {
         FormField("New reference",
                   help: FieldHelp(
                       "The name the image gains. Tagging adds a name; it does not "
@@ -758,12 +824,12 @@ struct ImagesView: View {
 
     /// The command the button will run, beside the field — the same rail every other form
     /// carries, and the reason it is an answer rather than another field to find at the end.
-    private func tagRail(for image: ContainerImage) -> some View {
+    private func tagRail(for row: HostedImage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Command preview", systemImage: "chevron.right.square")
                 .font(.caption)
                 .foregroundStyle(Theme.info)
-            Text("container image tag \(image.reference) "
+            Text("container image tag \(row.reference) "
                  + (trimmedTag.isEmpty ? "<new reference>" : trimmedTag))
                 .font(.system(size: 11, design: .monospaced))
                 .textSelection(.enabled)
@@ -771,24 +837,31 @@ struct ImagesView: View {
                                                     : AnyShapeStyle(.primary))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if !row.host.isLocal {
+                Label("Runs on \(row.hostName)", systemImage: "desktopcomputer")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
-    private func tagFooter(for image: ContainerImage) -> some View {
+    private func tagFooter(for row: HostedImage) -> some View {
         HStack(spacing: 8) {
             Spacer()
             Button("Cancel") { taggingImage = nil }
             Button("Tag") {
                 let target = trimmedTag
-                let source = image.reference
+                let source = row.reference
+                let host = row.host
+                let where_ = onHost(row)
                 taggingImage = nil
                 guard !target.isEmpty else { return }
                 Task {
                     do {
-                        try await model.tagImage(source, as: target)
-                        await model.refreshImages()
+                        try await model.tagImage(source, as: target, host: host)
+                        if host.isLocal { await model.refreshImages() }
                     } catch {
-                        tagError = "Tag failed for \(source) \u{2192} \(target): \(error)"
+                        tagError = "Tag failed for \(source) \u{2192} \(target)\(where_): "
+                            + (host.isLocal ? "\(error)" : HostModeController.describe(error))
                     }
                 }
             }
@@ -870,12 +943,18 @@ struct ImagesView: View {
     /// Defers to `model.deletePolicy`, the one authority. This used to read the setting key
     /// directly, which is how three screens ended up with three copies of the rule and two more
     /// screens with none.
-    private func requestDelete(_ image: ContainerImage) {
+    private func requestDelete(_ row: HostedImage) {
         if model.deletePolicy.requiresConfirmation(.single) {
-            pendingDelete = image
+            pendingDelete = row
         } else {
-            Task { await model.removeImage(image) }
+            leaveDetailIfShowing(row)
+            Task { await model.removeImage(row.image, host: row.host) }
         }
+    }
+
+    /// Deleting the image whose detail is open goes back to the list, as in Containers.
+    private func leaveDetailIfShowing(_ row: HostedImage) {
+        if detailTarget?.id == row.detailKey { detailTarget = nil }
     }
 
     /// `ContainerImage` has no separate repository/tag fields — `reference` is one string
@@ -936,11 +1015,30 @@ extension ContainerImage {
     var creationSortKey: String { configuration.creationDate ?? "9999" }
 }
 
-/// Wraps a reference so `.sheet(item:)` has something `Identifiable` to key on — a bare
-/// `String` is not, and keying on the value itself would re-present the sheet if the same
-/// image were chosen twice in a row.
-private struct RunTarget: Identifiable {
+/// What the Run screen opens with: an image reference, on the Mac the image is on.
+private struct RunTarget: Hashable {
     let reference: String
-    var id: String { reference }
-    init(_ reference: String) { self.reference = reference }
+    let host: HostRef
+}
+
+/// One image on one Mac (PLAN.md Phase C) — the same image on two Macs is two rows, because each
+/// is its own thing to run, tag or delete. This Mac's rows keep `ContainerImage.id` as their id,
+/// so selection and busy state are unchanged for them.
+struct HostedImage: Identifiable {
+    let image: ContainerImage
+    let host: HostRef
+    let hostName: String
+    /// A host's row that is older than a fresh answer: shown, with its age, rather than hidden.
+    var staleSince: Date? = nil
+
+    var id: String { host.rowID(image.id) }
+    /// How the detail screen names the image: by reference, on its Mac.
+    var detailKey: String { host.rowID(image.reference) }
+
+    var reference: String { image.reference }
+    var tagSortKey: String { image.tagSortKey }
+    var platformSortKey: String { image.platformSortKey }
+    var digestSortKey: String { image.digestSortKey }
+    var sizeSortKey: Int64 { image.sizeSortKey }
+    var creationSortKey: String { image.creationSortKey }
 }

@@ -31,9 +31,13 @@ struct ImageDetailView: View {
 
     @State private var tab: ImageDetailTab
 
-    init(model: AppModel, image: ContainerImage, requestedTab: ImageDetailTab? = nil) {
+    /// Which Mac it is on (PLAN.md Phase C).
+    var host: HostRef = .local
+
+    init(model: AppModel, image: ContainerImage, host: HostRef = .local, requestedTab: ImageDetailTab? = nil) {
         self.model = model
         self.image = image
+        self.host = host
         self.requestedTab = requestedTab
         _tab = State(initialValue: requestedTab ?? .overview)
     }
@@ -49,8 +53,10 @@ struct ImageDetailView: View {
                 case .overview: overview
                 case .inspect:
                     InspectPane(command: "container image inspect \(image.reference)",
-                                failureTitle: "Couldn't inspect this image") {
-                        try await model.fetchImageInspectJSON(for: image.reference)
+                                failureTitle: "Couldn't inspect this image",
+                                hostName: model.hostMode.hostName(host, local: "this Mac")) {
+                        host.isLocal ? try await model.fetchImageInspectJSON(for: image.reference)
+                                     : try await model.fetchImageInspectJSON(for: image.reference, host: host)
                     }
                 }
             }
@@ -87,7 +93,12 @@ struct ImageDetailView: View {
                     // The question you arrive with, and the one `image inspect` cannot answer:
                     // the reference is recorded on the *container*. It is also the set Prune
                     // reasons about — an image with no rows here is one Prune would remove.
-                    let users = model.containers.filter {
+                    // That Mac's containers: on a paired host, what it last reported.
+                    let pool: [Container] = switch host {
+                    case .local: model.containers
+                    case .peer(let fingerprint): model.hostMode.containerSnapshots[fingerprint]?.items ?? []
+                    }
+                    let users = pool.filter {
                         $0.configuration.image.reference == image.reference
                     }
                     if users.isEmpty {
@@ -98,7 +109,7 @@ struct ImageDetailView: View {
                             HStack(spacing: 8) {
                                 Circle().fill(container.stateColor).frame(width: 6, height: 6)
                                 Button(container.id) {
-                                    model.requestDetail(kind: .container, subject: container.id)
+                                    model.requestDetail(kind: .container, subject: host.rowID(container.id))
                                 }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(Theme.link)

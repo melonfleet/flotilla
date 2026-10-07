@@ -45,9 +45,15 @@ final class ResourceUIState<Row: Identifiable> {
     /// view that defines the options is the view that interprets them.
     var filterID = "all"
 
+    /// Which Mac's rows to list: `nil` for every host (PLAN.md Phase C).
+    var hostFilter: HostRef?
+
     /// Name-ascending, per the 9 August decision that a table's default sort should be stable
     /// rather than clever — see `ContainersUIState`.
-    init(sortOrder: [KeyPathComparator<Row>]) {
+    /// `hidden` names columns off by default — Host, which with one Mac reads "This Mac" on every
+    /// row, as in `ContainersUIState`.
+    init(sortOrder: [KeyPathComparator<Row>], hidden: [String] = []) {
         self.sortOrder = sortOrder
+        for id in hidden { columnCustomization[visibility: id] = .hidden }
     }
 }

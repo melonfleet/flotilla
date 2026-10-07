@@ -32,8 +32,8 @@ struct MainWindowView: View {
         sortOrder: [KeyPathComparator(\ContainerVolume.name)])
     @State private var networksUI = ResourceUIState<ContainerNetwork>(
         sortOrder: [KeyPathComparator(\ContainerNetwork.id)])
-    @State private var imagesUI = ResourceUIState<ContainerImage>(
-        sortOrder: [KeyPathComparator(\ContainerImage.reference)])
+    @State private var imagesUI = ResourceUIState<HostedImage>(
+        sortOrder: [KeyPathComparator(\HostedImage.reference)], hidden: ["host"])
     @State private var registriesUI = ResourceUIState<RegistryRow>(
         sortOrder: [KeyPathComparator(\RegistryRow.nameSortKey)])
     @State private var dnsUI = ResourceUIState<LocalDNSDomain>(

@@ -76,6 +76,11 @@ final class HostModeController {
     /// Each paired host's containers, as last fetched — kept through failures, with their age
     /// (PLAN.md Phase C). The Containers section lists these beside This Mac's.
     private(set) var containerSnapshots: [PeerFingerprint: FleetSnapshot<Container>] = [:]
+    /// The same for images, volumes and networks — fetched on the same ask, so a host costs one
+    /// round of reads per interval whichever sections are open.
+    private(set) var imageSnapshots: [PeerFingerprint: FleetSnapshot<ContainerImage>] = [:]
+    private(set) var volumeSnapshots: [PeerFingerprint: FleetSnapshot<ContainerVolume>] = [:]
+    private(set) var networkSnapshots: [PeerFingerprint: FleetSnapshot<ContainerNetwork>] = [:]
     @ObservationIgnored private var backoff: [PeerFingerprint: HostBackoff] = [:]
     /// Shown as fresh for this long; older, or after a failed ask, the rows say how old they are.
     static let freshFor: TimeInterval = 75
@@ -439,6 +444,9 @@ final class HostModeController {
         remotes.removeValue(forKey: fingerprint)?.close()
         live.removeValue(forKey: fingerprint)
         containerSnapshots.removeValue(forKey: fingerprint)
+        imageSnapshots.removeValue(forKey: fingerprint)
+        volumeSnapshots.removeValue(forKey: fingerprint)
+        networkSnapshots.removeValue(forKey: fingerprint)
         backoff.removeValue(forKey: fingerprint)
     }
 
@@ -461,8 +469,23 @@ final class HostModeController {
     }
 
     /// The paired, trusted hosts and what each last said about its containers.
-    var fleetContainers: [(host: Peer, snapshot: FleetSnapshot<Container>)] {
-        hosts.filter(\.isTrusted).compactMap { peer in containerSnapshots[peer.fingerprint].map { (peer, $0) } }
+    var fleetContainers: [(host: Peer, snapshot: FleetSnapshot<Container>)] { fleet(containerSnapshots) }
+    var fleetImages: [(host: Peer, snapshot: FleetSnapshot<ContainerImage>)] { fleet(imageSnapshots) }
+    var fleetVolumes: [(host: Peer, snapshot: FleetSnapshot<ContainerVolume>)] { fleet(volumeSnapshots) }
+    var fleetNetworks: [(host: Peer, snapshot: FleetSnapshot<ContainerNetwork>)] { fleet(networkSnapshots) }
+
+    private func fleet<T>(_ snapshots: [PeerFingerprint: FleetSnapshot<T>]) -> [(host: Peer, snapshot: FleetSnapshot<T>)] {
+        hosts.filter(\.isTrusted).compactMap { peer in snapshots[peer.fingerprint].map { (peer, $0) } }
+    }
+
+    /// Paired, trusted hosts — the choices every Host filter and Host picker offers.
+    var trustedHosts: [Peer] { hosts.filter(\.isTrusted) }
+
+    func hostName(_ host: HostRef, local: String) -> String {
+        switch host {
+        case .local: local
+        case .peer(let fingerprint): hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "a host"
+        }
     }
 
     /// The `ContainerCLI` for a host — This Mac's own, or a paired host's over the wire, held to
@@ -499,6 +522,25 @@ final class HostModeController {
                 return (version, try cli.listContainers(), try cli.machines().count)
             }
         }.value
+        // The other lists, each on its own: one failing does not blank the others.
+        if case .success = outcome {
+            let (images, volumes, networks) = await Task.detached {
+                (Result { try cli.listImages() }, Result { try cli.listVolumes() }, Result { try cli.listNetworks() })
+            }.value
+            let at = Date()
+            switch images {
+            case .success(let list): imageSnapshots[fingerprint, default: FleetSnapshot()].succeeded(list, at: at)
+            case .failure(let error): imageSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
+            }
+            switch volumes {
+            case .success(let list): volumeSnapshots[fingerprint, default: FleetSnapshot()].succeeded(list, at: at)
+            case .failure(let error): volumeSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
+            }
+            switch networks {
+            case .success(let list): networkSnapshots[fingerprint, default: FleetSnapshot()].succeeded(list, at: at)
+            case .failure(let error): networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
+            }
+        }
         let now = Date()
         switch outcome {
         case .success(let (version, containers, machines)):
@@ -517,6 +559,9 @@ final class HostModeController {
             save()
         case .failure(let error):
             containerSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
+            imageSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
+            volumeSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
+            networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             backoff[fingerprint, default: HostBackoff()].failed(at: now)
             live[fingerprint] = LiveStatus(state: .failed(Self.describe(error)), checkedAt: Date())
             // Connected but a command failed — a host without `container` — still says who it is.

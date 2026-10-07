@@ -391,7 +391,8 @@ private struct InspectTab: View {
 
     var body: some View {
         InspectPane(command: "container inspect \(container.id)",
-                    failureTitle: "Couldn't inspect this container") {
+                    failureTitle: "Couldn't inspect this container",
+                    hostName: model.hostMode.hostName(host, local: "this Mac")) {
             host.isLocal ? try await model.fetchInspectJSON(for: container.id)
                          : try await model.fetchInspectJSON(for: container.id, host: host)
         }

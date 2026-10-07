@@ -1248,6 +1248,25 @@ final class AppModel {
         await refreshImages()
     }
 
+    /// Deletes an image on any Mac; a paired host is asked again at once so its rows update.
+    func removeImage(_ image: ContainerImage, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await removeImage(image) }
+        let busyKey = host.rowID(image.id)
+        guard !busy.contains(busyKey, kind: .image) else { return }
+        busy.mark(busyKey, kind: .image)
+        defer { busy.clear(busyKey, kind: .image) }
+        let where_ = hostMode.hostName(host, local: hostLabel)
+        do {
+            let cli = try cli(for: host)
+            _ = try await Task.detached { try cli.removeImage(image.reference) }.value
+            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .image,
+                                          subject: "\(image.reference) on \(where_)", action: "Deleted"))
+        } catch {
+            actionError = "Delete image failed for \(image.reference) on \(where_): \(HostModeController.describe(error))"
+        }
+        await hostMode.refreshHost(fingerprint)
+    }
+
     // MARK: Logs
 
     /// Backs `ContainerDetailView`'s Logs tab. Streaming and `exec` are Phase 4, so this

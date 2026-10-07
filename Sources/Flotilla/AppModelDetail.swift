@@ -44,6 +44,23 @@ extension AppModel {
         return try await Task.detached { try cli.processes(id) }.value
     }
 
+    func fetchImageInspectJSON(for reference: String, host: HostRef) async throws -> String {
+        let cli = try cli(for: host)
+        let raw = try await Task.detached { try cli.rawInspectImageJSON(reference) }.value
+        return JSONPrettyPrinter.prettyPrint(raw)
+    }
+
+    /// Tags an image on any Mac.
+    func tagImage(_ source: String, as target: String, host: HostRef) async throws {
+        guard case .peer(let fingerprint) = host else { return try await tagImage(source, as: target) }
+        let cli = try cli(for: host)
+        _ = try await Task.detached { try cli.tag(source, as: target) }.value
+        recordActivity(ContainerEvent(date: Date(), from: source, to: target, kind: .image,
+                                      subject: "\(target) on \(hostMode.hostName(host, local: hostLabel))",
+                                      action: "Tagged from \(source)"))
+        await hostMode.refreshHost(fingerprint)
+    }
+
     // MARK: Inspect
 
     /// `rawInspectJSON(_:)` and `JSONPrettyPrinter` landed in `FlotillaCore` partway

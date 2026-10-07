@@ -101,9 +101,10 @@ struct RunSheetView: View {
     /// already holds them. Named in the notice rather than silently missing.
     private let portsInUse: [Int]
 
-    init(model: AppModel, initialImage: String = "", prefill: RunPrefill? = nil,
+    init(model: AppModel, initialImage: String = "", initialHost: HostRef = .local, prefill: RunPrefill? = nil,
          dismiss: @escaping () -> Void) {
         self.model = model
+        _host = State(initialValue: initialHost)
         self.dismiss = dismiss
         self.prefilled = prefill?.mayHaveUncarriedSettings ?? false
         self.portsInUse = prefill?.portsInUse ?? []
@@ -487,11 +488,16 @@ struct RunSheetView: View {
 
     // MARK: Fields
 
-    /// Local, pulled images — a convenience list, not a restriction; the field still
-    /// accepts any reference the user types, pulled or not.
+    /// The chosen Mac's pulled images — a convenience list, not a restriction; the field still
+    /// accepts any reference the user types, pulled or not. A paired host's are what it last
+    /// reported.
     private var imageSuggestions: [String] {
         var seen = Set<String>()
-        return model.images.map(\.reference).filter { seen.insert($0).inserted }
+        let images: [ContainerImage] = switch host {
+        case .local: model.images
+        case .peer(let fingerprint): model.hostMode.imageSnapshots[fingerprint]?.items ?? []
+        }
+        return images.map(\.reference).filter { seen.insert($0).inserted }
     }
 
     /// The volumes you have already created, offered instead of remembered.
