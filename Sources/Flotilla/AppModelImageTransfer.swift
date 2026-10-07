@@ -23,9 +23,7 @@ extension AppModel {
         }
         let theirs = hostMode.imageSnapshots[fingerprint]?.items.first { $0.reference == image.reference }
         if let theirs {
-            let same = theirs.configuration.descriptor?.digest != nil
-                && theirs.configuration.descriptor?.digest == image.configuration.descriptor?.digest
-            return same ? ("already has it", false, false)
+            return ImageTransfer.hostHasSame(image, as: theirs) ? ("already has it", false, false)
                 : ("has a different \(ContainerImage.shortReference(image.reference)) — sending replaces it", true, true)
         }
         return ("will receive it", false, true)

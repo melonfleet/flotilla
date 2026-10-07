@@ -323,6 +323,21 @@ struct WireStreamTests {
         #expect(ImageTransfer.hostCanLoad(containerVersion: "1.5.0"))
     }
 
+    @Test func aHostHoldingTheSentVariantAlreadyHasTheImage() throws {
+        let url = try #require(Bundle.module.url(forResource: "images", withExtension: "json", subdirectory: "Fixtures"))
+        let images = try JSONDecoder.flotilla.decode([ContainerImage].self, from: Data(contentsOf: url))
+        let image = try #require(images.first { ImageTransfer.platform(for: $0) != nil })
+        #expect(ImageTransfer.hostHasSame(image, as: image))
+        // The host's index is a different, single-platform one, but its arm64 variant is ours.
+        var single = image
+        single.configuration.descriptor?.digest = "sha256:" + String(repeating: "0", count: 64)
+        single.variants = image.variants?.filter { $0.platform?.architecture == "arm64" }
+        #expect(ImageTransfer.hostHasSame(image, as: single))
+        let other = try #require(images.first { $0.id != image.id && ImageTransfer.platform(for: $0) != nil
+            && $0.configuration.descriptor?.digest != image.configuration.descriptor?.digest })
+        #expect(!ImageTransfer.hostHasSame(image, as: other))
+    }
+
     @Test func theArmVariantIsSentWhenThereIsOne() throws {
         let url = try #require(Bundle.module.url(forResource: "images", withExtension: "json", subdirectory: "Fixtures"))
         let data = try Data(contentsOf: url)

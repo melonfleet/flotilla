@@ -40,7 +40,11 @@ struct SendImageView: View {
             // Fresh image lists from every host first, so "already has it" is current.
             await model.hostMode.refreshLiveStatus(force: true)
             if !seeded {
-                chosen = Set(model.trustedHostRefs.filter { model.sendState(of: image, to: $0).sendable })
+                // Only hosts that lack it: replacing a host's own copy of this name is ticked by hand.
+                chosen = Set(model.trustedHostRefs.filter {
+                    let state = model.sendState(of: image, to: $0)
+                    return state.sendable && !state.warning
+                })
                 seeded = true
             }
         }

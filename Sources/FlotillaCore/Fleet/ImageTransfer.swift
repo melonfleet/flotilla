@@ -23,4 +23,22 @@ public enum ImageTransfer {
         }
         return nil
     }
+
+    /// Whether `theirs` (a host's image of the same reference) already holds what a send of `mine`
+    /// would deliver. The whole index matching says so; so does the sent variant's own digest,
+    /// because a send carries one variant — the host's index then differs from this Mac's
+    /// multi-platform one while holding exactly the same image (measured 7 October, grafana:13.2).
+    public static func hostHasSame(_ mine: ContainerImage, as theirs: ContainerImage) -> Bool {
+        if let digest = mine.configuration.descriptor?.digest, digest == theirs.configuration.descriptor?.digest {
+            return true
+        }
+        guard let platform = platform(for: mine),
+              let sent = variant(of: mine, platform: platform)?.digest else { return false }
+        return variant(of: theirs, platform: platform)?.digest == sent
+    }
+
+    private static func variant(of image: ContainerImage, platform: String) -> ContainerImage.Variant? {
+        let architecture = platform.split(separator: "/").last.map(String.init)
+        return image.variants?.first { $0.platform?.os == "linux" && $0.platform?.architecture == architecture }
+    }
 }
