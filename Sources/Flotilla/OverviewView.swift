@@ -5,7 +5,9 @@ import FlotillaCore
 /// connected, what they hold in total, and what needs attention. Per-Mac charts and tables moved
 /// to each host's landing page under Hosts.
 ///
-/// Today the fleet is one host, This Mac; the shape is the fleet's so host mode only fills it in.
+/// Since Phase C the numbers are the fleet's: This Mac plus what each paired host last reported.
+/// Groups, DNS domains, machines and clusters stay This Mac's until Phase D pushes them, and their
+/// tiles say so once there is another Mac to confuse them with.
 struct OverviewView: View {
     let model: AppModel
     let go: (Section) -> Void
@@ -22,57 +24,111 @@ struct OverviewView: View {
         }
         // The totals read lists the poll refreshes only every sixth tick or on a section's visit,
         // so Overview loads them itself rather than showing zeros on a fresh launch.
+        // Paired hosts are asked alongside, not first: a host that is slow to answer must not hold
+        // This Mac's numbers at zero.
         .task {
+            async let hosts: Void = model.hostMode.refreshLiveStatus()
             await model.refreshImages()
             await model.refreshVolumes()
             await model.refreshNetworks()
             await model.refreshMachines()
             await model.refreshClusters()
             await model.refreshDNS()
+            await hosts
         }
     }
 
     // MARK: Hosts
 
+    /// One line per Mac: This Mac, then every paired host, each with its state.
+    private struct HostLine: Identifiable {
+        let id: String
+        let name: String
+        let state: String
+        let color: Color
+        let connected: Bool
+    }
+
+    private var hostLines: [HostLine] {
+        var lines = [HostLine(id: "local", name: model.hostLabel,
+                              state: model.runtimeUsable ? "connected" : "runtime unavailable",
+                              color: model.runtimeUsable ? Theme.online : Theme.warning,
+                              connected: model.runtimeUsable)]
+        for peer in model.hostMode.trustedHosts {
+            let status = model.hostMode.live[peer.fingerprint]
+            let (state, color, connected): (String, Color, Bool) = switch status?.state {
+            case .connected?: ("connected", Theme.online, true)
+            case .failed?: ("not answering", Theme.warning, false)
+            case .checking?, nil: ("checking…", Color.secondary, false)
+            }
+            lines.append(HostLine(id: peer.fingerprint.hex, name: peer.displayName,
+                                  state: state, color: color, connected: connected))
+        }
+        return lines
+    }
+
     private var hosts: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Hosts").font(.headline)
+        let lines = hostLines
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Hosts").font(.headline)
+                Spacer()
+                Text("\(lines.filter(\.connected).count) of \(lines.count) connected")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Button { go(.hosts) } label: {
-                HStack(spacing: 10) {
-                    Circle().fill(model.runtimeUsable ? Theme.online : Theme.warning)
-                        .frame(width: 9, height: 9)
-                    Text(model.hostLabel).font(.body.weight(.medium))
-                    Text(model.runtimeUsable ? "connected" : "runtime unavailable")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("1 of 1 connected").font(.caption).foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                VStack(spacing: 0) {
+                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                        if index > 0 { Divider().padding(.leading, 31) }
+                        HStack(spacing: 10) {
+                            Circle().fill(line.color).frame(width: 9, height: 9)
+                            Text(line.name).font(.body.weight(.medium))
+                            Text(line.state).font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            if index == 0 {
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                    }
                 }
-                .padding(12)
+                .contentShape(Rectangle())
                 .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline.opacity(0.25)))
             }
             .buttonStyle(.plain)
-            .help("Open This Mac's page")
+            .help("Open Hosts")
         }
     }
 
     // MARK: Totals
 
     private var totals: some View {
-        let running = model.containers.filter(AppModel.isRunning).count
+        let fleet = model.hostMode
+        // This Mac's lists plus each paired host's last answer — the same rows the sections list.
+        let containers = model.containers + fleet.fleetContainers.flatMap(\.snapshot.items)
+        let running = containers.filter(AppModel.isRunning).count
+        let images = model.images.count + fleet.fleetImages.reduce(0) { $0 + $1.snapshot.items.count }
+        let volumes = model.volumes.count + fleet.fleetVolumes.reduce(0) { $0 + $1.snapshot.items.count }
+        let networks = model.networks.count + fleet.fleetNetworks.reduce(0) { $0 + $1.snapshot.items.count }
         let machinesRunning = model.machines.filter { MachinesView.isRunning($0) }.count
+        // "on 3 Macs" where the number spans the fleet; "on This Mac" where it does not yet.
+        let macs = 1 + fleet.trustedHosts.count
+        let across = macs > 1 ? " · \(macs) Macs" : ""
+        let thisMacOnly = macs > 1 ? "on This Mac" : ""
         return VStack(alignment: .leading, spacing: 10) {
             Text("Across all hosts").font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
-                tile("Containers", "\(running)", detail: "running of \(model.containers.count)", .containers)
-                tile("Groups", "\(model.groups.book.groups.count)", detail: "saved", .containers)
-                tile("Images", "\(model.images.count)", detail: "stored", .images)
-                tile("Volumes", "\(model.volumes.count)", detail: "", .volumes)
-                tile("Networks", "\(model.networks.count)", detail: "", .networks)
-                tile("DNS domains", "\(model.dnsDomains.count)", detail: "", .dns)
-                tile("Machines", "\(machinesRunning)", detail: "running of \(model.machines.count)", .machines)
-                tile("Clusters", "\(Set(model.clusters.map(\.name)).count)", detail: "", .clusters)
+                tile("Containers", "\(running)", detail: "running of \(containers.count)" + across, .containers)
+                tile("Groups", "\(model.groups.book.groups.count)",
+                     detail: macs > 1 ? "saved on This Mac" : "saved", .containers)
+                tile("Images", "\(images)", detail: "stored" + across, .images)
+                tile("Volumes", "\(volumes)", detail: String(across.dropFirst(3)), .volumes)
+                tile("Networks", "\(networks)", detail: String(across.dropFirst(3)), .networks)
+                tile("DNS domains", "\(model.dnsDomains.count)", detail: thisMacOnly, .dns)
+                tile("Machines", "\(machinesRunning)",
+                     detail: "running of \(model.machines.count)" + (macs > 1 ? " on This Mac" : ""), .machines)
+                tile("Clusters", "\(Set(model.clusters.map(\.name)).count)", detail: thisMacOnly, .clusters)
             }
         }
     }
@@ -102,7 +158,18 @@ struct OverviewView: View {
         for network in model.disconnectedNetworks {
             items.append(("\(network) has lost its connection to \(model.hostLabel).", .networks))
         }
-        let flagged = model.containers.filter(\.needsAttention)
+        let fleet = model.hostMode
+        // A paired host that has stopped answering, or is waiting to be let in.
+        for peer in fleet.trustedHosts {
+            if case .failed(let reason)? = fleet.live[peer.fingerprint]?.state {
+                items.append(("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts))
+            }
+        }
+        let waiting = fleet.hosts.filter { $0.status == .pending }.count
+        if waiting > 0 {
+            items.append(("\(waiting) Mac\(waiting == 1 ? " is" : "s are") waiting for your approval.", .hosts))
+        }
+        let flagged = (model.containers + fleet.fleetContainers.flatMap(\.snapshot.items)).filter(\.needsAttention)
         if !flagged.isEmpty {
             items.append(("\(flagged.count) container\(flagged.count == 1 ? " is" : "s are") in an unknown state.", .containers))
         }

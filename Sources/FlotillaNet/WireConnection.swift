@@ -122,6 +122,9 @@ public final class WireConnection: @unchecked Sendable {
     public func close(_ reason: String? = nil) {
         queue.async { [self] in
             guard !finished else { return }
+            // Nothing to flush on a connection that never came up: the final send would never
+            // complete, and every abandoned attempt would wait out the two-second backstop.
+            guard case .ready = connection.state else { return finish(reason) }
             // Whichever comes first; `finish` runs once. **Strong** captures, deliberately: the
             // owner often lets go of a connection the moment it asks it to close (a stopping host
             // drops every handler), and a weak reference here meant the close never finished —

@@ -53,8 +53,20 @@ public final class AdminConnection: @unchecked Sendable {
     private var deadlines: [UInt32: DispatchSourceTimer] = [:]
     private var pingTimer: DispatchSourceTimer?
     private var connectTimer: DispatchSourceTimer?
+    private var reachTimer: DispatchSourceTimer?
     private var pairingTimer: DispatchSourceTimer?
     static let connectTimeout: TimeInterval = 20
+    /// How long TCP and TLS alone may take before this attempt is given up for another
+    /// (`RemoteHost` retries). Measured 7 October: in the first moment after Flotilla starts,
+    /// macOS can refuse its local-network lookups ("Local network prohibited" in the system log)
+    /// while it is still applying the app's Local Network permission. The connection then sits in
+    /// `preparing` and never recovers — only a fresh one does. On a LAN this phase takes well under
+    /// a second, so six is generous for a slow link and short enough to retry inside 20.
+    public static let reachTimeout: TimeInterval = 6
+    private let reachTimeout: TimeInterval
+    /// The reason an attempt ends with when it never reached the host — `RemoteHost` retries
+    /// exactly this one.
+    public static let notReachedReason = "couldn\u{2019}t reach it on the network"
     /// Long enough for two people to compare four words.
     static let pairingTimeout: TimeInterval = 300
     private var pairingSession: PairingAdminSession?
@@ -63,8 +75,10 @@ public final class AdminConnection: @unchecked Sendable {
     private var closedReason: String??
 
     public init(endpoint: NWEndpoint, identity: DeviceIdentity, info: WirePeerInfo,
-                limits: WireLimits = .default, crypto: PairingCrypto = .system) {
+                limits: WireLimits = .default, crypto: PairingCrypto = .system,
+                reachTimeout: TimeInterval = AdminConnection.reachTimeout) {
         self.endpoint = endpoint
+        self.reachTimeout = reachTimeout
         self.identity = identity
         self.crypto = crypto
         session = WireClientSession(peer: info, limits: limits)
@@ -95,8 +109,13 @@ public final class AdminConnection: @unchecked Sendable {
                 guard let self, self.connectCompletion != nil else { return }
                 self.connection.close("no welcome in time")
             }
+            reachTimer = timer(after: reachTimeout) { [weak self] in
+                guard let self, self.connectCompletion != nil else { return }
+                self.connection.close(Self.notReachedReason)
+            }
             connection.onReady = { [weak self] in
                 guard let self else { return }
+                self.reachTimer?.cancel()
                 self.connection.send(self.session.hello())
             }
             connection.onMessage = { [weak self] message in self?.received(message) }
@@ -262,6 +281,7 @@ public final class AdminConnection: @unchecked Sendable {
     private func closed(_ reason: String?) {
         closedReason = .some(reason)
         pingTimer?.cancel()
+        reachTimer?.cancel()
         connectCompletion?(.failure(RemoteHostError.unreachable(reason ?? "closed")))
         connectCompletion = nil
         for id in Array(pending.keys) { settle(id, .failure(RemoteHostError.closed(reason))) }

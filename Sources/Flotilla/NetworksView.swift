@@ -145,7 +145,8 @@ struct NetworksView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This cannot be undone.")
+            Text([FleetWording.onMacs(actionableRows.map { ($0.host, $0.hostName) }), "This cannot be undone."]
+                    .compactMap { $0 }.joined(separator: " "))
         }
     }
 

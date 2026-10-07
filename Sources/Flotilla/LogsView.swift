@@ -113,8 +113,7 @@ struct LogsView: View {
     /// starting or stopping something refreshes the logs on its own, which is the behaviour you
     /// would want anyway.
     private var fetchKey: String {
-        let sources = (model.running.map(\.id)
-                       + model.machines.filter { MachinesView.isRunning($0) }.map(\.id)).sorted()
+        let sources = model.logSources().map(\.key).sorted()
         return "\(ui.scope.rawValue)|\(ui.sources.rawValue)|\(ui.lineLimit)"
             + "|\(ui.only.sorted().joined(separator: ","))|\(sources.joined(separator: ","))"
     }
@@ -239,13 +238,25 @@ struct LogsView: View {
 
     /// Sources the tail would follow: the same set a fetch would read, so Live and Refresh never
     /// disagree about what "selected" means.
+    ///
+    /// **This Mac's only.** The wire carries a command's result when it ends and has no streams yet
+    /// (frame types 40–49 are reserved for them, PLAN.md Phase D), so a host's container cannot be
+    /// followed. Left out and said so in the Live button's help, rather than quietly dropped.
     private var liveTargets: [(String, ActivityKind)] {
+        selectedSources.filter(\.host.isLocal).map { ($0.key, $0.kind) }
+    }
+
+    /// The sources the kind and source filters leave, on every Mac.
+    private var selectedSources: [LogSource] {
         var targets = availableSources
-        if ui.sources == .containers { targets = targets.filter { $0.1 != .machine } }
-        if ui.sources == .machines { targets = targets.filter { $0.1 == .machine } }
-        if !ui.only.isEmpty { targets = targets.filter { ui.only.contains($0.0) } }
+        if ui.sources == .containers { targets = targets.filter { $0.kind != .machine } }
+        if ui.sources == .machines { targets = targets.filter { $0.kind == .machine } }
+        if !ui.only.isEmpty { targets = targets.filter { ui.only.contains($0.key) } }
         return targets
     }
+
+    /// Selected sources on other Macs, which Live cannot follow.
+    private var remoteSelectedCount: Int { selectedSources.filter { !$0.host.isLocal }.count }
 
     /// Refused rather than degraded above the ceiling — see `LogsUIState.maxLiveSources`. A live
     /// view that silently follows eight of your twenty containers is a view that lies by
@@ -255,15 +266,21 @@ struct LogsView: View {
     }
 
     private var liveHelp: String {
-        if liveTargets.isEmpty { return "Nothing running to stream" }
+        if liveTargets.isEmpty {
+            return remoteSelectedCount > 0
+                ? "Only This Mac's logs can be streamed — other Macs' are fetched"
+                : "Nothing running to stream"
+        }
         if liveTargets.count > LogsUIState.maxLiveSources {
             return "Too many sources to stream (\(liveTargets.count) selected, "
                 + "\(LogsUIState.maxLiveSources) at a time) — narrow them with the filter"
         }
+        let thisMacOnly = remoteSelectedCount > 0
+            ? " (This Mac only — other Macs' logs can't be streamed yet)" : ""
         return ui.live
             ? "Stop streaming"
             : "Stream new lines from \(liveTargets.count) source"
-                + (liveTargets.count == 1 ? "" : "s") + " as they are written"
+                + (liveTargets.count == 1 ? "" : "s") + " as they are written" + thisMacOnly
     }
 
     private var isFiltered: Bool { ui.sources != .all || !ui.only.isEmpty }
@@ -293,14 +310,14 @@ struct LogsView: View {
                 Divider()
                 Toggle("All sources", isOn: Binding(get: { ui.only.isEmpty },
                                                     set: { if $0 { ui.only.removeAll() } }))
-                ForEach(availableSources, id: \.0) { source, kind in
+                ForEach(availableSources, id: \.key) { source in
                     Toggle(isOn: Binding(
-                        get: { ui.only.contains(source) },
+                        get: { ui.only.contains(source.key) },
                         set: { on in
-                            if on { ui.only.insert(source) } else { ui.only.remove(source) }
+                            if on { ui.only.insert(source.key) } else { ui.only.remove(source.key) }
                         }
                     )) {
-                        Label(source, systemImage: kind.systemImage)
+                        Label(source.label, systemImage: source.kind.systemImage)
                     }
                 }
             }
@@ -452,7 +469,7 @@ struct LogsView: View {
                         }
 
                         TableColumn("Object") { line in
-                            sourceButton(line.source, kind: line.kind,
+                            sourceButton(line.source, name: line.name, kind: line.kind,
                                          selected: ui.selection.contains(line.id))
                         }
                         // Capped. `width(min:ideal:)` leaves the maximum unbounded, and with
@@ -462,12 +479,21 @@ struct LogsView: View {
                         // screen is for, so it is the column that takes the slack.
                         .width(min: 110, ideal: 168, max: 260)
                         .customizationID("object")
-                        // The only column carrying a `customizationID`, which is what the
+
+                        // Which Mac said it, as in every fleet table (PLAN.md Phase C). Shown
+                        // once a host is paired, by the same rule.
+                        TableColumn("Host") { line in
+                            HostCell(name: line.hostName, staleSince: nil)
+                        }
+                        .width(min: 70, ideal: 100, max: 180)
+                        .customizationID("host")
+                        // One of two columns carrying a `customizationID`, which is what the
                         // customization binding actually persists: this is the one whose width
                         // people drag, because source names vary from `web` to
-                        // `probe-alpine-latest`. Message has none because it is the screen's
-                        // whole purpose, and Received is switched from the Display popover
-                        // rather than the header menu — for the reason that popover explains.
+                        // `probe-alpine-latest`; Host is the other, so it can follow pairing.
+                        // Message has none because it is the screen's whole purpose, and Received
+                        // is switched from the Display popover rather than the header menu — for
+                        // the reason that popover explains.
 
                         TableColumn("Message") { line in
                             messageCell(line)
@@ -509,7 +535,8 @@ struct LogsView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.danger)
-                    sourceButton(chunk.source, kind: chunk.kind)
+                    sourceButton(chunk.source, name: chunk.host.isLocal ? chunk.name : "\(chunk.name) on \(chunk.hostName)",
+                                 kind: chunk.kind)
                         .frame(width: 150, alignment: .leading)
                     Text(chunk.failure ?? "")
                         .font(.system(size: 11))
@@ -659,7 +686,7 @@ struct LogsView: View {
         // has no single answer, and picking one of them arbitrarily is how the containers detail
         // used to open the wrong row.
         if sources.count == 1, let first = lines.first {
-            Button("Open \(first.source) Logs") { openSource(first.source, kind: first.kind) }
+            Button("Open \(first.name) Logs") { openSource(first.source, kind: first.kind) }
         }
         Button(lines.count == 1 ? "Show Whole Message" : "Show Whole Messages") {
             for line in lines { ui.expanded.insert(line.id) }
@@ -671,7 +698,9 @@ struct LogsView: View {
         }
         .disabled(lines.isEmpty)
         Button("Copy with Source") {
-            Clipboard.copy(lines.map { "\($0.source)\t\($0.text)" }.joined(separator: "\n"))
+            Clipboard.copy(lines.map {
+                ($0.host.isLocal ? $0.name : "\($0.name) on \($0.hostName)") + "\t" + $0.text
+            }.joined(separator: "\n"))
         }
         .disabled(lines.isEmpty)
         Divider()
@@ -695,7 +724,7 @@ struct LogsView: View {
     ///
     /// Truncates from the head: container ids share prefixes far more often than suffixes, so
     /// keeping the end is what keeps two of them distinguishable.
-    private func sourceButton(_ source: String, kind: ActivityKind,
+    private func sourceButton(_ source: String, name: String, kind: ActivityKind,
                               selected: Bool = false) -> some View {
         HStack(spacing: 4) {
             Image(systemName: kind.systemImage)
@@ -703,7 +732,7 @@ struct LogsView: View {
                 // Tertiary is nearly invisible on the accent fill; on a selected row the glyph
                 // follows the text rather than staying a wash.
                 .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-            Button(source) { openSource(source, kind: kind) }
+            Button(name) { openSource(source, kind: kind) }
                 .buttonStyle(.link)
                 // **`rowName(selected:)`, not `accentText`.** A selected row is filled with the
                 // accent, so an accent-coloured link on it is the one piece of text that stays
@@ -720,7 +749,7 @@ struct LogsView: View {
             // lines, you are recognising which of your things is talking.
             TagPillRow(tags: model.tags.tags(on: kind, source), compact: true, limit: 1)
         }
-        .help("Open \(source)\u{2019}s own Logs tab "
+        .help("Open \(name)\u{2019}s own Logs tab "
               + "(\(kind == .machine ? "machine" : "container"))")
     }
 
@@ -747,6 +776,7 @@ struct LogsView: View {
         guard !needle.isEmpty else { return liveLines }
         return liveLines.filter {
             $0.text.lowercased().contains(needle) || $0.source.lowercased().contains(needle)
+                || $0.hostName.lowercased().contains(needle)
         }
     }
 
@@ -759,19 +789,18 @@ struct LogsView: View {
         guard !needle.isEmpty else { return chunks }
         return chunks.compactMap { chunk in
             if chunk.failure != nil { return chunk }
-            if chunk.source.lowercased().contains(needle) { return chunk }
+            if chunk.source.lowercased().contains(needle)
+                || (!chunk.host.isLocal && chunk.hostName.lowercased().contains(needle)) { return chunk }
             let hits = chunk.lines.filter { $0.text.lowercased().contains(needle) }
             guard !hits.isEmpty else { return nil }
             return AggregatedLogChunk(source: chunk.source, kind: chunk.kind, lines: hits,
-                                      truncated: chunk.truncated, failure: nil)
+                                      truncated: chunk.truncated, failure: nil,
+                                      host: chunk.host, hostName: chunk.hostName)
         }
     }
 
     /// Running containers and machines, in the order the feed uses.
-    private var availableSources: [(String, ActivityKind)] {
-        model.running.map { ($0.id, ActivityKind.container) }
-            + model.machines.filter { MachinesView.isRunning($0) }.map { ($0.id, ActivityKind.machine) }
-    }
+    private var availableSources: [LogSource] { model.logSources() }
 
     /// The live tail, across every selected source at once.
     ///
@@ -823,7 +852,8 @@ struct LogsView: View {
                     nextIndex[key] = index + 1
                     liveLines.append(AggregatedLogLine(source: item.source, kind: item.kind,
                                                        index: index, stream: item.stream,
-                                                       text: item.text, receivedAt: item.at))
+                                                       text: item.text, receivedAt: item.at,
+                                                       host: .local, hostName: model.hostLabel))
                 }
                 // One cap across the whole feed, not per source: this is one list and what
                 // matters is how much of it is in memory.
@@ -901,11 +931,12 @@ struct LogsView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let document = CSVWriter.document(
-            header: ["Received", "Kind", "Object", "Stream", "Message"],
+            header: ["Received", "Host", "Kind", "Object", "Stream", "Message"],
             rows: lines.map { line in
                 [line.receivedAt.map { $0.formatted(.iso8601) } ?? "",
+                 line.hostName,
                  line.kind.rawValue,
-                 line.source,
+                 line.name,
                  line.stream.rawValue,
                  line.text]
             })

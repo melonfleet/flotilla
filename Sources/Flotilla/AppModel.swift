@@ -1216,6 +1216,107 @@ final class AppModel {
         }
     }
 
+    /// Pulls one image to several Macs at once (PLAN.md Phase C: fan-out pulls).
+    ///
+    /// Each Mac pulls from the registry itself, all at the same time, so the slowest Mac sets the
+    /// pace rather than the sum of them. The panel has one line per Mac and says which failed and
+    /// why: a partial pull is reported as a failure that names what did succeed, never as a
+    /// success with a footnote. A host pulls with whatever registry sign-in its own owner made
+    /// there; Flotilla sends none (Q20, Phase B).
+    ///
+    /// - Returns: whether every Mac pulled it, so the form stays open for a retry otherwise.
+    func pullImage(_ reference: String, to hosts: [HostRef],
+                   scheme: ContainerCLI.RegistryScheme = .default) async -> Bool {
+        guard hosts != [.local] else { return await pullImage(reference, scheme: scheme) }
+        activePull = ImagePull(reference: reference, startedAt: Date())
+        defer { activePull = nil }
+        let panel = OperationProgress(
+            title: "Pull an image to \(hosts.count) Mac\(hosts.count == 1 ? "" : "s")",
+            command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
+        activeOperation = panel
+
+        struct Job { let host: HostRef; let name: String; let step: UUID; let cli: ContainerCLI }
+        var jobs: [Job] = []
+        var failures: [(name: String, reason: String)] = []
+        for host in hosts {
+            let name = hostMode.hostName(host, local: hostLabel)
+            let step = panel.begin("Pulling on \(name)")
+            do {
+                jobs.append(Job(host: host, name: name, step: step, cli: try cli(for: host)))
+            } catch {
+                let reason = HostModeController.describe(error)
+                panel.finish(step, detail: reason, failed: true)
+                failures.append((name, reason))
+            }
+        }
+
+        let outcomes = await withTaskGroup(of: (Int, Error?).self) { group in
+            for (index, job) in jobs.enumerated() {
+                let cli = job.cli, isLocal = job.host.isLocal, step = job.step
+                group.addTask {
+                    do {
+                        _ = try await Task.detached {
+                            if isLocal {
+                                // This Mac's pull reports as it goes, into its own line and the
+                                // Images list's banner — the hosts' arrive whole, at the end.
+                                try cli.pull(reference, scheme: scheme) { progress in
+                                    Task { @MainActor in
+                                        self.notePullProgress(progress, for: reference)
+                                        panel.update(step, detail: Self.pullLine(progress))
+                                    }
+                                }
+                            } else {
+                                try cli.pull(reference, scheme: scheme)
+                            }
+                        }.value
+                        return (index, nil)
+                    } catch {
+                        return (index, error)
+                    }
+                }
+            }
+            var collected: [(Int, Error?)] = []
+            for await outcome in group { collected.append(outcome) }
+            return collected
+        }
+
+        var pulled: [String] = []
+        for (index, error) in outcomes.sorted(by: { $0.0 < $1.0 }) {
+            let job = jobs[index]
+            if let error {
+                let reason = job.host.isLocal ? String(describing: error) : HostModeController.describe(error)
+                panel.finish(job.step, detail: reason, failed: true)
+                failures.append((job.name, reason))
+            } else {
+                panel.finish(job.step)
+                pulled.append(job.name)
+                recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present", kind: .image,
+                                              subject: job.host.isLocal ? reference : "\(reference) on \(job.name)",
+                                              action: "Pulled"))
+            }
+        }
+
+        let listStep = panel.begin("Refreshing images")
+        for job in jobs {
+            switch job.host {
+            case .local: await refreshImages()
+            case .peer(let fingerprint): await hostMode.refreshHost(fingerprint)
+            }
+        }
+        panel.finish(listStep)
+
+        guard failures.isEmpty else {
+            let lines = failures.map { "\($0.name): \($0.reason)" }.joined(separator: "\n")
+            let summary = pulled.isEmpty
+                ? "No Mac pulled \(reference).\n\n\(lines)"
+                : "Pulled on \(pulled.joined(separator: ", ")), but not on \(failures.count) Mac\(failures.count == 1 ? "" : "s").\n\n\(lines)"
+            panel.fail(summary)
+            return false
+        }
+        panel.succeed("\(reference) pulled on \(pulled.count) Macs")
+        return true
+    }
+
     /// One readable line per progress report, for the operation panel.
     static func pullLine(_ progress: ImagePullProgress) -> String {
         var parts = ["[\(progress.step)/\(progress.stepCount)]",

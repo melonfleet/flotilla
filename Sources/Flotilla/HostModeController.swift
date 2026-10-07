@@ -576,7 +576,7 @@ final class HostModeController {
 
     /// A remote failure in a sentence. The common one on a Mac without `container` is the CLI's own
     /// "not found", which arrives as the host's failure message.
-    static func describe(_ error: Error) -> String {
+    nonisolated static func describe(_ error: Error) -> String {
         if let remote = error as? RemoteHostError { return remote.description }
         return "\(error)"
     }

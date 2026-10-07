@@ -467,7 +467,24 @@ Progress (7 October):
   recorded in the activity feed as "name on host", and every detail screen's Recent events now
   reads that key — a host's `web` no longer shows This Mac's `web` history. Live-tested on the
   mini: create, inspect and delete a volume; create and delete a network.
-- Next: fan-out pulls, Logs' Host column, Overview totals, version skew, export.
+- **Fan-out pulls — built.** New Image ▸ Pull has a "Pull to" checklist; every chosen Mac pulls
+  from the registry itself, all at once, one line per Mac in the progress panel, and a partial
+  pull is reported as a failure naming what did succeed. Over HTTP only This Mac pulls (the wire
+  refuses `--scheme`). Live-tested: `hello-world` to all four Macs, then a bulk delete across
+  them. Bulk-delete dialogs in every fleet section now name the Macs they touch.
+- **Logs — built.** A paired host's running containers are log sources (fetched over the wire),
+  each line carries its Mac in a Host column, sources read "web on mini", search matches host
+  names, CSV gains a Host column. Live streaming stays This Mac's until the wire has streams
+  (Phase D), and the Live button says so.
+- **Overview — built.** Every Mac's connection state, "N of M connected", fleet totals for
+  containers, images, volumes and networks, and attention items for a host that is not answering
+  or waiting for approval. Groups, DNS, machines and clusters are labelled This Mac's.
+- **Launch-time connection race — fixed.** Measured: in the first moment after launch macOS can
+  refuse Flotilla's local-network lookups while it applies the Local Network permission, and the
+  connection sat in `preparing` until the 20-second deadline, then a 60-second backoff. An attempt
+  now gets 6 seconds to reach the host and is made again, up to three times; a connection that
+  never came up closes at once instead of waiting out the graceful-close backstop.
+- Next: version skew, safe host and settings export.
 
 ### Phase D — Pushed infrastructure
 

@@ -345,6 +345,7 @@ struct MainWindowView: View {
             imagesUI.columnCustomization[visibility: "host"] = visibility
             volumesUI.columnCustomization[visibility: "host"] = visibility
             networksUI.columnCustomization[visibility: "host"] = visibility
+            logsUI.columnCustomization[visibility: "host"] = visibility
         }
         .onChange(of: model.pendingSection) { _, requested in
             guard let requested else { return }

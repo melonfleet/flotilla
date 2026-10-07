@@ -37,6 +37,8 @@ struct NewImageView: View {
     @State private var mode: Mode
 
     // Pull
+    /// Which Macs pull it (PLAN.md Phase C) — This Mac, or the host the list is filtered to.
+    @State private var targets: Set<HostRef>
     @State private var reference = ""
     /// Which registry an unqualified reference is completed against. Seeded from the user's
     /// default on the Registries screen and changeable per pull, because "usually GHCR, this
@@ -63,11 +65,13 @@ struct NewImageView: View {
 
     @State private var edits = FormEditTracker()
 
-    init(model: AppModel, initialMode: Mode = .pull, dismiss: @escaping () -> Void) {
+    init(model: AppModel, initialMode: Mode = .pull, initialHost: HostRef = .local,
+         dismiss: @escaping () -> Void) {
         self.model = model
         self.initialMode = initialMode
         self.dismiss = dismiss
         _mode = State(initialValue: initialMode)
+        _targets = State(initialValue: [initialHost])
     }
 
     /// Every control on the form, **including the source picker**.
@@ -83,7 +87,8 @@ struct NewImageView: View {
     /// less than a guard that looks unreliable. Opening the form and leaving without touching
     /// anything still closes on one click, which is the case the rule was really written for.
     private var editSignature: String {
-        [mode.rawValue, reference, scheme.rawValue, context?.path ?? "", dockerfile, tag, target,
+        [mode.rawValue, reference, scheme.rawValue, targets.map(\.token).sorted().joined(separator: ","),
+         context?.path ?? "", dockerfile, tag, target,
          platform, "\(noCache)",
          buildArgs.joined(separator: ",")].joined(separator: "\u{1}")
     }
@@ -168,8 +173,47 @@ struct NewImageView: View {
         ImageReferenceHost.qualify(reference, with: registry)
     }
 
+    /// This Mac and every paired host, in the order the Host filters list them.
+    private var hostChoices: [(ref: HostRef, name: String)] {
+        [(HostRef.local, model.hostLabel)]
+            + model.hostMode.trustedHosts.map { (HostRef.peer($0.fingerprint), $0.displayName) }
+    }
+
+    /// The Macs that will actually pull, in that order. Over HTTP only This Mac: the wire
+    /// refuses `--scheme` (`wireForbiddenFlags`), because pulling over plaintext on another Mac
+    /// is that Mac's owner's decision, not one an admin makes for it.
+    private var pullTargets: [HostRef] {
+        hostChoices.map(\.ref).filter { targets.contains($0) && (scheme == .default || $0.isLocal) }
+    }
+
+    private func targetBinding(_ host: HostRef) -> Binding<Bool> {
+        Binding(get: { targets.contains(host) },
+                set: { on in if on { targets.insert(host) } else { targets.remove(host) } })
+    }
+
     @ViewBuilder
     private var pullFields: some View {
+        if hostChoices.count > 1 {
+            FormField("Pull to",
+                      help: FieldHelp(
+                          "Which Macs pull the image.",
+                          detail: "Each Mac pulls from the registry itself, all at the same time, "
+                              + "and the progress panel reports each one. A Mac signed in to a "
+                              + "private registry pulls with its own sign-in; Flotilla sends none.",
+                          warning: scheme == .http
+                              ? "Over HTTP only This Mac pulls. Another Mac is never asked to pull over plaintext."
+                              : nil),
+                      problem: pullTargets.isEmpty ? "Choose at least one Mac." : nil) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(hostChoices, id: \.ref) { choice in
+                        Toggle(choice.name, isOn: targetBinding(choice.ref))
+                            .toggleStyle(.checkbox)
+                            .disabled(scheme == .http && !choice.ref.isLocal)
+                    }
+                }
+            }
+        }
+
         FormField("Reference",
                   help: FieldHelp(
                       "What to pull, and where from.",
@@ -358,6 +402,12 @@ struct NewImageView: View {
                 .foregroundStyle(previewStyle)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if mode == .pull, pullTargets != [.local], !pullTargets.isEmpty {
+                Label("Runs on " + pullTargets.map { model.hostMode.hostName($0, local: model.hostLabel) }
+                        .joined(separator: ", "),
+                      systemImage: "desktopcomputer")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -433,6 +483,7 @@ struct NewImageView: View {
         switch mode {
         case .pull:
             return !trimmedReference.isEmpty && referenceProblem == nil && model.activePull == nil
+                && !pullTargets.isEmpty
         case .build:
             if case .success = buildPreview { return true }
             return false
@@ -485,8 +536,9 @@ struct NewImageView: View {
             // typo in it.
             let wanted = effectiveReference
             let using = scheme
+            let hosts = pullTargets
             Task {
-                if await model.pullImage(wanted, scheme: using) { dismiss() }
+                if await model.pullImage(wanted, to: hosts, scheme: using) { dismiss() }
             }
         case .build:
             guard let context else { return }

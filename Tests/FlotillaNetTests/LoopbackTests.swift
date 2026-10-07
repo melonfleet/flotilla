@@ -364,4 +364,33 @@ struct LoopbackTests {
         let result = try await host.run(["ls"], timeout: nil)
         #expect(result.exitCode == 0)
     }
+
+    @Test func anAttemptThatNeverReachesTheHostIsRetriedThenReported() async throws {
+        // Measured 7 October: just after launch macOS can refuse Flotilla's local-network lookups
+        // while it applies the Local Network permission, and the connection sits in `preparing`
+        // for good. A Bonjour name nobody advertises stays there the same way. Each attempt must
+        // give up quickly, be made again, and finally fail saying it never reached the host —
+        // not wait out the 20-second welcome deadline once.
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        let host = RemoteHost(endpoint: .service(name: "nobody-\(UUID().uuidString.prefix(8))",
+                                                 type: WireTLS.serviceType, domain: "local.", interface: nil),
+                              fingerprint: rig.hostIdentity.fingerprint, identity: rig.adminIdentity,
+                              info: WirePeerInfo(name: "admin", appVersion: "test"), reachTimeout: 0.4)
+        defer { host.close() }
+        let started = Date()
+        do {
+            _ = try await host.run(["ls"], timeout: nil)
+            Issue.record("a host nobody advertises answered")
+        } catch let error as RemoteHostError {
+            guard case .unreachable(let reason) = error else {
+                Issue.record("\(error)")
+                return
+            }
+            #expect(reason == AdminConnection.notReachedReason)
+        }
+        // Three attempts of 0.4s with a second between them: about 3.2s, well inside 20.
+        let elapsed = Date().timeIntervalSince(started)
+        #expect(elapsed > 2.5 && elapsed < 8, "took \(elapsed)s")
+    }
 }

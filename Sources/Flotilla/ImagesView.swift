@@ -54,7 +54,7 @@ struct ImagesView: View {
             if let target = runImage {
                 RunSheetView(model: model, initialImage: target.reference, initialHost: target.host) { runImage = nil }
             } else if let mode = newImageMode {
-                NewImageView(model: model, initialMode: mode) { newImageMode = nil }
+                NewImageView(model: model, initialMode: mode, initialHost: ui.hostFilter ?? .local) { newImageMode = nil }
             } else if let image = taggingImage {
                 tagScreen(for: image)
             } else if let target = detailTarget {
@@ -180,7 +180,8 @@ struct ImagesView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This cannot be undone.")
+            Text([FleetWording.onMacs(actionableRows.map { ($0.host, $0.hostName) }), "This cannot be undone."]
+                    .compactMap { $0 }.joined(separator: " "))
         }
     }
 

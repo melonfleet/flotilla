@@ -1328,6 +1328,11 @@ struct ContainersView: View {
         if !actionableGroups.isEmpty {
             parts.append("Deleting a group removes only the grouping; its containers stay unless you delete them too.")
         }
+        // The Macs, when any is not this one. Groups are This Mac's until Phase D.
+        let local = (actionableContainerIDs.isEmpty && actionableGroups.isEmpty) ? [] : [(HostRef.local, model.hostLabel)]
+        if let macs = FleetWording.onMacs(local + actionableRemote.map { ($0.host, $0.hostName) }) {
+            parts.insert(macs, at: 0)
+        }
         parts.append("This cannot be undone.")
         return parts.joined(separator: " ")
     }

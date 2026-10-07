@@ -24,8 +24,12 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     private var connection: AdminConnection?
     private var welcome: WireMessage.Welcome?
 
-    public init(endpoint: NWEndpoint, fingerprint: PeerFingerprint, identity: DeviceIdentity, info: WirePeerInfo) {
+    let reachTimeout: TimeInterval
+
+    public init(endpoint: NWEndpoint, fingerprint: PeerFingerprint, identity: DeviceIdentity, info: WirePeerInfo,
+                reachTimeout: TimeInterval = AdminConnection.reachTimeout) {
         self.endpoint = endpoint
+        self.reachTimeout = reachTimeout
         self.fingerprint = fingerprint
         self.identity = identity
         self.info = info
@@ -94,11 +98,25 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
         action()
     }
 
-    private func openConnection() {
-        let fresh = AdminConnection(endpoint: endpoint, identity: identity, info: info)
+    /// Attempts that never reach the host are made again, a second apart, this many times in all —
+    /// see `AdminConnection.reachTimeout` for the launch-time case this exists for. A host that is
+    /// really off the network costs three short attempts rather than one long one.
+    static let reachAttempts = 3
+
+    private func openConnection(attempt: Int = 1) {
+        let fresh = AdminConnection(endpoint: endpoint, identity: identity, info: info, reachTimeout: reachTimeout)
         let expected = fingerprint
         fresh.connect { [weak self] result in
             guard let self else { return }
+            // A case pattern on the cast, not `.failure(RemoteHostError.unreachable(…))`: that
+            // spelling against an `Error` is the kind that compiles and never matches (see `run`).
+            if case .failure(let error) = result, case .unreachable(let reason)? = error as? RemoteHostError,
+               reason == AdminConnection.notReachedReason, attempt < Self.reachAttempts {
+                DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
+                    self?.openConnection(attempt: attempt + 1)
+                }
+                return
+            }
             let outcome: Result<AdminConnection, Error>
             switch result {
             case .failure(let error): outcome = .failure(error)
