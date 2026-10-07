@@ -564,7 +564,7 @@ must preserve all of the following:
     silently, Allowlist-validated, quoted by `AdminScript`, and **only** with the installed
     `/usr/local/bin/container` while it and its directory are root-owned and writable by no one
     else (`AdminExecutable`). Never the configurable `containerBinaryPath`. Do not add another
-    privileged command without the owner's say-so. **Amended 2026-10-06/07 (Q32):** the same two
+    privileged command without the owner's say-so. **Amended 2026-10-07 (Q32):** the same two
     commands may also run through the **DNS helper** — a root `SMAppService` daemon
     (`FlotillaDNSHelper`, interface in `FlotillaPrivileged`) the owner approves once in Login
     Items. It takes typed requests (create a name / delete names), never an argv; re-validates
