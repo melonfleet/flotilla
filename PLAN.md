@@ -270,8 +270,26 @@ Decided with the owner (7 October):
   volumes and networks. Terminal, registry sign-in, runtime start/stop,
   machines and DNS stay this-Mac-only for Phase B and are reviewed one by one
   later.
-- **Pairing:** the host shows a short one-time code; the owner types it on the
-  admin Mac; both sides then show the same fingerprint words to confirm.
+- **Enrolment, two ways to the same result** (the owner, 7 October). Both end
+  with each side pinning the other's key in its peer list, revocable at once.
+  - **Fleet enrolment key**, modelled on CrowdStrike's CID, for managed
+    deployment. The admin Mac generates a key that carries its own public-key
+    fingerprint and a random 256-bit secret, with a checksum so a mistyped key
+    is caught. The key reaches hosts in a configuration profile (managed
+    preference in `dev.melonfleet.Flotilla`, alongside host mode on and the
+    port, locked) or is pasted by hand. A host holding it trusts only the admin
+    whose key it names; the admin accepts a host only once it proves it holds
+    the secret, so a spoofed Bonjour advert cannot join. New hosts appear in
+    Hosts and in Activity. The admin can rotate the key, which stops new
+    enrolments without touching hosts already enrolled.
+  - **One-time code** for a single unmanaged Mac: the host shows a short code,
+    the owner types it on the admin Mac, and both show the same fingerprint
+    words to confirm.
+  - The key is a bearer secret for enrolment only: anyone with the profile can
+    enrol a Mac, and managed preferences are readable by local users on that
+    Mac (as a CrowdStrike CID is). It never grants a host anything over the
+    admin, and the admin's per-host identities, not the key, carry trust after
+    enrolment.
 - **Port:** 7868 by default, changeable in Settings.
 - **Where host mode runs — headless Macs.** `container` today runs only inside
   a logged-in user's GUI session: `system start` installs its API server as a
