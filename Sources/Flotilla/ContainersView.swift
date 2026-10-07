@@ -617,7 +617,7 @@ struct ContainersView: View {
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
                 }
-                .width(min: 90, ideal: 130)
+                .width(min: 90, ideal: 116)
                 .customizationID("ip")
 
                 // Hidden by default (see `ui.columnCustomization`): with one host it reads
@@ -629,7 +629,7 @@ struct ContainersView: View {
                 TableColumn("Host", value: \.hostName) { row in
                     HostCell(name: row.hostName, staleSince: row.staleSince)
                 }
-                    .width(min: 80, ideal: 110)
+                    .width(min: 70, ideal: 92)
                     .customizationID("host")
 
                 // Last. Sized to its content rather than fixed, so it compresses with
@@ -1844,13 +1844,13 @@ struct ContainersView: View {
                         TagPillRow(tags: model.tags.tags(on: .container, row.id), compact: true)
                     }
                 }
-                .width(min: 60, ideal: 130)
+                .width(min: 60, ideal: 104)
                 .customizationID("tags")
 
                 TableColumn("Image", value: \.imageSortKey) { row in
                     imageCell(row)
                 }
-                .width(min: 90, ideal: 150)
+                .width(min: 90, ideal: 124)
                 .customizationID("image")
                 TableColumn("Created", value: \.creationSortKey) { row in
                     if let c = row.container {
@@ -1874,7 +1874,7 @@ struct ContainersView: View {
                         .foregroundStyle(summary == nil ? .tertiary : .secondary)
                         .help(summary ?? "No published ports")
                 }
-                .width(min: 80, ideal: 110)
+                .width(min: 70, ideal: 90)
                 .customizationID("ports")
                 trailingColumns
             }

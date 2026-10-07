@@ -57,8 +57,9 @@ final class ContainersUIState {
     /// Which columns are shown, in what order and at what width.
     ///
     /// Two hidden by default:
-    /// - **Host**, because with a single host it prints "This Mac" on every row, and a column
-    ///   identical in every row is pure width. The cross-host dimension stays in the data.
+    /// - **Host**, until a host is paired: with This Mac alone it prints "This Mac" on every row,
+    ///   and a column identical in every row is pure width. `MainWindowView` shows it in every
+    ///   section once a host is paired, and hides it again if the last one goes.
     /// - **Created**, so the identifier and the live figures get the space first.
     var columnCustomization: TableColumnCustomization<ContainersView.ContainerRow> = {
         var customization = TableColumnCustomization<ContainersView.ContainerRow>()

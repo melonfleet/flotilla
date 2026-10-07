@@ -581,6 +581,28 @@ shows the system model falls short. Her 15 open questions are the owner's.
   `Allowlist` before they are shown, and whether it may pre-fill a form (never
   run anything itself).
 
+### Registry browser (the owner, 7 October)
+
+Agreed for after Phase C; not started. Docker Desktop lists and searches Docker Hub from inside
+the app. Flotilla gains the same: a Browse button in Images that opens the **default registry**
+(`defaultRegistryDomain`, set from the Registries table — Docker Hub or GitHub's, whichever it is
+at the time), lists its images, searches them, and offers Pull (to This Mac or, with Phase C's
+fan-out, to chosen hosts) from a result.
+
+To settle before building:
+
+- `container` has no search command, so this talks to the registry's own HTTP API. Docker Hub
+  has a public search endpoint; GitHub Container Registry has no public catalogue search, so
+  browsing it likely means the GitHub Packages API, which needs a signed-in account — say so in
+  the UI rather than show an empty list.
+- It is a network request Flotilla makes itself, so the no-phone-home promise applies: only when
+  the user opens the browser or types a search, never in the background, and nothing about the
+  Mac sent with it.
+- Credentials stay where Q20 put them: `container registry login` and the Keychain. If an API
+  needs a token, decide where it lives before anything is written.
+- Results are untrusted text from the internet: shown, never executed, and a reference only ever
+  reaches `image pull` through the `Allowlist` like a typed one.
+
 ### Host-run policies and streaming
 
 - Add live log and stats streams over persistent connections.

@@ -50,10 +50,7 @@ final class ResourceUIState<Row: Identifiable> {
 
     /// Name-ascending, per the 9 August decision that a table's default sort should be stable
     /// rather than clever — see `ContainersUIState`.
-    /// `hidden` names columns off by default — Host, which with one Mac reads "This Mac" on every
-    /// row, as in `ContainersUIState`.
-    init(sortOrder: [KeyPathComparator<Row>], hidden: [String] = []) {
+    init(sortOrder: [KeyPathComparator<Row>]) {
         self.sortOrder = sortOrder
-        for id in hidden { columnCustomization[visibility: id] = .hidden }
     }
 }

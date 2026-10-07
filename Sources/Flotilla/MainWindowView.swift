@@ -29,11 +29,11 @@ struct MainWindowView: View {
 
     /// Volumes, Networks and Images share one generic state type — see `ResourceUIState`.
     @State private var volumesUI = ResourceUIState<HostedVolume>(
-        sortOrder: [KeyPathComparator(\HostedVolume.name)], hidden: ["host"])
+        sortOrder: [KeyPathComparator(\HostedVolume.name)])
     @State private var networksUI = ResourceUIState<HostedNetwork>(
-        sortOrder: [KeyPathComparator(\HostedNetwork.name)], hidden: ["host"])
+        sortOrder: [KeyPathComparator(\HostedNetwork.name)])
     @State private var imagesUI = ResourceUIState<HostedImage>(
-        sortOrder: [KeyPathComparator(\HostedImage.reference)], hidden: ["host"])
+        sortOrder: [KeyPathComparator(\HostedImage.reference)])
     @State private var registriesUI = ResourceUIState<RegistryRow>(
         sortOrder: [KeyPathComparator(\RegistryRow.nameSortKey)])
     @State private var dnsUI = ResourceUIState<LocalDNSDomain>(
@@ -334,6 +334,17 @@ struct MainWindowView: View {
         .sheet(item: Binding(get: { model.activeOperation },
                              set: { if $0 == nil { model.activeOperation = nil } })) { operation in
             OperationProgressView(progress: operation) { model.activeOperation = nil }
+        }
+        // The Host column follows the fleet (the owner, 7 October): shown once a host is paired —
+        // four `default` networks with nothing to tell them apart is what it is for — and hidden
+        // when there is only This Mac, where it would read "This Mac" on every row. Applied only
+        // when that changes, so hiding or showing it by hand in between is left alone.
+        .onChange(of: model.hostMode.trustedHosts.isEmpty, initial: true) { _, thisMacOnly in
+            let visibility: Visibility = thisMacOnly ? .hidden : .visible
+            containersUI.columnCustomization[visibility: "host"] = visibility
+            imagesUI.columnCustomization[visibility: "host"] = visibility
+            volumesUI.columnCustomization[visibility: "host"] = visibility
+            networksUI.columnCustomization[visibility: "host"] = visibility
         }
         .onChange(of: model.pendingSection) { _, requested in
             guard let requested else { return }

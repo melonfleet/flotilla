@@ -317,6 +317,11 @@ struct FlotillaApp: App {
     /// hook early enough to tell the delegate the user's presentation preference *before*
     /// SwiftUI decides whether to build the main window. See `applyPresentation`.
     init() {
+        // Tooltips after 0.3s rather than AppKit's 1.6s (measured, 7 October). The collapsed
+        // sidebar is icons only and its tooltips are the labels, so waiting over a second and a
+        // half on each icon to learn what it is was the owner's complaint. The registration domain,
+        // not a write: nothing persists, and a `defaults write` of the key still wins.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
         let model = AppModel()
         _model = State(initialValue: model)
         AppDelegate.pendingModel = model
