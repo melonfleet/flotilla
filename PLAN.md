@@ -267,9 +267,21 @@ Decided with the owner (7 October):
 
 - **Exposure:** a paired admin Mac starts with reads and lifecycle — lists,
   inspect, logs, and run/create/start/stop/delete for containers, images,
-  volumes and networks. Terminal, registry sign-in, runtime start/stop,
-  machines and DNS stay this-Mac-only for Phase B and are reviewed one by one
-  later.
+  volumes and networks. Terminal, runtime start/stop and machines are reviewed
+  one by one later. Two others are not withheld so much as replaced (the owner,
+  7 October):
+  - **Registries — the admin Mac is the image source.** Registry sign-in never
+    goes to a host, because a credential must not leave the admin Mac. Instead
+    the admin pulls a private image with its own sign-in, then sends it to the
+    host with `container image save` → the bounded binary stream → `image load`
+    on the host. Hosts still pull public images directly, which spares the
+    laptop's bandwidth. The admin's image store acts as the fleet's cache.
+  - **DNS — per-host zones.** `container` names containers under one domain per
+    Mac (`config.toml`), so different hosts can already sit in different zones
+    — storefront hosts in one, back-end hosts in another. The DNS section gains
+    the Host column and Host picker every section gets in Phase C. It waits for
+    Phase D only because creating a domain on a host needs root there, which is
+    the helper's job.
 - **Enrolment, two ways to the same result** (the owner, 7 October). Both end
   with each side pinning the other's key in its peer list, revocable at once.
   - **Fleet enrolment key**, modelled on CrowdStrike's CID, for managed
@@ -280,13 +292,18 @@ Decided with the owner (7 October):
     port, locked) or is pasted by hand. A host holding it trusts only the admin
     whose key it names; the admin accepts a host only once it proves it holds
     the secret, so a spoofed Bonjour advert cannot join. New hosts appear in
-    Hosts and in Activity. The admin can rotate the key, which stops new
-    enrolments without touching hosts already enrolled.
+    Hosts and in Activity as **Waiting for approval**, and none is trusted until
+    the owner approves it on the admin Mac (the owner, 7 October): approval
+    shows the computer name, model, serial number, macOS version, address and
+    fingerprint words, so it can be checked against the inventory. Reject
+    blocks that identity; an unanswered request expires after seven days. The
+    admin can rotate the key, which stops new enrolments without touching
+    hosts already enrolled.
   - **One-time code** for a single unmanaged Mac: the host shows a short code,
     the owner types it on the admin Mac, and both show the same fingerprint
     words to confirm.
-  - The key is a bearer secret for enrolment only: anyone with the profile can
-    enrol a Mac, and managed preferences are readable by local users on that
+  - The key is a bearer secret for asking to enrol only: anyone with the
+    profile can ask, and only the owner's approval admits a Mac, and managed preferences are readable by local users on that
     Mac (as a CrowdStrike CID is). It never grants a host anything over the
     admin, and the admin's per-host identities, not the key, carry trust after
     enrolment.
