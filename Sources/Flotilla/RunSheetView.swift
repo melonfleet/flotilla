@@ -403,8 +403,8 @@ struct RunSheetView: View {
             FormField("Command",
                       help: FieldHelp(
                           "Replaces whatever the image runs by default.",
-                          detail: "Split on whitespace into up to \(Self.maxCommandTokens) tokens.",
-                          example: "echo hello\nsh -c \"while true; do date; sleep 5; done\"",
+                          detail: "Split into up to \(Self.maxCommandTokens) arguments the way a shell would — quote an argument that contains spaces. Nothing is expanded: there is no shell here, so for $VARIABLES, pipes or ; run one with sh -c '…'.",
+                          example: "echo hello\nsh -c 'while true; do date; sleep 5; done'",
                           warning: "Left empty, the image runs its own entrypoint — which is what you want most of the time."),
                       problem: message(for: .command),
                       optional: true) {
@@ -482,7 +482,7 @@ struct RunSheetView: View {
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
-            .disabled(previewError != nil)
+            .disabled(previewError != nil || commandSplitError != nil)
         }
         .padding(12)
     }
@@ -555,17 +555,26 @@ struct RunSheetView: View {
 
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 8) {
-                Text(previewLine)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if let previewLine {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(previewLine)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                CommandPreviewCopyButton(command: previewLine,
-                                         help: "Copy the container command to the clipboard")
+                    CommandPreviewCopyButton(command: previewLine,
+                                             help: "Copy the container command to the clipboard")
+                }
             }
-            if !hasStarted {
+            if commandSplitError != nil {
+                // No line at all rather than one without the command, or with the text pasted in
+                // unsplit: either would be a command the Run button cannot mean.
+                Label("Fix the highlighted field to see the command.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Theme.warning)
+            } else if !hasStarted {
                 Label("Enter an image reference to build the command.", systemImage: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -594,20 +603,22 @@ struct RunSheetView: View {
         }
     }
 
-    /// The argv as it will be executed, one token-joined line — computed from the exact
-    /// same construction the preview validates and `runContainer` runs, whether or not it
-    /// currently validates, so the sheet never shows a lookalike command.
-    private var previewLine: String {
+    /// The argv as it will be executed, one line with each argument shell-quoted where it needs
+    /// to be — computed from the exact same construction the preview validates and
+    /// `runContainer` runs, whether or not it currently validates, so the sheet never shows a
+    /// lookalike command. Nil while the Command field does not split into arguments, because
+    /// then there is no argv to show.
+    private var previewLine: String? {
         // The **validated** argv when there is one, because that is what runs. `runArguments`
         // is the input grammar: it carries a `--` before the command that `Allowlist` consumes
         // and never re-emits, so showing it would put a token on screen that the CLI would
         // refuse. The raw construction is still the fallback for a command that does not
         // validate — a refused command must still be visible, or the error has nothing to
         // point at.
+        guard case .success(let command) = commandSplit else { return nil }
         if case .success(let validated) = preview { return validated.localPreview }
-        return (["container"] + ContainerCLI.runArguments(image: trimmedImage, options: options,
-                                                          command: command))
-            .joined(separator: " ")
+        return ShellWords.join(["container"] + ContainerCLI.runArguments(image: trimmedImage, options: options,
+                                                                         command: command))
     }
 
     private var preview: Result<ValidatedCommand, AllowlistError> {
@@ -620,6 +631,9 @@ struct RunSheetView: View {
     }
 
     private func message(for field: Field) -> String? {
+        // Ahead of the `hasStarted` gate: a quote left open is wrong in a field the user has typed
+        // into, whether or not the image is filled in yet.
+        if field == .command, let commandSplitError { return commandSplitError.description }
         // An untouched form is not a broken one. With no image typed yet the validator
         // legitimately fails, and reporting that as `'' isn't a valid imageReference` greets
         // you with two red errors for a form you have not filled in — the same "empty is not
@@ -685,7 +699,21 @@ struct RunSheetView: View {
         )
     }
 
+    /// The Command field as argv, split with shell quoting (`ShellWords`). It used to split on
+    /// whitespace, so `sh -c 'i=0; …'` reached the container as `sh`, `-c`, `'i=0;`, … and failed
+    /// with "unterminated quoted string" — while the preview's space-join made the quotes look
+    /// honoured.
+    private var commandSplit: Result<[String], ShellWords.SplitError> {
+        do { return .success(try ShellWords.split(commandText)) } catch { return .failure(error) }
+    }
+
+    private var commandSplitError: ShellWords.SplitError? {
+        if case .failure(let error) = commandSplit { return error }
+        return nil
+    }
+
+    /// Empty while the field does not split; Run is disabled then, so this never runs.
     private var command: [String] {
-        commandText.split(whereSeparator: \.isWhitespace).map(String.init)
+        (try? commandSplit.get()) ?? []
     }
 }

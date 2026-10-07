@@ -466,7 +466,10 @@ struct GroupMemberFormView: View {
         _ports = State(initialValue: member.ports.joined(separator: "\n"))
         _env = State(initialValue: member.env.joined(separator: "\n"))
         _volumes = State(initialValue: member.volumes.joined(separator: "\n"))
-        _command = State(initialValue: member.command.joined(separator: " "))
+        // Rendered with quotes where an argument needs them, so the stored argv splits back to
+        // itself on Save. A space-join turned `sh`, `-c`, `echo hi` into three words *plus one*
+        // the moment an untouched member was saved again.
+        _command = State(initialValue: ShellWords.join(member.command))
         _cpus = State(initialValue: member.cpus.map(String.init) ?? "")
         _memory = State(initialValue: member.memory ?? "")
         _readyPort = State(initialValue: member.readyPort.map(String.init) ?? "")
@@ -558,8 +561,9 @@ struct GroupMemberFormView: View {
             FormField("Command",
                       help: FieldHelp(
                           "Replaces what the image runs by default.",
-                          detail: "Left empty, the image runs its own entrypoint.",
-                          example: "python -m app"),
+                          detail: "Split into arguments the way a shell would — quote an argument that contains spaces. Nothing is expanded, so for $VARIABLES, pipes or ; run a shell with sh -c '…'. Left empty, the image runs its own entrypoint.",
+                          example: "python -m app\nsh -c 'while true; do date; sleep 5; done'"),
+                      problem: commandSplitError?.description,
                       optional: true) {
                 TextField("python -m app", text: $command)
                     .textFieldStyle(.roundedBorder)
@@ -618,7 +622,8 @@ struct GroupMemberFormView: View {
         made.ports = Self.lines(ports)
         made.env = Self.lines(env)
         made.volumes = Self.lines(volumes)
-        made.command = command.split(separator: " ").map(String.init)
+        // Empty while the field does not split; Save is disabled then, so it is never stored.
+        made.command = (try? ShellWords.split(command)) ?? []
         made.cpus = Int(cpus.trimmingCharacters(in: .whitespaces))
         let trimmedMemory = memory.trimmingCharacters(in: .whitespaces)
         made.memory = trimmedMemory.isEmpty ? nil : trimmedMemory
@@ -636,7 +641,11 @@ struct GroupMemberFormView: View {
         let made = built
         return !made.name.isEmpty && !made.image.isEmpty
             && problem(made.name) == nil && imageProblem(made.image) == nil
-            && readyPortProblem == nil
+            && readyPortProblem == nil && commandSplitError == nil
+    }
+
+    private var commandSplitError: ShellWords.SplitError? {
+        do { _ = try ShellWords.split(command); return nil } catch { return error }
     }
 
     private var readyPortProblem: String? {
@@ -655,6 +664,8 @@ struct GroupMemberFormView: View {
                 .foregroundStyle(Theme.info)
             Text(built.image.isEmpty
                  ? "Add an image to see the command."
+                 : commandSplitError != nil
+                 ? "Fix the command to see it."
                  : GroupFormView.preview(of: built, network: nil, redacted: false))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)

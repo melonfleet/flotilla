@@ -832,7 +832,7 @@ private func requireRejected(
         // spellings of one request produce one argv — and the preview is the property that still
         // shows the argv whole. The audit string deliberately shapes values away, and asserting
         // canonicalisation through it would test two things badly instead of one thing well.
-        #expect(command.localPreview == (["container"] + testCase.canonical).joined(separator: " "))
+        #expect(command.localPreview == ShellWords.join(["container"] + testCase.canonical))
     }
 }
 

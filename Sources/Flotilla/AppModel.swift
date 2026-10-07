@@ -2072,10 +2072,9 @@ final class AppModel {
             return await runContainer(image: image, options: options, command: command)
         }
         let hostName = hostMode.hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "the host"
-        let argv = ContainerCLI.runArguments(image: image, options: options, command: command)
         await withProgress(
             title: "Run a container on \(hostName)",
-            command: argv.joined(separator: " "),
+            command: Self.runDisplayLine(image: image, options: options, command: command, host: host),
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let remote = try self.cli(for: host)
@@ -2097,10 +2096,9 @@ final class AppModel {
     }
 
     func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = []) async {
-        let argv = ContainerCLI.runArguments(image: image, options: options, command: command)
         await withProgress(
             title: "Run a container",
-            command: argv.joined(separator: " "),
+            command: Self.runDisplayLine(image: image, options: options, command: command, host: .local),
             work: { progress in
                 let step = progress.begin("Starting from \(image)")
                 let result = try await Task.detached { [cli] in
@@ -2119,6 +2117,19 @@ final class AppModel {
                 return containers.contains { $0.id == name }
             }
         )
+    }
+
+    /// The progress panel's line for a run: the same validated, quoted argv the Run form previewed.
+    /// It was the raw `runArguments` space-joined — the input grammar's `--` included, and a
+    /// `sh -c` script indistinguishable from separate words — so the panel showed a different
+    /// command from the one the form had just said it would run.
+    static func runDisplayLine(image: String, options: ContainerCLI.RunOptions, command: [String],
+                               host: HostRef) -> String {
+        switch runPreview(image: image, options: options, command: command, host: host) {
+        case .success(let validated): validated.localPreview
+        case .failure: ShellWords.join(["container"] + ContainerCLI.runArguments(image: image, options: options,
+                                                                                 command: command))
+        }
     }
 
     /// The validated argv for `container run …`, or the `Allowlist` error that rejects

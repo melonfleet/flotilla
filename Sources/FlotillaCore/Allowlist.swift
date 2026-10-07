@@ -516,7 +516,13 @@ public struct ValidatedCommand: Sendable, Equatable {
     ///
     /// **Never log this, never put it on a wire, never put it in an alert.** The audience is the
     /// person at the keyboard who supplied the values, and nobody else.
-    public var localPreview: String { (["container"] + arguments).joined(separator: " ") }
+    ///
+    /// Each argument is shell-quoted where it needs to be (`ShellWords.join`). A plain space-join
+    /// rendered the argv `sh`, `-c`, `echo hi; sleep 1` as `sh -c echo hi; sleep 1` — a line that
+    /// means something else — and, the other way round, made a broken split of `'i=0; …'` look as
+    /// though its quotes had been honoured. Quoted, the line is the argv, and it pastes into a
+    /// terminal as the same command.
+    public var localPreview: String { ShellWords.join(["container"] + arguments) }
 }
 
 public enum AllowlistError: Error, Equatable, Sendable {
