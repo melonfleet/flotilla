@@ -54,7 +54,12 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
             case .success(let open):
                 let host = self
                 open.run(arguments, timeout: timeout) { outcome in
-                    if case .failure(RemoteHostError.closed) = outcome { host?.forget(open) }
+                    // Measured 7 October: written as `case .failure(RemoteHostError.closed)` this
+                    // never matched — an expression pattern, not a case pattern — so a host that
+                    // restarted left a dead connection that every later call reused.
+                    if case .failure(let error) = outcome, case .closed? = error as? RemoteHostError {
+                        host?.forget(open)
+                    }
                     completion(outcome)
                 }
             }
@@ -77,7 +82,10 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     /// host's per-address limit reset all but four).
     private func connection(_ completion: @escaping @Sendable (Result<AdminConnection, Error>) -> Void) {
         let action: () -> Void = lock.withLock {
-            if let open = connection { return { completion(.success(open)) } }
+            // A connection that has closed underneath us is dropped here, whatever any caller saw.
+            if let open = connection, !open.isClosed { return { completion(.success(open)) } }
+            connection = nil
+            welcome = nil
             waiters.append(completion)
             if connecting { return {} }
             connecting = true

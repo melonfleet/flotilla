@@ -121,7 +121,7 @@ struct MainWindowView: View {
                 row(.clusters, count: model.clustersState == .loaded ? model.clusters.count : nil)
             }
             SwiftUI.Section {
-                row(.hosts, count: 1)
+                row(.hosts, count: 1 + model.hostMode.hosts.count)
             }
             SwiftUI.Section {
                 row(.activity, count: model.activity.isEmpty ? nil : model.activity.count)

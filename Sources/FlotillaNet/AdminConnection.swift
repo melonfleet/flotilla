@@ -72,6 +72,9 @@ public final class AdminConnection: @unchecked Sendable {
                                     limits: limits, label: "admin-connection")
     }
 
+    /// Whether this connection has ended — a closed one is never reused.
+    public var isClosed: Bool { connection.queue.sync { closedReason != nil } }
+
     /// The host's fingerprint, once connected.
     public var hostFingerprint: PeerFingerprint? { connection.peerFingerprint }
 

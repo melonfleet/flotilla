@@ -122,10 +122,14 @@ public final class WireConnection: @unchecked Sendable {
     public func close(_ reason: String? = nil) {
         queue.async { [self] in
             guard !finished else { return }
-            // Whichever comes first; `finish` runs once.
-            queue.asyncAfter(deadline: .now() + 2) { [weak self] in self?.finish(reason) }
+            // Whichever comes first; `finish` runs once. **Strong** captures, deliberately: the
+            // owner often lets go of a connection the moment it asks it to close (a stopping host
+            // drops every handler), and a weak reference here meant the close never finished —
+            // the socket was never cancelled and the other side held a dead connection
+            // (measured 7 October). The closures are released once they run.
+            queue.asyncAfter(deadline: .now() + 2) { [self] in finish(reason) }
             connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
-                            completion: .contentProcessed { [weak self] _ in self?.finish(reason) })
+                            completion: .contentProcessed { [self] _ in finish(reason) })
         }
     }
 

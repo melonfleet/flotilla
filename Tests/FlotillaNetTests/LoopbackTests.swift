@@ -338,4 +338,30 @@ struct LoopbackTests {
         }
         #expect(rig.delegate.locked { rig.delegate.trusted.isEmpty })
     }
+
+    @Test func aHostThatRestartsIsReconnectedTo() async throws {
+        // Measured 7 October: hosts updated and restarted, and the admin kept reusing the dead
+        // connection — every status check said "The connection closed" until relaunch.
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let host = remote(rig)
+        defer { host.close() }
+        _ = try await host.run(["ls"], timeout: nil)
+
+        // Restart the host on the same port, as an update does.
+        rig.server.stop()
+        try await Task.sleep(for: .milliseconds(300))
+        var configuration = rig.server.configuration
+        configuration.port = rig.port
+        let restarted = HostServer(configuration: configuration, host: rig.host, delegate: rig.delegate)
+        try restarted.start()
+        defer { restarted.stop() }
+        try await Task.sleep(for: .milliseconds(500))
+
+        // The first call may still meet the dead connection; the next must not.
+        _ = try? await host.run(["ls"], timeout: nil)
+        let result = try await host.run(["ls"], timeout: nil)
+        #expect(result.exitCode == 0)
+    }
 }
