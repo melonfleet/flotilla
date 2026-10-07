@@ -12,18 +12,28 @@ import FlotillaCore
 enum LogViewerSource: Equatable {
     case container(String)
     case machine(String)
+    /// A paired host's container (PLAN.md Phase C): fetched in bounded tails over the wire.
+    case remoteContainer(String, HostRef)
 
     var id: String {
         switch self {
         case .container(let id), .machine(let id): id
+        case .remoteContainer(let id, let host): host.rowID(id)
         }
+    }
+
+    /// Following a log is a stream, and the wire's stream frames are reserved, not built — so a
+    /// remote container's logs are fetched, not followed, and Live says why.
+    var supportsLive: Bool {
+        if case .remoteContainer = self { return false }
+        return true
     }
 
     /// What the status bar calls the non-boot log. Both sources have a boot log as well, and
     /// conflating the two is the one mistake this screen must never make.
     var streamLabel: String {
         switch self {
-        case .container: "Container logs"
+        case .container, .remoteContainer: "Container logs"
         case .machine: "Machine logs"
         }
     }
@@ -34,14 +44,14 @@ enum LogViewerSource: Equatable {
     /// log is the VM underneath it, which is worth saying.
     var bootLabel: String {
         switch self {
-        case .container: "Boot log (micro-VM)"
+        case .container, .remoteContainer: "Boot log (micro-VM)"
         case .machine: "Boot log (VM)"
         }
     }
 
     var emptyDescription: String {
         switch self {
-        case .container: "This container hasn't produced any output yet."
+        case .container, .remoteContainer: "This container hasn't produced any output yet."
         case .machine: "This machine hasn't produced any output yet."
         }
     }
@@ -50,6 +60,7 @@ enum LogViewerSource: Equatable {
         switch self {
         case .container(let id): try await model.fetchLogs(for: id, lines: lines, bootLog: boot)
         case .machine(let id): try await model.machineLogs(for: id, lines: lines, boot: boot)
+        case .remoteContainer(let id, let host): try await model.fetchLogs(for: id, lines: lines, bootLog: boot, host: host)
         }
     }
 
@@ -57,6 +68,7 @@ enum LogViewerSource: Equatable {
         switch self {
         case .container(let id): model.liveContainerLogs(id, lines: lines, bootLog: boot)
         case .machine(let id): model.liveMachineLogs(id, lines: lines, boot: boot)
+        case .remoteContainer: AsyncStream { $0.finish() }
         }
     }
 }
@@ -167,7 +179,9 @@ struct LogViewer: View {
                 // a popover and another to find the switch. Console keeps its equivalent on the
                 // toolbar for the same reason.
                 IconActionButton(systemImage: "dot.radiowaves.left.and.right", label: "Live",
-                                 help: live ? "Stop streaming" : "Stream new lines as they are written",
+                                 help: !source.supportsLive ? "Following logs on another Mac isn’t available yet — use Refresh"
+                                     : live ? "Stop streaming" : "Stream new lines as they are written",
+                                 disabled: !source.supportsLive,
                                  active: live) {
                     live.toggle()
                 }

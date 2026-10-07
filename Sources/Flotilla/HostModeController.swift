@@ -73,6 +73,12 @@ final class HostModeController {
         var checkedAt: Date
     }
     private(set) var live: [PeerFingerprint: LiveStatus] = [:]
+    /// Each paired host's containers, as last fetched — kept through failures, with their age
+    /// (PLAN.md Phase C). The Containers section lists these beside This Mac's.
+    private(set) var containerSnapshots: [PeerFingerprint: FleetSnapshot<Container>] = [:]
+    @ObservationIgnored private var backoff: [PeerFingerprint: HostBackoff] = [:]
+    /// Shown as fresh for this long; older, or after a failed ask, the rows say how old they are.
+    static let freshFor: TimeInterval = 75
     @ObservationIgnored private var remotes: [PeerFingerprint: RemoteHost] = [:]
 
     @ObservationIgnored private let containerHost: ContainerHost
@@ -432,16 +438,49 @@ final class HostModeController {
     private func dropRemote(_ fingerprint: PeerFingerprint) {
         remotes.removeValue(forKey: fingerprint)?.close()
         live.removeValue(forKey: fingerprint)
+        containerSnapshots.removeValue(forKey: fingerprint)
+        backoff.removeValue(forKey: fingerprint)
     }
 
-    /// Asks every approved host for its version, containers and machines — the Hosts columns.
-    /// Read-only calls, through the same Allowlist as everything else.
-    func refreshLiveStatus() async {
+    /// Asks every approved host that is due for its version, containers and machines — the Hosts
+    /// columns and the fleet-wide Containers list. Read-only calls, through the same Allowlist as
+    /// everything else. A host that keeps failing is asked less often (`HostBackoff`); `force`
+    /// asks every one now, as Refresh does.
+    func refreshLiveStatus(force: Bool = false) async {
+        let now = Date()
+        let due = hosts.filter { peer in
+            guard peer.isTrusted else { return false }
+            if force { backoff[peer.fingerprint, default: HostBackoff()].forceDue() }
+            return backoff[peer.fingerprint, default: HostBackoff()].isDue(at: now)
+        }
         await withTaskGroup(of: Void.self) { group in
-            for peer in hosts where peer.isTrusted {
+            for peer in due {
                 group.addTask { await self.refreshLiveStatus(peer.fingerprint) }
             }
         }
+    }
+
+    /// The paired, trusted hosts and what each last said about its containers.
+    var fleetContainers: [(host: Peer, snapshot: FleetSnapshot<Container>)] {
+        hosts.filter(\.isTrusted).compactMap { peer in containerSnapshots[peer.fingerprint].map { (peer, $0) } }
+    }
+
+    /// The `ContainerCLI` for a host — This Mac's own, or a paired host's over the wire, held to
+    /// `.remotePeer`. `nil` for a host that is not approved or cannot be located.
+    func cli(for host: HostRef, local: ContainerCLI) -> ContainerCLI? {
+        switch host {
+        case .local: return local
+        case .peer(let fingerprint):
+            return remoteHost(for: fingerprint).map {
+                ContainerCLI(host: $0, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
+            }
+        }
+    }
+
+    /// After an action on a host: ask it again now, not at the next tick.
+    func refreshHost(_ fingerprint: PeerFingerprint) async {
+        backoff[fingerprint, default: HostBackoff()].forceDue()
+        await refreshLiveStatus(fingerprint)
     }
 
     private func refreshLiveStatus(_ fingerprint: PeerFingerprint) async {
@@ -460,8 +499,11 @@ final class HostModeController {
                 return (version, try cli.listContainers(), try cli.machines().count)
             }
         }.value
+        let now = Date()
         switch outcome {
         case .success(let (version, containers, machines)):
+            containerSnapshots[fingerprint, default: FleetSnapshot()].succeeded(containers, at: now)
+            backoff[fingerprint, default: HostBackoff()].succeeded(at: now)
             live[fingerprint] = LiveStatus(state: .connected,
                                            containersRunning: containers.filter { $0.state.isRunning }.count,
                                            containersTotal: containers.count, machines: machines,
@@ -474,6 +516,8 @@ final class HostModeController {
             }
             save()
         case .failure(let error):
+            containerSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
+            backoff[fingerprint, default: HostBackoff()].failed(at: now)
             live[fingerprint] = LiveStatus(state: .failed(Self.describe(error)), checkedAt: Date())
             // Connected but a command failed — a host without `container` — still says who it is.
             // Measured 7 October: a renamed VM kept its old name because only success refreshed it.

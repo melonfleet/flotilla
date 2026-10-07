@@ -92,6 +92,7 @@ struct ContainersView: View {
     /// actions confirm with the object *named* (`FEATURES.md`'s destructive-action policy),
     /// which is why this holds the container rather than a bool.
     @State private var confirmingRowDelete: Container?
+    @State private var confirmingRemoteDelete: RemoteTarget?
     @State private var showingRun = false
     /// Set when Run was opened from an existing container ("Run Again with Changes…"), and cleared
     /// on dismiss so the next plain Run starts empty.
@@ -202,6 +203,11 @@ struct ContainersView: View {
                 detailHeader(for: container)
                 Divider()
                 ContainerDetailView(model: model, container: container, requestedTab: target.tab)
+            } else if let remote = remoteContainer(rowID: target.id) {
+                detailHeader(for: remote.container, on: remote.host)
+                Divider()
+                ContainerDetailView(model: model, container: remote.container, host: remote.host,
+                                    requestedTab: target.tab)
             } else {
                 detailHeader(for: nil)
                 Divider()
@@ -215,8 +221,19 @@ struct ContainersView: View {
     }
 
     /// Back, identity, the stepper, and the lifecycle actions — the mockup's `toolbar tall`.
+    /// A paired host's container by its row id, from what that host last reported.
+    private func remoteContainer(rowID: String) -> (container: Container, host: HostRef)? {
+        for (peer, snapshot) in model.hostMode.fleetContainers {
+            let host = HostRef.peer(peer.fingerprint)
+            if let container = snapshot.items.first(where: { host.rowID($0.id) == rowID }) {
+                return (container, host)
+            }
+        }
+        return nil
+    }
+
     @ViewBuilder
-    private func detailHeader(for container: Container?) -> some View {
+    private func detailHeader(for container: Container?, on host: HostRef = .local) -> some View {
         HStack(spacing: 10) {
             IconActionButton(systemImage: "chevron.left", label: "Back to Containers",
                              help: "Back to Containers") { detailTarget = nil }
@@ -235,7 +252,7 @@ struct ContainersView: View {
                         }
                         .foregroundStyle(.secondary)
                     }
-                    Text(subtitle(for: container))
+                    Text(subtitle(for: container, on: host))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -250,7 +267,11 @@ struct ContainersView: View {
             stepper
 
             if let container {
-                ActionCluster { rowActions(for: container) }
+                if host.isLocal {
+                    ActionCluster { rowActions(for: container) }
+                } else {
+                    ActionCluster { remoteRowActions(for: container, on: host) }
+                }
             }
         }
         // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
@@ -266,7 +287,9 @@ struct ContainersView: View {
     /// list you are stepping through one at a time.
     @ViewBuilder
     private var stepper: some View {
-        let order = sorted
+        // Every container on screen, on any host, in on-screen order — by row id, so a remote
+        // container and a local one of the same name are different stops.
+        let order = rows.filter { $0.container != nil }
         let index = order.firstIndex { $0.id == detailTarget?.id }
 
         HStack(spacing: 2) {
@@ -300,8 +323,8 @@ struct ContainersView: View {
         }
     }
 
-    private func subtitle(for container: Container) -> String {
-        var parts = [ContainerImage.shortReference(container.imageReference), model.hostLabel]
+    private func subtitle(for container: Container, on host: HostRef = .local) -> String {
+        var parts = [ContainerImage.shortReference(container.imageReference), hostName(host)]
         if AppModel.isRunning(container), let started = container.status.startedDate {
             parts.append(RelativeDate.relative(started, prefix: "up"))
         } else {
@@ -328,7 +351,7 @@ struct ContainersView: View {
     /// no shading while the columns button beside it did, on the same band. Same glyph, same
     /// accent-when-active rule, same feedback, everywhere.
     private var filterButton: some View {
-        let filtering = ui.filter != .all || ui.kindFilter != .all
+        let filtering = ui.filter != .all || ui.kindFilter != .all || ui.hostFilter != nil
         return IconActionButton(systemImage: "line.3.horizontal.decrease",
                                 label: "Filter",
                                 help: filtering ? filterSummary : "Filter by state or kind",
@@ -357,6 +380,20 @@ struct ContainersView: View {
                 }
                 .pickerStyle(.radioGroup)
                 .labelsHidden()
+                if !model.hostMode.hosts.filter(\.isTrusted).isEmpty {
+                    Divider()
+                    Text("Host").font(.caption).foregroundStyle(.secondary)
+                    Picker("Host", selection: $ui.hostFilter) {
+                        Label("All hosts", systemImage: "square.stack").tag(HostRef?.none)
+                        Label(model.hostLabel, systemImage: "laptopcomputer").tag(HostRef?.some(.local))
+                        ForEach(model.hostMode.hosts.filter(\.isTrusted)) { peer in
+                            Label(peer.displayName, systemImage: "desktopcomputer")
+                                .tag(HostRef?.some(.peer(peer.fingerprint)))
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                }
             }
             .padding(14)
         }
@@ -372,6 +409,7 @@ struct ContainersView: View {
         case .groups: parts.append("groups only")
         case .containers: parts.append("containers only")
         }
+        if let host = ui.hostFilter { parts.append("on " + hostName(host)) }
         return "Showing " + parts.joined(separator: ", ")
     }
 
@@ -441,7 +479,14 @@ struct ContainersView: View {
 
     /// Whether anything the user chose is hiding rows, so an empty state can say so.
     private var isFiltered: Bool {
-        !ui.search.isEmpty || ui.filter != .all || ui.kindFilter != .all
+        !ui.search.isEmpty || ui.filter != .all || ui.kindFilter != .all || ui.hostFilter != nil
+    }
+
+    private func hostName(_ host: HostRef) -> String {
+        switch host {
+        case .local: model.hostLabel
+        case .peer(let fingerprint): model.hostMode.hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "a host"
+        }
     }
 
     private var visibleIDs: Set<ContainerRow.ID> { Set(rows.map(\.id)) }
@@ -489,10 +534,24 @@ struct ContainersView: View {
     /// fire a duplicate operation on top of the first.
     private var selectionBusy: Bool { model.isAnyBusy(actionableContainerIDs, kind: .container) }
 
+    /// Other Macs' containers in the actionable selection. Acted on host by host, after this Mac's.
+    private var actionableRemote: [ContainerRow] {
+        actionable.compactMap { rowsByID[$0] }.filter { !$0.host.isLocal && $0.container != nil }
+    }
+
+    /// Runs one action on each remote row, in order — a host does one thing at a time per row.
+    private func performRemote(_ action: AppModel.Action, on rows: [ContainerRow],
+                               where applies: (Container) -> Bool = { _ in true }) async {
+        for row in rows {
+            guard let container = row.container, applies(container) else { continue }
+            await model.perform(action, on: container, host: row.host)
+        }
+    }
+
     /// How the bulk bar and the bulk menu describe the selection: "3 containers", "1 group",
     /// "2 containers and 1 group".
     private var selectionNoun: String {
-        let c = actionableContainerIDs.count, g = actionableGroups.count
+        let c = actionableContainerIDs.count + actionableRemote.count, g = actionableGroups.count
         let containers = "\(c) container\(c == 1 ? "" : "s")"
         let groups = "\(g) group\(g == 1 ? "" : "s")"
         switch (c, g) {
@@ -558,8 +617,19 @@ struct ContainersView: View {
                 // "This Mac" on every row, and a column identical in every row is pure width.
                 // **Not sortable, and not an omission** — a column with one distinct value cannot
                 // be ordered. It gains a `value:` the moment a row carries a real host.
-                TableColumn("Host") { _ in Text(model.hostLabel).foregroundStyle(.secondary) }
-                    .width(min: 80, ideal: 100)
+                // Real since Phase C: which Mac the row is on. A host that has stopped answering
+                // keeps its rows, marked with how old they are, rather than emptying the table.
+                TableColumn("Host", value: \.hostName) { row in
+                    HStack(spacing: 4) {
+                        Text(row.hostName).foregroundStyle(.secondary).lineLimit(1)
+                        if let since = row.staleSince {
+                            Image(systemName: "clock.badge.exclamationmark")
+                                .foregroundStyle(Theme.warning)
+                                .help("As of \(since.formatted(.relative(presentation: .named))) — \(row.hostName) isn’t answering")
+                        }
+                    }
+                }
+                    .width(min: 80, ideal: 110)
                     .customizationID("host")
 
                 // Last. Sized to its content rather than fixed, so it compresses with
@@ -569,7 +639,9 @@ struct ContainersView: View {
                     case .group:
                         if let group = row.group { groupRowActions(for: group) }
                     case .container, .member:
-                        if let container = row.container {
+                        if let container = row.container, !row.host.isLocal {
+                            remoteRowActions(for: container, on: row.host)
+                        } else if let container = row.container {
                             rowActions(for: container)
                         } else {
                             // A member the group has not created yet has nothing to act on; its
@@ -631,6 +703,87 @@ struct ContainersView: View {
         }
     }
 
+    /// A paired host's container: the same controls in the same places as This Mac's — start or
+    /// stop, restart, the menu, delete — acting on that host.
+    @ViewBuilder
+    private func remoteRowActions(for container: Container, on host: HostRef) -> some View {
+        let busy = model.isBusy(host.rowID(container.id), kind: .container)
+        let running = AppModel.isRunning(container)
+        HStack(spacing: 2) {
+            if running {
+                iconButton("stop.fill", "Stop \(container.id) on \(hostName(host))", busy: busy) {
+                    Task { await model.perform(.stop, on: container, host: host) }
+                }
+                iconButton("arrow.clockwise", "Restart \(container.id) on \(hostName(host))", busy: busy) {
+                    Task { await model.perform(.restart, on: container, host: host) }
+                }
+            } else {
+                iconButton("play.fill", "Start \(container.id) on \(hostName(host))", busy: busy) {
+                    Task { await model.perform(.start, on: container, host: host) }
+                }
+                iconButton("arrow.clockwise", "Restart \(container.id)", busy: true) {}
+                    .hidden()
+            }
+            Menu {
+                remoteActions(for: container, on: host)
+            } label: {
+                RowOverflowLabel()
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More actions for \(container.id) on \(hostName(host))")
+
+            Divider().frame(height: 14)
+
+            iconButton("trash", "Delete \(container.id) on \(hostName(host))", busy: busy, destructive: true) {
+                if model.deletePolicy.requiresConfirmation(.single) {
+                    confirmingRemoteDelete = RemoteTarget(container: container, host: host)
+                } else {
+                    Task { await model.perform(.delete, on: container, host: host) }
+                }
+            }
+        }
+    }
+
+    /// The menu for a paired host's container: the lifecycle, tags and Copy, as This Mac's has.
+    /// Items that open this Mac's own tools — Terminal, Files, Run Again — are not offered.
+    @ViewBuilder
+    private func remoteActions(for container: Container, on host: HostRef) -> some View {
+        let busy = model.isBusy(host.rowID(container.id), kind: .container)
+        let running = AppModel.isRunning(container)
+        Button("Start") { Task { await model.perform(.start, on: container, host: host) } }
+            .disabled(running || busy)
+        Button("Stop") { Task { await model.perform(.stop, on: container, host: host) } }
+            .disabled(!running || busy)
+        Button("Restart") { Task { await model.perform(.restart, on: container, host: host) } }
+            .disabled(!running || busy)
+        Button("Force Kill") { Task { await model.perform(.kill, on: container, host: host) } }
+            .disabled(!running || busy)
+        Divider()
+        TagMenu(store: model.tags, subject: TagSubject(kind: .container, id: host.rowID(container.id))) {
+            tagSheet = TagSheetTarget(kind: .container, id: host.rowID(container.id))
+        }
+        Divider()
+        CopyMenu([
+            ("Name", container.id),
+            ("Image", container.configuration.image.reference),
+            ("Ports", container.portSummary),
+            ("Host", hostName(host)),
+        ])
+        Divider()
+        Button("Delete…", role: .destructive) {
+            confirmingRemoteDelete = RemoteTarget(container: container, host: host)
+        }
+        .disabled(busy)
+    }
+
+    struct RemoteTarget: Identifiable {
+        let container: Container
+        let host: HostRef
+        var id: String { host.rowID(container.id) }
+    }
+
     /// Every single-container delete enters here, and `model.deletePolicy` is the only thing that
     /// decides whether it stops to ask. Containers previously ignored
     /// `confirmDestructiveActions` entirely: the trash button confirmed unconditionally, the
@@ -671,7 +824,9 @@ struct ContainersView: View {
             case .group:
                 if let group = row.group { groupMenu(for: group) }
             case .container, .member:
-                if let container = row.container {
+                if let container = row.container, !row.host.isLocal {
+                    remoteActions(for: container, on: row.host)
+                } else if let container = row.container {
                     actions(for: container)
                 } else if let group = row.group {
                     // A member not created yet: its group is the thing you can act on.
@@ -977,6 +1132,14 @@ struct ContainersView: View {
                 }
             }
         }
+        // Paired hosts' containers kept current while this section is open — each host on its own
+        // schedule, backing off one that does not answer (PLAN.md Phase C).
+        .task {
+            while !Task.isCancelled {
+                await model.hostMode.refreshLiveStatus()
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
@@ -1046,15 +1209,33 @@ struct ContainersView: View {
                  : "This cannot be undone.")
         }
         .confirmationDialog(
+            "Delete “\(confirmingRemoteDelete?.container.id ?? "")” on \(confirmingRemoteDelete.map { hostName($0.host) } ?? "")?",
+            isPresented: Binding(get: { confirmingRemoteDelete != nil },
+                                 set: { if !$0 { confirmingRemoteDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: confirmingRemoteDelete
+        ) { target in
+            Button("Delete", role: .destructive) {
+                Task { await model.perform(.delete, on: target.container, host: target.host) }
+                confirmingRemoteDelete = nil
+            }
+            Button("Cancel", role: .cancel) { confirmingRemoteDelete = nil }
+        } message: { target in
+            Text(target.container.isRunning
+                 ? "It is running on \(hostName(target.host)) and will be stopped first. This cannot be undone."
+                 : "This cannot be undone.")
+        }
+        .confirmationDialog(
             "Delete \(selectionNoun)?",
             isPresented: $confirmingBulkDelete,
             titleVisibility: .visible
         ) {
             Button("Delete \(selectionNoun)", role: .destructive) {
-                let containers = actionableContainerIDs, groups = actionableGroups
+                let containers = actionableContainerIDs, groups = actionableGroups, remote = actionableRemote
                 Task {
                     if !containers.isEmpty { await model.performBulk(.delete, on: containers) }
                     for group in groups { model.deleteGroup(group) }
+                    await performRemote(.delete, on: remote)
                 }
             }
             // Only when groups are in the selection: their containers go too, which the button
@@ -1271,15 +1452,24 @@ struct ContainersView: View {
                 // The rows' glyphs, not words — the same four actions must not look like
                 // different controls depending on how many things you selected. A group in the
                 // selection is started and stopped the way its own row would do it.
-                let containers = actionableContainerIDs, groups = actionableGroups
+                let containers = actionableContainerIDs, groups = actionableGroups, remote = actionableRemote
                 iconButton("play.fill", "Start \(selectionNoun)", busy: selectionBusy) {
-                    Task { await startSelected(containers, groups) }
+                    Task {
+                        await startSelected(containers, groups)
+                        await performRemote(.start, on: remote) { !$0.isRunning }
+                    }
                 }
                 iconButton("stop.fill", "Stop \(selectionNoun)", busy: selectionBusy) {
-                    Task { await stopSelected(containers, groups) }
+                    Task {
+                        await stopSelected(containers, groups)
+                        await performRemote(.stop, on: remote) { $0.isRunning }
+                    }
                 }
                 iconButton("arrow.clockwise", "Restart \(selectionNoun)", busy: selectionBusy) {
-                    Task { await restartSelected(containers, groups) }
+                    Task {
+                        await restartSelected(containers, groups)
+                        await performRemote(.restart, on: remote) { $0.isRunning }
+                    }
                 }
                 iconButton("trash", "Delete \(selectionNoun)",
                            busy: selectionBusy, destructive: true) {
@@ -1417,6 +1607,12 @@ struct ContainersView: View {
         let cpu: Double
         let memory: Int64
         let id: String
+        /// Which Mac the row is on (PLAN.md Phase C). Groups and their members are This Mac's —
+        /// a group is a saved form on this Mac until Phase D deploys it.
+        let host: HostRef
+        let hostName: String
+        /// A host's row that is older than a fresh answer: shown, with its age, rather than hidden.
+        let staleSince: Date?
 
         // MARK: Sort keys, one per sortable column, valid for every kind
 
@@ -1438,7 +1634,8 @@ struct ContainersView: View {
         static func isGroupRowID(_ id: String) -> Bool { id.hasPrefix("group:") }
 
         init(container: Container, kind: Kind = .container, group: ContainerGroup? = nil,
-             member: GroupMember? = nil, cpu: Double, memory: Int64) {
+             member: GroupMember? = nil, cpu: Double, memory: Int64,
+             host: HostRef = .local, hostName: String = "This Mac", staleSince: Date? = nil) {
             self.kind = kind
             self.container = container
             self.group = group
@@ -1446,7 +1643,10 @@ struct ContainersView: View {
             self.groupState = nil
             self.cpu = cpu
             self.memory = memory
-            self.id = container.id
+            self.host = host
+            self.hostName = hostName
+            self.staleSince = staleSince
+            self.id = host.rowID(container.id)
             self.name = container.id
             self.stateRank = container.sortRank * 2
             self.kindLabel = "Container"
@@ -1465,6 +1665,9 @@ struct ContainersView: View {
             self.groupState = nil
             self.cpu = -1
             self.memory = -1
+            self.host = .local
+            self.hostName = "This Mac"
+            self.staleSince = nil
             self.id = member.name
             self.name = member.name
             self.stateRank = GroupState.notCreated.sortRank
@@ -1483,6 +1686,9 @@ struct ContainersView: View {
             self.groupState = state
             self.cpu = cpu
             self.memory = memory
+            self.host = .local
+            self.hostName = "This Mac"
+            self.staleSince = nil
             self.id = Self.groupRowID(group.id)
             self.name = group.name
             self.stateRank = state.sortRank
@@ -1503,16 +1709,52 @@ struct ContainersView: View {
                               group: ContainerGroup? = nil, member: GroupMember? = nil) -> ContainerRow {
         ContainerRow(container: container, kind: kind, group: group, member: member,
                      cpu: model.cpuPercent(for: container.id) ?? -1,
-                     memory: model.memoryBytes(for: container.id) ?? -1)
+                     memory: model.memoryBytes(for: container.id) ?? -1,
+                     hostName: model.hostLabel)
+    }
+
+    /// Paired hosts' containers, through the same state, kind, host and search filters as This
+    /// Mac's. Flat: groups are This Mac's until Phase D. No CPU or memory — live stats from other
+    /// Macs are a stream, which the wire does not carry yet.
+    private var remoteRows: [ContainerRow] {
+        guard ui.kindFilter != .groups, ui.hostFilter != .local else { return [] }
+        let needle = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
+        let now = Date()
+        var rows: [ContainerRow] = []
+        for (peer, snapshot) in model.hostMode.fleetContainers {
+            let host = HostRef.peer(peer.fingerprint)
+            if let only = ui.hostFilter, only != host { continue }
+            let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
+            for container in snapshot.items {
+                switch ui.filter {
+                case .running where !container.isRunning: continue
+                case .stopped where container.isRunning: continue
+                default: break
+                }
+                if !needle.isEmpty {
+                    let rowID = host.rowID(container.id)
+                    let hit = container.id.lowercased().contains(needle)
+                        || container.status.state.lowercased().contains(needle)
+                        || peer.displayName.lowercased().contains(needle)
+                        || container.imageReference.lowercased().contains(needle)
+                        || model.tags.tags(on: .container, rowID).contains { $0.name.lowercased().contains(needle) }
+                    if !hit { continue }
+                }
+                rows.append(ContainerRow(container: container, cpu: -1, memory: -1,
+                                         host: host, hostName: peer.displayName, staleSince: stale))
+            }
+        }
+        return rows
     }
 
     /// The listing, as rows: top-level rows sorted by whatever header was clicked, and each open
     /// group's members under it, **sorted by the same header** (the owner, 5 October). A group
     /// never splits apart: its members always sit directly under it.
     private var sortedRows: [ContainerRow] {
-        var top: [ContainerRow] = []
+        var top: [ContainerRow] = remoteRows
         var children: [ContainerRow.ID: [ContainerRow]] = [:]
-        for item in listing {
+        let showLocal = ui.hostFilter == nil || ui.hostFilter == .local
+        for item in showLocal ? listing : [] {
             switch item {
             case .container(let container):
                 top.append(containerRow(container))
@@ -1760,6 +2002,25 @@ struct ContainersView: View {
                             groupRowActions(for: group)
                         }
                         .contextMenu { groupMenu(for: group) }
+                    } else if let container = row.container, !row.host.isLocal {
+                        // A paired host's container: the same card, acting on that host — no live
+                        // stats, since those would be a stream from another Mac.
+                        let host = row.host
+                        ContainerCard(
+                            container: container,
+                            cpuPercent: nil,
+                            memoryBytes: nil,
+                            history: [],
+                            isBusy: model.isBusy(row.id, kind: .container),
+                            tags: model.tags.tags(on: .container, row.id),
+                            onStart: { Task { await model.perform(.start, on: container, host: host) } },
+                            onStop: { Task { await model.perform(.stop, on: container, host: host) } },
+                            onRestart: { Task { await model.perform(.restart, on: container, host: host) } },
+                            onDetails: { openDetail(row.id) },
+                            onDelete: { confirmingRemoteDelete = RemoteTarget(container: container, host: host) },
+                            menuContent: { remoteActions(for: container, on: host) }
+                        )
+                        .contextMenu { remoteActions(for: container, on: host) }
                     } else if let container = row.container {
                         ContainerCard(
                             container: container,

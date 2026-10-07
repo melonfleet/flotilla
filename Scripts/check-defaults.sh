@@ -50,7 +50,7 @@ require Sources/Flotilla/MachineDetailView.swift 'model.lastMachineTab[machine.i
 # which is exactly why this check named two files, and why adding volumes and networks would have
 # meant naming four.
 require Sources/Flotilla/InspectPane.swift '@State private var presentation: InspectPresentation = .table'
-require Sources/Flotilla/ContainerDetailView.swift 'model.lastDetailTab[container.id] ?? .overview)'
+require Sources/Flotilla/ContainerDetailView.swift 'model.lastDetailTab[host.rowID(container.id)] ?? .overview'
 # The two new detail screens open on Overview, for the same reason the other two do.
 require Sources/Flotilla/VolumeDetailView.swift 'requestedTab ?? .overview'
 require Sources/Flotilla/NetworkDetailView.swift 'requestedTab ?? .overview'

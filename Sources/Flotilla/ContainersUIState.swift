@@ -26,6 +26,8 @@ final class ContainersUIState {
     /// Groups, containers or both — the merged list's second filter (5 October). `.containers`
     /// lists every container flat, which is what this screen showed before groups joined it.
     var kindFilter: ContainerListing.KindFilter = .all
+    /// Which Macs' containers to list: `nil` for all, else one host (PLAN.md Phase C).
+    var hostFilter: HostRef?
     var search = ""
 
     /// Groups the user has opened, by group id. Here for the reason everything else is: the section

@@ -15,6 +15,9 @@ import FlotillaCore
 struct ContainerDetailView: View {
     let model: AppModel
     let container: Container
+    /// Which Mac it is on (PLAN.md Phase C). A paired host's container offers the tabs the wire can
+    /// back — Overview, Logs, Inspect, Processes — and not Terminal or Files, which are this Mac's.
+    let host: HostRef
 
     typealias Tab = DetailTab
 
@@ -29,11 +32,17 @@ struct ContainerDetailView: View {
     /// whenever the view is already installed.
     let requestedTab: DetailTab?
 
-    init(model: AppModel, container: Container, requestedTab: DetailTab? = nil) {
+    init(model: AppModel, container: Container, host: HostRef = .local, requestedTab: DetailTab? = nil) {
         self.model = model
         self.container = container
+        self.host = host
         self.requestedTab = requestedTab
-        _tab = State(initialValue: requestedTab ?? model.lastDetailTab[container.id] ?? .overview)
+        let wanted = requestedTab ?? model.lastDetailTab[host.rowID(container.id)] ?? .overview
+        _tab = State(initialValue: Self.tabs(for: host).contains(wanted) ? wanted : .overview)
+    }
+
+    static func tabs(for host: HostRef) -> [Tab] {
+        host.isLocal ? Tab.allCases : [.overview, .logs, .inspect, .processes]
     }
 
 
@@ -48,11 +57,12 @@ struct ContainerDetailView: View {
             Group {
                 switch tab {
                 case .overview: overview
-                case .processes: ProcessesTab(model: model, container: container)
-                case .logs: LogViewer(model: model, source: .container(container.id))
+                case .processes: ProcessesTab(model: model, container: container, host: host)
+                case .logs: LogViewer(model: model, source: host.isLocal ? .container(container.id)
+                                                                          : .remoteContainer(container.id, host))
                 case .terminal: TerminalTab(model: model, container: container)
                 case .files: FilesTab(model: model, container: container)
-                case .inspect: InspectTab(model: model, container: container)
+                case .inspect: InspectTab(model: model, container: container, host: host)
                 }
             }
             // `.topLeading`, not `.top`. SwiftUI's `.top` is *horizontally centred* and only
@@ -63,7 +73,7 @@ struct ContainerDetailView: View {
         }
         // Remembered for this run only — see `AppModel.lastDetailTab` for why it is not
         // persisted to disk.
-        .onChange(of: tab) { _, newTab in model.lastDetailTab[container.id] = newTab }
+        .onChange(of: tab) { _, newTab in model.lastDetailTab[host.rowID(container.id)] = newTab }
         .onChange(of: [container.id, requestedTab?.rawValue ?? ""]) { _, _ in
             if let requestedTab { tab = requestedTab }
         }
@@ -85,12 +95,13 @@ struct ContainerDetailView: View {
     /// heavier weight and full-strength text — three signals, so it does not rely on colour
     /// alone.
     private var tabBar: some View {
-        DetailTabBar(items: Tab.allCases.enumerated().map { index, candidate in
+        let tabs = Self.tabs(for: host)
+        return DetailTabBar(items: tabs.enumerated().map { index, candidate in
             .init(tab: candidate,
                   title: candidate.rawValue,
                   systemImage: candidate.systemImage,
                   separatedFromPrevious: index > 0
-                      && Tab.allCases[index - 1].isShared && !candidate.isShared)
+                      && tabs[index - 1].isShared && !candidate.isShared)
         }, selection: $tab)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Detail sections")
@@ -376,11 +387,13 @@ struct ContainerDetailView: View {
 private struct InspectTab: View {
     let model: AppModel
     let container: Container
+    var host: HostRef = .local
 
     var body: some View {
         InspectPane(command: "container inspect \(container.id)",
                     failureTitle: "Couldn't inspect this container") {
-            try await model.fetchInspectJSON(for: container.id)
+            host.isLocal ? try await model.fetchInspectJSON(for: container.id)
+                         : try await model.fetchInspectJSON(for: container.id, host: host)
         }
     }
 }
@@ -465,6 +478,7 @@ private enum ProcessParse {
 private struct ProcessesTab: View {
     let model: AppModel
     let container: Container
+    var host: HostRef = .local
 
     @State private var rows: [ProcessRow]?
     @State private var rawOutput: String?
@@ -557,7 +571,7 @@ private struct ProcessesTab: View {
         loading = true
         error = nil
         do {
-            let raw = try await model.fetchProcesses(for: container.id)
+            let raw = try await (host.isLocal ? model.fetchProcesses(for: container.id) : model.fetchProcesses(for: container.id, host: host))
             if let parsed = ProcessParse.parse(raw) {
                 rows = parsed
                 rawOutput = nil

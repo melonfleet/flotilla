@@ -1755,6 +1755,42 @@ final class AppModel {
         recentlyActed.remove(id)
     }
 
+    /// `perform(_:on:)` for a container on any Mac (PLAN.md Phase C). This Mac's go through the
+    /// local path unchanged; a paired host's go over the wire, through a `ContainerCLI` held to
+    /// `.remotePeer`, and the host is asked again at once so its row shows the result.
+    func perform(_ action: Action, on container: Container, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await perform(action, on: container) }
+        let id = container.id
+        // Keyed by host and name: `web` here and `web` on the mini are different containers.
+        let busyKey = host.rowID(id)
+        guard !busy.contains(busyKey, kind: .container) else { return }
+        busy.mark(busyKey, kind: .container)
+        defer { busy.clear(busyKey, kind: .container) }
+        let hostName = hostMode.hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "the host"
+        guard let remote = hostMode.cli(for: host, local: cli) else {
+            actionError = "\(Self.label(for: action)) failed for \(id): \(hostName) can't be reached."
+            return
+        }
+        do {
+            try await Task.detached { () -> Void in
+                switch action {
+                case .start:   try remote.start(id)
+                case .stop:    try remote.stop(id)
+                case .restart: try remote.restart(id)
+                case .kill:    try remote.kill(id)
+                case .delete:  try remote.remove(id, force: true)
+                }
+            }.value
+            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .container,
+                                          subject: "\(id) on \(hostName)", action: Self.label(for: action)))
+        } catch {
+            let message = "\(Self.label(for: action)) failed for \(id) on \(hostName): \(HostModeController.describe(error))"
+            actionError = message
+            record(message, subsystem: "container.lifecycle")
+        }
+        await hostMode.refreshHost(fingerprint)
+    }
+
     /// Bulk counterpart to `perform(_:on:)`, for the containers table's multi-selection
     /// action bar. Runs every id through the same allowlisted `ContainerCLI` calls and
     /// refreshes once at the end rather than once per id — `perform(_:on:)` itself is left
@@ -1823,6 +1859,38 @@ final class AppModel {
 
     // MARK: Run
 
+    /// `runContainer` on a paired host (PLAN.md Phase C): the same command, validated as a remote
+    /// peer would be — host paths refused — run on that Mac, and the host asked again afterwards.
+    func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = [],
+                      host: HostRef) async {
+        guard case .peer(let fingerprint) = host else {
+            return await runContainer(image: image, options: options, command: command)
+        }
+        let hostName = hostMode.hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "the host"
+        let argv = ContainerCLI.runArguments(image: image, options: options, command: command)
+        await withProgress(
+            title: "Run a container on \(hostName)",
+            command: argv.joined(separator: " "),
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                let remote = try self.cli(for: host)
+                let step = progress.begin("Starting from \(image) on \(hostName)")
+                let result = try await Task.detached {
+                    try remote.run(image: image, options: options, command: command)
+                }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step, detail: options.name)
+                return options.name.map { "\($0) started on \(hostName)" } ?? "Container started on \(hostName)"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await hostMode.refreshHost(fingerprint)
+                guard let name = options.name else { return true }
+                return hostMode.containerSnapshots[fingerprint]?.items.contains { $0.id == name } ?? false
+            }
+        )
+    }
+
     func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = []) async {
         let argv = ContainerCLI.runArguments(image: image, options: options, command: command)
         await withProgress(
@@ -1855,9 +1923,13 @@ final class AppModel {
     /// preview can never show a command as accepted or rejected differently than reality
     /// would. Static and pure so the view holds no allowlist logic of its own.
     static func runPreview(
-        image: String, options: ContainerCLI.RunOptions, command: [String] = []
+        image: String, options: ContainerCLI.RunOptions, command: [String] = [], host: HostRef = .local
     ) -> Result<ValidatedCommand, AllowlistError> {
-        Allowlist.validate(ContainerCLI.runArguments(image: image, options: options, command: command),
-                           mountPolicy: .unrestricted)
+        let argv = ContainerCLI.runArguments(image: image, options: options, command: command)
+        // Another Mac's rules, not this one's: host paths refused, local-only flags refused — so
+        // the preview cannot pass what that host would turn away.
+        return host.isLocal
+            ? Allowlist.validate(argv, mountPolicy: .unrestricted)
+            : Allowlist.validate(argv, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
     }
 }

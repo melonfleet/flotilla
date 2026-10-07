@@ -87,6 +87,8 @@ struct RunSheetView: View {
     let dismiss: () -> Void
 
     @State private var image: String
+    /// Where it runs (PLAN.md Phase C): This Mac, or a paired host.
+    @State private var host: HostRef = .local
 
     /// `initialImage` lets the Images screen's **Run…** open the sheet already pointed at a
     /// reference. It pre-fills, it does not launch — the validated command preview still has
@@ -247,6 +249,22 @@ struct RunSheetView: View {
 
     private var imageSection: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !model.hostMode.hosts.filter(\.isTrusted).isEmpty {
+                FormSectionHeader(title: "Host")
+                FormField("Run on",
+                          help: FieldHelp("Which Mac the container runs on.",
+                                          detail: "On another Mac, host folders can’t be mounted: only named volumes.")) {
+                    Picker("", selection: $host) {
+                        Text(model.hostLabel).tag(HostRef.local)
+                        ForEach(model.hostMode.hosts.filter(\.isTrusted)) { peer in
+                            Text(peer.displayName).tag(HostRef.peer(peer.fingerprint))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+            }
+
             FormSectionHeader(title: "Image")
 
             FormField("Image reference",
@@ -456,8 +474,9 @@ struct RunSheetView: View {
                 let ranImage = trimmedImage
                 let ranOptions = options
                 let ranCommand = command
+                let ranHost = host
                 dismiss()
-                Task { await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand) }
+                Task { await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost) }
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
@@ -585,7 +604,7 @@ struct RunSheetView: View {
     }
 
     private var preview: Result<ValidatedCommand, AllowlistError> {
-        AppModel.runPreview(image: trimmedImage, options: options, command: command)
+        AppModel.runPreview(image: trimmedImage, options: options, command: command, host: host)
     }
 
     private var previewError: AllowlistError? {

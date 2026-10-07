@@ -267,7 +267,7 @@ struct HostsView: View {
                 Task {
                     await model.reload()
                     await model.refreshMachines()
-                    await hostMode.refreshLiveStatus()
+                    await hostMode.refreshLiveStatus(force: true)
                 }
             }
         })

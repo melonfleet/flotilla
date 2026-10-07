@@ -1,5 +1,6 @@
 import Foundation
 import FlotillaCore
+import FlotillaNet
 
 /// New read paths for the Logs tab, the Inspect tab, the System page, and Images'
 /// tag/prune actions — kept out of `AppModel.swift` itself because the app owner is editing that
@@ -17,6 +18,30 @@ extension AppModel {
     /// overload (distinct arity) rather than an edit to the original.
     func fetchLogs(for id: String, lines: Int, bootLog: Bool) async throws -> LogChunk {
         try await Task.detached { [cli] in try cli.logs(id, lines: lines, bootLog: bootLog) }.value
+    }
+
+    // MARK: Any Mac (PLAN.md Phase C)
+
+    /// The CLI for a host, or an error that says which host could not be reached.
+    func cli(for host: HostRef) throws -> ContainerCLI {
+        if let found = hostMode.cli(for: host, local: cli) { return found }
+        throw RemoteHostError.unreachable("That host isn't paired, or can't be found on the network.")
+    }
+
+    func fetchLogs(for id: String, lines: Int, bootLog: Bool, host: HostRef) async throws -> LogChunk {
+        let cli = try cli(for: host)
+        return try await Task.detached { try cli.logs(id, lines: lines, bootLog: bootLog) }.value
+    }
+
+    func fetchInspectJSON(for id: String, host: HostRef) async throws -> String {
+        let cli = try cli(for: host)
+        let raw = try await Task.detached { try cli.rawInspectJSON(id) }.value
+        return JSONPrettyPrinter.prettyPrint(raw)
+    }
+
+    func fetchProcesses(for id: String, host: HostRef) async throws -> String {
+        let cli = try cli(for: host)
+        return try await Task.detached { try cli.processes(id) }.value
     }
 
     // MARK: Inspect
