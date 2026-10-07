@@ -211,13 +211,20 @@ struct ContainersView: View {
             } else {
                 detailHeader(for: nil)
                 Divider()
+                // Named without its host prefix, and without claiming it was on this Mac: a remote
+                // container deleted while open lands here too.
                 ContentUnavailableView(
                     "Container unavailable",
                     systemImage: "questionmark.square.dashed",
-                    description: Text("“\(target.id)” is no longer on this Mac. It may have been deleted.")
+                    description: Text("“\(target.id.split(separator: "/").last.map(String.init) ?? target.id)” "
+                                      + "is no longer there. It may have been deleted.")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        // Header at the top whatever is below it — the unavailable state takes only its own height,
+        // and the stack was centring header and all in the window (seen 7 October).
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     /// Back, identity, the stepper, and the lifecycle actions — the mockup's `toolbar tall`.
