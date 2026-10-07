@@ -77,6 +77,8 @@ public struct PairingAdminSession: Sendable {
     }
 
     public enum State: Sendable, Equatable {
+        /// Both owners said yes; waiting for the host to say it has recorded the trust.
+        case awaitingAcknowledgement
         case idle, awaitingProof, awaitingChallenge, awaitingHostProof, confirming, done, failed
     }
 
@@ -162,6 +164,13 @@ public struct PairingAdminSession: Sendable {
             remoteConfirmed = true
             return completeIfConfirmed()
 
+        // The host has recorded this Mac as trusted. Only now is pairing finished here: declaring
+        // it on our own "yes" raced the host, and a reconnect could arrive before it had saved.
+        case (.awaitingAcknowledgement, .pairResult(let result), .pairingCode) where result.outcome == .approved:
+            guard let hostDetails else { throw WireError.unexpected(.pairResult) }
+            state = .done
+            return [.paired(host, hostDetails)]
+
         default:
             throw WireError.unexpected(message.frameType)
         }
@@ -192,9 +201,9 @@ public struct PairingAdminSession: Sendable {
     }
 
     private mutating func completeIfConfirmed() -> [Event] {
-        guard localConfirmed, remoteConfirmed, let hostDetails else { return [] }
-        state = .done
-        return [.paired(host, hostDetails)]
+        guard localConfirmed, remoteConfirmed else { return [] }
+        state = .awaitingAcknowledgement
+        return []
     }
 }
 
@@ -312,10 +321,13 @@ public struct PairingHostSession: Sendable {
         return [.send(.pairConfirm(.init(confirmed: true)))] + completeIfConfirmed()
     }
 
+    /// Both said yes: record the admin (the `.paired` event), then tell it so — the admin finishes
+    /// on this acknowledgement, never before, so it cannot reconnect ahead of the trust.
     private mutating func completeIfConfirmed() -> [Event] {
         guard localConfirmed, remoteConfirmed else { return [] }
         state = .done
-        return [.paired(admin, adminDetails ?? PeerDetails(computerName: "?"))]
+        return [.paired(admin, adminDetails ?? PeerDetails(computerName: "?")),
+                .send(.pairResult(.init(outcome: .approved, message: "Paired.")))]
     }
 
     private mutating func refuse(_ message: String) -> [Event] {

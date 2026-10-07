@@ -39,7 +39,7 @@ let package = Package(
         // that. Moves to an Xcode project when the app bundle, LSUIElement and signing
         // start to matter (see CLAUDE.md).
         .executableTarget(name: "Flotilla",
-                          dependencies: ["FlotillaCore", "FlotillaPrivileged", "FlotillaTrust",
+                          dependencies: ["FlotillaCore", "FlotillaPrivileged", "FlotillaTrust", "FlotillaNet",
                                          .product(name: "SwiftTerm", package: "SwiftTerm")]),
 
         // The DNS helper (decision 19, amended 7 October): a root SMAppService daemon that runs
@@ -56,6 +56,11 @@ let package = Package(
                                .product(name: "X509", package: "swift-certificates"),
                                .product(name: "SwiftASN1", package: "swift-asn1")]),
         .testTarget(name: "FlotillaTrustTests", dependencies: ["FlotillaTrust", "FlotillaCore"]),
+
+        // Host mode's transport (B3): Network.framework with mutual TLS, a host listener and an
+        // admin connector speaking FlotillaCore's wire protocol. macOS-only.
+        .target(name: "FlotillaNet", dependencies: ["FlotillaCore", "FlotillaTrust"]),
+        .testTarget(name: "FlotillaNetTests", dependencies: ["FlotillaNet", "FlotillaTrust", "FlotillaCore"]),
         .executableTarget(name: "FlotillaDNSHelper",
                           dependencies: ["FlotillaCore", "FlotillaPrivileged"]),
 

@@ -123,16 +123,19 @@ public struct PeerBook: Sendable, Equatable, Codable {
 
     /// Pairing by one-time code ends with both owners confirming the words on their screens, so a
     /// Mac paired that way is approved directly — the confirmation is the approval.
+    ///
+    /// A host also uses this for the admin its enrolment key names (`method: .enrolmentKey`): the
+    /// profile the owner deployed is that approval.
     public mutating func pairConfirmed(_ fingerprint: PeerFingerprint, role: Peer.Role, details: PeerDetails,
-                                       at now: Date) {
+                                       method: Peer.Method = .pairingCode, at now: Date) {
         if let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) {
             peers[index].status = .approved
-            peers[index].method = .pairingCode
+            peers[index].method = method
             peers[index].details = details
             peers[index].decidedAt = now
             peers[index].lastSeen = now
         } else {
-            peers.append(Peer(fingerprint: fingerprint, role: role, status: .approved, method: .pairingCode,
+            peers.append(Peer(fingerprint: fingerprint, role: role, status: .approved, method: method,
                               details: details, nickname: nil, requestedAt: now, decidedAt: now, lastSeen: now))
         }
     }

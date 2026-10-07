@@ -27,9 +27,14 @@ public struct WireHostSession: Sendable {
         case cancel(id: UInt32)
         /// Close the connection once anything queued before this has been sent.
         case close(reason: String)
+        /// A pairing message, for `PairingHostSession` — the only conversation an untrusted caller
+        /// may have.
+        case pairing(WireMessage)
     }
 
     public let peer: WirePeerInfo
+    /// Whether the TLS layer found the caller's key in this host's peer book.
+    public let trusted: Bool
     public private(set) var state: State = .awaitingHello
     /// This host's own limits until the handshake, then the intersection with the peer's.
     public private(set) var limits: WireLimits
@@ -46,8 +51,10 @@ public struct WireHostSession: Sendable {
                 versions: ClosedRange<UInt16> = WireProtocol.supportedVersions,
                 mountPolicy: MountPolicy = .denyHostPaths,
                 execPolicy: ExecPolicy = .processListOnly,
-                allowlistLimits: Allowlist.Limits = .default) {
+                allowlistLimits: Allowlist.Limits = .default,
+                trusted: Bool = true) {
         precondition(mountPolicy != .unrestricted, "a host session never grants every host path")
+        self.trusted = trusted
         self.peer = peer
         self.limits = limits
         self.versions = versions
@@ -71,10 +78,19 @@ public struct WireHostSession: Sendable {
             }
             limits = limits.intersection(hello.limits)
             state = .ready(version: version, peer: hello.peer)
-            return [.send(.welcome(.init(version: version, peer: peer, limits: limits)))]
+            return [.send(.welcome(.init(version: version, peer: peer, limits: limits, trusted: trusted)))]
 
         case (.ready, .request(let request)):
+            guard trusted else {
+                return [.send(.failure(.init(id: request.id, code: .refused,
+                                             message: "This Mac hasn't been paired with this host.")))]
+            }
             return [try handle(request)]
+
+        case (.ready, .pairStart), (.ready, .pairProof), (.ready, .pairResult), (.ready, .pairConfirm):
+            // Pairing is for strangers. A trusted caller has nothing to pair.
+            guard !trusted else { throw WireError.unexpected(message.frameType) }
+            return [.pairing(message)]
 
         case (.ready, .cancel(let cancel)):
             // A cancel that crosses its own result is normal, not a fault.
@@ -158,6 +174,8 @@ public struct WireClientSession: Sendable {
         case send(WireMessage)
         case pong(nonce: UInt64)
         case closed(reason: String)
+        /// A pairing message, for `PairingAdminSession`.
+        case pairing(WireMessage)
     }
 
     /// A request ready to send, with the deadline the requesting side should hold it to.
@@ -247,6 +265,9 @@ public struct WireClientSession: Sendable {
         case (.ready, .failure(let failure)):
             guard try settle(failure.id) else { return [] }
             return [.failed(failure)]
+
+        case (.ready, .pairChallenge), (.ready, .pairProof), (.ready, .pairResult), (.ready, .pairConfirm):
+            return [.pairing(message)]
 
         case (_, .ping(let ping)):
             return [.send(.pong(ping))]

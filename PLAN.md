@@ -277,6 +277,24 @@ the label given when a certificate is added (it is set afterwards), and it fails
 key creation when two keys are made at once in one process (now serialised).
 The approval screens arrive with B3, when a request can actually come in.
 
+**B3a built 7 October** (`Sources/FlotillaNet/`, `FlotillaNetTests`): Network.framework
+TLS 1.3 with each Mac's identity, the host requiring the caller's certificate.
+TLS accepts any certificate and proves key possession; trust is the fingerprint,
+checked in one place above TLS — a known, approved key gets a trusted
+`WireHostSession`, any other key can only pair (the welcome says which).
+`HostServer` listens (optional Bonjour `_flotilla._tcp`), runs a trusted admin's
+commands off the connection queue through `ContainerHost`, routes a stranger's
+pairing to `PairingHostSession`, and closes a revoked key's live connections.
+`AdminConnection` connects, runs numbered requests with deadlines and keepalive
+pings, and pairs by code or enrolment key. Six loopback tests with two real
+Keychain identities over real TLS cover a stranger refused, code pairing then a
+command, a wrong code counted, the host owner saying the words do not match,
+enrolment into the approval list, and revocation. They found a race: the admin
+declared pairing done before the host had saved the trust, so a quick
+reconnect could be refused; the admin now finishes on the host's
+acknowledgement. Next, B3b: host mode in Settings, Add Host and the approval
+list in Hosts, `RemoteHost`, Bonjour browsing, then the VMs and the M1 mini.
+
 - Define bounded protocol framing, version and capability negotiation, explicit
   request lifecycle and failure semantics.
 - Carry only validated CLI argument arrays. Validate on both sides and enforce

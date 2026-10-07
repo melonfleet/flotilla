@@ -288,10 +288,14 @@ struct PairingTests {
         let quiet = try admin.receive(hostYes)
         #expect(quiet.isEmpty)
         let adminSays = admin.confirm(true)
-        #expect(adminSays.contains(.paired(hostPrint, hostDetails)))
+        // Not yet: the admin waits for the host to say it has recorded the trust.
+        #expect(!adminSays.contains { if case .paired = $0 { true } else { false } })
         guard case .send(let adminYes) = adminSays.first else { Issue.record(); return }
         let done = try host.receive(adminYes)
-        #expect(done == [.paired(adminPrint, adminDetails)])
+        #expect(done.first == .paired(adminPrint, adminDetails))
+        guard case .send(let acknowledgement)? = done.last else { Issue.record("no acknowledgement"); return }
+        let finished = try admin.receive(acknowledgement)
+        #expect(finished == [.paired(hostPrint, hostDetails)])
     }
 
     @Test func aWrongCodeIsRefusedAndCounted() throws {

@@ -75,11 +75,15 @@ public enum WireMessage: Sendable, Equatable {
         public var peer: WirePeerInfo
         /// The limits the host will hold this connection to — already the intersection of both.
         public var limits: WireLimits
+        /// Whether the host trusts the caller's key. If not, only pairing is offered on this
+        /// connection; every request is refused.
+        public var trusted: Bool
 
-        public init(version: UInt16, peer: WirePeerInfo, limits: WireLimits) {
+        public init(version: UInt16, peer: WirePeerInfo, limits: WireLimits, trusted: Bool = true) {
             self.version = version
             self.peer = peer
             self.limits = limits
+            self.trusted = trusted
         }
     }
 
