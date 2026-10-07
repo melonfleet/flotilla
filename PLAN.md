@@ -541,13 +541,15 @@ locally built 20 MB image and a 445 MB grafana sent and loaded (the last in abou
 mini); a host's container followed live in detail and in Logs beside This Mac's. A host holding
 the sent variant counts as having the image, though its index digest differs from this Mac's.
 
-**D3 — Parts A and B built, not yet live-tested on hosts** (research/FLEET-DNS-D3.md, DECISIONS
+**D3 — Parts A and B built and live-tested on the mini** (research/FLEET-DNS-D3.md, DECISIONS
 Q36). Wire version 3 adds typed host calls: an admin reads a host's DNS and creates, deletes or
 chooses its container domain, and the host does it through its own DNS helper — never a password
 prompt, never an argv that runs as root. The DNS section lists every Mac's domains with a Host
 column and filter, and New Domain has a Create on picker. Set Up Zones gives each Mac its own zone,
 `<its label>.<fleet domain>` (default `fleet.internal`), with each Mac's restart and the containers
-it would stop shown first. Part C (names that resolve across Macs) follows.
+it would stop shown first. Live, 8 October: the mini's zone set up from the admin Mac through
+its helper, and a container there resolved `web.test-mac-mini.fleet.internal` to web's address.
+Part C (names that resolve across Macs) follows.
 
 #### Layer 2 — Fleet DNS
 

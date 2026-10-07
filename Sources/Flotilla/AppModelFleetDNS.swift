@@ -184,7 +184,11 @@ extension AppModel {
     /// two names always resolves the same way.
     var fleetZones: [HostRef: String] {
         let macs = [HostRef.local] + trustedHostRefs.sorted { $0.rowID("") < $1.rowID("") }
-        let names = macs.map { (id: $0.rowID(""), name: hostMode.hostName($0, local: hostLabel)) }
+        // This Mac by its computer name, as hosts are by theirs: "This Mac" is a label in this
+        // window, not a name — measured 8 October, it made the zone this-mac.fleet.internal.
+        let names = macs.map { mac in
+            (id: mac.rowID(""), name: mac.isLocal ? HostModeController.computerName : hostMode.hostName(mac, local: hostLabel))
+        }
         let zones = FleetZones.zones(for: names, fleetDomain: fleetDNSDomain)
         return Dictionary(uniqueKeysWithValues: macs.compactMap { mac in zones[mac.rowID("")].map { (mac, $0) } })
     }
