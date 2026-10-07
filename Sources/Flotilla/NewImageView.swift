@@ -186,9 +186,20 @@ struct NewImageView: View {
         hostChoices.map(\.ref).filter { targets.contains($0) && (scheme == .default || $0.isLocal) }
     }
 
-    private func targetBinding(_ host: HostRef) -> Binding<Bool> {
-        Binding(get: { targets.contains(host) },
-                set: { on in if on { targets.insert(host) } else { targets.remove(host) } })
+    /// Each Mac's line in the Pull to table: whether it can be asked, and which `container`.
+    private func pullState(_ host: HostRef) -> (text: String, warning: Bool) {
+        if scheme == .http && !host.isLocal { return ("over HTTP only This Mac pulls", false) }
+        guard case .peer(let fingerprint) = host else {
+            return (model.localContainerVersion.map { "container \($0)" } ?? "this Mac", false)
+        }
+        let live = model.hostMode.live[fingerprint]
+        switch live?.state {
+        case .connected?:
+            let version = live?.containerVersion.map { "container \($0)" } ?? "connected"
+            return (version, model.containerSkew(host)?.mayRefuseCommands == true)
+        case .failed?: return ("not answering — the pull will fail there", true)
+        case .checking?, nil: return ("checking…", false)
+        }
     }
 
     @ViewBuilder
@@ -204,12 +215,10 @@ struct NewImageView: View {
                               ? "Over HTTP only This Mac pulls. Another Mac is never asked to pull over plaintext."
                               : nil),
                       problem: pullTargets.isEmpty ? "Choose at least one Mac." : nil) {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(hostChoices, id: \.ref) { choice in
-                        Toggle(choice.name, isOn: targetBinding(choice.ref))
-                            .toggleStyle(.checkbox)
-                            .disabled(scheme == .http && !choice.ref.isLocal)
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    HostChecklist(model: model, hosts: hostChoices.map(\.ref), selection: $targets,
+                                  isSelectable: { scheme == .default || $0.isLocal },
+                                  state: pullState)
                     ContainerSkewNote(model: model, hosts: pullTargets)
                 }
             }

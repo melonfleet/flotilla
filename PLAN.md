@@ -523,7 +523,10 @@ hosts, per-host DNS zones, fleet names; **D4** layer 3's research reviewed with 
 **D1 — built (DECISIONS Q35).** Push to Hosts… on This Mac's networks and volumes, with a per-host
 preview and results and an On hosts column that marks drift; a /20 per Mac from 10.240.0.0/12,
 shown on each host's page; pushed networks and gateway-wired Suggestions take /24s from it.
-Live-tested across all three hosts. Not built: editing a Mac's block by hand.
+Live-tested across all three hosts. Not built: editing a Mac's block by hand. Choosing hosts is a
+table built for a fleet of dozens (the owner, 7 October): search by name, tag or state, a Show
+filter (all, can be chosen, selected), Select All Shown and a count, ten rows high and scrolling —
+`HostChecklist`, shared by Push to Hosts and New Image ▸ Pull to.
 
 #### Layer 2 — Fleet DNS
 

@@ -100,77 +100,73 @@ struct PushDefinitionView: View {
                 if model.trustedHostRefs.isEmpty {
                     Text("No host is paired yet. Add one in Hosts.")
                         .font(.callout).foregroundStyle(.secondary)
-                }
-                ForEach(model.trustedHostRefs, id: \.self) { host in
-                    hostRow(host)
+                } else {
+                    HostChecklist(model: model, hosts: model.trustedHostRefs, selection: $chosen,
+                                  isSelectable: { status(on: $0).isCreate },
+                                  state: { host in
+                                      let state = status(on: host)
+                                      return (describe(state), state.isDrift || state == .unavailable)
+                                  },
+                                  stateTitle: "A push would",
+                                  extraTitle: isNetwork ? "Subnet" : nil,
+                                  extra: { host in
+                                      isNetwork && status(on: host).isCreate ? model.pushSubnet(on: host)?.description : nil
+                                  })
                 }
                 ContainerSkewNote(model: model, hosts: targets)
             }
         }
     }
 
-    @ViewBuilder
-    private func hostRow(_ host: HostRef) -> some View {
-        let state = status(on: host)
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Toggle(model.hostMode.hostName(host, local: model.hostLabel),
-                   isOn: Binding(get: { chosen.contains(host) && state.isCreate },
-                                 set: { on in if on { chosen.insert(host) } else { chosen.remove(host) } }))
-                .toggleStyle(.checkbox)
-                .disabled(!state.isCreate)
-            Text(describe(state, on: host))
-                .font(.caption)
-                .foregroundStyle(state.isDrift ? AnyShapeStyle(Theme.warning) : AnyShapeStyle(.secondary))
-                .lineLimit(2)
-        }
+    private var isNetwork: Bool {
+        if case .network = subject { return true }
+        return false
     }
 
-    private func describe(_ state: FleetPush.Status, on host: HostRef) -> String {
+    private func describe(_ state: FleetPush.Status) -> String {
         switch state {
-        case .create:
-            if case .network = subject {
-                return model.pushSubnet(on: host).map { "will create on \($0)" } ?? "no free subnet in its block"
-            }
-            return "will create, empty"
+        case .create: return isNetwork ? "will create" : "will create, empty"
         case .matches: return "already has it, the same"
-        case .differs(let reasons): return "has one that differs — \(reasons.joined(separator: "; ")). Left as it is."
+        case .differs(let reasons): return "differs — \(reasons.joined(separator: "; ")); left as it is"
         case .unavailable: return "not answering — its \(noun)s aren't known"
         }
     }
 
     // MARK: Rail and footer
 
-    /// The commands each ticked host will run — built by the same functions that run them.
+    /// The command every chosen host runs — once, not once per host, which at thirty Mac minis
+    /// would be thirty copies of one line. A network's subnet differs per Mac, so it is shown as a
+    /// placeholder here and per host in the table's Subnet column. Built by the same functions
+    /// that run it.
     private var rail: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Command preview", systemImage: "chevron.right.square")
                 .font(.caption).foregroundStyle(Theme.info)
             if targets.isEmpty {
-                Text("Tick a host to see what it will run.")
+                Text("Choose a host to see what it will run.")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-            }
-            ForEach(targets, id: \.self) { host in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.hostMode.hostName(host, local: model.hostLabel))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text(command(on: host))
-                        .font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            } else {
+                Text("On \(targets.count) host\(targets.count == 1 ? "" : "s"):")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(command)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
 
-    private func command(on host: HostRef) -> String {
+    private var command: String {
         let argv: [String]
         switch subject {
         case .network(let network):
             let definition = FleetPush.definition(of: network)
+            // A real subnet for the shape check, shown as the placeholder it stands for.
             argv = ContainerCLI.createNetworkArguments(definition.name, options: .init(
-                subnet: model.pushSubnet(on: host)?.description, isInternal: definition.hostOnly,
+                subnet: "10.240.0.0/24", isInternal: definition.hostOnly,
                 labels: definition.labels))
+                .map { $0 == "10.240.0.0/24" ? "<that Mac's /24>" : $0 }
         case .volume(let volume):
             let definition = FleetPush.definition(of: volume)
             argv = ContainerCLI.createVolumeArguments(definition.name, options: .init(size: definition.size,
