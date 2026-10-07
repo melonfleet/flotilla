@@ -85,7 +85,7 @@ struct ExportConfigurationView: View {
             FormSectionHeader(title: "Also")
             Toggle("Tags — on the things above", isOn: $selection.tags).toggleStyle(.checkbox)
             Toggle("Registry list — never sign-ins", isOn: $selection.registries).toggleStyle(.checkbox)
-            Toggle("DNS domains — recreating them asks for an administrator password",
+            Toggle("DNS domains — recreating them needs an administrator, or the DNS helper",
                    isOn: $selection.dns).toggleStyle(.checkbox)
         }
     }

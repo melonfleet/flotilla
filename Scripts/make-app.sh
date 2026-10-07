@@ -72,11 +72,16 @@ echo "▸ checking view defaults…"
 echo "▸ building ($CONFIG)…"
 if [ "$CONFIG" = "release" ]; then
   swift build -c release --product Flotilla
+  swift build -c release --product FlotillaDNSHelper
 else
   swift build --product Flotilla
+  swift build --product FlotillaDNSHelper
 fi
 BINARY="$(swift build -c "$CONFIG" --product Flotilla --show-bin-path)/Flotilla"
 [ -x "$BINARY" ] || { echo "no binary at $BINARY" >&2; exit 1; }
+HELPER_BINARY="$(swift build -c "$CONFIG" --product FlotillaDNSHelper --show-bin-path)/FlotillaDNSHelper"
+[ -x "$HELPER_BINARY" ] || { echo "no binary at $HELPER_BINARY" >&2; exit 1; }
+HELPER_ID="dev.melonfleet.Flotilla.dns-helper"
 
 # Versions, and the two plist keys have different rules — which the first version of this got
 # wrong in a way only a build with **no tags** exposed.
@@ -144,6 +149,12 @@ echo "▸ assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/Flotilla"
+# The DNS helper (decision 19, amended 7 October) and the launchd plist SMAppService reads. Shipped
+# in every build; it only runs once the owner approves it in Login Items, and only in a Developer
+# ID build — an ad-hoc helper has no team to require of its callers and refuses to start.
+cp "$HELPER_BINARY" "$APP/Contents/MacOS/FlotillaDNSHelper"
+mkdir -p "$APP/Contents/Library/LaunchDaemons"
+cp "$ROOT/Resources/$HELPER_ID.plist" "$APP/Contents/Library/LaunchDaemons/"
 
 cp "$ROOT/build/icons/Flotilla.icns" "$APP/Contents/Resources/Flotilla.icns"
 # The menu-bar template, at both scales. Loaded by URL at runtime and marked isTemplate
@@ -182,7 +193,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          narrows to .accessory for menu-bar-only users before any scene exists. -->
     <key>LSUIElement</key>                  <$LSUIELEMENT/>
     <key>NSHighResolutionCapable</key>      <true/>
-    <!-- `.flotilla` configuration files (Q29): Flotilla owns the type, so a double-click opens
+    <!-- .flotilla configuration files (Q29): Flotilla owns the type, so a double-click opens
          its import review. JSON inside, so it conforms to public.json. -->
     <key>UTExportedTypeDeclarations</key>
     <array>
@@ -229,15 +240,19 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # nothing else needs to.
 if [ -n "${FLOTILLA_SIGN_IDENTITY:-}" ]; then
     echo "▸ signing (Developer ID, hardened runtime)…"
-    # No `--deep`. Apple's own guidance is to sign inside-out, and this bundle has nothing inside:
-    # one flat executable, no frameworks, no helpers, SwiftTerm statically linked. Verified with
-    # `otool -L` — nothing outside /usr/lib and /System. `--deep` on a bundle like this does
-    # nothing except make a future nested binary silently inherit the wrong options.
+    # No `--deep`: Apple's guidance is to sign inside-out. The one nested binary is the DNS helper,
+    # signed first under its own identifier — the app requires exactly that identifier of it, and
+    # `--deep` would have stamped the app's onto it. SwiftTerm is statically linked (`otool -L`).
+    codesign --force --options runtime --timestamp \
+             --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$HELPER_ID" \
+             "$APP/Contents/MacOS/FlotillaDNSHelper" 2>&1 | sed 's/^/   /'
     codesign --force --options runtime --timestamp \
              --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$APP" 2>&1 | sed 's/^/   /'
     SIGN_MODE="Developer ID"
 else
     echo "▸ signing (ad-hoc)…"
+    codesign --force --sign - --identifier "$HELPER_ID" --timestamp=none \
+             "$APP/Contents/MacOS/FlotillaDNSHelper" 2>&1 | sed 's/^/   /'
     codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>&1 | sed 's/^/   /'
     SIGN_MODE="ad-hoc"
 fi

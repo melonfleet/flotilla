@@ -33,6 +33,8 @@ struct DNSView: View {
     @State private var working = false
     @State private var actionError: String?
     @State private var tagSheet: TagSheetTarget?
+    /// "Set Up on This Mac…" with the DNS helper on: no password prompt follows, so Flotilla asks.
+    @State private var pendingSetUp: String?
 
     private var rows: [LocalDNSDomain] { model.dnsDomains }
 
@@ -109,11 +111,12 @@ struct DNSView: View {
             }
             Button("Cancel", role: .cancel) { pendingDelete = [] }
         } message: {
-            Text(DNSCopy.deleteMessage(pendingDelete))
+            Text(DNSCopy.deleteMessage(pendingDelete, helper: model.dnsHelperEnabled))
         }
         .containerDomainConfirmation($pendingChange, model: model) { change in
             perform(change)
         }
+        .dnsSetUpConfirmation($pendingSetUp) { create($0) }
     }
 
     private var deleteTitle: String {
@@ -268,8 +271,9 @@ struct DNSView: View {
                 Text(isFiltered
                      ? "No domain matches the current filter."
                      : "A local domain gives your containers names — web.test, db.test — that "
-                       + "this Mac and other containers can reach. Creating one asks for an "
-                       + "administrator password.")
+                       + "this Mac and other containers can reach. "
+                       + (model.dnsHelperEnabled ? "Flotilla asks you to confirm before it creates one."
+                                                 : "Creating one asks for an administrator password."))
             } actions: {
                 if isFiltered {
                     Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
@@ -300,7 +304,7 @@ struct DNSView: View {
         if let row = model.containerDNSRow, !row.resolverInstalled {
             note("Containers are named under “\(row.name)”, but this Mac can’t look those names "
                  + "up yet.", systemImage: "exclamationmark.triangle", tint: Theme.warning) {
-                Button("Set Up on This Mac…") { create(row.name) }
+                Button("Set Up on This Mac…") { setUp(row.name) }
                     .disabled(working)
             }
         } else if model.containerDNSRow == nil, rows.contains(where: { !$0.isHostAlias }) {
@@ -433,7 +437,7 @@ struct DNSView: View {
             IconActionButton(systemImage: "trash",
                              label: "Delete \(row.name)",
                              help: row.resolverInstalled
-                                 ? "Delete — asks for an administrator password"
+                                 ? (model.dnsHelperEnabled ? "Delete" : "Delete — asks for an administrator password")
                                  : "Not set up on this Mac — stop using it for containers instead",
                              disabled: !row.resolverInstalled || working,
                              destructive: true) {
@@ -457,7 +461,7 @@ struct DNSView: View {
             }
         }
         if !row.resolverInstalled {
-            Button("Set Up on This Mac…") { create(row.name) }
+            Button("Set Up on This Mac…") { setUp(row.name) }
                 .disabled(working)
         }
         Divider()
@@ -482,11 +486,13 @@ struct DNSView: View {
     }
 
     /// The password prompt that follows is a confirmation of its own, so a single delete follows
-    /// the delete policy like every other section; several always ask.
+    /// the delete policy like every other section; several always ask. With the DNS helper on there
+    /// is no prompt, so every delete asks here (decision 19, amended 7 October).
     private func requestDelete(_ rows: [LocalDNSDomain]) {
         let deletable = rows.filter(\.resolverInstalled)
         guard !deletable.isEmpty else { return }
-        if deletable.count == 1, !model.deletePolicy.requiresConfirmation(.single) {
+        if deletable.count == 1, !model.dnsHelperEnabled,
+           !model.deletePolicy.requiresConfirmation(.single) {
             delete(deletable)
         } else {
             pendingDelete = deletable
@@ -501,6 +507,11 @@ struct DNSView: View {
             selection.subtract(rows.map(\.id))
             if case .failed(let message) = result { actionError = message }
         }
+    }
+
+    /// The password prompt is the confirmation without the helper; with it, Flotilla asks.
+    private func setUp(_ name: String) {
+        if model.dnsHelperEnabled { pendingSetUp = name } else { create(name) }
     }
 
     /// Re-creates the resolver half for a domain config.toml already names.
@@ -597,8 +608,8 @@ enum DNSCopy {
         }
     }
 
-    static func deleteMessage(_ rows: [LocalDNSDomain]) -> String {
-        var text = "macOS asks for an administrator password, then removes "
+    static func deleteMessage(_ rows: [LocalDNSDomain], helper: Bool) -> String {
+        var text = (helper ? "Flotilla’s DNS helper removes " : "macOS asks for an administrator password, then removes ")
             + (rows.count == 1 ? "it" : "them") + " from this Mac’s DNS settings."
         if let used = rows.first(where: \.registersContainers) {
             text += " Containers are still named under “\(used.name)” until you stop using it "
@@ -638,6 +649,22 @@ enum ContainerDomainChange: Identifiable, Hashable {
 }
 
 extension View {
+    /// "Set Up on This Mac…" when the DNS helper is on — the in-app confirmation that stands in for
+    /// the password prompt. Shared by the table and the form.
+    func dnsSetUpConfirmation(_ name: Binding<String?>, perform: @escaping (String) -> Void) -> some View {
+        confirmationDialog("Set up “\(name.wrappedValue ?? "")” on this Mac?",
+                           isPresented: Binding(get: { name.wrappedValue != nil },
+                                                set: { if !$0 { name.wrappedValue = nil } }),
+                           titleVisibility: .visible,
+                           presenting: name.wrappedValue) { pending in
+            Button("Set Up") { name.wrappedValue = nil; perform(pending) }
+            Button("Cancel", role: .cancel) { name.wrappedValue = nil }
+        } message: { _ in
+            Text("Flotilla’s DNS helper adds it to this Mac’s DNS settings, so this Mac can look up "
+                 + "names under it.")
+        }
+    }
+
     /// The warning before containers are renamed (the owner's answer, 6 October: "Yes, with a clear
     /// warning"). Shared by the table and the form so it cannot say two different things.
     func containerDomainConfirmation(_ change: Binding<ContainerDomainChange?>, model: AppModel,

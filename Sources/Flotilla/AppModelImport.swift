@@ -223,10 +223,22 @@ extension AppModel {
                     let commands = dnsSpec.domains.compactMap {
                         try? ContainerCLI.dnsCreateCommand(domain: $0.name, localhost: $0.localhost).get()
                     }
-                    let stepID = progress.begin("Adding \(commands.count) DNS domain\(commands.count == 1 ? "" : "s") — macOS asks for your password")
+                    let viaHelper = dnsHelperEnabled
+                    let stepID = progress.begin("Adding \(commands.count) DNS domain\(commands.count == 1 ? "" : "s")"
+                                                + (viaHelper ? "" : " — macOS asks for your password"))
                     let names = dnsSpec.domains.map(\.name)
-                    let outcome = AdminCommandRunner.run(
-                        commands, prompt: "Flotilla wants to add the local domains \(names.joined(separator: ", ")) to this Mac’s DNS settings.")
+                    let outcome: AdminCommandRunner.Outcome
+                    if viaHelper {
+                        // One request per domain, stopping at the first failure as `&&` does.
+                        var failure: String?
+                        for domain in dnsSpec.domains where failure == nil {
+                            failure = await DNSHelper.send(.create(domain: domain.name, localhost: domain.localhost))
+                        }
+                        outcome = failure.map { .failed($0) } ?? .succeeded
+                    } else {
+                        outcome = AdminCommandRunner.run(
+                            commands, prompt: "Flotilla wants to add the local domains \(names.joined(separator: ", ")) to this Mac’s DNS settings.")
+                    }
                     switch outcome {
                     case .succeeded: progress.finish(stepID)
                     case .cancelled:

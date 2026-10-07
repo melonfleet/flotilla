@@ -40,6 +40,8 @@ struct DNSFormView: View {
     @State private var problem: String?
     @State private var pendingChange: ContainerDomainChange?
     @State private var confirmingDelete = false
+    /// "Set Up on This Mac…" with the DNS helper on — see `dnsSetUpConfirmation`.
+    @State private var pendingSetUp: String?
 
     @State private var edits = FormEditTracker()
 
@@ -129,12 +131,13 @@ struct DNSFormView: View {
         .containerDomainConfirmation($pendingChange, model: model) { change in
             if isAdd { create(thenUse: true) } else { apply(change) }
         }
+        .dnsSetUpConfirmation($pendingSetUp) { _ in createManaged() }
         .confirmationDialog("Delete the local domain “\(managed?.name ?? "")”?",
                             isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete…", role: .destructive) { deleteManaged() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(DNSCopy.deleteMessage(managed.map { [$0] } ?? []))
+            Text(DNSCopy.deleteMessage(managed.map { [$0] } ?? [], helper: model.dnsHelperEnabled))
         }
     }
 
@@ -207,8 +210,10 @@ struct DNSFormView: View {
             }
         }
 
-        Text("Creating a domain changes this Mac’s DNS settings, so macOS asks for an "
-             + "administrator password.")
+        Text(model.dnsHelperEnabled
+             ? "Creating a domain changes this Mac’s DNS settings, through Flotilla’s DNS helper."
+             : "Creating a domain changes this Mac’s DNS settings, so macOS asks for an "
+               + "administrator password.")
             .font(.callout).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
@@ -257,7 +262,9 @@ struct DNSFormView: View {
                             .disabled(!managed.resolverInstalled)
                     }
                     if !managed.resolverInstalled {
-                        Button("Set Up on This Mac…") { createManaged() }
+                        Button("Set Up on This Mac…") {
+                            if model.dnsHelperEnabled { pendingSetUp = managed.name } else { createManaged() }
+                        }
                     }
                 }
                 .disabled(working)

@@ -5,9 +5,9 @@ import FlotillaCore
 ///
 /// Three sources make a row (see `LocalDNS`): `container system dns list`, the runtime's resolver
 /// files in `/etc/resolver` (world-readable, so no administrator is needed to *read* them), and
-/// `config.toml`'s `[dns] domain`. Creating or deleting a domain needs an administrator and goes
-/// through `AdminCommandRunner`; choosing the domain containers are named under edits
-/// `config.toml` and restarts the runtime, which needs neither.
+/// `config.toml`'s `[dns] domain`. Creating or deleting a domain needs root and goes through
+/// `runPrivilegedDNS` — the DNS helper, or the administrator prompt; choosing the domain
+/// containers are named under edits `config.toml` and restarts the runtime, which needs neither.
 extension AppModel {
 
     /// The result of an action the user started. `nil` from the async calls below means it worked.
@@ -54,17 +54,13 @@ extension AppModel {
         }
     }
 
-    /// Creates a domain, behind the administrator prompt.
+    /// Creates a domain — through the DNS helper when the owner has approved it, otherwise behind
+    /// the administrator prompt (`runPrivilegedDNS`).
     func createDNSDomain(_ domain: String, localhost: String?) async -> DNSActionResult? {
-        let command: ValidatedCommand
-        switch ContainerCLI.dnsCreateCommand(domain: domain, localhost: localhost) {
-        case .success(let validated): command = validated
-        case .failure(let error): return .failed(String(describing: error))
-        }
         let prompt = localhost == nil
             ? "Flotilla wants to add the local domain “\(domain)” to this Mac’s DNS settings."
             : "Flotilla wants to point the local name “\(domain)” at this Mac."
-        let outcome = AdminCommandRunner.run([command], prompt: prompt)
+        let outcome = await runPrivilegedDNS(.create(domain: domain, localhost: localhost), prompt: prompt)
         await refreshDNS()
         switch outcome {
         case .succeeded:
@@ -76,19 +72,12 @@ extension AppModel {
         }
     }
 
-    /// Deletes domains, behind **one** administrator prompt however many there are.
+    /// Deletes domains — one helper request or **one** administrator prompt however many there are.
     func deleteDNSDomains(_ domains: [String]) async -> DNSActionResult? {
-        var commands: [ValidatedCommand] = []
-        for domain in domains {
-            switch ContainerCLI.dnsDeleteCommand(domain: domain) {
-            case .success(let validated): commands.append(validated)
-            case .failure(let error): return .failed(String(describing: error))
-            }
-        }
         let prompt = domains.count == 1
             ? "Flotilla wants to remove the local domain “\(domains[0])” from this Mac’s DNS settings."
             : "Flotilla wants to remove \(domains.count) local domains from this Mac’s DNS settings."
-        let outcome = AdminCommandRunner.run(commands, prompt: prompt)
+        let outcome = await runPrivilegedDNS(.delete(domains), prompt: prompt)
         await refreshDNS()
         switch outcome {
         case .succeeded:

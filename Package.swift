@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "FlotillaCore", targets: ["FlotillaCore"]),
         .executable(name: "flotilla-probe", targets: ["flotilla-probe"]),
         .executable(name: "Flotilla", targets: ["Flotilla"]),
+        .executable(name: "FlotillaDNSHelper", targets: ["FlotillaDNSHelper"]),
     ],
     // SwiftTerm (MIT) — a VT100/xterm emulator for AppKit. Backs the detail view's Terminal
     // tab, which needs a real PTY and something that understands the escape sequences coming
@@ -33,8 +34,16 @@ let package = Package(
         // that. Moves to an Xcode project when the app bundle, LSUIElement and signing
         // start to matter (see CLAUDE.md).
         .executableTarget(name: "Flotilla",
-                          dependencies: ["FlotillaCore",
+                          dependencies: ["FlotillaCore", "FlotillaPrivileged",
                                          .product(name: "SwiftTerm", package: "SwiftTerm")]),
+
+        // The DNS helper (decision 19, amended 7 October): a root SMAppService daemon that runs
+        // `system dns create|delete` for the signed app and nothing else. Its interface lives in
+        // FlotillaPrivileged, shared with the app. Both are macOS-only (Security, XPC), so both are
+        // absent from Package@swift-6.1.swift for the same reason the app is.
+        .target(name: "FlotillaPrivileged"),
+        .executableTarget(name: "FlotillaDNSHelper",
+                          dependencies: ["FlotillaCore", "FlotillaPrivileged"]),
 
         // Decoding tests run against real captured JSON in Fixtures/ — no `container`
         // install needed to run `swift test`.

@@ -1732,3 +1732,27 @@ The owner re-phased the project around fleet mode (PLAN.md, rewritten the same d
   links, appearance and settings buttons share one **light glass capsule** (white tint 20%) with a
   soft ink (seed at 72%) instead of near-black, rendered in the light scheme so it is the same on
   every theme.
+
+## Q32 — The DNS helper on every Mac, and Phase B's first decisions (settled 2026-10-07)
+
+**The helper.** The owner asked (7 October) for the Phase D privileged helper on the admin Mac
+too, so DNS changes stop asking for the password. Built as `FlotillaDNSHelper`, an
+`SMAppService` daemon shipped inside the app and inert until the owner switches it on in
+System Settings ▸ Login Items. It amends decision 19 narrowly: root still runs only
+`system dns create|delete`, never silently — the approval moves from a password per change to a
+one-time install approval plus an in-app confirmation of every change (deletes always confirm
+with the helper on; "Set Up on This Mac…" gains a dialog; a form's Save is its own
+confirmation). Requests are typed, not argv; the helper re-validates everything as root and
+accepts only the same-team, Developer ID-signed app; the app likewise requires the helper's
+identity. Unsigned builds, or a declined approval, keep the password prompt. Rejected: a
+setuid tool (no caller check), a sudoers rule (a general grant), caching the password (it is
+the owner's).
+
+**Phase B.** Exposure starts with reads and lifecycle; registry sign-in is replaced by the admin
+Mac sending images (`image save` → stream → `image load`) so credentials never leave it; DNS
+becomes per-host zones once the helper runs on hosts. Enrolment is a CID-style fleet key in a
+configuration profile, or a one-time code — and either way the owner approves each new host on
+the admin Mac. Port 7868. Host mode is a login item in a user session; headless minis use an
+auto-login service account until `container` supports a non-GUI launchd domain
+(apple/container#2008, #1514). Details in PLAN.md Phase B.
+

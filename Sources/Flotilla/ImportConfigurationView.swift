@@ -133,7 +133,9 @@ struct ImportConfigurationView: View {
             VStack(alignment: .leading, spacing: 6) {
                 if !dns.domains.isEmpty {
                     FormSectionHeader(title: "DNS",
-                                      note: "Adding \(dns.domains.map(\.name).joined(separator: ", ")) asks for an administrator password, once.")
+                                      note: "Adding \(dns.domains.map(\.name).joined(separator: ", ")) "
+                                          + (model.dnsHelperEnabled ? "goes through Flotilla’s DNS helper."
+                                                                    : "asks for an administrator password, once."))
                 }
                 if let domain = dns.containerDomain, domain != model.containerDNSDomain {
                     Toggle("Name containers under “\(domain)”", isOn: $useContainerDomain).toggleStyle(.checkbox)

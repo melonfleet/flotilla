@@ -457,6 +457,7 @@ struct SettingsView: View {
                 }
             }
 
+            DNSHelperSettingsSection()
             logsSection
             diagnosticsSection
             resetSection
