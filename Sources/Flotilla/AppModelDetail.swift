@@ -50,6 +50,20 @@ extension AppModel {
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
+    func fetchVolumeInspectJSON(for name: String, host: HostRef) async throws -> String {
+        guard !host.isLocal else { return try await fetchVolumeInspectJSON(for: name) }
+        let cli = try cli(for: host)
+        let raw = try await Task.detached { try cli.rawInspectVolumeJSON(name) }.value
+        return JSONPrettyPrinter.prettyPrint(raw)
+    }
+
+    func fetchNetworkInspectJSON(for id: String, host: HostRef) async throws -> String {
+        guard !host.isLocal else { return try await fetchNetworkInspectJSON(for: id) }
+        let cli = try cli(for: host)
+        let raw = try await Task.detached { try cli.rawInspectNetworkJSON(id) }.value
+        return JSONPrettyPrinter.prettyPrint(raw)
+    }
+
     /// Tags an image on any Mac.
     func tagImage(_ source: String, as target: String, host: HostRef) async throws {
         guard case .peer(let fingerprint) = host else { return try await tagImage(source, as: target) }

@@ -124,7 +124,7 @@ struct ImageDetailView: View {
                 DetailCard(title: "Recent events", minHeight: nil) {
                     // Keyed on `reference`, which is what the feed records images by —
                     // `ContainerImage.id` is the digest, and matching on it would find nothing.
-                    let events = model.events(for: image.reference, kind: .image)
+                    let events = model.events(for: image.reference, kind: .image, host: host)
                     if events.isEmpty {
                         Text("Nothing has changed since Flotilla started. Changes appear here as "
                              + "they happen; history from before launch is not recorded.")

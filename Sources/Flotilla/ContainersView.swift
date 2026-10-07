@@ -627,14 +627,7 @@ struct ContainersView: View {
                 // Real since Phase C: which Mac the row is on. A host that has stopped answering
                 // keeps its rows, marked with how old they are, rather than emptying the table.
                 TableColumn("Host", value: \.hostName) { row in
-                    HStack(spacing: 4) {
-                        Text(row.hostName).foregroundStyle(.secondary).lineLimit(1)
-                        if let since = row.staleSince {
-                            Image(systemName: "clock.badge.exclamationmark")
-                                .foregroundStyle(Theme.warning)
-                                .help("As of \(since.formatted(.relative(presentation: .named))) — \(row.hostName) isn’t answering")
-                        }
-                    }
+                    HostCell(name: row.hostName, staleSince: row.staleSince)
                 }
                     .width(min: 80, ideal: 110)
                     .customizationID("host")

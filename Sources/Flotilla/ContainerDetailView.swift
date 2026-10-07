@@ -265,7 +265,7 @@ struct ContainerDetailView: View {
     /// would be a lie of omission — the sort this project has already paid for once.
     private var eventsCard: some View {
         card("Recent events") {
-            let events = model.events(for: container.id, kind: .container)
+            let events = model.events(for: container.id, kind: .container, host: host)
             if events.isEmpty {
                 Text("Nothing has changed since Flotilla started. State changes appear here as "
                      + "they happen; history from before launch is not recorded.")

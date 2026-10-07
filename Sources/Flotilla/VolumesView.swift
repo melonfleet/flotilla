@@ -9,15 +9,17 @@ struct VolumesView: View {
     let model: AppModel
     /// Owned by `MainWindowView` — see `ResourceUIState`. Search, sort and column visibility
     /// have to outlive a trip to another section.
-    let ui: ResourceUIState<ContainerVolume>
+    let ui: ResourceUIState<HostedVolume>
 
-    @State private var selection = Set<ContainerVolume.ID>()
+    @State private var selection = Set<HostedVolume.ID>()
     @State private var showingCreate = false
     /// Which volume the detail screen is showing, and optionally which tab to open it on.
     /// Private per section, as it is in Containers and Machines — the tab type differs.
     private struct DetailTarget: Identifiable, Hashable {
-        let id: String
+        let name: String
+        var host: HostRef = .local
         var tab: VolumeDetailTab?
+        var id: String { host.rowID(name) }
     }
 
     /// The volume whose detail screen is showing, or nil for the list. A `DetailTarget` rather
@@ -32,7 +34,9 @@ struct VolumesView: View {
     @State private var newSize = ""
     @State private var newLabels: [String] = []
     @State private var newDriverOptions: [String] = []
-    @State private var pendingDelete: ContainerVolume?
+    /// Which Mac New Volume creates on (PLAN.md Phase C).
+    @State private var newHost: HostRef = .local
+    @State private var pendingDelete: HostedVolume?
     @State private var confirmingBulkDelete = false
 
     /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
@@ -85,7 +89,7 @@ struct VolumesView: View {
                                   // `{ _ in }` — a row that looked like a link and did nothing —
                                   // then briefly the Inspect sheet, and now the same destination
                                   // clicking the name gives.
-                                  open: { detailTarget = DetailTarget(id: $0) },
+                                  open: { detailTarget = DetailTarget(name: $0) },
                                   // Matched on `name`, the key the feed records volumes by.
                                   // It equals `id` on every volume the CLI returns, but matching
                                   // the feed's own key is what keeps that from mattering — the
@@ -97,6 +101,13 @@ struct VolumesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
+        // Paired hosts' volumes kept current while this section is open, as Containers does.
+        .task {
+            while !Task.isCancelled {
+                await model.hostMode.refreshLiveStatus()
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
@@ -124,13 +135,14 @@ struct VolumesView: View {
             Text(model.actionError ?? "")
         }
         .confirmationDialog(
-            "Delete volume “\(pendingDelete?.name ?? "")”?",
+            "Delete volume “\(pendingDelete?.name ?? "")”\(pendingDelete.map(onHost) ?? "")?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                if let volume = pendingDelete {
-                    Task { await model.removeVolume(volume) }
+                if let row = pendingDelete {
+                    leaveDetailIfShowing(row)
+                    Task { await model.removeVolume(row.volume, host: row.host) }
                 }
                 pendingDelete = nil
             }
@@ -145,7 +157,15 @@ struct VolumesView: View {
         ) {
             Button("Delete \(actionable.count) Volume\(actionable.count == 1 ? "" : "s")",
                    role: .destructive) {
-                Task { await model.deleteVolumes(actionable) }
+                let rows = actionableRows
+                Task {
+                    let local = Set(rows.filter(\.host.isLocal).map(\.volume.id))
+                    if !local.isEmpty { await model.deleteVolumes(local) }
+                    // Other Macs' volumes one at a time, as Containers acts on its remote rows.
+                    for row in rows where !row.host.isLocal {
+                        await model.removeVolume(row.volume, host: row.host)
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -168,13 +188,15 @@ struct VolumesView: View {
                 .accessibilityLabel(allVisibleSelected ? "Deselect all volumes" : "Select all volumes")
                 .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
-            ResourceListControls<ContainerVolume>(
+            ResourceListControls<HostedVolume>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
                 columnCustomization: Binding(get: { ui.columnCustomization },
                                              set: { ui.columnCustomization = $0 }),
                 columns: Self.columnSpecs,
-                filters: volumeFilters)
+                filters: volumeFilters,
+                hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
+                hosts: hostChoices)
         }, trailing: {
             ToolbarIconMenu(systemImage: "plus", label: "Create a volume") {
                 addMenuItems
@@ -189,25 +211,57 @@ struct VolumesView: View {
     /// Whether anything is currently narrowing the list. Drives the empty state's wording and
     /// its action: "no matches, clear the filter" and "none exist, make one" are different
     /// situations and only one of them is the user's mistake.
-    private var isFiltered: Bool { !ui.search.trimmingCharacters(in: .whitespaces).isEmpty || ui.filterID != "all" }
+    private var isFiltered: Bool {
+        !ui.search.trimmingCharacters(in: .whitespaces).isEmpty || ui.filterID != "all" || ui.hostFilter != nil
+    }
 
-    private var displayedVolumes: [ContainerVolume] {
-        var volumes = model.volumes
+    /// This Mac and every trusted host, for the filter's Host section and New Volume's picker.
+    private var hostChoices: [(ref: HostRef, name: String)] {
+        [(HostRef.local, model.hostLabel)]
+            + model.hostMode.trustedHosts.map { (HostRef.peer($0.fingerprint), $0.displayName) }
+    }
+
+    /// " on mini" for a paired host's volume, nothing for This Mac's.
+    private func onHost(_ row: HostedVolume) -> String {
+        row.host.isLocal ? "" : " on \(row.hostName)"
+    }
+
+    /// This Mac's volumes and every paired host's last answer, through the host filter (PLAN.md
+    /// Phase C). Two Macs' `data` volumes are two rows: neither is the other's.
+    private var allRows: [HostedVolume] {
+        var rows: [HostedVolume] = []
+        if ui.hostFilter == nil || ui.hostFilter == .local {
+            rows += model.volumes.map { HostedVolume(volume: $0, host: .local, hostName: model.hostLabel) }
+        }
+        let now = Date()
+        for (peer, snapshot) in model.hostMode.fleetVolumes {
+            let host = HostRef.peer(peer.fingerprint)
+            if let only = ui.hostFilter, only != host { continue }
+            let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
+            rows += snapshot.items.map {
+                HostedVolume(volume: $0, host: host, hostName: peer.displayName, staleSince: stale)
+            }
+        }
+        return rows
+    }
+
+    private var displayedVolumes: [HostedVolume] {
+        var volumes = allRows
 
         // The one filter control covers two independent facets — age and label — because
         // `ResourceUIState.filterID` is a single selected string, not a set of facets. The id
         // itself says which facet fired: an age bucket's id round-trips through `VolumeAgeBucket`,
         // anything else is checked against the `label:` prefix.
         if let bucket = VolumeSizeBucket.allCases.first(where: { $0.filterID == ui.filterID }) {
-            volumes = volumes.filter { Self.sizeBucket(for: $0) == bucket }
+            volumes = volumes.filter { Self.sizeBucket(for: $0.volume) == bucket }
         } else if let bucket = VolumeAgeBucket.allCases.first(where: { $0.filterID == ui.filterID }) {
-            volumes = volumes.filter { Self.ageBucket(for: $0) == bucket }
+            volumes = volumes.filter { Self.ageBucket(for: $0.volume) == bucket }
         } else if ui.filterID.hasPrefix(Self.labelFilterPrefix) {
             let pair = ui.filterID.dropFirst(Self.labelFilterPrefix.count)
             if let separator = pair.firstIndex(of: "=") {
                 let key = String(pair[..<separator])
                 let value = String(pair[pair.index(after: separator)...])
-                volumes = volumes.filter { $0.configuration.labels?[key] == value }
+                volumes = volumes.filter { $0.volume.configuration.labels?[key] == value }
             }
         }
 
@@ -226,7 +280,8 @@ struct VolumesView: View {
         // the same way everywhere, and composes with whatever filter is already on.
             volumes = volumes.filter {
                 $0.name.lowercased().contains(query)
-                    || model.tags.tags(on: .volume, $0.name)
+                    || (!$0.host.isLocal && $0.hostName.lowercased().contains(query))
+                    || model.tags.tags(on: .volume, $0.detailKey)
                         .contains { $0.name.lowercased().contains(query) }
             }
         }
@@ -234,13 +289,24 @@ struct VolumesView: View {
         return volumes.sorted(using: ui.sortOrder)
     }
 
-    private var visibleIDs: Set<ContainerVolume.ID> { Set(displayedVolumes.map(\.id)) }
+    private var visibleIDs: Set<HostedVolume.ID> { Set(displayedVolumes.map(\.id)) }
 
     /// Filtering does not clear table selection, so destructive batches must never include a
     /// row that disappeared before the user confirmed the action.
-    private var actionable: Set<ContainerVolume.ID> { selection.intersection(visibleIDs) }
+    private var actionable: Set<HostedVolume.ID> { selection.intersection(visibleIDs) }
 
-    private func selectionToggle(for id: ContainerVolume.ID) -> some View {
+    private var actionableRows: [HostedVolume] { displayedVolumes.filter { actionable.contains($0.id) } }
+
+    private func open(_ row: HostedVolume, tab: VolumeDetailTab? = nil) {
+        detailTarget = DetailTarget(name: row.name, host: row.host, tab: tab)
+    }
+
+    /// Deleting the volume whose detail is open goes back to the list, as in Containers.
+    private func leaveDetailIfShowing(_ row: HostedVolume) {
+        if detailTarget?.id == row.detailKey { detailTarget = nil }
+    }
+
+    private func selectionToggle(for id: HostedVolume.ID) -> some View {
         let isOn = Binding<Bool>(
             get: { selection.contains(id) },
             set: { on in
@@ -265,12 +331,12 @@ struct VolumesView: View {
     /// selection, so a row you selected and then filtered away is still in the set — and tagging
     /// something the user cannot see is the same mistake the bulk delete bars guard against.
     private var selectedTagSubjects: [TagSubject] {
-        // Resolved through the model rather than mapping the id set straight across. Tags on
-        // volumes key on `name` — the key the activity feed uses too — and `actionable` holds
-        // `ContainerVolume.ID`. They are equal on every volume this CLI returns, which is
-        // exactly the kind of coincidence that stops being true quietly.
-        model.volumes.filter { actionable.contains($0.id) }
-            .map { TagSubject(kind: .volume, id: $0.name) }
+        // Resolved through the rows rather than mapping the id set straight across. Tags on
+        // volumes key on `name` (prefixed for a paired host) — the key the activity feed uses
+        // too — and `actionable` holds row ids built from `ContainerVolume.ID`. They are equal on
+        // every volume this CLI returns, which is exactly the kind of coincidence that stops
+        // being true quietly.
+        actionableRows.map { TagSubject(kind: .volume, id: $0.detailKey) }
     }
 
     @ViewBuilder
@@ -342,7 +408,7 @@ struct VolumesView: View {
                      : "Create one to persist data across container runs.")
             } actions: {
                 if isFiltered {
-                    Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
+                    Button("Clear Filter") { ui.search = ""; ui.filterID = "all"; ui.hostFilter = nil }
                 } else {
                     VStack(spacing: 14) {
                         Button("New Volume…") { openNewVolume() }
@@ -364,6 +430,7 @@ struct VolumesView: View {
     private static let columnSpecs: [(id: String, title: String)] = [
         ("tags", "Tags"),
         ("format", "Format"), ("driver", "Driver"), ("size", "Capacity"), ("created", "Created"),
+        ("host", "Host"),
     ]
 
     /// Prefix for a label filter's id, e.g. `label:team=infra`. Namespaced against
@@ -383,15 +450,16 @@ struct VolumesView: View {
     /// at least one volume `All` would show. Verified in `container volume list --format json`:
     /// `creationDate`, `labels` (and `sizeInBytes`, unused here) do vary across real volumes.
     private var volumeFilters: [ResourceFilterOption] {
-        let total = model.volumes.count
+        let volumes = allRows.map(\.volume)
+        let total = volumes.count
 
         // Age. A volume with no readable `creationDate` is its own (unlabelled) category —
         // "unknown", never "old" — so it still makes a bucket meaningful even when every dated
         // volume falls in the same one: selecting that bucket would exclude the undated volumes.
         // Only when literally everything (dated or not) lands in one category does a bucket
         // filter nothing, and that is when it is withheld.
-        let presentBuckets = Set(model.volumes.compactMap(Self.ageBucket(for:)))
-        let hasUnknownAge = model.volumes.contains { Self.ageBucket(for: $0) == nil }
+        let presentBuckets = Set(volumes.compactMap(Self.ageBucket(for:)))
+        let hasUnknownAge = volumes.contains { Self.ageBucket(for: $0) == nil }
         let ageOptions: [ResourceFilterOption] =
             presentBuckets.count + (hasUnknownAge ? 1 : 0) > 1
             ? VolumeAgeBucket.allCases.filter(presentBuckets.contains).map {
@@ -403,7 +471,7 @@ struct VolumesView: View {
         // it does not match every volume. `--label` is a real `volume create` flag and the
         // create form's own `newLabels` writes it, so this is populated by ordinary use, not
         // aspirational.
-        let pairCounts = model.volumes
+        let pairCounts = volumes
             .flatMap { ($0.configuration.labels ?? [:]).map { "\($0.key)=\($0.value)" } }
             .reduce(into: [String: Int]()) { counts, pair in counts[pair, default: 0] += 1 }
         let labelOptions = pairCounts.keys.sorted().compactMap { pair -> ResourceFilterOption? in
@@ -413,8 +481,8 @@ struct VolumesView: View {
 
         // Size. Same rule as age: offered only when the volumes actually straddle the boundary,
         // so selecting a bucket can never produce an empty list.
-        let presentSizes = Set(model.volumes.compactMap(Self.sizeBucket(for:)))
-        let hasUnknownSize = model.volumes.contains { Self.sizeBucket(for: $0) == nil }
+        let presentSizes = Set(volumes.compactMap(Self.sizeBucket(for:)))
+        let hasUnknownSize = volumes.contains { Self.sizeBucket(for: $0) == nil }
         let sizeOptions: [ResourceFilterOption] =
             presentSizes.count + (hasUnknownSize ? 1 : 0) > 1
             ? VolumeSizeBucket.allCases.filter(presentSizes.contains).map {
@@ -447,21 +515,24 @@ struct VolumesView: View {
 
     private var cards: some View {
         ResourceCardGrid {
-            ForEach(displayedVolumes) { volume in
+            ForEach(displayedVolumes) { row in
+                let volume = row.volume
                 ResourceCard(
                     title: volume.name,
                     fields: [("Format", volume.configuration.format),
                              ("Driver", volume.configuration.driver),
                              ("Size", volume.sizeInBytes.map(Self.byteCount)),
-                             ("Created", RelativeDate.relative(volume.configuration.creationDate))],
-                    tags: model.tags.tags(on: .volume, volume.name),
+                             ("Created", RelativeDate.relative(volume.configuration.creationDate))]
+                        // Named only when there is more than one Mac to tell apart.
+                        + (hostChoices.count > 1 ? [("Host", row.hostName)] : []),
+                    tags: model.tags.tags(on: .volume, row.detailKey),
                     // The card title opens the detail, so the list/cards toggle does not change
                     // what you can reach.
-                    onOpen: { detailTarget = DetailTarget(id: volume.name) }
+                    onOpen: { open(row) }
                 ) {
-                    rowActions(for: volume)
+                    rowActions(for: row)
                 }
-                .contextMenu { menu(for: volume) }
+                .contextMenu { menu(for: row) }
             }
         }
     }
@@ -481,19 +552,19 @@ struct VolumesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
-            TableColumn("") { volume in
-                selectionToggle(for: volume.id)
+            TableColumn("") { row in
+                selectionToggle(for: row.id)
             }
             .width(min: 28, ideal: 30, max: 34)
 
-            TableColumn("Name", value: \.name) { volume in
+            TableColumn("Name", value: \.name) { row in
                 // The name is the way in, as it is in every other table. It was plain text here,
                 // so the only route to a volume's record was a menu item that opened a sheet.
-                Button(volume.name) { detailTarget = DetailTarget(id: volume.name) }
+                Button(row.name) { open(row) }
                     .buttonStyle(.link)
-                    .foregroundStyle(Theme.rowName(selected: selection.contains(volume.id)))
+                    .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
                     .lineLimit(1)
-                    .help("Open \(volume.name)")
+                    .help("Open \(row.name)\(onHost(row))")
             }
             .width(min: 160, ideal: 240)
 
@@ -505,20 +576,20 @@ struct VolumesView: View {
             // row's tags live in `TagStore`, not on the model — so a sortable column here would
             // mean denormalising the user's tags onto the runtime's own types. Hideable instead,
             // through the same column menu every other column uses.
-            TableColumn("Tags") { volume in
-                TagPillRow(tags: model.tags.tags(on: .volume, volume.name), compact: true)
+            TableColumn("Tags") { row in
+                TagPillRow(tags: model.tags.tags(on: .volume, row.detailKey), compact: true)
             }
             .width(min: 60, ideal: 130)
             .customizationID("tags")
 
-            TableColumn("Format", value: \.formatSortKey) { volume in
-                Text(volume.configuration.format ?? "—").foregroundStyle(.secondary)
+            TableColumn("Format", value: \.formatSortKey) { row in
+                Text(row.volume.configuration.format ?? "—").foregroundStyle(.secondary)
             }
             .width(min: 70, ideal: 84)
             .customizationID("format")
 
-            TableColumn("Driver", value: \.driverSortKey) { volume in
-                Text(volume.configuration.driver ?? "—").foregroundStyle(.secondary)
+            TableColumn("Driver", value: \.driverSortKey) { row in
+                Text(row.volume.configuration.driver ?? "—").foregroundStyle(.secondary)
             }
             .width(min: 70, ideal: 90)
             .customizationID("driver")
@@ -535,111 +606,77 @@ struct VolumesView: View {
             //
             // There is no per-volume *usage* to show instead — `system df` gives one total for
             // all volumes and the CLI offers nothing finer — so the honest fix is the label.
-            TableColumn("Capacity", value: \.sizeSortKey) { volume in
-                Text(volume.sizeInBytes.map(Self.byteCount) ?? "—")
+            TableColumn("Capacity", value: \.sizeSortKey) { row in
+                Text(row.volume.sizeInBytes.map(Self.byteCount) ?? "—")
                     .monospacedDigit().foregroundStyle(.secondary)
                     .help("The size this volume was created with, not what it is using")
             }
             .width(min: 74, ideal: 90)
             .customizationID("size")
 
-            TableColumn("Created", value: \.creationSortKey) { volume in
-                Text(RelativeDate.relative(volume.configuration.creationDate))
+            TableColumn("Created", value: \.creationSortKey) { row in
+                Text(RelativeDate.relative(row.volume.configuration.creationDate))
                     .foregroundStyle(.secondary)
-                    .help(RelativeDate.absolute(volume.configuration.creationDate))
+                    .help(RelativeDate.absolute(row.volume.configuration.creationDate))
             }
             .width(min: 80, ideal: 104)
             .customizationID("created")
 
-            TableColumn("Actions") { volume in
-                rowActions(for: volume)
+            // Which Mac the volume is on, as in Containers and Images.
+            TableColumn("Host", value: \.hostName) { row in
+                HostCell(name: row.hostName, staleSince: row.staleSince)
+            }
+            .width(min: 80, ideal: 110)
+            .customizationID("host")
+
+            TableColumn("Actions") { row in
+                rowActions(for: row)
             }
             .width(min: 78, ideal: 88)
         }
         .frame(maxHeight: .infinity)
-        .contextMenu(forSelectionType: ContainerVolume.ID.self) { ids in
-            if let volume = model.volumes.first(where: { ids.contains($0.id) }) {
-                menu(for: volume)
+        .contextMenu(forSelectionType: HostedVolume.ID.self) { ids in
+            if let row = displayedVolumes.first(where: { ids.contains($0.id) }) {
+                menu(for: row)
             }
         } primaryAction: { ids in
             // Double-click opens the detail, as it does in Containers and Machines — but only
             // when the activation names exactly one row. `ids` is a `Set`, so with several
             // selected `first` is an arbitrary member, and opening the wrong volume is worse
             // than opening none.
-            guard ids.count == 1, let volume = model.volumes.first(where: { ids.contains($0.id) })
+            guard ids.count == 1, let row = displayedVolumes.first(where: { ids.contains($0.id) })
             else { return }
-            detailTarget = DetailTarget(id: volume.name)
+            open(row)
         }
     }
 
     /// Overflow then bin, in that order and with the same divider — the arrangement every other
     /// section uses, so the destructive control is always in the same place.
     @ViewBuilder
-    private func rowActions(for volume: ContainerVolume) -> some View {
-        let busy = model.isBusy(volume.id, kind: .volume)
+    private func rowActions(for row: HostedVolume) -> some View {
+        let busy = model.isBusy(row.id, kind: .volume)
+        let name = row.name + onHost(row)
         HStack(spacing: 2) {
             Menu {
-                menu(for: volume)
+                menu(for: row)
             } label: {
                 RowOverflowLabel()
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel("More actions for \(volume.name)")
+            .accessibilityLabel("More actions for \(name)")
 
             Divider().frame(height: 14)
 
             IconActionButton(systemImage: "trash",
-                             label: "Delete \(volume.name)",
-                             help: "Delete \(volume.name)",
+                             label: "Delete \(name)",
+                             help: "Delete \(name)",
                              busy: busy, destructive: true) {
-                requestDelete(volume)
+                requestDelete(row)
             }
             Spacer(minLength: 0)
         }
-    }
-
-    private func row(for volume: ContainerVolume) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Button(volume.name) { detailTarget = DetailTarget(id: volume.name) }
-                    .buttonStyle(.link)
-                    .foregroundStyle(Theme.link)
-                    .lineLimit(1)
-                    .help("Open \(volume.name)")
-                HStack(spacing: 8) {
-                    if let format = volume.format {
-                        Text(format).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let size = volume.sizeInBytes {
-                        Text(Self.byteCount(size)).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let createdAt = volume.createdAt {
-                        // Age, not a raw ISO timestamp — see `RelativeDate`. The exact value
-                        // is one hover away.
-                        Text(RelativeDate.relative(createdAt, prefix: "Created"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .help(RelativeDate.absolute(createdAt))
-                    }
-                }
-            }
-            Spacer()
-            IconActionButton(systemImage: "trash",
-                             label: "Delete \(volume.name)",
-                             help: "Delete \(volume.name)",
-                             busy: model.isBusy(volume.id, kind: .volume),
-                             destructive: true) {
-                requestDelete(volume)
-            }
-        }
-        .padding(.vertical, 4)
-        // On the whole row (and after `.padding`, so the hit area covers the padding too),
-        // not on the label — a menu you can only summon by right-clicking exactly the text
-        // reads as no menu at all. Shape per `ContextMenus.swift`: actions, Copy, destructive
-        // last.
-        .contextMenu { menu(for: volume) }
     }
 
     // MARK: Detail
@@ -649,37 +686,54 @@ struct VolumesView: View {
     @ViewBuilder
     private func detailScreen(_ target: DetailTarget) -> some View {
         VStack(spacing: 0) {
-            if let volume = model.volumes.first(where: { $0.name == target.id }) {
-                detailHeader(for: volume)
+            if let row = hostedVolume(target) {
+                detailHeader(for: row)
                 Divider()
-                VolumeDetailView(model: model, volume: volume, requestedTab: target.tab)
+                VolumeDetailView(model: model, volume: row.volume, host: row.host, requestedTab: target.tab)
                     // Keyed so stepping to the next volume rebuilds rather than keeping the
                     // previous one's tab state under a new name.
-                    .id(volume.name)
+                    .id(row.detailKey)
             } else {
                 detailHeader(for: nil)
                 Divider()
+                // Top-aligned with neutral wording, as Containers' detail does.
                 ContentUnavailableView(
                     "Volume unavailable",
                     systemImage: "questionmark.square.dashed",
-                    description: Text("\u{201C}\(target.id)\u{201D} is no longer on this Mac. It may have been deleted.")
+                    description: Text("\u{201C}\(target.name)\u{201D} is no longer on "
+                                      + "\(model.hostMode.hostName(target.host, local: "this Mac")). It may have been deleted.")
                 )
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
     }
 
+    /// The row a detail target names: This Mac's by name, a paired host's from its last answer.
+    private func hostedVolume(_ target: DetailTarget) -> HostedVolume? {
+        switch target.host {
+        case .local:
+            return model.volumes.first { $0.name == target.name }
+                .map { HostedVolume(volume: $0, host: .local, hostName: model.hostLabel) }
+        case .peer(let fingerprint):
+            guard let volume = model.hostMode.volumeSnapshots[fingerprint]?.items
+                .first(where: { $0.name == target.name }) else { return nil }
+            return HostedVolume(volume: volume, host: target.host,
+                                hostName: model.hostMode.hostName(target.host, local: model.hostLabel))
+        }
+    }
+
     @ViewBuilder
-    private func detailHeader(for volume: ContainerVolume?) -> some View {
+    private func detailHeader(for row: HostedVolume?) -> some View {
         HStack(spacing: 10) {
             IconActionButton(systemImage: "chevron.left", label: "Back to Volumes",
                              help: "Back to Volumes") { detailTarget = nil }
 
-            if let volume {
+            if let row {
                 Image(systemName: "cylinder.split.1x2")
                     .font(.system(size: 19)).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(volume.name).font(.headline)
-                    Text(subtitle(for: volume))
+                    Text(row.name).font(.headline)
+                    Text(subtitle(for: row))
                         .font(.caption).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.middle)
                 }
@@ -689,8 +743,8 @@ struct VolumesView: View {
 
             Spacer()
             stepper
-            if let volume {
-                ActionCluster { rowActions(for: volume) }
+            if let row {
+                ActionCluster { rowActions(for: row) }
             }
         }
         .padding(.horizontal, 12)
@@ -702,10 +756,10 @@ struct VolumesView: View {
     @ViewBuilder
     private var stepper: some View {
         let order = displayedVolumes
-        let index = order.firstIndex { $0.name == detailTarget?.id }
+        let index = order.firstIndex { $0.detailKey == detailTarget?.id }
         HStack(spacing: 2) {
             Button {
-                if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].name) }
+                if let index, index > 0 { open(order[index - 1]) }
             } label: { Image(systemName: "chevron.up") }
                 .disabled(index == nil || index == 0)
                 .help("Previous volume")
@@ -713,7 +767,7 @@ struct VolumesView: View {
 
             Button {
                 if let index, index < order.count - 1 {
-                    detailTarget = DetailTarget(id: order[index + 1].name)
+                    open(order[index + 1])
                 }
             } label: { Image(systemName: "chevron.down") }
                 .disabled(index == nil || index == order.count - 1)
@@ -728,8 +782,9 @@ struct VolumesView: View {
         }
     }
 
-    private func subtitle(for volume: ContainerVolume) -> String {
-        var parts: [String] = []
+    private func subtitle(for row: HostedVolume) -> String {
+        let volume = row.volume
+        var parts = row.host.isLocal ? [] : [row.hostName]
         if let format = volume.format { parts.append(format) }
         if let size = volume.sizeInBytes { parts.append(Self.byteCount(size)) }
         if let source = volume.source { parts.append(source) }
@@ -737,8 +792,9 @@ struct VolumesView: View {
     }
 
     @ViewBuilder
-    private func menu(for volume: ContainerVolume) -> some View {
-        let busy = model.isBusy(volume.id, kind: .volume)
+    private func menu(for row: HostedVolume) -> some View {
+        let volume = row.volume
+        let busy = model.isBusy(row.id, kind: .volume)
 
         // Guarded item by item rather than by disabling the whole menu from the row, so the
         // `⋯` button and a right-click render **identically**. The row used to wrap this in
@@ -747,24 +803,24 @@ struct VolumesView: View {
         // First, above Copy: `volume inspect` was allowlisted from the start with nothing able to
         // call it (GAP-06). This is the authoritative record — `options`, `labels`, the on-disk
         // source — rather than the columns this table chose to show.
-        Button("Details…") { detailTarget = DetailTarget(id: volume.name) }
+        Button("Details…") { open(row) }
         // Straight to the tab you wanted, the way the containers menu offers Logs and Inspect.
-        Button("Inspect") { detailTarget = DetailTarget(id: volume.name, tab: .inspect) }
+        Button("Inspect") { open(row, tab: .inspect) }
         Divider()
         // Tags, in the same place on every row menu in the app: after the things you open and
         // before Copy. Not a destructive action, not a read of the runtime — it changes how the
         // row looks to you and nothing about what it is.
-        TagMenu(store: model.tags, subject: TagSubject(kind: .volume, id: volume.name)) {
-            tagSheet = TagSheetTarget(kind: .volume, id: volume.name)
+        TagMenu(store: model.tags, subject: TagSubject(kind: .volume, id: row.detailKey)) {
+            tagSheet = TagSheetTarget(kind: .volume, id: row.detailKey)
         }
         Divider()
         CopyMenu([
             ("Name", volume.name),
             ("Source Path", volume.source),
             ("Format", volume.format),
-        ])
+        ] + (row.host.isLocal ? [] : [("Host", row.hostName)]))
         Divider()
-        Button("Delete…", role: .destructive) { requestDelete(volume) }
+        Button("Delete…", role: .destructive) { requestDelete(row) }
             .disabled(busy)
     }
 
@@ -809,6 +865,7 @@ struct VolumesView: View {
     }
 
     private func openNewVolume() {
+        newHost = ui.hostFilter ?? .local
         newVolumeName = ""
         newSize = ""
         suggestedMount = nil
@@ -816,8 +873,8 @@ struct VolumesView: View {
     }
 
     private func useSuggestion(_ suggestion: VolumeSuggestion) {
-        newVolumeName = ResourceSuggestions.uniqueName(suggestion.baseName,
-                                                       taken: Set(model.volumes.map(\.name)))
+        newHost = ui.hostFilter ?? .local
+        newVolumeName = ResourceSuggestions.uniqueName(suggestion.baseName, taken: volumeNames(on: newHost))
         newSize = suggestion.size
         suggestedMount = suggestion.mountPath
         // A filled-in form is the starting point, not an edit: Back from it asks nothing.
@@ -832,6 +889,18 @@ struct VolumesView: View {
                 Label("Mount it in the container at \(suggestedMount).", systemImage: "info.circle")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+            if hostChoices.count > 1 {
+                FormField("Create on",
+                          help: FieldHelp("Which Mac the volume is created on.",
+                                          detail: "A volume belongs to one Mac: a container mounts the volumes on its own Mac.")) {
+                    Picker("", selection: $newHost) {
+                        ForEach(hostChoices, id: \.ref) { Text($0.name).tag($0.ref) }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                }
             }
             FormField("Name",
                       help: FieldHelp(
@@ -901,6 +970,19 @@ struct VolumesView: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if !newHost.isLocal {
+                Label("Runs on \(model.hostMode.hostName(newHost, local: model.hostLabel))",
+                      systemImage: "desktopcomputer")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Names already taken on a Mac, so a suggestion never proposes one that exists there.
+    private func volumeNames(on host: HostRef) -> Set<String> {
+        switch host {
+        case .local: Set(model.volumes.map(\.name))
+        case .peer(let fingerprint): Set(model.hostMode.volumeSnapshots[fingerprint]?.items.map(\.name) ?? [])
         }
     }
 
@@ -917,8 +999,9 @@ struct VolumesView: View {
             Button("Create") {
                 let name = trimmedName
                 let opts = options
+                let host = newHost
                 showingCreate = false
-                Task { await model.createVolume(name, options: opts) }
+                Task { await model.createVolume(name, options: opts, host: host) }
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
@@ -1016,11 +1099,12 @@ struct VolumesView: View {
     /// Defers to `model.deletePolicy`, the one authority. This used to read the setting key
     /// directly, which is how three screens ended up with three copies of the rule and two more
     /// screens with none.
-    private func requestDelete(_ volume: ContainerVolume) {
+    private func requestDelete(_ row: HostedVolume) {
         if model.deletePolicy.requiresConfirmation(.single) {
-            pendingDelete = volume
+            pendingDelete = row
         } else {
-            Task { await model.removeVolume(volume) }
+            leaveDetailIfShowing(row)
+            Task { await model.removeVolume(row.volume, host: row.host) }
         }
     }
 
@@ -1115,4 +1199,24 @@ extension ContainerVolume {
     /// happens to sort correctly lexicographically. Same rule `Container.creationSortKey`
     /// uses: an absent date sorts last rather than first.
     var creationSortKey: String { configuration.creationDate ?? "9999" }
+}
+
+/// One volume on one Mac (PLAN.md Phase C). This Mac's rows keep `ContainerVolume.id` as their id
+/// and their bare name as their tag key, so selection, busy state and tags are unchanged for them.
+struct HostedVolume: Identifiable {
+    let volume: ContainerVolume
+    let host: HostRef
+    let hostName: String
+    /// A host's row that is older than a fresh answer: shown, with its age, rather than hidden.
+    var staleSince: Date? = nil
+
+    var id: String { host.rowID(volume.id) }
+    /// How the detail screen and tags name the volume: by name, on its Mac.
+    var detailKey: String { host.rowID(volume.name) }
+
+    var name: String { volume.name }
+    var formatSortKey: String { volume.formatSortKey }
+    var driverSortKey: String { volume.driverSortKey }
+    var sizeSortKey: Int64 { volume.sizeSortKey }
+    var creationSortKey: String { volume.creationSortKey }
 }

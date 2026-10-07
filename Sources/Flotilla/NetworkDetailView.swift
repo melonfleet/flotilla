@@ -22,14 +22,18 @@ struct NetworkDetailView: View {
     let model: AppModel
     let network: ContainerNetwork
 
+    /// Which Mac it is on (PLAN.md Phase C).
+    var host: HostRef = .local
+
     /// A tab the caller asked for — "Inspect" from the row menu — which wins over the default.
     let requestedTab: NetworkDetailTab?
 
     @State private var tab: NetworkDetailTab
 
-    init(model: AppModel, network: ContainerNetwork, requestedTab: NetworkDetailTab? = nil) {
+    init(model: AppModel, network: ContainerNetwork, host: HostRef = .local, requestedTab: NetworkDetailTab? = nil) {
         self.model = model
         self.network = network
+        self.host = host
         self.requestedTab = requestedTab
         _tab = State(initialValue: requestedTab ?? .overview)
     }
@@ -45,8 +49,9 @@ struct NetworkDetailView: View {
                 case .overview: overview
                 case .inspect:
                     InspectPane(command: "container network inspect \(network.id)",
-                                failureTitle: "Couldn't inspect this network") {
-                        try await model.fetchNetworkInspectJSON(for: network.id)
+                                failureTitle: "Couldn't inspect this network",
+                                hostName: model.hostMode.hostName(host, local: "this Mac")) {
+                        try await model.fetchNetworkInspectJSON(for: network.id, host: host)
                     }
                 }
             }
@@ -82,7 +87,12 @@ struct NetworkDetailView: View {
                     // The question you actually arrive with, and one no `network inspect` answers:
                     // the attachment is recorded on the *container*, so it is read from the
                     // container list rather than from this network's own record.
-                    let attached = model.containers.filter {
+                    // That Mac's containers: on a paired host, what it last reported.
+                    let pool: [Container] = switch host {
+                    case .local: model.containers
+                    case .peer(let fingerprint): model.hostMode.containerSnapshots[fingerprint]?.items ?? []
+                    }
+                    let attached = pool.filter {
                         $0.status.networks?.contains { $0.network == network.id } == true
                     }
                     if attached.isEmpty {
@@ -93,7 +103,7 @@ struct NetworkDetailView: View {
                             HStack(spacing: 8) {
                                 Circle().fill(container.stateColor).frame(width: 6, height: 6)
                                 Button(container.id) {
-                                    model.requestDetail(kind: .container, subject: container.id)
+                                    model.requestDetail(kind: .container, subject: host.rowID(container.id))
                                 }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(Theme.link)
@@ -108,7 +118,7 @@ struct NetworkDetailView: View {
                 }
 
                 DetailCard(title: "Recent events", minHeight: nil) {
-                    let events = model.events(for: network.id, kind: .network)
+                    let events = model.events(for: network.id, kind: .network, host: host)
                     if events.isEmpty {
                         Text("Nothing has changed since Flotilla started. Changes appear here as "
                              + "they happen; history from before launch is not recorded.")

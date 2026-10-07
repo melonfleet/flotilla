@@ -1251,20 +1251,99 @@ final class AppModel {
     /// Deletes an image on any Mac; a paired host is asked again at once so its rows update.
     func removeImage(_ image: ContainerImage, host: HostRef) async {
         guard case .peer(let fingerprint) = host else { return await removeImage(image) }
-        let busyKey = host.rowID(image.id)
-        guard !busy.contains(busyKey, kind: .image) else { return }
-        busy.mark(busyKey, kind: .image)
-        defer { busy.clear(busyKey, kind: .image) }
+        await deleteOnHost(fingerprint, kind: .image, id: image.id, name: image.reference, noun: "image") {
+            _ = try $0.removeImage(image.reference)
+        }
+    }
+
+    /// Deletes a volume on any Mac.
+    func removeVolume(_ volume: ContainerVolume, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await removeVolume(volume) }
+        await deleteOnHost(fingerprint, kind: .volume, id: volume.id, name: volume.name, noun: "volume") {
+            _ = try $0.removeVolume(volume.name)
+        }
+    }
+
+    /// Deletes a network on any Mac.
+    func removeNetwork(_ network: ContainerNetwork, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await removeNetwork(network) }
+        await deleteOnHost(fingerprint, kind: .network, id: network.id, name: network.id, noun: "network") {
+            _ = try $0.removeNetwork(network.id)
+        }
+    }
+
+    /// One delete on a paired host, the same shape for every kind: busy under the host's row id,
+    /// the activity feed told which Mac, a failure naming it, and the host asked again so its
+    /// rows update.
+    private func deleteOnHost(_ fingerprint: PeerFingerprint, kind: ActivityKind, id: String, name: String,
+                              noun: String, _ operation: @escaping @Sendable (ContainerCLI) throws -> Void) async {
+        let host = HostRef.peer(fingerprint)
+        let busyKey = host.rowID(id)
+        guard !busy.contains(busyKey, kind: kind) else { return }
+        busy.mark(busyKey, kind: kind)
+        defer { busy.clear(busyKey, kind: kind) }
         let where_ = hostMode.hostName(host, local: hostLabel)
         do {
             let cli = try cli(for: host)
-            _ = try await Task.detached { try cli.removeImage(image.reference) }.value
-            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .image,
-                                          subject: "\(image.reference) on \(where_)", action: "Deleted"))
+            try await Task.detached { try operation(cli) }.value
+            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: kind,
+                                          subject: "\(name) on \(where_)", action: "Deleted"))
         } catch {
-            actionError = "Delete image failed for \(image.reference) on \(where_): \(HostModeController.describe(error))"
+            actionError = "Delete \(noun) failed for \(name) on \(where_): \(HostModeController.describe(error))"
         }
         await hostMode.refreshHost(fingerprint)
+    }
+
+    /// Creates a volume on any Mac (PLAN.md Phase C).
+    func createVolume(_ name: String, options: ContainerCLI.VolumeOptions, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await createVolume(name, options: options) }
+        await createOnHost(fingerprint, kind: .volume, title: "Create a volume", name: name,
+                           command: ContainerCLI.createVolumeArguments(name, options: options),
+                           exists: { [weak self] in
+                               self?.hostMode.volumeSnapshots[fingerprint]?.items.contains { $0.name == name } ?? false
+                           }) { try $0.createVolume(name, options: options) }
+    }
+
+    /// Creates a network on any Mac (PLAN.md Phase C). Its subnet is that Mac's business: the same
+    /// name on two Macs is two separate networks.
+    func createNetwork(_ name: String, options: ContainerCLI.NetworkOptions, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await createNetwork(name, options: options) }
+        await createOnHost(fingerprint, kind: .network, title: "Create a network", name: name,
+                           command: ContainerCLI.createNetworkArguments(name, options: options),
+                           exists: { [weak self] in
+                               self?.hostMode.networkSnapshots[fingerprint]?.items.contains { $0.id == name } ?? false
+                           }) { try $0.createNetwork(name, options: options) }
+    }
+
+    /// One create on a paired host, with the same progress panel This Mac's creates use, confirmed
+    /// against what the host lists afterwards.
+    private func createOnHost(_ fingerprint: PeerFingerprint, kind: ActivityKind, title: String, name: String,
+                              command: [String],
+                              exists: @escaping @MainActor () -> Bool,
+                              _ operation: @escaping @Sendable (ContainerCLI) throws -> CommandResult) async {
+        let host = HostRef.peer(fingerprint)
+        let hostName = hostMode.hostName(host, local: hostLabel)
+        await withProgress(
+            title: "\(title) on \(hostName)",
+            command: command.joined(separator: " "),
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                let remote = try self.cli(for: host)
+                let step = progress.begin("Creating \(name) on \(hostName)")
+                let result = try await Task.detached { try operation(remote) }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step)
+                // Recorded here: This Mac's creates are noticed by the list refresh, a host's are not.
+                self.recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: kind,
+                                                   subject: "\(name) on \(hostName)", action: "Created"))
+                return "\(name) created on \(hostName)"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await hostMode.refreshHost(fingerprint)
+                return exists()
+            }
+        )
     }
 
     // MARK: Logs
@@ -1347,6 +1426,12 @@ final class AppModel {
     /// longer lets a caller ask it.
     func events(for subject: String, kind: ActivityKind) -> [ContainerEvent] {
         activity.filter { $0.subject == subject && $0.kind == kind }
+    }
+
+    /// Events for something on any Mac. A paired host's are recorded as "name on host", so its
+    /// `web` never shows This Mac's `web` history.
+    func events(for subject: String, kind: ActivityKind, host: HostRef) -> [ContainerEvent] {
+        events(for: host.isLocal ? subject : "\(subject) on \(hostMode.hostName(host, local: hostLabel))", kind: kind)
     }
 
     func events(ofKind kind: ActivityKind) -> [ContainerEvent] {

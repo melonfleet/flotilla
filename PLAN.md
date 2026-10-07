@@ -460,8 +460,14 @@ Progress (7 October):
   as in Containers) and filter, stale marker; Run opens on the image's Mac with that Mac's images
   as suggestions; Tag, Delete, bulk delete, detail and Inspect run on the image's Mac. Prune stays
   This Mac's. Live-tested on the mini: list across three hosts, Inspect, tag, delete.
-- Next: Volumes, Networks; then fan-out pulls, Logs' Host column, Overview totals, version skew,
-  export.
+- **Volumes and Networks — built.** Same shape (`HostedVolume`, `HostedNetwork`): rows from every
+  Mac, Host column and filter, stale marker, tags keyed per host; New Volume and New Network gain
+  a "Create on" picker; delete, bulk delete, detail and Inspect act on the row's Mac. Every Mac's
+  built-in `default` network is listed and cannot be deleted. A host's creates and deletes are
+  recorded in the activity feed as "name on host", and every detail screen's Recent events now
+  reads that key — a host's `web` no longer shows This Mac's `web` history. Live-tested on the
+  mini: create, inspect and delete a volume; create and delete a network.
+- Next: fan-out pulls, Logs' Host column, Overview totals, version skew, export.
 
 ### Phase D — Pushed infrastructure
 

@@ -31,15 +31,18 @@ enum VolumeDetailTab: String, CaseIterable, Identifiable {
 struct VolumeDetailView: View {
     let model: AppModel
     let volume: ContainerVolume
+    /// Which Mac it is on (PLAN.md Phase C).
+    var host: HostRef = .local
 
     /// A tab the caller asked for — "Inspect" from the row menu — which wins over the default.
     let requestedTab: VolumeDetailTab?
 
     @State private var tab: VolumeDetailTab
 
-    init(model: AppModel, volume: ContainerVolume, requestedTab: VolumeDetailTab? = nil) {
+    init(model: AppModel, volume: ContainerVolume, host: HostRef = .local, requestedTab: VolumeDetailTab? = nil) {
         self.model = model
         self.volume = volume
+        self.host = host
         self.requestedTab = requestedTab
         _tab = State(initialValue: requestedTab ?? .overview)
     }
@@ -55,8 +58,9 @@ struct VolumeDetailView: View {
                 case .overview: overview
                 case .inspect:
                     InspectPane(command: "container volume inspect \(volume.name)",
-                                failureTitle: "Couldn't inspect this volume") {
-                        try await model.fetchVolumeInspectJSON(for: volume.name)
+                                failureTitle: "Couldn't inspect this volume",
+                                hostName: model.hostMode.hostName(host, local: "this Mac")) {
+                        try await model.fetchVolumeInspectJSON(for: volume.name, host: host)
                     }
                 }
             }
@@ -95,7 +99,7 @@ struct VolumeDetailView: View {
                 }
 
                 DetailCard(title: "Recent events", minHeight: nil) {
-                    let events = model.events(for: volume.name, kind: .volume)
+                    let events = model.events(for: volume.name, kind: .volume, host: host)
                     if events.isEmpty {
                         Text("Nothing has changed since Flotilla started. Changes appear here as "
                              + "they happen; history from before launch is not recorded.")

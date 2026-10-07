@@ -28,10 +28,10 @@ struct MainWindowView: View {
     @State private var logsUI = LogsUIState()
 
     /// Volumes, Networks and Images share one generic state type — see `ResourceUIState`.
-    @State private var volumesUI = ResourceUIState<ContainerVolume>(
-        sortOrder: [KeyPathComparator(\ContainerVolume.name)])
-    @State private var networksUI = ResourceUIState<ContainerNetwork>(
-        sortOrder: [KeyPathComparator(\ContainerNetwork.id)])
+    @State private var volumesUI = ResourceUIState<HostedVolume>(
+        sortOrder: [KeyPathComparator(\HostedVolume.name)], hidden: ["host"])
+    @State private var networksUI = ResourceUIState<HostedNetwork>(
+        sortOrder: [KeyPathComparator(\HostedNetwork.name)], hidden: ["host"])
     @State private var imagesUI = ResourceUIState<HostedImage>(
         sortOrder: [KeyPathComparator(\HostedImage.reference)], hidden: ["host"])
     @State private var registriesUI = ResourceUIState<RegistryRow>(

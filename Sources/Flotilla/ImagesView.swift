@@ -411,14 +411,7 @@ struct ImagesView: View {
             // Which Mac the image is on, as in Containers: a host that has stopped answering keeps
             // its rows, marked with how old they are.
             TableColumn("Host", value: \.hostName) { row in
-                HStack(spacing: 4) {
-                    Text(row.hostName).foregroundStyle(.secondary).lineLimit(1)
-                    if let since = row.staleSince {
-                        Image(systemName: "clock.badge.exclamationmark")
-                            .foregroundStyle(Theme.warning)
-                            .help("As of \(since.formatted(.relative(presentation: .named))) — \(row.hostName) isn’t answering")
-                    }
-                }
+                HostCell(name: row.hostName, staleSince: row.staleSince)
             }
             .width(min: 80, ideal: 110)
             .customizationID("host")
