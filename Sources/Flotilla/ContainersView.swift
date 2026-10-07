@@ -747,6 +747,7 @@ struct ContainersView: View {
                 if model.deletePolicy.requiresConfirmation(.single) {
                     confirmingRemoteDelete = RemoteTarget(container: container, host: host)
                 } else {
+                    leaveDetailIfShowing(host.rowID(container.id))
                     Task { await model.perform(.delete, on: container, host: host) }
                 }
             }
@@ -785,6 +786,13 @@ struct ContainersView: View {
         .disabled(busy)
     }
 
+    /// Deleting the container whose detail is open goes back to the list: there is nothing left to
+    /// show, and "Container unavailable" is for one that vanished some other way (the owner,
+    /// 7 October, deleting `fleet-test` from its own detail screen).
+    private func leaveDetailIfShowing(_ rowID: String) {
+        if detailTarget?.id == rowID { detailTarget = nil }
+    }
+
     struct RemoteTarget: Identifiable {
         let container: Container
         let host: HostRef
@@ -799,6 +807,7 @@ struct ContainersView: View {
         if model.deletePolicy.requiresConfirmation(.single) {
             confirmingRowDelete = container
         } else {
+            leaveDetailIfShowing(container.id)
             Task { await model.perform(.delete, on: container) }
         }
     }
@@ -1205,6 +1214,7 @@ struct ContainersView: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let target = confirmingRowDelete {
+                    leaveDetailIfShowing(target.id)
                     Task { await model.perform(.delete, on: target) }
                 }
                 confirmingRowDelete = nil
@@ -1223,6 +1233,7 @@ struct ContainersView: View {
             presenting: confirmingRemoteDelete
         ) { target in
             Button("Delete", role: .destructive) {
+                leaveDetailIfShowing(target.id)
                 Task { await model.perform(.delete, on: target.container, host: target.host) }
                 confirmingRemoteDelete = nil
             }
