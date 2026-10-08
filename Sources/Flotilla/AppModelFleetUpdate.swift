@@ -134,7 +134,10 @@ extension AppModel {
     private var updateCandidates: [FleetUpdate.Candidate] {
         hostMode.trustedHosts.map { peer in
             FleetUpdate.Candidate(id: peer.fingerprint.hex, name: peer.displayName, build: hostBuild(peer.fingerprint),
-                                  connected: hostMode.live[peer.fingerprint]?.state == .connected,
+                                  // Its Flotilla answering is what matters, not its `container`: a host
+                                  // without container is exactly one that may need the update (8 October).
+                                  connected: hostMode.live[peer.fingerprint]?.state == .connected
+                                      || hostMode.live[peer.fingerprint]?.appVersion != nil,
                                   canReceive: canReceiveUpdate(peer.fingerprint),
                                   failedBuild: hostMode.updateFailures[peer.fingerprint]?.build)
         }
