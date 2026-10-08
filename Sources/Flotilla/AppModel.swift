@@ -126,6 +126,7 @@ final class AppModel {
         // "Checking…" until the window was opened — found 8 October, once the menu bar had a
         // status line and a badge to show it.
         Task { await reloadUnlessLoading() }
+        startFleetWatch()
         hostMode.onRefreshed = { [weak self] in
             Task {
                 await self?.updateFleetNames()

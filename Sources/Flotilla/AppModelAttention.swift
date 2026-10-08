@@ -58,4 +58,22 @@ extension AppModel {
         default: return .attention
         }
     }
+
+    /// Keeps every paired host's status current for as long as Flotilla runs, window or no window.
+    ///
+    /// Until 8 October only the screens that show hosts asked them (Hosts every 30 seconds while
+    /// open), so with the window closed the menu bar listed every host as "Checking…", its badge
+    /// could not see a host stop answering, and the automatic host updates that run after each
+    /// refresh (`onRefreshed`) never ran. Each host's own backoff (`HostBackoff`) still decides
+    /// when it is due — every 30 seconds while it answers, less often while it doesn't — so this
+    /// and an open Hosts screen never ask the same host twice in a window.
+    func startFleetWatch() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.hostMode.refreshLiveStatus()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
 }
