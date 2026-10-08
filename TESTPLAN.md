@@ -1,9 +1,7 @@
 # Flotilla 1.5.0.0-beta.2 — test plan
 
-Written 8 October 2026, for the build after beta 1 (5 September). Beta 1's plan predates almost all
-of what is here — image-pull progress, the rebuilt forms, groups in Containers, DNS, Suggestions,
-`.flotilla` files and the whole fleet (hosts, pairing, pushing, fleet DNS, updates, the Flotilla
-Helper) — so this replaces it rather than amending it.
+Written 8 October 2026 for beta 2, from scratch: almost everything has changed since beta 1
+(5 September), so nothing here assumes beta 1's plan or results.
 
 **How to use it.** Each case has an ID to quote back, what to do, and what should happen. Mark each
 **PASS**, **FAIL** (say what happened instead) or **BLOCK** (could not get far enough to try). A
@@ -22,48 +20,16 @@ Running containers on the test Macs may be stopped by some cases — each such c
 
 ---
 
-## 0. Regression: beta 1's findings
-
-Beta 1 was tested on 7 September (MacBook Pro 13-inch M1, 2020, macOS 26.6.2): 20 FAIL, 3 BLOCK.
-The results came from the beta 1 test page's Copy results, pasted into the development session.
-Re-test each one first. "Changed" says what was done about it, and in which commit.
-
-| Beta 1 | What happened | Changed | Re-test in beta 2 |
-|---|---|---|---|
-| 1.5 BLOCK | No Mac on macOS 15 to try. | The pkg refuses macOS earlier than 26 (checked at build). | Still BLOCK unless an older Mac turns up. |
-| 2.1 FAIL | No container: "not available", no link to Apple's project. | Flotilla now offers to download and install container 1.5.0 itself (Q39). | 1.2, 1.3 |
-| 2.2 FAIL | Stopped service: no warning. | Started automatically by default; if stopped later, Needs attention says so with Start, and the menu bar badge shows no-entry. | 2.3 |
-| 3.1–3.3 FAIL | Launch at login toggle did nothing. | Fixed (d081358): a never-registered signed app is now registrable. | Settings ▸ General ▸ Launch at login: on, reboot, starts; off, reboot, doesn't. |
-| 4.2 FAIL | Range 5m/15m/1h didn't change the graph. | Fixed (2b33832): the axis is the chosen range, and the header says how much history exists. | This Mac's page ▸ Pressure: switch ranges. |
-| 5.1 FAIL | A run container appeared only after another was run in Terminal. | Never reproduced; the list now also refreshes on a timer and after every action. | 4.1 — watch for it. |
-| 5.4, 5.5 FAIL | Deleting a running container failed. | Fixed (2b33832): delete stops it first, and the confirmation says so. | 4.2, 4.3 on running containers. |
-| 5.6 FAIL | Run Again with Changes made a container that wouldn't stay up. | Fixed (2b33832): a host port still in use is left out and named. | Containers ▸ ⋯ ▸ Run Again with Changes… on a running container with a published port. |
-| 9.2 FAIL | Couldn't work out Build from a Dockerfile. | One New Image form with Pull and Build, each field explained in the side panel (c1c1cba). | 5.4 |
-| 10.1–10.3 FAIL | New Volume / New Network blanked the window. | Fixed (d081358), with a check that stops the layout bug returning. | 6.1 |
-| 11.3, 11.4 FAIL | Couldn't find how to make a support bundle. | Help ▸ Create Support Bundle…. | 9.4, then search it for your username. |
-| 13.1, 13.6 FAIL | Login item couldn't be set, so not checked. | Follows 3.1. | 14.1 |
-| 13.3, 13.4 FAIL | Cleanup script couldn't remove the root-owned app. | Fixed (d081358): asks for sudo for exactly those paths, and says why. | `Scripts/uninstall-test-build.sh`, twice: the second run finds nothing. |
-| 8.2 BLOCK | "What images the form offers" unclear. | The machine form offers only images that boot. | Machines ▸ New Machine…: no Ubuntu, Debian or Fedora offered. |
-| 8.7 BLOCK | Relationship between machines and containers unclear. | — | 8.1. A machine is a Linux VM you work in; containers each run in their own small VM. Say if the app should explain this itself. |
-
-Notes from beta 1 passes, also addressed: image pulls now show progress and Browse Docker Hub
-exists (9.1); every list has a checkbox column and select-all (5.4); the machine tab is called
-Terminal like the container's (8.5); the menu bar opens the right container or machine (12.4 —
-the menu is now a native menu with no item list).
-
----
-
 ## 1. Install and first run (one Mac, nothing installed)
 
 | ID | Do | Expect |
 |---|---|---|
 | 1.1 | Open the `.pkg` and install. | Installs with no Gatekeeper warning (signed and notarised). Flotilla is in /Applications. |
-| 1.2 | Open Flotilla for the first time. | Onboarding: appearance choice, then a step offering **Download and Install container 1.5.0**. |
-| 1.3 | Choose Download and Install. | Progress for the download, then Apple's Installer opens; your password is asked by macOS, not Flotilla. container installs. |
-| 1.4 | Carry on after the install. | The kernel downloads by itself (about 20 s), then the runtime starts. Overview shows **Get started** with Run a Container…, Pull Image…, Add Host… and Try a Suggested Stack…. |
+| 1.2 | Open Flotilla for the first time. | Onboarding asks for an appearance and how to use this Mac — choose **Admin** for this pass (Host has its own section, 10) — then offers **Download and Install container 1.5.0**. |
+| 1.3 | Choose Download and Install. | Overview's banner shows each step — downloading, checking it is Apple's, Apple's Installer, starting, the kernel — and so does the status line at the bottom left. Your password is asked by macOS's Installer, not Flotilla. |
+| 1.4 | Carry on after the install. | The kernel downloads by itself (about 20 s), then the runtime starts and the banner goes. Overview shows a **Get started** card with Run a Container… (in colour), Pull Image…, Add Host… and Try a Suggested Stack…. |
 | 1.5 | Quit and reopen. | No onboarding. Get started still shows until something is created. |
 | 1.6 | Settings ▸ Advanced ▸ **Flotilla Helper** ▸ Install…. | macOS lists Flotilla in Login Items & Extensions; Settings says *Waiting for your approval* and offers **Open Login Items…**. Switch it on: Settings says **On**. |
-| 1.7 | Install over beta 1 instead (a Mac that had it). | Upgrade installs; settings, groups and tags kept. If beta 1 had the old DNS helper, it is replaced by the Flotilla Helper and stays on. |
 
 ## 2. Menu bar
 
@@ -85,6 +51,7 @@ the menu is now a native menu with no item list).
 | 3.3 | Hosts table ▸ the columns button. | Show/hide Model, CPU, Memory, Disk, macOS, Flotilla, container, Last Check-in; Host cannot be hidden; the choice survives a relaunch. |
 | 3.4 | Read the CPU column. | `M1 · 8 cores`; a virtual Mac shows `vCores`; no "Apple". |
 | 3.5 | Click a host name. | Opens that host's page under Hosts. |
+| 3.6 | Click This Mac, then Pressure ▸ 5m, 15m and 1h. | The graph's time axis spans the chosen range; the header says how much history has been collected so far. |
 
 ## 4. Containers and groups
 
@@ -96,6 +63,7 @@ the menu is now a native menu with no item list).
 | 4.4 | Suggestions ▸ a stack. | Creates a group with its containers and network. Group row shows *N of M running* and a half dot when mixed; expanding shows members. |
 | 4.5 | Delete a group both ways. | *Delete group* leaves its containers; *Delete group and containers* names every container before deleting. |
 | 4.6 | Logs and Terminal on a running container. | Logs stream; the terminal opens a shell. |
+| 4.7 | On a running container with a published port: ⋯ ▸ Run Again with Changes…. | The form is filled in from it; the port still in use is left out and named. The new container starts and stays running. |
 
 ## 5. Images and registries
 
@@ -129,6 +97,7 @@ the menu is now a native menu with no item list).
 |---|---|---|
 | 8.1 | New Machine…; start, stop, delete. | Works; delete asks first. |
 | 8.2 | New Cluster…; Recreate…. | Creates; Recreate warns it destroys the cluster's data, then recreates with the same settings. |
+| 8.3 | New Machine… ▸ the image choices. | Only images that boot as a machine are offered (no Ubuntu, Debian or Fedora). |
 
 ## 9. Settings, export and import
 
@@ -137,7 +106,8 @@ the menu is now a native menu with no item list).
 | 9.1 | Each Settings tab. | Every control does something; nothing is a placeholder. |
 | 9.2 | Themes: each bar colour, light and dark. | Bar and background change; controls stay macOS-native. |
 | 9.3 | File ▸ Export Configuration…, then Import on another Mac. | Groups, tags, networks, volumes and (if ticked) hosts and settings come across; secrets never do. |
-| 9.4 | Help ▸ Create Support Bundle…. | Saves a bundle; it contains no secrets or personal paths. |
+| 9.4 | Help ▸ Create Support Bundle…. | Saves a bundle; it contains no secrets or personal paths — search it for your short username. |
+| 9.5 | Settings ▸ General ▸ Launch at login: on, then restart the Mac. | Flotilla opens at login and is listed in System Settings ▸ Login Items. Turn it off and restart: it doesn't. |
 
 ## 10. Pairing hosts
 

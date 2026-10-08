@@ -81,7 +81,7 @@ struct RuntimeStatusBand: View {
     /// different states, and a dot that stays amber through a restart says neither.
     @ViewBuilder
     private var indicator: some View {
-        if model.startingRuntime {
+        if model.startingRuntime || settingUp {
             ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 8, height: 8)
         } else {
             Circle()
@@ -110,8 +110,17 @@ struct RuntimeStatusBand: View {
                     .disabled(!enablement.stopRestart)
             }
 
-            // Always present, greyed out unless there is no kernel, like the lifecycle items above:
-            // a menu whose items come and go teaches nothing.
+            // Always present, greyed out unless they apply, like the lifecycle items above: a menu
+            // whose items come and go teaches nothing. Installing container was missing from this
+            // menu, so with everything else greyed out there was no way in from here (8 October).
+            Button("Download and Install container \(ContainerRuntime.expectedVersion)…") {
+                if model.hostMode.mode == .host, model.helperEnabled, case .missing? = model.preflight {
+                    Task { model.hostRuntimeNote = await model.ensureHostRuntime(allowStoppingContainers: true) }
+                } else {
+                    Task { await model.installContainerInteractively() }
+                }
+            }
+            .disabled(!model.needsContainerInstall || settingUp)
             Button("Install Recommended Kernel") { Task { await model.installKernel() } }
                 .disabled(!needsKernel)
 
@@ -156,7 +165,21 @@ struct RuntimeStatusBand: View {
 
     private var enablement: (start: Bool, stopRestart: Bool) { RuntimeStatus.enablement(model.preflight) }
 
-    private var status: (title: String, detail: String?, tint: Color) { RuntimeStatus.describe(model.preflight) }
+    /// A setup under way says so here as well as in the banner: this corner is where someone
+    /// looks to see whether `container` is being installed (beta 2's test, 8 October).
+    private var status: (title: String, detail: String?, tint: Color) {
+        if let setup = model.runtimeSetup {
+            if case .failed = setup.phase { return (RuntimeBanner.setupTitle(setup), nil, Theme.danger) }
+            return (RuntimeBanner.setupTitle(setup), nil, .secondary)
+        }
+        return RuntimeStatus.describe(model.preflight)
+    }
+
+    private var settingUp: Bool {
+        guard let setup = model.runtimeSetup else { return false }
+        if case .failed = setup.phase { return false }
+        return true
+    }
 }
 
 /// What the runtime is doing and what may be done to it, from the one preflight verdict — shared by

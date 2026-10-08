@@ -24,7 +24,11 @@ extension AppModel {
         if case .serviceStopped? = preflight {
             items.append(AttentionItem("container is stopped on \(hostLabel).", .hosts,
                                        fix: ("Start", { [weak self] in Task { await self?.startRuntime() } })))
-        } else if !runtimeUsable {
+        } else if case .needsKernel? = preflight {
+            items.append(AttentionItem("\(hostLabel) has no kernel, so containers can't start.", .hosts,
+                                       fix: ("Download Kernel", { [weak self] in Task { await self?.installKernel() } })))
+        } else if !runtimeUsable && !needsContainerInstall && runtimeSetup == nil {
+            // Missing or being installed is Overview's setup banner, not a line here.
             items.append(AttentionItem("The container runtime on \(hostLabel) isn't running.", .hosts))
         }
         for network in disconnectedNetworks {

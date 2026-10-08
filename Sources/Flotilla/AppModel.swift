@@ -1691,6 +1691,9 @@ final class AppModel {
     @ObservationIgnored lazy var updater = AppUpdater(settings: settingsStore)
     /// A `container` install or upgrade in progress, for the banner and onboarding (Q39).
     var runtimeSetup: RuntimeSetupProgress?
+    /// On a host: why its own automatic install of `container` is waiting, if it is — shown in the
+    /// runtime banner so a host that is "doing nothing" says what it is waiting for.
+    var hostRuntimeNote: String?
 
     /// Retained history for one container, for the dashboard's charts and the detail sparkline.
     func statsHistory(for id: String) -> [StatsSampler.HistoryPoint] { sampler.history(for: id) }

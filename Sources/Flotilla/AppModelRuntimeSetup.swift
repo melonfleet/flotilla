@@ -219,12 +219,21 @@ extension AppModel {
     }
 
     /// The host's half-hourly look, and one at launch.
+    ///
+    /// Every half hour once `container` is in place, but every 30 seconds while it is missing and
+    /// the only thing in the way is the helper being off: switching it on in Settings used to wait
+    /// up to half an hour to do anything, which looked like nothing happening (beta 2's test,
+    /// 8 October). After a failed install it waits five minutes rather than retrying at once.
     func startHostRuntimeWatch() {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(20))
             while let self, !Task.isCancelled {
-                await self.ensureHostRuntime()
-                try? await Task.sleep(for: .seconds(30 * 60))
+                let note = await self.ensureHostRuntime()
+                self.hostRuntimeNote = self.hostMode.mode == .host ? note : nil
+                let failed: Bool = if case .failed? = self.runtimeSetup?.phase { true } else { false }
+                let waitingForHelper = self.needsContainerInstall && !self.helperEnabled && self.hostMode.mode == .host
+                let seconds = failed ? 300 : waitingForHelper ? 30 : 30 * 60
+                try? await Task.sleep(for: .seconds(seconds))
             }
         }
     }

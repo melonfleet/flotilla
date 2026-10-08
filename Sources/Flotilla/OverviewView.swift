@@ -17,6 +17,9 @@ struct OverviewView: View {
             // Iris's order (8 October): is anything wrong, is anything ready to update, what does
             // the fleet hold, which Macs make it up.
             VStack(alignment: .leading, spacing: 22) {
+                // Setting up `container` comes first and says what is happening (beta 2's test):
+                // the same banner This Mac's page has.
+                if model.runtimeSetup != nil || model.needsContainerInstall { RuntimeBanner(model: model) }
                 attention
                 getStarted
                 updates
@@ -322,17 +325,42 @@ struct OverviewView: View {
     private var getStarted: some View {
         if !getStartedDone, model.runtimeUsable, model.state == .loaded {
             if isEmptyInstall {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Get started").font(.headline)
-                    HStack(spacing: 10) {
-                        Button("Run a Container\u{2026}") { model.requestRunSheet() }
-                        Button("Pull Image\u{2026}") { model.requestPullForm() }
-                        if model.hostMode.isAdmin {
-                            Button("Add Host\u{2026}") { model.requestAddHost() }
-                        }
-                        Button("Try a Suggested Stack\u{2026}") { model.requestSuggestions(.containers) }
+                // A card of its own, centred, with the first step in colour (the owner, beta 2's
+                // test): left-aligned plain buttons under a small heading read as a footnote.
+                VStack(spacing: 14) {
+                    Image(systemName: "shippingbox")
+                        .font(.system(size: 30, weight: .light))
+                        .foregroundStyle(Theme.info)
+                    VStack(spacing: 4) {
+                        Text("Get started").font(.title2.weight(.semibold))
+                        Text("Run your first container, bring in an image, or add another Mac.")
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
+                    HStack(spacing: 10) {
+                        Button { model.requestRunSheet() } label: {
+                            Label("Run a Container\u{2026}", systemImage: "play.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button { model.requestPullForm() } label: {
+                            Label("Pull Image\u{2026}", systemImage: "arrow.down.circle")
+                        }
+                        if model.hostMode.isAdmin {
+                            Button { model.requestAddHost() } label: {
+                                Label("Add Host\u{2026}", systemImage: "desktopcomputer")
+                            }
+                        }
+                        Button { model.requestSuggestions(.containers) } label: {
+                            Label("Try a Suggested Stack\u{2026}", systemImage: "square.grid.2x2")
+                        }
+                    }
+                    .controlSize(.large)
                 }
+                .padding(.vertical, 28)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity)
+                .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.hairline))
             } else {
                 Color.clear.frame(height: 0).onAppear { getStartedDone = true }
             }
