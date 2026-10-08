@@ -214,3 +214,29 @@ clears a stale entry resets every background item on the machine. Turn *Launch a
 Flotilla before removing it, or clear it afterwards in System Settings ▸ General ▸ Login Items.
 The script says so at the point it matters.
 
+
+## What a release publishes (DECISIONS Q38)
+
+`Scripts/release.sh` publishes **signed artefacts only**, in four forms, all under `dist/`:
+
+| Artefact | For | Signed | Notarised |
+|---|---|---|---|
+| `Flotilla-<version>.zip` | Sparkle, the fleet, testers | app: Developer ID Application | app, stapled |
+| `Flotilla-<version>.tar.gz` | scripted installs | the same stapled app | yes |
+| `Flotilla-<version>.dmg` | drag-to-Applications downloads | the image itself, too | the image, stapled |
+| `Flotilla-<version>.pkg` | Jamf / MDM | Developer ID Installer (`make-pkg.sh`) | yes |
+
+`--skip-pkg` leaves the pkg out when the Installer certificate is not on this Mac.
+
+## Updating the fleet
+
+Hosts do not need a release at all: the admin Mac pushes the build it is running (Hosts ▸ the
+updates menu, or automatically). A host installs it only if it is `dev.melonfleet.Flotilla` signed
+by its own Developer ID team and newer than its own build, waits until it is idle, and relaunches
+only Flotilla; containers keep running.
+
+- Install Flotilla in `/Applications` on every host. An update replaces the app where it is, so a
+  copy run from a shared folder would rewrite that folder for every Mac using it.
+- A host on a build from before wire version 6 cannot be updated from the admin; update it by
+  hand once.
+- `acceptAdminUpdates = false` in a host's managed profile (locked) leaves updates to Jamf.
