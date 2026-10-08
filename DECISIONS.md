@@ -1862,3 +1862,29 @@ The owner's answers, 8 October, to research/FLEET-DNS-D3.md ▸ "Part C in detai
 - **Every Mac resolves fleet names**, the admin and every host. The admin sends each host the name
   table (`.setFleetNames`, wire version 5); a host keeps the last one it was sent.
 - Flotilla's responder listens on 127.0.0.1:7869 only. A Mac's own zone stays the runtime's.
+
+## Q38 — Updating the fleet, and what a release publishes (settled 2026-10-08)
+
+The owner, 8 October: keeping the test fleet current by copying builds by hand does not scale.
+His answers:
+
+- **The admin Mac pushes its own build to its hosts** over the host-mode connection (wire version 6,
+  an upload of purpose `app-update`), the same bounded, credit-controlled path as Send to Hosts. No
+  GitHub release is needed, so dev builds roll out too. **Sparkle comes next**, for the admin Mac's
+  own updates from GitHub releases (Decision 13's appcast).
+- **A host installs only genuine Flotilla**: the bundle must satisfy the code requirement for
+  `dev.melonfleet.Flotilla` signed by Apple-issued Developer ID under the **host's own team**, and be
+  **newer** (higher build number) than the host's own. So the admin's new power is "install a
+  newer genuine build", never "run code". Notarisation is not required for fleet pushes — `make-app.sh`
+  builds are signed, not notarised — and can be switched on later. A host whose
+  `acceptAdminUpdates` setting is off (a managed profile can lock it, so Jamf stays the authority on
+  managed minis) refuses.
+- **Rolling by default**: when hosts are behind, the admin updates them one at a time and stops at
+  the first that does not come back on the new build. The Hosts section switches between this and
+  **manual** (Update on a host's row, or Update All). Each host shows its Flotilla version and when
+  an update is available.
+- **Running containers are never touched.** They run under `container`'s own services; a host
+  relaunches only Flotilla, and only when it is idle (nothing running for an admin, no follow or
+  transfer in flight), waiting up to ten minutes for that.
+- **Releases publish signed artefacts only**, in four forms: a zip (what Sparkle and the fleet use),
+  a pkg (MDM), a DMG and a tarball. This replaces the earlier "PKG only" instruction.

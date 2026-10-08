@@ -56,6 +56,17 @@ struct LoopbackTests {
 
         func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
 
+        /// Q38: whether updates are taken, and what the installer was handed.
+        var updateRefusal: String?
+        var installed: [Data] = []
+        func acceptsAppUpdates() -> String? { locked { updateRefusal } }
+        func installUpdate(archive: URL, isIdle: @escaping @Sendable () -> Bool,
+                           reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
+            let data = (try? Data(contentsOf: archive)) ?? Data()
+            locked { installed.append(data) }
+            reply(isIdle() ? .success("0.0.0 (999)") : .failure(HostCallFailure(.busy, "not idle")))
+        }
+
         /// Host calls the host was asked to perform, and what it answers.
         var calls: [HostCall] = []
         var callAnswer: Result<String, HostCallFailure> = .success("")
@@ -537,6 +548,36 @@ extension LoopbackTests {
         defer { host.close() }
         await #expect(throws: (any Error).self) { _ = try await host.call(.dnsCreate(domain: "printers.local", localhost: nil)) }
         #expect(rig.delegate.locked { rig.delegate.calls }.isEmpty)
+    }
+}
+
+extension LoopbackTests {
+    @Test func anUpdateReachesTheHostsInstallerWholeOrIsRefused() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let bytes = Data((0..<(2 * (1 << 20) + 1234)).map { UInt8(truncatingIfNeeded: $0 &* 7) })
+        let archive = FileManager.default.temporaryDirectory.appendingPathComponent("update-\(UUID().uuidString).zip")
+        try bytes.write(to: archive)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let host = remote(rig)
+        defer { host.close() }
+        // No `system version` answer needed: an update is not an image load.
+        let result = try await host.upload(file: archive, bytes: UInt64(bytes.count), sha256: SHA256Hex.of(bytes),
+                                           label: "Flotilla build 999", purpose: .appUpdate) { _ in }
+        #expect(result.stdout == "0.0.0 (999)")
+        #expect(rig.delegate.locked { rig.delegate.installed } == [bytes])
+        #expect(rig.host.ran.allSatisfy { !$0.starts(with: ["image", "load"]) })
+
+        rig.delegate.locked { rig.delegate.updateRefusal = "owner turned it off" }
+        do {
+            _ = try await host.upload(file: archive, bytes: UInt64(bytes.count), sha256: SHA256Hex.of(bytes),
+                                      label: "x", purpose: .appUpdate) { _ in }
+            Issue.record("a refusing host took an update")
+        } catch {
+            #expect(String(describing: error).contains("owner turned it off"))
+        }
+        #expect(rig.delegate.locked { rig.delegate.installed }.count == 1)
     }
 }
 

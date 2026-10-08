@@ -512,7 +512,11 @@ must preserve all of the following:
     host peer, not only while a client laptop is connected.
 13. **Installation and updates:** never silently perform a privileged `container`
     package install. Sparkle serves unmanaged Macs; Jamf owns managed-mini app
-    updates.
+    updates. **Amended 2026-10-08 (Q38):** an admin Mac pushes its own build to its hosts
+    (wire version 6); a host installs it only if it is genuine Flotilla signed by the host's own
+    Developer ID team and newer than its own, only while idle, and never touches the `container`
+    runtime. A host's `acceptAdminUpdates` can be locked off by a profile, so Jamf keeps managed
+    minis. Releases publish signed artefacts only: zip, pkg, DMG and tarball.
 14. **Tags are content, not settings (Q19):** the user's tags live in `TagBook`
     (Foundation-only, in `FlotillaCore`, with the rules and the tests) and are
     persisted by `TagStore` as plist-native keys `tagDefinitions` /

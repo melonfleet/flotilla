@@ -141,6 +141,9 @@ extension WireHostSession {
         guard uploads.count < streamLimits.maxUploadsPerConnection else {
             return [.send(.failure(.init(id: upload.id, code: .busy, message: "This host is already receiving an image from you.")))]
         }
+        if case .ready(let version, _) = state, version < upload.purpose.minimumVersion {
+            return [.send(.failure(.init(id: upload.id, code: .refused, message: "Not on this connection's version.")))]
+        }
         guard upload.bytes > 0, upload.bytes <= streamLimits.maxUploadBytes else {
             return [.send(.failure(.init(id: upload.id, code: .refused,
                                          message: "That archive is larger than this host accepts.")))]
@@ -388,6 +391,7 @@ extension WireClientSession {
                                 purpose: WireMessage.UploadPurpose = .imageLoad) throws -> Outgoing {
         guard case .ready = state else { throw state == .closed ? WireError.closed : WireError.notConnected }
         guard streamsNegotiated else { throw WireError.streamsUnsupported }
+        if case .ready(let version, _) = state, version < purpose.minimumVersion { throw WireError.appUpdatesUnsupported }
         guard bytes > 0 else { throw WireError.streamViolation("an empty archive") }
         guard inFlight.count < limits.maxConcurrentRequests else {
             throw WireError.tooManyRequests(limit: limits.maxConcurrentRequests)

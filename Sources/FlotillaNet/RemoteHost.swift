@@ -38,6 +38,9 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     /// What the host said about itself on the current connection.
     public var hostInfo: WirePeerInfo? { lock.lock(); defer { lock.unlock() }; return welcome?.peer }
 
+    /// The wire version agreed on the current connection — what decides which calls a host takes.
+    public var protocolVersion: UInt16? { lock.lock(); defer { lock.unlock() }; return welcome?.version }
+
     /// This Mac's and the host's IPv4 addresses on the open connection, if one is open.
     public var ipv4Addresses: (local: String?, remote: String?) {
         let open = lock.withLock { connection }
@@ -195,16 +198,21 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     /// Phase D, D2). `progress` reports bytes sent, from the connection's queue. The answer is the
     /// host's own `image load` result.
     public func upload(file: URL, bytes: UInt64, sha256: String, label: String,
+                       purpose: WireMessage.UploadPurpose = .imageLoad,
                        progress: @escaping @Sendable (UInt64) -> Void) async throws -> CommandResult {
         let open: AdminConnection = try await withCheckedThrowingContinuation { continuation in
             connection { continuation.resume(with: $0) }
         }
         do {
-            return try await open.upload(file: file, bytes: bytes, sha256: sha256, label: label, progress: progress)
+            return try await open.upload(file: file, bytes: bytes, sha256: sha256, label: label,
+                                         purpose: purpose, progress: progress)
         } catch {
             if case .closed? = error as? RemoteHostError { forget(open) }
             if case WireError.streamsUnsupported? = error as? WireError {
                 throw RemoteHostError.protocolError("That Mac's Flotilla is too old to receive images. Update it first.")
+            }
+            if case WireError.appUpdatesUnsupported? = error as? WireError {
+                throw RemoteHostError.protocolError("That Mac's Flotilla is too old to be updated from here. Update it by hand once.")
             }
             throw error
         }

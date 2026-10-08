@@ -226,13 +226,14 @@ public final class AdminConnection: @unchecked Sendable {
     /// itself. `progress` reports bytes sent, on this connection's queue. The answer is the host's
     /// `image load` result.
     public func upload(file: URL, bytes: UInt64, sha256: String, label: String,
+                       purpose: WireMessage.UploadPurpose = .imageLoad,
                        progress: @escaping @Sendable (UInt64) -> Void) async throws -> CommandResult {
         try await withCheckedThrowingContinuation { continuation in
             connection.queue.async { [self] in
                 if let reason = closedReason { return continuation.resume(throwing: RemoteHostError.closed(reason)) }
                 do {
                     let handle = try FileHandle(forReadingFrom: file)
-                    let outgoing = try session.upload(bytes: bytes, sha256: sha256, label: label)
+                    let outgoing = try session.upload(bytes: bytes, sha256: sha256, label: label, purpose: purpose)
                     uploads[outgoing.id] = OutgoingUpload(handle: handle, declared: bytes, progress: progress)
                     pending[outgoing.id] = { [weak self] result in
                         self?.uploads.removeValue(forKey: outgoing.id).map { try? $0.handle.close() }

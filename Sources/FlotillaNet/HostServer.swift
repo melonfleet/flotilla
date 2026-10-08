@@ -25,6 +25,13 @@ public protocol HostServerDelegate: AnyObject, Sendable {
     func enrolmentAnswered(_ outcome: WireMessage.PairOutcome, message: String)
     /// A trusted admin's command, for the host's own record (Activity).
     func ran(_ command: ValidatedCommand, for admin: PeerFingerprint)
+    /// Whether this host takes Flotilla updates from its admin (Q38) — asked before a byte arrives.
+    func acceptsAppUpdates() -> String?
+    /// A Flotilla update has arrived whole and its digest matched (Q38). Verify and install it from
+    /// `archive`, which is valid until `reply` is called; wait while `isIdle` is false. Reply once,
+    /// before relaunching.
+    func installUpdate(archive: URL, isIdle: @escaping @Sendable () -> Bool,
+                       reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void)
     /// A trusted admin's host call (D3), already validated. Answer exactly once: JSON (or nothing)
     /// on success, or why not. Called on a connection's queue; implementations hop to their own.
     func perform(_ call: HostCall, for admin: PeerFingerprint,
@@ -40,6 +47,11 @@ public struct HostCallFailure: Error, Sendable {
 
 extension HostServerDelegate {
     public func ran(_ command: ValidatedCommand, for admin: PeerFingerprint) {}
+    public func acceptsAppUpdates() -> String? { "This host doesn't take updates from its admin." }
+    public func installUpdate(archive: URL, isIdle: @escaping @Sendable () -> Bool,
+                              reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
+        reply(.failure(HostCallFailure(.refused, "This host doesn't take updates from its admin.")))
+    }
     public func perform(_ call: HostCall, for admin: PeerFingerprint,
                         reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
         reply(.failure(HostCallFailure(.refused, "This host doesn't take that request.")))
@@ -145,6 +157,12 @@ public final class HostServer: @unchecked Sendable {
         }
     }
     func releaseUpload() { runLock.withLock { uploadCount -= 1 } }
+
+    /// Nothing running for an admin, nothing followed, and no transfer but the update itself — the
+    /// moment a host may relaunch Flotilla (Q38). Containers are not Flotilla's and are untouched.
+    func isIdleForUpdate() -> Bool {
+        runLock.withLock { running == 0 && followCount == 0 && uploadCount <= 1 }
+    }
 
     /// Disk promised to uploads in progress, host-wide (Iris's review, High 3). An upload holds
     /// its reservation until its loader has exited and its folder is gone.
@@ -449,8 +467,11 @@ final class HostConnectionHandler: @unchecked Sendable {
         func refuse(_ code: WireFailureCode, _ message: String) {
             if let reply = session?.fail(id, code: code, message: message) { connection.send(reply) }
         }
-        // Older loaders trust what is inside an archive (Iris's review, High 4).
-        guard ImageTransfer.hostCanLoad(containerVersion: containerVersion) else {
+        if upload.purpose == .appUpdate, let refusal = server.delegate?.acceptsAppUpdates() {
+            return refuse(.refused, refusal)
+        }
+        // Older loaders trust what is inside an archive (Iris's review, High 4). Not an update's concern.
+        guard upload.purpose == .appUpdate || ImageTransfer.hostCanLoad(containerVersion: containerVersion) else {
             return refuse(.refused, "This host needs container \(ImageTransfer.minimumContainer) or later to receive images"
                           + (containerVersion.map { " — it has \($0)." } ?? "."))
         }
@@ -467,6 +488,7 @@ final class HostConnectionHandler: @unchecked Sendable {
         }
         do {
             let sink = try IncomingUpload(root: server.configuration.transferRoot, reservation: token)
+            sink.purpose = upload.purpose
             incoming[id] = sink
             armUploadTimers(id, bytes: upload.bytes)
             if let credit = session?.acceptUpload(id) { connection.send(credit) }
@@ -540,7 +562,24 @@ final class HostConnectionHandler: @unchecked Sendable {
             if let reply { connection.send(reply) }
         }
         guard sink.digest() == sha256 else {
-            return finish(session?.fail(id, code: .invalidRequest, message: "The image arrived damaged — its digest didn't match."))
+            return finish(session?.fail(id, code: .invalidRequest, message: "The archive arrived damaged — its digest didn't match."))
+        }
+        if sink.purpose == .appUpdate {
+            guard let delegate = server.delegate else { return finish(session?.fail(id, code: .internalError, message: "This host isn't ready.")) }
+            delegate.installUpdate(archive: sink.archive, isIdle: { [server] in server.isIdleForUpdate() }) { [weak self] outcome in
+                sink.discard()
+                server.releaseDisk(sink.reservation)
+                server.releaseUpload()
+                guard let self else { return }
+                self.connection.queue.async {
+                    let reply: WireMessage? = switch outcome {
+                    case .success(let text): self.session?.complete(id, with: CommandResult(stdout: text, stderr: "", exitCode: 0))
+                    case .failure(let failure): self.session?.fail(id, code: failure.code, message: failure.message)
+                    }
+                    if let reply { self.connection.send(reply) }
+                }
+            }
+            return
         }
         let command: ValidatedCommand
         do {
@@ -731,6 +770,8 @@ final class IncomingUpload: @unchecked Sendable {
     let directory: URL
     let archive: URL
     let reservation: UUID
+    /// What the upload is for (Q38: an app update goes to the delegate, not `image load`).
+    var purpose: WireMessage.UploadPurpose = .imageLoad
     private let handle: FileHandle
     private var hasher = SHA256()
     private(set) var written: UInt64 = 0

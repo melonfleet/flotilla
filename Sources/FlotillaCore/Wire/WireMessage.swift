@@ -312,6 +312,14 @@ public enum WireMessage: Sendable, Equatable {
     public enum UploadPurpose: String, Sendable, Codable {
         /// An OCI archive from `image save`, loaded with `image load` by the host itself.
         case imageLoad = "image-load"
+        /// A zipped Flotilla.app — the admin's own build — for the host to verify and install
+        /// itself (version 6, DECISIONS Q38).
+        case appUpdate = "app-update"
+
+        /// The protocol version a host must speak to be sent this.
+        public var minimumVersion: UInt16 {
+            self == .appUpdate ? WireProtocol.appUpdatesVersion : WireProtocol.streamsVersion
+        }
     }
 
     /// Admin → host: about to send `bytes` bytes whose SHA-256 is `sha256`, for `purpose`. The host

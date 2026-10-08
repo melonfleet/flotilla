@@ -16,7 +16,9 @@ public enum WireProtocol {
     /// (research/FLEET-DNS-D3.md, DECISIONS Q36).
     /// Version 4 adds the `.hostFacts` call — a host's chip, memory and disk, for Overview.
     /// Version 5 adds `.setFleetNames` — the table each Mac answers other Macs' zones from (Q37).
-    public static let supportedVersions: ClosedRange<UInt16> = 1...5
+    /// Version 6 adds uploads of purpose `app-update` — the admin's own build, for a host to install
+    /// (DECISIONS Q38).
+    public static let supportedVersions: ClosedRange<UInt16> = 1...6
     /// The first version that carries streams.
     public static let streamsVersion: UInt16 = 2
     /// The first version that carries host calls.
@@ -25,6 +27,8 @@ public enum WireProtocol {
     public static let hostFactsVersion: UInt16 = 4
     /// The first version that takes `.setFleetNames`.
     public static let fleetNamesVersion: UInt16 = 5
+    /// The first version that takes an `app-update` upload.
+    public static let appUpdatesVersion: UInt16 = 6
     /// The owner's choice, 7 October. Changeable in Settings.
     public static let defaultPort: UInt16 = 7868
 
@@ -231,6 +235,8 @@ public enum WireError: Error, Equatable, Sendable, CustomStringConvertible {
     case hostCallsUnsupported
     /// A host call its own rules refuse, caught before it is sent.
     case hostCallRefused(String)
+    /// An update sent to a host whose Flotilla predates updates over the wire.
+    case appUpdatesUnsupported
 
     public var description: String {
         switch self {
@@ -250,6 +256,7 @@ public enum WireError: Error, Equatable, Sendable, CustomStringConvertible {
         case .streamViolation(let why): "stream error: \(why)"
         case .hostCallsUnsupported: "this host's Flotilla is too old for that — update it"
         case .hostCallRefused(let why): why
+        case .appUpdatesUnsupported: "this host's Flotilla is too old to be updated from here — update it by hand once"
         }
     }
 }

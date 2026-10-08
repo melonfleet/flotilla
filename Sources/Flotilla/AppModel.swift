@@ -118,7 +118,16 @@ final class AppModel {
         // or a user who removed Flotilla in System Settings ▸ Login Items since last time.
         syncLoginItem()
         hostMode.recordActivity = { [weak self] event in self?.recordActivity(event) }
-        hostMode.onRefreshed = { [weak self] in Task { await self?.updateFleetNames() } }
+        hostMode.onRefreshed = { [weak self] in
+            Task {
+                await self?.updateFleetNames()
+                await self?.rollOutUpdates()
+            }
+        }
+        hostMode.installUpdate = { [weak self] archive, isIdle in
+            guard let self else { return .failure(HostCallFailure(.internalError, "This host isn't ready.")) }
+            return await self.performInstallUpdate(archive, isIdle: isIdle)
+        }
         restoreFleetNames()
         hostMode.performHostCall = { [weak self] call in
             guard let self else { return .failure(HostCallFailure(.internalError, "This host isn't ready.")) }

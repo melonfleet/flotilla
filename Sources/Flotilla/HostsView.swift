@@ -330,6 +330,9 @@ struct HostsView: View {
                               help: hostMode.isAdmin ? "Pair another Mac"
                                                      : "This Mac is a host. Make it an admin in Settings ▸ Host Mode to add Macs.",
                               disabled: !hostMode.isAdmin) { showingAdd = true }
+            if hostMode.isAdmin, !hostMode.trustedHosts.isEmpty {
+                updatesMenu
+            }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh hosts") {
                 Task {
                     await model.reload()
@@ -476,10 +479,9 @@ struct HostsView: View {
             // matters. A different build is worth a mark; the wire version, which actually decides
             // whether the two can talk, is checked when they connect.
             TableColumn("Flotilla", value: \.appSortKey) { row in
-                versionCell(row.appVersion, skew: row.appSkew, warnAt: .build,
-                            what: "Flotilla", host: row.name)
+                flotillaCell(row)
             }
-            .width(min: 64, ideal: 82)
+            .width(min: 64, ideal: 110)
             .customizationID("flotilla")
 
             TableColumn("Model", value: \.modelSortKey) { row in
@@ -549,6 +551,61 @@ struct HostsView: View {
             guard ids.count == 1, let id = ids.first,
                   let row = model.hostRows.first(where: { $0.id == id }) else { return }
             open(row)
+        }
+    }
+
+    /// A host's Flotilla: its version, and where it stands against This Mac's (DECISIONS Q38) — an
+    /// Update button when it is behind and can be updated from here.
+    @ViewBuilder
+    private func flotillaCell(_ row: HostRow) -> some View {
+        if let peer = row.peer, peer.isTrusted {
+            HStack(spacing: 6) {
+                Text(row.appVersion ?? "—").monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+                switch model.updateState(peer.fingerprint) {
+                case .available:
+                    Button("Update") { Task { await model.updateHost(peer.fingerprint) } }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                        .disabled(hostMode.rollingOut)
+                        .help("Update \(row.name) to This Mac’s Flotilla, build \(model.ownBuild.map(String.init) ?? "?"). "
+                              + "Running containers are not touched.")
+                case .updating:
+                    ProgressView().controlSize(.mini)
+                        .help("Updating — \(row.name) relaunches Flotilla when it is idle; containers keep running.")
+                case .failed(let message):
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2).foregroundStyle(Theme.warning)
+                        .help("The last update failed: \(message)")
+                case .manualOnly:
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2).foregroundStyle(Theme.warning)
+                        .help("\(row.name)’s Flotilla is too old to be updated from here — update it by hand once.")
+                case .current, .ahead, .unknown:
+                    EmptyView()
+                }
+            }
+        } else {
+            versionCell(row.appVersion, skew: row.appSkew, warnAt: .build, what: "Flotilla", host: row.name)
+        }
+    }
+
+    /// Updates for the fleet (Q38): update every host now, one at a time, or let This Mac do it by
+    /// itself whenever it is newer.
+    private var updatesMenu: some View {
+        let waiting = model.hostsWithUpdates.count
+        return ToolbarIconMenu(systemImage: waiting > 0 ? "arrow.down.circle.fill" : "arrow.down.circle",
+                               label: waiting > 0 ? "\(waiting) host\(waiting == 1 ? "" : "s") can be updated" : "Host updates") {
+            Button(waiting == 0 ? "Every Host Is Up to Date" : "Update \(waiting) Host\(waiting == 1 ? "" : "s") Now") {
+                Task { await model.rollOutUpdates(automatic: false) }
+            }
+            .disabled(waiting == 0 || hostMode.rollingOut)
+            Divider()
+            Toggle("Update Hosts Automatically", isOn: Binding(
+                get: { model.autoUpdateHosts },
+                set: { on in
+                    try? model.settingsStore.set(on, for: SettingsKeys.autoUpdateHosts)
+                    if on { Task { await model.rollOutUpdates() } }
+                }))
         }
     }
 
@@ -645,6 +702,14 @@ struct HostsView: View {
                 Button("Approve") { hostMode.approve(peer.fingerprint) }
                 Button("Turn Away") { hostMode.reject(peer.fingerprint) }
             case .approved:
+                switch model.updateState(peer.fingerprint) {
+                case .available, .failed:
+                    Button("Update Flotilla") { Task { await model.updateHost(peer.fingerprint) } }
+                        .disabled(hostMode.rollingOut)
+                    Divider()
+                default:
+                    EmptyView()
+                }
                 Button("Remove Access") { hostMode.revoke(peer.fingerprint) }
             case .rejected, .revoked:
                 Button("Approve") { hostMode.approve(peer.fingerprint) }

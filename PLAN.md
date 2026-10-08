@@ -688,6 +688,15 @@ To settle before building:
   bounded operations with host-aware paths. Do not reuse a generic remote
   terminal to obtain that access.
 
+### Updating the fleet from the admin Mac (DECISIONS Q38) — built
+
+The admin pushes its own build to its hosts (wire version 6, an `app-update` upload). A host
+installs it only if it is genuine Flotilla signed by its own team and newer than its own, only
+when idle, and relaunches only Flotilla — containers keep running. Rolling by default, one host at
+a time, stopping at the first that does not come back; Hosts ▸ the updates menu switches to manual
+(Update on a row, or Update All). `acceptAdminUpdates` can be locked off for managed minis.
+`release.sh` now publishes the zip, a tarball, a signed and notarised DMG, and the pkg.
+
 ### Sparkle auto-updates
 
 - Integrate Sparkle 2 for unmanaged Macs with an HTTPS appcast, Ed25519 artefact

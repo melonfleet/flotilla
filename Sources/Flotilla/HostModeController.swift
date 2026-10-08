@@ -202,6 +202,17 @@ final class HostModeController {
 
     /// Called after each refresh of the hosts — the admin's moment to rebuild and send the table.
     @ObservationIgnored var onRefreshed: (() -> Void)?
+
+    // MARK: Updating hosts (Q38)
+
+    /// Hosts being sent or installing an update now.
+    var updating: Set<PeerFingerprint> = []
+    /// The admin build a host last failed to update to, and why — not retried automatically.
+    var updateFailures: [PeerFingerprint: (build: Int, message: String)] = [:]
+    /// A rolling update is under way.
+    var rollingOut = false
+    /// Host side: performs an update the admin sent — set by `AppModel`.
+    @ObservationIgnored var installUpdate: ((URL, @escaping @Sendable () -> Bool) async -> Result<String, HostCallFailure>)?
     static func blockKey(_ host: HostRef) -> String {
         switch host {
         case .local: "local"
@@ -876,6 +887,7 @@ final class HostModeController {
         bridge.update(trustedAdmins: Set(book.approved.filter { $0.role == .admin }.map(\.fingerprint)),
                       blockedAdmins: Set(admins.filter { book.isBlocked($0.fingerprint) }.map(\.fingerprint)),
                       code: pairingCode, key: hostEnrolmentKey?.key)
+        bridge.setAcceptsUpdates(settings[SettingsKeys.acceptAdminUpdates])
     }
 
     private func record(_ subject: String, _ action: String) {
@@ -922,6 +934,24 @@ final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
     private var code: PairingCode?
     private var key: EnrolmentKey?
     @MainActor weak var controller: HostModeController?
+
+    private var acceptsUpdates = true
+    func setAcceptsUpdates(_ on: Bool) { lock.lock(); acceptsUpdates = on; lock.unlock() }
+
+    func acceptsAppUpdates() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return acceptsUpdates ? nil : "This host doesn't take Flotilla updates from its admin — its owner turned that off."
+    }
+
+    func installUpdate(archive: URL, isIdle: @escaping @Sendable () -> Bool,
+                       reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
+        Task { @MainActor in
+            guard let install = self.controller?.installUpdate else {
+                return reply(.failure(HostCallFailure(.internalError, "This host isn't ready.")))
+            }
+            reply(await install(archive, isIdle))
+        }
+    }
 
     func update(trustedAdmins: Set<PeerFingerprint>, blockedAdmins: Set<PeerFingerprint>,
                 code: PairingCode?, key: EnrolmentKey?) {

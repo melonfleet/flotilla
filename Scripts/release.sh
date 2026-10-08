@@ -19,6 +19,10 @@
 #   Scripts/release.sh --version 0.3.1     # explicit
 #   Scripts/release.sh --allow-dirty       # for testing the pipeline itself
 #   Scripts/release.sh --skip-notarize     # sign + staple-less local check, no Apple round trip
+#   Scripts/release.sh --skip-pkg          # zip, tarball and DMG only
+#
+# A release publishes signed artefacts only, in four forms (DECISIONS Q38): the zip (what Sparkle
+# and the fleet use), a tarball, a DMG, and the pkg from make-pkg.sh.
 #
 # Environment:
 #   FLOTILLA_SIGN_IDENTITY   signing identity; auto-detected when exactly one Developer ID exists
@@ -41,11 +45,13 @@ ROOT="$PWD"
 VERSION=""
 ALLOW_DIRTY=0
 SKIP_NOTARIZE=0
+SKIP_PKG=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --version)        VERSION="${2:?--version needs a value}"; shift 2 ;;
         --allow-dirty)    ALLOW_DIRTY=1; shift ;;
         --skip-notarize)  SKIP_NOTARIZE=1; shift ;;
+        --skip-pkg)       SKIP_PKG=1; shift ;;
         -h|--help)        sed -n '2,30p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -194,10 +200,45 @@ echo "▸ archiving the stapled build…"
 rm -f "$ZIP"
 /usr/bin/ditto -c -k --keepParent "$APP" "$ZIP"
 
+# The same stapled app as a tarball, for scripted installs. bsdtar keeps the bundle's files — the
+# signature and the stapled ticket live inside it — exactly as they are.
+TARBALL="$DIST/Flotilla-$VERSION.tar.gz"
+echo "▸ tarball…"
+rm -f "$TARBALL"
+tar -czf "$TARBALL" -C "$(dirname "$APP")" "$(basename "$APP")"
+
+# A DMG is assessed by Gatekeeper itself when it is opened, so it is signed, notarised and stapled
+# in its own right, not only the app inside it.
+DMG="$DIST/Flotilla-$VERSION.dmg"
+echo "▸ disk image…"
+STAGE="$(mktemp -d)"
+/usr/bin/ditto "$APP" "$STAGE/Flotilla.app"
+ln -s /Applications "$STAGE/Applications"
+rm -f "$DMG"
+hdiutil create -quiet -volname "Flotilla" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+rm -rf "$STAGE"
+codesign --sign "$FLOTILLA_SIGN_IDENTITY" --timestamp "$DMG"
+echo "▸ notarising the disk image…"
+if ! xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait 2>&1 | tee "$DIST/notarize-dmg-$VERSION.log"; then
+    fail "disk image notarisation failed — see $DIST/notarize-dmg-$VERSION.log"
+fi
+grep -q "status: Accepted" "$DIST/notarize-dmg-$VERSION.log" || fail "Apple did not accept the disk image — see $DIST/notarize-dmg-$VERSION.log"
+xcrun stapler staple "$DMG" 2>&1 | sed 's/^/   /'
+spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG" 2>&1 | sed 's/^/   /'
+
+# The pkg needs the Developer ID *Installer* certificate as well; make-pkg.sh checks for it.
+if [ "$SKIP_PKG" -eq 0 ]; then
+    echo "▸ installer package…"
+    Scripts/make-pkg.sh --version "$VERSION"
+fi
+
 echo
 echo "✓ Flotilla $VERSION — signed, notarised, stapled"
 echo "   $ZIP"
+echo "   $TARBALL"
+echo "   $DMG"
+[ "$SKIP_PKG" -eq 0 ] && echo "   (and the pkg make-pkg.sh reported above)"
 echo
-echo "   Hand that zip to a tester. On their Mac it should open from Finder with no"
+echo "   Hand any of them to a tester. On their Mac it should open from Finder with no"
 echo "   right-click-Open dance and no 'unidentified developer' dialog. If it does not,"
 echo "   the fault is real and not their settings — spctl above is the same check they get."

@@ -216,6 +216,20 @@ public enum SettingsKeys {
         summary: "Let every Mac look up containers on the other Macs by name, such as web.mini.fleet.internal."
     )
 
+    /// Whether this host installs Flotilla updates its admin Mac sends (DECISIONS Q38). A profile can
+    /// lock it off, so Jamf stays the update authority on managed minis.
+    public static let acceptAdminUpdates = SettingsKey<Bool>(
+        "acceptAdminUpdates", default: true, scope: .host,
+        summary: "Install Flotilla updates the admin Mac sends. Only genuine, newer Flotilla is ever installed."
+    )
+
+    /// Whether the admin Mac updates its hosts by itself, one at a time, when it is newer (Q38).
+    /// Off: each host shows Update available, and you update it from Hosts.
+    public static let autoUpdateHosts = SettingsKey<Bool>(
+        "autoUpdateHosts", default: true,
+        summary: "Update hosts to this Mac's Flotilla automatically, one at a time."
+    )
+
     /// The fleet enrolment key a configuration profile hands a host (PLAN.md Phase B). Sensitive:
     /// it lets a Mac *ask* to join, so it is never exported or put in diagnostics. A key pasted by
     /// hand lives in the Keychain instead, not here.
@@ -357,6 +371,8 @@ public enum SettingsRegistry {
         SettingsKeys.bonjourEnabled.descriptor,
         SettingsKeys.fleetDNSDomain.descriptor,
         SettingsKeys.fleetNamesEnabled.descriptor,
+        SettingsKeys.acceptAdminUpdates.descriptor,
+        SettingsKeys.autoUpdateHosts.descriptor,
         SettingsKeys.identityKeychainLabel.descriptor,
         SettingsKeys.peerAllowlist.descriptor,
         SettingsKeys.trustAnchorFingerprints.descriptor,
