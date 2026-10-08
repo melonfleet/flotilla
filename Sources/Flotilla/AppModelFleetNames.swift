@@ -20,6 +20,9 @@ extension AppModel {
         hostMode.fleetResponder.update(mine)
         let zones = (mine?.zones.map(\.zone) ?? []).sorted()
         var problem: String?
+        // Nothing to look up and no files of ours to remove: no helper needed — measured 8 October,
+        // a host with no other zone to answer was told its (older) helper had to be updated.
+        if zones.isEmpty, !Self.hasFleetResolverFiles() { hostMode.syncedFleetZones = [] }
         if zones != hostMode.syncedFleetZones {
             let request: PrivilegedDNSRequest = zones.isEmpty
                 ? .removeFleetResolvers
@@ -34,6 +37,12 @@ extension AppModel {
         if problem == nil { problem = hostMode.fleetResponder.lastError }
         hostMode.fleetNamesProblem = problem
         return problem
+    }
+
+    /// Whether any `/etc/resolver/flotilla.*` file exists — the directory is world-readable.
+    nonisolated static func hasFleetResolverFiles() -> Bool {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: DNSResolverFile.directory)) ?? []
+        return names.contains { FleetResolvers.zone(fromFilename: $0) != nil }
     }
 
     /// At launch: answer from the last table straight away. The resolver files are already in place.

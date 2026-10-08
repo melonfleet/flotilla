@@ -549,7 +549,13 @@ column and filter, and New Domain has a Create on picker. Set Up Zones gives eac
 `<its label>.<fleet domain>` (default `fleet.internal`), with each Mac's restart and the containers
 it would stop shown first. Live, 8 October: the mini's zone set up from the admin Mac through
 its helper, and a container there resolved `web.test-mac-mini.fleet.internal` to web's address.
-Part C (names that resolve across Macs) follows.
+**Part C — built and live-tested** (DECISIONS Q37): with the switch on, this laptop's
+macOS resolver answered `web.test-mac-mini.fleet.internal` with the mini's address through
+Flotilla's responder and a helper-written resolver file; a container with no published port got
+NXDOMAIN; switching off removed the file and stopped the responder. From another Mac,
+`http://web.test-mac-mini.fleet.internal:8080/` served the mini's nginx — after a macOS network
+prompt for Flotilla, pending on the mini, was answered. Until then the mini accepted connections
+on the published port and reset them. A headless host must have its prompts answered at setup.
 
 #### Layer 2 — Fleet DNS
 
