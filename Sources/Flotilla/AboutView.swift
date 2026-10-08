@@ -75,12 +75,6 @@ struct AboutView: View {
         model.settingsStore[SettingsKeys.defaultRegistryDomain]
     }
 
-    /// Read live, so this page describes what **this** copy of Flotilla does rather than what
-    /// the default does. A privacy page that ignores your own settings is a brochure.
-    private var launchCheckEnabled: Bool {
-        model.settingsStore[SettingsKeys.checkForNewReleasesOnLaunch]
-    }
-
     private var networkDestinations: some View {
         VStack(alignment: .leading, spacing: 12) {
             destinationRow(
@@ -88,20 +82,6 @@ struct AboutView: View {
                 title: "Flotilla itself",
                 body: "No analytics, no crash reporting, no licence check, and nothing about this "
                     + "Mac sent anywhere. Every place it can reach is listed below, with when."
-            )
-            destinationRow(
-                status: launchCheckEnabled ? .active : .onRequest,
-                title: "Checking for a Flotilla update",
-                body: "Asks api.github.com for this project's latest release and compares it "
-                    + "here. The request carries no version number, no identifier and nothing "
-                    + "about this Mac; the answer is not stored. "
-                    + (launchCheckEnabled
-                       ? "\"Check for new releases at launch\" is ON, so this runs once each "
-                         + "time Flotilla starts, and whenever you click the version in the "
-                         + "corner of This Mac's page in Hosts. Turn it off in Settings → Updates."
-                       : "It runs only when you click the version in the corner of This Mac's page in Hosts — "
-                         + "never at launch, unless you turn on \"Check for new releases at "
-                         + "launch\" in Settings → Updates.")
             )
             if model.updater.isRunning {
                 destinationRow(

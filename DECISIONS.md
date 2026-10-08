@@ -1929,6 +1929,10 @@ clicks at all. His answers:
   private key up to 1Password. Losing it means existing installs cannot verify new updates.
 - Sparkle updates Macs that are admins. A host-only Mac is updated by its admin (Q38), so it does
   not check Sparkle as well.
+- **Amended 2026-10-08:** Flotilla's own GitHub release check (the version in This Mac's corner,
+  and the "Check for new releases at launch" setting) is removed. Two update mechanisms could
+  disagree; the version now opens Sparkle's Check for Updates, and on a host it only says the admin
+  Mac updates it. The retired setting is dropped from stored settings at load.
 
 ## Q41 — One helper, called the Flotilla Helper (settled 2026-10-08)
 
