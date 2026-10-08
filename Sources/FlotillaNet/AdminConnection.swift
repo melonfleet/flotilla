@@ -167,6 +167,9 @@ public final class AdminConnection: @unchecked Sendable {
 
     public func close() { connection.close(nil) }
 
+    /// This Mac's and the host's IPv4 addresses on this connection (see `WireConnection`).
+    public var ipv4Addresses: (local: String?, remote: String?) { connection.ipv4Addresses }
+
     /// A host call (D3): the answer is an ordinary result, JSON in its stdout, or a failure.
     /// Refused at once if the host predates host calls; never queued, there are only ever a few.
     public func call(_ call: HostCall) async throws -> CommandResult {

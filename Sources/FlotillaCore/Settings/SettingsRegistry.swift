@@ -209,6 +209,13 @@ public enum SettingsKeys {
         summary: "The domain each Mac's DNS zone sits under, such as fleet.internal."
     )
 
+    /// Names across Macs (D3 Part C, DECISIONS Q37): every Mac answers every other Mac's zone through
+    /// Flotilla's own responder. Off until the owner turns it on in Set Up Zones.
+    public static let fleetNamesEnabled = SettingsKey<Bool>(
+        "fleetNamesEnabled", default: false,
+        summary: "Let every Mac look up containers on the other Macs by name, such as web.mini.fleet.internal."
+    )
+
     /// The fleet enrolment key a configuration profile hands a host (PLAN.md Phase B). Sensitive:
     /// it lets a Mac *ask* to join, so it is never exported or put in diagnostics. A key pasted by
     /// hand lives in the Keychain instead, not here.
@@ -349,6 +356,7 @@ public enum SettingsRegistry {
         SettingsKeys.hostListenPort.descriptor,
         SettingsKeys.bonjourEnabled.descriptor,
         SettingsKeys.fleetDNSDomain.descriptor,
+        SettingsKeys.fleetNamesEnabled.descriptor,
         SettingsKeys.identityKeychainLabel.descriptor,
         SettingsKeys.peerAllowlist.descriptor,
         SettingsKeys.trustAnchorFingerprints.descriptor,

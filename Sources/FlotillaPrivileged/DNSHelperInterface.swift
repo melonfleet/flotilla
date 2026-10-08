@@ -20,7 +20,8 @@ public enum DNSHelperInterface {
     /// The only app allowed to talk to the helper.
     public static let appIdentifier = "dev.melonfleet.Flotilla"
     /// Bumped when the interface changes, so an app can tell an old helper from a current one.
-    public static let version = 1
+    /// 2 (8 October, Q37): adds the fleet resolver files.
+    public static let version = 2
 
     /// A code requirement for `identifier`, signed by Apple-issued Developer ID under `team`.
     /// Both ends use it: the helper on the app, and the app on the helper.
@@ -50,4 +51,9 @@ public enum DNSHelperInterface {
     func helperVersion(reply: @escaping @Sendable (Int) -> Void)
     func createDomain(_ domain: String, localhost: String?, reply: @escaping @Sendable (String?) -> Void)
     func deleteDomains(_ domains: [String], reply: @escaping @Sendable (String?) -> Void)
+    /// Makes `/etc/resolver/flotilla.<zone>` exist for exactly `zones`, each pointing at Flotilla's
+    /// responder on 127.0.0.1 (DECISIONS Q37). Version 2.
+    func syncFleetResolvers(fleetDomain: String, zones: [String], reply: @escaping @Sendable (String?) -> Void)
+    /// Removes every `/etc/resolver/flotilla.*` file. Version 2.
+    func removeFleetResolvers(reply: @escaping @Sendable (String?) -> Void)
 }

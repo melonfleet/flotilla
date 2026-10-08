@@ -86,6 +86,18 @@ public final class WireConnection: @unchecked Sendable {
 
     public var remoteEndpoint: NWEndpoint { connection.endpoint }
 
+    /// The IPv4 addresses this connection actually runs between — this Mac's end, then the
+    /// peer's — or `nil` for either that is not IPv4 or not known yet. Fleet names (Q37) point a
+    /// Mac's zone at the address another Mac really reaches it on.
+    public var ipv4Addresses: (local: String?, remote: String?) {
+        func ipv4(_ endpoint: NWEndpoint?) -> String? {
+            guard case .hostPort(let host, _)? = endpoint, case .ipv4(let address) = host else { return nil }
+            return "\(address)".split(separator: "%").first.map(String.init)
+        }
+        let path = connection.currentPath
+        return (ipv4(path?.localEndpoint), ipv4(path?.remoteEndpoint))
+    }
+
     public func start() {
         connection.stateUpdateHandler = { [weak self] state in self?.handle(state) }
         connection.start(queue: queue)

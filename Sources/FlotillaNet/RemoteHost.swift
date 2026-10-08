@@ -38,6 +38,12 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     /// What the host said about itself on the current connection.
     public var hostInfo: WirePeerInfo? { lock.lock(); defer { lock.unlock() }; return welcome?.peer }
 
+    /// This Mac's and the host's IPv4 addresses on the open connection, if one is open.
+    public var ipv4Addresses: (local: String?, remote: String?) {
+        let open = lock.withLock { connection }
+        return open?.isClosed == false ? open!.ipv4Addresses : (nil, nil)
+    }
+
     public func close() {
         lock.lock()
         let open = connection

@@ -572,7 +572,11 @@ must preserve all of the following:
     and accepts XPC only from the Developer ID-signed app of its own team (an ad-hoc build has no
     team and the helper refuses to start). With it on, Flotilla asks for an in-app confirmation
     of every change instead of the password. `AppModel.runPrivilegedDNS` is the one place that
-    chooses between the helper and the prompt.
+    chooses between the helper and the prompt. **Amended 2026-10-08 (Q37):** the helper also keeps
+    `/etc/resolver/flotilla.<zone>` files for other Macs' DNS zones — `syncFleetResolvers` and
+    `removeFleetResolvers`, typed, each file always pointing at Flotilla's own responder on
+    127.0.0.1:7869, only under a `.internal`, `.test` or `.home.arpa` fleet domain, never touching a
+    file not named `flotilla.*`. Still nothing else.
 
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.

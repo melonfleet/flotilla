@@ -14,6 +14,9 @@ public enum HostCall: Sendable, Equatable, Codable {
     case dnsStatus
     /// The host's chip, memory and disk, for Overview (version 4).
     case hostFacts
+    /// The names of every other Mac's containers, for the host to answer (version 5, Q37). An
+    /// empty table turns names across Macs off there.
+    case setFleetNames(FleetNameTable)
     /// `system dns create`, run by the host's DNS helper.
     case dnsCreate(domain: String, localhost: String?)
     /// `system dns delete`, run by the host's DNS helper.
@@ -35,6 +38,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         }
         switch self {
         case .dnsStatus, .hostFacts: return nil
+        case .setFleetNames(let table): return table.problem
         case .dnsCreate(let domain, let localhost):
             if let reserved = LocalDNS.reservedProblem(domain) { return reserved }
             if case .failure(let error) = ContainerCLI.dnsCreateCommand(domain: domain, localhost: localhost) {
@@ -55,13 +59,19 @@ public enum HostCall: Sendable, Equatable, Codable {
     public var mutates: Bool { self != .dnsStatus && self != .hostFacts }
 
     /// The protocol version a host must speak to be asked this.
-    public var minimumVersion: UInt16 { self == .hostFacts ? WireProtocol.hostFactsVersion : WireProtocol.hostCallsVersion }
+    public var minimumVersion: UInt16 {
+        switch self {
+        case .hostFacts: WireProtocol.hostFactsVersion
+        case .setFleetNames: WireProtocol.fleetNamesVersion
+        default: WireProtocol.hostCallsVersion
+        }
+    }
 
     /// How long the host may take. A runtime restart waits for every container to stop.
     public var timeout: TimeInterval {
         switch self {
         case .dnsStatus, .hostFacts: 30
-        case .dnsCreate, .dnsDelete: 60
+        case .dnsCreate, .dnsDelete, .setFleetNames: 60
         case .setContainerDNSDomain: 300
         }
     }
@@ -71,6 +81,8 @@ public enum HostCall: Sendable, Equatable, Codable {
         switch self {
         case .dnsStatus: "read DNS settings"
         case .hostFacts: "read its chip, memory and disk"
+        case .setFleetNames(let table): table.zones.isEmpty ? "turned off names across Macs"
+                                                            : "updated names across Macs (\(table.zones.count) zones)"
         case .dnsCreate(let domain, let localhost): localhost == nil ? "created DNS domain \(domain)" : "created host alias \(domain)"
         case .dnsDelete(let domains): "deleted DNS domain" + (domains.count == 1 ? " \(domains[0])" : "s \(domains.joined(separator: ", "))")
         case .setContainerDNSDomain(let domain): domain.map { "named containers under \($0)" } ?? "stopped naming containers"

@@ -68,3 +68,32 @@ listener to Flotilla (loopback only). Both are the owner's call.
    on the host?
 4. The fleet domain's default: `fleet.internal` (`.internal` is reserved for private use), or the
    owner's choice?
+
+## Part C in detail (8 October, before building)
+
+**The responder.** Flotilla answers DNS itself, on **127.0.0.1 only** (UDP and TCP, port 7869 —
+next to the wire's 7868, unused by anything measured). It answers `A` for `<container>.<zone>` where
+`<zone>` is **another** Mac's zone, with that Mac's address, only while `<container>` publishes a
+port there; `AAAA` gets an empty answer so lookups do not stall; everything else is refused. TTL 30
+seconds. A Mac's own zone is never Flotilla's: the runtime answers it, as today.
+
+**The name table.** The admin Mac builds it from what it already polls: each host's zone, the
+address the admin reaches it at, and its containers' published ports. Hosts do not know each other,
+so the admin sends each host the table with a new host call, `.setFleetNames(table)` (wire version
+5); a host keeps the last one it was sent. A container with no published port is in the table
+marked unreachable, so Flotilla can say why it has no name rather than return an address that leads
+nowhere.
+
+**The two new helper operations — the whole of the widening.**
+
+1. `syncFleetResolvers(fleetDomain, zones)` — makes `/etc/resolver/flotilla.<zone>` exist for
+   exactly these zones and no others. Each file is always the same four lines:
+   `domain <zone>` / `search <zone>` / `nameserver 127.0.0.1` / `port 7869`. The helper checks, as
+   root: every zone is the DNS grammar, not `.local`, and a subdomain of `fleetDomain`; `fleetDomain`
+   ends in a suffix reserved for private use; at most 256 zones; no zone has a runtime
+   (`containerization.<zone>`) file here. It writes each file atomically, 0644, root-owned, and never
+   reads, writes or removes any file whose name does not start `flotilla.`.
+2. `removeFleetResolvers()` — removes every `/etc/resolver/flotilla.*` file, and nothing else.
+
+Neither takes a nameserver or a port: they are fixed, so the helper can only ever send a private
+fleet zone to Flotilla on this Mac — never a real domain, never to another server.

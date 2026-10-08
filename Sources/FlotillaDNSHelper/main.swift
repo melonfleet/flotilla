@@ -49,6 +49,81 @@ final class DNSHelperService: NSObject, NSXPCListenerDelegate, DNSHelperProtocol
         reply(run(commands))
     }
 
+    // MARK: Fleet resolver files (DECISIONS Q37)
+    //
+    // The only files this helper writes itself. Every one is named `flotilla.<zone>`, holds the four
+    // fixed lines `FleetResolvers.contents` gives — nameserver 127.0.0.1, port 7869 — and is for a
+    // zone under a private-use fleet domain. Nothing not named `flotilla.` is read, written or removed.
+
+    private static let resolverDirectory = URL(fileURLWithPath: DNSResolverFile.directory, isDirectory: true)
+
+    func syncFleetResolvers(fleetDomain: String, zones: [String], reply: @escaping @Sendable (String?) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        let fileManager = FileManager.default
+        let names = (try? fileManager.contentsOfDirectory(atPath: Self.resolverDirectory.path)) ?? []
+        let runtimeZones = Set(names.compactMap(DNSResolverFile.domain(fromFilename:)))
+        if let problem = FleetResolvers.problem(fleetDomain: fleetDomain, zones: zones, runtimeZones: runtimeZones) {
+            reply(problem); return
+        }
+        do {
+            if !fileManager.fileExists(atPath: Self.resolverDirectory.path) {
+                try fileManager.createDirectory(at: Self.resolverDirectory, withIntermediateDirectories: false,
+                                                attributes: [.posixPermissions: 0o755])
+            }
+            let wanted = Set(zones)
+            // Stale files first, so a zone that left the fleet stops resolving even if a write fails.
+            for name in names {
+                guard let zone = FleetResolvers.zone(fromFilename: name), !wanted.contains(zone) else { continue }
+                try removeFile(named: name)
+            }
+            for zone in zones.sorted() {
+                let url = Self.resolverDirectory.appendingPathComponent(FleetResolvers.filename(for: zone))
+                let contents = Data(FleetResolvers.contents(for: zone).utf8)
+                if (try? Data(contentsOf: url)) == contents, isRegularFile(url.path) { continue }
+                // Written beside, then renamed over: a reader never sees half a file, and the rename
+                // replaces whatever was there — a link included — rather than writing through it.
+                let temporary = Self.resolverDirectory.appendingPathComponent(".flotilla-\(UUID().uuidString)")
+                guard fileManager.createFile(atPath: temporary.path, contents: contents,
+                                             attributes: [.posixPermissions: 0o644]) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                guard rename(temporary.path, url.path) == 0 else {
+                    try? fileManager.removeItem(at: temporary)
+                    throw POSIXError(.init(rawValue: errno) ?? .EIO)
+                }
+            }
+            reply(nil)
+        } catch {
+            reply("The helper couldn't update this Mac's DNS settings: \(error.localizedDescription)")
+        }
+    }
+
+    func removeFleetResolvers(reply: @escaping @Sendable (String?) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: Self.resolverDirectory.path)) ?? []
+        do {
+            for name in names where FleetResolvers.zone(fromFilename: name) != nil { try removeFile(named: name) }
+            reply(nil)
+        } catch {
+            reply("The helper couldn't update this Mac's DNS settings: \(error.localizedDescription)")
+        }
+    }
+
+    /// Removes one entry of ours — a file or a link, never a directory, and never by following a link.
+    private func removeFile(named name: String) throws {
+        let path = Self.resolverDirectory.appendingPathComponent(name).path
+        var info = stat()
+        guard lstat(path, &info) == 0, info.st_mode & S_IFMT != S_IFDIR else { return }
+        guard unlink(path) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+    }
+
+    private func isRegularFile(_ path: String) -> Bool {
+        var info = stat()
+        return lstat(path, &info) == 0 && info.st_mode & S_IFMT == S_IFREG
+    }
+
     /// Runs each command in turn and stops at the first failure, as the password path's `&&` does.
     private func run(_ commands: [ValidatedCommand]) -> String? {
         lock.lock()

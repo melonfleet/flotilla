@@ -1845,3 +1845,20 @@ The owner's answers, 7 October, to research/FLEET-DNS-D3.md's questions:
   answer.
 - **The fleet domain defaults to `fleet.internal`** (`.internal` is reserved for private use), and
   can be changed on the admin Mac. Each Mac's zone is `<its label>.<fleet domain>`.
+
+## Q37 — Phase D layer 2, Part C: names that resolve across Macs (settled 2026-10-08)
+
+The owner's answers, 8 October, to research/FLEET-DNS-D3.md ▸ "Part C in detail":
+
+- **The DNS helper gains exactly two operations**, approved as written:
+  `syncFleetResolvers(fleetDomain, zones)` makes `/etc/resolver/flotilla.<zone>` exist for exactly
+  those zones, each file always `domain`/`search` the zone, `nameserver 127.0.0.1`, `port 7869`;
+  `removeFleetResolvers()` removes every `/etc/resolver/flotilla.*` file. Neither takes a server or
+  a port. Nothing else is added to what root may do.
+- **Only private-use fleet domains**: the helper refuses a fleet domain that does not end in
+  `.internal`, `.test` or `.home.arpa`, so it can never redirect a real domain.
+- **A container that publishes no port gets no answer**, and Flotilla says why — "not reachable
+  from other Macs: publish a port" — rather than return an address that leads nowhere.
+- **Every Mac resolves fleet names**, the admin and every host. The admin sends each host the name
+  table (`.setFleetNames`, wire version 5); a host keeps the last one it was sent.
+- Flotilla's responder listens on 127.0.0.1:7869 only. A Mac's own zone stays the runtime's.

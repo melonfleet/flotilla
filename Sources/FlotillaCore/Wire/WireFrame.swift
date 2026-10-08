@@ -15,13 +15,16 @@ public enum WireProtocol {
     /// Version 3 (D3) adds typed host calls — DNS on a host, through its own helper
     /// (research/FLEET-DNS-D3.md, DECISIONS Q36).
     /// Version 4 adds the `.hostFacts` call — a host's chip, memory and disk, for Overview.
-    public static let supportedVersions: ClosedRange<UInt16> = 1...4
+    /// Version 5 adds `.setFleetNames` — the table each Mac answers other Macs' zones from (Q37).
+    public static let supportedVersions: ClosedRange<UInt16> = 1...5
     /// The first version that carries streams.
     public static let streamsVersion: UInt16 = 2
     /// The first version that carries host calls.
     public static let hostCallsVersion: UInt16 = 3
     /// The first version that answers `.hostFacts`.
     public static let hostFactsVersion: UInt16 = 4
+    /// The first version that takes `.setFleetNames`.
+    public static let fleetNamesVersion: UInt16 = 5
     /// The owner's choice, 7 October. Changeable in Settings.
     public static let defaultPort: UInt16 = 7868
 

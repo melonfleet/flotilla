@@ -174,6 +174,34 @@ final class HostModeController {
     /// Assigned the first time it is needed and kept; a removed host's block is given back.
     private(set) var addressBlocks: [String: IPv4Block] = [:]
     static let addressBlocksKey = "addressBlocks"
+
+    // MARK: Names across Macs (Q37)
+
+    /// This Mac's answers for other Macs' zones: the last table the admin sent (on a host), or the
+    /// one built here (on the admin). Kept across launches, so a host answers before the admin
+    /// reconnects.
+    private(set) var fleetTable: FleetNameTable?
+    static let fleetTableKey = "fleetNameTable"
+    @ObservationIgnored let fleetResponder = FleetDNSResponder()
+    /// The zones this Mac's resolver files were last synced to, so the helper is asked only on a change.
+    @ObservationIgnored var syncedFleetZones: [String]?
+    /// Why names across Macs aren't fully working here, or `nil`.
+    var fleetNamesProblem: String?
+    /// Admin side: the table each host was last sent, and what it said.
+    @ObservationIgnored var sentFleetTables: [PeerFingerprint: FleetNameTable] = [:]
+    private(set) var fleetNamesResults: [PeerFingerprint: String?] = [:]
+
+    func setFleetTable(_ table: FleetNameTable?) {
+        fleetTable = table
+        localStore.set(table.flatMap { try? PropertyListEncoder().encode($0) }, forKey: Self.fleetTableKey)
+    }
+
+    func noteFleetNamesResult(_ fingerprint: PeerFingerprint, _ problem: String?) {
+        fleetNamesResults[fingerprint] = .some(problem)
+    }
+
+    /// Called after each refresh of the hosts — the admin's moment to rebuild and send the table.
+    @ObservationIgnored var onRefreshed: (() -> Void)?
     static func blockKey(_ host: HostRef) -> String {
         switch host {
         case .local: "local"
@@ -203,6 +231,8 @@ final class HostModeController {
             .flatMap { try? PropertyListDecoder().decode([ImportedHost].self, from: $0) } ?? []
         addressBlocks = localStore.data(forKey: Self.addressBlocksKey)
             .flatMap { try? PropertyListDecoder().decode([String: IPv4Block].self, from: $0) } ?? [:]
+        fleetTable = localStore.data(forKey: Self.fleetTableKey)
+            .flatMap { try? PropertyListDecoder().decode(FleetNameTable.self, from: $0) }
         self.settings = settings
         self.containerHost = containerHost
         self.bookStore = bookStore
@@ -582,6 +612,7 @@ final class HostModeController {
                 group.addTask { await self.refreshLiveStatus(peer.fingerprint) }
             }
         }
+        if !due.isEmpty { onRefreshed?() }
     }
 
     /// The paired, trusted hosts and what each last said about its containers.

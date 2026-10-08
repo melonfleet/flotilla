@@ -14,6 +14,12 @@ extension AppModel {
     /// Performs an admin's host call, already validated by the wire session.
     func performHostCall(_ call: HostCall) async -> Result<String, HostCallFailure> {
         switch call {
+        case .setFleetNames(let table):
+            if let problem = await applyFleetNames(table.zones.isEmpty ? nil : table) {
+                return .failure(HostCallFailure(.refused, problem))
+            }
+            return .success("")
+
         case .hostFacts:
             guard let json = try? JSONEncoder().encode(localHostFacts()) else {
                 return .failure(HostCallFailure(.internalError, "This host couldn't describe itself."))
