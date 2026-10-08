@@ -354,7 +354,7 @@ struct FlotillaApp: App {
                 // The chosen light and dark themes, for the bar and the background. Set once here,
                 // at the root, for the reason the tint was: set per view, it would be missed.
                 .environment(\.themeChoice, model.themeChoice)
-                .task { await model.reload() }
+                .task { await model.reloadUnlessLoading() }
                 // First run: ask, with Auto pre-selected. `needsAppearanceOnboarding` is
                 // false once answered, including when the answer was Auto — which is
                 // exactly why the store models `notChosen` separately.

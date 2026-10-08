@@ -121,6 +121,11 @@ final class AppModel {
         updater.apply(isAdmin: hostMode.isAdmin)
         startHostRuntimeWatch()
         Task { await PrivilegedHelper.moveFromLegacyName() }
+        // The first load, from here rather than only from the main window: a launch with no window
+        // (at login, or with the window closed) left preflight unrun, so the menu bar said
+        // "Checking…" until the window was opened — found 8 October, once the menu bar had a
+        // status line and a badge to show it.
+        Task { await reloadUnlessLoading() }
         hostMode.onRefreshed = { [weak self] in
             Task {
                 await self?.updateFleetNames()
@@ -881,6 +886,13 @@ final class AppModel {
     /// What the Refresh control must call. Re-runs preflight FIRST: if the runtime was
     /// unusable, `refresh()` alone would hit its own guard and silently do nothing, so the
     /// user could start the service and never recover without relaunching the app.
+    /// `reload()`, unless one is already running — the launch load and the main window's first
+    /// appearance both ask for one.
+    func reloadUnlessLoading() async {
+        guard state != .loading else { return }
+        await reload()
+    }
+
     func reload() async {
         preflight = nil          // clear the stale verdict, or the guard below still bites
         state = .loading
