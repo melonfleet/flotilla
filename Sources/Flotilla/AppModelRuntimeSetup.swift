@@ -284,4 +284,32 @@ extension AppModel {
             return message
         }
     }
+
+    /// Hosts whose `container` is older than the version this Flotilla expects and that can be
+    /// upgraded from here — Overview's Updates block. A host without `container` is not here: that
+    /// is setup, not an update.
+    var hostsWithContainerUpgrades: [PeerFingerprint] {
+        hostMode.trustedHosts.map(\.fingerprint).filter {
+            if case .behind = hostRuntimeState($0) { return true }
+            return false
+        }
+    }
+
+    /// What upgrading `hosts` would stop: their running containers, as each last reported.
+    func runningContainers(on hosts: [PeerFingerprint]) -> Int {
+        hosts.reduce(0) { $0 + (hostMode.live[$1]?.containersRunning ?? 0) }
+    }
+
+    /// Upgrades each host in turn, as Hosts' Upgrade does for one — the owner has confirmed with
+    /// the count of what stops. One at a time, so the fleet is never all restarting at once, and
+    /// a failure on one host does not stop the rest. Returns each failure, by host.
+    func upgradeContainer(on hosts: [PeerFingerprint]) async -> [String] {
+        var failures: [String] = []
+        for fingerprint in hosts {
+            if let failure = await setUpRuntime(on: fingerprint) {
+                failures.append("\(hostMode.hostName(.peer(fingerprint), local: hostLabel)): \(failure)")
+            }
+        }
+        return failures
+    }
 }

@@ -272,36 +272,109 @@ struct OverviewView: View {
         }
     }
 
-    /// Hosts that can take this Mac's Flotilla, with the same action as Hosts' Updates menu. Shown
-    /// only when there is one; an update is work to do, not a fault, so it is not in the list above.
+    /// What can be updated: Flotilla on hosts behind This Mac, and `container` on hosts behind the
+    /// version Flotilla expects — one row each however many hosts, with the same actions as Hosts.
+    /// Shown only when there is something; an update is work to do, not a fault.
+    @State private var confirmingContainerUpgrade = false
+    @State private var upgradeFailures: [String] = []
+
     @ViewBuilder
     private var updates: some View {
-        let waiting = model.hostsWithUpdates
-        let underWay = model.hostMode.updating.count
-        if !waiting.isEmpty || underWay > 0 {
+        let flotillaWaiting = model.hostsWithUpdates
+        let flotillaUnderWay = model.hostMode.updating.count
+        let containerWaiting = model.hostsWithContainerUpgrades
+        let containerUnderWay = model.hostMode.settingUpRuntime.count
+        if !flotillaWaiting.isEmpty || flotillaUnderWay > 0 || !containerWaiting.isEmpty || containerUnderWay > 0 {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Updates").font(.headline)
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.down.circle").foregroundStyle(Theme.info)
-                    if underWay > 0 {
-                        Text("Updating Flotilla on \(underWay) host\(underWay == 1 ? "" : "s")…")
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("\(waiting.count) host\(waiting.count == 1 ? " runs" : "s run") an older Flotilla than This Mac (\(HostModeController.appVersion)).")
-                    }
-                    Spacer()
-                    if !waiting.isEmpty {
-                        Button("Update \(waiting.count) Host\(waiting.count == 1 ? "" : "s") Now") {
-                            Task { await model.rollOutUpdates(automatic: false) }
+                VStack(spacing: 0) {
+                    if !flotillaWaiting.isEmpty || flotillaUnderWay > 0 {
+                        updateRow(underWay: flotillaUnderWay > 0
+                                      ? "Updating Flotilla on \(Self.hosts(flotillaUnderWay))\u{2026}" : nil,
+                                  text: "\(Self.hosts(flotillaWaiting.count)) \(flotillaWaiting.count == 1 ? "runs" : "run") "
+                                      + "an older Flotilla than This Mac (\(HostModeController.appVersion)).") {
+                            if !flotillaWaiting.isEmpty {
+                                Button("Update \(Self.hosts(flotillaWaiting.count, capitalised: true)) Now") {
+                                    Task { await model.rollOutUpdates(automatic: false) }
+                                }
+                                .disabled(model.hostMode.rollingOut)
+                            }
                         }
-                        .disabled(model.hostMode.rollingOut)
+                    }
+                    if (!flotillaWaiting.isEmpty || flotillaUnderWay > 0) && (!containerWaiting.isEmpty || containerUnderWay > 0) {
+                        Divider()
+                    }
+                    if !containerWaiting.isEmpty || containerUnderWay > 0 {
+                        updateRow(underWay: containerUnderWay > 0
+                                      ? "Upgrading container on \(Self.hosts(containerUnderWay))\u{2026}" : nil,
+                                  text: "\(Self.hosts(containerWaiting.count)) can upgrade container to "
+                                      + "\(ContainerRuntime.expectedVersion).") {
+                            if !containerWaiting.isEmpty {
+                                Button("Upgrade \(Self.hosts(containerWaiting.count, capitalised: true))\u{2026}") {
+                                    confirmingContainerUpgrade = true
+                                }
+                                .disabled(containerUnderWay > 0)
+                            }
+                        }
                     }
                 }
-                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
             }
+            .confirmationDialog(containerUpgradeQuestion(containerWaiting),
+                                isPresented: $confirmingContainerUpgrade, titleVisibility: .visible) {
+                Button(model.runningContainers(on: containerWaiting) > 0 ? "Stop Containers and Upgrade" : "Upgrade") {
+                    Task {
+                        let failures = await model.upgradeContainer(on: containerWaiting)
+                        if !failures.isEmpty { upgradeFailures = failures }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(containerUpgradeMessage(containerWaiting))
+            }
+            .alert("container wasn't upgraded everywhere",
+                   isPresented: Binding(get: { !upgradeFailures.isEmpty }, set: { if !$0 { upgradeFailures = [] } })) {
+                Button("OK") { upgradeFailures = [] }
+            } message: {
+                Text(upgradeFailures.joined(separator: "\n"))
+            }
         }
+    }
+
+    private func updateRow(underWay: String?, text: String,
+                           @ViewBuilder action: () -> some View) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle").foregroundStyle(Theme.info)
+            if let underWay {
+                Text(underWay)
+                ProgressView().controlSize(.small)
+            } else {
+                Text(text)
+            }
+            Spacer()
+            action()
+        }
+        .padding(12)
+    }
+
+    private func containerUpgradeQuestion(_ hosts: [PeerFingerprint]) -> String {
+        "Upgrade container on \(Self.hosts(hosts.count)) to \(ContainerRuntime.expectedVersion)?"
+    }
+
+    /// Hosts' wording for one host, for several: what each does, and what stops, in all.
+    private func containerUpgradeMessage(_ hosts: [PeerFingerprint]) -> String {
+        let running = model.runningContainers(on: hosts)
+        var text = "Each host downloads Apple's container installer, and its Flotilla Helper installs it after "
+            + "checking it is Apple's. One host at a time. container restarts on each, "
+        text += running > 0
+            ? "which stops the \(running) running container\(running == 1 ? "" : "s") on them in all; start them again afterwards. "
+            : "and nothing is running on them. "
+        return text + "Then the recommended kernel, if one has none."
+    }
+
+    private static func hosts(_ count: Int, capitalised: Bool = false) -> String {
+        "\(count) \(capitalised ? "Host" : "host")\(count == 1 ? "" : "s")"
     }
 }
