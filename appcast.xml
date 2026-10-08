@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Flotilla</title>
+    <link>https://melonfleet.github.io/flotilla/appcast.xml</link>
+    <language>en</language>
+    <item>
+      <title>Flotilla 1.5.0.0-beta.2</title>
+      <pubDate>Thu, 08 Oct 2026 15:23:24 +0000</pubDate>
+      <sparkle:version>347</sparkle:version>
+      <sparkle:shortVersionString>1.5.0.0-beta.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:channel>beta</sparkle:channel>
+      <sparkle:releaseNotesLink>https://github.com/melonfleet/flotilla/releases/tag/v1.5.0.0-beta.2</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/melonfleet/flotilla/releases/download/v1.5.0.0-beta.2/Flotilla-1.5.0.0-beta.2.zip" type="application/octet-stream" sparkle:edSignature="tPYqSp6DXb/8ZcwkBjheqto22VdsdanP3GoT38IDGyw5GVhCI1U1F95TdZ0xa4fiKom6JNdK81rC69ONhyu4Bw==" length="12386174"/>
+    </item>
+  </channel>
+</rss>

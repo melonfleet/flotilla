@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — fleet dashboard mockup</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.7.0/tabler-icons.min.css">
+<style>
+  :root {
+    --surface-2:#ffffff; --surface-1:#f7f6f2; --surface-0:#f1efe8;
+    --border:rgba(0,0,0,0.10); --border-strong:rgba(0,0,0,0.18);
+    --text-primary:#1a1a18; --text-secondary:#5f5e5a; --text-muted:#888780;
+    /* watermelon: pink = brand/selection, green = healthy/running */
+    --text-accent:#c2185b; --bg-accent:#ffe3ea;
+    --text-success:#2e7d32; --bg-success:#e8f5e9;
+    --flesh:#fc4a6b; --rind:#1b5e20; --online:#43a047; --radius:8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-2:#2c2c2a; --surface-1:#232321; --surface-0:#1a1a18;
+      --border:rgba(255,255,255,0.12); --border-strong:rgba(255,255,255,0.20);
+      --text-primary:#f1efe8; --text-secondary:#b4b2a9; --text-muted:#888780;
+      --text-accent:#ff8aa3; --bg-accent:#5a1330;
+      --text-success:#9ccc9e; --bg-success:#1b3d1d;
+    }
+  }
+  body { background:var(--surface-0); color:var(--text-primary);
+         font-family:-apple-system,BlinkMacSystemFont,"SF Pro",Segoe UI,sans-serif;
+         margin:0; padding:28px; -webkit-font-smoothing:antialiased; }
+  .win { max-width:720px; margin:0 auto; background:var(--surface-1);
+         border-radius:12px; padding:10px; border:0.5px solid var(--border); }
+  .dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
+  .row { display:flex; align-items:center; gap:7px; padding:6px 8px; border-radius:var(--radius); }
+  .card { background:var(--surface-2); border:0.5px solid var(--border);
+          border-radius:12px; padding:11px 12px; }
+  .badge-ok { font-size:11px; color:var(--text-success); background:var(--bg-success);
+              padding:2px 7px; border-radius:var(--radius); }
+  .badge-off { font-size:11px; color:var(--text-secondary); background:var(--surface-1);
+               padding:2px 7px; border-radius:var(--radius); }
+</style>
+</head>
+<body>
+<div class="win">
+  <div style="display:flex; align-items:center; gap:8px; padding:0 6px 10px; border-bottom:0.5px solid var(--border);">
+    <span class="dot" style="width:11px;height:11px;background:#F09595;"></span>
+    <span class="dot" style="width:11px;height:11px;background:#EF9F27;"></span>
+    <span class="dot" style="width:11px;height:11px;background:#97C459;"></span>
+    <span style="margin-left:8px; font-size:13px; font-weight:500;"><i class="ti ti-sailboat" style="font-size:15px;vertical-align:-2px;margin-right:5px;color:var(--flesh);"></i>Flotilla</span>
+    <span style="margin-left:auto; display:flex; align-items:center; gap:10px;">
+      <span style="font-size:12px; color:var(--text-muted);"><i class="ti ti-search" style="font-size:14px;vertical-align:-2px;"></i> Search&nbsp;&nbsp;⌘K</span>
+      <span style="font-size:12px; color:var(--text-success); background:var(--bg-success); padding:3px 9px; border-radius:var(--radius);"><i class="ti ti-circle-check" style="font-size:13px;vertical-align:-2px;"></i> 6 hosts online</span>
+    </span>
+  </div>
+
+  <div style="display:grid; grid-template-columns:168px minmax(0,1fr); gap:0;">
+    <div style="border-right:0.5px solid var(--border); padding:12px 10px;">
+      <p style="font-size:11px; color:var(--text-muted); margin:0 0 8px 4px;">Fleet</p>
+      <div class="row" style="background:var(--bg-accent);">
+        <span class="dot" style="background:var(--online);"></span>
+        <span style="font-size:13px;font-weight:500;color:var(--text-accent);">All hosts</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--text-accent);">14</span>
+      </div>
+      <div class="row"><span class="dot" style="background:var(--online);"></span><span style="font-size:13px;">studio-01</span><span style="margin-left:auto;font-size:11px;color:var(--text-muted);">4</span></div>
+      <div class="row"><span class="dot" style="background:var(--online);"></span><span style="font-size:13px;">studio-02</span><span style="margin-left:auto;font-size:11px;color:var(--text-muted);">3</span></div>
+      <div class="row"><span class="dot" style="background:var(--online);"></span><span style="font-size:13px;">mini-01</span><span style="margin-left:auto;font-size:11px;color:var(--text-muted);">3</span></div>
+      <div class="row"><span class="dot" style="background:var(--online);"></span><span style="font-size:13px;">mini-02</span><span style="margin-left:auto;font-size:11px;color:var(--text-muted);">4</span></div>
+      <div class="row"><span class="dot" style="background:#B4B2A9;"></span><span style="font-size:13px;color:var(--text-muted);">mini-03</span><span style="margin-left:auto;font-size:11px;color:var(--text-muted);">—</span></div>
+      <p style="font-size:11px; color:var(--text-muted); margin:14px 0 8px 4px;">Mode</p>
+      <div style="font-size:12px;color:var(--text-secondary);padding:0 4px;line-height:1.9;">
+        <i class="ti ti-broadcast" style="font-size:14px;vertical-align:-2px;"></i> Client · this Mac<br>
+        <i class="ti ti-key" style="font-size:14px;vertical-align:-2px;color:var(--text-accent);"></i> mTLS · 6 keys
+      </div>
+    </div>
+
+    <div style="padding:12px 12px 14px;">
+      <div style="display:flex;align-items:center;margin-bottom:10px;">
+        <span style="font-size:13px;font-weight:500;">Containers</span>
+        <span style="margin-left:auto;display:flex;gap:6px;">
+          <span style="font-size:12px;color:var(--text-secondary);border:0.5px solid var(--border-strong);padding:3px 9px;border-radius:var(--radius);"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px;"></i> Run</span>
+          <span style="font-size:12px;color:var(--text-secondary);border:0.5px solid var(--border-strong);padding:3px 9px;border-radius:var(--radius);"><i class="ti ti-download" style="font-size:13px;vertical-align:-2px;"></i> Pull image</span>
+        </span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-database" style="font-size:16px;color:#2e7d32;"></i><span style="font-size:13px;font-weight:500;">postgres</span></div>
+          <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">studio-01 · pg:16</p>
+          <svg viewBox="0 0 120 24" style="width:100%;height:20px;" preserveAspectRatio="none"><polyline points="0,18 15,16 30,17 45,10 60,12 75,7 90,9 105,5 120,8" fill="none" stroke="#2e7d32" stroke-width="1.5"/></svg>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;"><span class="badge-ok">running</span><span style="font-size:11px;color:var(--text-muted);">12% · 340MB</span></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-world" style="font-size:16px;color:#fc4a6b;"></i><span style="font-size:13px;font-weight:500;">nginx</span></div>
+          <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">studio-01 · nginx:latest</p>
+          <svg viewBox="0 0 120 24" style="width:100%;height:20px;" preserveAspectRatio="none"><polyline points="0,20 15,19 30,20 45,18 60,19 75,17 90,19 105,18 120,20" fill="none" stroke="#fc4a6b" stroke-width="1.5"/></svg>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;"><span class="badge-ok">running</span><span style="font-size:11px;color:var(--text-muted);">3% · 64MB</span></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-flame" style="font-size:16px;color:#e63956;"></i><span style="font-size:13px;font-weight:500;">redis</span></div>
+          <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">mini-02 · redis:7</p>
+          <svg viewBox="0 0 120 24" style="width:100%;height:20px;" preserveAspectRatio="none"><polyline points="0,14 15,9 30,15 45,11 60,6 75,13 90,8 105,12 120,7" fill="none" stroke="#e63956" stroke-width="1.5"/></svg>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;"><span class="badge-ok">running</span><span style="font-size:11px;color:var(--text-muted);">8% · 110MB</span></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><i class="ti ti-box" style="font-size:16px;color:var(--text-muted);"></i><span style="font-size:13px;font-weight:500;color:var(--text-secondary);">build-runner</span></div>
+          <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">mini-02 · ubuntu:24.04</p>
+          <svg viewBox="0 0 120 24" style="width:100%;height:20px;" preserveAspectRatio="none"><polyline points="0,21 120,21" fill="none" stroke="#B4B2A9" stroke-width="1.5"/></svg>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;"><span class="badge-off">stopped</span><span style="font-size:11px;color:var(--text-muted);">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

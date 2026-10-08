@@ -1,0 +1,416 @@
+import SwiftUI
+import Foundation
+import FlotillaCore
+
+/// Creating a local Kubernetes cluster.
+///
+/// Embedded, with `FormHeader` and Save bottom-right, like every other form since 9 August.
+struct NewClusterView: View {
+    let model: AppModel
+    let dismiss: () -> Void
+    /// Set when a suggestion opened the form (Q28): its values fill the fields.
+    var prefill: ClusterSuggestion?
+
+    @State private var name = ""
+    @State private var limitResources = false
+    @State private var cpus = "2"
+    @State private var memory = "4G"
+    @State private var nodeImage = ""
+    @State private var autoRemove = false
+    @State private var creating = false
+    @State private var edits = FormEditTracker()
+
+    private var editSignature: String {
+        [name, "\(limitResources)", cpus, memory, nodeImage, "\(autoRemove)"]
+            .joined(separator: "\u{1}")
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FormHeader(title: "New Cluster", systemImage: "circle.hexagongrid",
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
+            Divider()
+            FormScaffold {
+                form
+            } preview: {
+                railPreview
+            }
+            Divider()
+            footer
+        }
+        .onAppear {
+            if let prefill {
+                name = ResourceSuggestions.uniqueName(prefill.baseName,
+                                                      taken: Set(model.clusters.map(\.name)))
+                limitResources = true
+                cpus = String(prefill.cpus)
+                memory = prefill.memory
+                nodeImage = prefill.nodeImage
+                autoRemove = prefill.disposable
+            }
+            edits.open(editSignature)
+        }
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            FormField("Name",
+                      help: FieldHelp(
+                          "What the cluster is called, here and in kubectl.",
+                          detail: "It becomes the kubectl context name, so `kubectl --context <name>` is how you reach it.",
+                          example: "dev",
+                          warning: "The CLI defaults this to `k8s-dev` when it is omitted. Flotilla always sends a name, because a default-named cluster is one you create twice by accident."),
+                      problem: nameProblem) {
+                TextField("dev", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+
+            FormSectionHeader(
+                title: "Resources",
+                note: "Left alone, the CLI decides — and its default is large.")
+
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("Set CPUs and memory", isOn: $limitResources)
+                // Measured, not guessed: a cluster created here with no resource flags came back
+                // with 3 CPUs and 16384 MB. That is a sixteen-gigabyte VM for a dev cluster, and
+                // worth knowing before you create two.
+                Text("A cluster created with neither came back with 3 CPUs and 16384 MB.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if limitResources {
+                FormField("CPUs",
+                          help: FieldHelp("Whole cores for the cluster's VM."),
+                          problem: cpusProblem,
+                          optional: true) {
+                    TextField("2", text: $cpus)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                }
+
+                FormField("Memory",
+                          help: FieldHelp("With a K, M or G suffix.", example: "4G"),
+                          problem: memoryProblem,
+                          optional: true) {
+                    TextField("4G", text: $memory)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+                }
+            }
+
+            FormSectionHeader(title: "Advanced")
+
+            FormField("Node image",
+                      help: FieldHelp(
+                          "The Kubernetes version, as a kind node image.",
+                          detail: "Left empty, the CLI uses its own digest-pinned default — which is how you get a reproducible version rather than whatever is newest. If you set one, it needs a tag: since container 1.5 the tag also picks the Kubernetes version, and an untagged or digest-only image is refused.",
+                          example: "docker.io/kindest/node:v1.35.5"),
+                      problem: nodeImageProblem,
+                      optional: true) {
+                TextField("kindest/node:v1.35.5", text: $nodeImage)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("Remove the cluster when it stops", isOn: $autoRemove)
+                Text("`--rm`. Useful for a throwaway cluster; wrong for one you mean to start again.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: Validation
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
+
+    private var nameProblem: String? {
+        guard !trimmedName.isEmpty else { return nil }
+        guard Allowlist.accepts(trimmedName, as: .identifier) else {
+            return "“\(trimmedName)” cannot be a cluster name. \(ValueShape.identifier.rule)"
+        }
+        if model.clusters.contains(where: { $0.node == trimmedName }) {
+            return "A cluster called “\(trimmedName)” already exists."
+        }
+        return nil
+    }
+
+    private var chosenCPUs: Int? {
+        guard limitResources else { return nil }
+        return Int(cpus.trimmingCharacters(in: .whitespaces))
+    }
+
+    private var chosenMemory: String? {
+        guard limitResources else { return nil }
+        let trimmed = memory.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var chosenNodeImage: String? {
+        let trimmed = nodeImage.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var cpusProblem: String? {
+        guard limitResources, !cpus.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return chosenCPUs == nil ? "Expected a whole number of cores." : nil
+    }
+
+    private var memoryProblem: String? {
+        guard let chosenMemory else { return nil }
+        return Allowlist.accepts(chosenMemory, as: .memorySize)
+            ? nil : "“\(chosenMemory)” is not a memory size. \(ValueShape.memorySize.rule)"
+    }
+
+    private var nodeImageProblem: String? {
+        guard let chosenNodeImage else { return nil }
+        // The same shape the allowlist checks `--node-image` against. Checking a looser one here
+        // let `kindest/node` pass the field while Create stayed disabled with nothing on screen
+        // saying why — the control that refuses without explaining itself.
+        guard Allowlist.accepts(chosenNodeImage, as: .imageReference) else {
+            return "“\(chosenNodeImage)” is not an image reference. \(ValueShape.imageReference.rule)"
+        }
+        return Allowlist.accepts(chosenNodeImage, as: .taggedImageReference)
+            ? nil : "“\(chosenNodeImage)” has no tag. \(ValueShape.taggedImageReference.rule)"
+    }
+
+    private var validation: Result<ValidatedCommand, AllowlistError> {
+        AppModel.createClusterValidation(name: trimmedName.isEmpty ? "placeholder" : trimmedName,
+                                         cpus: chosenCPUs, memory: chosenMemory,
+                                         nodeImage: chosenNodeImage, autoRemove: autoRemove)
+    }
+
+    private var canSubmit: Bool {
+        guard !trimmedName.isEmpty, nameProblem == nil, cpusProblem == nil,
+              memoryProblem == nil, nodeImageProblem == nil, !creating
+        else { return false }
+        if case .success = validation { return true }
+        return false
+    }
+
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            Text(trimmedName.isEmpty
+                 ? "Name the cluster to see the command."
+                 : AppModel.createClusterPreview(name: trimmedName, cpus: chosenCPUs,
+                                                 memory: chosenMemory, nodeImage: chosenNodeImage,
+                                                 autoRemove: autoRemove))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // The two things that surprise people, said before they happen rather than after.
+            Label("The first cluster downloads a node image of about a gigabyte and can take several minutes.",
+                  systemImage: "clock")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Label("Creating a cluster also writes ~/.kube/config. That is the CLI's own behaviour and it has no flag to prevent it.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.caption).foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if creating {
+                ProgressView().controlSize(.small)
+                Text("Creating… this pulls the node image and boots a VM.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Cancel", action: dismiss)
+            Button("Save") { Task { await create() } }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSubmit)
+        }
+        .padding(12)
+    }
+
+    private func create() async {
+        creating = true
+        defer { creating = false }
+        let succeeded = await model.createCluster(name: trimmedName, cpus: chosenCPUs,
+                                                  memory: chosenMemory,
+                                                  nodeImage: chosenNodeImage,
+                                                  autoRemove: autoRemove)
+        if succeeded { dismiss() }
+    }
+}
+
+/// Loading a local image into a cluster's containerd.
+///
+/// **An embedded screen, not a dialog.** It began as a `ModalCard` and that was simply the wrong
+/// shape: `CLAUDE.md`'s 9 August rule is that anything you fill in and save is a screen with
+/// `FormHeader` and Save bottom-right, and `ModalCard` is for things you acknowledge — About,
+/// the support bundle, a progress panel. A form in a dialog is the surface you leave a different
+/// way from every other form in the app, which is the cost that rule was written to stop paying.
+///
+/// **It picks from the images that exist.** The first version was a bare text field whose
+/// placeholder named `fleetcheck:1.0` — an image that had been deleted by the time anyone read
+/// it — so the app's own hint led to a failure, and the only way to succeed was to remember an
+/// exact reference. Flotilla knows every image on the Mac; asking the user to retype one from
+/// memory is what the Run form's "Use an existing volume" menu exists to avoid.
+///
+/// `k8s load-image` **cannot** pull: it copies from this Mac's image store. So a reference that
+/// is not in that store is refused here, where it costs a sentence, rather than by the CLI
+/// several seconds later.
+struct LoadImageView: View {
+    let model: AppModel
+    let cluster: K8sNode
+    let dismiss: () -> Void
+
+    @State private var reference = ""
+    @State private var loading = false
+    @State private var edits = FormEditTracker()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FormHeader(title: "Load an Image", systemImage: "square.and.arrow.down.on.square",
+                       hasUnsavedChanges: edits.isDirty(reference), onBack: dismiss)
+            Divider()
+            FormScaffold {
+                form
+            } preview: {
+                railPreview
+            }
+            Divider()
+            footer
+        }
+        .onAppear { edits.open(reference) }
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            FormSectionHeader(
+                title: "Into “\(cluster.node)”",
+                note: "Copies an image from this Mac into the cluster, so a pod can run it with no registry in between.")
+
+            FormField("Image reference",
+                      help: FieldHelp(
+                          "An image that already exists on this Mac.",
+                          detail: "This copies; it does not pull. Build or pull the image first, then load it.",
+                          example: placeholder),
+                      problem: problem) {
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField(placeholder, text: $reference)
+                        .textFieldStyle(.roundedBorder)
+                        .monospaced()
+                    imagePicker
+                }
+            }
+        }
+    }
+
+    /// The images on this Mac, as a menu.
+    ///
+    /// Hidden rather than disabled when there are none: an empty menu is a control that opens
+    /// onto nothing, and the field still takes a reference typed by hand.
+    @ViewBuilder
+    private var imagePicker: some View {
+        if !model.images.isEmpty {
+            Menu {
+                ForEach(model.images, id: \.id) { image in
+                    Button(image.reference) { reference = image.reference }
+                }
+            } label: {
+                Label("Choose from this Mac’s images", systemImage: "square.stack.3d.down.right")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            Text(trimmed.isEmpty
+                 ? "Choose an image to see the command."
+                 : "container k8s load-image --name \(cluster.node) \(trimmed)")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            FormSectionHeader(title: "Then run it")
+            Text("Kubernetes will try to fetch the image unless you tell it not to, and there is no registry here to fetch from:")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("kubectl --context \(cluster.node) run demo \\\n  --image=\(trimmed.isEmpty ? "<image>" : trimmed) \\\n  --image-pull-policy=Never")
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(9)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    /// A real image from this Mac, so following the hint cannot fail. Falls back to a shape
+    /// rather than a name when there is nothing to point at.
+    private var placeholder: String {
+        model.images.first?.reference ?? "name:tag"
+    }
+
+    private var trimmed: String { reference.trimmingCharacters(in: .whitespaces) }
+
+    private var problem: String? {
+        guard !trimmed.isEmpty else { return nil }
+        guard Allowlist.accepts(trimmed, as: .imageReference) else {
+            return "“\(trimmed)” is not an image reference. \(ValueShape.imageReference.rule)"
+        }
+        // Matched against what the Images table shows, which is the same store `load-image`
+        // reads. `container` records `nginx:alpine` as `docker.io/library/nginx:alpine`, so a
+        // bare name has to match on the tail as well or every short reference would be refused.
+        guard !isOnThisMac else { return nil }
+        return "No image called “\(trimmed)” on this Mac. Loading copies from here — pull or build it first."
+    }
+
+    private var isOnThisMac: Bool {
+        model.images.contains {
+            $0.reference == trimmed || $0.reference.hasSuffix("/\(trimmed)")
+        }
+    }
+
+    private var canLoad: Bool { !trimmed.isEmpty && problem == nil && !loading }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if loading {
+                ProgressView().controlSize(.small)
+                Text("Copying into the cluster…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Cancel", action: dismiss)
+            // "Load", not "Save", following `NewImageView`'s "Build"/"Pull": the convention is
+            // that the commit sits bottom-right, not that it is always called Save, and a form
+            // whose button names what it does is easier to be sure about before pressing it.
+            Button("Load") {
+                Task {
+                    loading = true
+                    await model.loadImage(trimmed, into: cluster)
+                    loading = false
+                    dismiss()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(!canLoad)
+        }
+        .padding(12)
+    }
+}

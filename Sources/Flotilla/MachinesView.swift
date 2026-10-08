@@ -1,0 +1,1005 @@
+import SwiftUI
+import FlotillaCore
+
+/// The Machines section: the Linux micro-VMs `container` runs containers inside.
+///
+/// Built to `research/MACHINES-SPEC.md`, and deliberately the **same shapes** as the containers
+/// side — the owner asked for that explicitly. `SectionToolbar` for the control band, an embedded
+/// detail screen with Back and a prev/next stepper, `ModalCard` for the create form, and the
+/// same table/row-action idiom. A machine is a different noun, not a different app.
+///
+/// Where it differs, it differs because machines *are* different:
+///
+/// - **Delete is louder.** A machine is the VM every container on this host runs inside, so
+///   deleting one destroys the substrate rather than one workload. The confirmation says so.
+/// - **The default machine is called out.** `machine set-default` decides where a bare
+///   `machine stop` or `machine inspect` lands, and I put the host into a no-default state
+///   earlier today simply by deleting a machine — a UI that hides that fact repeats it.
+/// - **Config changes need a restart**, which the form states rather than discovering.
+struct MachinesView: View {
+    let model: AppModel
+
+    /// Owned by `MainWindowView`, not here — see `MachinesUIState`. Presentation, filter,
+    /// search, sort and column visibility have to survive a trip to another section.
+    let ui: MachinesUIState
+
+    /// Icons rather than words, same as the containers switcher — the glyph reads faster and
+    /// the word survives as the tooltip and accessibility label.
+    enum Presentation: String, CaseIterable, Identifiable {
+        case list = "List"
+        case cards = "Cards"
+        var id: Self { self }
+        var systemImage: String {
+            switch self {
+            case .list: "list.bullet"
+            case .cards: "square.grid.2x2"
+            }
+        }
+    }
+
+    /// The tester compared these menus directly, so Machines uses the Containers vocabulary
+    /// rather than keeping an identical second list that can drift unnoticed.
+    typealias Filter = ContainersView.Filter
+
+    private static let columnSpecs: [(id: String, title: String)] = [
+        ("state", "State"),
+        ("tags", "Tags"),
+        ("cpus", "CPUs"),
+        ("memory", "Memory"),
+        ("disk", "Disk"),
+        ("ip", "IP"),
+        ("created", "Created"),
+    ]
+
+    @State private var showingColumns = false
+    @State private var showingFilter = false
+    @State private var selection = Set<ContainerMachine.ID>()
+    @State private var detailTarget: DetailTarget?
+    @State private var showingCreate = false
+    @State private var showingSuggestions = false
+    @State private var createPrefill: MachineSuggestion?
+    @State private var confirmingDelete: ContainerMachine?
+    @State private var confirmingBulkDelete = false
+
+    /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
+    /// bare `TagSubject` — see that type for why a subject is not `Identifiable`.
+    ///
+    /// Presented from the view, never from inside the menu: a `.sheet` attached within a `Menu`
+    /// never appears, because the menu is gone by the time the state changes.
+    @State private var tagSheet: TagSheetTarget?
+
+    /// `sheet(item:)` needs `Identifiable` and a bare `String` is not — same small wrapper the
+    /// containers screen uses, and keyed by **id** so the screen re-reads live state each pass
+    /// rather than showing a frozen copy.
+    /// A machine to show, and optionally **which tab to land on**.
+    ///
+    /// The tab used to travel through `model.lastMachineTab`, written by the menu and read by
+    /// `MachineDetailView.init`. That is a write-once side channel, and `@State` seeded in `init`
+    /// only takes effect when SwiftUI *installs* the view — so from a detail that was already on
+    /// screen (stepping between machines, or reopening one) the requested tab was silently
+    /// dropped and you stayed where you were. "Edit Settings…" appearing to do nothing is exactly
+    /// what that looks like. Carrying the intent in the navigation value instead means the
+    /// request cannot be lost between being made and being honoured.
+    private struct DetailTarget: Identifiable, Hashable {
+        let id: String
+        var tab: MachineDetailTab?
+    }
+
+    /// The tab a `requestDetail` asked for, resolved against **this** screen's own tab type.
+    ///
+    /// A title this screen does not have resolves to nil and the detail opens on its default tab,
+    /// which is the point of carrying a title rather than an index: a request naming a tab only
+    /// the other detail screen has can never land on an arbitrary third one.
+    private var requestedTab: MachineDetailTab? {
+        model.pendingDetailTab.flatMap(MachineDetailTab.init(rawValue:))
+    }
+
+    var body: some View {
+        Group {
+            // Create is a screen now, not a sheet — see `MachineFormView`. Checked before the
+            // detail so "New Machine" from inside a detail still lands somewhere sensible.
+            if showingCreate {
+                MachineFormView(model: model, prefill: createPrefill) {
+                    showingCreate = false
+                    createPrefill = nil
+                }
+            } else if showingSuggestions {
+                ResourceSuggestionsGallery(
+                    intro: "Machine images that boot on container 1.5 — each was booted and "
+                        + "logged in to before it was offered. Use one to open New Machine with "
+                        + "it filled in.",
+                    items: MachineSuggestion.catalogue,
+                    use: useSuggestion,
+                    dismiss: { showingSuggestions = false })
+            } else if let target = detailTarget {
+                detailScreen(target)
+            } else {
+                VStack(spacing: 0) {
+                    toolbar
+                    bulkActionBar
+                    Divider()
+                    content
+                }
+                // Without this the whole stack centres vertically whenever `content` is a
+                // `ContentUnavailableView` rather than a table, which floats the control band
+                // into the middle of the window. The toolbar is chrome; it stays at the top.
+                .frame(maxHeight: .infinity, alignment: .top)
+                // The strip needed `ActivityStrip`'s **empty** branch bounding before it could
+                // live here. This section had no events at all — `refreshMachines` recorded
+                // none until today — so it always took that branch, which had no height, grew
+                // the stack past the window, and scrolled the sidebar out of sight. Containers
+                // happened to have one event and took the bounded `ScrollView` branch, which is
+                // why only this section broke, and why removing the `ScrollView` then broke
+                // Containers too. One unbounded child explains all three observations.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    ActivityStrip(title: "Recent activity",
+                                  entries: activityEntries,
+                                  isExpanded: Binding(get: { ui.activityExpanded },
+                                                      set: { ui.activityExpanded = $0 }),
+                                  open: { detailTarget = DetailTarget(id: $0) })
+                }
+            }
+        }
+        .task { await model.refreshMachines() }
+        .sheet(item: $tagSheet) { target in
+            NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
+        }
+        // "Open in Flotilla" from the menu-bar popover names a subject, not just a section.
+        // One-shot: cleared on consumption so a rebuild does not reopen it.
+        .onChange(of: model.pendingDetailSubject) { _, subject in
+            // Only this section's own requests. See `AppModel.requestDetail`.
+            guard let subject, model.pendingDetailKind == .machine else { return }
+            detailTarget = DetailTarget(id: subject, tab: requestedTab)
+            model.clearPendingDetail()
+        }
+        .onAppear {
+            if let subject = model.pendingDetailSubject, model.pendingDetailKind == .machine {
+                detailTarget = DetailTarget(id: subject, tab: requestedTab)
+                model.clearPendingDetail()
+            }
+        }
+        // "New Machine…" from the menu-bar popover. One-shot: consumed and cleared, so the form
+        // does not reopen every time this view is rebuilt — the same shape as `pendingRunSheet`.
+        .onChange(of: model.pendingMachineForm) { _, requested in
+            if requested { showingCreate = true; model.pendingMachineForm = false }
+        }
+        .onAppear {
+            if model.pendingMachineForm { showingCreate = true; model.pendingMachineForm = false }
+        }
+        // File ▸ Suggestions ▸ Machines…. One-shot.
+        .onChange(of: model.pendingSuggestions) { _, section in
+            if section == .machines { model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true }
+        }
+        .onAppear {
+            if model.pendingSuggestions == .machines {
+                model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true
+            }
+        }
+        .alert("Action failed",
+               isPresented: Binding(get: { model.actionError != nil },
+                                    set: { if !$0 { model.clearActionError() } })) {
+            Button("OK") { model.clearActionError() }
+        } message: {
+            Text(model.actionError ?? "")
+        }
+        .confirmationDialog(
+            "Delete the machine “\(confirmingDelete?.id ?? "")”?",
+            isPresented: Binding(get: { confirmingDelete != nil },
+                                 set: { if !$0 { confirmingDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Machine", role: .destructive) {
+                if let machine = confirmingDelete {
+                    Task { await model.perform(.delete, on: machine) }
+                }
+                confirmingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { confirmingDelete = nil }
+        } message: {
+            Text(deleteWarning)
+        }
+        .confirmationDialog(
+            "Delete \(actionable.count) machine\(actionable.count == 1 ? "" : "s")?",
+            isPresented: $confirmingBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(actionable.count) Machine\(actionable.count == 1 ? "" : "s")",
+                   role: .destructive) {
+                Task { await model.performMachineBulk(.delete, on: actionable) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Deleting these virtual machines destroys anything stored in them. This cannot be undone.")
+        }
+    }
+
+    /// Every machine delete enters here. Machines ignored `confirmDestructiveActions` and always
+    /// confirmed, so switching the preference off did nothing on this screen.
+    ///
+    /// Worth stating what honouring it now means: with confirmations off, deleting a machine
+    /// destroys a VM and everything in it without a dialog. That is what the preference says it
+    /// does, on by default, and respecting a switch the user deliberately turned off is the point
+    /// of having one — but it is a real consequence, and the Settings summary now spells out that
+    /// machines are included rather than listing four kinds and covering three.
+    private func requestDelete(_ machine: ContainerMachine) {
+        if model.deletePolicy.requiresConfirmation(.single) {
+            confirmingDelete = machine
+        } else {
+            Task { await model.perform(.delete, on: machine) }
+        }
+    }
+
+    /// Names what is actually at stake — "are you sure?" makes you go back and check which row
+    /// you clicked. Extracted from the dialog because inlined it defeated the type-checker.
+    private var deleteWarning: String {
+        var text = "A machine is the virtual machine containers run inside. Deleting it destroys "
+            + "that VM and anything stored in it, and cannot be undone."
+        if confirmingDelete?.isDefault == true {
+            // I put this Mac into a no-default state earlier today simply by deleting a
+            // machine. A dialog that stays silent about it repeats the surprise.
+            text += "\n\nThis is also the default machine, so the host will be left without one "
+                + "until you set another."
+        }
+        return text
+    }
+
+    // MARK: List
+
+    /// The containers screen's control band, member for member and in the same order: view
+    /// switcher, columns, filter, search, updated stamp, then the create/refresh cluster.
+    ///
+    /// It used to be a bare `SectionToolbar` with only search and refresh, which made Machines
+    /// the one section where you could not switch to cards, filter by state, or choose columns.
+    /// A section that quietly offers less than its neighbours reads as unfinished rather than
+    /// as a deliberate simplification.
+    private func useSuggestion(_ suggestion: MachineSuggestion) {
+        createPrefill = suggestion
+        showingSuggestions = false
+        showingCreate = true
+    }
+
+    private var toolbar: some View {
+        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
+                       searchPrompt: "Search machines…",
+                       updated: model.machinesLastRefresh,
+                       leading: {
+            Toggle("", isOn: Binding(get: { allVisibleSelected },
+                                     set: { on in
+                                         if on { selection.formUnion(visibleIDs) }
+                                         else { selection.subtract(visibleIDs) }
+                                     }))
+                .labelsHidden()
+                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
+                .accessibilityLabel(allVisibleSelected ? "Deselect all machines" : "Select all machines")
+                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+
+            Picker("View", selection: Binding(get: { ui.presentation },
+                                              set: { ui.presentation = $0 })) {
+                ForEach(Presentation.allCases) { option in
+                    Label(option.rawValue, systemImage: option.systemImage)
+                        .labelStyle(.iconOnly)
+                        .accessibilityLabel("\(option.rawValue) view")
+                        .help("\(option.rawValue) view")
+                        .tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+
+            columnsButton
+                .disabled(ui.presentation != .list)     // cards have no columns to configure
+
+            filterButton
+        }, trailing: {
+            ToolbarIconMenu(systemImage: "plus", label: "Create a machine") {
+                Button("New Machine…") { createPrefill = nil; showingCreate = true }
+                Divider()
+                Button("Suggestions…") { showingSuggestions = true }
+            }
+            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh machines") {
+                Task { await model.refreshMachines() }
+            }
+        })
+    }
+
+    private var columnsButton: some View {
+        IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
+                         help: "Show or hide columns") { showingColumns.toggle() }
+        .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Self.columnSpecs, id: \.id) { spec in
+                    Toggle(spec.title, isOn: columnBinding(for: spec.id))
+                        .toggleStyle(.checkbox)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 2)
+                }
+                Divider().padding(.vertical, 6)
+                HStack {
+                    Button("Hide All") { setAllColumns(.hidden) }
+                    Spacer()
+                    Button("Show All") { setAllColumns(.visible) }
+                }
+                .controlSize(.small)
+                .padding(.horizontal, 12)
+            }
+            .padding(.vertical, 10)
+            .frame(width: 200)
+        }
+    }
+
+    /// `IconActionButton`, like every other icon control in the app — **not** a bare `Button`
+    /// with an `Image`, which is what this was. That is the difference the owner spotted: the shared
+    /// button carries the hover tint and the pressed scale, so a filter button that skipped it had
+    /// no shading while the columns button beside it did, on the same band. Same glyph, same
+    /// accent-when-active rule, same feedback, everywhere.
+    private var filterButton: some View {
+        IconActionButton(systemImage: "line.3.horizontal.decrease",
+                         label: "Filter by state",
+                         help: ui.filter == .all
+                             ? "Filter by state"
+                             : "Showing \(ui.filter.rawValue.lowercased()) only",
+                         active: ui.filter != .all) {
+            showingFilter.toggle()
+        }
+        .popover(isPresented: $showingFilter, arrowEdge: .bottom) {
+            Picker("Show", selection: Binding(get: { ui.filter }, set: { ui.filter = $0 })) {
+                ForEach(Filter.allCases) { option in
+                    Label(option.rawValue, systemImage: option.systemImage).tag(option)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .padding(14)
+        }
+    }
+
+    private func columnBinding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { ui.columnCustomization[visibility: id] != .hidden },
+            set: { ui.columnCustomization[visibility: id] = $0 ? .visible : .hidden }
+        )
+    }
+
+    private func setAllColumns(_ visibility: Visibility) {
+        for spec in Self.columnSpecs {
+            ui.columnCustomization[visibility: spec.id] = visibility
+        }
+    }
+
+    private var displayed: [ContainerMachine] {
+        var machines = model.machines
+
+        switch ui.filter {
+        case .all: break
+        case .running: machines = machines.filter { Self.isRunning($0) }
+        case .stopped: machines = machines.filter { !Self.isRunning($0) }
+        }
+
+        let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
+        if !query.isEmpty {
+            // Name **and** image, because a machine's name is often generated and the image is
+            // the thing you actually remember about it.
+        // **Tag names are searchable too, on every section.**
+        //
+        // This is how tags filter. The alternative was a tag entry in each section's filter
+        // control, which Volumes and Networks could take as a string id but Containers and
+        // Machines could not without widening their typed `Filter` enums — and a tag filter that
+        // exists on two sections out of five is the asymmetry this app keeps being asked to
+        // remove. Searching the name reaches every section through one line each, works exactly
+        // the same way everywhere, and composes with whatever filter is already on.
+            machines = machines.filter {
+                $0.id.lowercased().contains(query)
+                || ($0.image?.reference.lowercased().contains(query) ?? false)
+                || model.tags.tags(on: .machine, $0.id)
+                    .contains { $0.name.lowercased().contains(query) }
+            }
+        }
+
+        return machines.sorted(using: ui.sortOrder)
+    }
+
+    private var visibleIDs: Set<ContainerMachine.ID> { Set(displayed.map(\.id)) }
+
+    /// A retained table selection can include rows hidden by a later filter change, so bulk
+    /// actions only touch ids the user can still see when they press the button.
+    private var actionable: Set<ContainerMachine.ID> { selection.intersection(visibleIDs) }
+
+    private func selectionToggle(for id: ContainerMachine.ID) -> some View {
+        let isOn = Binding<Bool>(
+            get: { selection.contains(id) },
+            set: { on in
+                if on { selection.insert(id) } else { selection.remove(id) }
+            })
+        return Toggle("", isOn: isOn)
+            .labelsHidden()
+            .accessibilityLabel("Select \(id)")
+            .help("Select \(id)")
+    }
+
+    private var allVisibleSelected: Bool {
+        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
+    }
+
+    private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .machine) }
+
+
+    /// The selected rows as tag subjects, in the table's own order.
+    ///
+    /// Built from `actionable`, not from `selection`: filtering does not clear a table's
+    /// selection, so a row you selected and then filtered away is still in the set — and tagging
+    /// something the user cannot see is the same mistake the bulk delete bars guard against.
+    private var selectedTagSubjects: [TagSubject] {
+        actionable.sorted().map { TagSubject(kind: .machine, id: $0) }
+    }
+
+    @ViewBuilder
+    private var bulkActionBar: some View {
+        // One selected row already has the same controls in its Actions column; this band earns
+        // the extra space only when it can do something a row control cannot.
+        if actionable.count > 1 {
+            HStack(spacing: 12) {
+                Text("\(actionable.count) selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                // Tags first in the cluster, before the lifecycle controls, and separated by a
+                // divider: it is the one action here that changes nothing about what the
+                // selection *is*. Same menu the row offers, asking the three-state question a
+                // multi-row selection actually poses — see `BulkTagMenu`.
+                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+                    tagSheet = TagSheetTarget(selectedTagSubjects)
+                }
+                Divider().frame(height: 14)
+                iconButton("play.fill", "Start \(actionable.count) machines", busy: selectionBusy) {
+                    Task { await model.performMachineBulk(.start, on: actionable) }
+                }
+                iconButton("stop.fill", "Stop \(actionable.count) machines", busy: selectionBusy) {
+                    Task { await model.performMachineBulk(.stop, on: actionable) }
+                }
+                iconButton("trash", "Delete \(actionable.count) machines",
+                           busy: selectionBusy, destructive: true) {
+                    confirmingBulkDelete = true
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.3))
+        }
+    }
+
+    /// Machine transitions, newest first. `AppModelMachines.recordMachineTransitions` fills
+    /// this; before it existed a machine restart left no trace anywhere in the app.
+    private var activityEntries: [ActivityStrip.Entry] {
+        model.machines
+            .flatMap { machine in
+                model.events(for: machine.id, kind: .machine).map {
+                    ActivityStrip.Entry(id: $0.id, subject: machine.id, event: $0)
+                }
+            }
+            .sorted { $0.event.date > $1.event.date }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.machinesState {
+        case .idle, .loading where model.machines.isEmpty:
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        case .unavailable(let reason), .failed(let reason):
+            // Never render a failed load as an empty list — that would look like a machine-less
+            // Mac, which is the offline-detection mistake this project already made once.
+            ContentUnavailableView("Can't list machines",
+                                   systemImage: "exclamationmark.triangle",
+                                   description: Text(reason))
+
+        case .loaded where model.machines.isEmpty:
+            ContentUnavailableView {
+                Label("No machines", systemImage: "server.rack")
+            } description: {
+                // `ubuntu:24.04` used to be the second example here. It does not boot as a
+                // machine — see `MachineCreateSheet.suggestions`. Naming an image that fails is
+                // worse than naming none.
+                Text(LocalizedStringKey("Containers run inside a Linux virtual machine. "
+                     + "`container` creates one on demand, and you can also create and size them "
+                     + "yourself — a machine is built from a container image, such as "
+                     + "`alpine:3.22`, rather than an installer disc."))
+            } actions: {
+                VStack(spacing: 14) {
+                    Button("Create a machine…") { createPrefill = nil; showingCreate = true }
+                        .buttonStyle(.borderedProminent)
+                    SuggestionQuickPicks(
+                        picks: MachineSuggestion.catalogue.map { suggestion in
+                            (suggestion.title, { useSuggestion(suggestion) })
+                        },
+                        more: { showingSuggestions = true })
+                }
+            }
+
+        // A filter that matches nothing is not the same as having no machines, and must not
+        // render as the "No machines" onboarding — that would invite you to create a second
+        // machine you already have.
+        //
+        // The `where` is repeated on **both** patterns deliberately. Written as
+        // `case .loaded, .loading where displayed.isEmpty` the condition binds only to the last
+        // pattern, so `.loaded` matched unconditionally and the screen said "No matching
+        // machines" while two machines sat in the model. Swift accepts that silently.
+        case .loaded where displayed.isEmpty, .loading where displayed.isEmpty:
+            ContentUnavailableView {
+                Label("No matching machines", systemImage: "line.3.horizontal.decrease")
+            } description: {
+                Text(ui.filter == .all
+                     ? "No machine matches “\(ui.search)”."
+                     : "No \(ui.filter.rawValue.lowercased()) machine matches the current filter.")
+            } actions: {
+                Button("Clear filters") { ui.search = ""; ui.filter = .all }
+            }
+
+        default:
+            switch ui.presentation {
+            case .list: table
+            case .cards: cards
+            }
+        }
+    }
+
+    /// The cards presentation. Same rule the containers cards follow: **identical capabilities**
+    /// to the row — name is the link, the overflow menu and the bin are both present. A toggle
+    /// that changes what you can do is a trap, and losing the copy menu here was a bug once.
+    private var cards: some View {
+        ResourceCardGrid {
+            ForEach(displayed) { machine in
+                machineCard(machine)
+                    .contextMenu { machineMenu(for: machine) }
+            }
+        }
+    }
+
+    private func machineCard(_ machine: ContainerMachine) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle().fill(Self.stateColor(machine)).frame(width: 7, height: 7)
+                Button(machine.id) { detailTarget = DetailTarget(id: machine.id) }
+                    .buttonStyle(.link)
+                    .foregroundStyle(Theme.link)
+                    .lineLimit(1)
+                    .help("Open \(machine.id)")
+                if machine.isDefault == true {
+                    // The same grey badge every other card uses ("default" on a registry,
+                    // "built-in" on a network). It was the accent purple here alone.
+                    Text("default")
+                        .font(.caption2)
+                        .fixedSize()
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(.quaternary, in: Capsule())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Text(machine.status.capitalized)
+                .font(.caption).foregroundStyle(.secondary)
+
+            // Tags, as the table row already showed them and every other card does. The row is
+            // kept when empty so both machines' fields sit on the same line.
+            let tags = model.tags.tags(on: .machine, machine.id)
+            if tags.isEmpty {
+                TagPillRow(tags: [CardSurface.placeholderTag], limit: 1).hidden()
+            } else {
+                TagPillRow(tags: tags, limit: 4)
+            }
+
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
+                GridRow {
+                    Text("CPUs").font(.caption2).foregroundStyle(.tertiary)
+                    Text("\(machine.cpus)").font(.caption).monospacedDigit()
+                }
+                GridRow {
+                    Text("Memory").font(.caption2).foregroundStyle(.tertiary)
+                    Text(Self.bytes(machine.memory)).font(.caption).monospacedDigit()
+                }
+                GridRow {
+                    Text("IP").font(.caption2).foregroundStyle(.tertiary)
+                    Text(machine.ipAddress ?? "—").font(.caption).monospacedDigit()
+                }
+            }
+
+            Divider()
+            rowActions(for: machine)
+        }
+        .cardSurface()
+    }
+
+    private var table: some View {
+        SwiftUI.Table(displayed,
+                      selection: $selection,
+                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
+                      columnCustomization: Binding(get: { ui.columnCustomization },
+                                                   set: { ui.columnCustomization = $0 })) {
+            TableColumn("") { machine in
+                selectionToggle(for: machine.id)
+            }
+            .width(min: 28, ideal: 30, max: 34)
+
+            // The dot alone, and no header text either — "State" is five times wider than the
+            // thing it labels, and the column exists to be scanned, not read.
+            //
+            // The state survives as the tooltip AND the accessibility label on every cell,
+            // because a colour is not readable to everyone and is meaningless to VoiceOver.
+            // The blank header is the one real cost: the sort control has no name. The
+            // columns popover still lists it as "State" (from `columnSpecs`), which is where
+            // anyone hunting for it will look.
+            TableColumn("", value: \.sortRank) { machine in
+                Circle()
+                    .fill(Self.stateColor(machine))
+                    .frame(width: 8, height: 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(machine.status.capitalized)
+                    .accessibilityLabel(machine.status.capitalized)
+            }
+            .width(min: 26, ideal: 28, max: 34)
+            .customizationID("state")
+
+            TableColumn("Name", value: \.id) { machine in
+                let selected = selection.contains(machine.id)
+                HStack(spacing: 6) {
+                    Button(machine.id) { detailTarget = DetailTarget(id: machine.id) }
+                        .buttonStyle(.link)
+                        .foregroundStyle(Theme.rowName(selected: selected))
+                        .lineLimit(1)
+                        .help("Open \(machine.id)")
+                    // Which machine a bare `machine stop` or `inspect` would hit. Not cosmetic.
+                    if machine.isDefault == true {
+                        Text("default")
+                            .font(.caption2)
+                            // Without this the badge is the first thing the column sacrifices
+                            // and it rendered as "defa…", which reads like a truncated name
+                            // rather than a label. A four-character mystery word is worse than
+                            // no badge; it has to be the last thing to give.
+                            .fixedSize()
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            // The badge is a pink pill on a pink fill when the row is selected —
+                            // the same disappearing act as the name, one size smaller.
+                            .background(selected ? AnyShapeStyle(.quaternary)
+                                                 : AnyShapeStyle(Theme.accentTint),
+                                        in: Capsule())
+                            .foregroundStyle(Theme.rowName(selected: selected))
+                    }
+                }
+            }
+            // Machine names run longer than container names — `container` generates them with a
+            // hash suffix — and at the default width "probe-alpine-latest" wrapped to two lines
+            // and pushed the rows out of alignment.
+            .width(min: 150, ideal: 210)
+            // No `customizationID` — the name is how you identify and open a row, so it is not
+            // something to hide. Same reason the containers table pins its Name column.
+
+            // Next to the name, the way Finder puts a tag beside a filename: the whole point is
+            // that you recognise the row without reading it, which only works if the pill is
+            // where your eye already is.
+            //
+            // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**, and a
+            // row's tags live in `TagStore`, not on the model — so a sortable column here would
+            // mean denormalising the user's tags onto the runtime's own types. Hideable instead,
+            // through the same column menu every other column uses.
+            TableColumn("Tags") { machine in
+                TagPillRow(tags: model.tags.tags(on: .machine, machine.id), compact: true)
+            }
+            .width(min: 60, ideal: 130)
+            .customizationID("tags")
+
+            TableColumn("CPUs", value: \.cpus) { machine in
+                Text("\(machine.cpus)").monospacedDigit().foregroundStyle(.secondary)
+            }
+            .width(min: 52, ideal: 60)
+            .customizationID("cpus")
+
+            TableColumn("Memory", value: \.memory) { machine in
+                Text(Self.bytes(machine.memory)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .width(min: 72, ideal: 84)
+            .customizationID("memory")
+
+            TableColumn("Disk", value: \.diskSize) { machine in
+                Text(Self.bytes(machine.diskSize)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .width(min: 72, ideal: 84)
+            .customizationID("disk")
+
+            TableColumn("IP", value: \.ipSortKey) { machine in
+                Text(machine.ipAddress ?? "—").foregroundStyle(.secondary)
+            }
+            .width(min: 96, ideal: 120)
+            .customizationID("ip")
+
+            TableColumn("Created", value: \.creationSortKey) { machine in
+                Text(RelativeDate.relative(machine.createdDate))
+                    .foregroundStyle(.secondary)
+                    .help(RelativeDate.absolute(machine.createdDate))
+            }
+            .width(min: 80, ideal: 100)
+            .customizationID("created")
+
+            TableColumn("Actions") { machine in
+                rowActions(for: machine)
+            }
+            .width(min: 108, ideal: 120)
+        }
+        // Bounds the table so it *fills* the space left over rather than dictating the stack's
+        // height. Without it, adding the activity strip below broke the whole window: a macOS
+        // `Table` reports a very large ideal height, so the VStack grew past the window and
+        // both columns scrolled — the sidebar ended up above the title bar and the table showed
+        // only its empty filler rows. The containers table already had this; the machines one
+        // did not, which is why only this section broke.
+        .frame(maxHeight: .infinity)
+        .contextMenu(forSelectionType: ContainerMachine.ID.self) { ids in
+            if let machine = model.machines.first(where: { ids.contains($0.id) }) {
+                machineMenu(for: machine)
+            }
+        } primaryAction: { ids in
+            if let id = ids.first { detailTarget = DetailTarget(id: id) }
+        }
+    }
+
+    /// Same shape as the containers row: start/stop swap, overflow menu, then delete behind a
+    /// divider — icon-only with the word kept as tooltip and accessibility label.
+    @ViewBuilder
+    private func rowActions(for machine: ContainerMachine) -> some View {
+        let busy = model.isBusy(machine.id, kind: .machine)
+        HStack(spacing: 2) {
+            if Self.isRunning(machine) {
+                iconButton("stop.fill", "Stop \(machine.id)", busy: busy) {
+                    Task { await model.perform(.stop, on: machine) }
+                }
+                iconButton("arrow.clockwise", "Restart \(machine.id)", busy: busy) {
+                    Task { await model.perform(.restart, on: machine) }
+                }
+            } else {
+                iconButton("play.fill", "Start \(machine.id)", busy: busy) {
+                    Task { await model.perform(.start, on: machine) }
+                }
+                // Placeholder so the Actions column keeps one width whichever state the row is
+                // in — the same trick the containers rows use, and for the same reason: buttons
+                // that shift sideways as machines start and stop are hard to hit.
+                iconButton("arrow.clockwise", "Restart \(machine.id)", busy: true) {}
+                    .hidden()
+            }
+
+            Menu {
+                machineMenu(for: machine)
+            } label: {
+                RowOverflowLabel()
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More actions for \(machine.id)")
+
+            Divider().frame(height: 14)
+
+            iconButton("trash", "Delete \(machine.id)", busy: busy, destructive: true) {
+                requestDelete(machine)
+            }
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private func machineMenu(for machine: ContainerMachine) -> some View {
+        let running = Self.isRunning(machine)
+        // Guarded item by item rather than by disabling the whole menu from the row, so the
+        // `⋯` button and a right-click render **identically**. The row used to wrap this in
+        // `.disabled(busy)` while the context menu had no guard at all, so right-click → Stop on
+        // a machine that was already stopping issued a second command — and the reads were
+        // greyed on one surface and live on the other.
+        let busy = model.isBusy(machine.id, kind: .machine)
+
+        Button("Details…") { detailTarget = DetailTarget(id: machine.id) }
+        // Edit opens the machine's own Settings tab rather than a second copy of the form.
+        // `machine set` only accepts cpus, memory and home-mount — an "edit" that showed the
+        // image and name as though they were changeable would be lying about what the CLI can
+        // do, and the Settings tab already states the restart requirement.
+        Button("Edit Settings…") { detailTarget = DetailTarget(id: machine.id, tab: .settings) }
+        Divider()
+        // Greyed out when it is already the default, rather than absent — same rule as the
+        // lifecycle items below.
+        Button("Set as Default") { Task { await model.perform(.setDefault, on: machine) } }
+            .disabled(machine.isDefault == true || busy)
+
+        // All three lifecycle items, always, with the ones that do not apply greyed out rather
+        // than absent — the rule the runtime band's menu follows, in the same order, and for the
+        // same reason: a menu whose items rearrange as state changes teaches nothing about what
+        // the section can do, while a greyed-out Stop says plainly that this machine is already
+        // stopped. The old shape showed Stop and Restart *or* Start, so the item under the
+        // pointer depended on the row.
+        Button("Start") { Task { await model.perform(.start, on: machine) } }
+            .disabled(running || busy)
+        Button("Stop") { Task { await model.perform(.stop, on: machine) } }
+            .disabled(!running || busy)
+        Button("Restart") { Task { await model.perform(.restart, on: machine) } }
+            .disabled(!running || busy)
+        Divider()
+        // Tags, in the same place on every row menu in the app: after the things you open and
+        // before Copy. Not a destructive action, not a read of the runtime — it changes how the
+        // row looks to you and nothing about what it is.
+        TagMenu(store: model.tags, subject: TagSubject(kind: .machine, id: machine.id)) {
+            tagSheet = TagSheetTarget(kind: .machine, id: machine.id)
+        }
+        Divider()
+        CopyMenu([
+            ("Name", machine.id),
+            ("IP Address", machine.ipAddress),
+            ("Image", machine.image?.reference),
+        ])
+        Divider()
+        Button("Delete…", role: .destructive) { requestDelete(machine) }
+            .disabled(busy)
+    }
+
+    private func iconButton(_ symbol: String, _ label: String, busy: Bool,
+                            destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        IconActionButton(systemImage: symbol, label: label, help: label,
+                         busy: busy, destructive: destructive, action: action)
+    }
+
+    // MARK: Detail
+
+    @ViewBuilder
+    private func detailScreen(_ target: DetailTarget) -> some View {
+        VStack(spacing: 0) {
+            if let machine = model.machines.first(where: { $0.id == target.id }) {
+                detailHeader(for: machine)
+                Divider()
+                MachineDetailView(model: model, machine: machine, requestedTab: target.tab)
+            } else {
+                detailHeader(for: nil)
+                Divider()
+                ContentUnavailableView(
+                    "Machine unavailable",
+                    systemImage: "questionmark.square.dashed",
+                    description: Text("“\(target.id)” is no longer on this Mac. It may have been deleted.")
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailHeader(for machine: ContainerMachine?) -> some View {
+        HStack(spacing: 10) {
+            IconActionButton(systemImage: "chevron.left", label: "Back to Machines",
+                             help: "Back to Machines") { detailTarget = nil }
+
+            if let machine {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 19)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(machine.id).font(.headline)
+                        HStack(spacing: 4) {
+                            Circle().fill(Self.stateColor(machine)).frame(width: 6, height: 6)
+                            Text(machine.status.capitalized).font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                        if machine.isDefault == true {
+                            Text("default").font(.caption2).foregroundStyle(Theme.accent)
+                        }
+                    }
+                    Text(subtitle(for: machine))
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            } else {
+                Text("Machine unavailable").font(.headline)
+            }
+
+            Spacer()
+            stepper
+            if let machine {
+                ActionCluster { rowActions(for: machine) }
+            }
+        }
+        // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    /// Steps through machines as currently shown, same rules as the containers stepper: no
+    /// wrapping, buttons disable at the ends, and the position is stated.
+    @ViewBuilder
+    private var stepper: some View {
+        let order = displayed
+        let index = order.firstIndex { $0.id == detailTarget?.id }
+        HStack(spacing: 2) {
+            Button {
+                if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) }
+            } label: { Image(systemName: "chevron.up") }
+                .disabled(index == nil || index == 0)
+                .help("Previous machine")
+                .accessibilityLabel("Previous machine")
+
+            Button {
+                if let index, index < order.count - 1 {
+                    detailTarget = DetailTarget(id: order[index + 1].id)
+                }
+            } label: { Image(systemName: "chevron.down") }
+                .disabled(index == nil || index == order.count - 1)
+                .help("Next machine")
+                .accessibilityLabel("Next machine")
+
+            if let index {
+                Text("\(index + 1) of \(order.count)")
+                    .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
+        }
+    }
+
+    private func subtitle(for machine: ContainerMachine) -> String {
+        var parts: [String] = []
+        if let image = machine.image?.reference {
+            parts.append(ContainerImage.shortReference(image))
+        }
+        parts.append("\(machine.cpus) CPU\(machine.cpus == 1 ? "" : "s")")
+        parts.append(Self.bytes(machine.memory))
+        if let ip = machine.ipAddress { parts.append(ip) }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: Helpers
+
+    /// `status`, not `state` — the machine payload spells it differently from `Container`, which
+    /// is the sort of detail the captured fixture settled and a guess would have got wrong.
+    static func isRunning(_ machine: ContainerMachine) -> Bool { machine.state.isRunning }
+
+    /// The dot's colour — and since the State column dropped its text on 9 August, the dot is
+    /// now the *whole* statement, so a wrong colour is a wrong claim rather than a redundant one.
+    ///
+    /// That change immediately exposed a bug the text had been covering: the old rule matched
+    /// `status.contains("stopp")`, which is true of **stopped** as well as *stopping*, so a
+    /// machine sitting quietly at rest was painted amber — "needs attention". Nobody noticed
+    /// while the word "Stopped" sat next to it explaining otherwise.
+    ///
+    /// Amber is for the transitional states only: something is moving and will settle. Stopped
+    /// is a resting state and takes the same neutral grey a stopped container does.
+    ///
+    /// The rule is now a `switch` over `MachineState` rather than substring tests, which is what
+    /// let the `stopp` bug exist at all — and which was also hiding a dead branch: the danger
+    /// arm tested for `error` and `fail`, and the runtime's machine vocabulary is
+    /// `starting`/`running`/`stopping`/`stopped`/`unknown` with no failure in it. `unknown`
+    /// takes the danger tint instead, being the one status that actually means something is
+    /// wrong. See `MachineState` and DECISIONS.md Q18.
+    static func stateColor(_ machine: ContainerMachine) -> Color {
+        switch machine.state {
+        case .running: Theme.online
+        case .starting, .stopping: Theme.warning
+        case .unknown: Theme.danger
+        case .stopped, .other: .secondary
+        }
+    }
+
+    static func bytes(_ value: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: value, countStyle: .memory)
+    }
+}
+
+extension ContainerMachine {
+    /// `ipAddress` is nil for a stopped machine — no lease, no address. Sorted to the end
+    /// (`"zzzz"` is lexicographically after any dotted-quad), matching `creationSortKey`'s
+    /// rule that "we don't know" is not the same as "first" or "zero".
+    /// Octets zero-padded to three digits, so `192.168.64.9` sorts before `192.168.64.10`.
+    /// A plain string sort puts `.10` first, which reads as a bug to anyone scanning an address
+    /// column — the same key `ContainersView.ContainerRow.ipSortKey` uses, for the same reason.
+    /// An absent address becomes `zzz…` so it sorts last rather than masquerading as `0.0.0.0`.
+    var ipSortKey: String {
+        guard let ipAddress else { return "zzz" }
+        return ipAddress.split(separator: ".")
+            .map { String(format: "%03d", Int($0) ?? 0) }
+            .joined(separator: ".")
+    }
+
+    /// Sortable form of `createdDate`, which the CLI gives as an ISO-8601 *string* that
+    /// happens to sort correctly lexicographically. Same shape as `Container.creationSortKey`
+    /// — an absent date sorts last rather than first, so a machine we couldn't date doesn't
+    /// masquerade as the oldest one on the host.
+    var creationSortKey: String { createdDate ?? "9999" }
+}

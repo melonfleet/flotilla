@@ -1,0 +1,16 @@
+OVERVIEW: Display resource usage statistics for containers
+
+USAGE: container stats [<containers> ...] [--format <format>] [--no-stream] [--debug]
+
+ARGUMENTS:
+  <containers>            Container ID or name (optional, shows all running
+                          containers if not specified)
+
+OPTIONS:
+  --format <format>       Format of the output (values: json, table, yaml,
+                          toml; default: table)
+  --no-stream             Disable streaming stats and only pull the first result
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

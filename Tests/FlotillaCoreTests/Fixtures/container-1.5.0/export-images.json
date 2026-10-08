@@ -1,0 +1,391 @@
+[
+  {
+    "configuration": {
+      "creationDate": "2026-09-17T21:31:32Z",
+      "descriptor": {
+        "digest": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "size": 10301
+      },
+      "name": "docker.io/library/postgres:17-alpine"
+    },
+    "id": "b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+    "variants": [
+      {
+        "config": {
+          "architecture": "arm64",
+          "config": {
+            "Cmd": [
+              "postgres"
+            ],
+            "Entrypoint": [
+              "docker-entrypoint.sh"
+            ],
+            "Env": [
+              "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+              "GOSU_VERSION=1.19",
+              "LANG=en_US.utf8",
+              "PG_MAJOR=17",
+              "PG_VERSION=17.11",
+              "PG_SHA256=dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979",
+              "DOCKER_PG_LLVM_DEPS=llvm21-dev \t\tclang21",
+              "PGDATA=/var/lib/postgresql/data"
+            ],
+            "StopSignal": "SIGINT",
+            "WorkingDir": "/"
+          },
+          "created": "2026-09-17T21:31:46.755310538Z",
+          "history": [
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T20:37:05.258369293Z",
+              "created_by": "ADD alpine-minirootfs-3.24.2-aarch64.tar.gz / # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T20:37:05.258369293Z",
+              "created_by": "CMD [\"/bin/sh\"]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:12.749854513Z",
+              "created_by": "RUN /bin/sh -c set -eux; \taddgroup -g 70 -S postgres; \tadduser -u 70 -S -D -G postgres -H -h /var/lib/postgresql -s /bin/sh postgres; \tinstall --verbose --directory --owner postgres --group postgres --mode 1777 /var/lib/postgresql # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:15.378390199Z",
+              "created_by": "ENV GOSU_VERSION=1.19",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:15.378390199Z",
+              "created_by": "RUN /bin/sh -c set -eux; \t\tapk add --no-cache --virtual .gosu-deps \t\tca-certificates \t\tdpkg \t\tgnupg \t; \t\tdpkgArch=\"$(dpkg --print-architecture | awk -F- '{ print $NF }')\"; \twget -O /usr/local/bin/gosu \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch\"; \twget -O /usr/local/bin/gosu.asc \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc\"; \t\texport GNUPGHOME=\"$(mktemp -d)\"; \tgpg --batch --keyserver hkps://keys.openpgp.org --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \tgpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" /usr/local/bin/gosu.asc; \t\tapk del --no-network .gosu-deps; \t\tchmod +x /usr/local/bin/gosu; \tgosu --version; \tgosu nobody true # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:15.378390199Z",
+              "created_by": "ENV LANG=en_US.utf8",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:15.467138029Z",
+              "created_by": "RUN /bin/sh -c mkdir /docker-entrypoint-initdb.d # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:15.467138029Z",
+              "created_by": "ENV PG_MAJOR=17",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:15.467138029Z",
+              "created_by": "ENV PG_VERSION=17.11",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:15.467138029Z",
+              "created_by": "ENV PG_SHA256=dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:29:15.467138029Z",
+              "created_by": "ENV DOCKER_PG_LLVM_DEPS=llvm21-dev \t\tclang21",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.421298768Z",
+              "created_by": "RUN /bin/sh -c set -eux; \t\twget -O postgresql.tar.bz2 \"https://ftp.postgresql.org/pub/source/v$PG_VERSION/postgresql-$PG_VERSION.tar.bz2\"; \techo \"$PG_SHA256 *postgresql.tar.bz2\" | sha256sum -c -; \tmkdir -p /usr/src/postgresql; \ttar \t\t--extract \t\t--file postgresql.tar.bz2 \t\t--directory /usr/src/postgresql \t\t--strip-components 1 \t; \trm postgresql.tar.bz2; \t\tapk add --no-cache --virtual .build-deps \t\t$DOCKER_PG_LLVM_DEPS \t\tbison \t\tcoreutils \t\tdpkg-dev dpkg \t\tflex \t\tg++ \t\tgcc \t\tkrb5-dev \t\tlibc-dev \t\tlibedit-dev \t\tlibxml2-dev \t\tlibxslt-dev \t\tlinux-headers \t\tmake \t\topenldap-dev \t\topenssl-dev \t\tperl-dev \t\tperl-ipc-run \t\tperl-utils \t\tpython3-dev \t\ttcl-dev \t\tutil-linux-dev \t\tzlib-dev \t\ticu-dev \t\tlz4-dev \t\tzstd-dev \t; \t\tcd /usr/src/postgresql; \tawk '$1 == \"#define\" && $2 == \"DEFAULT_PGSOCKET_DIR\" && $3 == \"\\\"/tmp\\\"\" { $3 = \"\\\"/var/run/postgresql\\\"\"; print; next } { print }' src/include/pg_config_manual.h > src/include/pg_config_manual.h.new; \tgrep '/var/run/postgresql' src/include/pg_config_manual.h.new; \tmv src/include/pg_config_manual.h.new src/include/pg_config_manual.h; \tgnuArch=\"$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)\"; \t\texport LLVM_CONFIG=\"/usr/lib/llvm21/bin/llvm-config\"; \texport CLANG=clang-21; \t\t./configure \t\t--enable-option-checking=fatal \t\t--build=\"$gnuArch\" \t\t--enable-integer-datetimes \t\t--enable-tap-tests \t\t--disable-rpath \t\t--with-uuid=e2fs \t\t--with-pgport=5432 \t\t--with-system-tzdata=/usr/share/zoneinfo \t\t--prefix=/usr/local \t\t--with-includes=/usr/local/include \t\t--with-libraries=/usr/local/lib \t\t--with-gssapi \t\t--with-icu \t\t--with-ldap \t\t--with-libxml \t\t--with-libxslt \t\t--with-llvm \t\t--with-lz4 \t\t--with-openssl \t\t--with-perl \t\t--with-python \t\t--with-tcl \t\t--with-zstd \t; \tmake -j \"$(nproc)\" world-bin; \tmake install-world-bin; \tmake -C contrib install; \t\trunDeps=\"$( \t\tscanelf --needed --nobanner --format '%n#p' --recursive /usr/local \t\t\t| tr ',' '\\n' \t\t\t| sort -u \t\t\t| awk 'system(\"[ -e /usr/local/lib/\" $1 \" ]\") == 0 { next } { print \"so:\" $1 }' \t\t\t| grep -v -e perl -e python -e tcl \t)\"; \tapk add --no-cache --virtual .postgresql-rundeps \t\t$runDeps \t\tbash \t\ttzdata \t\tzstd \t\ticu-data-full \t\t$([ \"$(apk --print-arch)\" != 'ppc64le' ] && echo 'nss_wrapper') \t; \tapk del --no-network .build-deps; \tcd /; \trm -rf \t\t/usr/src/postgresql \t\t/usr/local/share/doc \t\t/usr/local/share/man \t; \t\tpostgres --version # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.500570653Z",
+              "created_by": "RUN /bin/sh -c set -eux; \tcp -v /usr/local/share/postgresql/postgresql.conf.sample /usr/local/share/postgresql/postgresql.conf.sample.orig; \tsed -ri \"s!^#?(listen_addresses)\\s*=\\s*\\S+.*!\\1 = '*'!\" /usr/local/share/postgresql/postgresql.conf.sample; \tgrep -F \"listen_addresses = '*'\" /usr/local/share/postgresql/postgresql.conf.sample # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.583032319Z",
+              "created_by": "RUN /bin/sh -c install --verbose --directory --owner postgres --group postgres --mode 3777 /var/run/postgresql # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.583032319Z",
+              "created_by": "ENV PGDATA=/var/lib/postgresql/data",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.651047109Z",
+              "created_by": "RUN /bin/sh -c install --verbose --directory --owner postgres --group postgres --mode 1777 \"$PGDATA\" # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.651047109Z",
+              "created_by": "VOLUME [/var/lib/postgresql/data]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.679086809Z",
+              "created_by": "COPY docker-entrypoint.sh docker-ensure-initdb.sh /usr/local/bin/ # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.755310538Z",
+              "created_by": "RUN /bin/sh -c ln -sT docker-ensure-initdb.sh /usr/local/bin/docker-enforce-initdb.sh # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.755310538Z",
+              "created_by": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.755310538Z",
+              "created_by": "STOPSIGNAL SIGINT",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.755310538Z",
+              "created_by": "EXPOSE map[5432/tcp:{}]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T21:31:46.755310538Z",
+              "created_by": "CMD [\"postgres\"]",
+              "empty_layer": true
+            }
+          ],
+          "os": "linux",
+          "rootfs": {
+            "diff_ids": [
+              "sha256:1b349a3334531b575b01d409540dd8aca14ef29abddacd50f36643d7c949db4b",
+              "sha256:6105053010d7234e5da3c998271cd6a06c966bf02609780cd462ffbb8ccd4af2",
+              "sha256:d973feabfe24563d84362ea8e3cf5fa8d3f15d77c741c6cbae34cc19a0c99c89",
+              "sha256:59b3db3a6e9366134d5a638faf1bd73cd7ebf5f83fb66c756a2261a3185f480e",
+              "sha256:69f72ea6f65dbab3e3bdfd07322848577dce31912d95ea38e1c1a36d5a70e462",
+              "sha256:b9896a47aeba727e79e04481a1eb6e80227a071346553689b933153440d441ba",
+              "sha256:f069d78ee120649c0cb6b9a65598638a3d6236b884e65705a6d8fdbaea79e965",
+              "sha256:075b36f84691a142a8d182af28926d791b4a4d82b6e3fd390dc03961521e4c03",
+              "sha256:f769e9f71cef9122be783a92c89fd894e0c077069d841c27335d7ba996d771f9",
+              "sha256:08c3845a93301179ecebb8b32a7d0b99c0d955b6af8d4363f92287c6e999b8fa"
+            ],
+            "type": "layers"
+          },
+          "variant": "v8"
+        },
+        "digest": "sha256:0b2882c46a2b8d8e148431b333394348cf4d7f15aec6df7f17d51dc641e56cfa",
+        "platform": {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        "size": 115032142
+      }
+    ]
+  },
+  {
+    "configuration": {
+      "creationDate": "2026-10-02T18:15:29Z",
+      "descriptor": {
+        "digest": "sha256:d44355d3c2149dc580ce2cac735955d1c08d3d00882c30489c241aa51a5c10d9",
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "size": 8987
+      },
+      "name": "docker.io/library/caddy:2-alpine"
+    },
+    "id": "d44355d3c2149dc580ce2cac735955d1c08d3d00882c30489c241aa51a5c10d9",
+    "variants": [
+      {
+        "config": {
+          "architecture": "arm64",
+          "config": {
+            "Cmd": [
+              "caddy",
+              "run",
+              "--config",
+              "/etc/caddy/Caddyfile",
+              "--adapter",
+              "caddyfile"
+            ],
+            "Env": [
+              "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+              "CADDY_VERSION=v2.11.6",
+              "XDG_CONFIG_HOME=/config",
+              "XDG_DATA_HOME=/data"
+            ],
+            "Labels": {
+              "org.opencontainers.image.description": "a powerful, enterprise-ready, open source web server with automatic HTTPS written in Go",
+              "org.opencontainers.image.documentation": "https://caddyserver.com/docs",
+              "org.opencontainers.image.licenses": "Apache-2.0",
+              "org.opencontainers.image.source": "https://github.com/caddyserver/caddy-docker",
+              "org.opencontainers.image.title": "Caddy",
+              "org.opencontainers.image.url": "https://caddyserver.com",
+              "org.opencontainers.image.vendor": "Light Code Labs",
+              "org.opencontainers.image.version": "v2.11.6"
+            },
+            "WorkingDir": "/srv"
+          },
+          "created": "2026-10-02T18:16:43.001119451Z",
+          "history": [
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T20:37:18.289637635Z",
+              "created_by": "ADD alpine-minirootfs-3.23.6-aarch64.tar.gz / # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-09-17T20:37:18.289637635Z",
+              "created_by": "CMD [\"/bin/sh\"]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:41.785997782Z",
+              "created_by": "RUN /bin/sh -c apk add --no-cache \tca-certificates \tcurl \tlibcap \tmailcap # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.035386705Z",
+              "created_by": "RUN /bin/sh -c set -eux; \tmkdir -p \t\t/config/caddy \t\t/data/caddy \t\t/etc/caddy \t\t/usr/share/caddy \t; \tchmod 1777 /config/caddy /data/caddy; \twget -O /etc/caddy/Caddyfile \"https://github.com/caddyserver/dist/raw/33ae08ff08d168572df2956ed14fbc4949880d94/config/Caddyfile\"; \twget -O /usr/share/caddy/index.html \"https://github.com/caddyserver/dist/raw/33ae08ff08d168572df2956ed14fbc4949880d94/welcome/index.html\" # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "ENV CADDY_VERSION=v2.11.6",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "RUN /bin/sh -c set -eux; \tapkArch=\"$(apk --print-arch)\"; \tcase \"$apkArch\" in \t\tx86_64)  binArch='amd64'; checksum='422771007d505ea97efd1177a4905b2c1a471cd426668f2ace3bcda3d8e30b11f9b1610bfb02c6ad60f2a795f56124f2f5eec6409c17d5a0dd4c21a11375fb94' ;; \t\tarmhf)   binArch='armv6'; checksum='c120f071720e1b5581386e840dc7b78ddd5fbae12f36cbe01ee7f5af776e2fbc8b7f69e2731023efa1ed740aaf5309f66743f4be2fc386b8cea640c9ad6dd708' ;; \t\tarmv7)   binArch='armv7'; checksum='c9ed41fd5944604bc0ef184cdfbef47d9c2405869feadb1ae218d9c916a270e915c92aebcb98d6bcf49a5d66a3d47703103ee801d3d429a8694b086b975814d6' ;; \t\taarch64) binArch='arm64'; checksum='bd228ea44b6b95720a0c2d7b62886e99cb4a0b05356fe6e058c4a155618c913377b18e686839ae7fcc6c2c05aea2d549fa91f25aa3ef8d43cdead117259577ed' ;; \t\tppc64el|ppc64le) binArch='ppc64le'; checksum='acc236010e39f5ec0ff973eee4d6bfce4efa6c3c5bbd1de357e85ecd0aa0468998a17980efbefe7643b8d1368c5bd85a555524b0c12c3ba3c16d5f527294b68c' ;; \t\triscv64) binArch='riscv64'; checksum='56afa5cff92dc9c99f138c2cb8557a83b9049d2e09cbb36023c77b9b71e913a9acd8e74e48a7ce482b21dc2aba8d6b373e94bb24e86717d3e720b1cd3d13379c' ;; \t\ts390x)   binArch='s390x'; checksum='fd2db1d4f325102029ebc4b6ead4ddf669daf4efea2628dab7623b071a953f69b26806b441e6555494130d45dc54cbaec53c2f6b45a30fa7a66d4250925d8663' ;; \t\t*) echo >&2 \"error: unsupported architecture ($apkArch)\"; exit 1 ;;\tesac; \twget -O /tmp/caddy.tar.gz \"https://github.com/caddyserver/caddy/releases/download/v2.11.6/caddy_2.11.6_linux_${binArch}.tar.gz\"; \techo \"$checksum  /tmp/caddy.tar.gz\" | sha512sum -c; \ttar x -z -f /tmp/caddy.tar.gz -C /usr/bin caddy; \trm -f /tmp/caddy.tar.gz; \tsetcap cap_net_bind_service=+ep /usr/bin/caddy; \tchmod +x /usr/bin/caddy; \tcaddy version # buildkit"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "ENV XDG_CONFIG_HOME=/config",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "ENV XDG_DATA_HOME=/data",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "LABEL org.opencontainers.image.version=v2.11.6",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "LABEL org.opencontainers.image.title=Caddy",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "LABEL org.opencontainers.image.description=a powerful, enterprise-ready, open source web server with automatic HTTPS written in Go",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "LABEL org.opencontainers.image.url=https://caddyserver.com",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "LABEL org.opencontainers.image.documentation=https://caddyserver.com/docs",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "LABEL org.opencontainers.image.vendor=Light Code Labs",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "LABEL org.opencontainers.image.licenses=Apache-2.0",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "LABEL org.opencontainers.image.source=https://github.com/caddyserver/caddy-docker",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "EXPOSE map[80/tcp:{}]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "EXPOSE map[443/tcp:{}]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "EXPOSE map[443/udp:{}]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:42.972518058Z",
+              "created_by": "EXPOSE map[2019/tcp:{}]",
+              "empty_layer": true
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:43.001119451Z",
+              "created_by": "WORKDIR /srv"
+            },
+            {
+              "comment": "buildkit.dockerfile.v0",
+              "created": "2026-10-02T18:16:43.001119451Z",
+              "created_by": "CMD [\"caddy\" \"run\" \"--config\" \"/etc/caddy/Caddyfile\" \"--adapter\" \"caddyfile\"]",
+              "empty_layer": true
+            }
+          ],
+          "os": "linux",
+          "rootfs": {
+            "diff_ids": [
+              "sha256:18932007cc273c0541920263e57c02d40013c4730d7db35437a4ffcc31422eda",
+              "sha256:db41121999a6096cb5121ddc08319575a78c8c547285e1c0660f4eaec074a613",
+              "sha256:350815660e1b9538d9ab94fffedb5f300cba06b6f85e9c0ff21af3336bb0b46e",
+              "sha256:b148ad28d98ede04397c72bfcf72aee3beb3ff4eeecd2de9a2b795b853582afe",
+              "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+            ],
+            "type": "layers"
+          },
+          "variant": "v8"
+        },
+        "digest": "sha256:ed9acd2f75ce6cd125d05a1c9f625fdc47bc979d10a1da1ba9363d0d2c9f9f2c",
+        "platform": {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        "size": 23611085
+      }
+    ]
+  }
+]

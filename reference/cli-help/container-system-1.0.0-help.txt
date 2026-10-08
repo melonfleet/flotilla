@@ -1,0 +1,21 @@
+OVERVIEW: Manage system components
+
+USAGE: container system [--debug] <subcommand>
+
+OPTIONS:
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+
+SUBCOMMANDS:
+  df                      Show disk usage for images, containers, and volumes
+  dns                     Manage local DNS domains
+  kernel                  Manage the default kernel configuration
+  logs                    Fetch system logs for `container` services
+  property                Manage system property values
+  start                   Start `container` services
+  status                  Show the status of `container` services
+  stop                    Stop all `container` services
+  version                 Show version information
+
+  See 'container help system <subcommand>' for detailed help.

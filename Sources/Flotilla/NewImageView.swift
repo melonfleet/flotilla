@@ -1,0 +1,592 @@
+import SwiftUI
+import AppKit
+import FlotillaCore
+
+/// One form for getting an image onto this Mac, however you get it: **Pull** it from a registry
+/// or **Build** it from a Dockerfile.
+///
+/// They were two toolbar buttons and two screens — a hammer and a download arrow — which made
+/// "add an image" two places to look for one intention, in a section where every other action is
+/// a single control. Both forms are short: pull is two fields, build is five, and neither filled
+/// the column it was given.
+///
+/// **The mode picker is the first thing in the column, not a tab bar above the form.** It is a
+/// field like any other: it changes what the rest of the form asks for, which is exactly what
+/// the fields below it do to each other. Putting it in the column also means the rail follows it
+/// for free — `FormScaffold` collects help from whichever fields are on screen, so switching mode
+/// re-writes the guidance with no second mapping to maintain.
+struct NewImageView: View {
+    let model: AppModel
+    /// Which half to open on. The Images toolbar opens Pull; the menu bar's two commands and
+    /// `AppModel.pendingBuildForm` still name a specific one, and a merged form that ignored
+    /// that would answer "Build an image…" with a pull form.
+    let initialMode: Mode
+    let dismiss: () -> Void
+
+    enum Mode: String, CaseIterable, Identifiable {
+        case pull = "Pull", build = "Build"
+        var id: Self { self }
+        var symbol: String {
+            switch self {
+            case .pull: "arrow.down.circle"
+            case .build: "hammer"
+            }
+        }
+    }
+
+    @State private var mode: Mode
+
+    // Pull
+    /// Which Macs pull it (PLAN.md Phase C) — This Mac, or the host the list is filtered to.
+    @State private var targets: Set<HostRef>
+    @State private var reference = ""
+    /// Which registry an unqualified reference is completed against. Seeded from the user's
+    /// default on the Registries screen and changeable per pull, because "usually GHCR, this
+    /// once from Docker Hub" is an ordinary thing to want and changing a setting to do it is not.
+    @State private var registry = ""
+    /// HTTPS unless someone changes it, every time the form opens. Deliberately **not**
+    /// remembered: a persisted "use plaintext" would apply to the next pull from a public
+    /// registry too, and the one thing worse than no HTTP support is HTTP nobody asked for.
+    @State private var scheme = ContainerCLI.RegistryScheme.default
+
+    // Build
+    @State private var context: URL?
+    @State private var dockerfile = ""
+    @State private var tag = ""
+    @State private var target = ""
+    @State private var platform = ""
+    /// `--build-arg`, one `KEY=VALUE` per row.
+    ///
+    /// The allowlist has permitted these from the start; the form simply passed `[]`, so a
+    /// Dockerfile with an `ARG` could only ever be built with its defaults from inside Flotilla.
+    @State private var buildArgs: [String] = []
+    @State private var noCache = false
+    @State private var building = false
+
+    @State private var edits = FormEditTracker()
+
+    /// A reference to pull, from Browse Docker Hub — seeded with Docker Hub as its registry.
+    let initialReference: String?
+    /// Opens Images ▸ Browse Docker Hub. When set, the Docker Hub link below goes there rather than
+    /// to the website, so the two things called "Browse Docker Hub" do the same thing.
+    let onBrowseDockerHub: (() -> Void)?
+
+    init(model: AppModel, initialMode: Mode = .pull, initialHost: HostRef = .local,
+         initialReference: String? = nil, onBrowseDockerHub: (() -> Void)? = nil,
+         dismiss: @escaping () -> Void) {
+        self.model = model
+        self.initialMode = initialMode
+        self.initialReference = initialReference
+        self.onBrowseDockerHub = onBrowseDockerHub
+        self.dismiss = dismiss
+        _mode = State(initialValue: initialMode)
+        _targets = State(initialValue: [initialHost])
+    }
+
+    /// Every control on the form, **including the source picker**.
+    ///
+    /// Both halves, so switching source with something typed still counts as unsaved work — the
+    /// prompt is about the form, not about whichever half is showing.
+    ///
+    /// `mode` is in here on the owner's report, and it is a deliberate softening of
+    /// `FormHeader`'s rule that a prompt means "there is something to lose". Switching Pull to
+    /// Build loses nothing, so by that rule Back should close silently — and it did, which read
+    /// as the guard being broken on this form when every other form has one. A reader cannot be
+    /// expected to know which controls the guard counts, and an occasional extra click costs
+    /// less than a guard that looks unreliable. Opening the form and leaving without touching
+    /// anything still closes on one click, which is the case the rule was really written for.
+    private var editSignature: String {
+        [mode.rawValue, reference, scheme.rawValue, targets.map(\.token).sorted().joined(separator: ","),
+         context?.path ?? "", dockerfile, tag, target,
+         platform, "\(noCache)",
+         buildArgs.joined(separator: ",")].joined(separator: "\u{1}")
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FormHeader(title: "New Image", systemImage: "plus",
+                       hasUnsavedChanges: edits.isDirty(editSignature) && model.activePull == nil,
+                       onBack: dismiss)
+            Divider()
+            if let pull = model.activePull {
+                // The form *is* the progress screen while its pull runs. Dismissing on submit —
+                // which this did once — reported a forty-second network operation by showing
+                // nothing at all and then growing a row.
+                ScrollView {
+                    ImagePullStatus(pull: pull, compact: false)
+                        .padding(20)
+                        .frame(maxWidth: 640, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                FormScaffold {
+                    form
+                } preview: {
+                    railPreview
+                }
+                Divider()
+                footer
+            }
+        }
+        .onAppear {
+            edits.open(editSignature)
+            // Seeded once, on open. Held in `@State` rather than read live so changing it for
+            // one pull does not rewrite the user's default — "usually GHCR, this once from
+            // Docker Hub" is an ordinary thing to want.
+            if let initialReference, reference.isEmpty {
+                reference = initialReference
+                registry = DockerHub.registryDomain
+            }
+            if registry.isEmpty {
+                registry = model.settingsStore[SettingsKeys.defaultRegistryDomain]
+            }
+        }
+    }
+
+    // MARK: Fields
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            FormField("Source",
+                      help: FieldHelp(
+                          "Where the image comes from.",
+                          // Plain text: `FieldHelp.detail` is rendered as-is, so markdown
+                          // emphasis arrives as literal asterisks. Backticks are the one
+                          // convention the rail already reads as code by eye.
+                          detail: "Pull downloads one somebody else published. Build makes one "
+                              + "from a Dockerfile on this Mac.",
+                          example: "Pull for nginx or postgres\nBuild for your own project")) {
+                Picker("", selection: $mode) {
+                    ForEach(Mode.allCases) { option in
+                        Label(option.rawValue, systemImage: option.symbol).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            switch mode {
+            case .pull: pullFields
+            case .build: buildFields
+            }
+        }
+    }
+
+    /// The catalogue and the user's own additions — what the picker offers.
+    private var registries: [KnownRegistry] { model.registries.all }
+
+    private var selectedRegistry: KnownRegistry? {
+        registries.first { KnownRegistry.canonicalHost($0.id) == KnownRegistry.canonicalHost(registry) }
+    }
+
+    /// The reference that will actually be pulled. Shown in the preview and sent on submit, so
+    /// the two cannot disagree.
+    private var qualifiedReference: String {
+        ImageReferenceHost.qualify(reference, with: registry)
+    }
+
+    /// This Mac and every paired host, in the order the Host filters list them.
+    private var hostChoices: [(ref: HostRef, name: String)] {
+        [(HostRef.local, model.hostLabel)]
+            + model.hostMode.trustedHosts.map { (HostRef.peer($0.fingerprint), $0.displayName) }
+    }
+
+    /// The Macs that will actually pull, in that order. Over HTTP only This Mac: the wire
+    /// refuses `--scheme` (`wireForbiddenFlags`), because pulling over plaintext on another Mac
+    /// is that Mac's owner's decision, not one an admin makes for it.
+    private var pullTargets: [HostRef] {
+        hostChoices.map(\.ref).filter { targets.contains($0) && (scheme == .default || $0.isLocal) }
+    }
+
+    /// Each Mac's line in the Pull to table: whether it can be asked, and which `container`.
+    private func pullState(_ host: HostRef) -> (text: String, warning: Bool) {
+        if scheme == .http && !host.isLocal { return ("over HTTP only This Mac pulls", false) }
+        guard case .peer(let fingerprint) = host else {
+            return (model.localContainerVersion.map { "container \($0)" } ?? "this Mac", false)
+        }
+        let live = model.hostMode.live[fingerprint]
+        switch live?.state {
+        case .connected?:
+            let version = live?.containerVersion.map { "container \($0)" } ?? "connected"
+            return (version, model.containerSkew(host)?.mayRefuseCommands == true)
+        case .failed?: return ("not answering — the pull will fail there", true)
+        case .checking?, nil: return ("checking…", false)
+        }
+    }
+
+    @ViewBuilder
+    private var pullFields: some View {
+        if hostChoices.count > 1 {
+            FormField("Pull to",
+                      help: FieldHelp(
+                          "Which Macs pull the image.",
+                          detail: "Each Mac pulls from the registry itself, all at the same time, "
+                              + "and the progress panel reports each one. A Mac signed in to a "
+                              + "private registry pulls with its own sign-in; Flotilla sends none.",
+                          warning: scheme == .http
+                              ? "Over HTTP only This Mac pulls. Another Mac is never asked to pull over plaintext."
+                              : nil),
+                      problem: pullTargets.isEmpty ? "Choose at least one Mac." : nil) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HostChecklist(model: model, hosts: hostChoices.map(\.ref), selection: $targets,
+                                  isSelectable: { scheme == .default || $0.isLocal },
+                                  state: pullState)
+                    ContainerSkewNote(model: model, hosts: pullTargets)
+                }
+            }
+        }
+
+        FormField("Reference",
+                  help: FieldHelp(
+                      "What to pull, and where from.",
+                      detail: "A bare name is completed the way the CLI completes it — "
+                          + "`nginx` becomes `docker.io/library/nginx:latest`. Lead with a "
+                          + "registry host to pull from anywhere else.",
+                      example: "nginx\nnginx:alpine\nghcr.io/owner/app:1.2.3\nalpine@sha256:…",
+                      warning: "A tag can be moved by whoever published it. Pin a digest "
+                          + "(`@sha256:…`) when you need the same bytes every time."),
+                  problem: referenceProblem) {
+            TextField("nginx:alpine", text: $reference)
+                .textFieldStyle(.roundedBorder)
+                .monospaced()
+                .onSubmit(submit)
+        }
+
+        // An action, so it stays in the column rather than moving to the rail with the help.
+        //
+        // **It follows the registry picker now.** It was hardcoded to Docker Hub's search, which
+        // was wrong the moment you were pulling from anywhere else — and the owner asked for
+        // exactly that. Absent where the registry has no browse page: `registry.k8s.io` genuinely
+        // has none, and a link to nothing is worse than no link.
+        if let onBrowseDockerHub, selectedRegistry.map({ KnownRegistry.canonicalHost($0.id)
+            == KnownRegistry.canonicalHost(DockerHub.registryDomain) }) == true {
+            Button(action: onBrowseDockerHub) {
+                Label("Browse Docker Hub", systemImage: "magnifyingglass")
+                    .font(.callout)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.link)
+        } else if let url = selectedRegistry?.browseURL.flatMap(URL.init(string:)) {
+            Link(destination: url) {
+                Label("Browse \(selectedRegistry?.name ?? "registry")",
+                      systemImage: "arrow.up.right.square")
+                    .font(.callout)
+            }
+            // The system link colour, stated rather than inherited, so every link in the app
+            // names `Theme.link` and a future change to link colour is one line.
+            .foregroundStyle(Theme.link)
+        }
+
+        FormSectionHeader(title: "Registry",
+                          note: "Where it comes from, and how Flotilla reaches it.")
+
+        FormField("Pull from",
+                  help: FieldHelp(
+                      "Which registry completes a bare name.",
+                      detail: "A reference that already names a host ignores this — "
+                          + "`quay.io/prometheus/busybox` comes from Quay whatever is picked "
+                          + "here. Docker Hub is left to the CLI, which adds the `library/` "
+                          + "namespace that only it has.",
+                      example: "myapp:1.0 + GitHub\n  → ghcr.io/myapp:1.0")) {
+            Picker("", selection: $registry) {
+                ForEach(registries) { entry in
+                    Text(entry.name).tag(entry.id)
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 280)
+        }
+
+        FormField("Connect using",
+                  help: FieldHelp(
+                      "HTTPS, unless the registry has no TLS.",
+                      detail: "`container` 1.4.1 removed the old `auto` scheme that fell back "
+                          + "to plaintext on its own, so a development registry without TLS is "
+                          + "unreachable unless you ask for HTTP here.",
+                      example: "http is for localhost:5000\nand your own network — nothing\non the internet",
+                      warning: "It must be an anonymous registry: `container` refuses to send "
+                          + "credentials over HTTP even when you ask for it. The choice is not "
+                          + "remembered, so the next pull is HTTPS again.")) {
+            Picker("", selection: $scheme) {
+                Text("HTTPS").tag(ContainerCLI.RegistryScheme.https)
+                Text("HTTP").tag(ContainerCLI.RegistryScheme.http)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+        }
+
+        if scheme == .http {
+            // In the column as well as the rail: a warning that has to be read *before*
+            // pressing Pull cannot live only where the reader may not be looking.
+            Label("Image layers cross the network unencrypted.",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var buildFields: some View {
+        FormSectionHeader(title: "Context")
+
+        FormField("Folder",
+                  help: FieldHelp(
+                      "The build context available to Dockerfile instructions.",
+                      detail: "Everything in this directory is sent to the builder, and the build may read all of it.",
+                      warning: "Choosing the folder grants access to that host path for this build; Flotilla otherwise denies host paths.")) {
+            HStack(spacing: 8) {
+                Text(context?.path ?? "No folder chosen")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(context == nil ? .tertiary : .primary)
+                    .lineLimit(1).truncationMode(.head)
+                Spacer()
+                Button("Choose…") { chooseContext() }
+            }
+        }
+
+        FormField("Dockerfile",
+                  help: FieldHelp(
+                      "Overrides the Dockerfile inside the context folder.",
+                      detail: "Left empty, the Dockerfile in the context folder is used.",
+                      example: "docker/release.Dockerfile",
+                      warning: "Any path entered here must stay inside the selected context folder."),
+                  optional: true) {
+            TextField("<context>/Dockerfile", text: $dockerfile)
+                .textFieldStyle(.roundedBorder)
+                .monospaced()
+        }
+
+        FormSectionHeader(title: "Image")
+
+        // The default is worth stating precisely: `container build -t` documents it as a UUID,
+        // so an untagged build does not produce `<none>` you can find later — it produces a
+        // random name.
+        FormField("Tag",
+                  help: FieldHelp(
+                      "A name and tag for finding the built image later.",
+                      detail: "The `container build -t` format is `name:tag`.",
+                      example: "myapp:latest",
+                      warning: "Left empty, `container` uses a random UUID, so the image is not findable by name afterwards."),
+                  optional: true) {
+            TextField("myapp:latest", text: $tag)
+                .textFieldStyle(.roundedBorder)
+                .monospaced()
+        }
+
+        FormField("Target stage",
+                  help: FieldHelp(
+                      "Stops a multi-stage build at the named stage.",
+                      detail: "Use the name after `FROM … AS` in the Dockerfile. Left empty, the last stage is built.",
+                      example: "builder"),
+                  optional: true) {
+            TextField("build", text: $target)
+                .textFieldStyle(.roundedBorder)
+                .monospaced()
+        }
+
+        FormField("Platform",
+                  help: FieldHelp(
+                      "Chooses the operating system and architecture to build for.",
+                      detail: "Use `os/arch[/variant]`. This Mac builds `linux/arm64` unless told otherwise.",
+                      example: "linux/amd64"),
+                  optional: true) {
+            TextField("linux/arm64", text: $platform)
+                .textFieldStyle(.roundedBorder)
+                .monospaced()
+        }
+
+        FormField("Build arguments",
+                  help: FieldHelp(
+                      "Values for the Dockerfile's `ARG` instructions, one `KEY=VALUE` per row.",
+                      detail: "An `ARG` with a default builds without one; an `ARG` with no default fails until you supply it here.",
+                      example: "APP_VERSION=1.4.1\nGO_VERSION=1",
+                      warning: "These are visible in the image's own history, so they are the wrong place for a token or a password."),
+                  problem: buildArgsProblem,
+                  optional: true) {
+            KeyValueList(values: $buildArgs, limit: 24, placeholder: "APP_VERSION=1.4.1",
+                         itemLabel: "build argument")
+        }
+
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Ignore the build cache", isOn: $noCache)
+            Text("Re-runs every layer instead of reusing what has not changed.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: Rail and footer
+
+    /// Kept beside the active field because it is the answer to what the button will run, not
+    /// another field to discover at the end of the form.
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            Text(previewText)
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .foregroundStyle(previewStyle)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if mode == .pull, pullTargets != [.local], !pullTargets.isEmpty {
+                Label("Runs on " + pullTargets.map { model.hostMode.hostName($0, local: model.hostLabel) }
+                        .joined(separator: ", "),
+                      systemImage: "desktopcomputer")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if building {
+                ProgressView().controlSize(.small)
+                Text("Building… this can take minutes and pulls the base image.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Cancel", action: dismiss)
+            // Named for what it does rather than a generic Create: the two halves of this form
+            // do genuinely different things and the button is the last chance to say which.
+            Button(mode.rawValue, action: submit)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSubmit || building)
+        }
+        .padding(12)
+    }
+
+    // MARK: Validation and actions
+
+    private var trimmedReference: String { reference.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// **Everything downstream uses this, not `trimmedReference`.** The validation, the preview
+    /// and the command that actually runs must all be about the same string, or the form would
+    /// validate one reference, display a second and pull a third.
+    private var effectiveReference: String {
+        ImageReferenceHost.qualify(trimmedReference, with: registry)
+    }
+    private var trimmedDockerfile: String { dockerfile.trimmingCharacters(in: .whitespaces) }
+    private var trimmedTag: String { tag.trimmingCharacters(in: .whitespaces) }
+
+    /// Blank rows are dropped rather than refused: an empty row is one you added and have not
+    /// filled in yet, and disabling Build for it would make adding a row feel like an error.
+    private var trimmedBuildArgs: [String] {
+        buildArgs.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// The allowlist's refusal for whichever argument is malformed, named so the message points
+    /// at the row rather than at the command. `KEY=VALUE` is easy to get subtly wrong — a bare
+    /// `KEY`, a leading dash, a space around the `=` — and the whole-command preview turning red
+    /// with no explanation is the failure the `ValueShape.rule` note describes.
+    private var buildArgsProblem: String? {
+        for argument in trimmedBuildArgs where !Allowlist.accepts(argument, as: .envAssignment) {
+            return "“\(argument)” is not a build argument. \(ValueShape.envAssignment.rule)"
+        }
+        return nil
+    }
+
+    /// The allowlist's own refusal, so the form cannot accept something the table will reject.
+    private var referenceProblem: String? {
+        guard !trimmedReference.isEmpty else { return nil }
+        if case .failure(let error) = Allowlist.validate(
+            ContainerCLI.pullArguments(effectiveReference, scheme: scheme)) {
+            return error.description
+        }
+        return nil
+    }
+
+    private var buildPreview: Result<ValidatedCommand, AllowlistError> {
+        AppModel.buildPreview(context: context,
+                              dockerfile: trimmedDockerfile.isEmpty ? nil : trimmedDockerfile,
+                              tag: trimmedTag.isEmpty ? nil : trimmedTag,
+                              buildArgs: trimmedBuildArgs, labels: [], noCache: noCache,
+                              platform: platform.trimmingCharacters(in: .whitespaces),
+                              target: target.trimmingCharacters(in: .whitespaces))
+    }
+
+    private var canSubmit: Bool {
+        switch mode {
+        case .pull:
+            return !trimmedReference.isEmpty && referenceProblem == nil && model.activePull == nil
+                && !pullTargets.isEmpty
+        case .build:
+            if case .success = buildPreview { return true }
+            return false
+        }
+    }
+
+    /// Guidance before there is anything to run; the real refusal afterwards. Same rule as the
+    /// Run form: an untouched form is not a broken one.
+    private var previewText: String {
+        switch mode {
+        case .pull:
+            let argv = ContainerCLI.pullArguments(
+                trimmedReference.isEmpty ? "<reference>" : effectiveReference, scheme: scheme)
+            return (["container"] + argv).joined(separator: " ")
+        case .build:
+            guard context != nil else { return "Choose a context folder to build the command." }
+            switch buildPreview {
+            case .success(let command): return command.localPreview
+            case .failure(let error): return error.description
+            }
+        }
+    }
+
+    private var previewStyle: AnyShapeStyle {
+        switch mode {
+        case .pull:
+            return referenceProblem == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.danger)
+        case .build:
+            if context == nil || canSubmit { return AnyShapeStyle(.secondary) }
+            return AnyShapeStyle(Theme.danger)
+        }
+    }
+
+    private func chooseContext() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose the build context — the folder sent to the builder"
+        if panel.runModal() == .OK { context = panel.url }
+    }
+
+    private func submit() {
+        guard canSubmit, !building else { return }
+        switch mode {
+        case .pull:
+            // Returns to the list only on success, and only after `pullImage` has refreshed it,
+            // so the image that was just pulled is present the moment the list appears. On
+            // failure the form stays put with the reference intact: the likeliest cause is a
+            // typo in it.
+            let wanted = effectiveReference
+            let using = scheme
+            let hosts = pullTargets
+            Task {
+                if await model.pullImage(wanted, to: hosts, scheme: using) { dismiss() }
+            }
+        case .build:
+            guard let context else { return }
+            Task { await build(context: context) }
+        }
+    }
+
+    private func build(context: URL) async {
+        building = true
+        defer { building = false }
+        let succeeded = await model.buildImage(
+            context: context,
+            dockerfile: trimmedDockerfile.isEmpty ? nil : trimmedDockerfile,
+            tag: trimmedTag.isEmpty ? nil : trimmedTag,
+            buildArgs: trimmedBuildArgs, labels: [], noCache: noCache,
+            platform: platform.trimmingCharacters(in: .whitespaces),
+            target: target.trimmingCharacters(in: .whitespaces))
+        if succeeded { dismiss() }
+    }
+}

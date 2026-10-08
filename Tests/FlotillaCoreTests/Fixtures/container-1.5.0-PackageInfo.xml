@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<pkg-info overwrite-permissions="true" relocatable="false" identifier="com.apple.container-installer" postinstall-action="none" version="1.5.0" format-version="2" generator-version="InstallCmds-860.14 (24G84)" install-location="/usr/local" auth="root">
+    <payload numberOfFiles="34" installKBytes="433216"/>
+    <bundle-version/>
+    <upgrade-bundle/>
+    <update-bundle/>
+    <atomic-update-bundle/>
+    <strict-identifier/>
+    <relocate/>
+</pkg-info>

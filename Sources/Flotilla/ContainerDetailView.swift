@@ -1,0 +1,630 @@
+import SwiftUI
+import Foundation
+import AppKit
+import UniformTypeIdentifiers
+import FlotillaCore
+
+/// Detail sheet for one container: Overview, Processes, Logs, Terminal, Inspect, Configuration.
+///
+/// Logs is still a repeated bounded fetch (`cli.logs(id, lines:, bootLog:)`), not a
+/// subscription — even "Follow" is that fetch on a timer. Live *streaming* remains Phase 4.
+///
+/// **Terminal is Phase 4 scope pulled forward deliberately**, at the owner's request and after
+/// checking it was possible at all: `container exec` supports `-i/-t` and yields a real PTY.
+/// It is gated on `ExecPolicy.interactiveShell`, which the default allowlist does not grant.
+struct ContainerDetailView: View {
+    let model: AppModel
+    let container: Container
+    /// Which Mac it is on (PLAN.md Phase C). A paired host's container offers the tabs the wire can
+    /// back — Overview, Logs, Inspect, Processes — and not Terminal or Files, which are this Mac's.
+    let host: HostRef
+
+    typealias Tab = DetailTab
+
+    @State private var tab: Tab
+
+    /// Seeded from the model so reopening a container returns you to the tab you left it on,
+    /// and defaults to Overview the first time you open it this run. See `AppModel.lastDetailTab`.
+    /// A tab the caller asked for explicitly — "Logs" or "Terminal" from the row menu — which
+    /// wins over the remembered one. Nil means "wherever this container was left". Carried as a
+    /// parameter rather than through `lastDetailTab` for the reason `MachinesView.DetailTarget`
+    /// documents: a request routed through a dictionary the view reads once in `init` is dropped
+    /// whenever the view is already installed.
+    let requestedTab: DetailTab?
+
+    init(model: AppModel, container: Container, host: HostRef = .local, requestedTab: DetailTab? = nil) {
+        self.model = model
+        self.container = container
+        self.host = host
+        self.requestedTab = requestedTab
+        let wanted = requestedTab ?? model.lastDetailTab[host.rowID(container.id)] ?? .overview
+        _tab = State(initialValue: Self.tabs(for: host).contains(wanted) ? wanted : .overview)
+    }
+
+    static func tabs(for host: HostRef) -> [Tab] {
+        host.isLocal ? Tab.allCases : [.overview, .logs, .inspect, .processes]
+    }
+
+
+    var body: some View {
+        VStack(spacing: 0) {
+            tabBar
+
+            // Each tab fills the remaining height. Without this the `VStack` sizes itself to
+            // whichever tab is showing and centres the lot inside the fixed sheet frame, so a
+            // short tab — Logs with no output, most obviously — left a large empty band above
+            // the title and below the content.
+            Group {
+                switch tab {
+                case .overview: overview
+                case .processes: ProcessesTab(model: model, container: container, host: host)
+                case .logs: LogViewer(model: model, source: host.isLocal ? .container(container.id)
+                                                                          : .remoteContainer(container.id, host))
+                case .terminal: TerminalTab(model: model, container: container)
+                case .files: FilesTab(model: model, container: container)
+                case .inspect: InspectTab(model: model, container: container, host: host)
+                }
+            }
+            // `.topLeading`, not `.top`. SwiftUI's `.top` is *horizontally centred* and only
+            // vertically top — which is why the Inspect tab's JSON sat as a floating block in
+            // the middle of the pane instead of reading as a document from the top-left. It
+            // applies to every tab here, so the one word fixes all of them.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        // Remembered for this run only — see `AppModel.lastDetailTab` for why it is not
+        // persisted to disk.
+        .onChange(of: tab) { _, newTab in model.lastDetailTab[host.rowID(container.id)] = newTab }
+        .onChange(of: [container.id, requestedTab?.rawValue ?? ""]) { _, _ in
+            if let requestedTab { tab = requestedTab }
+        }
+        // No frame and no header of its own. `ContainersView.detailHeader` supplies the name,
+        // state, image, host and uptime above this, so a second header here would repeat them;
+        // and now that detail is embedded rather than sheeted, it should take whatever height
+        // the window has rather than pin itself to a fixed one.
+    }
+
+    /// The mockup's `.tabs` strip, transcribed from `assets/mac.css` rather than eyeballed.
+    ///
+    /// It replaces a centred segmented `Picker`, which was wrong twice over: no icons, and
+    /// centred when the mockup is **left-aligned**. Note this is a different shape from the
+    /// Settings strip on purpose — Settings uses chips with the icon stacked above the label,
+    /// these are underlined tabs with the icon beside it. Two different jobs, two different
+    /// controls, both from the same stylesheet.
+    ///
+    /// The selected tab is marked by a 2pt accent underline inset 8pt at each end, plus a
+    /// heavier weight and full-strength text — three signals, so it does not rely on colour
+    /// alone.
+    private var tabBar: some View {
+        let tabs = Self.tabs(for: host)
+        return DetailTabBar(items: tabs.enumerated().map { index, candidate in
+            .init(tab: candidate,
+                  title: candidate.rawValue,
+                  systemImage: candidate.systemImage,
+                  separatedFromPrevious: index > 0
+                      && tabs[index - 1].isShared && !candidate.isShared)
+        }, selection: $tab)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Detail sections")
+    }
+
+    /// The mockup's overview: a grid of cards rather than one long `Form` of label/value rows.
+    ///
+    /// The point is that everything is visible at once instead of scrolled through — state,
+    /// what it is using, how to reach it, and what it was built from, side by side.
+    ///
+    /// **What is deliberately absent matters as much as what is here.** The mockup also shows
+    /// Network I/O, Block I/O, MAC, MTU, IPv6, working directory, mounts, labels and a Recent
+    /// Events timeline. `StatsSampler` measures CPU and memory only, and the container model
+    /// carries none of the rest, so every one of those would be a plausible-looking number
+    /// with nothing behind it. Fabricated fixtures already cost this project a day; fabricated
+    /// *readouts* would be worse, because nothing would ever fail to reveal them. They arrive
+    /// when the data does.
+    private var overview: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                // Two fixed columns rather than `.adaptive`, so the four cards are the same
+                // width as each other instead of re-flowing to three-up or one-up as the
+                // window resizes. `minHeight` then squares them off vertically: without it a
+                // card with two rows sat half the height of its neighbour and the grid looked
+                // ragged. The cards still grow if their content needs it.
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                    GridItem(.flexible(), spacing: 12)],
+                          alignment: .leading, spacing: 12) {
+                    stateCard
+                    resourceCard
+                    networkCard
+                    imageCard
+                }
+                // Full width beneath the grid, as in the mockup — a timeline reads badly in a
+                // narrow column.
+                eventsCard
+            }
+            .padding(12)
+        }
+    }
+
+    private var stateCard: some View {
+        card("State") {
+            HStack(spacing: 6) {
+                Circle().fill(container.stateColor).frame(width: 7, height: 7)
+                Text(container.status.state.capitalized).font(.system(size: 13, weight: .medium))
+            }
+            detailRow("Started", RelativeDate.relative(container.status.startedDate, prefix: ""))
+            detailRow("Created", RelativeDate.relative(container.configuration.creationDate, prefix: ""))
+
+            // The mockup carries this note and it is true of Apple's runtime, not a limitation
+            // of ours: there is no `--restart` and no health check in `container run`, checked
+            // against the captured CLI help. Flotilla implements restart policy itself in a
+            // later phase, and until it does, saying nothing here would imply the container is
+            // being watched when it is not.
+            Text("Apple `container` has no native restart policy or health check.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+        }
+    }
+
+    private var resourceCard: some View {
+        card("Resource use") {
+            meter("CPU",
+                  value: model.cpuLabel(for: container.id),
+                  // Against one core, which is what a per-container percentage means here.
+                  fraction: (model.cpuPercent(for: container.id) ?? 0) / 100)
+            meter("Memory",
+                  value: model.memoryLabel(for: container.id),
+                  fraction: memoryFraction)
+
+            if let allocated = container.configuration.resources {
+                detailRow("Allocated", Self.allocationLabel(allocated))
+            }
+
+            // Real sampled history, or nothing. An empty sparkline drawn flat at zero would
+            // read as an idle container rather than an unmeasured one.
+            let history = model.cpuHistory(for: container.id)
+            if history.contains(where: { $0 != nil }) {
+                Sparkline(values: history, maximum: nil).frame(height: 30).padding(.top, 2)
+            }
+        }
+    }
+
+    private var networkCard: some View {
+        card("Ports & network") {
+            if container.publishedPorts.isEmpty {
+                detailRow("Ports", "None published")
+            } else {
+                ForEach(container.publishedPorts, id: \.self) { port in
+                    portRow(port)
+                }
+            }
+            Divider().padding(.vertical, 2)
+            detailRow("Network", container.status.networks?.first?.network ?? "—")
+            detailRow("Hostname", container.status.networks?.first?.hostname ?? "—")
+            detailRow("IPv4", container.ipv4 ?? "—", monospaced: true)
+        }
+    }
+
+    private var imageCard: some View {
+        card("Image") {
+            detailRow("Reference", container.configuration.image.reference)
+            if let digest = container.configuration.image.descriptor?.digest {
+                detailRow("Digest", digest, monospaced: true, truncateMiddle: true)
+            }
+            if let platform = container.configuration.platform {
+                detailRow("Platform", [platform.os, platform.architecture, platform.variant]
+                    .compactMap { $0 }.joined(separator: "/"))
+            }
+            if let size = container.configuration.image.descriptor?.size {
+                detailRow("Size", ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+            }
+        }
+    }
+
+    /// One published port, with Copy always and Open only where a browser could plausibly
+    /// help.
+    ///
+    /// The owner clicked Open on a container publishing 8080 and got "empty response". The link was
+    /// working correctly — the container was running `sleep` with nothing listening — but the
+    /// affordance was overpromising, and the mockup overpromises the same way by offering
+    /// "Open in browser" beside Postgres on 5432. **A published port is not necessarily HTTP.**
+    ///
+    /// So Copy is the primary action, because an address is useful whatever is behind it —
+    /// `psql`, `redis-cli`, a browser. Open stays for TCP, since a web server is the common
+    /// case and guessing wrong costs one browser tab, but its tooltip now says plainly what it
+    /// assumes instead of implying every port answers HTTP.
+    @ViewBuilder
+    private func portRow(_ port: Container.Configuration.PublishedPort) -> some View {
+        let address = "localhost:\(port.hostPort)"
+        HStack {
+            Text(port.displayText).font(.system(size: 12).monospacedDigit())
+            Spacer()
+            Button("Copy") { Clipboard.copy(address) }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(Theme.link)
+                .help("Copy \(address)")
+            // UDP is excluded outright: a browser has nothing to do with it.
+            if port.proto?.lowercased() != "udp",
+               let url = URL(string: "http://\(address)") {
+                Link("Open", destination: url)
+                    .font(.caption)
+                    // The system link colour, named explicitly like every other link.
+                    .foregroundStyle(Theme.link)
+                    .help("Open http://\(address) — assumes this container serves HTTP on "
+                          + "port \(port.containerPort). It will not respond if nothing is "
+                          + "listening there.")
+            }
+        }
+    }
+
+    /// The mockup's Recent Events, backed by what Flotilla actually watched happen.
+    ///
+    /// The mockup sources this "from local history (SwiftData)". There is no store, so rather
+    /// than fake a history this shows the transitions the poll loop observed **this run**, and
+    /// says exactly that. A timeline that starts at app launch but presents itself as complete
+    /// would be a lie of omission — the sort this project has already paid for once.
+    private var eventsCard: some View {
+        card("Recent events") {
+            let events = model.events(for: container.id, kind: .container, host: host)
+            if events.isEmpty {
+                Text("Nothing has changed since Flotilla started. State changes appear here as "
+                     + "they happen; history from before launch is not recorded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(events.prefix(8)) { event in
+                    HStack(spacing: 8) {
+                        Circle()
+                            // The fourth copy of the event colour rule, and the most wrong: it
+                            // painted **every** non-failure event green, so a container stopping
+                            // read as healthy here while the same event was grey in the activity
+                            // strip, the Activity table and the dashboard. One rule now.
+                            .fill(Theme.color(forEventEndingIn: event.to))
+                            .frame(width: 6, height: 6)
+                        Text(event.summary).font(.system(size: 12, weight: .medium))
+                        Text(event.detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(event.date.formatted(date: .omitted, time: .shortened))
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                if events.count > 8 {
+                    Text("+ \(events.count - 8) earlier this session")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    // MARK: Card building blocks
+
+    /// `DetailCard` — shared with the machine detail, which had a line-for-line copy of the
+    /// private builder this replaces. 128 rather than 148 because the heading now sits outside
+    /// the box and takes its height with it.
+    private func card<Content: View>(_ title: String,
+                                     @ViewBuilder content: @escaping () -> Content) -> some View {
+        // The events card is full width and its height should follow how much actually
+        // happened, so it opts out of the squared grid.
+        DetailCard(title: title, minHeight: title == "Recent events" ? nil : 128, content: content)
+    }
+
+    private func detailRow(_ label: String, _ value: String,
+                           monospaced: Bool = false, truncateMiddle: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.system(size: 12, design: monospaced ? .monospaced : .default))
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+                .truncationMode(truncateMiddle ? .middle : .tail)
+                .help(value)
+        }
+    }
+
+    /// A labelled bar. Not a `ProgressView`: this is a level, and the stock indicator styles it
+    /// as an operation in progress.
+    private func meter(_ label: String, value: String, fraction: Double) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
+                Spacer()
+                Text(value).font(.system(size: 12).monospacedDigit())
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule()
+                        .fill(fraction > 0.85 ? Theme.warning : Theme.online)
+                        .frame(width: max(0, min(1, fraction)) * geo.size.width)
+                }
+            }
+            .frame(height: 5)
+        }
+    }
+
+    /// Used over allocated, when both are known. Without an allocation there is no denominator
+    /// and the bar stays empty rather than inventing one.
+    private var memoryFraction: Double {
+        guard let used = model.memoryBytes(for: container.id),
+              let limit = container.configuration.resources?.memoryInBytes, limit > 0
+        else { return 0 }
+        return Double(used) / Double(limit)
+    }
+
+    private static func allocationLabel(_ resources: Container.Configuration.Resources) -> String {
+        var parts: [String] = []
+        if let cpus = resources.cpus { parts.append("\(cpus) CPU\(cpus == 1 ? "" : "s")") }
+        if let memory = resources.memoryInBytes {
+            parts.append(ByteCountFormatter.string(fromByteCount: memory, countStyle: .memory))
+        }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    /// `creationDate` is an ISO-8601 string from `container`, not a `Date` — parse it here
+    /// for display only.
+    private static func createdLabel(_ iso: String?) -> String {
+        guard let iso else { return "—" }
+        let strict = ISO8601DateFormatter()
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = strict.date(from: iso) ?? fractional.date(from: iso) else { return "—" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+/// Inspect tab: a compact typed summary plus the CLI's own inspect JSON, pretty-printed
+/// (`AppModel.fetchInspectJSON`, which wraps the core owner's `rawInspectJSON(_:)` +
+/// `JSONPrettyPrinter`), monospaced, natively selectable, and filterable by a cheap
+/// line-substring search.
+/// The container's Inspect tab — `InspectPane` with this subject's command and loader.
+///
+/// The body of this used to live here in full, and a line-for-line copy lived in
+/// `MachineDetailView`. See `InspectPane`.
+private struct InspectTab: View {
+    let model: AppModel
+    let container: Container
+    var host: HostRef = .local
+
+    var body: some View {
+        InspectPane(command: "container inspect \(container.id)",
+                    failureTitle: "Couldn't inspect this container",
+                    hostName: model.hostMode.hostName(host, local: "this Mac")) {
+            host.isLocal ? try await model.fetchInspectJSON(for: container.id)
+                         : try await model.fetchInspectJSON(for: container.id, host: host)
+        }
+    }
+}
+
+// MARK: - Processes
+
+/// One parsed `ps -o pid,comm,args` row.
+private struct ProcessRow: Identifiable {
+    let id: Int
+    let pid: String
+    let command: String
+    let arguments: String
+}
+
+/// Parses `container exec <id> -- ps -o pid,comm,args` output into rows, or reports that it
+/// couldn't so the caller can fall back to the raw text instead of guessing.
+///
+/// The real output repeats the header word `COMMAND` for both the `comm` and `args`
+/// columns:
+/// ```
+/// PID   COMMAND          COMMAND
+///     1 sh               sh -c while true; do i=0; ...
+///     5 ps               ps -o pid,comm,args
+/// ```
+/// Splitting on whitespace is only safe for the first two fields — PID and `comm` never
+/// contain spaces — everything after that is `args` verbatim, including its own internal
+/// spaces, and must be taken as one remainder rather than tokenized further.
+private enum ProcessParse {
+    /// `nil` means "couldn't make sense of this" — no header, or a body line that isn't at
+    /// least three whitespace-separated fields. An empty (non-nil) array means a real,
+    /// recognised header with no process rows under it, which is a different and equally
+    /// honest outcome ("no processes"), not a parse failure.
+    static func parse(_ raw: String) -> [ProcessRow]? {
+        let lines = raw.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        guard let header = lines.first, isHeader(header) else { return nil }
+        let body = lines.dropFirst()
+        guard !body.isEmpty else { return [] }
+
+        var rows: [ProcessRow] = []
+        rows.reserveCapacity(body.count)
+        for (index, line) in body.enumerated() {
+            guard let fields = splitFields(line) else { return nil }
+            rows.append(ProcessRow(id: index, pid: fields.pid, command: fields.command, arguments: fields.arguments))
+        }
+        return rows
+    }
+
+    private static func isHeader(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespaces).uppercased().hasPrefix("PID")
+    }
+
+    private static func splitFields(_ line: String) -> (pid: String, command: String, arguments: String)? {
+        func isSpace(_ c: Character) -> Bool { c == " " || c == "\t" }
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+
+        var remainder = Substring(trimmed)
+        guard let pidEnd = remainder.firstIndex(where: isSpace) else { return nil }
+        let pid = String(remainder[remainder.startIndex..<pidEnd])
+        remainder = remainder[pidEnd...].drop(while: isSpace)
+
+        // No third field means a process with a command but no arguments. Return it with
+        // empty arguments rather than nil: dropping the row would hide a running process,
+        // and a process list that silently omits entries is worse than an ugly one.
+        guard let commandEnd = remainder.firstIndex(where: isSpace) else {
+            return (pid, String(remainder), "")
+        }
+        let command = String(remainder[remainder.startIndex..<commandEnd])
+        remainder = remainder[commandEnd...].drop(while: isSpace)
+
+        return (pid, command, String(remainder))
+    }
+}
+
+/// What is actually running inside a running container — `container exec <id> ps -o
+/// pid,comm,args`. No `--`: the real CLI takes the separator as the program name and fails,
+/// so the allowlist accepts it on input and strips it from the executed argv (see
+/// `ContainerCLI.processes(_:)`). No auto-poll: this shells into the container on every
+/// call, which is not something to do on a timer without being asked — only the Logs tab's
+/// explicit "Follow" toggle earns that, and even that is a fixed-interval fetch, not a
+/// stream.
+private struct ProcessesTab: View {
+    let model: AppModel
+    let container: Container
+    var host: HostRef = .local
+
+    @State private var rows: [ProcessRow]?
+    @State private var rawOutput: String?
+    @State private var loading = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            controls
+            Divider()
+            content
+        }
+        .task {
+            guard container.isRunning else { return }
+            await load()
+        }
+    }
+
+    private var controls: some View {
+        HStack {
+            Spacer()
+            Button {
+                Task { await load() }
+            } label: {
+                Label("Reload", systemImage: "arrow.clockwise")
+            }
+            .disabled(loading || !container.isRunning)
+        }
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !container.isRunning {
+            ContentUnavailableView(
+                "Not running",
+                systemImage: "pause.circle",
+                description: Text("Only a running container has processes to list.")
+            )
+        } else if loading && rows == nil && rawOutput == nil {
+            ProgressView("Loading processes…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error {
+            ContentUnavailableView(
+                "Couldn't list processes",
+                systemImage: "exclamationmark.triangle",
+                description: Text(error)
+            )
+        } else if let rows {
+            if rows.isEmpty {
+                ContentUnavailableView(
+                    "No processes",
+                    systemImage: "list.bullet",
+                    description: Text("The container reported no running processes.")
+                )
+            } else {
+                Table(rows) {
+                    TableColumn("PID") { row in
+                        Text(row.pid).monospacedDigit()
+                    }
+                    .width(60)
+                    TableColumn("Command") { row in
+                        Text(row.command).font(.system(.body, design: .monospaced))
+                    }
+                    .width(160)
+                    TableColumn("Arguments") { row in
+                        Text(row.arguments).font(.system(.body, design: .monospaced))
+                    }
+                }
+            }
+        } else if let rawOutput {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Couldn't parse process output — showing it as text.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+                LineListView(lines: Self.rawLines(rawOutput), search: "")
+            }
+        }
+    }
+
+    private static func rawLines(_ text: String) -> [DisplayLine] {
+        text.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { index, line in
+            DisplayLine(id: index, text: String(line), color: .primary)
+        }
+    }
+
+    private func load() async {
+        loading = true
+        error = nil
+        do {
+            let raw = try await (host.isLocal ? model.fetchProcesses(for: container.id) : model.fetchProcesses(for: container.id, host: host))
+            if let parsed = ProcessParse.parse(raw) {
+                rows = parsed
+                rawOutput = nil
+            } else {
+                rows = nil
+                rawOutput = raw
+            }
+        } catch {
+            self.error = String(describing: error)
+        }
+        loading = false
+    }
+}
+
+// MARK: - Configuration (rendered YAML)
+/// Which pane of the container detail is showing.
+///
+/// Top-level rather than nested in the view because `AppModel` remembers the last one per
+/// container, and a model reaching into a view's private nested type would be backwards.
+enum DetailTab: String, CaseIterable, Identifiable {
+    // Overview, Terminal, Logs, Inspect are the four both detail screens have, in this order on
+    // both — so moving between a container and a machine does not move the tabs under you. What
+    // only one of them can offer comes after, behind a divider.
+    case overview = "Overview"
+    case terminal = "Terminal"
+    case logs = "Logs"
+    case inspect = "Inspect"
+    case processes = "Processes"
+    case files = "Files"
+    var id: Self { self }
+
+    /// True for the four tabs the machine detail also has. The tab bar draws a divider where this
+    /// stops being true, so the shared set reads as one group.
+    var isShared: Bool {
+        switch self {
+        case .overview, .terminal, .logs, .inspect: true
+        case .processes, .files: false
+        }
+    }
+
+    /// The mockup names an icon per tab (`i-info`, `i-doc`, `i-terminal`, `i-braces`).
+    /// Processes has no counterpart there — that mockup shows Stats and Files, which the CLI
+    /// cannot back — so it is chosen to stay distinguishable from its neighbours rather than
+    /// invented to look busy.
+    var systemImage: String {
+        switch self {
+        case .overview: "info.circle"
+        case .processes: "list.bullet.rectangle"
+        case .logs: "doc.text"
+        case .terminal: "terminal"
+        case .files: "folder"
+        case .inspect: "curlybraces"
+        }
+    }
+}

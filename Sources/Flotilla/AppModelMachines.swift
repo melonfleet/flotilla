@@ -1,0 +1,224 @@
+import Foundation
+import FlotillaCore
+
+/// Machines — the Linux micro-VMs `container` runs containers inside.
+///
+/// A separate file from `AppModel` for the same reason `AppModelDetail` is: this is a distinct
+/// surface and keeping it apart makes ownership obvious. It shares **this** model's `cli`, so
+/// every call crosses the one `Allowlist` and `MountPolicy` boundary rather than a second
+/// instance's — the mistake `AppModelDetail` made and had corrected.
+///
+/// Every mutation is deliberately loud. A machine is not a container: it is the VM every
+/// container on this host runs inside, so stopping one stops everything in it and deleting one
+/// destroys the substrate. `research/VM-SECURITY-REVIEW.md` is explicit that these are "not nine
+/// ordinary additions", and the UI treats them accordingly.
+@MainActor
+extension AppModel {
+
+    // MARK: Loading
+
+    func refreshMachines() async {
+        guard runtimeUsable else { return }
+        machinesState = .loading
+        do {
+            let fetched = try await Task.detached { [cli] in try cli.machines() }.value
+            // Same equality guard as `containers`: `@Observable` notifies on every write, so an
+            // unconditional assignment invalidates every view on each poll even when nothing
+            // moved. That was half of the original flicker.
+            if fetched != machines {
+                recordMachineTransitions(previous: machines, current: fetched)
+                machines = fetched
+            }
+            machinesState = .loaded
+            machinesLastRefresh = Date()
+        } catch {
+            machines = []
+            machinesState = .failed(describe(error))
+            record("Could not list machines: \(error)", subsystem: "machines")
+        }
+    }
+
+    /// Notes state changes so the activity strip has something to show.
+    ///
+    /// Mirrors `recordTransitions` for containers, including its rule that a **first sighting is
+    /// not a transition** — recording "appeared" for every machine present at launch would fill
+    /// the strip with noise about nothing having happened.
+    func recordMachineTransitions(previous: [ContainerMachine], current: [ContainerMachine]) {
+        let before = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0.status) })
+        for machine in current {
+            guard let was = before[machine.id] else { continue }
+            guard was.caseInsensitiveCompare(machine.status) != .orderedSame else { continue }
+            recordActivity(ContainerEvent(date: Date(), from: was, to: machine.status,
+                                          kind: .machine, subject: machine.id))
+        }
+    }
+
+    // MARK: Actions
+
+    enum MachineAction { case start, stop, restart, delete, setDefault }
+
+    /// Runs one action and reloads. Marking the machine busy disables the row's controls while it
+    /// is in flight, because a second click on Stop is a second VM shutdown.
+    ///
+    /// `kind: .machine` is what used to be a whole second set. Machines needed one because the old
+    /// `busy` was keyed by bare id and a machine named `web` is not the container named `web`;
+    /// `BusySet` keys by kind, so the distinction is in the type and every kind gets it.
+    func perform(_ action: MachineAction, on machine: ContainerMachine) async {
+        guard !isBusy(machine.id, kind: .machine) else { return }
+        markBusy(machine.id, kind: .machine)
+        defer { clearBusy(machine.id, kind: .machine) }
+
+        do {
+            let result = try await Task.detached { [cli] in
+                switch action {
+                case .start: try cli.startMachine(machine.id)
+                case .stop: try cli.stopMachine(machine.id)
+                case .restart: try cli.restartMachine(machine.id)
+                case .delete: try cli.deleteMachine(machine.id)
+                case .setDefault: try cli.setDefaultMachine(machine.id)
+                }
+            }.value
+
+            // Shells live inside the machine. Stopping or deleting it kills them whether we
+            // tidy up or not, so drop them rather than leaving dead terminals on screen.
+            // `.restart` too: the VM goes down in the middle, so any shell attached to it is
+            // already dead by the time it comes back.
+            if action == .stop || action == .delete || action == .restart {
+                machineTerminals.closeAll(for: machine.id)
+            }
+            // Same blind spot as containers: a restart leaves the machine running, so
+            // `recordMachineTransitions` sees nothing between polls.
+            if action == .restart {
+                recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                              kind: .machine, subject: machine.id,
+                                              action: "Restarted"))
+            }
+            await refreshMachines()
+            verifyOutcome(of: action, on: machine, result: result)
+        } catch {
+            actionError = describe(error)
+            record("Machine \(action) failed for \(machine.id): \(error)", subsystem: "machines")
+        }
+    }
+
+    /// Checks the machine actually reached the state the action promised, and says so if it did
+    /// not.
+    ///
+    /// **Because a zero exit is not proof.** The owner pressed Start on a stopped machine and got a
+    /// spinner, then the Play button back, with no message at all — while the same command run by
+    /// hand printed `Error: The operation couldn't be completed. Operation not supported by
+    /// device`. `succeeding(_:)` throws on a non-zero exit, so the most likely explanation is
+    /// that this command printed its error and exited **0**: nothing threw, the refresh found the
+    /// machine still stopped, and the row honestly re-drew Play. Silence is the worst possible
+    /// report of a failure.
+    ///
+    /// I could not reproduce the original failure afterwards — the same machine now boots
+    /// headlessly every time — so this is deliberately not written as a fix for that cause. It is
+    /// a net under the whole class: whatever the runtime does with exit codes, an action that did
+    /// not achieve its state now says so, and quotes the CLI's own words when it left any.
+    private func verifyOutcome(of action: MachineAction, on machine: ContainerMachine,
+                               result: CommandResult) {
+        let expectedRunning: Bool
+        switch action {
+        case .start, .restart: expectedRunning = true
+        case .stop: expectedRunning = false
+        // Delete removes the row; set-default changes a flag, not a state. Nothing to verify.
+        case .delete, .setDefault: return
+        }
+
+        guard let current = machines.first(where: { $0.id == machine.id }) else { return }
+        let isRunning = current.status.caseInsensitiveCompare("running") == .orderedSame
+        guard isRunning != expectedRunning else { return }
+
+        // The CLI's own sentence if it left one on either stream — `container machine run` has
+        // been seen writing `Error:` to stdout — otherwise state the bare fact.
+        let reported = ContainerCLI.failureMessage(result)
+        let verb = expectedRunning ? "start" : "stop"
+        actionError = reported.isEmpty
+            ? "‘\(machine.id)’ did not \(verb) — it is still \(current.status.lowercased()), and the runtime reported no reason."
+            : "‘\(machine.id)’ did not \(verb): \(reported)"
+        record("Machine \(action) reported success but \(machine.id) is \(current.status): "
+               + "stdout=\(result.stdout) stderr=\(result.stderr)", subsystem: "machines")
+    }
+
+    func createMachine(image: String, name: String?, cpus: Int?, memory: String?,
+                       homeMount: String?) async -> Bool {
+        return await withProgress(
+            title: "Create a machine",
+            command: ContainerCLI.createMachineArguments(image: image, name: name, cpus: cpus,
+                                                         memory: memory, homeMount: homeMount)
+                .joined(separator: " "),
+            work: { progress in
+                // Two steps, because a machine create genuinely is two things and the second is
+                // the slow one: the image has to be pulled before the VM record exists.
+                let step = progress.begin("Creating from \(image)")
+                let result = try await Task.detached { [cli] in
+                    try cli.createMachine(image: image, name: name, cpus: cpus,
+                                          memory: memory, homeMount: homeMount)
+                }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                for line in result.stderr.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step, detail: name)
+                return name.map { "\($0) created" } ?? "Machine created"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refreshMachines()
+                guard let name else { return true }
+                return machines.contains { $0.id == name }
+            }
+        )
+    }
+
+    /// Applies configuration. **Takes effect after a restart** — the CLI says so and the UI must
+    /// too, or a form that silently changes nothing until the next boot is a trap. The caller
+    /// owns telling the user; this just reports whether the write landed.
+    func applyMachineSettings(_ id: String, cpus: Int?, memory: String?,
+                              homeMount: String?) async -> Bool {
+        do {
+            _ = try await Task.detached { [cli] in
+                try cli.setMachine(id, cpus: cpus, memory: memory, homeMount: homeMount)
+            }.value
+            await refreshMachines()
+            return true
+        } catch {
+            actionError = describe(error)
+            record("Machine set failed for \(id): \(error)", subsystem: "machines")
+            return false
+        }
+    }
+
+    /// The **full** record for one machine.
+    ///
+    /// `machine list` returns a deliberately thin row — no image, no start time, no home-mount,
+    /// no platform — while `machine inspect` returns all of it. The detail Overview was
+    /// rendering "Started —" and "Not reported by `machine list`" for fields that were one call
+    /// away, which is the same "a card that states nothing" failure as an inert setting.
+    ///
+    /// Returns `nil` rather than throwing: this only enriches a view that already has a usable
+    /// record, so a failure should quietly leave the thin one in place, not blank the screen.
+    func inspectMachine(_ id: String) async -> ContainerMachine? {
+        do {
+            return try await Task.detached { [cli] in try cli.inspectMachine(id) }.value
+        } catch {
+            record("Could not inspect machine \(id): \(error)", subsystem: "machines")
+            return nil
+        }
+    }
+
+    func machineLogs(for id: String, lines: Int, boot: Bool) async throws -> LogChunk {
+        try await Task.detached { [cli] in
+            try cli.machineLogs(id, lines: lines, boot: boot)
+        }.value
+    }
+
+    /// The CLI's own error text is more useful than Swift's `String(describing:)` on a thrown
+    /// enum, so prefer it where we have it.
+    ///
+    /// Internal rather than private because `AppModelClusters` needs the same treatment and a
+    /// second copy of two lines is still a second place for the rule to change.
+    func describe(_ error: any Error) -> String {
+        if let cliError = error as? ContainerCLIError { return String(describing: cliError) }
+        return String(describing: error)
+    }
+}

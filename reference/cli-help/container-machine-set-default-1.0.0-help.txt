@@ -1,0 +1,12 @@
+OVERVIEW: Set the default container machine
+
+USAGE: container machine set-default [--debug] <id>
+
+ARGUMENTS:
+  <id>                    Container machine ID
+
+OPTIONS:
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

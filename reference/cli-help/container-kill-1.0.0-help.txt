@@ -1,0 +1,14 @@
+OVERVIEW: Kill or signal one or more running containers
+
+USAGE: container kill [--all] [--signal <signal>] [--debug] [<container-ids> ...]
+
+ARGUMENTS:
+  <container-ids>         Container IDs
+
+OPTIONS:
+  -a, --all               Kill or signal all running containers
+  -s, --signal <signal>   Signal to send to the container(s) (default: KILL)
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

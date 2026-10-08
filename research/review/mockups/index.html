@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flotilla — UI mockups</title>
+<link rel="stylesheet" href="assets/mac.css">
+<style>
+  .win.w-index { max-width: 1000px; }
+  .pane { padding: 22px 26px 28px; background: var(--grouped-bg); }
+  .page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(288px, 1fr)); gap: 12px; }
+  .page-card {
+    display: flex; flex-direction: column; gap: 7px; padding: 14px;
+    background: var(--raised-bg); border-radius: var(--r-card);
+    box-shadow: 0 0 0 0.5px var(--hairline); color: var(--label); text-decoration: none;
+  }
+  .page-card:hover { box-shadow: 0 0 0 1px var(--accent-fill), 0 4px 14px rgba(233,58,95,0.12); text-decoration: none; }
+  .page-card .pc-top { display: flex; align-items: center; gap: 8px; }
+  .page-card .pc-look { font-size: 11px; color: var(--label-2); line-height: 1.45; }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sw { width: 96px; }
+  .sw i { display: block; height: 34px; border-radius: 7px; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12); }
+  .gallery { display: grid; grid-template-columns: 150px 1fr; gap: 12px 16px; align-items: center; font-size: 12px; }
+  .gallery > span:nth-child(odd) { color: var(--label-2); }
+  .qlist { counter-reset: q; }
+  .qlist > li { margin-bottom: 9px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<script src="assets/icons.js"></script>
+
+<div class="desktop">
+  <div class="win w-index">
+    <div class="toolbar">
+      <span class="traffic"><span class="close"><i>×</i></span><span class="min"><i>−</i></span><span class="zoom"><i>⤢</i></span></span>
+      <span style="width: 6px;"></span>
+      <svg class="ic s18 accent"><use href="#i-sails"/></svg>
+      <div class="col">
+        <span class="win-title">Flotilla — UI mockups</span>
+        <span class="win-subtitle">Design direction for review · native macOS 26, not a web app</span>
+      </div>
+      <span class="spacer"></span>
+      <span class="pill brand">6 screens</span>
+    </div>
+
+    <div class="pane">
+      <p class="sec" style="max-width: 720px; line-height: 1.55; margin-bottom: 18px;">
+        These are HTML simulations of a native Mac app: real window chrome, SF system type,
+        vibrancy and Liquid Glass materials on the functional layer only, and AppKit-shaped
+        controls. Nothing here reuses the melonfleet web design system. Watermelon pink is the
+        brand tint (selection, identity, default buttons) and green means healthy — nothing else.
+        Fake data throughout, but the shapes come from the real captured
+        <span class="mono">container</span> 1.0.0 JSON.
+      </p>
+
+      <div class="g-head">Screens</div>
+      <div class="page-grid" style="margin-bottom: 6px;">
+
+        <a class="page-card" href="menubar.html">
+          <div class="pc-top">
+            <svg class="ic s20 accent"><use href="#i-sails"/></svg>
+            <span class="med">Menu-bar popover</span>
+            <span class="spacer"></span><svg class="ic s13 dim"><use href="#i-chev-right"/></svg>
+          </div>
+          <span class="t12 sec">Anchored under a simulated macOS menu bar: rollup meters, running containers with inline stop, fleet summaries, needs-attention section, footer actions.</span>
+          <span class="pc-look"><b>Look for:</b> is the popover shallow enough? Do the glyph states read?</span>
+        </a>
+
+        <a class="page-card" href="main-window.html">
+          <div class="pc-top">
+            <svg class="ic s20 accent"><use href="#i-cube"/></svg>
+            <span class="med">Main window</span>
+            <span class="spacer"></span><svg class="ic s13 dim"><use href="#i-chev-right"/></svg>
+          </div>
+          <span class="t12 sec">Sidebar (Containers / Images / Volumes / Fleet / Settings) plus hosts, a sortable container table grouped by host, a selection action bar, and an inspector. Run sheet and right-click menu included.</span>
+          <span class="pc-look"><b>Look for:</b> table-by-default instead of the card grid — this needs sign-off.</span>
+        </a>
+
+        <a class="page-card" href="container-detail.html">
+          <div class="pc-top">
+            <svg class="ic s20 accent"><use href="#i-doc"/></svg>
+            <span class="med">Container detail</span>
+            <span class="spacer"></span><svg class="ic s13 dim"><use href="#i-chev-right"/></svg>
+          </div>
+          <span class="t12 sec">Overview, Logs (streaming, with a <span class="mono">--boot</span> toggle), Terminal, Stats, Files, Inspect. All six tabs are clickable.</span>
+          <span class="pc-look"><b>Look for:</b> which tabs are worth Phase 1 versus waiting for streaming.</span>
+        </a>
+
+        <a class="page-card" href="fleet.html">
+          <div class="pc-top">
+            <svg class="ic s20 accent"><use href="#i-server"/></svg>
+            <span class="med">Fleet</span>
+            <span class="spacer"></span><svg class="ic s13 dim"><use href="#i-chev-right"/></svg>
+          </div>
+          <span class="t12 sec">Aggregate rollup, nine host cards covering all five connection states, a per-host drill-down inspector, and the config-drift table.</span>
+          <span class="pc-look"><b>Look for:</b> untrusted vs unreachable vs version-mismatch — do they read as different problems?</span>
+        </a>
+
+        <a class="page-card" href="settings.html">
+          <div class="pc-top">
+            <svg class="ic s20 accent"><use href="#i-gear"/></svg>
+            <span class="med">Settings</span>
+            <span class="spacer"></span><svg class="ic s13 dim"><use href="#i-chev-right"/></svg>
+          </div>
+          <span class="t12 sec">Six panes — General, Resources, Network, Updates, Fleet, Advanced — populated from the preferences research, including locked/managed values and the three-way reset.</span>
+          <span class="pc-look"><b>Look for:</b> is this the right number of knobs? Anything missing that you'd want on day one?</span>
+        </a>
+
+        <a class="page-card" href="onboarding.html">
+          <div class="pc-top">
+            <svg class="ic s20 accent"><use href="#i-check-circle"/></svg>
+            <span class="med">First run</span>
+            <span class="spacer"></span><svg class="ic s13 dim"><use href="#i-chev-right"/></svg>
+          </div>
+          <span class="t12 sec">Seven steps: welcome, preflight checks with inline fixes, install progress with a log, empty states, add-host (Bonjour + manual), fingerprint pairing, done. Plus the changed-certificate dialog.</span>
+          <span class="pc-look"><b>Look for:</b> the pairing comparison — enough to trust, without being a chore?</span>
+        </a>
+      </div>
+      <p class="g-foot" style="margin-bottom: 18px;">
+        Every page is linked to every other page from the floating navigator at the bottom, and the
+        <b>Notes</b> button opens the rationale for that screen, with the phase and priority of each idea.
+        <b>Auto / Light / Dark</b> switches appearance — dark mode is a first-class pass, not an afterthought.
+      </p>
+
+      <div class="g-head">Brand tint, used sparingly</div>
+      <div class="group" style="margin-bottom: 18px;">
+        <div class="g-row stack">
+          <div class="swatches">
+            <span class="sw"><i style="background: #fc4a6b;"></i><span class="t11 sec">flesh · brand</span></span>
+            <span class="sw"><i style="background: #e63956;"></i><span class="t11 sec">flesh deep · default button</span></span>
+            <span class="sw"><i style="background: #2e7d32;"></i><span class="t11 sec">success · running</span></span>
+            <span class="sw"><i style="background: #43a047;"></i><span class="t11 sec">online dot</span></span>
+            <span class="sw"><i style="background: #1b5e20;"></i><span class="t11 sec">rind</span></span>
+            <span class="sw"><i style="background: #7cb342;"></i><span class="t11 sec">stripe</span></span>
+            <span class="sw"><i style="background: #d70015;"></i><span class="t11 sec">system red · errors</span></span>
+            <span class="sw"><i style="background: #c9510c;"></i><span class="t11 sec">system orange · warnings</span></span>
+          </div>
+          <p class="g-help" style="margin-top: 4px;">
+            Pink is brand, selection and identity. Green is health. <b>Pink is never an error colour</b> —
+            failures use the system's semantic red and orange, which is a small extension to
+            <span class="mono">design/branding.md</span> (it assigns pink and green jobs but never defines an
+            error colour). Data surfaces stay neutral, same rule as Liquid Glass: chrome and status, not content.
+          </p>
+        </div>
+      </div>
+
+      <div class="g-head">Control vocabulary</div>
+      <div class="group" style="margin-bottom: 18px;">
+        <div class="g-row stack">
+          <div class="gallery">
+            <span>Buttons</span>
+            <span class="row gap6 wrap">
+              <a class="btn">Bezel</a>
+              <a class="btn primary">Default</a>
+              <a class="btn destructive">Delete…</a>
+              <a class="btn disabled">Disabled</a>
+              <a class="btn icon"><svg class="ic s13"><use href="#i-ellipsis"/></svg></a>
+            </span>
+
+            <span>Glass cluster</span>
+            <span class="glass-cluster" style="width: max-content;">
+              <a class="btn"><svg class="ic s13"><use href="#i-plus"/></svg> Run…</a>
+              <a class="btn"><svg class="ic s13"><use href="#i-download"/></svg> Pull image…</a>
+              <a class="btn icon"><svg class="ic s13"><use href="#i-ellipsis"/></svg></a>
+            </span>
+
+            <span>Segmented</span>
+            <span class="seg" data-seg style="width: max-content;"><a class="on">All</a><a>Running</a><a>Stopped</a></span>
+
+            <span>Switch · check · radio</span>
+            <span class="row gap14">
+              <span class="switch on"></span>
+              <span class="switch"></span>
+              <span class="check on"><svg class="ic s11"><use href="#i-check"/></svg></span>
+              <span class="check"></span>
+              <span data-radio-group class="row gap6">
+                <span class="radio on"><svg class="ic s11"><use href="#i-check"/></svg></span>
+                <span class="radio"></span>
+              </span>
+              <span class="lock t11"><svg class="ic s11"><use href="#i-lock"/></svg> managed</span>
+              <span class="switch on locked"></span>
+            </span>
+
+            <span>Popup · field · search</span>
+            <span class="row gap10 wrap">
+              <span class="popup">5 seconds <span class="chev"><svg class="ic s11"><use href="#i-chev-updown-sm"/></svg></span></span>
+              <span class="field" style="width: 110px;"><span class="mono">7443</span></span>
+              <span class="search" style="width: 180px;">
+                <svg class="ic s12 dim"><use href="#i-search"/></svg>
+                <span class="token">is:running</span><span class="ph">name</span>
+              </span>
+            </span>
+
+            <span>Status</span>
+            <span class="row gap14 wrap">
+              <span class="status running"><span class="dot running"></span><span class="st-label">Running</span></span>
+              <span class="status"><span class="dot stopped"></span><span class="st-label">Stopped</span></span>
+              <span class="status warn"><span class="dot warn"></span><span class="st-label">Restarting</span></span>
+              <span class="status error"><span class="dot error"></span><span class="st-label">Exited (137)</span></span>
+              <span class="status warn"><span class="dot untrusted"></span><span class="st-label">Untrusted</span></span>
+              <span class="status"><span class="dot hollow"></span><span class="st-label">Connecting</span></span>
+            </span>
+
+            <span>Type</span>
+            <span class="col gap4">
+              <span class="t13">SF system font at 13 px — the Mac control size, not 16 px web body copy</span>
+              <span class="t11 sec">11 px secondary, tabular figures for counts: <span class="tnum">14 · 21 · 6.2 GB</span></span>
+              <span class="mono">SF Mono / Ubuntu Mono for logs, JSON, ports and fingerprints</span>
+            </span>
+          </div>
+          <p class="g-help" style="margin-top: 8px;">
+            Status is always a dot <em>plus</em> a distinct glyph or shape <em>plus</em> a word. No colour-only
+            state anywhere, no hover-only affordances — the two accessibility failures Podman filed
+            against themselves.
+          </p>
+        </div>
+      </div>
+
+      <div class="g-head">Decisions this mockup is asking you to make</div>
+      <div class="group">
+        <div class="g-row stack">
+          <ol class="qlist t12" style="margin: 2px 0 0; padding-left: 20px;">
+            <li>
+              <b>Table by default, cards as a toggle.</b> This overturns the premise of
+              <span class="mono">design/dashboard-mockup.html</span>: the card grid is lovely at four
+              containers and unusable at forty. The cards survive as a view toggle.
+            </li>
+            <li>
+              <b>A popover rather than a menu</b> for the menu-bar extra, which deviates from HIG's
+              default advice under its own “too complex for a menu” exception.
+            </li>
+            <li>
+              <b>Sidebar shape.</b> Four content items plus hosts plus System. Volumes stays a top-level
+              row here; the alternative is folding it into a single System page.
+            </li>
+            <li>
+              <b>An error colour.</b> Branding assigns pink and green jobs but defines no failure colour,
+              so failures use the system red/orange and pink stays brand-only.
+            </li>
+            <li>
+              <b>Which detail tabs ship in Phase 1.</b> Overview, Logs and Inspect are cheap; Terminal
+              needs a real PTY, Stats needs streaming, Files needs <span class="mono">container cp</span>.
+            </li>
+            <li>
+              <b>Notifications exist at all</b> — <span class="mono">PLAN.md</span> doesn't mention them.
+              Five categories are proposed, error ones not disableable.
+            </li>
+            <li>
+              <b>Two-tier managed settings</b> (“defaults” seed vs “locked”), which extends
+              <span class="mono">reference/jamf-config-profile.md</span>'s simpler “managed value wins”.
+            </li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="caption">
+    Static HTML, no frameworks, no CDNs, no network access. Shared local
+    <code>assets/mac.css</code>, <code>assets/icons.js</code> (inline SVG sprite) and
+    <code>assets/app.js</code>.
+  </p>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

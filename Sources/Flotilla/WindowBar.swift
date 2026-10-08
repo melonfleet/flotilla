@@ -1,0 +1,222 @@
+import SwiftUI
+import AppKit
+
+/// The full-width bar across the top of the window: sidebar toggle and wordmark at the leading
+/// edge, window-level controls at the trailing edge, and the split view — sidebar included —
+/// starting **below** it. The arrangement the owner asked for from Docker Desktop; deliberately not
+/// the colour, so this carries our own chrome rather than a blue strip.
+///
+/// **Why this is the window's first content row and not a titlebar accessory.** The accessory
+/// route was tried first, on the second reviewer's research, and it cannot produce this layout — measured, not
+/// assumed. `NSTitlebarAccessoryViewController` with `layoutAttribute = .bottom` installed fine
+/// and Apple does maximise its width, but AppKit laid it out at **`(208, y) 972 × 36` in an
+/// 1180pt window**: the content area only, offset by exactly the sidebar's width. The reason is
+/// structural — a `NavigationSplitView` sidebar is *full height*, running up under the title
+/// bar, so nothing living in the titlebar region can span across it. The bar therefore has to be
+/// above the split view in the content, with `.windowStyle(.hiddenTitleBar)` letting the content
+/// reach the top of the window while the traffic lights keep floating over it.
+///
+/// A cautionary note on how that was found: the first measurement was taken immediately after
+/// `addTitlebarAccessoryViewController` and reported the full 1180pt width, because AppKit had
+/// not laid the view out yet. Measuring three seconds later told the truth. A geometry reading
+/// taken before layout is not a measurement, it is a guess with a number attached.
+struct WindowBar: View {
+    /// The chosen light and dark themes; the bar's colour and its ink come from them.
+    @Environment(\.themeChoice) private var themes
+    let model: AppModel
+    @Binding var railed: Bool
+
+    /// Room for the traffic lights, which float over the content under `.hiddenTitleBar`.
+    ///
+    /// A constant, and honestly so: `window.standardWindowButton(_:)` could be measured instead,
+    /// but that needs an `NSWindow` reach-around and this value is fixed by the system's own
+    /// button metrics. Docker's strip does the same thing. If the buttons ever move, the symptom
+    /// is cosmetic and obvious rather than silent.
+    /// The bar's height, shared with `TrafficLightAligner` so the buttons are centred on the same
+    /// number the content is.
+    /// 52, up from 44, to match Docker Desktop's strip — the reference the owner gave. Measured
+    /// off that screenshot with the traffic lights as the ruler: macOS spaces their centres 20pt
+    /// apart, which fixes the image's scale, and the blue band comes out around 50pt with the
+    /// buttons centred in it. The extra height is also what gives the wordmark room to grow.
+    static let barHeight: CGFloat = 52
+
+    /// Where the bar's own content starts, clearing the traffic lights. Docker's logo sits
+    /// closer to the left edge than ours did; 72 puts the sidebar toggle at about the same
+    /// distance from the buttons as Docker's search field is from its logo.
+    private let trafficLightInset: CGFloat = 72
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                // The sidebar toggle moved to the middle of the sidebar's edge (6 October); this
+                // keeps the wordmark the same distance from the traffic lights it had beside it.
+                Color.clear.frame(width: 18, height: 1)
+
+                // The owner's bar (6 October): the full lockup in white, straight on the bar.
+                Wordmark(size: 16, lockup: .bar)
+                    .fixedSize()          // a lockup, never wrapped
+
+                Spacer(minLength: 12)
+
+                // The three app-level controls share one capsule, the way a section's actions do.
+                BarGlass {
+                    AppLinksMenu()
+                    // Beside the gear, because it is the same kind of thing — an app-level
+                    // control. It is also *in* Settings; both write the one stored preference.
+                    AppearanceToggleButton(model: model)
+                    SettingsToolbarButton {
+                        // Through the model: `pendingSection` drives the window's selection.
+                        model.pendingSection = .settings
+                    }
+                }
+            }
+            .padding(.leading, trafficLightInset)
+            .padding(.trailing, 12)
+            .frame(height: Self.barHeight)
+            // The bar's own ground — see `Theme.titleBar`. It had none, so it showed the content
+            // wash and read as the top of the content rather than as chrome.
+            .background(Theme.titleBar(themes))
+            // Every glyph in the bar takes the bar's ink, through the mechanism that already
+            // exists for a coloured fill: `IconActionButtonStyle` reads `backgroundProminence` and
+            // repaints its icon for the fill behind it — written for selected table rows, and a
+            // coloured bar is the same situation. The ink is the theme's — seed on all four bars
+            // today. On a table row, with no `barInk`, it stays white.
+            .environment(\.backgroundProminence, .increased)
+            .environment(\.barInk, Theme.onTitleBar(themes))
+            Divider()
+        }
+        // Pull the traffic lights down onto the wordmark's line. See `TrafficLightAligner`.
+        .background(TrafficLightAligner(barHeight: Self.barHeight, nudgeRight: 0))
+        // The whole bar is a window-drag handle, because with the title bar hidden the strip
+        // *looks* like the place you would grab to move the window — and controls inside it keep
+        // their own clicks, since a gesture on the container does not swallow a button's hit.
+        .background(WindowDragArea())
+    }
+}
+
+/// A light frosted capsule on the window bar, the same on every theme: rendered in the light
+/// scheme whatever the appearance, so dark mode does not swap it for dark glass, and with the
+/// soft ink for everything inside it.
+private struct BarGlass<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GlassEffectContainer(spacing: 6) {
+            HStack(spacing: 4) { content }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .glassEffect(.regular.tint(.white.opacity(0.2)), in: .capsule)
+        }
+        .environment(\.barInk, Theme.barSoftInk)
+        .environment(\.colorScheme, .light)
+        .fixedSize()
+    }
+}
+
+/// Makes its area drag the window, restoring what `.hiddenTitleBar` takes away.
+///
+/// `mouseDownCanMoveWindow` rather than a `DragGesture` doing arithmetic on the window's origin:
+/// AppKit already implements window dragging, including snapping and multi-display edges, and a
+/// hand-rolled version would be a worse copy of it.
+private struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+    }
+}
+
+/// Centres the standard window buttons on `WindowBar`'s line, and nudges them right.
+///
+/// **Why this is needed at all.** AppKit centres the traffic lights in the *standard* titlebar —
+/// 28pt tall, so their centre sits 14pt below the window's top edge. Our bar is 44pt, centred at
+/// 22pt, so the buttons rode 8pt high and read as squashed against the top rather than sitting on
+/// the wordmark's line. The owner spotted it against Docker Desktop, where the lights and the logo
+/// share a centre line.
+///
+/// **This overrides AppKit's own layout, and that has a cost worth naming.** The frames are set by
+/// hand, so anything that re-lays the titlebar puts them back. That used to be handled by naming
+/// the causes — resize, full screen, becoming main — and the list was incomplete: AppKit's own
+/// layout at launch was not on it, so the app opened misaligned and corrected itself the first
+/// time the window became main. It is now driven by `didUpdate` as well, which fires for any
+/// cause rather than the ones someone thought of. If a future macOS moves the buttons for its own reasons, the symptom is cosmetic
+/// and obvious — misaligned lights — rather than silent. The alternative was a taller titlebar via
+/// an empty accessory view, which on this window is what `WindowBar`'s own docstring already
+/// records failing: a titlebar accessory here is laid out over the content column only.
+private struct TrafficLightAligner: NSViewRepresentable {
+    let barHeight: CGFloat
+    let nudgeRight: CGFloat
+
+    func makeNSView(context: Context) -> NSView { Aligner(barHeight: barHeight, nudgeRight: nudgeRight) }
+    func updateNSView(_ nsView: NSView, context: Context) { (nsView as? Aligner)?.align() }
+
+    private final class Aligner: NSView {
+        private let barHeight: CGFloat
+        private let nudgeRight: CGFloat
+        /// The x each button started at, captured once. Re-reading it after a nudge would compound
+        /// the offset every time the window resized.
+        private var originalX: [NSWindow.ButtonType: CGFloat] = [:]
+
+        init(barHeight: CGFloat, nudgeRight: CGFloat) {
+            self.barHeight = barHeight
+            self.nudgeRight = nudgeRight
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observe()
+            align()
+        }
+
+        private func observe() {
+            guard let window else { return }
+            let centre = NotificationCenter.default
+            // `didUpdate` is the one that makes this correct rather than merely thorough.
+            //
+            // The other four are a *list of causes*, and the list was incomplete: at launch none
+            // of them fire after AppKit's own titlebar layout, so the buttons kept the positions
+            // AppKit gave them and the app opened with the lights riding high. Clicking away and
+            // back fixed it, because that finally posted `didBecomeMain` — which is exactly the
+            // shape of a bug that looks intermittent and is not.
+            //
+            // `didUpdate` posts at the end of every event-loop pass in which the window needed
+            // display, so the first one after launch corrects the initial layout and any future
+            // cause is covered without having to be predicted. `align()` below is a no-op when
+            // the buttons are already placed, so the frequency costs nothing.
+            for name: NSNotification.Name in [NSWindow.didResizeNotification,
+                                              NSWindow.didEnterFullScreenNotification,
+                                              NSWindow.didExitFullScreenNotification,
+                                              NSWindow.didBecomeMainNotification,
+                                              NSWindow.didUpdateNotification] {
+                centre.addObserver(self, selector: #selector(realign),
+                                   name: name, object: window)
+            }
+        }
+
+        @objc private func realign() { align() }
+
+        func align() {
+            guard let window else { return }
+            for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                guard let button = window.standardWindowButton(type),
+                      let frameView = button.superview else { continue }
+                if originalX[type] == nil { originalX[type] = button.frame.origin.x }
+                guard let baseX = originalX[type] else { continue }
+
+                // The buttons live in the window's frame view, whose coordinates run from the
+                // bottom, so centring them `barHeight / 2` below the top is a subtraction.
+                let centredY = frameView.bounds.height - barHeight / 2 - button.frame.height / 2
+                let target = NSPoint(x: baseX + nudgeRight, y: centredY)
+                // Idempotent, because this now runs on every window update. Setting an origin a
+                // button already has would still mark it for display each pass.
+                guard button.frame.origin != target else { continue }
+                button.setFrameOrigin(target)
+            }
+        }
+    }
+}

@@ -1,0 +1,9 @@
+OVERVIEW: Remove all stopped containers
+
+USAGE: container prune [--debug]
+
+OPTIONS:
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

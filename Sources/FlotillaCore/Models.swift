@@ -1,0 +1,974 @@
+import Foundation
+
+// Models match the real `container` 1.0.0 `--format json` schema, captured from a
+// live install (see Tests/FlotillaCoreTests/Fixtures/*.json). Field names are exact;
+// most are optional for resilience across CLI versions. Unknown keys are ignored.
+
+// MARK: - Shared
+
+public struct Descriptor: Codable, Sendable, Equatable {
+    public var digest: String?
+    public var mediaType: String?
+    public var size: Int64?
+}
+
+public struct Platform: Codable, Sendable, Equatable {
+    public var architecture: String?
+    public var os: String?
+    public var variant: String?
+}
+
+// MARK: - Container  (`container ls --all --format json`, `container inspect`)
+
+public struct Container: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var configuration: Configuration
+    public var status: Status
+
+    public struct Configuration: Codable, Sendable, Equatable {
+        public var id: String
+        public var creationDate: String?
+        public var image: ImageRef
+        public var platform: Platform?
+        public var resources: Resources?
+        /// Host→container port mappings from `--publish`. Absent on older output and
+        /// `[]` for a container that publishes nothing, so both decode to empty.
+        public var publishedPorts: [PublishedPort]?
+        /// What runs, as the container was created — the image's entrypoint and command unless
+        /// overridden, and its environment **merged with the image's own**. The exporter
+        /// subtracts the image's defaults to recover what was actually chosen.
+        public var initProcess: InitProcess?
+        public var mounts: [Mount]?
+        public var networks: [NetworkAttachment]?
+
+        public struct InitProcess: Codable, Sendable, Equatable {
+            public var executable: String?
+            public var arguments: [String]?
+            public var environment: [String]?
+        }
+
+        /// One mount. `type` is an object with a single key naming the kind: `volume` (with the
+        /// volume's `name`) or `virtiofs` — a folder on this Mac (captured 6 October, 1.5.0).
+        public struct Mount: Codable, Sendable, Equatable {
+            public var destination: String
+            public var options: [String]?
+            public var source: String?
+            public var type: MountType?
+
+            public struct MountType: Codable, Sendable, Equatable {
+                public var volume: VolumeMount?
+                public var virtiofs: Empty?
+                public struct VolumeMount: Codable, Sendable, Equatable { public var name: String? }
+                public struct Empty: Codable, Sendable, Equatable {}
+            }
+
+            public var volumeName: String? { type?.volume?.name }
+            public var isReadOnly: Bool { options?.contains("ro") == true }
+        }
+
+        public struct NetworkAttachment: Codable, Sendable, Equatable {
+            public var network: String
+        }
+
+        public struct ImageRef: Codable, Sendable, Equatable {
+            public var reference: String
+            public var descriptor: Descriptor?
+        }
+        public struct Resources: Codable, Sendable, Equatable {
+            public var cpus: Int?
+            public var memoryInBytes: Int64?
+        }
+
+        /// One `--publish` mapping. Captured from real `container ls --format json`
+        /// output — note the key is `proto`, not `protocol`, and `hostAddress` is
+        /// `0.0.0.0` rather than absent when unbound.
+        public struct PublishedPort: Codable, Sendable, Hashable {
+            public var containerPort: Int
+            public var hostPort: Int
+            public var hostAddress: String?
+            public var proto: String?
+            /// `container` publishes a contiguous range as one entry with a count,
+            /// rather than repeating the mapping — so a `count` above 1 means
+            /// `hostPort ..< hostPort + count`, and rendering only `hostPort` would
+            /// under-report what is exposed.
+            public var count: Int?
+
+            public init(
+                containerPort: Int, hostPort: Int, hostAddress: String? = nil,
+                proto: String? = nil, count: Int? = nil
+            ) {
+                self.containerPort = containerPort
+                self.hostPort = hostPort
+                self.hostAddress = hostAddress
+                self.proto = proto
+                self.count = count
+            }
+
+            /// `18080:80/tcp`, or `18080-18082:80-82/tcp` for a published range.
+            public var displayText: String {
+                let span = max(count ?? 1, 1)
+                let hosts = span > 1 ? "\(hostPort)-\(hostPort + span - 1)" : "\(hostPort)"
+                let guests = span > 1 ? "\(containerPort)-\(containerPort + span - 1)" : "\(containerPort)"
+                let suffix = proto.map { "/\($0)" } ?? ""
+                return "\(hosts):\(guests)\(suffix)"
+            }
+        }
+    }
+
+    public struct Status: Codable, Sendable, Equatable {
+        public var state: String
+        public var startedDate: String?
+        public var networks: [NetworkStatus]?
+
+        public struct NetworkStatus: Codable, Sendable, Equatable {
+            public var hostname: String?
+            public var ipv4Address: String?
+            public var network: String?
+        }
+    }
+
+    // Convenience for the UI
+    public var name: String { configuration.id }
+    public var imageReference: String { configuration.image.reference }
+    /// The reported state, parsed. See `ContainerState` for the vocabulary and how it was
+    /// measured — in particular for why there is no "failed" among these.
+    public var state: ContainerState { ContainerState(status.state) }
+    public var isRunning: Bool { state.isRunning }
+    /// Whether a person should look at this container. `ContainerState.needsAttention` owns the
+    /// rule; this is here so the five call sites that each had their own copy have one place to
+    /// ask instead.
+    public var needsAttention: Bool { state.needsAttention }
+    public var ipv4: String? { status.networks?.first?.ipv4Address }
+
+    public var publishedPorts: [Configuration.PublishedPort] { configuration.publishedPorts ?? [] }
+
+    /// Sort key that puts **running first** (DECISIONS.md Q2), which is the table's default
+    /// order. A `Bool` would sort false-before-true, i.e. stopped first — exactly backwards —
+    /// so this is an explicit rank rather than the obvious-looking `!isRunning`.
+    public var sortRank: Int { isRunning ? 0 : 1 }
+
+    /// Sortable form of `creationDate`, which the CLI gives as an ISO-8601 *string*.
+    /// ISO-8601 with a fixed offset happens to sort correctly lexicographically, and an
+    /// absent date sorts last rather than first — a container whose date we could not read
+    /// should not claim to be the oldest thing on the machine.
+    public var creationSortKey: String { configuration.creationDate ?? "9999" }
+
+    /// Comma-separated `18080:80/tcp` mappings, or nil when nothing is published — so a
+    /// table column can show an unambiguous em dash rather than an empty cell that reads
+    /// as missing data.
+    public var portSummary: String? {
+        let ports = publishedPorts
+        guard !ports.isEmpty else { return nil }
+        return ports.map(\.displayText).joined(separator: ", ")
+    }
+}
+
+// MARK: - Image  (`container image list --format json`, `container image inspect`)
+
+public struct ContainerImage: Codable, Identifiable, Sendable {
+    public var id: String
+    public var configuration: Configuration
+    public var variants: [Variant]?
+
+    public struct Configuration: Codable, Sendable {
+        public var name: String
+        public var creationDate: String?
+        public var descriptor: Descriptor?
+    }
+    public struct Variant: Codable, Sendable {
+        public var digest: String?
+        public var size: Int64?
+        public var platform: Platform?
+        /// `image inspect` only: the OCI image config, whose `config` holds the defaults a
+        /// container starts from.
+        public var config: ImageConfig?
+
+        public struct ImageConfig: Codable, Sendable {
+            public var config: RunConfig?
+        }
+
+        /// The OCI spelling — capitalised keys.
+        public struct RunConfig: Codable, Sendable {
+            public var Env: [String]?
+            public var Entrypoint: [String]?
+            public var Cmd: [String]?
+        }
+    }
+
+    public var reference: String { configuration.name }
+
+    /// `docker.io/library/alpine:latest` → `alpine:latest`.
+    ///
+    /// For narrow table cells. Middle-truncating a full reference produced
+    /// `docker.i…ne:latest` — the same string for every row, carrying no information about
+    /// what was actually running. The last path component is what distinguishes one image
+    /// from another; registry and namespace are near-identical across a fleet. Callers
+    /// should keep the full reference available on hover.
+    ///
+    /// Lives here rather than in the view because the awkward cases are real: a digest
+    /// reference would otherwise contribute 64 hex characters, and `host:5000/name` must
+    /// not have its registry port mistaken for a tag. That is worth a test, and the
+    /// SwiftUI target has none.
+    public static func shortReference(_ reference: String) -> String {
+        // Split the digest off first, or the last path component swallows all of it.
+        let path: String
+        let digest: String?
+        if let at = reference.firstIndex(of: "@") {
+            path = String(reference[reference.startIndex..<at])
+            digest = String(reference[reference.index(after: at)...])
+        } else {
+            path = reference
+            digest = nil
+        }
+
+        // Splitting on "/" is what keeps a registry port out of the way: in
+        // `registry.example:5000/team/tool:2.1` the port is in an earlier component, so the
+        // last component's colon is unambiguously the tag.
+        let short = path.split(separator: "/").last.map(String.init) ?? path
+
+        guard let digest else { return short }
+        // Enough of the digest to recognise, short enough to read — and never dropped
+        // entirely, because hiding it would hide that the image is pinned at all.
+        let abbreviated = digest.count > 19 ? String(digest.prefix(19)) + "…" : digest
+        return "\(short)@\(abbreviated)"
+    }
+
+    /// Size of the variant matching the host arch (arm64), else the largest variant.
+    public var displaySize: Int64? {
+        let arm = variants?.first { $0.platform?.architecture == "arm64" }?.size
+        return arm ?? variants?.compactMap(\.size).max()
+    }
+}
+
+// MARK: - Stats  (`container stats --no-stream --format json`)
+
+public struct ContainerStats: Codable, Identifiable, Sendable {
+    public var id: String
+    public var cpuUsageUsec: Int64?
+    public var memoryUsageBytes: Int64?
+    public var memoryLimitBytes: Int64?
+    public var networkRxBytes: Int64?
+    public var networkTxBytes: Int64?
+    public var blockReadBytes: Int64?
+    public var blockWriteBytes: Int64?
+    public var numProcesses: Int?
+
+    /// NOTE: `cpuUsageUsec` is cumulative — compute a % from the delta between two
+    /// samples over wall-clock time. A single-sample CPU % is not meaningful.
+    public var memoryPercent: Double? {
+        guard let used = memoryUsageBytes, let limit = memoryLimitBytes, limit > 0 else { return nil }
+        return Double(used) / Double(limit) * 100
+    }
+}
+
+// MARK: - System
+
+// MARK: - Disk usage  (`container system df --format json`)
+
+/// Captured from a live `container 1.0.0` install on 2026-07-28. The payload is an object
+/// keyed by resource — not the array the list commands return — with the same four counters
+/// under each key.
+public struct SystemDiskUsage: Codable, Sendable {
+    public var containers: Category
+    public var images: Category
+    public var volumes: Category
+
+    public struct Category: Codable, Sendable, Hashable, Identifiable {
+        public var total: Int
+        public var active: Int
+        public var sizeInBytes: Int64
+        public var reclaimable: Int64
+
+        /// Set by `SystemDiskUsage.categories` so a table can identify rows; not part of
+        /// the decoded payload, which is keyed rather than labelled.
+        public var id: String = ""
+
+        private enum CodingKeys: String, CodingKey {
+            case total, active, sizeInBytes, reclaimable
+        }
+
+        public init(total: Int, active: Int, sizeInBytes: Int64, reclaimable: Int64, id: String = "") {
+            self.total = total
+            self.active = active
+            self.sizeInBytes = sizeInBytes
+            self.reclaimable = reclaimable
+            self.id = id
+        }
+
+        /// Share of this category's bytes that could be freed. Nil rather than zero when
+        /// nothing is stored — "0% reclaimable" and "nothing here" are different answers,
+        /// and the CLI's own table prints `0 B (0%)` for both.
+        public var reclaimableFraction: Double? {
+            guard sizeInBytes > 0 else { return nil }
+            return Double(reclaimable) / Double(sizeInBytes)
+        }
+    }
+
+    /// Row order matching the CLI's own `system df` table, so the app and the terminal
+    /// don't disagree about what comes first.
+    public var categories: [Category] {
+        [labelled(images, "Images"),
+         labelled(containers, "Containers"),
+         labelled(volumes, "Local Volumes")]
+    }
+
+    private func labelled(_ category: Category, _ id: String) -> Category {
+        var copy = category
+        copy.id = id
+        return copy
+    }
+
+    public var totalReclaimableBytes: Int64 {
+        containers.reclaimable + images.reclaimable + volumes.reclaimable
+    }
+}
+
+/// `container system status --format json`, decoded from **either** payload shape.
+///
+/// Apple replaced this payload in 1.4.1 (PR #1769). 1.0.0 was flat:
+///
+/// ```json
+/// { "status": "running", "apiServerVersion": "container-apiserver version 1.0.0 (…)",
+///   "appRoot": "…", "installRoot": "/usr/local/" }
+/// ```
+///
+/// 1.4.1 keeps `status` at the top and nests the rest, with every nested object optional because
+/// the daemon-sourced ones are omitted when the server is unavailable:
+///
+/// ```json
+/// { "status": "running",
+///   "client": { "version": "1.4.1", "build": "release", "commit": "…", "appName": "container" },
+///   "server": { … }, "host": { "architecture": …, "cpus": … },
+///   "paths": { "appRoot": "…", "installRoot": "…", "logRoot": "…" },
+///   "resources": { "containersTotal": 7, "containersRunning": 5, "images": 9 } }
+/// ```
+///
+/// **Both are decoded, rather than cutting over.** Flotilla is installed next to whatever
+/// `container` the user happens to have, and the version it reports is exactly the thing this
+/// type is used to find out — so a build that only understood the new shape would be unable to
+/// describe the runtime it was complaining about. The computed properties below read whichever
+/// side is present, so callers never learn which version they are talking to.
+///
+/// `status` itself moved in neither version, which is why `Preflight` survived the change
+/// untouched: it reads `isRunning` and nothing else.
+public struct SystemStatus: Codable, Sendable {
+    public var status: String
+
+    // 1.0.0, flat. Absent on 1.4.1.
+    private var apiServerVersionFlat: String?
+    private var appRootFlat: String?
+    private var installRootFlat: String?
+
+    // 1.4.1, nested. Absent on 1.0.0.
+    public var client: Component?
+    public var server: Component?
+    public var host: Host?
+    public var paths: Paths?
+    public var resources: ResourceCounts?
+
+    public struct Component: Codable, Sendable {
+        public var version: String
+        public var build: String?
+        public var commit: String?
+        public var appName: String?
+    }
+
+    public struct Host: Codable, Sendable {
+        public var architecture: String?
+        public var operatingSystem: String?
+        public var cpus: Int?
+    }
+
+    public struct Paths: Codable, Sendable {
+        public var appRoot: String?
+        public var installRoot: String?
+        public var logRoot: String?
+    }
+
+    public struct ResourceCounts: Codable, Sendable {
+        public var containersTotal: Int?
+        public var containersRunning: Int?
+        public var images: Int?
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case apiServerVersionFlat = "apiServerVersion"
+        case appRootFlat = "appRoot"
+        case installRootFlat = "installRoot"
+        case client, server, host, paths, resources
+    }
+
+    public var isRunning: Bool { status == "running" }
+
+    /// The daemon's version, from whichever shape reported it.
+    ///
+    /// 1.0.0 gave a whole sentence — `container-apiserver version 1.0.0 (build: release, commit:
+    /// ee848e3)` — and 1.4.1 gives the bare number. Not normalised here: this is diagnostic text,
+    /// and rewriting what the runtime said about itself in a support bundle is how a bug report
+    /// stops matching the machine it came from.
+    public var apiServerVersion: String? { server?.version ?? apiServerVersionFlat }
+
+    public var appRoot: String? { paths?.appRoot ?? appRootFlat }
+    public var installRoot: String? { paths?.installRoot ?? installRootFlat }
+
+    /// True when the CLI and the running service are **different builds**.
+    ///
+    /// This is the state a `container` upgrade leaves behind, and it is worth detecting because
+    /// nothing else about it looks wrong. Measured here on 2026-09-12, upgrading 1.0.0 → 1.4.1
+    /// without restarting the service (the fixture is
+    /// `Fixtures/system-status-version-skew.json`, captured in exactly that state):
+    ///
+    /// * `status` said `running`, so preflight was satisfied and Flotilla showed a green light;
+    /// * every already-running container kept running;
+    /// * and **no new container or machine could start at all**, failing with
+    ///   `no available interface strategy for network default, plugin=container-network-vmnet
+    ///   variant=nil` — the old plugin processes were still holding the networks.
+    ///
+    /// `container system stop && container system start` fixed it completely. So the symptom is
+    /// baffling, the cause is invisible, and the remedy is one button Flotilla already has.
+    ///
+    /// **Compared by commit, not by version string.** The old daemon reported its version as a
+    /// whole sentence — `container-apiserver version 1.0.0 (build: release, commit: ee848e3)` —
+    /// while 1.4.1 reports a bare `1.4.1`, so a string comparison would have to parse two
+    /// formats and would still be guessing. The commit is exact and format-independent. Version
+    /// strings are the fallback for a payload that omits commits.
+    ///
+    /// Only ever true on a runtime new enough to report both halves: 1.0.0's flat payload named
+    /// the server alone, so there was nothing to compare it against and this is `false` there.
+    /// That is the honest answer rather than a guess — and the version that can detect the
+    /// problem is the version you are upgrading *to*, which is when it matters.
+    public var hasVersionSkew: Bool {
+        guard let client, let server else { return false }
+        if let clientCommit = client.commit, let serverCommit = server.commit {
+            return clientCommit != serverCommit
+        }
+        return !server.version.contains(client.version)
+    }
+
+    /// The two builds, for a message that names them rather than saying "mismatch".
+    public var skewDescription: String? {
+        guard hasVersionSkew, let client, let server else { return nil }
+        return "CLI \(client.version), service \(Self.shortVersion(server.version))"
+    }
+
+    /// `container-apiserver version 1.0.0 (build: release, commit: ee848e3)` → `1.0.0`.
+    ///
+    /// Only for the sentence the pre-1.4.1 daemon reports, and only for display — the raw string
+    /// is what reaches a support bundle, unchanged.
+    static func shortVersion(_ reported: String) -> String {
+        for word in reported.split(separator: " ") where SemanticVersion(String(word)) != nil {
+            return String(word)
+        }
+        return reported
+    }
+}
+
+public struct VersionComponent: Codable, Identifiable, Sendable {
+    public var appName: String
+    public var version: String
+    public var buildType: String?
+    public var commit: String?
+
+    public var id: String { appName }
+}
+
+// MARK: - Volume  (`container volume list --format json`)
+
+// ⚠️ SCHEMA NOT YET CAPTURED. Unlike everything above, no live `container volume list`
+// output has been captured into Fixtures/, so the field names here are inferred from
+// `reference/container-cli.md` (`volume create -s/--opt size=/--opt journal=/--label`)
+// and from the shape the CLI uses elsewhere. Everything but the identifier is optional
+// and the identifier accepts either `name` or `id`, so an unexpected schema degrades to
+// a sparse row rather than a decode failure. Capture a real fixture and tighten this the
+// first time it runs against a live install.
+/// A volume, as `container volume list --format json` actually returns it.
+///
+/// **This model was wrong until 2026-07-30, and its fixture was fabricated.** The old shape
+/// was flat (`name`, `format`, `source`, … at the top level) and `volumes.json` had been
+/// written to match the model rather than captured from the CLI, so the tests passed while
+/// the real payload — `{ "configuration": { … }, "id": … }` — could not decode at all.
+/// `name` was non-optional, so the moment a volume existed, decoding *threw* and the Volumes
+/// screen showed a runtime error instead of a list. A fixture nobody captured is worse than
+/// no fixture: it makes a broken decode look verified.
+public struct ContainerVolume: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var configuration: Configuration
+
+    public struct Configuration: Codable, Sendable, Equatable {
+        public var name: String
+        public var driver: String?
+        public var format: String?
+        public var source: String?
+        public var creationDate: String?
+        /// The size the volume was **created with** — its capacity, not its usage.
+        ///
+        /// Measured 2026-09-12: a volume created with `--size 64M` reports exactly 67,108,864
+        /// here while occupying 2.2 MB on disk, and one created with no size reports
+        /// 549,755,813,888 (the 512 GiB default) while occupying 66 MB. `container system df`
+        /// reports the real figure, but only as one total for all volumes together.
+        public var sizeInBytes: Int64?
+        public var labels: [String: String]?
+        public var options: [String: String]?
+
+        public init(
+            name: String, driver: String? = nil, format: String? = nil, source: String? = nil,
+            creationDate: String? = nil, sizeInBytes: Int64? = nil,
+            labels: [String: String]? = nil, options: [String: String]? = nil
+        ) {
+            self.name = name
+            self.driver = driver
+            self.format = format
+            self.source = source
+            self.creationDate = creationDate
+            self.sizeInBytes = sizeInBytes
+            self.labels = labels
+            self.options = options
+        }
+    }
+
+    public init(id: String, configuration: Configuration) {
+        self.id = id
+        self.configuration = configuration
+    }
+
+    // Convenience so call sites read the same as before the shape was corrected.
+    public var name: String { configuration.name }
+    public var format: String? { configuration.format }
+    public var source: String? { configuration.source }
+    public var driver: String? { configuration.driver }
+    public var createdAt: String? { configuration.creationDate }
+    public var sizeInBytes: Int64? { configuration.sizeInBytes }
+    public var labels: [String: String]? { configuration.labels }
+}
+
+// MARK: - Network  (`container network list --format json`)
+
+// ⚠️ SCHEMA NOT YET CAPTURED — same caveat as ContainerVolume. What *is* pinned by a real
+// fixture is the network reference seen from the container side
+// (`Container.Status.NetworkStatus`, e.g. `network: "default"`), which is why `id` is the
+// identifier here: it's the value that joins the two.
+//
+// Named `ContainerNetwork`, not `Network`, on purpose — matching `ContainerImage`, and
+// because a `FlotillaCore.Network` would collide with `import Network` in the Phase 2
+// transport code.
+/// A network, as `container network list --format json` actually returns it.
+///
+/// Same story as `ContainerVolume`: the old model was flat and `networks.json` was written to
+/// match it rather than captured, so only `id` ever decoded from real output and every row
+/// rendered as a bare name with no mode, subnet or gateway. That is exactly what it looked
+/// like in use — "I don't see any information".
+///
+/// Note the subnet and gateway live under **`status`**, not configuration: they are assigned
+/// by the network plugin at creation, so they are observed state rather than declared intent.
+public struct ContainerNetwork: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var configuration: Configuration
+    public var status: Status?
+
+    public struct Configuration: Codable, Sendable, Equatable {
+        public var name: String
+        public var mode: String?
+        public var plugin: String?
+        public var creationDate: String?
+        public var labels: [String: String]?
+        public var options: [String: String]?
+
+        public init(
+            name: String, mode: String? = nil, plugin: String? = nil, creationDate: String? = nil,
+            labels: [String: String]? = nil, options: [String: String]? = nil
+        ) {
+            self.name = name
+            self.mode = mode
+            self.plugin = plugin
+            self.creationDate = creationDate
+            self.labels = labels
+            self.options = options
+        }
+    }
+
+    public struct Status: Codable, Sendable, Equatable {
+        public var ipv4Subnet: String?
+        public var ipv4Gateway: String?
+        public var ipv6Subnet: String?
+
+        public init(ipv4Subnet: String? = nil, ipv4Gateway: String? = nil, ipv6Subnet: String? = nil) {
+            self.ipv4Subnet = ipv4Subnet
+            self.ipv4Gateway = ipv4Gateway
+            self.ipv6Subnet = ipv6Subnet
+        }
+    }
+
+    public init(id: String, configuration: Configuration, status: Status? = nil) {
+        self.id = id
+        self.configuration = configuration
+        self.status = status
+    }
+
+    public var name: String { configuration.name }
+    public var mode: String? { configuration.mode }
+    public var plugin: String? { configuration.plugin }
+    public var subnet: String? { status?.ipv4Subnet }
+    public var gateway: String? { status?.ipv4Gateway }
+    public var ipv6Subnet: String? { status?.ipv6Subnet }
+    public var labels: [String: String]? { configuration.labels }
+
+    /// A builtin network is one Apple created, not the user — `default` carries
+    /// `com.apple.container.resource.role: builtin`. Deleting it is not something to offer
+    /// as casually as deleting your own.
+    public var isBuiltin: Bool {
+        configuration.labels?["com.apple.container.resource.role"] == "builtin"
+    }
+}
+
+// MARK: - Machine  (`container machine list --format json`, `container machine inspect`)
+
+/// A `container machine` — one of the CLI's own persistent Linux micro-VMs (see
+/// `research/MACHINES-SPEC.md`). Not general-purpose VM management; scope is exactly
+/// the `container machine` subcommand family.
+///
+/// **Deliberately FLAT, unlike `Container`.** Modelling this by analogy to `Container`'s
+/// `configuration`/`status` nesting is the exact mistake that made `ContainerVolume` throw
+/// on every real volume (see that type's history, above). Captured against real
+/// `container 1.0.0` output (`Fixtures/machines.json`, `Fixtures/machine-inspect.json`),
+/// and the top-level keys really are flat: `id`, `status`, `cpus`, `memory`, `diskSize`,
+/// `ipAddress`, `createdDate`, `default`. Also note `status`, not `state` — a different key
+/// than `Container.Status.state` for what is conceptually the same thing.
+///
+/// **One type, not two.** `machine inspect` returns everything `machine list` does, plus
+/// five more fields (`containerId`, `homeMount`, `image`, `platform`, `startedDate`,
+/// `userSetup`). Modelled here as one `Codable` struct with those five optional, rather
+/// than a second `MachineInspect` type — the same choice `Container` already makes for its
+/// own list/inspect pair (`ContainerCLI.inspect` decodes the identical `[Container]` shape
+/// `ls` does). A second type would duplicate every list-shared field and force call sites
+/// to know in advance which shape they are holding; an optional simply reads as "not filled
+/// in yet" until an `inspectMachine` call populates it.
+public struct ContainerMachine: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var status: String
+
+    /// The reported status, parsed. See `MachineState` — in particular for why there is no
+    /// "failed" among these either.
+    public var state: MachineState { MachineState(status) }
+    public var cpus: Int
+    /// Bytes. `machine list --format table` renders this in human units; the JSON does not.
+    public var memory: Int64
+    /// Bytes, same unit note as `memory`.
+    public var diskSize: Int64
+    public var ipAddress: String?
+    public var createdDate: String?
+    /// Whether `machine set-default` currently points at this machine. Present on
+    /// `machine list` output; **absent** from `machine inspect` (confirmed against
+    /// `Fixtures/machine-inspect.json`, which has no `default` key at all) — nil here
+    /// means "this endpoint doesn't say," not "not the default." `default` is also a
+    /// Swift keyword, hence the rename via `CodingKeys`.
+    public var isDefault: Bool?
+
+    // Inspect-only — nil when decoded from `machine list`.
+    public var containerId: String?
+    /// `ro` or `rw` in the one captured fixture; whether `none`/unset also occurs is not
+    /// yet verified (`research/MACHINES-SPEC.md` §6.4).
+    public var homeMount: String?
+    public var image: MachineImage?
+    public var platform: Platform?
+    public var startedDate: String?
+    public var userSetup: UserSetup?
+
+    public struct MachineImage: Codable, Sendable, Equatable {
+        public var reference: String
+        public var descriptor: Descriptor?
+    }
+
+    /// The host user whose account booted this machine.
+    ///
+    /// `username` is the HOST USER'S NAME — identity, not machine metadata. The committed
+    /// fixture is anonymised to `example` on purpose. **Never log this field, and never let
+    /// it reach a diagnostics snapshot or support bundle unredacted.**
+    public struct UserSetup: Codable, Sendable, Equatable {
+        public var uid: Int
+        public var gid: Int
+        public var username: String
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, status, cpus, memory, diskSize, ipAddress, createdDate
+        case isDefault = "default"
+        case containerId, homeMount, image, platform, startedDate, userSetup
+    }
+
+    public init(
+        id: String, status: String, cpus: Int, memory: Int64, diskSize: Int64,
+        ipAddress: String? = nil, createdDate: String? = nil, isDefault: Bool? = nil,
+        containerId: String? = nil, homeMount: String? = nil, image: MachineImage? = nil,
+        platform: Platform? = nil, startedDate: String? = nil, userSetup: UserSetup? = nil
+    ) {
+        self.id = id
+        self.status = status
+        self.cpus = cpus
+        self.memory = memory
+        self.diskSize = diskSize
+        self.ipAddress = ipAddress
+        self.createdDate = createdDate
+        self.isDefault = isDefault
+        self.containerId = containerId
+        self.homeMount = homeMount
+        self.image = image
+        self.platform = platform
+        self.startedDate = startedDate
+        self.userSetup = userSetup
+    }
+
+    public var isRunning: Bool { status.caseInsensitiveCompare("running") == .orderedSame }
+}
+
+// MARK: - Logs
+
+// `container logs` emits plain text, not JSON, so these are Flotilla's own types
+// rather than a decode of CLI output: the CLI gives us bytes, we split and tag them.
+// They are Codable because Phase 2 ships them over the Wire from a host peer.
+
+public struct LogLine: Codable, Identifiable, Sendable, Equatable {
+    public enum Stream: String, Codable, Sendable {
+        case stdout, stderr
+        /// Flotilla's own word about the stream — lines dropped because it fell behind. Shown
+        /// apart from the output so it is never mistaken for the container's.
+        case notice
+    }
+
+    /// Sequence number within the chunk. Log lines are not unique by content, so
+    /// identity has to come from position — a `List` keyed on text would glitch on
+    /// repeated output.
+    public var index: Int
+    public var stream: Stream
+    public var text: String
+    /// When Flotilla received the line. `container logs` has no `--timestamps` flag,
+    /// so this is never the container's own clock.
+    public var receivedAt: Date?
+
+    public var id: Int { index }
+
+    public init(index: Int, stream: Stream = .stdout, text: String, receivedAt: Date? = nil) {
+        self.index = index
+        self.stream = stream
+        self.text = text
+        self.receivedAt = receivedAt
+    }
+}
+
+/// One bounded fetch of a container's logs — the "reload" half of the log viewer.
+///
+/// The live half does not produce one of these: `ContainerCLI.followLogs` hands lines to an
+/// observer as they arrive and there is no chunk to describe, which is why this has no cursor.
+/// A chunk is a snapshot; a tail is not.
+public struct LogChunk: Codable, Sendable, Equatable {
+    public var containerID: String
+    public var lines: [LogLine]
+    /// The `-n` value that was asked for.
+    public var requestedLines: Int
+    /// True when the requested limit was hit, i.e. older lines exist.
+    public var truncated: Bool
+    /// `container logs --boot` returns the VM boot log instead of the process output.
+    public var isBootLog: Bool
+
+    public init(
+        containerID: String, lines: [LogLine], requestedLines: Int,
+        truncated: Bool = false, isBootLog: Bool = false
+    ) {
+        self.containerID = containerID
+        self.lines = lines
+        self.requestedLines = requestedLines
+        self.truncated = truncated
+        self.isBootLog = isBootLog
+    }
+
+    /// Split raw CLI output into tagged lines. A trailing newline is not an empty
+    /// last line.
+    public static func from(
+        stdout: String, stderr: String = "", containerID: String,
+        requestedLines: Int, isBootLog: Bool = false, receivedAt: Date? = nil
+    ) -> LogChunk {
+        var lines: [LogLine] = []
+        func append(_ text: String, _ stream: LogLine.Stream) {
+            guard !text.isEmpty else { return }
+            var pieces = text.split(separator: "\n", omittingEmptySubsequences: false)
+            // A trailing newline terminates the last line; it is not an empty one.
+            if text.hasSuffix("\n") { pieces.removeLast() }
+            for piece in pieces {
+                lines.append(LogLine(index: lines.count, stream: stream, text: String(piece), receivedAt: receivedAt))
+            }
+        }
+        append(stdout, .stdout)
+        append(stderr, .stderr)
+        return LogChunk(
+            containerID: containerID, lines: lines, requestedLines: requestedLines,
+            truncated: requestedLines > 0 && lines.count >= requestedLines, isBootLog: isBootLog
+        )
+    }
+}
+
+// MARK: - Notifications
+
+/// Notification categories, each with its own toggle (`DECISIONS.md` Q6: notifications
+/// ship in Phase 1 with full per-category toggles).
+///
+/// Docker's one good rule here is that genuine errors are not disableable; unlike
+/// Docker we ship no announcement, survey or recommendation categories, because we
+/// have nothing to announce.
+public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Identifiable {
+    case containerExited
+    case imagePullFinished
+    case buildFinished
+    case hostOffline
+    case error
+
+    public var id: String { rawValue }
+
+    /// Errors are always delivered; the UI shows this row as an "always on" disabled
+    /// toggle rather than hiding it.
+    public var isMandatory: Bool { self == .error }
+
+    public var defaultEnabled: Bool {
+        switch self {
+        case .error, .hostOffline: true
+        case .containerExited, .imagePullFinished, .buildFinished: false
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .containerExited: "Container exited unexpectedly"
+        case .imagePullFinished: "Image pull finished"
+        case .buildFinished: "Build finished"
+        case .hostOffline: "Host went offline"
+        case .error: "Errors"
+        }
+    }
+
+    public var summary: String {
+        switch self {
+        case .containerExited: "Notify when a container stops without being asked to."
+        case .imagePullFinished: "Notify when `container image pull` completes."
+        case .buildFinished: "Notify when a build completes."
+        case .hostOffline: "Notify when a fleet host stops responding."
+        case .error: "Notify on operation failures. Always on."
+        }
+    }
+}
+
+/// Effective per-category state, resolved from `SettingsStore`. A value type so the
+/// notifications pane and a Wire message can carry the same thing.
+///
+/// Encodes as a flat `{"hostOffline": true, …}` object: Foundation would otherwise
+/// encode an enum-keyed dictionary as an array of alternating keys and values, which
+/// round-trips but is unreadable in a support bundle.
+public struct NotificationSettings: Codable, Sendable, Equatable {
+    public var enabled: [NotificationCategory: Bool]
+
+    public init(enabled: [NotificationCategory: Bool] = [:]) {
+        self.enabled = enabled
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode([String: Bool].self)
+        enabled = Dictionary(uniqueKeysWithValues: raw.compactMap { name, on in
+            NotificationCategory(rawValue: name).map { ($0, on) }
+        })
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(Dictionary(uniqueKeysWithValues: enabled.map { ($0.key.rawValue, $0.value) }))
+    }
+
+    public static var defaults: NotificationSettings {
+        NotificationSettings(enabled: Dictionary(uniqueKeysWithValues:
+            NotificationCategory.allCases.map { ($0, $0.defaultEnabled) }
+        ))
+    }
+
+    public func isEnabled(_ category: NotificationCategory) -> Bool {
+        category.isMandatory || (enabled[category] ?? category.defaultEnabled)
+    }
+}
+
+// MARK: - Preflight
+
+/// Outcome of the `container` CLI preflight check (the CLI owner's `Preflight.swift` returns
+/// this; it lives here so the diagnostics snapshot and the Wire layer can carry it
+/// without depending on the preflight implementation).
+///
+/// Versions are carried as strings, not a parsed type, so the comparison logic stays
+/// entirely in `Preflight.swift`.
+public enum PreflightResult: Codable, Sendable, Equatable {
+    /// Installed, new enough, and the API service answered.
+    case ok(version: String, path: String)
+    /// No `container` binary found. Triggers the guided install offer — which is
+    /// always user-authorized, never silent or privileged.
+    case missing
+    case tooOld(found: String, required: String)
+    /// Installed and new enough, but the API service is not running.
+    ///
+    /// Split out of `.unusable` because the app *acts* on this one: it is the normal state after
+    /// a reboot and one `container system start` from working, so the UI offers to fix it rather
+    /// than reporting a fault. `status` is the CLI's own word for the state.
+    case serviceStopped(version: String, path: String, status: String)
+    /// Installed, new enough, service **running** — and the service is a *different build* from
+    /// the CLI, which means nothing new can start.
+    ///
+    /// Its own case rather than a flavour of `.ok`, because the difference is not cosmetic:
+    /// measured on 2026-09-12 upgrading 1.0.0 → 1.4.1 without restarting, `status` said
+    /// `running` and every `container run` failed with `no available interface strategy for
+    /// network default`. `.ok` would have Flotilla show a green light over a runtime that cannot
+    /// start a container, which is the one thing preflight exists to prevent.
+    ///
+    /// One `container system stop && start` fixes it, so this is offered like `.serviceStopped`
+    /// — a state the app can repair — rather than reported like a fault.
+    case needsRestart(cli: String, service: String, path: String)
+    /// Installed, new enough, service running and the right build — and **no kernel**, so no
+    /// container or machine can start.
+    ///
+    /// What a fresh install looks like (measured on 1.5.0, 5 October, on a Mac that had never had
+    /// `container`): `system status` says `running` and every `run` fails until
+    /// `container system kernel set --recommended` downloads one. `expected` is the file whose
+    /// absence was the evidence, so the diagnosis can be checked rather than taken on trust.
+    /// Repairable like `.needsRestart`: one command, offered as a button the user presses.
+    case needsKernel(version: String, path: String, expected: String)
+    /// Present but not usable: wrong architecture, unreadable version, an API that will not
+    /// answer even once started.
+    case unusable(reason: String)
+
+    public var isOK: Bool { if case .ok = self { true } else { false } }
+
+    /// Version string when one could be read, whether or not it was acceptable.
+    public var detectedVersion: String? {
+        switch self {
+        case .ok(let version, _): version
+        case .serviceStopped(let version, _, _): version
+        case .needsRestart(let cli, _, _): cli
+        case .needsKernel(let version, _, _): version
+        case .tooOld(let found, _): found
+        case .missing, .unusable: nil
+        }
+    }
+
+    /// One line for the menu bar, the diagnostics snapshot and the log.
+    public var summary: String {
+        switch self {
+        case .ok(let version, _): "container \(version) ready"
+        case .missing: "container is not installed"
+        case .serviceStopped(let version, _, let status): "container \(version) installed, service \(status)"
+        case .needsRestart(let cli, let service, _):
+            "container \(cli) installed but the running service is \(service) — restart it"
+        case .needsKernel(let version, _, _):
+            "container \(version) running, but no kernel is installed — nothing can start"
+        case .tooOld(let found, let required): "container \(found) is older than the required \(required)"
+        case .unusable(let reason): "container is unusable: \(reason)"
+        }
+    }
+}
+
+extension JSONDecoder {
+    /// Shared decoder for `container` JSON. Keys already match (camelCase), so no
+    /// key strategy is needed.
+    public static var flotilla: JSONDecoder { JSONDecoder() }
+}

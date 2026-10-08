@@ -1,0 +1,19 @@
+[
+  {
+    "configuration" : {
+      "creationDate" : "2026-10-05T10:38:00Z",
+      "driver" : "local",
+      "format" : "ext4",
+      "labels" : {
+
+      },
+      "name" : "fx-vol",
+      "options" : {
+        "size" : "64M"
+      },
+      "sizeInBytes" : 67108864,
+      "source" : "/Users/example/Library/Application Support/com.apple.container/volumes/fx-vol/volume.img"
+    },
+    "id" : "fx-vol"
+  }
+]

@@ -1,0 +1,2224 @@
+import Foundation
+import Observation
+// The appearance preference has to reach AppKit as well as SwiftUI — see
+// `applyAppKitAppearance()`. This is the app target, so AppKit is fair game; `FlotillaCore`
+// stays Foundation-only.
+import AppKit
+import FlotillaCore
+import FlotillaNet
+
+/// UI-facing state for the app shell.
+///
+/// Deliberately thin: every rule about *what may run* lives in `FlotillaCore`
+/// (`Allowlist`, `MountPolicy`), not here. A view must never construct an argv and hand it
+/// to a host directly — it goes through `ContainerCLI`, which validates first. Keeping that
+/// boundary in one place is what makes the security review meaningful.
+@MainActor
+@Observable
+final class AppModel {
+
+    enum LoadState: Equatable {
+        case idle
+        case loading
+        /// `container` is absent or too old — the UI shows preflight guidance rather than an
+        /// empty table pretending the fleet is healthy.
+        case unavailable(String)
+        case loaded
+        case failed(String)
+    }
+
+    private(set) var state: LoadState = .idle
+    private(set) var containers: [Container] = []
+    private(set) var lastRefresh: Date?
+
+    /// Which host each row came from. Phase 1 is local-only, but the table is a *cross-host*
+    /// table by design (the one thing no comparable tool has), so rows carry their origin
+    /// from the start rather than being retrofitted in Phase 3.
+    var hostLabel: String { "This Mac" }
+
+    /// Internal rather than `private` so `AppModelDetail.swift`'s extension can share **this**
+    /// instance. It was private, which Swift's same-file rule put out of reach of an
+    /// extension in another file, so that extension built a second `ContainerCLI` of its own.
+    /// That compiles as a bypass of nothing — both cross `Allowlist` — but it silently
+    /// discards this one's `mountPolicy`, and a narrowed policy that some call sites quietly
+    /// ignore is worse than no policy at all. One instance, one boundary.
+    let cli: ContainerCLI
+
+    /// Shared with the Settings screen. Unmanaged by default, matching the personal,
+    /// unmanaged-Mac case (`DECISIONS.md` Q4) — a managed source is wired in once the
+    /// app reads `/Library/Managed Preferences` for real.
+    let settingsStore: SettingsStore
+    /// Host mode: identity, peers, listener, pairing (PLAN.md Phase B).
+    let hostMode: HostModeController
+
+    /// The user's tags, and what they are on.
+    ///
+    /// Held here rather than beside the section UI states in `MainWindowView` because tags are
+    /// **data, not view state**: a filter resets harmlessly when a section is rebuilt, a tag
+    /// must not. It also has to be reachable from surfaces that are not the main window — the
+    /// menu-bar popover shows containers too — and from five sections at once, which is what an
+    /// app-model property is for.
+    ///
+    /// Deliberately not a setting; `TagStore` says why it is not in `SettingsStore`.
+    let tags = TagStore()
+
+    /// Registries the user has added by hand, on top of the built-in catalogue. Held here for
+    /// the reason `tags` is: data rather than view state. Carries no credentials — see
+    /// `RegistryStore`.
+    let registries = RegistryStore()
+
+    /// Saved groups of containers that start and stop together. Data rather than view state, for
+    /// the reason `tags` gives; `GroupStore` says why it is not in `SettingsStore`.
+    let groups = GroupStore()
+
+    /// Retained for as long as the app runs. `SettingsPersistence` writes on every change
+    /// through this token, and dropping it would stop persistence silently — which looks
+    /// identical to the bug it exists to fix.
+    private let persistence: SettingsObservation?
+
+    /// The default store is seeded from `UserDefaults` and writes back on change. Tests and
+    /// previews pass their own in-memory store, which then persists nothing.
+    /// `execPolicy: .interactiveShell` is set **here**, at the one place a client driving its
+    /// own Mac is constructed, and nowhere else. It backs the detail view's Terminal tab.
+    ///
+    /// Deliberately not a constant inside that tab: when Phase 2 builds a `ContainerCLI` for a
+    /// remote peer it will pass the strict default, and the terminal must then refuse rather
+    /// than carry on because it had the permissive value baked in. The policy travels with the
+    /// CLI, exactly as `MountPolicy` does.
+    init(cli: ContainerCLI = ContainerCLI(host: LocalHost(), execPolicy: .interactiveShell, wirePolicy: .localOwner),
+         settingsStore: SettingsStore? = nil) {
+        let resolved: (store: SettingsStore, observation: SettingsObservation?)
+        if let settingsStore {
+            resolved = (settingsStore, nil)
+        } else {
+            let made = SettingsPersistence.makeStore()
+            resolved = (made.store, made.observation)
+        }
+
+        self.cli = cli
+        self.settingsStore = resolved.store
+        self.persistence = resolved.observation
+        self.appearance = resolved.store.effectiveAppearance
+        self.needsAppearanceOnboarding = resolved.store.needsAppearanceOnboarding
+        self.themeChoice = Self.themeChoice(from: resolved.store)
+        self.showsDockIcon = resolved.store[SettingsKeys.showDockIcon]
+        self.notifier = Notifier(categories: Self.notificationSettings(from: resolved.store))
+        self.errorLog = ErrorLog(settings: resolved.store)
+        self.hostMode = HostModeController(settings: resolved.store, containerHost: cli.host)
+        observeSettings()
+        // At launch too, not only on change. This was missing: `appearance` was read here but only
+        // *applied* by `reloadAppearance()`, after a settings edit, so a saved Light or Dark was
+        // ignored on every launch and the window followed the system until something in Settings
+        // changed. Auto hid it, since Auto follows the system anyway. Found 5 October, when a
+        // relaunch with `appearance = dark` drew light. No window exists yet; the app-level value
+        // is what each new window inherits.
+        applyAppKitAppearance()
+        // At launch, not only on change: the preference and the system state can already disagree
+        // before the app runs — a fresh install with `launchAtLogin` seeded by a managed profile,
+        // or a user who removed Flotilla in System Settings ▸ Login Items since last time.
+        syncLoginItem()
+        hostMode.recordActivity = { [weak self] event in self?.recordActivity(event) }
+        updater.apply(isAdmin: hostMode.isAdmin)
+        startHostRuntimeWatch()
+        Task { await PrivilegedHelper.moveFromLegacyName() }
+        // The first load, from here rather than only from the main window: a launch with no window
+        // (at login, or with the window closed) left preflight unrun, so the menu bar said
+        // "Checking…" until the window was opened — found 8 October, once the menu bar had a
+        // status line and a badge to show it.
+        Task { await reloadUnlessLoading() }
+        startFleetWatch()
+        hostMode.onRefreshed = { [weak self] in
+            Task {
+                await self?.updateFleetNames()
+                await self?.rollOutUpdates()
+            }
+        }
+        hostMode.installUpdate = { [weak self] archive, isIdle in
+            guard let self else { return .failure(HostCallFailure(.internalError, "This host isn't ready.")) }
+            return await self.performInstallUpdate(archive, isIdle: isIdle)
+        }
+        restoreFleetNames()
+        hostMode.performHostCall = { [weak self] call in
+            guard let self else { return .failure(HostCallFailure(.internalError, "This host isn't ready.")) }
+            return await self.performHostCall(call)
+        }
+        hostMode.apply()
+    }
+
+    // MARK: Appearance
+    //
+    // `SettingsStore` is Foundation-only, so it is not `@Observable` and cannot drive
+    // SwiftUI on its own — and `SettingRow` keeps each edit in local `@State`, so nothing
+    // propagated past the row that made it. The result was a picker offering Light / Dark /
+    // Auto that changed precisely nothing. This is the bridge: the store's change
+    // notifications become observable properties the scenes can read.
+
+    /// What the app should actually render with. `.auto` means follow the system.
+    private(set) var appearance: AppearanceMode
+    /// True until the user (or a managed profile) has answered the first-run question.
+    /// Distinct from "chose auto" — see `AppearancePreference.notChosen`.
+    private(set) var needsAppearanceOnboarding: Bool
+    /// The light and dark themes. Observable for the same reason as `appearance`: the scenes put
+    /// it into the environment, and the bar and background repaint from it.
+    private(set) var themeChoice: ThemeChoice
+
+    private var settingsObservation: SettingsObservation?
+
+    private func observeSettings() {
+        settingsObservation = settingsStore.observeChanges { [weak self] _ in
+            // The store may notify from any thread; this state is main-actor isolated.
+            Task { @MainActor [weak self] in self?.reloadAppearance() }
+        }
+    }
+
+    /// `SettingsStore` exposes notification state one category at a time
+    /// (`isEnabled(_:)`); `NotificationSettings` is the value the notifier wants. This
+    /// collects the former into the latter, honouring precedence per key, so a managed
+    /// profile that locks a category is respected here too.
+    private static func notificationSettings(from store: SettingsStore) -> NotificationSettings {
+        NotificationSettings(enabled: Dictionary(uniqueKeysWithValues:
+            NotificationCategory.allCases.map { ($0, store.isEnabled($0)) }
+        ))
+    }
+
+    /// **Show Dock icon.** Read by `AppDelegate`, which is the only place that can act on it —
+    /// activation policy is an `NSApplication` concern.
+    private(set) var showsDockIcon: Bool
+
+    /// What macOS actually thinks about opening Flotilla at login, and why it might disagree with
+    /// the toggle. Shown in Settings rather than assumed: `SMAppService` can accept a registration
+    /// and still park it in `.requiresApproval` until the user approves it in System Settings.
+    private(set) var loginItemStatus: LoginItem.Status = .notRegistered
+    /// The last failure from registering or unregistering, or nil. Surfaced, never swallowed.
+    private(set) var loginItemFailure: String?
+
+    /// Brings the login-item registration into line with `launchAtLogin`.
+    ///
+    /// Called at launch and after any settings change. The preference is the intent and the system
+    /// is the state, and they drift for a legitimate reason: the user can remove Flotilla in System
+    /// Settings ▸ Login Items without touching this app. Reconciling toward the preference is right,
+    /// but only when they actually differ — `LoginItem.reconcile` checks first, so this is a status
+    /// read on the overwhelming majority of calls rather than a registration attempt.
+    private func syncLoginItem() {
+        let wanted = settingsStore[SettingsKeys.launchAtLogin]
+        let (status, failure) = LoginItem.reconcile(preference: wanted)
+        loginItemStatus = status
+        loginItemFailure = failure
+        if let failure {
+            record("Could not \(wanted ? "enable" : "disable") launch at login: \(failure)",
+                   subsystem: "startup")
+        }
+    }
+
+    /// Called after any settings change, so a preference edit takes effect without relaunch.
+    var onPresentationChange: (() -> Void)?
+
+    private func reloadAppearance() {
+        appearance = settingsStore.effectiveAppearance
+        needsAppearanceOnboarding = settingsStore.needsAppearanceOnboarding
+        applyAppKitAppearance()
+        // Compared before assigning, so an unrelated settings edit does not re-run every view
+        // that reads the theme.
+        let newThemes = Self.themeChoice(from: settingsStore)
+        if newThemes != themeChoice { themeChoice = newThemes }
+
+        let newShowsDockIcon = settingsStore[SettingsKeys.showDockIcon]
+        if newShowsDockIcon != showsDockIcon {
+            showsDockIcon = newShowsDockIcon
+            onPresentationChange?()
+        }
+
+        // `launchAtLogin` may have been what changed. This used to be the setting with no code
+        // behind it at all — see `LoginItem`.
+        syncLoginItem()
+
+        // The interval may have been what changed; restart the timers against the new values.
+        restartPolling()
+        restartStatsPolling()
+        // Categories may have been toggled.
+        notifier.updateCategories(Self.notificationSettings(from: settingsStore))
+        // The mode, the port or Bonjour may have changed. Idempotent when nothing did.
+        hostMode.apply()
+        // The role decides whether Sparkle runs; an update setting may have changed.
+        updater.apply(isAdmin: hostMode.isAdmin)
+    }
+
+    private static func themeChoice(from store: SettingsStore) -> ThemeChoice {
+        ThemeChoice(light: store[SettingsKeys.lightTheme], dark: store[SettingsKeys.darkTheme])
+    }
+
+    /// Makes the **AppKit** appearance match the preference, which `preferredColorScheme` alone
+    /// does not do.
+    ///
+    /// This is the fix for the owner's "auto gives a grey, mixed background". There were two
+    /// independent authorities on appearance and nothing kept them in step:
+    ///
+    /// - SwiftUI views followed `preferredColorScheme(model.appearance.colorScheme)`.
+    /// - Every `Theme` colour is a **dynamic `NSColor`**, and those resolve against the *AppKit*
+    ///   appearance — `NSApp`'s, or the window's. Nothing set either, so they followed the system
+    ///   no matter what the user had chosen.
+    ///
+    /// So pinning Light on a dark Mac drew light SwiftUI chrome over dark-resolved brand colours,
+    /// and switching back to Auto after Dark left the window's appearance where
+    /// `preferredColorScheme(.dark)` had put it while SwiftUI redrew light — a honeydew wash
+    /// resolved for one appearance sitting on a background for the other, which is exactly what a
+    /// grey mixture looks like.
+    ///
+    /// `nil` for Auto is the load-bearing part: it means "inherit", so the system's own value
+    /// applies and, crucially, any appearance a previous Light/Dark choice pinned is *cleared*.
+    private func applyAppKitAppearance() {
+        let named: NSAppearance.Name? = switch appearance {
+        case .auto: nil
+        case .light: .aqua
+        case .dark: .darkAqua
+        }
+        let resolved = named.flatMap(NSAppearance.init(named:))
+        NSApplication.shared.appearance = resolved
+
+        // **And every window, which is the part that was missing.**
+        //
+        // The owner: Light worked, Dark worked, and going back to Auto left the window grey until he
+        // switched to another app and back — at which point it corrected itself. That last detail
+        // is the whole diagnosis. `NSApp.appearance` is only a *fallback*: a window with its own
+        // `appearance` set ignores it. SwiftUI's `preferredColorScheme(.dark)` sets exactly that
+        // window-level override, and clearing the app-level one does not remove it. It got cleared
+        // on the next activation, when SwiftUI re-applied `preferredColorScheme(nil)` — hence "toggle
+        // away and back and it updates".
+        //
+        // `nil` here means *inherit*, so Auto genuinely defers to the app and therefore the system,
+        // rather than keeping whatever the last explicit choice pinned.
+        //
+        // Except the menu-bar item's window. The menu bar's appearance is the system's — picked
+        // from the wallpaper behind it — and pinning Flotilla's choice on it turned the icon black
+        // on a dark menu bar whenever Flotilla was set to Light (the owner, 8 October).
+        for window in NSApplication.shared.windows where !window.className.contains("StatusBarWindow") {
+            window.appearance = resolved
+        }
+    }
+
+    // MARK: Modal form presentation
+    //
+    // The owner wants the web-modal feel — the interface behind dims and stops responding while
+    // the form sits in front — AND macOS's own red close button. Stock presentations force a
+    // choice: a sheet is modal but has no title bar and therefore no traffic lights, while a
+    // window has traffic lights but floats free.
+    //
+    // So the form stays a real window and is made to *behave* modally: it counts itself while
+    // open, and `MainWindowView` dims and disables its content whenever the count is above
+    // zero. A count rather than a flag because two forms can be open at once, and the dim must
+    // not lift when only the first closes.
+
+    private(set) var openFormCount = 0
+
+    func formDidOpen() { openFormCount += 1 }
+    func formDidClose() { openFormCount = max(0, openFormCount - 1) }
+
+    // MARK: Diagnostics
+    //
+    // The error log has to be *fed*, or the support bundle ships an empty one and looks like a
+    // feature while helping nobody — the same hollow shape as the settings that drove nothing.
+    // Every failure that reaches `actionError` is recorded here as well.
+
+    /// Capacity comes from the registry, so the cap the Settings screen shows is the cap that
+    /// applies rather than a number the UI invents.
+    ///
+    /// `@ObservationIgnored` because `ErrorLog` is a thread-safe reference type that manages
+    /// its own locking — putting it in the observation graph would invalidate views on every
+    /// recorded error for no benefit. It also cannot be `lazy`: `@Observable` rejects that on
+    /// stored properties.
+    @ObservationIgnored let errorLog: ErrorLog
+
+    /// Honours `diagnosticsEnabled`: with the log switched off, nothing is retained at all —
+    /// not merely hidden from the bundle.
+    func record(_ message: String, subsystem: String = "app") {
+        guard settingsStore[SettingsKeys.diagnosticsEnabled] else { return }
+        errorLog.record(.error, subsystem: subsystem, message: message)
+    }
+
+    /// Everything the builder needs about this build. `Bundle.main` is empty under
+    /// `swift run`, so the fallbacks describe a development build rather than leaving blanks
+    /// that read as missing data.
+    private var appInfo: DiagnosticsSnapshot.AppInfo {
+        DiagnosticsSnapshot.AppInfo(
+            name: "Flotilla",
+            version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
+            // `CFBundleVersion` is now a plain commit count, because Apple's rule for that key is
+            // one to three integers and `make-app.sh` used to put a git hash there. The hash is the
+            // part a support bundle actually needs, so it moved to `FLGitDescribe` and is appended
+            // here — "136 (5135510-dirty)" identifies the build exactly and stays a valid version
+            // where the plist requires one.
+            build: Self.buildDescription,
+            bundleIdentifier: Bundle.main.bundleIdentifier ?? "dev.melonfleet.Flotilla",
+            mode: settingsStore[SettingsKeys.mode],
+            isManaged: !settingsStore.lockedKeyNames().isEmpty
+        )
+    }
+
+    /// The build number, with the exact commit when the bundle carries one.
+    private static var buildDescription: String? {
+        let number = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let describe = Bundle.main.object(forInfoDictionaryKey: "FLGitDescribe") as? String
+        switch (number, describe) {
+        case (let number?, let describe?): return "\(number) (\(describe))"
+        case (let number?, nil):           return number
+        // `swift run` has no bundle keys at all; naming that is better than a blank field that
+        // reads as missing data.
+        case (nil, let describe?):         return describe
+        case (nil, nil):                   return nil
+        }
+    }
+
+    /// Model identifier, never the serial or hardware UUID — those identify the machine and
+    /// a support bundle must not.
+    var systemInfo: DiagnosticsSnapshot.SystemInfo {
+        var model: String?
+        var size = 0
+        if sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 0 {
+            var bytes = [UInt8](repeating: 0, count: size)
+            if sysctlbyname("hw.model", &bytes, &size, nil, 0) == 0 {
+                // sysctl returns a NUL-terminated C string; drop the terminator before
+                // decoding, or the trailing \0 ends up inside the Swift string.
+                model = String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
+            }
+        }
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        return DiagnosticsSnapshot.SystemInfo(
+            osName: "macOS",
+            osVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)",
+            architecture: Self.architecture,
+            modelIdentifier: model
+        )
+    }
+
+    private static var architecture: String {
+        #if arch(arm64)
+        "arm64"
+        #else
+        "x86_64"
+        #endif
+    }
+
+    /// Assemble a support bundle. Throws `SupportBundleLeakError` if the final audit finds
+    /// anything that must not leave the machine — deliberately a failure rather than a
+    /// quietly-scrubbed file, so a redaction gap surfaces here instead of in someone's inbox.
+    func makeSupportBundle() throws -> SupportBundle {
+        try SupportBundleBuilder().build(
+            at: Date(),
+            app: appInfo,
+            system: systemInfo,
+            settings: settingsStore,
+            preflight: preflight,
+            errorLog: errorLog
+        )
+    }
+
+    // MARK: Resets
+    //
+    // Three, and deliberately separate — `research/FEATURES.md`: *Reset preferences ≠ Forget
+    // all hosts and trust ≠ Reset window layout*, and **never offer to delete container or
+    // image data from a settings reset**. Someone whose window is stranded on a disconnected
+    // display should not have to lose their preferences to recover it.
+    //
+    // Nothing here can reach the container runtime. These clear our own `UserDefaults` keys
+    // and in-memory state; containers, images and volumes are owned by `container` and are not
+    // ours to delete from a settings screen.
+
+    /// Return every user-set preference to its built-in or managed default.
+    func resetPreferences() {
+        settingsStore.resetAll()
+        SettingsPersistence.clearUserValues()
+        reloadAppearance()
+    }
+
+    /// Forget saved window geometry. Takes effect on next launch — AppKit writes frames on
+    /// close, so a window open right now would immediately save its position again.
+    func resetWindowLayout() {
+        SettingsPersistence.clearWindowState()
+    }
+
+    /// Whether there is any paired host or trust material to forget.
+    ///
+    /// False throughout Phase 1: there are no hosts and no Keychain identity yet. The control
+    /// is shown anyway, disabled, rather than hidden — a reset that appears only once you have
+    /// something to lose is one nobody discovers in time.
+    var hasHostTrustToForget: Bool {
+        !settingsStore[SettingsKeys.peerAllowlist].isEmpty
+            || !settingsStore[SettingsKeys.trustAnchorFingerprints].isEmpty
+    }
+
+    // MARK: Polling
+    //
+    // `pollIntervalSeconds` has been in the registry and on the Settings screen from the
+    // start — "Seconds between `container ls` refreshes. 0 disables polling." — and nothing
+    // ever polled. Flotilla only refreshed when you pressed Refresh, so a container that
+    // exited on its own sat in the table looking healthy indefinitely. That is the same
+    // class of bug as showing an empty list for a failed load, just slower to notice.
+
+    private var pollTask: Task<Void, Never>?
+
+    /// Seconds between refreshes, or nil when the user has turned polling off. Guards
+    /// against a nonsensical stored value: a negative or absurd interval from a corrupt
+    /// preference or a managed profile must not become a spin loop.
+    private var pollInterval: Duration? {
+        let seconds = settingsStore[SettingsKeys.pollIntervalSeconds]
+        guard seconds > 0 else { return nil }          // 0 (or nonsense) means off
+        return .seconds(min(seconds, 3600))
+    }
+
+    /// Called on launch and whenever settings change. Cancelling first is what makes this
+    /// safe to call repeatedly — otherwise every settings edit would leave another timer
+    /// running and the refresh rate would silently multiply.
+    func restartPolling() {
+        pollTask?.cancel()
+        guard let interval = pollInterval else { pollTask = nil; return }
+
+        pollTask = Task { [weak self] in
+            var tick = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled else { return }
+                guard let self else { return }
+                // Skip a tick rather than queue behind one: if an action is in flight it
+                // will refresh when it finishes, and a poll landing mid-action would fight
+                // the optimistic state the row is showing.
+                guard self.busy.isEmpty else { continue }
+                // A runtime known to be down is re-checked every sixth tick rather than polled, so
+                // one started outside Flotilla is noticed without a process every few seconds.
+                if !self.runtimeUsable {
+                    tick += 1
+                    if tick % 6 == 0, !self.startingRuntime {
+                        await self.runPreflight(autoStartingService: false)
+                        if self.runtimeUsable { await self.refresh(showingProgress: false) }
+                    }
+                    continue
+                }
+                await self.refresh()
+
+                // Machines, images, volumes and networks on a **slower** cadence.
+                //
+                // They used to be refreshed only by their own section's `.task`, which meant
+                // their create/delete events were recorded only while you happened to be looking
+                // at them — so the Activity feed was inert for four of five kinds. That is a
+                // feature that works exactly when you do not need it.
+                //
+                // Every sixth tick rather than every tick, because these change rarely and each
+                // is a separate CLI invocation. At the default five-second interval that is
+                // roughly every thirty seconds: fast enough that the feed and the sidebar counts
+                // are honest, slow enough not to spawn four processes a second.
+                tick += 1
+                if tick % 6 == 0 {
+                    await self.refreshMachines()
+                    await self.refreshImages()
+                    await self.refreshVolumes()
+                    await self.refreshNetworks()
+                    // Clusters join the slow tick for the same reason: without it the sidebar
+                    // count and the feed would only be honest while you were looking at them.
+                    // It is also the most expensive of these — `k8s list` boots nothing, but it
+                    // is another process — which is why it is here and not on every tick.
+                    await self.refreshClusters()
+                }
+            }
+        }
+    }
+
+    func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
+        statsTask?.cancel()
+        statsTask = nil
+    }
+
+    // MARK: Stats
+    //
+    // `cli.stats` and `StatsSampler` both existed and nothing rendered either, so the table
+    // had no CPU or Memory columns despite the approved mockup carrying them from the start.
+    // CPU is a *delta* measure: one sample cannot produce a percentage, which is why the
+    // sampler returns nil until it has two and why nil must never be drawn as 0%.
+
+    /// Delivers the per-category notifications the Settings pane has been offering toggles
+    /// for all along with nothing behind them. A no-op when there is no app bundle, so
+    /// `swift run Flotilla` keeps working — see `Notifier`.
+    let notifier: Notifier
+
+    private let sampler = StatsSampler()
+    private var statsTask: Task<Void, Never>?
+
+    /// CPU percent per container id, or absent when not yet measurable.
+    private(set) var cpuPercents: [String: Double] = [:]
+    /// Memory bytes per container id, straight from the last sample.
+    private(set) var memoryUsage: [String: Int64] = [:]
+
+    func cpuPercent(for id: String) -> Double? { cpuPercents[id] }
+    func memoryBytes(for id: String) -> Int64? { memoryUsage[id] }
+
+    /// A dash, never "0%". "We have not sampled this yet" and "this container is idle" are
+    /// different facts and must not share a rendering.
+    func cpuLabel(for id: String) -> String { Self.cpuLabel(cpuPercents[id]) }
+
+    func memoryLabel(for id: String) -> String { Self.memoryLabel(memoryUsage[id]) }
+
+    /// The one rendering of a CPU figure, shared by a container row and a group row's sum so the
+    /// two never disagree about how "12%" is written.
+    static func cpuLabel(_ percent: Double?) -> String {
+        guard let percent else { return "—" }
+        return percent < 10 ? String(format: "%.1f%%", percent) : String(format: "%.0f%%", percent)
+    }
+
+    static func memoryLabel(_ bytes: Int64?) -> String {
+        guard let bytes else { return "—" }
+        return ByteCountFormatStyle(style: .memory).format(bytes)
+    }
+
+    /// CPU history for one container, oldest → newest, for the card's sparkline.
+    ///
+    /// `nil` entries are preserved rather than dropped: they are the samples where a
+    /// percentage could not be computed (first sample, or a counter reset after a restart),
+    /// and a line drawn straight through them would claim continuity that never existed.
+    ///
+    /// Reads through `statsGeneration` so SwiftUI actually re-renders — `StatsSampler` is a
+    /// reference type outside the observation graph, so a view calling this directly would
+    /// never be invalidated when new samples land.
+    func cpuHistory(for id: String) -> [Double?] {
+        _ = statsGeneration
+        return sampler.history(for: id).map(\.cpuPercent)
+    }
+
+    /// Bumped on every sample so `@Observable` has a stored property to track.
+    private(set) var statsGeneration = 0
+
+    private var statsInterval: Duration? {
+        let seconds = settingsStore[SettingsKeys.statsPollIntervalSeconds]
+        guard seconds > 0 else { return nil }
+        return .seconds(min(seconds, 3600))
+    }
+
+    /// Separate from the container poll on purpose: `container stats` is heavier than `ls`,
+    /// and the registry gives the two their own intervals so stats can be slowed or switched
+    /// off without blinding the container list.
+    func restartStatsPolling() {
+        statsTask?.cancel()
+        guard let interval = statsInterval else { statsTask = nil; return }
+
+        statsTask = Task { [weak self] in
+            // Sample immediately, then on the interval: the first sample can never produce a
+            // percentage, so waiting a full interval before taking it would leave the columns
+            // empty for twice as long as necessary.
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.sampleStats()
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
+    private func sampleStats() async {
+        // The HOST sample is taken unconditionally, before the runtime guard. Machine CPU and
+        // memory are true whether or not `container` is usable, and a dashboard that goes blank
+        // because the runtime is down is least useful exactly when you are diagnosing why.
+        hostMetrics.sample()
+
+        guard runtimeUsable else { return }
+        do {
+            let samples = try await Task.detached { [cli] in try cli.stats() }.value
+            let now = Date()
+            // Same discipline as `containers`: an unconditional write invalidates every
+            // view reading these on each sample, whether or not a single figure moved.
+            let newCPU = sampler.update(with: samples, at: now)
+            if newCPU != cpuPercents { cpuPercents = newCPU }
+
+            let newMemory = Dictionary(
+                uniqueKeysWithValues: samples.compactMap { sample in
+                    sample.memoryUsageBytes.map { (sample.id, $0) }
+                }
+            )
+            if newMemory != memoryUsage { memoryUsage = newMemory }
+
+            // The history grew by a point, so this genuinely did change — it is what drives
+            // the sparkline forward.
+            statsGeneration &+= 1
+        } catch {
+            // Deliberately quiet: stats are decoration next to the container list, and a
+            // failing `stats` must not raise a modal over a table that is working fine. The
+            // columns fall back to dashes, which is the honest rendering of "unknown".
+            cpuPercents = [:]
+            memoryUsage = [:]
+        }
+    }
+
+    /// Records the first-run choice. Failure is surfaced rather than swallowed: the only
+    /// realistic cause is a managed profile having locked appearance, and silently
+    /// discarding the user's pick would leave onboarding looking broken.
+    func chooseAppearance(_ mode: AppearanceMode) {
+        do {
+            try settingsStore.chooseAppearance(mode)
+        } catch {
+            actionError = "Couldn't save that appearance choice: \(error)"
+        }
+        reloadAppearance()
+    }
+
+    /// Result of the last preflight, so the UI can explain *why* nothing is listed.
+    private(set) var preflight: PreflightResult?
+
+    /// Check the runtime before listing anything. Without this the app cannot tell
+    /// "no containers" from "no `container` installed", which are very different and
+    /// look identical in an empty table.
+    func runPreflight() async {
+        await runPreflight(autoStartingService: true)
+    }
+
+    /// - Parameter autoStartingService: whether a stopped service should be started here.
+    ///   False when called *by* `startRuntime`, which would otherwise recurse.
+    func runPreflight(autoStartingService: Bool) async {
+        let result = await Task.detached { [cli] in Preflight(cli: cli).run() }.value
+        preflight = result
+
+        // The owner's request, and the right default: a stopped service is the normal state after a
+        // reboot, it is one command from working, and making the user find that command is
+        // making them do the app's job. Attempted **once** per launch — an auto-start that fails
+        // must not be retried on every reload, or a machine with a genuinely broken runtime
+        // spawns a process every few seconds forever.
+        // The **policy** decides now. This used to be unconditional, so the `ask`/`always`/`never`
+        // picker in Settings governed nothing: someone who set `never` still got an automatic
+        // `container system start`. `ask` and `never` both decline here and leave the banner — which
+        // already carries a Start button — to be the asking.
+        let policy = settingsStore[SettingsKeys.autoStartContainerService]
+        if case .serviceStopped = result, autoStartingService, !autoStartAttempted,
+           policy == .always {
+            autoStartAttempted = true
+            await startRuntime()
+            return
+        }
+
+        if let reason = Self.unavailableReason(for: result) {
+            state = .unavailable(reason)
+        }
+    }
+
+    /// Whether an automatic start has already been tried this launch. The **button** is not
+    /// gated by this: a manual retry is a new decision by the user.
+    private var autoStartAttempted = false
+
+    /// True while a `container system` lifecycle command — start, stop or restart — is running,
+    /// so the banner can say so. The CLI takes several seconds (start launches the API server,
+    /// then waits for it to answer), which is long enough that silence reads as nothing happening.
+    ///
+    /// One flag for all three because every caller wants the same thing from it: the spinner
+    /// instead of the dot, and no second lifecycle command while the first is in flight. The name
+    /// predates stop and restart; it is not worth a rename that touches every call site.
+    private(set) var startingRuntime = false
+
+    /// Starts the `container` services, then re-checks and reloads.
+    ///
+    /// Recorded in the activity feed on success. An automatic side effect with no trace is
+    /// indistinguishable from a mystery later.
+    func startRuntime() async {
+        guard !startingRuntime else { return }
+        startingRuntime = true
+        state = .loading
+        do {
+            try await Task.detached { [cli] in try cli.startSystem() }.value
+            recordActivity(ContainerEvent(date: Date(), from: "stopped", to: "running",
+                                          kind: .runtime, subject: hostLabel,
+                                          action: "Runtime started"))
+            startingRuntime = false
+            await reload()
+        } catch {
+            startingRuntime = false
+            // The CLI's own words. The likeliest real failure is a missing kernel, which we
+            // deliberately do not install, and its message says exactly that.
+            state = .unavailable("Couldn't start the container service — \(error)")
+        }
+    }
+
+    /// Downloads and installs Apple's recommended kernel, then re-checks and reloads — the repair
+    /// for `PreflightResult.needsKernel`, which is every fresh install.
+    ///
+    /// **Progress is shown in the Dashboard banner, not a panel** (the owner, 5 October: a modal
+    /// over the whole window for something the banner already describes looked worse). The banner
+    /// reads `kernelInstall` for the spinner, the CLI's own line and the elapsed time, and keeps
+    /// a failure on screen with the button still there to try again. Only ever from a button:
+    /// nothing calls this on its own.
+    func installKernel() async {
+        guard !startingRuntime else { return }
+        startingRuntime = true
+        kernelInstall = KernelInstall(started: Date())
+        defer { startingRuntime = false }
+
+        let expected: String? = if case .needsKernel(_, _, let path) = preflight { path } else { nil }
+        do {
+            try await Task.detached { [cli] in
+                // `kernel set` assumes `<appRoot>/kernels` exists. If it does not, the CLI
+                // downloads and unpacks the kernel, then fails to move it into place with "The
+                // file “vmlinux-…” doesn't exist" — about the temp file, not the missing folder.
+                // Measured on 1.5.0, 5 October, with the folder removed; the same command
+                // succeeds in 17 s once an empty folder is there. A fresh install has the folder,
+                // so this is for a Mac where someone deleted it. An empty directory where the CLI
+                // expects one, nothing more.
+                if let expected {
+                    let folder = URL(fileURLWithPath: expected).deletingLastPathComponent()
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                }
+                try cli.installRecommendedKernel(onLine: { line in
+                    Task { @MainActor [weak self] in self?.kernelInstall?.line = line }
+                })
+            }.value
+            kernelInstall = nil
+            recordActivity(ContainerEvent(date: Date(), from: "missing", to: "installed",
+                                          kind: .runtime, subject: hostLabel,
+                                          action: "Kernel installed"))
+        } catch {
+            // Kept on the banner until the next attempt: a failure that vanished on the reload
+            // below would leave the user looking at the same banner with no idea it was tried.
+            kernelInstall = KernelInstall(started: kernelInstall?.started ?? Date(),
+                                          failure: "\(error)")
+        }
+        await reload()
+    }
+
+    /// The kernel install the Dashboard banner is showing: running (`failure == nil`) or failed.
+    struct KernelInstall: Equatable {
+        let started: Date
+        /// The CLI's latest line, which on 1.5.0 names the archive and where it comes from.
+        var line: String?
+        var failure: String?
+    }
+
+    private(set) var kernelInstall: KernelInstall?
+
+    /// Stops the `container` services.
+    ///
+    /// Every running container goes down with them and does not come back, which is why the only
+    /// caller confirms first; this method does not ask, so do not call it from anywhere that
+    /// does not.
+    func stopRuntime() async {
+        guard !startingRuntime else { return }
+        startingRuntime = true
+        state = .loading
+        do {
+            try await Task.detached { [cli] in try cli.stopSystem() }.value
+            recordActivity(ContainerEvent(date: Date(), from: "running", to: "stopped",
+                                          kind: .runtime, subject: hostLabel,
+                                          action: "Runtime stopped"))
+            // A deliberate stop must survive the reload. `reload()` re-runs preflight, which
+            // starts a stopped service by itself when the auto-start policy is `always` — so
+            // without this the runtime would come straight back up and the menu item would look
+            // broken. Spending the once-per-launch attempt is exactly the right veto: the user
+            // has now made this decision by hand.
+            autoStartAttempted = true
+            startingRuntime = false
+            await reload()
+        } catch {
+            startingRuntime = false
+            state = .unavailable("Couldn't stop the container services — \(error)")
+        }
+    }
+
+    /// Stops the `container` services and starts them again.
+    ///
+    /// Synthesised, because the CLI has no `system restart` — only `start` and `stop`. Every
+    /// running container goes down with the services, which is why the only caller confirms
+    /// first; this method does not ask, so do not call it from anywhere that does not.
+    func restartRuntime() async {
+        guard !startingRuntime else { return }
+        startingRuntime = true
+        state = .loading
+        do {
+            try await Task.detached { [cli] in
+                try cli.stopSystem()
+                try cli.startSystem()
+            }.value
+            recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                          kind: .runtime, subject: hostLabel,
+                                          action: "Runtime restarted"))
+            startingRuntime = false
+            await reload()
+        } catch {
+            startingRuntime = false
+            state = .unavailable("Couldn't restart the container services — \(error)")
+        }
+    }
+
+    /// Shared with `refreshVolumes`/`refreshNetworks`: they fail the same runtime check
+    /// containers do, and repeating the diagnosis text in three places would let them drift.
+    /// The same diagnosis, for `AppModelRegistries`, which lives in another file.
+    static func registryUnavailableReason(for result: PreflightResult) -> String? {
+        unavailableReason(for: result)
+    }
+
+    private static func unavailableReason(for result: PreflightResult) -> String? {
+        switch result {
+        case .ok:
+            return nil
+        case .missing:
+            // Names where it looked. The previous message asserted "isn't installed" with no
+            // evidence, and was **wrong** on a machine where the CLI was installed and running:
+            // a GUI-launched app's PATH has no `/usr/local/bin`, so the search that backed the
+            // claim could not have found it. A diagnosis the reader can check is worth more than
+            // a shorter one.
+            return "Apple's container CLI wasn't found in: "
+                + Preflight.searchedDirectories().joined(separator: ", ")
+        case .serviceStopped(_, _, let status):
+            return "Apple's container service isn't running (\(status))."
+        case .needsRestart(let cli, let service, _):
+            // Names both builds, because the symptom without them is inexplicable: everything
+            // reports healthy and nothing new will start. Measured on the 1.0.0 → 1.4.1 upgrade.
+            return "container was upgraded to \(cli) but the running service is still "
+                + "\(service). Nothing new can start until it restarts."
+        case .needsKernel:
+            // What a fresh install looks like: everything says running and nothing can start.
+            // Stands alone on the screens that show only this line, and does not repeat the
+            // Dashboard's headline ("No kernel is installed") where both appear. No backticks:
+            // `Text(String)` does not render Markdown, so they showed literally.
+            return "Containers and machines can't start without one. "
+                + "Download the kernel Apple's container tool recommends to fix it."
+        case .tooOld(let found, let required):
+            return "container \(found) is too old — \(required) or newer is required."
+        case .unusable(let reason):
+            // Name the fix, not just the fault. The commonest cause by far is the API
+            // service simply not being started, and the user should not have to go
+            // looking for the one command that resolves it.
+            let remedy = reason.lowercased().contains("apiserver")
+                || reason.lowercased().contains("xpc")
+                || reason.lowercased().contains("connection")
+                ? "\n\nStart it with:  container system start"
+                : ""
+            return "container is installed but not usable — \(reason)\(remedy)"
+        }
+    }
+
+    /// True until preflight says otherwise. Nil means preflight hasn't run yet, in which
+    /// case we optimistically try — an unnecessary refresh is cheaper than a blank screen.
+    /// `internal`, not `private`, for the reason recorded on `cli`: Swift's same-file rule puts
+    /// a `private` member out of reach of an extension in another file, and the last time that
+    /// bit us the extension built its own `ContainerCLI` rather than sharing this one.
+    var runtimeUsable: Bool {
+        guard let preflight else { return true }
+        if case .ok = preflight { return true }
+        return false
+    }
+
+    /// What the Refresh control must call. Re-runs preflight FIRST: if the runtime was
+    /// unusable, `refresh()` alone would hit its own guard and silently do nothing, so the
+    /// user could start the service and never recover without relaunching the app.
+    /// `reload()`, unless one is already running — the launch load and the main window's first
+    /// appearance both ask for one.
+    func reloadUnlessLoading() async {
+        guard state != .loading else { return }
+        await reload()
+    }
+
+    func reload() async {
+        preflight = nil          // clear the stale verdict, or the guard below still bites
+        state = .loading
+        await runPreflight()
+        // Explicit, user-initiated: a spinner here is honest, unlike on a background tick.
+        await refresh(showingProgress: true)
+        // Start (or restart) polling only once we know the runtime is usable — polling a
+        // runtime that isn't there would spawn a doomed Process every few seconds.
+        restartPolling()
+        restartStatsPolling()
+    }
+
+    /// - Parameter showingProgress: whether this refresh may put the UI into `.loading`.
+    ///   **False for every background poll**, and that is the whole point.
+    ///
+    /// This used to set `.loading` unconditionally. Since the poll timer landed that meant
+    /// the container list switched to a spinner and back every few seconds — SwiftUI tore
+    /// down the whole table and rebuilt it on each tick, which is exactly the flicker the owner
+    /// saw and correctly noted that Docker Desktop does not have. Live data does not require
+    /// a visible reload; it requires updating the data *in place*.
+    ///
+    /// A spinner is only honest when there is nothing on screen yet. Once rows exist, a
+    /// background fetch should be invisible until it has something different to show.
+    func refresh(showingProgress: Bool = false) async {
+        // Don't poll a runtime preflight already told us is unusable — it would replace a
+        // precise diagnosis ("container isn't installed") with a generic failure.
+        guard runtimeUsable else { return }
+        if showingProgress { state = .loading }
+        do {
+            // Off the main actor: this shells out to `container` and would otherwise stall
+            // the UI on a slow or unreachable runtime.
+            let fetched = try await Task.detached { [cli] in try cli.listContainers() }.value
+            notifyUnexpectedExits(previous: containers, current: fetched)
+            recordTransitions(previous: containers, current: fetched)
+
+            // Only assign when something actually changed. `@Observable` notifies on every
+            // write regardless of equality, so an unconditional assignment invalidates every
+            // view reading `containers` on each poll even when the fleet is completely
+            // static — the second half of the flicker.
+            if fetched != containers { containers = fetched }
+
+            lastRefresh = Date()
+            if state != .loaded { state = .loaded }
+        } catch {
+            state = .failed(String(describing: error))
+            // Ask why. A runtime stopped outside Flotilla — `container system stop` in Terminal —
+            // left preflight saying "running", so Overview and the menu-bar badge stayed green
+            // over a stopped Mac (found 8 October). Diagnosis only: a stop somebody chose is not
+            // undone behind their back.
+            if !startingRuntime { await runPreflight(autoStartingService: false) }
+        }
+    }
+
+    /// "Container exited unexpectedly" — the category the notifications pane has offered
+    /// since day one with nothing behind it.
+    ///
+    /// *Unexpectedly* is the whole point: a container we were asked to stop is expected and
+    /// must stay silent, so anything with an action in flight is excluded. `busy` is the
+    /// signal — a user-initiated stop holds the id for the duration of the call, and the
+    /// refresh that follows it happens after `busy` is released, which is why this also
+    /// requires the container to have been absent from `busy` when the poll ran.
+    ///
+    /// Only fires for containers we previously *saw* running: a container that was already
+    /// stopped when the app launched has not just exited, and announcing it on first refresh
+    /// would be noise on every launch.
+    private func notifyUnexpectedExits(previous: [Container], current: [Container]) {
+        guard !previous.isEmpty else { return }   // first load has no "before" to compare
+
+        let stillRunning = Set(current.filter(Self.isRunning).map(\.id))
+        let nowStopped = previous
+            .filter { Self.isRunning($0) && !stillRunning.contains($0.id) }
+            .filter { !recentlyActed.contains($0.id) }
+
+        for container in nowStopped {
+            let name = container.id
+            Task { [notifier] in
+                await notifier.post(
+                    .containerExited,
+                    title: "Container exited",
+                    body: "\(name) stopped on its own."
+                )
+            }
+        }
+    }
+
+    /// Ids we deliberately acted on recently, so their stopping is not reported as a
+    /// surprise. Cleared as each action completes its follow-up refresh.
+    private var recentlyActed: Set<Container.ID> = []
+
+    // MARK: Volumes
+
+    /// When this section last loaded, for the toolbar's "Updated …" readout. Per-section
+    /// rather than one shared timestamp: these refresh independently, and a single figure
+    /// would claim the volumes list was as fresh as the containers list when it is not.
+    private(set) var volumesLastRefresh: Date?
+    private(set) var volumesState: LoadState = .idle
+    private(set) var volumes: [ContainerVolume] = []
+
+    func refreshVolumes() async {
+        guard runtimeUsable else {
+            volumesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
+            return
+        }
+        volumesState = .loading
+        do {
+            let fetched = try await Task.detached { [cli] in try cli.listVolumes() }.value
+            // Appearance and disappearance are a volume's only events — see `recordExistence`.
+            recordExistence(kind: .volume, previous: volumes.map(\.name),
+                            current: fetched.map(\.name))
+            volumes = fetched
+            volumesState = .loaded
+            volumesLastRefresh = Date()
+        } catch {
+            volumesState = .failed(String(describing: error))
+        }
+    }
+
+    func createVolume(_ name: String, options: ContainerCLI.VolumeOptions = .init()) async {
+        await withProgress(
+            title: "Create a volume",
+            command: ContainerCLI.createVolumeArguments(name, options: options).joined(separator: " "),
+            work: { progress in
+                let step = progress.begin("Creating \(name)")
+                let result = try await Task.detached { [cli] in
+                    try cli.createVolume(name, options: options)
+                }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step)
+                return "\(name) created"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refreshVolumes()
+                return volumes.contains { $0.name == name }
+            }
+        )
+    }
+
+    func removeVolume(_ volume: ContainerVolume) async {
+        guard !busy.contains(volume.id, kind: .volume) else { return }
+        busy.mark(volume.id, kind: .volume)
+        defer { busy.clear(volume.id, kind: .volume) }
+        do {
+            _ = try await Task.detached { [cli] in try cli.removeVolume(volume.name) }.value
+        } catch {
+            actionError = "Delete volume failed for \(volume.name): \(error)"
+        }
+        await refreshVolumes()
+    }
+
+    // MARK: Networks
+
+    private(set) var networksLastRefresh: Date?
+    private(set) var networksState: LoadState = .idle
+    private(set) var networks: [ContainerNetwork] = []
+
+    func refreshNetworks() async {
+        guard runtimeUsable else {
+            networksState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
+            return
+        }
+        networksState = .loading
+        do {
+            let fetched = try await Task.detached { [cli] in try cli.listNetworks() }.value
+            recordExistence(kind: .network, previous: networks.map(\.id),
+                            current: fetched.map(\.id))
+            networks = fetched
+            networksState = .loaded
+            networksLastRefresh = Date()
+        } catch {
+            networksState = .failed(String(describing: error))
+        }
+    }
+
+    func createNetwork(_ name: String, options: ContainerCLI.NetworkOptions) async {
+        await withProgress(
+            title: "Create a network",
+            command: ContainerCLI.createNetworkArguments(name, options: options).joined(separator: " "),
+            work: { progress in
+                let step = progress.begin("Creating \(name)")
+                let result = try await Task.detached { [cli] in
+                    try cli.createNetwork(name, options: options)
+                }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step)
+                return "\(name) created"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refreshNetworks()
+                return networks.contains { $0.id == name }
+            }
+        )
+    }
+
+    func removeNetwork(_ network: ContainerNetwork) async {
+        guard !busy.contains(network.id, kind: .network) else { return }
+        busy.mark(network.id, kind: .network)
+        defer { busy.clear(network.id, kind: .network) }
+        do {
+            _ = try await Task.detached { [cli] in try cli.removeNetwork(network.id) }.value
+        } catch {
+            actionError = "Delete network failed for \(network.id): \(error)"
+        }
+        await refreshNetworks()
+    }
+
+    /// `container` reports state as a free-form string. Compare case-insensitively and
+    /// treat anything we don't recognise as not-running: a table that quietly shows an
+    /// unknown state as healthy is worse than one that shows it as stopped.
+    static func isRunning(_ container: Container) -> Bool {
+        container.status.state.lowercased() == "running"
+    }
+
+    var running: [Container] { containers.filter(Self.isRunning) }
+    var stopped: [Container] { containers.filter { !Self.isRunning($0) } }
+
+    // MARK: Images
+
+    private(set) var imagesLastRefresh: Date?
+    private(set) var imagesState: LoadState = .idle
+    private(set) var images: [ContainerImage] = []
+
+    func refreshImages() async {
+        guard runtimeUsable else {
+            imagesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
+            return
+        }
+        imagesState = .loading
+        do {
+            let fetched = try await Task.detached { [cli] in try cli.listImages() }.value
+            // Keyed on `reference`, not `id`: a retag produces a new reference for the same
+            // digest, and "nginx:mine created" is the event you want to see, not silence.
+            recordExistence(kind: .image, previous: images.map(\.reference),
+                            current: fetched.map(\.reference))
+            images = fetched
+            imagesState = .loaded
+            imagesLastRefresh = Date()
+        } catch {
+            imagesState = .failed(String(describing: error))
+        }
+    }
+
+    /// The pull in flight, and the last progress line the CLI emitted for it.
+    ///
+    /// Model-owned rather than `@State` in the form, so the pull and its progress survive the
+    /// form being left or the window being closed. A pull of a multi-platform image is a
+    /// 40-second operation on a fast connection — long enough that trapping the user on one
+    /// screen to watch it would be its own complaint.
+    /// The operation whose progress panel is on screen, or nil.
+    ///
+    /// One at a time, deliberately: these are all "I just pressed the button" operations, and a
+    /// stack of panels would be a worse answer than a queue. Starting a second while one runs
+    /// replaces the panel, which is the same thing the forms already do with each other.
+    var activeOperation: OperationProgress?
+
+    /// Runs `work` with a progress panel in front of it, and keeps the panel up until the list
+    /// the new thing belongs to actually contains it.
+    ///
+    /// **That last part is the whole point.** `container run` returns in a second or two and the
+    /// poll that would notice takes up to five more, so a form that dismissed on success dropped
+    /// the user on a table without their new row in it — which reads as nothing having happened.
+    ///
+    /// - Parameters:
+    ///   - confirm: called after the refresh; return true once the new item is visible. A
+    ///     progress panel that closes before the list agrees with it has not solved anything.
+    @discardableResult
+    func withProgress(title: String,
+                      command: String,
+                      work: @MainActor (OperationProgress) async throws -> String,
+                      confirm: (@MainActor () async -> Bool)? = nil) async -> Bool {
+        let progress = OperationProgress(title: title, command: command)
+        activeOperation = progress
+        do {
+            let summary = try await work(progress)
+            if let confirm {
+                let step = progress.begin("Refreshing the list")
+                // Bounded: the CLI can succeed and the list still not show the item — a machine
+                // that is booting, an image the registry is still unpacking. Give it a few
+                // seconds and then say so rather than spinning for ever on a promise.
+                var appeared = false
+                for _ in 0..<10 where !appeared {
+                    appeared = await confirm()
+                    if !appeared { try? await Task.sleep(for: .milliseconds(400)) }
+                }
+                progress.finish(step,
+                                detail: appeared ? nil : "not listed yet — it may still be starting")
+            }
+            progress.succeed(summary)
+            return true
+        } catch {
+            progress.fail(String(describing: error))
+            return false
+        }
+    }
+
+    var activePull: ImagePull?
+
+    struct ImagePull: Sendable, Equatable {
+        let reference: String
+        let startedAt: Date
+        var progress: ImagePullProgress?
+    }
+
+    /// - Returns: whether the pull succeeded, so the form can return to the list on success and
+    ///   stay put — reference intact, ready to correct — on failure. Same contract as
+    ///   `buildImage`.
+    @discardableResult
+    func pullImage(_ reference: String,
+                   scheme: ContainerCLI.RegistryScheme = .default) async -> Bool {
+        activePull = ImagePull(reference: reference, startedAt: Date())
+        defer { activePull = nil }
+        // The panel and `activePull` are not duplicates: the panel is the report you watch, and
+        // `activePull` is what the Images list shows after you dismiss it, so pressing Back
+        // during a forty-second pull still does not look like a cancelled pull.
+        let panel = OperationProgress(
+            title: "Pull an image",
+            command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
+        activeOperation = panel
+        let pullStep = panel.begin("Pulling \(reference)")
+        do {
+            _ = try await Task.detached { [cli] in
+                try cli.pull(reference, scheme: scheme) { progress in
+                    Task { @MainActor in
+                        self.notePullProgress(progress, for: reference)
+                        // Reached through the model rather than by capturing the panel: it is
+                        // main-actor isolated and this closure is `@Sendable`, arriving from the
+                        // runner's drain thread. Rebuilt rather than carried, too —
+                        // `ImagePullProgress` is a parsed structure, not the raw line, and the
+                        // panel wants something readable rather than the CLI's redraws.
+                        self.activeOperation?.note(Self.pullLine(progress))
+                    }
+                }
+            }.value
+            panel.finish(pullStep)
+            // Named explicitly: the existence diff would say "Created", which is true but loses
+            // the distinction between an image you pulled and one a build produced.
+            // The scheme is part of the record when it was not the default: "pulled over
+            // plaintext" is a different fact from "pulled", and the activity feed is where
+            // someone would look to find out which one happened.
+            recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
+                                          kind: .image, subject: reference,
+                                          action: scheme == .default ? "Pulled" : "Pulled over HTTP"))
+            let listStep = panel.begin("Refreshing images")
+            var appeared = false
+            for _ in 0..<10 where !appeared {
+                await refreshImages()
+                appeared = images.contains { $0.reference == reference }
+                if !appeared { try? await Task.sleep(for: .milliseconds(400)) }
+            }
+            panel.finish(listStep, detail: appeared ? nil : "not listed yet")
+            panel.succeed("\(reference) pulled")
+            return true
+        } catch {
+            panel.fail(String(describing: error))
+            actionError = "Pull failed for \(reference): \(error)"
+            await refreshImages()
+            return false
+        }
+    }
+
+    /// Pulls one image to several Macs at once (PLAN.md Phase C: fan-out pulls).
+    ///
+    /// Each Mac pulls from the registry itself, all at the same time, so the slowest Mac sets the
+    /// pace rather than the sum of them. The panel has one line per Mac and says which failed and
+    /// why: a partial pull is reported as a failure that names what did succeed, never as a
+    /// success with a footnote. A host pulls with whatever registry sign-in its own owner made
+    /// there; Flotilla sends none (Q20, Phase B).
+    ///
+    /// - Returns: whether every Mac pulled it, so the form stays open for a retry otherwise.
+    func pullImage(_ reference: String, to hosts: [HostRef],
+                   scheme: ContainerCLI.RegistryScheme = .default) async -> Bool {
+        guard hosts != [.local] else { return await pullImage(reference, scheme: scheme) }
+        activePull = ImagePull(reference: reference, startedAt: Date())
+        defer { activePull = nil }
+        let panel = OperationProgress(
+            title: "Pull an image to \(hosts.count) Mac\(hosts.count == 1 ? "" : "s")",
+            command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
+        activeOperation = panel
+
+        struct Job { let host: HostRef; let name: String; let step: UUID; let cli: ContainerCLI }
+        var jobs: [Job] = []
+        var failures: [(name: String, reason: String)] = []
+        for host in hosts {
+            let name = hostMode.hostName(host, local: hostLabel)
+            let step = panel.begin("Pulling on \(name)")
+            do {
+                jobs.append(Job(host: host, name: name, step: step, cli: try cli(for: host)))
+            } catch {
+                let reason = HostModeController.describe(error)
+                panel.finish(step, detail: reason, failed: true)
+                failures.append((name, reason))
+            }
+        }
+
+        let outcomes = await withTaskGroup(of: (Int, Error?).self) { group in
+            for (index, job) in jobs.enumerated() {
+                let cli = job.cli, isLocal = job.host.isLocal, step = job.step
+                group.addTask {
+                    do {
+                        _ = try await Task.detached {
+                            if isLocal {
+                                // This Mac's pull reports as it goes, into its own line and the
+                                // Images list's banner — the hosts' arrive whole, at the end.
+                                try cli.pull(reference, scheme: scheme) { progress in
+                                    Task { @MainActor in
+                                        self.notePullProgress(progress, for: reference)
+                                        panel.update(step, detail: Self.pullLine(progress))
+                                    }
+                                }
+                            } else {
+                                try cli.pull(reference, scheme: scheme)
+                            }
+                        }.value
+                        return (index, nil)
+                    } catch {
+                        return (index, error)
+                    }
+                }
+            }
+            var collected: [(Int, Error?)] = []
+            for await outcome in group { collected.append(outcome) }
+            return collected
+        }
+
+        var pulled: [String] = []
+        for (index, error) in outcomes.sorted(by: { $0.0 < $1.0 }) {
+            let job = jobs[index]
+            if let error {
+                let reason = job.host.isLocal ? String(describing: error) : HostModeController.describe(error)
+                panel.finish(job.step, detail: reason, failed: true)
+                failures.append((job.name, reason))
+            } else {
+                panel.finish(job.step)
+                pulled.append(job.name)
+                recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present", kind: .image,
+                                              subject: job.host.isLocal ? reference : "\(reference) on \(job.name)",
+                                              action: "Pulled"))
+            }
+        }
+
+        let listStep = panel.begin("Refreshing images")
+        for job in jobs {
+            switch job.host {
+            case .local: await refreshImages()
+            case .peer(let fingerprint): await hostMode.refreshHost(fingerprint)
+            }
+        }
+        panel.finish(listStep)
+
+        guard failures.isEmpty else {
+            let lines = failures.map { "\($0.name): \($0.reason)" }.joined(separator: "\n")
+            let summary = pulled.isEmpty
+                ? "No Mac pulled \(reference).\n\n\(lines)"
+                : "Pulled on \(pulled.joined(separator: ", ")), but not on \(failures.count) Mac\(failures.count == 1 ? "" : "s").\n\n\(lines)"
+            panel.fail(summary)
+            return false
+        }
+        panel.succeed("\(reference) pulled on \(pulled.count) Macs")
+        return true
+    }
+
+    /// One readable line per progress report, for the operation panel.
+    static func pullLine(_ progress: ImagePullProgress) -> String {
+        var parts = ["[\(progress.step)/\(progress.stepCount)]",
+                     progress.phase == .fetching ? "Fetching" : "Unpacking"]
+        if let platform = progress.platform { parts.append(platform) }
+        if let fraction = progress.fraction { parts.append(String(format: "%.0f%%", fraction * 100)) }
+        if let detail = progress.detail { parts.append(detail) }
+        return parts.joined(separator: " ")
+    }
+
+    /// Progress arrives on the runner's drain thread, one line at a time, and hops here.
+    ///
+    /// Guarded on the reference rather than trusting arrival order: the drain thread can still
+    /// deliver a line after the pull it belongs to has ended, and an unguarded write would
+    /// reattach it to whichever pull started next.
+    private func notePullProgress(_ progress: ImagePullProgress, for reference: String) {
+        guard activePull?.reference == reference else { return }
+        activePull?.progress = progress
+    }
+
+    func removeImage(_ image: ContainerImage) async {
+        guard !busy.contains(image.id, kind: .image) else { return }
+        busy.mark(image.id, kind: .image)
+        defer { busy.clear(image.id, kind: .image) }
+        do {
+            _ = try await Task.detached { [cli] in try cli.removeImage(image.reference) }.value
+        } catch {
+            actionError = "Delete image failed for \(image.reference): \(error)"
+        }
+        await refreshImages()
+    }
+
+    /// Deletes an image on any Mac; a paired host is asked again at once so its rows update.
+    func removeImage(_ image: ContainerImage, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await removeImage(image) }
+        await deleteOnHost(fingerprint, kind: .image, id: image.id, name: image.reference, noun: "image") {
+            _ = try $0.removeImage(image.reference)
+        }
+    }
+
+    /// Deletes a volume on any Mac.
+    func removeVolume(_ volume: ContainerVolume, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await removeVolume(volume) }
+        await deleteOnHost(fingerprint, kind: .volume, id: volume.id, name: volume.name, noun: "volume") {
+            _ = try $0.removeVolume(volume.name)
+        }
+    }
+
+    /// Deletes a network on any Mac.
+    func removeNetwork(_ network: ContainerNetwork, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await removeNetwork(network) }
+        await deleteOnHost(fingerprint, kind: .network, id: network.id, name: network.id, noun: "network") {
+            _ = try $0.removeNetwork(network.id)
+        }
+    }
+
+    /// One delete on a paired host, the same shape for every kind: busy under the host's row id,
+    /// the activity feed told which Mac, a failure naming it, and the host asked again so its
+    /// rows update.
+    private func deleteOnHost(_ fingerprint: PeerFingerprint, kind: ActivityKind, id: String, name: String,
+                              noun: String, _ operation: @escaping @Sendable (ContainerCLI) throws -> Void) async {
+        let host = HostRef.peer(fingerprint)
+        let busyKey = host.rowID(id)
+        guard !busy.contains(busyKey, kind: kind) else { return }
+        busy.mark(busyKey, kind: kind)
+        defer { busy.clear(busyKey, kind: kind) }
+        let where_ = hostMode.hostName(host, local: hostLabel)
+        do {
+            let cli = try cli(for: host)
+            try await Task.detached { try operation(cli) }.value
+            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: kind,
+                                          subject: "\(name) on \(where_)", action: "Deleted"))
+        } catch {
+            actionError = "Delete \(noun) failed for \(name) on \(where_): \(HostModeController.describe(error))"
+        }
+        await hostMode.refreshHost(fingerprint)
+    }
+
+    /// Creates a volume on any Mac (PLAN.md Phase C).
+    func createVolume(_ name: String, options: ContainerCLI.VolumeOptions, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await createVolume(name, options: options) }
+        await createOnHost(fingerprint, kind: .volume, title: "Create a volume", name: name,
+                           command: ContainerCLI.createVolumeArguments(name, options: options),
+                           exists: { [weak self] in
+                               self?.hostMode.volumeSnapshots[fingerprint]?.items.contains { $0.name == name } ?? false
+                           }) { try $0.createVolume(name, options: options) }
+    }
+
+    /// Creates a network on any Mac (PLAN.md Phase C). Its subnet is that Mac's business: the same
+    /// name on two Macs is two separate networks.
+    func createNetwork(_ name: String, options: ContainerCLI.NetworkOptions, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await createNetwork(name, options: options) }
+        await createOnHost(fingerprint, kind: .network, title: "Create a network", name: name,
+                           command: ContainerCLI.createNetworkArguments(name, options: options),
+                           exists: { [weak self] in
+                               self?.hostMode.networkSnapshots[fingerprint]?.items.contains { $0.id == name } ?? false
+                           }) { try $0.createNetwork(name, options: options) }
+    }
+
+    /// One create on a paired host, with the same progress panel This Mac's creates use, confirmed
+    /// against what the host lists afterwards.
+    private func createOnHost(_ fingerprint: PeerFingerprint, kind: ActivityKind, title: String, name: String,
+                              command: [String],
+                              exists: @escaping @MainActor () -> Bool,
+                              _ operation: @escaping @Sendable (ContainerCLI) throws -> CommandResult) async {
+        let host = HostRef.peer(fingerprint)
+        let hostName = hostMode.hostName(host, local: hostLabel)
+        await withProgress(
+            title: "\(title) on \(hostName)",
+            command: command.joined(separator: " "),
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                let remote = try self.cli(for: host)
+                let step = progress.begin("Creating \(name) on \(hostName)")
+                let result = try await Task.detached { try operation(remote) }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step)
+                // Recorded here: This Mac's creates are noticed by the list refresh, a host's are not.
+                self.recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: kind,
+                                                   subject: "\(name) on \(hostName)", action: "Created"))
+                return "\(name) created on \(hostName)"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await hostMode.refreshHost(fingerprint)
+                return exists()
+            }
+        )
+    }
+
+    // MARK: Logs
+
+    /// Backs `ContainerDetailView`'s Logs tab. Streaming and `exec` are Phase 4, so this
+    /// is a plain bounded fetch — the view drives it with its own Reload button and owns
+    /// its own loading/error display, rather than the shared `actionError` alert, because
+    /// a stale log view failing to reload shouldn't pop a modal over the rest of the app.
+    func fetchLogs(for id: String, lines: Int = 200) async throws -> LogChunk {
+        try await Task.detached { [cli] in try cli.logs(id, lines: lines) }.value
+    }
+
+    // MARK: Files
+
+    /// Raw `ls -la` for one directory inside a container. Off the main actor: this shells out.
+    func listDirectory(_ path: String, in containerID: String) async throws -> String {
+        try await Task.detached { [cli] in try cli.listDirectory(containerID, path: path) }.value
+    }
+
+    /// Copies a file out of a container to a path the user chose in a save panel.
+    func download(_ containerPath: String, from containerID: String, to hostURL: URL) async throws {
+        try await Task.detached { [cli] in
+            try cli.copy(from: "\(containerID):\(containerPath)", to: hostURL.path)
+        }.value
+    }
+
+    /// Copies a file from this Mac into a container. The same `container copy`, reversed —
+    /// no separate mechanism, and still no network: this is local IPC to the runtime, not scp.
+    func upload(_ hostURL: URL, to containerPath: String, in containerID: String) async throws {
+        try await Task.detached { [cli] in
+            try cli.copy(from: hostURL.path, to: "\(containerID):\(containerPath)")
+        }.value
+    }
+
+    /// What we have actually **watched happen** to each container, newest first.
+    ///
+    /// The mockup's Recent Events card is fed "from local history (SwiftData)". There is no
+    /// store, so this is the honest version of the same idea: the poll loop already compares
+    /// the previous list against the new one to spot unexpected exits, and every state change
+    /// it sees is recorded here as it happens. Nothing is inferred or backfilled — the card
+    /// says so, because a timeline that begins when the app launched but looks like a complete
+    /// history is a lie of omission.
+    ///
+    /// In memory and bounded. Persisting it needs a real store, which is a Phase 4 decision
+    /// rather than something to bolt on here.
+    /// **One** flat feed, newest first, covering every resource kind.
+    ///
+    /// This replaced two dictionaries — one for containers, one for machines — while images,
+    /// volumes and networks recorded nothing at all. Three more dictionaries would have made the
+    /// question "what has changed on this Mac?" harder to answer, not easier: the Activity
+    /// section needs a single ordered list, and the per-subject lists the detail views want are a
+    /// filter over it. One store, several views.
+    ///
+    /// Observable, not `@ObservationIgnored`. The dashboard card got away with being ignored
+    /// because it rebuilds whenever `containers` changes anyway; the activity strips must update
+    /// on their own. It is only written when something actually happened, so it does not churn.
+    ///
+    /// In memory and bounded. Persisting it needs a real store, which is a Phase 4 decision
+    /// rather than something to bolt on here.
+    ///
+    /// Not `private(set)` — Swift's access control is per-file, and `AppModelMachines.swift`
+    /// appends to it.
+    var activity: [ContainerEvent] = []
+
+    /// How many entries the feed keeps. Higher than the old per-subject cap of 50 because this
+    /// is now shared by every subject on the machine, and a busy poll of a dozen containers
+    /// would otherwise push a machine restart off the end within minutes.
+    static let activityLimit = 500
+
+    /// Events about one subject **of one kind**.
+    ///
+    /// The kind is not optional, and that is the whole point. This used to filter on the subject
+    /// alone, so a name shared across kinds mixed their histories — and names are shared
+    /// routinely: the dev Mac this was found on has a container named `web` *and* a volume named
+    /// `web`, so the container's Recent events card would have listed the volume's creation and
+    /// deletion as its own.
+    ///
+    /// Exactly the collision `BusySet` exists for, one layer up. The lesson recorded there was
+    /// that a key which cannot answer the unqualified question is the fix — so this signature no
+    /// longer lets a caller ask it.
+    func events(for subject: String, kind: ActivityKind) -> [ContainerEvent] {
+        activity.filter { $0.subject == subject && $0.kind == kind }
+    }
+
+    /// Events for something on any Mac. A paired host's are recorded as "name on host", so its
+    /// `web` never shows This Mac's `web` history.
+    func events(for subject: String, kind: ActivityKind, host: HostRef) -> [ContainerEvent] {
+        events(for: host.isLocal ? subject : "\(subject) on \(hostMode.hostName(host, local: hostLabel))", kind: kind)
+    }
+
+    func events(ofKind kind: ActivityKind) -> [ContainerEvent] {
+        activity.filter { $0.kind == kind }
+    }
+
+    /// Appends to the feed, newest first, and trims.
+    func recordActivity(_ event: ContainerEvent) {
+        activity.insert(event, at: 0)
+        if activity.count > Self.activityLimit {
+            activity.removeLast(activity.count - Self.activityLimit)
+        }
+    }
+
+    /// Notes a resource appearing or disappearing between two polls.
+    ///
+    /// Images, volumes and networks have no lifecycle to transition through — they exist or they
+    /// do not — so appearance and disappearance *are* their events. The first-sighting rule still
+    /// applies in one direction only: `previous.isEmpty` means this is the initial load, and
+    /// announcing every pre-existing image as "created" would fill the feed with noise about
+    /// nothing having happened.
+    func recordExistence(kind: ActivityKind, previous: [String], current: [String]) {
+        guard !previous.isEmpty else { return }
+        let before = Set(previous), after = Set(current)
+        for added in after.subtracting(before).sorted() {
+            recordActivity(ContainerEvent(date: Date(), from: "absent", to: "present",
+                                          kind: kind, subject: added, action: "Created"))
+        }
+        for removed in before.subtracting(after).sorted() {
+            recordActivity(ContainerEvent(date: Date(), from: "present", to: "absent",
+                                          kind: kind, subject: removed, action: "Deleted"))
+        }
+    }
+
+    /// Records the transition and returns nothing — called from the poll loop, which is the
+    /// only place that can see a *change* rather than a state.
+    private func recordTransitions(previous: [Container], current: [Container]) {
+        let before = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0.status.state) })
+        for container in current {
+            let now = container.status.state
+            guard let was = before[container.id] else {
+                // First sighting is not a transition. Recording "appeared" for every container
+                // present at launch would fill the card with noise about nothing happening.
+                continue
+            }
+            guard was.caseInsensitiveCompare(now) != .orderedSame else { continue }
+            recordActivity(ContainerEvent(date: Date(), from: was, to: now,
+                                          kind: .container, subject: container.id))
+        }
+    }
+
+
+    /// Which detail tab each container was last showing, **for this run only**.
+    ///
+    /// The owner's rule, and it is a good one: reopening a container should return you to the tab
+    /// you were on, but a restart should forget. So this is in memory and deliberately not in
+    /// `SettingsStore` — a preference that survives a relaunch would make Flotilla open on
+    /// Logs weeks later because of something you did once.
+    ///
+    /// `@ObservationIgnored` because the view seeds its own `@State` from this at init and
+    /// writes back on change; making it observable would rebuild the detail view every time
+    /// you switched tab, to tell it something it already knows.
+    @ObservationIgnored var lastDetailTab: [String: DetailTab] = [:]
+
+    // MARK: Machines
+    //
+    // A machine is the VM containers run inside — see `AppModelMachines.swift`.
+
+    // Written by the `AppModelMachines.swift` extension, so these cannot be `private(set)` —
+    // Swift's access control is per-file, not per-type. Plain `var`: `internal(set)` on an
+    // internal property is redundant and the compiler says so.
+    var machines: [ContainerMachine] = []
+    var machinesState: LoadState = .idle
+
+    /// Local Kubernetes clusters. One row per cluster — see `AppModelClusters` for why there is
+    /// no node hierarchy to model.
+    var clusters: [K8sNode] = []
+    var clustersState: LoadState = .idle
+    var clustersLastRefresh: Date?
+    var machinesLastRefresh: Date?
+
+    /// **A second store, not a second namespace inside the first.**
+    ///
+    /// The CLI owner spotted this in `research/MACHINES-SPEC.md`: `TerminalSessionStore` is keyed by a
+    /// plain `String`, and machine names and container names are different namespaces in
+    /// `container` itself. A container called `web` and a machine called `web` would have shared
+    /// one entry, so opening a shell in one could show or clobber the other's session state.
+    ///
+    /// Two instances rather than prefixed keys: the type is already generic over "a string key
+    /// with sessions under it", so a second instance is free and cannot be got wrong. Encoding
+    /// a namespace into the key would put the invariant in every call site instead of the type.
+    @ObservationIgnored let machineTerminals = TerminalSessionStore()
+
+    /// Which machine detail tab each machine was last showing, this run only — same rule and
+    /// same reasoning as `lastDetailTab` for containers.
+    @ObservationIgnored var lastMachineTab: [String: MachineDetailTab] = [:]
+
+    /// Machine CPU, memory and network, read from the OS rather than the container runtime.
+    /// See `HostMetricsSampler` — host and container metrics answer different questions and
+    /// the dashboard shows both, labelled distinctly.
+    @ObservationIgnored let hostMetrics = HostMetricsSampler()
+    /// Sparkle, for this Mac's own Flotilla (Q40). Admins only.
+    @ObservationIgnored lazy var updater = AppUpdater(settings: settingsStore)
+    /// A `container` install or upgrade in progress, for the banner and onboarding (Q39).
+    var runtimeSetup: RuntimeSetupProgress?
+
+    /// Retained history for one container, for the dashboard's charts and the detail sparkline.
+    func statsHistory(for id: String) -> [StatsSampler.HistoryPoint] { sampler.history(for: id) }
+
+    /// Live terminal sessions, owned here so they outlive any view.
+    ///
+    /// `@ObservationIgnored` on the reference — the store is itself `@Observable`, so views
+    /// still react to shells opening and closing; what must not be tracked is this constant
+    /// property, which never changes.
+    @ObservationIgnored let terminals = TerminalSessionStore()
+
+    // MARK: Requests from menus
+    //
+    // The popover and app menus can *ask* for a screen; they cannot reach into the window's
+    // `@State` to set one. These are one-shot requests the window consumes and clears, which
+    // keeps the window's selection owned by the window while still letting commands land
+    // somewhere real. Without them those commands would open a blank window and look broken.
+
+    /// A section the popover asked the window to show. Cleared by `MainWindowView`.
+    var pendingSection: Section?
+    /// Whether the popover asked for the Run sheet. Cleared by `ContainersView`.
+    var pendingRunSheet = false
+
+    func requestSection(_ section: Section) { pendingSection = section }
+    /// Ask a section to open one item's detail screen.
+    ///
+    /// Carries the subject as well as the section, because "show me `web`" and "show me
+    /// Containers" are different requests and the popover was only ever able to make the second.
+    /// One-shot, like the other pending flags: consumed and cleared by whichever view honours it,
+    /// so a rebuild does not reopen it.
+    /// **The kind travels with the subject.** It used not to, and the consequence was that
+    /// whichever section view happened to be alive consumed the request — including the wrong
+    /// one. `MachinesView` and `ContainersView` both observe `pendingDetailSubject`, so asking
+    /// for a container while Machines was on screen had Machines take the id, clear it, and
+    /// leave nothing for Containers to open. A tester reported it precisely: clicking a name in
+    /// the menu bar "will open the correct machine" only when that section was already showing,
+    /// and otherwise just switched section.
+    ///
+    /// **The tab travels too**, as a raw title rather than a typed tab. Containers and machines
+    /// have different tab enums — `DetailTab` and `MachineDetailTab` — and both spell the shared
+    /// ones identically ("Overview", "Terminal", "Logs", "Inspect") precisely so the two screens
+    /// do not shuffle under you. A string is the honest amount of structure for a request that
+    /// has to cross both: the receiving section resolves it with its own `init(rawValue:)` and
+    /// ignores a title it does not have, rather than opening some arbitrary other tab.
+    ///
+    /// This is what lets the Logs section's source column be a way in: clicking `web` there asks
+    /// Containers for `web`'s **Logs** tab, which is the whole point of clicking a source in an
+    /// aggregated feed.
+    func requestDetail(kind: ActivityKind, subject: String, tab: String? = nil) {
+        pendingSection = kind.section
+        pendingDetailKind = kind
+        pendingDetailSubject = subject
+        pendingDetailTab = tab
+    }
+
+    var pendingDetailSubject: String?
+
+    /// The tab the requester wants, by title. Cleared alongside the subject.
+    var pendingDetailTab: String?
+
+    /// Clears all three halves of a pending request at once.
+    ///
+    /// One call rather than three assignments at each of the four consumption sites: the tab was
+    /// the third field to join subject and kind, and a site that clears two of them leaves a
+    /// stale tab to be applied to the *next* request — which is the same class of bug as the
+    /// kind-less request that had Machines swallow a container's id.
+    func clearPendingDetail() {
+        pendingDetailSubject = nil
+        pendingDetailKind = nil
+        pendingDetailTab = nil
+    }
+
+    /// Which section the pending subject belongs to, so a section can ignore a request that is
+    /// not its own instead of swallowing it.
+    var pendingDetailKind: ActivityKind?
+
+    /// Ask the Machines section to open its create form. Mirrors `requestRunSheet`.
+    func requestMachineForm() {
+        pendingSection = .machines
+        pendingMachineForm = true
+    }
+
+    var pendingMachineForm = false
+
+    /// Ask the Images section to open its pull form. Mirrors `requestRunSheet`.
+    ///
+    /// These exist so a menu command drives the *same* state the toolbar button sets, rather
+    /// than presenting a second copy of the form from the app scene — two code paths to one
+    /// screen is how they drift apart.
+    func requestPullForm() {
+        pendingSection = .images
+        pendingPullForm = true
+    }
+
+    var pendingPullForm = false
+
+    /// Ask the Images section to open its build form.
+    func requestBuildForm() {
+        pendingSection = .images
+        pendingBuildForm = true
+    }
+
+    var pendingBuildForm = false
+
+    /// Ask the Volumes section to open its create form.
+    func requestVolumeForm() {
+        pendingSection = .volumes
+        pendingVolumeForm = true
+    }
+
+    var pendingVolumeForm = false
+
+    /// Ask the Networks section to open its create form.
+    func requestNetworkForm() {
+        pendingSection = .networks
+        pendingNetworkForm = true
+    }
+
+    var pendingNetworkForm = false
+
+    /// Ask the Registries section to open its Add form.
+    func requestRegistryForm() {
+        pendingSection = .registries
+        pendingRegistryForm = true
+    }
+
+    var pendingRegistryForm = false
+
+    /// Ask the DNS section to open its New Domain form.
+    func requestDNSForm() {
+        pendingSection = .dns
+        pendingDNSForm = true
+    }
+
+    /// File ▸ New Group… — the group form in Containers.
+    func requestGroupForm() {
+        pendingSection = .containers
+        pendingGroupForm = true
+    }
+
+    var pendingGroupForm = false
+
+    /// File ▸ New Cluster….
+    func requestClusterForm() {
+        pendingSection = .clusters
+        pendingClusterForm = true
+    }
+
+    var pendingClusterForm = false
+
+    /// File ▸ Suggestions ▸ …: a section's Suggestions gallery (Q28).
+    func requestSuggestions(_ section: Section) {
+        pendingSection = section
+        pendingSuggestions = section
+    }
+
+    var pendingSuggestions: Section?
+
+    var pendingDNSForm = false
+
+    /// File ▸ Export Configuration… / Import…, shown over the selected section (Q29).
+    var configurationScreen: ConfigurationScreen?
+
+    // MARK: DNS section state
+    //
+    // Stored here for the same reason as the registries' below. Loading is `AppModelDNS`'s.
+
+    private(set) var dnsDomains: [LocalDNSDomain] = []
+    /// `config.toml`'s `[dns] domain`, read with the rows — the domain containers are named under.
+    private(set) var containerDNSDomain: String?
+    private(set) var dnsState: LoadState = .idle
+    private(set) var dnsLastRefresh: Date?
+
+    /// For `AppModelDNS`, which owns the loading.
+    func setDNS(_ domains: [LocalDNSDomain], containerDomain: String?, state: LoadState) {
+        dnsDomains = domains
+        containerDNSDomain = containerDomain
+        dnsState = state
+        if state == .loaded { dnsLastRefresh = Date() }
+    }
+
+    func setDNSState(_ state: LoadState) { dnsState = state }
+
+    // MARK: Registries section state
+    //
+    // Stored here rather than in `AppModelRegistries.swift` because an extension cannot hold
+    // stored properties. The logins are the runtime's; the list itself is `registries`.
+
+    private(set) var registryLogins: [RegistryLogin] = []
+    private(set) var registriesState: LoadState = .idle
+    private(set) var registriesLastRefresh: Date?
+
+    /// For `AppModelRegistries`, which owns the loading.
+    func setRegistryLogins(_ logins: [RegistryLogin], state: LoadState) {
+        registryLogins = logins
+        registriesState = state
+        if state == .loaded { registriesLastRefresh = Date() }
+    }
+
+    func setRegistriesState(_ state: LoadState) { registriesState = state }
+
+    /// Presentation state lives here because Help commands outlive the Settings view.
+    ///
+    /// Keeping this as `@State` in `SettingsView` made the only working route the button inside
+    /// that view: a Help-menu command cannot bind to state in a view that may not exist yet. The
+    /// request selects Settings first, and the shared flag remains set until that view presents
+    /// and dismisses the same `SupportBundleView` its Diagnostics button uses.
+    var showingSupportBundle = false
+
+    func requestSupportBundle() {
+        pendingSection = .settings
+        showingSupportBundle = true
+    }
+
+    /// Hosts' Add Host form, opened from Overview's Get started. One-shot, consumed by HostsView.
+    var pendingAddHost = false
+
+    func requestAddHost() {
+        pendingSection = .hosts
+        pendingAddHost = true
+    }
+
+    /// About is a sheet in Settings, opened from there or from the menu-bar menu.
+    var showingAbout = false
+
+    func requestAbout() {
+        pendingSection = .settings
+        showingAbout = true
+    }
+
+    func requestRunSheet() {
+        // Run lives on the containers screen, so ask for both — otherwise the sheet would
+        // open behind whatever section happened to be selected.
+        pendingSection = .containers
+        pendingRunSheet = true
+    }
+
+    /// This Mac's short host name, for the popover's "This Mac" heading.
+    ///
+    /// Trailing `.local` stripped: it is noise on every Mac on the network, and the point of
+    /// the label is to tell two machines apart once Phase 2 has more than one.
+    var hostName: String {
+        let name = ProcessInfo.processInfo.hostName
+        return name.hasSuffix(".local") ? String(name.dropLast(6)) : name
+    }
+
+    // MARK: Lifecycle actions
+
+    /// Everything with an action in flight, keyed by kind *and* id, so the UI can disable a row's
+    /// controls rather than letting an impatient second click fire a duplicate stop.
+    ///
+    /// **Keyed by kind because a bare id is ambiguous.** This was a `Set<String>` shared by
+    /// containers, images, volumes and networks, with machines holding a second set of their own
+    /// to escape exactly that sharing. So a slow `container stop web` disabled the delete button
+    /// on volume `web`: cosmetic, but the same namespace collision `TerminalSessionStore` keeps
+    /// two stores to avoid, and it would have been inherited by every bulk path added after it.
+    /// `BusySet` cannot answer the unqualified question, which is the point — see its docstring
+    /// for why it is in `FlotillaCore` rather than here.
+    private(set) var busy = BusySet()
+
+    /// Mark, clear, and ask — and nothing else. `busy`'s setter is file-private so the set has one
+    /// owner; the extensions in `AppModelBulk.swift` and `AppModelMachines.swift` need exactly
+    /// these verbs, not the ability to replace it.
+    ///
+    /// A batch must mark the same key the row's own controls read, or a row offers a delete button
+    /// while a batch is deleting it.
+    func markBusy(_ id: String, kind: ActivityKind) { busy.mark(id, kind: kind) }
+    func clearBusy(_ id: String, kind: ActivityKind) { busy.clear(id, kind: kind) }
+
+    /// The two reads the views want. Both take the kind, because there is no correct way to ask
+    /// without it.
+    func isBusy(_ id: String, kind: ActivityKind) -> Bool { busy.contains(id, kind: kind) }
+    func isAnyBusy(_ ids: some Sequence<String>, kind: ActivityKind) -> Bool {
+        busy.containsAny(of: ids, kind: kind)
+    }
+
+    /// Surfaced to the user; an action that fails must say so rather than looking like
+    /// nothing happened.
+    var actionError: String?
+
+    func clearActionError() { actionError = nil }
+
+    /// `kill` is separate from `stop` because they are not the same request. `stop` sends the
+    /// container's own stop signal and waits; `kill` is for the one that ignored it. The CLI has
+    /// backed this since the allowlist was written (`ContainerCLI.kill`) and nothing in the UI
+    /// offered it, so a wedged container could only be deleted.
+    enum Action { case start, stop, restart, kill, delete }
+
+    func perform(_ action: Action, on container: Container) async {
+        let id = container.id
+        guard !busy.contains(id, kind: .container) else { return }
+        busy.mark(id, kind: .container)
+        // Held past `busy` being released, so the refresh that follows this action does not
+        // report an intentional stop as an unexpected exit.
+        recentlyActed.insert(id)
+        defer { busy.clear(id, kind: .container) }
+
+        do {
+            // Off the main actor: each of these spawns `container` and waits on it.
+            // Note every one routes through ContainerCLI, which validates against the
+            // Allowlist first — the UI never builds an argv itself.
+            try await Task.detached { [cli] () -> Void in
+                switch action {
+                case .start:   try cli.start(id)
+                case .stop:    try cli.stop(id)
+                case .restart: try cli.restart(id)
+                // No explicit signal: the CLI's default for `kill` is SIGKILL, and naming it here
+                // would be this layer deciding a policy the CLI already has.
+                case .kill:    try cli.kill(id)
+                // `force` because the CLI refuses to delete a running container, and reporting
+                // its refusal verbatim is not a feature. A tester selected two running
+                // containers, confirmed the delete, and got
+                // `internalError: "failed to delete container" (cause: "invalidState: …is
+                // running and can not be deleted")` — then had to stop each one by hand and try
+                // again. `container delete --force` exists for exactly this ("Delete containers
+                // even if they are running"), and the confirmation says a running container will
+                // be stopped first, so the escalation is stated rather than silent.
+                case .delete:  try cli.remove(id, force: true)
+                }
+            }.value
+            // The poll loop cannot see this one: a restart of a running container ends running,
+            // so there is no transition between refreshes. Record it here or it is invisible.
+            if action == .restart {
+                recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                              kind: .container, subject: id, action: "Restarted"))
+            }
+        } catch {
+            let message = "\(Self.label(for: action)) failed for \(id): \(error)"
+            actionError = message
+            record(message, subsystem: "container.lifecycle")
+            // Errors are the one mandatory category — not disableable, per FEATURES.md.
+            Task { [notifier] in
+                await notifier.post(.error, title: "\(Self.label(for: action)) failed", body: message)
+            }
+        }
+
+        // Refresh regardless: on failure the container's real state is now unknown, and
+        // showing a stale row is worse than showing the truth.
+        await refresh()
+        recentlyActed.remove(id)
+    }
+
+    /// `perform(_:on:)` for a container on any Mac (PLAN.md Phase C). This Mac's go through the
+    /// local path unchanged; a paired host's go over the wire, through a `ContainerCLI` held to
+    /// `.remotePeer`, and the host is asked again at once so its row shows the result.
+    func perform(_ action: Action, on container: Container, host: HostRef) async {
+        guard case .peer(let fingerprint) = host else { return await perform(action, on: container) }
+        let id = container.id
+        // Keyed by host and name: `web` here and `web` on the mini are different containers.
+        let busyKey = host.rowID(id)
+        guard !busy.contains(busyKey, kind: .container) else { return }
+        busy.mark(busyKey, kind: .container)
+        defer { busy.clear(busyKey, kind: .container) }
+        let hostName = hostMode.hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "the host"
+        guard let remote = hostMode.cli(for: host, local: cli) else {
+            actionError = "\(Self.label(for: action)) failed for \(id): \(hostName) can't be reached."
+            return
+        }
+        do {
+            try await Task.detached { () -> Void in
+                switch action {
+                case .start:   try remote.start(id)
+                case .stop:    try remote.stop(id)
+                case .restart: try remote.restart(id)
+                case .kill:    try remote.kill(id)
+                case .delete:  try remote.remove(id, force: true)
+                }
+            }.value
+            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .container,
+                                          subject: "\(id) on \(hostName)", action: Self.label(for: action)))
+        } catch {
+            let message = "\(Self.label(for: action)) failed for \(id) on \(hostName): \(HostModeController.describe(error))"
+            actionError = message
+            record(message, subsystem: "container.lifecycle")
+        }
+        await hostMode.refreshHost(fingerprint)
+    }
+
+    /// Bulk counterpart to `perform(_:on:)`, for the containers table's multi-selection
+    /// action bar. Runs every id through the same allowlisted `ContainerCLI` calls and
+    /// refreshes once at the end rather than once per id — `perform(_:on:)` itself is left
+    /// untouched so single-row callers keep their existing per-action refresh.
+    func performBulk(_ action: Action, on ids: Set<Container.ID>) async {
+        // Collected, not assigned per-iteration. Writing `actionError` inside the loop
+        // meant each failure overwrote the last, so stopping eight containers and failing
+        // five of them reported exactly one — the user would fix that one and believe the
+        // job was done. A bulk operation has to report its true blast radius.
+        var failures: [(id: Container.ID, error: String)] = []
+
+        for id in ids.sorted() where !busy.contains(id, kind: .container) {
+            busy.mark(id, kind: .container)
+            do {
+                try await Task.detached { [cli] () -> Void in
+                    switch action {
+                    case .start:   try cli.start(id)
+                    case .stop:    try cli.stop(id)
+                    case .restart: try cli.restart(id)
+                    case .kill:    try cli.kill(id)
+                    // See the single-container path above for why `force`.
+                    case .delete:  try cli.remove(id, force: true)
+                    }
+                }.value
+                if action == .restart {
+                    recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
+                                                  kind: .container, subject: id,
+                                                  action: "Restarted"))
+                }
+            } catch {
+                failures.append((id, String(describing: error)))
+            }
+            busy.clear(id, kind: .container)
+        }
+
+        if let first = failures.first {
+            let verb = Self.label(for: action)
+            if failures.count == 1 {
+                actionError = "\(verb) failed for \(first.id): \(first.error)"
+            } else {
+                // Name a bounded handful rather than a wall of ids, but always state the
+                // true count so the number is never smaller than what actually failed.
+                let named = failures.prefix(4).map(\.id).joined(separator: ", ")
+                let rest = failures.count > 4 ? ", and \(failures.count - 4) more" : ""
+                actionError = """
+                    \(verb) failed for \(failures.count) of \(ids.count) containers \
+                    (\(named)\(rest)).
+
+                    First error: \(first.error)
+                    """
+            }
+        }
+
+        await refresh()
+    }
+
+    private static func label(for action: Action) -> String {
+        switch action {
+        case .start: "Start"
+        case .stop: "Stop"
+        case .restart: "Restart"
+        case .kill: "Force kill"
+        case .delete: "Delete"
+        }
+    }
+
+    // MARK: Run
+
+    /// `runContainer` on a paired host (PLAN.md Phase C): the same command, validated as a remote
+    /// peer would be — host paths refused — run on that Mac, and the host asked again afterwards.
+    func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = [],
+                      host: HostRef) async {
+        guard case .peer(let fingerprint) = host else {
+            return await runContainer(image: image, options: options, command: command)
+        }
+        let hostName = hostMode.hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "the host"
+        await withProgress(
+            title: "Run a container on \(hostName)",
+            command: Self.runDisplayLine(image: image, options: options, command: command, host: host),
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                let remote = try self.cli(for: host)
+                let step = progress.begin("Starting from \(image) on \(hostName)")
+                let result = try await Task.detached {
+                    try remote.run(image: image, options: options, command: command)
+                }.value
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step, detail: options.name)
+                return options.name.map { "\($0) started on \(hostName)" } ?? "Container started on \(hostName)"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await hostMode.refreshHost(fingerprint)
+                guard let name = options.name else { return true }
+                return hostMode.containerSnapshots[fingerprint]?.items.contains { $0.id == name } ?? false
+            }
+        )
+    }
+
+    func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = []) async {
+        await withProgress(
+            title: "Run a container",
+            command: Self.runDisplayLine(image: image, options: options, command: command, host: .local),
+            work: { progress in
+                let step = progress.begin("Starting from \(image)")
+                let result = try await Task.detached { [cli] in
+                    try cli.run(image: image, options: options, command: command)
+                }.value
+                // `container run -d` prints the id it created. Worth surfacing: it is the one
+                // piece of output that tells you *which* row to look for.
+                for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.finish(step, detail: options.name)
+                return options.name.map { "\($0) started" } ?? "Container started"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await refresh()
+                guard let name = options.name else { return true }
+                return containers.contains { $0.id == name }
+            }
+        )
+    }
+
+    /// The progress panel's line for a run: the same validated, quoted argv the Run form previewed.
+    /// It was the raw `runArguments` space-joined — the input grammar's `--` included, and a
+    /// `sh -c` script indistinguishable from separate words — so the panel showed a different
+    /// command from the one the form had just said it would run.
+    static func runDisplayLine(image: String, options: ContainerCLI.RunOptions, command: [String],
+                               host: HostRef) -> String {
+        switch runPreview(image: image, options: options, command: command, host: host) {
+        case .success(let validated): validated.localPreview
+        case .failure: ShellWords.join(["container"] + ContainerCLI.runArguments(image: image, options: options,
+                                                                                 command: command))
+        }
+    }
+
+    /// The validated argv for `container run …`, or the `Allowlist` error that rejects
+    /// it. Built from `ContainerCLI.runArguments` — the same construction `run(image:...)`
+    /// itself executes — and validated with `mountPolicy: .unrestricted`, matching
+    /// `ContainerCLI`'s own local-execution policy exactly, so the run sheet's live
+    /// preview can never show a command as accepted or rejected differently than reality
+    /// would. Static and pure so the view holds no allowlist logic of its own.
+    static func runPreview(
+        image: String, options: ContainerCLI.RunOptions, command: [String] = [], host: HostRef = .local
+    ) -> Result<ValidatedCommand, AllowlistError> {
+        let argv = ContainerCLI.runArguments(image: image, options: options, command: command)
+        // Another Mac's rules, not this one's: host paths refused, local-only flags refused — so
+        // the preview cannot pass what that host would turn away.
+        return host.isLocal
+            ? Allowlist.validate(argv, mountPolicy: .unrestricted)
+            : Allowlist.validate(argv, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
+    }
+}

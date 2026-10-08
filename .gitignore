@@ -1,0 +1,39 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+*.xcworkspace/xcuserdata/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+
+# Secrets — never commit signing/update keys
+*.p12
+*.cer
+# App Store Connect API keys, which is what notarisation authenticates with. Apple lets you
+# download an AuthKey_XXXXXXXX.p8 exactly once and it is a signing credential, so the likeliest
+# accident is one sitting in the repo root after a release. See RELEASING.md step 2.
+*.p8
+AuthKey_*
+sparkle_private_key*
+dsa_priv.pem
+ed25519_priv*
+
+# Assembled app bundle from Scripts/make-app.sh — a build product, not source.
+build/
+build/icons/
+
+# Release artefacts: signed zips and notarisation logs. Never committed — a notarised build is
+# reproducible from a tag, and the logs name submission ids tied to an Apple account.
+dist/
+
+# Raw screen captures used to produce the website's shots. Full-screen, unredacted, and 21 MB —
+# the curated 1440x940 window crops live in the melonfleet.github.io repo instead.
+ui-screenshots/

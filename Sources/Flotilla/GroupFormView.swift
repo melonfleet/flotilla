@@ -1,0 +1,693 @@
+import SwiftUI
+import AppKit
+import Foundation
+import FlotillaCore
+
+/// Creating or editing a group, and editing one service inside it.
+///
+/// **Nothing is written until Save.** The whole group lives in `draft` — including its members,
+/// which is why validation goes through `GroupBook.draftProblem(...)` rather than the plain
+/// `problem(withMemberName:)`: a service you have just typed is not in the book yet, and the
+/// stored copy of the group you are editing must not report its own unchanged members as clashes.
+struct GroupFormView: View {
+    let model: AppModel
+    let target: GroupFormTarget
+    /// Supplied by the presenter rather than `@Environment(\.dismiss)`, for the reason
+    /// `NewNetworkView.dismiss` gives.
+    let dismiss: () -> Void
+
+    @State private var draft: ContainerGroup
+    /// The service being edited, or nil while the group itself is on screen. One screen at a
+    /// time, with Back — the same shape as every other form in the app since 9 August.
+    @State private var editingMember: GroupMember?
+    /// Whether `editingMember` is new, so Back from a half-typed service does not leave one
+    /// behind and Save knows to append rather than replace.
+    @State private var memberIsNew = false
+    @State private var edits = FormEditTracker()
+    @State private var saveError: String?
+    /// The group's Keychain-held values as read on open, by secret name.
+    @State private var storedSecrets: [String: String] = [:]
+    /// New values generated here, written to the Keychain on Save and not before.
+    @State private var pendingSecrets: [String: String] = [:]
+    @State private var revealed = Set<String>()
+    @State private var confirmingRegenerate: String?
+
+    init(model: AppModel, target: GroupFormTarget, dismiss: @escaping () -> Void) {
+        self.model = model
+        self.target = target
+        self.dismiss = dismiss
+        switch target {
+        case .new:
+            _draft = State(initialValue: ContainerGroup(name: ""))
+        case .existing(let id):
+            _draft = State(initialValue: model.groups.group(id) ?? ContainerGroup(name: ""))
+        }
+    }
+
+    private var isNew: Bool { if case .new = target { true } else { false } }
+
+    var body: some View {
+        Group {
+            if let member = editingMember {
+                GroupMemberFormView(
+                    model: model,
+                    member: member,
+                    isNew: memberIsNew,
+                    problem: { name in
+                        model.groups.book.draftProblem(
+                            withMemberName: name, excluding: member.id,
+                            editing: isNew ? nil : draft.id, draftMembers: draft.members)
+                    },
+                    imageProblem: { model.groups.problem(withImage: $0) },
+                    onCancel: { editingMember = nil },
+                    onSave: { saved in
+                        if let slot = draft.members.firstIndex(where: { $0.id == saved.id }) {
+                            draft.members[slot] = saved
+                        } else {
+                            draft.members.append(saved)
+                        }
+                        editingMember = nil
+                    })
+            } else {
+                groupScreen
+            }
+        }
+        .onAppear { edits.open(editSignature) }
+        .task { await loadSecrets() }
+        // The picker reads `model.networks`, which the poll loop fills only every sixth tick and
+        // the Networks section on visit — so a form opened soon after launch said "No networks
+        // yet" and greyed the picker out with three networks on the Mac (found 6 October).
+        .task { if model.networksState != .loaded { await model.refreshNetworks() } }
+    }
+
+    // MARK: The group itself
+
+    private var groupScreen: some View {
+        VStack(spacing: 0) {
+            FormHeader(title: isNew ? "New Group" : "Edit Group",
+                       systemImage: "rectangle.3.group",
+                       hasUnsavedChanges: edits.isDirty(editSignature),
+                       onBack: dismiss) {
+                // The saved group, not the draft: a file should describe what exists.
+                if !isNew, let saved = model.groups.group(draft.id) {
+                    Button("Save to File…") { Task { await model.saveGroupToFile(saved) } }
+                        .help("Save this group as a .flotilla file to share or rebuild elsewhere")
+                }
+            }
+            Divider()
+            FormScaffold {
+                form
+            } preview: {
+                railPreview
+            }
+            Divider()
+            footer
+        }
+    }
+
+    private var editSignature: String {
+        ([draft.name, draft.network ?? "", pendingSecrets.keys.sorted().joined(separator: ",")]
+            + draft.members.map { "\($0.id)\u{2}\($0.name)\u{2}\($0.image)\u{2}\($0.ports.joined(separator: ","))" })
+            .joined(separator: "\u{1}")
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            FormField("Name",
+                      help: FieldHelp(
+                          "What this set of containers is called.",
+                          detail: "Yours alone — it is never passed to `container`, and no container is named after it."),
+                      problem: nameProblem) {
+                TextField("Shop", text: $draft.name)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            FormField("Network",
+                      help: model.networks.isEmpty
+                          ? FieldHelp(
+                              "No networks yet.",
+                              detail: "Create one in the Networks section and it will appear here.")
+                          : FieldHelp(
+                              "One network for every service in the group.",
+                              detail: "Chosen once here rather than per service: networks are isolated from one another, so a group spread across two of them would be a group whose halves cannot talk.",
+                              warning: "Applied when a service is first created. A service that already exists keeps the network it was created on — recreate it to move it."),
+                      optional: true) {
+                Picker("", selection: Binding(get: { draft.network ?? "" },
+                                              set: { draft.network = $0.isEmpty ? nil : $0 })) {
+                    Text("Default").tag("")
+                    ForEach(model.networks, id: \.id) { available in
+                        Text(available.name).tag(available.name)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .disabled(model.networks.isEmpty)
+            }
+
+            if !draft.notes.isEmpty {
+                // From Suggestions: how to use what was made. Names passwords, never holds one.
+                VStack(alignment: .leading, spacing: 8) {
+                    FormSectionHeader(title: "Getting started")
+                    ForEach(draft.notes, id: \.self) { note in
+                        Label(note, systemImage: "info.circle")
+                            .font(.callout)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                FormSectionHeader(
+                    title: "Services",
+                    note: "Started in this order, top to bottom, and stopped in reverse.")
+                servicesList
+            }
+
+            if !secretNames.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    FormSectionHeader(
+                        title: "Passwords",
+                        note: "Kept in this Mac’s Keychain, not in Flotilla’s settings or in an export.")
+                    ForEach(secretNames, id: \.self) { secret in
+                        secretRow(secret)
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Generate a new “\(confirmingRegenerate ?? "")”?",
+                            isPresented: Binding(get: { confirmingRegenerate != nil },
+                                                 set: { if !$0 { confirmingRegenerate = nil } }),
+                            titleVisibility: .visible) {
+            Button("Generate New") {
+                if let secret = confirmingRegenerate {
+                    pendingSecrets[secret] = GroupSecrets.generatePassword()
+                }
+                confirmingRegenerate = nil
+            }
+            Button("Cancel", role: .cancel) { confirmingRegenerate = nil }
+        } message: {
+            Text("Saved when you press Save. A database that already exists keeps the password it "
+                 + "was set up with — the new one only takes effect for containers created "
+                 + "afterwards, with fresh volumes.")
+        }
+    }
+
+    // MARK: Passwords
+
+    private var secretNames: [String] { GroupSecrets.secretNames(in: draft) }
+
+    private func secretValue(_ secret: String) -> String? {
+        pendingSecrets[secret] ?? storedSecrets[secret]
+    }
+
+    private func secretRow(_ secret: String) -> some View {
+        let users = draft.members.flatMap { member in
+            member.secretEnv.filter { $0.secret == secret }.map { "\(member.name): \($0.name)" }
+        }
+        let value = secretValue(secret)
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(secret).fontWeight(.medium)
+                Text(users.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            if let value {
+                Text(revealed.contains(secret) ? value : String(repeating: "•", count: 12))
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                    .foregroundStyle(pendingSecrets[secret] != nil ? Theme.info : .secondary)
+                    .help(pendingSecrets[secret] != nil ? "New — saved when you press Save" : "")
+                IconActionButton(systemImage: revealed.contains(secret) ? "eye.slash" : "eye",
+                                 label: revealed.contains(secret) ? "Hide \(secret)" : "Show \(secret)",
+                                 help: revealed.contains(secret) ? "Hide" : "Show") {
+                    if revealed.contains(secret) { revealed.remove(secret) } else { revealed.insert(secret) }
+                }
+                IconActionButton(systemImage: "doc.on.doc", label: "Copy \(secret)",
+                                 help: "Copy the password") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(value, forType: .string)
+                }
+                IconActionButton(systemImage: "arrow.triangle.2.circlepath",
+                                 label: "Generate a new \(secret)", help: "Generate a new password…") {
+                    confirmingRegenerate = secret
+                }
+            } else {
+                Text("Not in the Keychain")
+                    .font(.caption).foregroundStyle(Theme.warning)
+                Button("Generate") { pendingSecrets[secret] = GroupSecrets.generatePassword() }
+                    .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func loadSecrets() async {
+        let groupID = draft.id
+        let names = secretNames
+        guard !names.isEmpty else { return }
+        storedSecrets = await Task.detached {
+            var found: [String: String] = [:]
+            for name in names {
+                if let value = KeychainSecrets.value(group: groupID, secret: name) { found[name] = value }
+            }
+            return found
+        }.value
+    }
+
+    @ViewBuilder
+    private var servicesList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if draft.members.isEmpty {
+                // Not an empty box with nothing in it: the sentence says what a service is,
+                // because this is the first place the word appears.
+                Text("No services yet. A service is one container — an image, a name, and the ports and volumes it needs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(Array(draft.members.enumerated()), id: \.element.id) { index, member in
+                serviceRow(member, at: index)
+            }
+            Button {
+                memberIsNew = true
+                editingMember = GroupMember(name: "", image: "")
+            } label: {
+                Label("Add Service", systemImage: "plus")
+            }
+            .buttonStyle(.link)
+            .foregroundStyle(Theme.link)
+            .padding(.top, 2)
+        }
+    }
+
+    private func serviceRow(_ member: GroupMember, at index: Int) -> some View {
+        HStack(spacing: 8) {
+            Text("\(index + 1).")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 18, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(member.name).fontWeight(.medium)
+                Text(member.image)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let port = member.readyPort, index < draft.members.count - 1 {
+                    Label("Next waits for port \(String(port))", systemImage: "hourglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            IconActionButton(systemImage: "chevron.up", label: "Move \(member.name) earlier",
+                             help: "Start \(member.name) earlier",
+                             disabled: index == 0) {
+                draft.members.move(fromOffsets: IndexSet(integer: index), toOffset: index - 1)
+            }
+            IconActionButton(systemImage: "chevron.down", label: "Move \(member.name) later",
+                             help: "Start \(member.name) later",
+                             disabled: index == draft.members.count - 1) {
+                draft.members.move(fromOffsets: IndexSet(integer: index), toOffset: index + 2)
+            }
+            IconActionButton(systemImage: "pencil", label: "Edit \(member.name)",
+                             help: "Edit \(member.name)") {
+                memberIsNew = false
+                editingMember = member
+            }
+            IconActionButton(systemImage: "minus.circle", label: "Remove \(member.name)",
+                             help: "Remove \(member.name) from this group", destructive: true) {
+                draft.members.removeAll { $0.id == member.id }
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    // MARK: Validation and saving
+
+    private var nameProblem: String? {
+        let trimmed = draft.name.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return nil }  // Empty is "not finished", not "wrong".
+        return model.groups.problem(withName: trimmed, excluding: isNew ? nil : draft.id)
+    }
+
+    private var canSave: Bool {
+        !draft.name.trimmingCharacters(in: .whitespaces).isEmpty && nameProblem == nil
+    }
+
+    /// The sequence Start will issue, so the rail answers "what does this actually do".
+    ///
+    /// Every line is `container run`, unconditionally — unlike the progress panel's preview,
+    /// which can see which containers already exist. A form is about what the group *is*, and a
+    /// preview that changed depending on what happened to be running would be a moving target.
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("What Start will run", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            if draft.members.isEmpty {
+                Text("Add a service to see the commands.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(draft.members.map { Self.preview(of: $0, network: draft.network, redacted: true) }
+                        .joined(separator: "\n"))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text("Values are hidden here. Open a service to see or change them.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("A service whose container already exists is started rather than re-created.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// One member's command as it would run — through `Allowlist`, so the separator the input
+    /// grammar carries is stripped the same way execution strips it. A member that does not
+    /// validate shows the refusal instead of a command that could never run.
+    ///
+    /// - Parameter redacted: whether free-form values are shaped away. True on the **group**
+    ///   screen, where the list of commands is incidental to what you came to do — renaming a
+    ///   group should not put `MYSQL_ROOT_PASSWORD=…` on screen for every service in it. False
+    ///   on the member screen, where the env you are looking at is the env you are editing, and
+    ///   `<envAssignment>` would make the preview useless. That is `localPreview`'s own test:
+    ///   the audience is the person who supplied the values.
+    static func preview(of member: GroupMember, network: String?, redacted: Bool) -> String {
+        switch AppModel.runPreview(image: member.image,
+                                   options: member.runOptions(network: network),
+                                   command: member.command) {
+        case .success(let validated): redacted ? validated.auditDescription : validated.localPreview
+        case .failure(let error): "\(member.name): \(error)"
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if let saveError {
+                Label(saveError, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Button("Cancel", action: dismiss)
+            Button("Save") { save() }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSave)
+        }
+        .padding(12)
+    }
+
+    private func save() {
+        var committed = draft
+        committed.name = draft.name.trimmingCharacters(in: .whitespaces)
+        do {
+            try model.groups.commit(committed)
+            for (secret, value) in pendingSecrets
+            where !KeychainSecrets.set(value, group: committed.id, secret: secret,
+                                       label: "Flotilla: \(committed.name) — \(secret)") {
+                saveError = "The group was saved, but the Keychain refused the password “\(secret)”."
+                return
+            }
+            dismiss()
+        } catch {
+            saveError = (error as? GroupBook.GroupError)?.description ?? String(describing: error)
+        }
+    }
+}
+
+/// One service, on its own screen.
+///
+/// The same fields the Run form collects, minus the two a group settles for you: Detach, because
+/// members start in sequence and one holding the foreground would block the rest, and the network,
+/// which belongs to the group. `ContainerGroup` says why neither is offered here.
+struct GroupMemberFormView: View {
+    let model: AppModel
+    @State var member: GroupMember
+    let isNew: Bool
+    let problem: (String) -> String?
+    let imageProblem: (String) -> String?
+    let onCancel: () -> Void
+    let onSave: (GroupMember) -> Void
+
+    @State private var ports = ""
+    @State private var env = ""
+    @State private var volumes = ""
+    @State private var command = ""
+    @State private var cpus = ""
+    @State private var memory = ""
+    @State private var readyPort = ""
+
+    init(model: AppModel, member: GroupMember, isNew: Bool,
+         problem: @escaping (String) -> String?,
+         imageProblem: @escaping (String) -> String?,
+         onCancel: @escaping () -> Void,
+         onSave: @escaping (GroupMember) -> Void) {
+        self.model = model
+        _member = State(initialValue: member)
+        self.isNew = isNew
+        self.problem = problem
+        self.imageProblem = imageProblem
+        self.onCancel = onCancel
+        self.onSave = onSave
+        _ports = State(initialValue: member.ports.joined(separator: "\n"))
+        _env = State(initialValue: member.env.joined(separator: "\n"))
+        _volumes = State(initialValue: member.volumes.joined(separator: "\n"))
+        // Rendered with quotes where an argument needs them, so the stored argv splits back to
+        // itself on Save. A space-join turned `sh`, `-c`, `echo hi` into three words *plus one*
+        // the moment an untouched member was saved again.
+        _command = State(initialValue: ShellWords.join(member.command))
+        _cpus = State(initialValue: member.cpus.map(String.init) ?? "")
+        _memory = State(initialValue: member.memory ?? "")
+        _readyPort = State(initialValue: member.readyPort.map(String.init) ?? "")
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FormHeader(title: isNew ? "Add Service" : "Edit Service",
+                       systemImage: "shippingbox",
+                       hasUnsavedChanges: false,
+                       onBack: onCancel)
+            Divider()
+            FormScaffold {
+                form
+            } preview: {
+                preview
+            }
+            Divider()
+            footer
+        }
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            FormField("Name",
+                      help: FieldHelp(
+                          "The container's name, and the group's only handle on it.",
+                          detail: "A group finds what it started by name, so this is required here even though the Run form leaves it optional.",
+                          example: "db"),
+                      problem: member.name.isEmpty ? nil : problem(member.name)) {
+                TextField("db", text: $member.name)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+
+            FormField("Image reference",
+                      help: FieldHelp(
+                          "What this service is made from. Pulled automatically if this Mac does not have it.",
+                          detail: "Registry and tag are both optional — the defaults are Docker Hub and latest.",
+                          example: "postgres:16"),
+                      problem: member.image.isEmpty ? nil : imageProblem(member.image)) {
+                TextField("postgres:16", text: $member.image)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+
+            FormField("Ports",
+                      help: FieldHelp(
+                          "Published to this Mac, one per line.",
+                          detail: "Other services in the group don't need a published port. With a domain in use for containers (the DNS section), they reach this one by its name; without one, at the network's gateway and this host port.",
+                          example: "5432:5432\n127.0.0.1:8080:80"),
+                      optional: true) {
+                linesEditor($ports, placeholder: "5432:5432")
+            }
+
+            FormField("Environment variables",
+                      help: FieldHelp("One KEY=VALUE per line.", example: "POSTGRES_PASSWORD=secret"),
+                      optional: true) {
+                linesEditor($env, placeholder: "KEY=VALUE")
+            }
+
+            if !member.secretEnv.isEmpty {
+                FormField("From the Keychain",
+                          help: FieldHelp("Variables whose values are generated passwords.",
+                                          detail: "The values are kept in this Mac’s Keychain and filled in when the service is created. See Passwords on the group’s screen.")) {
+                    Text(member.secretEnv.map { "\($0.name) ← \($0.secret)" }.joined(separator: "\n"))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            FormField("Volumes",
+                      help: FieldHelp(
+                          "One per line, as source:/destination.",
+                          detail: "A named volume or an absolute path on this Mac.",
+                          example: "shop-data:/var/lib/postgresql/data",
+                          // Measured 14 September: a fresh named volume mounts `0:0` mode 755.
+                          // An image whose entrypoint starts as root and drops privileges — the
+                          // official mysql and postgres do — fixes its own ownership and is
+                          // fine. `redis:alpine` does not, and the server exits on "Can't open
+                          // or create append-only dir: Permission denied". The failure looks
+                          // like the group being broken, so the form says it first.
+                          warning: "A named volume is created owned by root. An image that runs as a non-root user and does not fix that itself — redis is one — will fail to write to it and the service will stop."),
+                      optional: true) {
+                linesEditor($volumes, placeholder: "name:/path")
+            }
+
+            FormField("Command",
+                      help: FieldHelp(
+                          "Replaces what the image runs by default.",
+                          detail: "Split into arguments the way a shell would — quote an argument that contains spaces. Nothing is expanded, so for $VARIABLES, pipes or ; run a shell with sh -c '…'. Left empty, the image runs its own entrypoint.",
+                          example: "python -m app\nsh -c 'while true; do date; sleep 5; done'"),
+                      problem: commandSplitError?.description,
+                      optional: true) {
+                TextField("python -m app", text: $command)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+            }
+
+            FormField("Ready when port answers",
+                      help: FieldHelp(
+                          "Holds the next service until this port accepts connections.",
+                          detail: "The port inside the container — 5432 for Postgres, 3306 for MySQL or MariaDB — whether or not it is published. Start waits up to two minutes and says which service it was waiting for if it gives up. Left empty, the next service starts straight away.",
+                          example: "5432",
+                          warning: "Only Start and Restart wait. Nothing watches the service afterwards or restarts it."),
+                      problem: readyPortProblem,
+                      optional: true) {
+                TextField("5432", text: $readyPort)
+                    .textFieldStyle(.roundedBorder)
+                    .monospaced()
+                    .frame(width: 100)
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                FormSectionHeader(title: "Resources")
+                FormField("CPUs",
+                          help: FieldHelp("Whole cores.", detail: "Left empty, `container` applies its own default."),
+                          optional: true) {
+                    TextField("2", text: $cpus)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                }
+                FormField("Memory",
+                          help: FieldHelp("With a K, M or G suffix.", example: "512M"),
+                          optional: true) {
+                    TextField("512M", text: $memory)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+                }
+            }
+        }
+    }
+
+    /// A plain multi-line field rather than the row-at-a-time editors the Run and Network forms
+    /// use. Those two already disagree with each other (`Row` structs there, `[String]` here),
+    /// and adding a third private copy to settle it is the wrong direction — one shared editor
+    /// should replace all three, which is a change to those screens and not to this one.
+    private func linesEditor(_ text: Binding<String>, placeholder: String) -> some View {
+        TextField(placeholder, text: text, axis: .vertical)
+            .textFieldStyle(.roundedBorder)
+            .monospaced()
+            .lineLimit(2...6)
+    }
+
+    private var built: GroupMember {
+        var made = member
+        made.name = member.name.trimmingCharacters(in: .whitespaces)
+        made.image = member.image.trimmingCharacters(in: .whitespaces)
+        made.ports = Self.lines(ports)
+        made.env = Self.lines(env)
+        made.volumes = Self.lines(volumes)
+        // Empty while the field does not split; Save is disabled then, so it is never stored.
+        made.command = (try? ShellWords.split(command)) ?? []
+        made.cpus = Int(cpus.trimmingCharacters(in: .whitespaces))
+        let trimmedMemory = memory.trimmingCharacters(in: .whitespaces)
+        made.memory = trimmedMemory.isEmpty ? nil : trimmedMemory
+        made.readyPort = Int(readyPort.trimmingCharacters(in: .whitespaces))
+        return made
+    }
+
+    private static func lines(_ text: String) -> [String] {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var canSave: Bool {
+        let made = built
+        return !made.name.isEmpty && !made.image.isEmpty
+            && problem(made.name) == nil && imageProblem(made.image) == nil
+            && readyPortProblem == nil && commandSplitError == nil
+    }
+
+    private var commandSplitError: ShellWords.SplitError? {
+        do { _ = try ShellWords.split(command); return nil } catch { return error }
+    }
+
+    private var readyPortProblem: String? {
+        let text = readyPort.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        guard let port = Int(text), (1...65535).contains(port) else {
+            return "Use a port number from 1 to 65535."
+        }
+        return nil
+    }
+
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Command preview", systemImage: "chevron.right.square")
+                .font(.caption)
+                .foregroundStyle(Theme.info)
+            Text(built.image.isEmpty
+                 ? "Add an image to see the command."
+                 : commandSplitError != nil
+                 ? "Fix the command to see it."
+                 : GroupFormView.preview(of: built, network: nil, redacted: false))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("The group's network is added when it starts, so it is not shown here.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            Button("Cancel", action: onCancel)
+            Button(isNew ? "Add" : "Save") { onSave(built) }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSave)
+        }
+        .padding(12)
+    }
+}

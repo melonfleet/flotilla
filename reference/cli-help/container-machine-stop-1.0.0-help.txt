@@ -1,0 +1,12 @@
+OVERVIEW: Stop a running container machine
+
+USAGE: container machine stop [--debug] [<id>]
+
+ARGUMENTS:
+  <id>                    container machine ID (uses default if not specified)
+
+OPTIONS:
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

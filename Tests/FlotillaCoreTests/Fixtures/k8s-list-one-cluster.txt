@@ -1,0 +1,2 @@
+CLUSTER  NODE     ROLE                  STATE    CPUS  MEMORY    ADDR           PORTS
+         k8s-dev  control-plane,worker  running  3     16384 MB  192.168.64.75  6445->6443

@@ -1,0 +1,8 @@
+OVERVIEW: List clusters and their nodes
+
+USAGE: k8s list
+
+OPTIONS:
+  --version               Show the version.
+  -h, --help              Show help information.
+

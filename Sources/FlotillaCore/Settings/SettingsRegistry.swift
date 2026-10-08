@@ -1,0 +1,400 @@
+import Foundation
+
+/// Schema versioning for the settings store, per research pattern #12 (Rancher's
+/// `"version": 18`). One integer on day one; a migration hook later beats a
+/// corrupt-prefs bug report.
+public enum SettingsSchema {
+    public static let version = 1
+    /// The preference / managed-preference domain (`DECISIONS.md`, settled).
+    public static let domain = "dev.melonfleet.Flotilla"
+}
+
+/// Every Flotilla setting, declared once.
+///
+/// Adding a setting means adding a `SettingsKey` here **and** listing its descriptor
+/// in `SettingsRegistry.all`; `registryIsComplete` in the tests fails if you forget,
+/// so the UI, the export format and the Jamf key list can never drift from the code.
+public enum SettingsKeys {
+
+    // MARK: General
+
+    public static let appearance = SettingsKey<AppearancePreference>(
+        "appearance", default: .notChosen,
+        summary: "Colour scheme. Chosen during first run; `notChosen` means onboarding hasn't asked yet."
+    )
+
+    /// The light half of the theme pair. Defaults to Cantaloupe, which is the look the app
+    /// shipped with, so nobody's window changes colour on upgrade.
+    public static let lightTheme = SettingsKey<LightTheme>(
+        "lightTheme", default: .cantaloupe,
+        summary: "Window bar and background when the app draws light: stripe, flesh, cantaloupe or canary on cream, or stripeHoneydew, fleshHoneydew, cantaloupeHoneydew or canaryHoneydew on the honeydew wash."
+    )
+
+    /// The dark half of the theme pair. Defaults to Flesh, the bar dark mode already had.
+    public static let darkTheme = SettingsKey<DarkTheme>(
+        "darkTheme", default: .flesh,
+        summary: "Window bar and background when the app draws dark: stripe, flesh, cantaloupe or canary."
+    )
+
+    public static let launchAtLogin = SettingsKey<Bool>(
+        "launchAtLogin", default: false,
+        summary: "Register Flotilla as a login item (SMAppService)."
+    )
+
+    /// **Default on, and a toggle rather than a three-way picker.**
+    ///
+    /// Hiding the Dock icon maps to `NSApplication.ActivationPolicy.accessory`, which also removes
+    /// Flotilla from ⌘-Tab — so the menu-bar item becomes the only way back to a window. For an app
+    /// whose *main window is the product* (`DECISIONS.md` Q2 — the popover is a glance), that is a
+    /// deliberate choice to offer, not a default to hand someone.
+    ///
+    /// `requiresRestart` is false because it is not: `AppDelegate.applyPresentation` switches the
+    /// activation policy live.
+    ///
+    /// It replaced `presentation`
+    /// (`menuBar`/`dock`/`both`), which offered a choice macOS cannot make: the activation policy
+    /// has two states, so `dock` and `both` both mapped to `.regular` and were indistinguishable
+    /// in every observable way. Two of the three options did the same thing.
+    ///
+    /// The menu-bar item is always shown, which is why there is no setting for it: it is how you
+    /// reach the app when the Dock icon is hidden, and a preference that can remove the only
+    /// remaining way in is a preference for locking yourself out.
+    public static let showDockIcon = SettingsKey<Bool>(
+        "showDockIcon", default: true,
+        summary: "Show Flotilla in the Dock. The menu bar item is always shown."
+    )
+
+    /// Applies to **single** deletes. Deleting more than one thing at a time always asks, and no
+    /// setting turns that off — see `DeletePolicy`.
+    ///
+    /// The summary names all five kinds because it now governs all five. It previously listed four
+    /// and was read by three: Containers and Machines ignored it and confirmed unconditionally, so
+    /// switching it off silently did nothing on those screens.
+    public static let confirmDestructiveActions = SettingsKey<Bool>(
+        "confirmDestructiveActions", default: true,
+        summary: "Confirm before deleting one container, image, volume, network or machine. "
+            + "Deleting several at once always asks."
+    )
+
+    // MARK: Polling
+    //
+    // Per-host scope: a mini on Wi-Fi should not be polled like the local machine,
+    // and a menu-bar app that spawns a Process every second is visible in Activity
+    // Monitor and on battery.
+
+    public static let pollIntervalSeconds = SettingsKey<Int>(
+        "pollIntervalSeconds", default: 5, scope: .perHost,
+        summary: "Seconds between `container ls` refreshes. 0 disables polling."
+    )
+
+    public static let statsPollIntervalSeconds = SettingsKey<Int>(
+        "statsPollIntervalSeconds", default: 10, scope: .perHost,
+        summary: "Seconds between `container stats` samples. 0 disables stats polling."
+    )
+
+    // MARK: `container` CLI integration
+
+    /// Read by `AppModel.containerExecutable`, which is what the container terminal and the machine
+    /// console launch. An **override**: when it names an executable file, that file is used; when it
+    /// does not, `Preflight.locateBinary` decides. So a wrong value degrades to detection rather
+    /// than breaking the app, and the Settings row says which one is in force.
+    ///
+    /// This is not the audit's SEC-01 hole in another costume. That was `/usr/bin/env`, a `PATH`
+    /// lookup the *environment* controlled; this is an absolute path the **user** typed into their
+    /// own copy of the app, and someone who can edit these preferences can already replace the
+    /// binary the default path points at.
+    public static let containerBinaryPath = SettingsKey<String>(
+        "containerBinaryPath", default: "",
+        summary: "Where the `container` binary is. Leave empty to detect it automatically."
+    )
+
+    /// **Default `.always`, changed from `.ask` on 2026-08-23.**
+    ///
+    /// `ServiceAutostartPolicy` documents `.ask` as the safe default, on the grounds that starting a
+    /// launchd service unasked is the same class of thing as the silent privileged install
+    /// `DECISIONS.md` rejects. That reasoning does not survive contact with what this actually does:
+    /// `container system start` starts a **user-level** service the user installed themselves, it
+    /// needs no authorisation, and the owner asked for exactly this after a macOS update left the
+    /// service stopped and the app claiming the CLI was not installed.
+    ///
+    /// The setting was inert either way — the app auto-started unconditionally and never read this
+    /// key — so `.ask` was documentation of an intention, not a description of behaviour. It is now
+    /// read, and the default matches what already shipped rather than silently changing it.
+    /// Auto-starts are attempted **once per launch** and recorded in the activity feed.
+    public static let autoStartContainerService = SettingsKey<ServiceAutostartPolicy>(
+        "autoStartContainerService", default: .always,
+        summary: "Whether to run `container system start` when the API service is down."
+    )
+
+    // MARK: Defaults for new containers
+    //
+    // These mirror `[container] cpus/memory` in config.toml and are applied as
+    // `-c`/`-m` flags on `container run`. There is deliberately no CPU/RAM slider
+    // pane: `container` runs one micro-VM per container, so there is no shared host
+    // VM to size.
+
+    public static let defaultContainerCPUs = SettingsKey<Int>(
+        "defaultContainerCPUs", default: 4,
+        summary: "Default `--cpus` for new containers."
+    )
+
+    public static let defaultContainerMemoryMB = SettingsKey<Int>(
+        "defaultContainerMemoryMB", default: 1024,
+        summary: "Default `--memory` (MB) for new containers."
+    )
+
+    /// **The summary used to claim something false.** It read "mirrors `[registry] domain`",
+    /// and `container` does have that property — but `container system property` offers only
+    /// `list`, so nothing Flotilla can run will change it. For its whole life this key was
+    /// persisted, shown in Settings as "Default registry", and read by exactly one thing: the
+    /// About page, which displays it. It changed no pull.
+    ///
+    /// It now means what Flotilla can actually deliver: the registry **its own Pull form**
+    /// completes an unqualified reference against. Typing `alpine:latest` in a terminal still
+    /// goes to Docker Hub, because that is the runtime's business; the Registries screen says so
+    /// rather than leaving the smaller claim implied. See `ImageReferenceHost`.
+    public static let defaultRegistryDomain = SettingsKey<String>(
+        "defaultRegistryDomain", default: "docker.io",
+        summary: "Registry that Flotilla's own Pull form completes an unqualified image reference against. Does not change what the `container` CLI does on its own."
+    )
+
+    // MARK: Logs
+
+    public static let logTailLines = SettingsKey<Int>(
+        "logTailLines", default: 200,
+        summary: "Lines requested by default when opening logs (`container logs -n`)."
+    )
+
+    public static let logBufferLineCap = SettingsKey<Int>(
+        "logBufferLineCap", default: 5_000,
+        summary: "Maximum log lines held in memory per container before the oldest are dropped."
+    )
+
+    public static let logShowTimestamps = SettingsKey<Bool>(
+        "logShowTimestamps", default: true,
+        summary: "Show timestamps in the log viewer."
+    )
+
+    // MARK: Host mode
+    //
+    // Present in Phase 1 even though the transport lands in Phase 2, because
+    // `reference/jamf-config-profile.md` requires these keys to be managed-readable
+    // from the start.
+
+    /// How this Mac is used (Phase B, 7 October): `client` is shown as **Admin** — it manages this
+    /// Mac and others — `host` lets an admin Mac manage it, `both` does both. The stored values
+    /// keep the names `reference/jamf-config-profile.md` documents. Asked at first run unless a
+    /// profile sets it; never switchable by a peer. Applied live — `HostModeController.apply()`
+    /// starts or stops the listener — as are the port and Bonjour below.
+    public static let mode = SettingsKey<RunMode>(
+        "mode", default: .client, scope: .host,
+        summary: "Admin (manage Macs from here), host (be managed by an admin Mac), or both."
+    )
+
+    /// 7868 since 7 October (the owner's choice); it was a placeholder 7443 while nothing listened.
+    public static let hostListenPort = SettingsKey<Int>(
+        "hostListenPort", default: Int(WireProtocol.defaultPort), scope: .host,
+        summary: "The port host mode listens on."
+    )
+
+    public static let bonjourEnabled = SettingsKey<Bool>(
+        "bonjourEnabled", default: true, scope: .host,
+        summary: "Let other Macs on this network find this host. Adding one by address works regardless."
+    )
+
+    /// The domain every Mac's zone sits under (D3, DECISIONS Q36): `mini.fleet.internal`. Chosen on
+    /// the admin Mac; `.internal` is reserved for private use.
+    public static let fleetDNSDomain = SettingsKey<String>(
+        "fleetDNSDomain", default: FleetZones.defaultFleetDomain,
+        summary: "The domain each Mac's DNS zone sits under, such as fleet.internal."
+    )
+
+    /// Names across Macs (D3 Part C, DECISIONS Q37): every Mac answers every other Mac's zone through
+    /// Flotilla's own responder. Off until the owner turns it on in Set Up Zones.
+    public static let fleetNamesEnabled = SettingsKey<Bool>(
+        "fleetNamesEnabled", default: false,
+        summary: "Let every Mac look up containers on the other Macs by name, such as web.mini.fleet.internal."
+    )
+
+    /// Whether this host installs Flotilla updates its admin Mac sends (DECISIONS Q38). A profile can
+    /// lock it off, so Jamf stays the update authority on managed minis.
+    public static let acceptAdminUpdates = SettingsKey<Bool>(
+        "acceptAdminUpdates", default: true, scope: .host,
+        summary: "Install Flotilla updates the admin Mac sends. Only genuine, newer Flotilla is ever installed."
+    )
+
+    /// Whether a host installs `container` and its kernel by itself, and upgrades `container` when
+    /// nothing is running (DECISIONS Q39). Needs the Flotilla Helper. A profile can set it for zero-touch.
+    public static let autoInstallRuntime = SettingsKey<Bool>(
+        "autoInstallRuntime", default: true, scope: .host,
+        summary: "On a host, install container and its kernel automatically, and upgrade container when nothing is running."
+    )
+
+    /// Whether the admin Mac updates its hosts by itself, one at a time, when it is newer (Q38).
+    /// Off: each host shows Update available, and you update it from Hosts.
+    public static let autoUpdateHosts = SettingsKey<Bool>(
+        "autoUpdateHosts", default: true,
+        summary: "Update hosts to this Mac's Flotilla automatically, one at a time."
+    )
+
+    /// The fleet enrolment key a configuration profile hands a host (PLAN.md Phase B). Sensitive:
+    /// it lets a Mac *ask* to join, so it is never exported or put in diagnostics. A key pasted by
+    /// hand lives in the Keychain instead, not here.
+    public static let enrolmentKey = SettingsKey<String>(
+        "enrolmentKey", default: "", scope: .host, isSensitive: true,
+        summary: "The fleet enrolment key from the admin Mac. Set by a configuration profile; never exported."
+    )
+
+    /// **Not built**, and worth being explicit about why the wording matters: there is no TLS
+    /// identity in the Keychain, so this labels nothing. A summary describing how key material is
+    /// protected, attached to a feature that does not exist, reads as a security guarantee.
+    public static let identityKeychainLabel = SettingsKey<String>(
+        "identityKeychainLabel", default: "Flotilla Identity", scope: .host,
+        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
+        summary: "Keychain label of the TLS identity. The key material itself never leaves the Keychain."
+    )
+
+    /// SHA-256 fingerprints of peers this machine will talk to. Marked sensitive:
+    /// it is an identifier list, so it is excluded from exports and diagnostics.
+    /// (The private key is never here at all — it lives in the Keychain.)
+    public static let peerAllowlist = SettingsKey<[String]>(
+        "peerAllowlist", default: [], scope: .host, isSensitive: true,
+        summary: "SHA-256 fingerprints of peers allowed to connect. Never exported."
+    )
+
+    public static let trustAnchorFingerprints = SettingsKey<[String]>(
+        "trustAnchorFingerprints", default: [], scope: .host, isSensitive: true,
+        summary: "SHA-256 fingerprints of trusted CA anchors. Never exported."
+    )
+
+    // MARK: Updates
+    //
+    // Sparkle's own key names on purpose: they then live in our preference domain
+    // and become lockable by the Phase 6 profile for free (Docker's `disableUpdate`
+    // equivalent), instead of us wrapping them in custom keys Sparkle ignores.
+
+    /// Sparkle's own preference names (DECISIONS Q40), so Sparkle and this registry agree on one
+    /// value. Applied by `AppUpdater` only when set by the owner or a profile: left at the built-in
+    /// default, Sparkle asks the owner once instead — an automatic check reaches GitHub, and Flotilla
+    /// does not do that unasked. Admin Macs only; a host is updated by its admin.
+    public static let automaticUpdateChecks = SettingsKey<Bool>(
+        "SUEnableAutomaticChecks", default: true,
+        summary: "Let Sparkle check GitHub for Flotilla updates automatically. Asked once if not set."
+    )
+
+    public static let automaticallyDownloadUpdates = SettingsKey<Bool>(
+        "SUAutomaticallyUpdate", default: false,
+        summary: "Download and install updates in the background without asking."
+    )
+
+    public static let updateCheckIntervalSeconds = SettingsKey<Int>(
+        "SUScheduledCheckInterval", default: 86_400,
+        summary: "Seconds between Sparkle update checks (at least an hour)."
+    )
+
+    public static let updateChannel = SettingsKey<UpdateChannel>(
+        "updateChannel", default: .stable,
+        summary: "Stable releases only, or pre-releases too."
+    )
+
+    // MARK: Diagnostics
+    //
+    // There is no telemetry setting because there is no telemetry: no analytics, no
+    // crash upload, no phone-home. Diagnostics are collected locally, only when the
+    // user opts in, and only leave the machine if the user hands someone the bundle.
+
+    public static let diagnosticsEnabled = SettingsKey<Bool>(
+        "diagnosticsEnabled", default: false,
+        summary: "Keep a local rolling error log so a support bundle has something in it."
+    )
+
+    public static let diagnosticsErrorLogCap = SettingsKey<Int>(
+        "diagnosticsErrorLogCap", default: 500,
+        summary: "Maximum error-log entries retained for the support bundle."
+    )
+
+    // MARK: Notifications (per category)
+
+    /// One key per category, derived from the enum rather than hand-written, so a
+    /// new category cannot be added without a setting to control it.
+    /// Mandatory categories still get a key so the UI can render it as a disabled
+    /// "always on" row; `SettingsStore.isEnabled(_:)` ignores the stored value.
+    public static func notification(_ category: NotificationCategory) -> SettingsKey<Bool> {
+        SettingsKey<Bool>(
+            "notifications.\(category.rawValue)",
+            default: category.defaultEnabled,
+            summary: category.summary
+        )
+    }
+}
+
+/// The type-erased view of the registry: what the Settings UI iterates, what export
+/// validates against, and what the Jamf key list is generated from.
+public enum SettingsRegistry {
+    public static let all: [SettingDescriptor] = [
+        SettingsKeys.appearance.descriptor,
+        SettingsKeys.lightTheme.descriptor,
+        SettingsKeys.darkTheme.descriptor,
+        SettingsKeys.launchAtLogin.descriptor,
+        SettingsKeys.showDockIcon.descriptor,
+        SettingsKeys.confirmDestructiveActions.descriptor,
+        SettingsKeys.pollIntervalSeconds.descriptor,
+        SettingsKeys.statsPollIntervalSeconds.descriptor,
+        SettingsKeys.containerBinaryPath.descriptor,
+        SettingsKeys.autoStartContainerService.descriptor,
+        SettingsKeys.defaultContainerCPUs.descriptor,
+        SettingsKeys.defaultContainerMemoryMB.descriptor,
+        SettingsKeys.defaultRegistryDomain.descriptor,
+        SettingsKeys.logTailLines.descriptor,
+        SettingsKeys.logBufferLineCap.descriptor,
+        SettingsKeys.logShowTimestamps.descriptor,
+        SettingsKeys.mode.descriptor,
+        SettingsKeys.hostListenPort.descriptor,
+        SettingsKeys.bonjourEnabled.descriptor,
+        SettingsKeys.fleetDNSDomain.descriptor,
+        SettingsKeys.fleetNamesEnabled.descriptor,
+        SettingsKeys.acceptAdminUpdates.descriptor,
+        SettingsKeys.autoInstallRuntime.descriptor,
+        SettingsKeys.autoUpdateHosts.descriptor,
+        SettingsKeys.identityKeychainLabel.descriptor,
+        SettingsKeys.peerAllowlist.descriptor,
+        SettingsKeys.trustAnchorFingerprints.descriptor,
+        SettingsKeys.enrolmentKey.descriptor,
+        SettingsKeys.automaticUpdateChecks.descriptor,
+        SettingsKeys.automaticallyDownloadUpdates.descriptor,
+        SettingsKeys.updateCheckIntervalSeconds.descriptor,
+        SettingsKeys.updateChannel.descriptor,
+        SettingsKeys.diagnosticsEnabled.descriptor,
+        SettingsKeys.diagnosticsErrorLogCap.descriptor,
+    ] + NotificationCategory.allCases.map { SettingsKeys.notification($0).descriptor }
+
+    private static let byName: [String: SettingDescriptor] =
+        Dictionary(uniqueKeysWithValues: all.map { ($0.name, $0) })
+
+    public static func descriptor(named name: String) -> SettingDescriptor? { byName[name] }
+
+    /// Descriptors an MDM profile may carry, for generating the Jamf payload docs.
+    ///
+    /// **Excludes settings nothing reads yet.** Handing an administrator a key they can push to a
+    /// fleet, which the app then ignores, is the same dishonesty as the toggle that did nothing —
+    /// and worse in one respect: the person deceived is not the person at the keyboard, so there is
+    /// nobody positioned to notice. `hostListenPort` in a profile would have looked like it hardened
+    /// a fleet's listener; there is no listener.
+    ///
+    /// A managed value for an unbuilt key is still *accepted* rather than rejected, because failing
+    /// a profile is worse than ignoring one entry — and the Settings row shows both "Managed by your
+    /// organization" and the not-yet-available reason, so it is visible where someone can act on it.
+    public static var manageable: [SettingDescriptor] {
+        all.filter { $0.isManageable && $0.availability.isAvailable }
+    }
+
+    /// Declared but not yet acted on. Exists so documentation can list them deliberately rather
+    /// than an audit rediscovering them.
+    public static var notBuilt: [SettingDescriptor] {
+        all.filter { !$0.availability.isAvailable }
+    }
+
+    public static func inScope(_ scope: SettingScope) -> [SettingDescriptor] {
+        all.filter { $0.scope == scope }
+    }
+}

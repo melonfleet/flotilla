@@ -1,0 +1,12 @@
+OVERVIEW: List container machines
+
+USAGE: container machine list [--format <format>] [--quiet] [--debug]
+
+OPTIONS:
+  --format <format>       Format of the output (values: json, table; default:
+                          table)
+  -q, --quiet             Only output the container machine ID
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

@@ -1,0 +1,18 @@
+OVERVIEW: Set container machine configuration values
+
+USAGE: container machine set [--debug] [--name <name>] [<setting> ...]
+
+ARGUMENTS:
+  <setting>               Configuration values
+        cpus=<number>           Number of virtual CPUs
+        memory=<size>           Memory allocation (e.g., 2G, 1G). Default: half
+        of system memory
+        home-mount=<string>     User home directory mount option (ro, rw,
+        none). Default: rw
+
+OPTIONS:
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  -n, --name <name>       Container machine ID (uses default if not specified)
+  --version               Show the version.
+  -h, --help              Show help information.
+

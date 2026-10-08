@@ -1,0 +1,18 @@
+OVERVIEW: Save one or more images as an OCI compatible tar archive
+
+USAGE: container image save [--arch <arch>] [--os <os>] [--output <output>] [--platform <platform>] [--debug] <references> ...
+
+ARGUMENTS:
+  <references>
+
+OPTIONS:
+  -a, --arch <arch>       Architecture for the saved image
+  --os <os>               OS for the saved image
+  -o, --output <output>   Pathname for the saved image
+  --platform <platform>   Platform for the saved image (format:
+                          os/arch[/variant], takes precedence over --os and
+                          --arch) [environment: CONTAINER_DEFAULT_PLATFORM]
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

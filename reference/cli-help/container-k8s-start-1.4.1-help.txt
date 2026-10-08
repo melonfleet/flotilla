@@ -1,0 +1,9 @@
+OVERVIEW: Start a stopped Kubernetes cluster
+
+USAGE: k8s start [--name <name>]
+
+OPTIONS:
+  --name <name>           Cluster name (default: k8s-dev) (default: k8s-dev)
+  --version               Show the version.
+  -h, --help              Show help information.
+

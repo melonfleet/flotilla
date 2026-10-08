@@ -1,0 +1,28 @@
+OVERVIEW: Create and start a local Kubernetes cluster
+
+USAGE: k8s create [--name <name>] [--rm] [--cpus <cpus>] [--memory <memory>] [--scheme <scheme>] [--max-concurrent-downloads <max-concurrent-downloads>] [--node-image <node-image>]
+
+RESOURCE OPTIONS:
+  -c, --cpus <cpus>       Number of CPUs to allocate to the container
+  -m, --memory <memory>   Amount of memory (1MiByte granularity), with optional
+                          K, M, G, T, or P suffix
+
+REGISTRY OPTIONS:
+  --scheme <scheme>       Scheme to use when connecting to the container
+                          registry. One of (http, https) (default: https)
+
+IMAGE FETCH OPTIONS:
+  --max-concurrent-downloads <max-concurrent-downloads>
+                          Maximum number of concurrent downloads (default: 3)
+
+OPTIONS:
+  --name <name>           Cluster name (default: k8s-dev) (default: k8s-dev)
+  --rm, --remove          Remove the cluster container after it stops
+  --node-image <node-image>
+                          Node image reference (default:
+                          docker.io/kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95)
+                          (default:
+                          docker.io/kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95)
+  --version               Show the version.
+  -h, --help              Show help information.
+

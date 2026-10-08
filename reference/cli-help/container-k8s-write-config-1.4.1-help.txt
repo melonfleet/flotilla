@@ -1,0 +1,12 @@
+OVERVIEW: Write the cluster context to a Kubernetes configuration file
+
+USAGE: k8s write-config [--name <name>] [--kubeconfig <kubeconfig>]
+
+OPTIONS:
+  --name <name>           Cluster name (default: k8s-dev) (default: k8s-dev)
+  --kubeconfig <kubeconfig>
+                          Path to the kubeconfig file to write or append to
+                          (default: ~/.kube/config)
+  --version               Show the version.
+  -h, --help              Show help information.
+
