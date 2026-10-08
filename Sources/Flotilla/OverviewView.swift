@@ -146,7 +146,7 @@ struct OverviewView: View {
             TableColumn("CPU") { line in
                 Text(Self.chip(line.facts)).lineLimit(1)
             }
-            .width(min: 160, ideal: 210)
+            .width(min: 110, ideal: 140)
             .customizationID("cpu")
             TableColumn("Memory") { line in
                 Text(Self.memory(line.facts)).monospacedDigit().lineLimit(1)
@@ -200,11 +200,20 @@ struct OverviewView: View {
         return date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
     }
 
-    /// `Apple M1 · 8 cores`.
+    /// `M1 · 8 cores`, `M3 Max · 4 vCores`. No "Apple" — every Mac's is — and a virtual Mac says
+    /// so in its cores rather than a "(Virtual)" in the name: shorter, so the table has room (the
+    /// owner, 8 October).
     static func chip(_ facts: HostFacts?) -> String {
         guard let facts else { return "—" }
-        let cores = facts.cores.map { "\($0) cores" }
-        let text = [facts.chip, cores].compactMap { $0 }.joined(separator: " · ")
+        var name = facts.chip?.trimmingCharacters(in: .whitespaces)
+        if let current = name, current.hasPrefix("Apple ") { name = String(current.dropFirst("Apple ".count)) }
+        let virtual = name?.localizedCaseInsensitiveContains("(Virtual)") ?? false
+        if virtual {
+            name = name?.replacingOccurrences(of: "(Virtual)", with: "", options: .caseInsensitive)
+                .trimmingCharacters(in: .whitespaces)
+        }
+        let cores = facts.cores.map { "\($0) \(virtual ? "vCores" : "cores")" }
+        let text = [name, cores].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         return text.isEmpty ? "—" : text
     }
 
