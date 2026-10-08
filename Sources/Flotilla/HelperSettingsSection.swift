@@ -1,17 +1,17 @@
 import SwiftUI
 import AppKit
 
-/// Settings ▸ Advanced ▸ DNS helper: install it, see whether it is approved, remove it.
+/// Settings ▸ Advanced ▸ Flotilla Helper (Q41): install it, see whether it is approved, remove it.
 ///
 /// Approval happens in System Settings, which tells the app nothing, so the status is read again
 /// whenever Flotilla comes back to the front — the moment the owner returns from Login Items.
-struct DNSHelperSettingsSection: View {
-    @State private var status = DNSHelper.status
+struct HelperSettingsSection: View {
+    @State private var status = PrivilegedHelper.status
     @State private var working = false
     @State private var problem: String?
 
     var body: some View {
-        SwiftUI.Section("DNS helper") {
+        SwiftUI.Section("Flotilla Helper") {
             HStack(alignment: .firstTextBaseline) {
                 Label(title, systemImage: symbol)
                     .foregroundStyle(tint)
@@ -25,9 +25,9 @@ struct DNSHelperSettingsSection: View {
                 Text(problem).font(.caption).foregroundStyle(Theme.danger).lineLimit(3)
             }
         }
-        .onAppear { status = DNSHelper.status }
+        .onAppear { status = PrivilegedHelper.status }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            status = DNSHelper.status
+            status = PrivilegedHelper.status
             if status == .enabled { problem = nil }
         }
     }
@@ -40,7 +40,7 @@ struct DNSHelperSettingsSection: View {
         case .notInstalled:
             Button("Install…") { install() }.disabled(working)
         case .awaitingApproval:
-            Button("Open Login Items…") { DNSHelper.openLoginItems() }
+            Button("Open Login Items…") { PrivilegedHelper.openLoginItems() }
             Button("Remove") { remove() }.disabled(working)
         case .enabled:
             Button("Remove") { remove() }.disabled(working)
@@ -78,43 +78,43 @@ struct DNSHelperSettingsSection: View {
             "Only a signed copy of Flotilla can use the helper. Creating or deleting a DNS domain "
                 + "asks for an administrator password instead."
         case .notInstalled:
-            "Creating or deleting a DNS domain asks for an administrator password each time. The "
-                + "helper does those two things — and nothing else — after you approve it once, "
-                + "and Flotilla still asks you to confirm every change."
+            "Flotilla's one helper for the jobs that need an administrator: DNS domains, names "
+                + "across Macs, and installing Apple's container. Approve it once; Flotilla still "
+                + "asks you to confirm every change, and a host can't do these jobs without it."
         case .awaitingApproval:
             "Switch on Flotilla in System Settings ▸ General ▸ Login Items & Extensions. Until "
                 + "then, DNS changes ask for an administrator password."
         case .enabled:
-            "Creating or deleting a DNS domain no longer asks for a password; Flotilla asks you to "
-                + "confirm each change instead. Remove the helper to go back to the password."
+            "DNS changes no longer ask for a password; Flotilla asks you to confirm each change "
+                + "instead. Remove the helper to go back to the password."
         }
     }
 
     private func install() {
         problem = nil
         do {
-            try DNSHelper.install()
+            try PrivilegedHelper.install()
         } catch {
             // Registration that is waiting for the owner's approval throws "Operation not
             // permitted" and still registers (measured 7 October): the status says what happened,
             // so only a status that did not move is a failure.
-            if DNSHelper.status == .notInstalled {
+            if PrivilegedHelper.status == .notInstalled {
                 problem = "Couldn't install the helper: \(error.localizedDescription)"
             }
         }
-        status = DNSHelper.status
-        if status == .awaitingApproval { DNSHelper.openLoginItems() }
+        status = PrivilegedHelper.status
+        if status == .awaitingApproval { PrivilegedHelper.openLoginItems() }
     }
 
     private func remove() {
         problem = nil
         working = true
         Task {
-            do { try await DNSHelper.remove() } catch {
+            do { try await PrivilegedHelper.remove() } catch {
                 problem = "Couldn't remove the helper: \(error.localizedDescription)"
             }
             working = false
-            status = DNSHelper.status
+            status = PrivilegedHelper.status
         }
     }
 }

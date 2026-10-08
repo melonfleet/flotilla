@@ -213,7 +213,7 @@ struct DashboardView: View {
             "From Apple's container releases on GitHub, about 118 MB — \(Int(Date().timeIntervalSince(started))) s so far."
         case .checking: "Signed by Apple's Containerization team and notarised, and the version this Flotilla expects."
         case .waitingForInstaller: "It asks for your password. Flotilla carries on by itself when it has finished."
-        case .installing: "Through Flotilla's DNS helper."
+        case .installing: "Through the Flotilla Helper."
         case .starting: "container \(setup.version) is installed."
         case .installingKernel: "Apple's recommended kernel, so containers can start."
         case .failed(let why): why

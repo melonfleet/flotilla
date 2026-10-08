@@ -1,22 +1,27 @@
 import Foundation
 import Security
 
-/// What the app and the DNS helper agree on: the helper's name, its XPC interface, and how each
+/// What the app and the Flotilla Helper agree on: the helper's name, its XPC interface, and how each
 /// side checks who is on the other end.
 ///
-/// The helper (decision 19 as amended 7 October) is a root `SMAppService` daemon the owner approves
-/// once in System Settings ▸ Login Items. It does two things — `system dns create` and `system dns
-/// delete` — and nothing else. It takes **typed requests**, never an argv: the app says "create
-/// `test`", and the helper builds and validates the command itself, so a caller that got past the
-/// signature check still could not choose what runs.
+/// The Flotilla Helper (decision 19, amended 7 October; one helper for every privileged job, Q41) is
+/// a root `SMAppService` daemon the owner approves once in System Settings ▸ Login Items. Its whole
+/// job is the short list in `HelperProtocol` — `system dns create|delete`, the fleet resolver files,
+/// installing Apple's `container` package — and nothing else. It takes **typed requests**, never an
+/// argv: the app says "create `test`", and the helper builds and validates the command itself, so a
+/// caller that got past the signature check still could not choose what runs.
 ///
 /// macOS-only (Security, the Objective-C runtime), which is why it is not in `FlotillaCore` — the
 /// core stays Foundation-only and builds on Linux.
-public enum DNSHelperInterface {
+public enum HelperInterface {
     /// The launchd label, the Mach service name, the helper's signing identifier and the plist's
     /// basename are all this one string, so none of them can drift from the others.
-    public static let label = "dev.melonfleet.Flotilla.dns-helper"
+    public static let label = "dev.melonfleet.Flotilla.helper"
     public static let plistName = label + ".plist"
+    /// What the helper was called until 8 October (Q41), when it only did DNS. Kept so the app can
+    /// unregister a Mac's old registration once, then register the helper under its new name.
+    public static let legacyLabel = "dev.melonfleet.Flotilla.dns-helper"
+    public static let legacyPlistName = legacyLabel + ".plist"
     /// The only app allowed to talk to the helper.
     public static let appIdentifier = "dev.melonfleet.Flotilla"
     /// Bumped when the interface changes, so an app can tell an old helper from a current one.
@@ -48,7 +53,7 @@ public enum DNSHelperInterface {
 
 /// The helper's XPC interface. Each reply carries `nil` on success, or the reason it refused or
 /// failed, in words fit for an alert.
-@objc public protocol DNSHelperProtocol {
+@objc public protocol HelperProtocol {
     func helperVersion(reply: @escaping @Sendable (Int) -> Void)
     func createDomain(_ domain: String, localhost: String?, reply: @escaping @Sendable (String?) -> Void)
     func deleteDomains(_ domains: [String], reply: @escaping @Sendable (String?) -> Void)

@@ -3,15 +3,15 @@ import ServiceManagement
 import FlotillaCore
 import FlotillaPrivileged
 
-/// The app's side of the DNS helper (decision 19, amended 7 October): installing and removing it,
+/// The app's side of the Flotilla Helper (decision 19, amended 7 October; Q41): installing and removing it,
 /// asking whether it is approved, and sending it requests.
 ///
 /// Installing registers an `SMAppService` daemon; macOS then lists it in System Settings ▸ Login
 /// Items, and nothing runs as root until the owner switches it on there. Until then — and on any
 /// build that is not Developer ID signed — DNS changes go through the password prompt exactly as
-/// before (`AdminCommandRunner`). `AppModel.runPrivilegedDNS` makes that choice in one place.
+/// before (`AdminCommandRunner`). `AppModel.runPrivileged` makes that choice in one place.
 @MainActor
-enum DNSHelper {
+enum PrivilegedHelper {
     enum Status: Equatable {
         /// This build cannot use a helper: it is not Developer ID signed, so the helper would refuse
         /// it and it would refuse the helper.
@@ -22,9 +22,10 @@ enum DNSHelper {
         case enabled
     }
 
-    private static var service: SMAppService { .daemon(plistName: DNSHelperInterface.plistName) }
+    private static var service: SMAppService { .daemon(plistName: HelperInterface.plistName) }
+    private static var legacyService: SMAppService { .daemon(plistName: HelperInterface.legacyPlistName) }
     /// Read once: a running process's signature does not change, and the screens ask often.
-    private static let team = DNSHelperInterface.ownTeamIdentifier()
+    private static let team = HelperInterface.ownTeamIdentifier()
 
     static var status: Status {
         guard team != nil else { return .unavailable }
@@ -46,6 +47,21 @@ enum DNSHelper {
         try await service.unregister()
     }
 
+    /// Q41: the helper was `dev.melonfleet.Flotilla.dns-helper` until it took on more than DNS. A
+    /// Mac that installed it under that name has it unregistered here, once, and the helper
+    /// registered under its own name in its place. That carries the owner's earlier choice to
+    /// install it, nothing more: the new name is off until they switch it on in Login Items, and
+    /// macOS says so in its own notification.
+    static func moveFromLegacyName() async {
+        guard team != nil else { return }
+        switch legacyService.status {
+        case .enabled, .requiresApproval: break
+        default: return
+        }
+        do { try await legacyService.unregister() } catch { return }
+        if status == .notInstalled { try? install() }
+    }
+
     static func openLoginItems() {
         SMAppService.openSystemSettingsLoginItems()
     }
@@ -55,54 +71,54 @@ enum DNSHelper {
     /// it is switched off and on again.
     static func runningVersion() async -> Int? {
         guard let team else { return nil }
-        let connection = NSXPCConnection(machServiceName: DNSHelperInterface.label, options: .privileged)
-        connection.remoteObjectInterface = NSXPCInterface(with: DNSHelperProtocol.self)
+        let connection = NSXPCConnection(machServiceName: HelperInterface.label, options: .privileged)
+        connection.remoteObjectInterface = NSXPCInterface(with: HelperProtocol.self)
         connection.setCodeSigningRequirement(
-            DNSHelperInterface.requirement(identifier: DNSHelperInterface.label, team: team))
+            HelperInterface.requirement(identifier: HelperInterface.label, team: team))
         connection.resume()
         defer { connection.invalidate() }
         return await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
             let once = VersionOnce(continuation)
-            let proxy = connection.remoteObjectProxyWithErrorHandler { _ in once.resume(nil) } as? DNSHelperProtocol
+            let proxy = connection.remoteObjectProxyWithErrorHandler { _ in once.resume(nil) } as? HelperProtocol
             guard let proxy else { once.resume(nil); return }
             proxy.helperVersion { once.resume($0) }
         }
     }
 
     /// One request. `nil` means it worked; otherwise the reason, in words fit for an alert.
-    static func send(_ request: PrivilegedDNSRequest) async -> String? {
+    static func send(_ request: HelperRequest) async -> String? {
         guard let team else {
-            return "This copy of Flotilla isn't signed, so it can't use the DNS helper."
+            return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
         }
         switch request {
         case .installContainer:
             if let version = await runningVersion(), version < 3 {
-                return "The DNS helper is from an older Flotilla. Switch it off and on again in "
+                return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
                     + "Settings ▸ Advanced to update it."
             }
         case .syncFleetResolvers, .removeFleetResolvers:
             // Added in version 2: an older helper would not know the request at all.
             if let version = await runningVersion(), version < 2 {
-                return "The DNS helper is from an older Flotilla. Switch it off and on again in "
+                return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
                     + "Settings ▸ Advanced to update it."
             }
         default: break
         }
-        let connection = NSXPCConnection(machServiceName: DNSHelperInterface.label, options: .privileged)
-        connection.remoteObjectInterface = NSXPCInterface(with: DNSHelperProtocol.self)
+        let connection = NSXPCConnection(machServiceName: HelperInterface.label, options: .privileged)
+        connection.remoteObjectInterface = NSXPCInterface(with: HelperProtocol.self)
         // The app checks the helper as the helper checks the app: same team, the helper's identity.
         connection.setCodeSigningRequirement(
-            DNSHelperInterface.requirement(identifier: DNSHelperInterface.label, team: team))
+            HelperInterface.requirement(identifier: HelperInterface.label, team: team))
         connection.resume()
         defer { connection.invalidate() }
 
         return await withCheckedContinuation { continuation in
             let once = ResumeOnce(continuation)
             let proxy = connection.remoteObjectProxyWithErrorHandler { error in
-                once.resume("Flotilla couldn't reach its DNS helper: \(error.localizedDescription)")
-            } as? DNSHelperProtocol
+                once.resume("Flotilla couldn't reach its Flotilla Helper: \(error.localizedDescription)")
+            } as? HelperProtocol
             guard let proxy else {
-                once.resume("Flotilla couldn't reach its DNS helper.")
+                once.resume("Flotilla couldn't reach its Flotilla Helper.")
                 return
             }
             switch request {
@@ -122,7 +138,7 @@ enum DNSHelper {
 }
 
 /// What may be asked of the helper — the whole of it.
-enum PrivilegedDNSRequest: Sendable {
+enum HelperRequest: Sendable {
     case create(domain: String, localhost: String?)
     case delete([String])
     /// Q37: the resolver files for other Macs' zones. Helper only — never the password prompt.
@@ -161,22 +177,22 @@ private final class ResumeOnce: @unchecked Sendable {
 extension AppModel {
     /// Whether DNS changes go through the helper rather than the password prompt. Read fresh each
     /// time: approval is given or withdrawn in System Settings, which tells the app nothing.
-    var dnsHelperEnabled: Bool { DNSHelper.status == .enabled }
+    var helperEnabled: Bool { PrivilegedHelper.status == .enabled }
 
     /// The one place a privileged DNS change is made: through the helper when the owner has
     /// approved it, otherwise behind the administrator prompt. Either way the request is validated
     /// — here for the prompt, and again by the helper itself.
-    func runPrivilegedDNS(_ request: PrivilegedDNSRequest, prompt: String) async -> AdminCommandRunner.Outcome {
-        if dnsHelperEnabled {
-            if let failure = await DNSHelper.send(request) { return .failed(failure) }
+    func runPrivileged(_ request: HelperRequest, prompt: String) async -> AdminCommandRunner.Outcome {
+        if helperEnabled {
+            if let failure = await PrivilegedHelper.send(request) { return .failed(failure) }
             return .succeeded
         }
         var commands: [ValidatedCommand] = []
         switch request {
         case .syncFleetResolvers, .removeFleetResolvers:
-            return .failed("Names across Macs need Flotilla's DNS helper switched on. Turn it on in Settings ▸ Advanced.")
+            return .failed("Names across Macs need the Flotilla Helper switched on. Turn it on in Settings ▸ Advanced.")
         case .installContainer:
-            return .failed("Installing container without a person here needs Flotilla's DNS helper switched on.")
+            return .failed("Installing container without a person here needs the Flotilla Helper switched on.")
         case .create(let domain, let localhost):
             switch ContainerCLI.dnsCreateCommand(domain: domain, localhost: localhost) {
             case .success(let command): commands = [command]

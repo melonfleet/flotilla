@@ -1929,3 +1929,21 @@ clicks at all. His answers:
   private key up to 1Password. Losing it means existing installs cannot verify new updates.
 - Sparkle updates Macs that are admins. A host-only Mac is updated by its admin (Q38), so it does
   not check Sparkle as well.
+
+## Q41 — One helper, called the Flotilla Helper (settled 2026-10-08)
+
+The DNS helper had grown past DNS: DNS domains (Q32), the fleet resolver files (Q37) and installing
+Apple's `container` package (Q39). The owner asked for it to be called the **Flotilla Helper** and to
+stay a single helper for every privileged job, as Jamf does with its one management daemon.
+
+- **One helper.** Every root job is a typed operation on the one daemon, each re-validated as root.
+  Splitting it would mean one Login Items approval per helper, one more XPC boundary to secure, and
+  one more thing for a managed profile to pre-approve, for no less privilege: each daemon would
+  still be root. The limit is the short, typed list in `HelperProtocol`, not the number of daemons.
+- **Renamed now, before the first release**, because the label is what a managed Login Items
+  profile names: `dev.melonfleet.Flotilla.helper` (was `…dns-helper`). Binary `FlotillaHelper`.
+- **Moving over:** on launch, a Mac that registered the old name has it unregistered and the
+  helper registered under the new one. That continues the owner's choice to install it and grants
+  nothing: macOS lists it off in Login Items until the owner switches it on, on each Mac. The old
+  plist stays in the bundle as a stub with no Mach service or RunAtLoad, only so it can be
+  unregistered.

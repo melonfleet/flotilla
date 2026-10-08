@@ -2,9 +2,10 @@ import Foundation
 import FlotillaCore
 import FlotillaPrivileged
 
-/// Flotilla's DNS helper: a root daemon that creates and deletes `container`'s local DNS domains,
-/// so changing one does not ask for the administrator password every time (decision 19, amended
-/// 7 October). See `DNSHelperInterface` for the contract.
+/// The Flotilla Helper: Flotilla's one root daemon, for the few jobs that need root — creating and
+/// deleting `container`'s local DNS domains, keeping the fleet resolver files, and installing Apple's
+/// `container` package — so none of them asks for the administrator password every time (decision
+/// 19, amended 7 October; one helper, Q41). See `HelperInterface` for the contract.
 ///
 /// Everything the app's password path checks, this checks again, here, as root — the app is the
 /// caller, not the authority:
@@ -15,19 +16,19 @@ import FlotillaPrivileged
 /// - only `/usr/local/bin/container`, and only while it and its directory are root-owned and
 ///   writable by no one else (`AdminExecutable`);
 /// - run directly, never through a shell, one request at a time.
-final class DNSHelperService: NSObject, NSXPCListenerDelegate, DNSHelperProtocol, @unchecked Sendable {
+final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol, @unchecked Sendable {
     /// One request at a time. Two creates racing on `/etc/resolver` gain nothing.
     private let lock = NSLock()
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        connection.exportedInterface = NSXPCInterface(with: DNSHelperProtocol.self)
+        connection.exportedInterface = NSXPCInterface(with: HelperProtocol.self)
         connection.exportedObject = self
         connection.resume()
         return true
     }
 
     func helperVersion(reply: @escaping @Sendable (Int) -> Void) {
-        reply(DNSHelperInterface.version)
+        reply(HelperInterface.version)
     }
 
     func createDomain(_ domain: String, localhost: String?, reply: @escaping @Sendable (String?) -> Void) {
@@ -224,15 +225,15 @@ final class DNSHelperService: NSObject, NSXPCListenerDelegate, DNSHelperProtocol
 
 // No team, no service: an ad-hoc or unsigned helper has nothing to require of its callers, and a
 // root daemon that accepted anyone would be the general privileged runner decision 19 forbids.
-guard let team = DNSHelperInterface.ownTeamIdentifier() else {
-    FileHandle.standardError.write(Data("dns-helper: not Developer ID signed; refusing to run.\n".utf8))
+guard let team = HelperInterface.ownTeamIdentifier() else {
+    FileHandle.standardError.write(Data("flotilla-helper: not Developer ID signed; refusing to run.\n".utf8))
     exit(1)
 }
 
-let listener = NSXPCListener(machServiceName: DNSHelperInterface.label)
+let listener = NSXPCListener(machServiceName: HelperInterface.label)
 listener.setConnectionCodeSigningRequirement(
-    DNSHelperInterface.requirement(identifier: DNSHelperInterface.appIdentifier, team: team))
-let service = DNSHelperService()
+    HelperInterface.requirement(identifier: HelperInterface.appIdentifier, team: team))
+let service = HelperService()
 listener.delegate = service
 listener.resume()
 dispatchMain()

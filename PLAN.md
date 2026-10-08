@@ -69,7 +69,7 @@ Flotilla.app  (one app, client/host/both modes)
 │   ├── peer and certificate authorisation
 │   ├── persisted policy and per-host settings store
 │   └── validated local CLI execution
-└── Privileged DNS helper  (Phase D)
+└── Flotilla Helper (privileged, Phase D; Q41)
     ├── SMAppService daemon approved once, on hosts and the admin Mac
     ├── DNS create/delete only
     └── accepts only the Developer ID-signed Flotilla app

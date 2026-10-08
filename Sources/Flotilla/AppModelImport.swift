@@ -224,7 +224,7 @@ extension AppModel {
                     let commands = dnsSpec.domains.compactMap {
                         try? ContainerCLI.dnsCreateCommand(domain: $0.name, localhost: $0.localhost).get()
                     }
-                    let viaHelper = dnsHelperEnabled
+                    let viaHelper = helperEnabled
                     let stepID = progress.begin("Adding \(commands.count) DNS domain\(commands.count == 1 ? "" : "s")"
                                                 + (viaHelper ? "" : " — macOS asks for your password"))
                     let names = dnsSpec.domains.map(\.name)
@@ -233,7 +233,7 @@ extension AppModel {
                         // One request per domain, stopping at the first failure as `&&` does.
                         var failure: String?
                         for domain in dnsSpec.domains where failure == nil {
-                            failure = await DNSHelper.send(.create(domain: domain.name, localhost: domain.localhost))
+                            failure = await PrivilegedHelper.send(.create(domain: domain.name, localhost: domain.localhost))
                         }
                         outcome = failure.map { .failed($0) } ?? .succeeded
                     } else {

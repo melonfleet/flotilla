@@ -462,7 +462,7 @@ struct SettingsView: View {
                 }
             }
 
-            DNSHelperSettingsSection()
+            HelperSettingsSection()
             logsSection
             diagnosticsSection
             settingsFileSection

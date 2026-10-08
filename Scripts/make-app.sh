@@ -72,16 +72,16 @@ echo "▸ checking view defaults…"
 echo "▸ building ($CONFIG)…"
 if [ "$CONFIG" = "release" ]; then
   swift build -c release --product Flotilla
-  swift build -c release --product FlotillaDNSHelper
+  swift build -c release --product FlotillaHelper
 else
   swift build --product Flotilla
-  swift build --product FlotillaDNSHelper
+  swift build --product FlotillaHelper
 fi
 BINARY="$(swift build -c "$CONFIG" --product Flotilla --show-bin-path)/Flotilla"
 [ -x "$BINARY" ] || { echo "no binary at $BINARY" >&2; exit 1; }
-HELPER_BINARY="$(swift build -c "$CONFIG" --product FlotillaDNSHelper --show-bin-path)/FlotillaDNSHelper"
+HELPER_BINARY="$(swift build -c "$CONFIG" --product FlotillaHelper --show-bin-path)/FlotillaHelper"
 [ -x "$HELPER_BINARY" ] || { echo "no binary at $HELPER_BINARY" >&2; exit 1; }
-HELPER_ID="dev.melonfleet.Flotilla.dns-helper"
+HELPER_ID="dev.melonfleet.Flotilla.helper"
 
 # Versions, and the two plist keys have different rules — which the first version of this got
 # wrong in a way only a build with **no tags** exposed.
@@ -149,10 +149,10 @@ echo "▸ assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/Flotilla"
-# The DNS helper (decision 19, amended 7 October) and the launchd plist SMAppService reads. Shipped
+# The Flotilla Helper (decision 19, amended 7 October) and the launchd plist SMAppService reads. Shipped
 # in every build; it only runs once the owner approves it in Login Items, and only in a Developer
 # ID build — an ad-hoc helper has no team to require of its callers and refuses to start.
-cp "$HELPER_BINARY" "$APP/Contents/MacOS/FlotillaDNSHelper"
+cp "$HELPER_BINARY" "$APP/Contents/MacOS/FlotillaHelper"
 
 # Sparkle (DECISIONS Q40): a dynamic framework, so it is embedded and the executable is told where
 # to find it. SwiftPM leaves it beside the binary; the bundle keeps it in Contents/Frameworks.
@@ -163,6 +163,10 @@ mkdir -p "$APP/Contents/Frameworks"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Flotilla" 2>/dev/null || true
 mkdir -p "$APP/Contents/Library/LaunchDaemons"
 cp "$ROOT/Resources/$HELPER_ID.plist" "$APP/Contents/Library/LaunchDaemons/"
+# The helper's name until 8 October (Q41). SMAppService can only unregister a daemon whose plist is
+# in the bundle, so this stub stays for the Macs that approved the old name: it has no Mach service
+# and no RunAtLoad, so launchd can never start anything from it.
+cp "$ROOT/Resources/dev.melonfleet.Flotilla.dns-helper.plist" "$APP/Contents/Library/LaunchDaemons/"
 
 cp "$ROOT/build/icons/Flotilla.icns" "$APP/Contents/Resources/Flotilla.icns"
 # The menu-bar template, at both scales. Loaded by URL at runtime and marked isTemplate
@@ -270,12 +274,12 @@ sign_sparkle() {
 
 if [ -n "${FLOTILLA_SIGN_IDENTITY:-}" ]; then
     echo "▸ signing (Developer ID, hardened runtime)…"
-    # No `--deep`: Apple's guidance is to sign inside-out. The one nested binary is the DNS helper,
+    # No `--deep`: Apple's guidance is to sign inside-out. The one nested binary is the Flotilla Helper,
     # signed first under its own identifier — the app requires exactly that identifier of it, and
     # `--deep` would have stamped the app's onto it. SwiftTerm is statically linked (`otool -L`).
     codesign --force --options runtime --timestamp \
              --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$HELPER_ID" \
-             "$APP/Contents/MacOS/FlotillaDNSHelper" 2>&1 | sed 's/^/   /'
+             "$APP/Contents/MacOS/FlotillaHelper" 2>&1 | sed 's/^/   /'
     sign_sparkle "$FLOTILLA_SIGN_IDENTITY" --timestamp
     codesign --force --options runtime --timestamp \
              --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$APP" 2>&1 | sed 's/^/   /'
@@ -283,7 +287,7 @@ if [ -n "${FLOTILLA_SIGN_IDENTITY:-}" ]; then
 else
     echo "▸ signing (ad-hoc)…"
     codesign --force --sign - --identifier "$HELPER_ID" --timestamp=none \
-             "$APP/Contents/MacOS/FlotillaDNSHelper" 2>&1 | sed 's/^/   /'
+             "$APP/Contents/MacOS/FlotillaHelper" 2>&1 | sed 's/^/   /'
     sign_sparkle - --timestamp=none
     codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>&1 | sed 's/^/   /'
     SIGN_MODE="ad-hoc"

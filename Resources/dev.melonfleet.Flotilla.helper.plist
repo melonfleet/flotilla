@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<!--
-  The Flotilla Helper's name until 8 October (DECISIONS Q41). Kept only so the app can unregister
-  the old registration on Macs that approved it: no MachServices and no RunAtLoad, so launchd has
-  no way to start it.
--->
 <dict>
 	<key>Label</key>
-	<string>dev.melonfleet.Flotilla.dns-helper</string>
+	<string>dev.melonfleet.Flotilla.helper</string>
 	<key>BundleProgram</key>
 	<string>Contents/MacOS/FlotillaHelper</string>
+	<key>MachServices</key>
+	<dict>
+		<key>dev.melonfleet.Flotilla.helper</key>
+		<true/>
+	</dict>
 	<key>AssociatedBundleIdentifiers</key>
 	<array>
 		<string>dev.melonfleet.Flotilla</string>

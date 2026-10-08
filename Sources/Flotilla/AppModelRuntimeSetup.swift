@@ -9,7 +9,7 @@ import FlotillaNet
 /// - **On an admin Mac** it is the owner's choice, every time: Flotilla downloads Apple's signed
 ///   installer for the version this build expects, checks it is Apple's, and hands it to Apple's
 ///   Installer, where the owner approves with their password. Then the service and the kernel.
-/// - **On a host** nobody may be at the keyboard, so the DNS helper installs the package, after
+/// - **On a host** nobody may be at the keyboard, so the Flotilla Helper installs the package, after
 ///   checking — as root, on its own copy — that it is Apple's, notarised and the version asked for.
 ///   An upgrade, which stops every running container, happens by itself only when none is running;
 ///   otherwise the admin starts it from Hosts, with the count shown first.
@@ -191,8 +191,8 @@ extension AppModel {
         case .install, .upgrade:
             break
         }
-        guard dnsHelperEnabled else {
-            return "\(hostLabel) needs its DNS helper switched on to install container by itself."
+        guard helperEnabled else {
+            return "\(hostLabel) needs its Flotilla Helper switched on to install container by itself."
         }
         do {
             let package = try await downloadContainerPackage(version)
@@ -202,7 +202,7 @@ extension AppModel {
                 try await Task.detached { [cli] in try cli.stopSystem() }.value
             }
             runtimeSetup = RuntimeSetupProgress(version: version, phase: .installing)
-            if let failure = await DNSHelper.send(.installContainer(path: package.path, version: version)) {
+            if let failure = await PrivilegedHelper.send(.installContainer(path: package.path, version: version)) {
                 runtimeSetup = RuntimeSetupProgress(version: version, phase: .failed(failure))
                 return failure
             }

@@ -9,7 +9,7 @@ import Foundation
 //
 // Pure, so it is tested without a network, a resolver or root.
 
-/// The resolver files the DNS helper keeps for other Macs' zones — and the rules it applies, as
+/// The resolver files the Flotilla Helper keeps for other Macs' zones — and the rules it applies, as
 /// root, before writing one (Q37). Fixed nameserver and port: a file can only ever send a private
 /// fleet zone to Flotilla on this Mac.
 public enum FleetResolvers {

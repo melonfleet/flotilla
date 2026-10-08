@@ -586,7 +586,12 @@ must preserve all of the following:
     127.0.0.1:7869, only under a `.internal`, `.test` or `.home.arpa` fleet domain, never touching a
     file not named `flotilla.*`. **Amended 2026-10-08 (Q39):** and `installContainer` — Apple's signed,
     notarised `container` package, at the version asked for, via `/usr/sbin/installer`. Still nothing
-    else.
+    else. **Amended 2026-10-08 (Q41):** it is now the **Flotilla Helper** — label
+    `dev.melonfleet.Flotilla.helper`, target `FlotillaHelper`, `HelperInterface`/`HelperProtocol`,
+    app side `PrivilegedHelper`, and `AppModel.runPrivileged` is the one place that chooses. One
+    helper for every privileged job, ever: a new job is a new typed operation on it, never a
+    second daemon. The old `dns-helper` plist ships only as a launch-less stub so the app can
+    unregister it.
 
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.

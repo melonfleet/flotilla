@@ -224,7 +224,7 @@ public enum SettingsKeys {
     )
 
     /// Whether a host installs `container` and its kernel by itself, and upgrades `container` when
-    /// nothing is running (DECISIONS Q39). Needs the DNS helper. A profile can set it for zero-touch.
+    /// nothing is running (DECISIONS Q39). Needs the Flotilla Helper. A profile can set it for zero-touch.
     public static let autoInstallRuntime = SettingsKey<Bool>(
         "autoInstallRuntime", default: true, scope: .host,
         summary: "On a host, install container and its kernel automatically, and upgrade container when nothing is running."

@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "FlotillaCore", targets: ["FlotillaCore"]),
         .executable(name: "flotilla-probe", targets: ["flotilla-probe"]),
         .executable(name: "Flotilla", targets: ["Flotilla"]),
-        .executable(name: "FlotillaDNSHelper", targets: ["FlotillaDNSHelper"]),
+        .executable(name: "FlotillaHelper", targets: ["FlotillaHelper"]),
     ],
     // SwiftTerm (MIT) — a VT100/xterm emulator for AppKit. Backs the detail view's Terminal
     // tab, which needs a real PTY and something that understands the escape sequences coming
@@ -46,8 +46,8 @@ let package = Package(
                                          .product(name: "SwiftTerm", package: "SwiftTerm"),
                                          .product(name: "Sparkle", package: "Sparkle")]),
 
-        // The DNS helper (decision 19, amended 7 October): a root SMAppService daemon that runs
-        // `system dns create|delete` for the signed app and nothing else. Its interface lives in
+        // The Flotilla Helper (decision 19, amended 7 October; Q41): Flotilla's one root SMAppService
+        // daemon, running the typed jobs in HelperProtocol for the signed app and nothing else. Its interface lives in
         // FlotillaPrivileged, shared with the app. Both are macOS-only (Security, XPC), so both are
         // absent from Package@swift-6.1.swift for the same reason the app is.
         .target(name: "FlotillaPrivileged"),
@@ -65,7 +65,7 @@ let package = Package(
         // admin connector speaking FlotillaCore's wire protocol. macOS-only.
         .target(name: "FlotillaNet", dependencies: ["FlotillaCore", "FlotillaTrust"]),
         .testTarget(name: "FlotillaNetTests", dependencies: ["FlotillaNet", "FlotillaTrust", "FlotillaCore"]),
-        .executableTarget(name: "FlotillaDNSHelper",
+        .executableTarget(name: "FlotillaHelper",
                           dependencies: ["FlotillaCore", "FlotillaPrivileged"]),
 
         // Decoding tests run against real captured JSON in Fixtures/ — no `container`

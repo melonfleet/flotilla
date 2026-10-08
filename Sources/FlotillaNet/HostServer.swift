@@ -631,7 +631,7 @@ final class HostConnectionHandler: @unchecked Sendable {
         }
     }
 
-    /// A host call (D3): counted against the host's command slots — it may start the DNS helper or
+    /// A host call (D3): counted against the host's command slots — it may start the Flotilla Helper or
     /// restart the runtime — and answered on this connection's queue. Like a request, a cancel only
     /// means the admin stops waiting.
     private func perform(_ id: UInt32, _ call: HostCall) {

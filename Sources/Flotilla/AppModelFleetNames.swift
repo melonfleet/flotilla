@@ -24,13 +24,13 @@ extension AppModel {
         // a host with no other zone to answer was told its (older) helper had to be updated.
         if zones.isEmpty, !Self.hasFleetResolverFiles() { hostMode.syncedFleetZones = [] }
         if zones != hostMode.syncedFleetZones {
-            let request: PrivilegedDNSRequest = zones.isEmpty
+            let request: HelperRequest = zones.isEmpty
                 ? .removeFleetResolvers
                 : .syncFleetResolvers(fleetDomain: mine?.fleetDomain ?? "", zones: zones)
-            if dnsHelperEnabled {
-                problem = await DNSHelper.send(request)
+            if helperEnabled {
+                problem = await PrivilegedHelper.send(request)
             } else if !zones.isEmpty {
-                problem = "\(hostLabel)'s DNS helper isn't switched on, so it can't look up other Macs' names."
+                problem = "\(hostLabel)'s Flotilla Helper isn't switched on, so it can't look up other Macs' names."
             }
             if problem == nil || zones.isEmpty { hostMode.syncedFleetZones = zones }
         }

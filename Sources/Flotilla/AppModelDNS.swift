@@ -6,7 +6,7 @@ import FlotillaCore
 /// Three sources make a row (see `LocalDNS`): `container system dns list`, the runtime's resolver
 /// files in `/etc/resolver` (world-readable, so no administrator is needed to *read* them), and
 /// `config.toml`'s `[dns] domain`. Creating or deleting a domain needs root and goes through
-/// `runPrivilegedDNS` — the DNS helper, or the administrator prompt; choosing the domain
+/// `runPrivileged` — the Flotilla Helper, or the administrator prompt; choosing the domain
 /// containers are named under edits `config.toml` and restarts the runtime, which needs neither.
 extension AppModel {
 
@@ -54,13 +54,13 @@ extension AppModel {
         }
     }
 
-    /// Creates a domain — through the DNS helper when the owner has approved it, otherwise behind
-    /// the administrator prompt (`runPrivilegedDNS`).
+    /// Creates a domain — through the Flotilla Helper when the owner has approved it, otherwise behind
+    /// the administrator prompt (`runPrivileged`).
     func createDNSDomain(_ domain: String, localhost: String?) async -> DNSActionResult? {
         let prompt = localhost == nil
             ? "Flotilla wants to add the local domain “\(domain)” to this Mac’s DNS settings."
             : "Flotilla wants to point the local name “\(domain)” at this Mac."
-        let outcome = await runPrivilegedDNS(.create(domain: domain, localhost: localhost), prompt: prompt)
+        let outcome = await runPrivileged(.create(domain: domain, localhost: localhost), prompt: prompt)
         await refreshDNS()
         switch outcome {
         case .succeeded:
@@ -77,7 +77,7 @@ extension AppModel {
         let prompt = domains.count == 1
             ? "Flotilla wants to remove the local domain “\(domains[0])” from this Mac’s DNS settings."
             : "Flotilla wants to remove \(domains.count) local domains from this Mac’s DNS settings."
-        let outcome = await runPrivilegedDNS(.delete(domains), prompt: prompt)
+        let outcome = await runPrivileged(.delete(domains), prompt: prompt)
         await refreshDNS()
         switch outcome {
         case .succeeded:

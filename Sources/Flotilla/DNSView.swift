@@ -38,7 +38,7 @@ struct DNSView: View {
     @State private var working = false
     @State private var actionError: String?
     @State private var tagSheet: TagSheetTarget?
-    /// "Set Up on This Mac…" with the DNS helper on: no password prompt follows, so Flotilla asks.
+    /// "Set Up on This Mac…" with the Flotilla Helper on: no password prompt follows, so Flotilla asks.
     @State private var pendingSetUp: String?
 
     /// Every Mac's domains through the host filter (PLAN.md Phase D, layer 2).
@@ -309,7 +309,7 @@ struct DNSView: View {
                      ? "No domain matches the current filter."
                      : "A local domain gives your containers names — web.test, db.test — that "
                        + "this Mac and other containers can reach. "
-                       + (model.dnsHelperEnabled ? "Flotilla asks you to confirm before it creates one."
+                       + (model.helperEnabled ? "Flotilla asks you to confirm before it creates one."
                                                  : "Creating one asks for an administrator password."))
             } actions: {
                 if isFiltered {
@@ -691,7 +691,7 @@ enum DNSCopy {
 
     static func deleteMessage(_ rows: [LocalDNSDomain], helper: Bool, place: String = "this Mac") -> String {
         let local = place == "this Mac"
-        var text = (helper ? (local ? "Flotilla’s DNS helper removes " : "\(place)’s DNS helper removes ")
+        var text = (helper ? (local ? "The Flotilla Helper removes " : "\(place)’s Flotilla Helper removes ")
                            : "macOS asks for an administrator password, then removes ")
             + (rows.count == 1 ? "it" : "them") + " from \(local ? "this Mac’s" : "\(place)’s") DNS settings."
         if let used = rows.first(where: \.registersContainers) {
@@ -732,7 +732,7 @@ enum ContainerDomainChange: Identifiable, Hashable {
 }
 
 extension View {
-    /// "Set Up on This Mac…" when the DNS helper is on — the in-app confirmation that stands in for
+    /// "Set Up on This Mac…" when the Flotilla Helper is on — the in-app confirmation that stands in for
     /// the password prompt. Shared by the table and the form.
     func dnsSetUpConfirmation(_ name: Binding<String?>, place: String = "this Mac",
                               perform: @escaping (String) -> Void) -> some View {
@@ -745,8 +745,8 @@ extension View {
             Button("Cancel", role: .cancel) { name.wrappedValue = nil }
         } message: { _ in
             Text(place == "this Mac"
-                 ? "Flotilla’s DNS helper adds it to this Mac’s DNS settings, so this Mac can look up names under it."
-                 : "\(place)’s DNS helper adds it to its DNS settings, so \(place) can look up names under it.")
+                 ? "The Flotilla Helper adds it to this Mac’s DNS settings, so this Mac can look up names under it."
+                 : "\(place)’s Flotilla Helper adds it to its DNS settings, so \(place) can look up names under it.")
         }
     }
 

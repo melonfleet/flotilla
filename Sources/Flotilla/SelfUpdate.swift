@@ -11,14 +11,14 @@ import FlotillaPrivileged
 /// the bundle is checked here, on the host, before it replaces anything:
 ///
 /// - it is `dev.melonfleet.Flotilla`, signed by Apple-issued Developer ID under **this host's own
-///   team** — the same requirement the DNS helper uses — with every nested binary valid;
+///   team** — the same requirement the Flotilla Helper uses — with every nested binary valid;
 /// - its build number is **higher** than the one running here: never a downgrade, never a sideways
 ///   swap.
 ///
 /// Only Flotilla is replaced and relaunched. Containers run under `container`'s own services and
 /// are not touched, and the swap waits until nothing is running for an admin.
 enum SelfUpdate {
-    static let bundleIdentifier = DNSHelperInterface.appIdentifier
+    static let bundleIdentifier = HelperInterface.appIdentifier
     /// How long an update waits for the host to be idle before giving up.
     static let idleWait: TimeInterval = 600
 
@@ -38,7 +38,7 @@ enum SelfUpdate {
     /// running app. Returns the installed version, as hosts report it. Blocking: call off the main
     /// actor.
     static func install(archive: URL, isIdle: @Sendable () -> Bool) throws -> String {
-        guard let team = DNSHelperInterface.ownTeamIdentifier() else {
+        guard let team = HelperInterface.ownTeamIdentifier() else {
             throw Failure.refused("This host's Flotilla isn't Developer ID signed, so it can't check an update. Update it by hand.")
         }
         let destination = Bundle.main.bundleURL
@@ -56,7 +56,7 @@ enum SelfUpdate {
         guard apps.count == 1, let app = apps.first else { throw Failure.refused("The update isn't one app.") }
 
         // Genuine: our identifier, our team, every nested binary valid.
-        let requirementText = DNSHelperInterface.requirement(identifier: bundleIdentifier, team: team)
+        let requirementText = HelperInterface.requirement(identifier: bundleIdentifier, team: team)
         var code: SecStaticCode?
         var requirement: SecRequirement?
         guard SecStaticCodeCreateWithPath(app as CFURL, [], &code) == errSecSuccess, let code,

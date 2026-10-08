@@ -20,9 +20,9 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// Install or upgrade `container` to the version the host's Flotilla expects, then the kernel —
     /// even if that stops running containers: the admin confirmed, with the count (version 7, Q39).
     case setUpRuntime
-    /// `system dns create`, run by the host's DNS helper.
+    /// `system dns create`, run by the host's Flotilla Helper.
     case dnsCreate(domain: String, localhost: String?)
-    /// `system dns delete`, run by the host's DNS helper.
+    /// `system dns delete`, run by the host's Flotilla Helper.
     case dnsDelete(domains: [String])
     /// Name the host's containers under `domain` (or under none): edits its `config.toml` and
     /// restarts its runtime, which stops every container there.

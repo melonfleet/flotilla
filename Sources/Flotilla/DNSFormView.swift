@@ -42,7 +42,7 @@ struct DNSFormView: View {
     @State private var problem: String?
     @State private var pendingChange: ContainerDomainChange?
     @State private var confirmingDelete = false
-    /// "Set Up on This Mac…" with the DNS helper on — see `dnsSetUpConfirmation`.
+    /// "Set Up on This Mac…" with the Flotilla Helper on — see `dnsSetUpConfirmation`.
     @State private var pendingSetUp: String?
     @State private var host: HostRef = .local
 
@@ -252,9 +252,9 @@ struct DNSFormView: View {
         }
 
         Text(!mac.isLocal
-             ? "Creating a domain changes \(place)’s DNS settings, through its own DNS helper."
+             ? "Creating a domain changes \(place)’s DNS settings, through its own Flotilla Helper."
              : noPrompt
-             ? "Creating a domain changes this Mac’s DNS settings, through Flotilla’s DNS helper."
+             ? "Creating a domain changes this Mac’s DNS settings, through the Flotilla Helper."
              : "Creating a domain changes this Mac’s DNS settings, so macOS asks for an "
                + "administrator password.")
             .font(.callout).foregroundStyle(.secondary)
@@ -338,7 +338,7 @@ struct DNSFormView: View {
     private var railPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
             if isAdd {
-                Label(mac.isLocal ? "Runs as administrator" : "Runs on \(place), by its DNS helper", systemImage: "lock.shield")
+                Label(mac.isLocal ? "Runs as administrator" : "Runs on \(place), by its Flotilla Helper", systemImage: "lock.shield")
                     .font(.caption).foregroundStyle(Theme.info)
                 if trimmedDomain.isEmpty {
                     Text("Type a domain to see the command.")

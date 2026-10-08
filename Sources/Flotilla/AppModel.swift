@@ -120,6 +120,7 @@ final class AppModel {
         hostMode.recordActivity = { [weak self] event in self?.recordActivity(event) }
         updater.apply(isAdmin: hostMode.isAdmin)
         startHostRuntimeWatch()
+        Task { await PrivilegedHelper.moveFromLegacyName() }
         hostMode.onRefreshed = { [weak self] in
             Task {
                 await self?.updateFleetNames()

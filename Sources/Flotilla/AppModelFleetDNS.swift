@@ -4,7 +4,7 @@ import FlotillaNet
 
 /// DNS across the fleet (PLAN.md Phase D, layer 2; research/FLEET-DNS-D3.md; DECISIONS Q36).
 ///
-/// On a host, an admin's host call is performed here — through this Mac's own DNS helper, never a
+/// On a host, an admin's host call is performed here — through this Mac's own Flotilla Helper, never a
 /// password prompt nobody is there to answer. On the admin Mac, each host's DNS is read and changed
 /// through those calls, and each Mac can be given its own zone, `<its label>.<fleet domain>`.
 extension AppModel {
@@ -35,7 +35,7 @@ extension AppModel {
         case .dnsStatus:
             await refreshDNS()
             let status = HostDNSStatus(domains: dnsDomains, containerDomain: containerDNSDomain,
-                                       helper: Self.helperState(DNSHelper.status))
+                                       helper: Self.helperState(PrivilegedHelper.status))
             guard let json = try? JSONEncoder().encode(status) else {
                 return .failure(HostCallFailure(.internalError, "This host couldn't describe its DNS."))
             }
@@ -43,13 +43,13 @@ extension AppModel {
 
         case .dnsCreate(let domain, let localhost):
             if let refusal = helperRefusal { return .failure(refusal) }
-            let failure = await DNSHelper.send(.create(domain: domain, localhost: localhost))
+            let failure = await PrivilegedHelper.send(.create(domain: domain, localhost: localhost))
             await refreshDNS()
             return failure.map { .failure(HostCallFailure(.internalError, $0)) } ?? .success("")
 
         case .dnsDelete(let domains):
             if let refusal = helperRefusal { return .failure(refusal) }
-            let failure = await DNSHelper.send(.delete(domains))
+            let failure = await PrivilegedHelper.send(.delete(domains))
             await refreshDNS()
             return failure.map { .failure(HostCallFailure(.internalError, $0)) } ?? .success("")
 
@@ -65,18 +65,18 @@ extension AppModel {
     /// A host makes DNS changes only through its helper (Q36): the admin is not at this Mac to
     /// answer a password prompt, and nobody else should be asked.
     private var helperRefusal: HostCallFailure? {
-        switch DNSHelper.status {
+        switch PrivilegedHelper.status {
         case .enabled: nil
         case .awaitingApproval:
-            HostCallFailure(.refused, "\(hostLabel)'s DNS helper is waiting to be switched on in System Settings ▸ Login Items.")
+            HostCallFailure(.refused, "\(hostLabel)'s Flotilla Helper is waiting to be switched on in System Settings ▸ Login Items.")
         case .notInstalled:
-            HostCallFailure(.refused, "\(hostLabel) hasn't installed its DNS helper. Its owner turns it on in Flotilla ▸ Settings ▸ Advanced.")
+            HostCallFailure(.refused, "\(hostLabel) hasn't installed its Flotilla Helper. Its owner turns it on in Flotilla ▸ Settings ▸ Advanced.")
         case .unavailable:
-            HostCallFailure(.refused, "\(hostLabel)'s copy of Flotilla isn't signed, so it can't use a DNS helper.")
+            HostCallFailure(.refused, "\(hostLabel)'s copy of Flotilla isn't signed, so it can't use the Flotilla Helper.")
         }
     }
 
-    nonisolated static func helperState(_ status: DNSHelper.Status) -> HostDNSStatus.Helper {
+    nonisolated static func helperState(_ status: PrivilegedHelper.Status) -> HostDNSStatus.Helper {
         switch status {
         case .enabled: .enabled
         case .awaitingApproval: .awaitingApproval
@@ -105,7 +105,7 @@ extension AppModel {
 
     /// Whether a change on that Mac goes without a password prompt — always on a host (its helper
     /// or nothing), and on This Mac when its helper is switched on.
-    func dnsChangesSkipPassword(on host: HostRef) -> Bool { host.isLocal ? dnsHelperEnabled : true }
+    func dnsChangesSkipPassword(on host: HostRef) -> Bool { host.isLocal ? helperEnabled : true }
 
     /// "this Mac", or the host's name — for sentences about where a change happens.
     func dnsPlace(_ host: HostRef) -> String { host.isLocal ? "this Mac" : hostMode.hostName(host, local: hostLabel) }
@@ -132,9 +132,9 @@ extension AppModel {
         if let error = hostMode.dnsSnapshots[fingerprint]?.lastError { return error }
         switch hostMode.dnsStatus[fingerprint]?.helper {
         case .enabled?: return nil
-        case .awaitingApproval?: return "Its DNS helper is waiting to be switched on in Login Items there."
-        case .notInstalled?: return "Its DNS helper isn't installed. Turn it on in Flotilla ▸ Settings ▸ Advanced on that Mac."
-        case .unavailable?: return "Its copy of Flotilla isn't signed, so it can't use a DNS helper."
+        case .awaitingApproval?: return "Its Flotilla Helper is waiting to be switched on in Login Items there."
+        case .notInstalled?: return "Its Flotilla Helper isn't installed. Turn it on in Flotilla ▸ Settings ▸ Advanced on that Mac."
+        case .unavailable?: return "Its copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
         case nil: return "Its DNS hasn't been read yet."
         }
     }

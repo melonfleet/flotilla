@@ -652,7 +652,7 @@ struct HostsView: View {
     }
 
     private func runtimeMessage(_ row: HostRow) -> String {
-        var text = "\(row.name) downloads Apple's container installer, and its DNS helper installs it after checking it is Apple's. "
+        var text = "\(row.name) downloads Apple's container installer, and its Flotilla Helper installs it after checking it is Apple's. "
         if row.containerVersion != nil {
             let running = row.containersRunning ?? 0
             text += running > 0

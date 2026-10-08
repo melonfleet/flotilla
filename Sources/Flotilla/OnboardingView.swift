@@ -81,7 +81,7 @@ struct OnboardingView: View {
                     Text("container").font(.headline)
                     if effectiveMode == .host {
                         Text("Apple's container isn't installed on this Mac. As a host, Flotilla installs container "
-                             + "\(ContainerRuntime.expectedVersion) and its kernel by itself once its DNS helper is switched "
+                             + "\(ContainerRuntime.expectedVersion) and its kernel by itself once its Flotilla Helper is switched "
                              + "on — in Settings ▸ Advanced, or by your organisation's profile.")
                             .font(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
