@@ -287,7 +287,11 @@ final class AppModel {
         //
         // `nil` here means *inherit*, so Auto genuinely defers to the app and therefore the system,
         // rather than keeping whatever the last explicit choice pinned.
-        for window in NSApplication.shared.windows {
+        //
+        // Except the menu-bar item's window. The menu bar's appearance is the system's — picked
+        // from the wallpaper behind it — and pinning Flotilla's choice on it turned the icon black
+        // on a dark menu bar whenever Flotilla was set to Light (the owner, 8 October).
+        for window in NSApplication.shared.windows where !window.className.contains("StatusBarWindow") {
             window.appearance = resolved
         }
     }

@@ -32,9 +32,12 @@ enum MenuBarIcon {
         [CGPoint(x: 92, y: 86), CGPoint(x: 92, y: 52), CGPoint(x: 73, y: 86)],
     ]
 
-    static func image(for status: MenuBarStatus) -> NSImage {
+    /// `dark` is the menu bar's own appearance (`MenuBarAppearance`), not the app's: in light mode
+    /// over a dark wallpaper the menu bar is dark, and a glyph drawn in the app's label colour came
+    /// out black on it (the owner, 8 October).
+    static func image(for status: MenuBarStatus, dark: Bool) -> NSImage {
         let image = NSImage(size: size, flipped: false) { rect in
-            draw(status, in: rect, glyph: .labelColor)
+            draw(status, in: rect, glyph: dark ? .white : .black)
             return true
         }
         image.isTemplate = false
@@ -120,5 +123,43 @@ enum MenuBarIcon {
             NSColor.white.setStroke()
             bar.stroke()
         }
+    }
+}
+
+/// Whether the menu bar is dark, read from the menu bar's own window and kept current.
+///
+/// A template image would follow the menu bar by itself, but the badge is colour, so the image is
+/// not a template and has to be told. The menu bar's appearance is not the app's: macOS picks it
+/// from the wallpaper behind it, so a light-mode Mac can have a dark menu bar. Its status-item
+/// window carries that appearance, and is observed for when the wallpaper or mode changes.
+@MainActor @Observable
+final class MenuBarAppearance {
+    private(set) var isDark = false
+    @ObservationIgnored private var observation: NSKeyValueObservation?
+
+    init() {
+        // The status item's window exists only once SwiftUI has made the item, after launch.
+        Task { [weak self] in
+            for _ in 0..<40 {
+                if self?.attach() == true { return }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+    }
+
+    private func attach() -> Bool {
+        guard let window = NSApp.windows.first(where: { $0.className.contains("StatusBarWindow") }) else {
+            return false
+        }
+        update(window.effectiveAppearance)
+        observation = window.observe(\.effectiveAppearance, options: [.new]) { [weak self] window, _ in
+            MainActor.assumeIsolated { self?.update(window.effectiveAppearance) }
+        }
+        return true
+    }
+
+    private func update(_ appearance: NSAppearance) {
+        let match = appearance.bestMatch(from: [.aqua, .darkAqua, .vibrantLight, .vibrantDark])
+        isDark = match == .darkAqua || match == .vibrantDark
     }
 }

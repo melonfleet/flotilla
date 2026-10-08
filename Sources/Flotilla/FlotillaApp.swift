@@ -295,6 +295,7 @@ private struct FlotillaCommands: Commands {
 struct FlotillaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
+    @State private var menuBarAppearance = MenuBarAppearance()
 
     /// Runs before `applicationDidFinishLaunching`, which is the whole point: it is the only
     /// hook early enough to tell the delegate the user's presentation preference *before*
@@ -318,7 +319,7 @@ struct FlotillaApp: App {
             MenuBarView(model: model)
         } label: {
             // Drawn, not a template: the badge is colour. See `MenuBarIcon`.
-            Image(nsImage: MenuBarIcon.image(for: model.menuBarStatus))
+            Image(nsImage: MenuBarIcon.image(for: model.menuBarStatus, dark: menuBarAppearance.isDark))
         }
         .menuBarExtraStyle(.menu)
 
