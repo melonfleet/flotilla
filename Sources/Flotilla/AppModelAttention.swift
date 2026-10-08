@@ -1,12 +1,16 @@
 import Foundation
 import FlotillaCore
 
-/// One thing that needs the owner: a sentence, and the section that deals with it.
-struct AttentionItem: Identifiable, Hashable {
+/// One thing that needs the owner: a sentence, the section that deals with it, and — where
+/// Flotilla already has one — the fix, as a button beside it.
+struct AttentionItem: Identifiable {
     let text: String
     let section: Section
+    var fix: (title: String, run: @MainActor () -> Void)?
     var id: String { text }
-    init(_ text: String, _ section: Section) { self.text = text; self.section = section }
+    init(_ text: String, _ section: Section, fix: (title: String, run: @MainActor () -> Void)? = nil) {
+        self.text = text; self.section = section; self.fix = fix
+    }
 }
 
 extension AppModel {
@@ -15,7 +19,14 @@ extension AppModel {
     /// disagree about whether something is wrong.
     var attentionItems: [AttentionItem] {
         var items: [AttentionItem] = []
-        if !runtimeUsable { items.append(AttentionItem("The container runtime on \(hostLabel) isn't running.", .hosts)) }
+        // Stopped is attention, amber, with Start beside it (the owner, 8 October): it may be
+        // deliberate, but nothing runs until it starts.
+        if case .serviceStopped? = preflight {
+            items.append(AttentionItem("container is stopped on \(hostLabel).", .hosts,
+                                       fix: ("Start", { [weak self] in Task { await self?.startRuntime() } })))
+        } else if !runtimeUsable {
+            items.append(AttentionItem("The container runtime on \(hostLabel) isn't running.", .hosts))
+        }
         for network in disconnectedNetworks {
             items.append(AttentionItem("\(network) has lost its connection to \(hostLabel).", .networks))
         }

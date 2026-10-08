@@ -217,6 +217,13 @@ struct HostsView: View {
                 openHost = subject
                 model.clearPendingDetail()
             }
+            if model.pendingAddHost, hostMode.isAdmin { showingAdd = true }
+            model.pendingAddHost = false
+        }
+        .onChange(of: model.pendingAddHost) { _, wanted in
+            guard wanted else { return }
+            if hostMode.isAdmin { showingAdd = true }
+            model.pendingAddHost = false
         }
         .task {
             await model.refreshMachines()

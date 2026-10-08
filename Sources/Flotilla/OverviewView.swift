@@ -18,6 +18,7 @@ struct OverviewView: View {
             // the fleet hold, which Macs make it up.
             VStack(alignment: .leading, spacing: 22) {
                 attention
+                getStarted
                 updates
                 totals
                 hosts
@@ -176,24 +177,16 @@ struct OverviewView: View {
         let images = model.images.count + fleet.fleetImages.reduce(0) { $0 + $1.snapshot.items.count }
         let volumes = model.volumes.count + fleet.fleetVolumes.reduce(0) { $0 + $1.snapshot.items.count }
         let networks = model.networks.count + fleet.fleetNetworks.reduce(0) { $0 + $1.snapshot.items.count }
-        let machinesRunning = model.machines.filter { MachinesView.isRunning($0) }.count
         // "on 3 Macs" where the number spans the fleet; "on This Mac" where it does not yet.
         let macs = 1 + fleet.trustedHosts.count
         let across = macs > 1 ? " · \(macs) Macs" : ""
-        let thisMacOnly = macs > 1 ? "on This Mac" : ""
         return VStack(alignment: .leading, spacing: 10) {
             Text("Across all hosts").font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
                 tile("Containers", "\(running)", detail: "running of \(containers.count)" + across, .containers)
-                tile("Groups", "\(model.groups.book.groups.count)",
-                     detail: macs > 1 ? "saved on This Mac" : "saved", .containers)
                 tile("Images", "\(images)", detail: "stored" + across, .images)
                 tile("Volumes", "\(volumes)", detail: String(across.dropFirst(3)), .volumes)
                 tile("Networks", "\(networks)", detail: String(across.dropFirst(3)), .networks)
-                tile("DNS domains", "\(model.dnsDomains.count)", detail: thisMacOnly, .dns)
-                tile("Machines", "\(machinesRunning)",
-                     detail: "running of \(model.machines.count)" + (macs > 1 ? " on This Mac" : ""), .machines)
-                tile("Clusters", "\(Set(model.clusters.map(\.name)).count)", detail: thisMacOnly, .clusters)
             }
         }
     }
@@ -231,12 +224,50 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Needs attention").font(.headline)
                 ForEach(attentionItems) { item in
-                    Button { go(item.section) } label: {
-                        Label(item.text, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(Theme.warning)
+                    HStack(spacing: 10) {
+                        Button { go(item.section) } label: {
+                            Label(item.text, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(Theme.warning)
+                        }
+                        .buttonStyle(.plain)
+                        if let fix = item.fix {
+                            Button(fix.title) { fix.run() }
+                                .controlSize(.small)
+                                .disabled(model.startingRuntime)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
+            }
+        }
+    }
+
+    /// The first things to do, on an install with nothing in it yet (Iris, 8 October; Add Host, the
+    /// owner). Only once `container` is usable — until then the top line is its setup — and gone
+    /// for good after the first container, group or paired host: deleting everything later does
+    /// not bring it back, since each section has its own empty-state actions.
+    @AppStorage("overviewGetStartedDone") private var getStartedDone = false
+
+    private var isEmptyInstall: Bool {
+        model.containers.isEmpty && model.groups.book.groups.isEmpty && model.hostMode.trustedHosts.isEmpty
+    }
+
+    @ViewBuilder
+    private var getStarted: some View {
+        if !getStartedDone, model.runtimeUsable, model.state == .loaded {
+            if isEmptyInstall {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Get started").font(.headline)
+                    HStack(spacing: 10) {
+                        Button("Run a Container\u{2026}") { model.requestRunSheet() }
+                        Button("Pull Image\u{2026}") { model.requestPullForm() }
+                        if model.hostMode.isAdmin {
+                            Button("Add Host\u{2026}") { model.requestAddHost() }
+                        }
+                        Button("Try a Suggested Stack\u{2026}") { model.requestSuggestions(.containers) }
+                    }
+                }
+            } else {
+                Color.clear.frame(height: 0).onAppear { getStartedDone = true }
             }
         }
     }

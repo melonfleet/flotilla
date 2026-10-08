@@ -1890,6 +1890,14 @@ final class AppModel {
         showingSupportBundle = true
     }
 
+    /// Hosts' Add Host form, opened from Overview's Get started. One-shot, consumed by HostsView.
+    var pendingAddHost = false
+
+    func requestAddHost() {
+        pendingSection = .hosts
+        pendingAddHost = true
+    }
+
     /// About is a sheet in Settings, opened from there or from the menu-bar menu.
     var showingAbout = false
 
