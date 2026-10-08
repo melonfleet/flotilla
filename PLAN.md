@@ -688,7 +688,7 @@ To settle before building:
   bounded operations with host-aware paths. Do not reuse a generic remote
   terminal to obtain that access.
 
-### Updating the fleet from the admin Mac (DECISIONS Q38) — built
+### Updating the fleet from the admin Mac (DECISIONS Q38) — built and live-tested
 
 The admin pushes its own build to its hosts (wire version 6, an `app-update` upload). A host
 installs it only if it is genuine Flotilla signed by its own team and newer than its own, only
@@ -696,6 +696,10 @@ when idle, and relaunches only Flotilla — containers keep running. Rolling by 
 a time, stopping at the first that does not come back; Hosts ▸ the updates menu switches to manual
 (Update on a row, or Update All). `acceptAdminUpdates` can be locked off for managed minis.
 `release.sh` now publishes the zip, a tarball, a signed and notarised DMG, and the pkg.
+Live, 8 October: three automatic rollouts (321→322→323→324) reached Golden Gate, the mini and
+Tahoe one at a time with no hand on any host; in manual mode only the host whose Update was
+pressed moved; and nginx on the mini answered all 265 requests (twice a second) while that mini
+updated and relaunched Flotilla. Not yet run for real: `release.sh`'s DMG and tarball steps.
 
 ### Sparkle auto-updates
 
