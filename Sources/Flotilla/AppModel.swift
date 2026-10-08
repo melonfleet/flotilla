@@ -482,6 +482,16 @@ final class AppModel {
                 // will refresh when it finishes, and a poll landing mid-action would fight
                 // the optimistic state the row is showing.
                 guard self.busy.isEmpty else { continue }
+                // A runtime known to be down is re-checked every sixth tick rather than polled, so
+                // one started outside Flotilla is noticed without a process every few seconds.
+                if !self.runtimeUsable {
+                    tick += 1
+                    if tick % 6 == 0, !self.startingRuntime {
+                        await self.runPreflight(autoStartingService: false)
+                        if self.runtimeUsable { await self.refresh(showingProgress: false) }
+                    }
+                    continue
+                }
                 await self.refresh()
 
                 // Machines, images, volumes and networks on a **slower** cadence.
@@ -943,6 +953,11 @@ final class AppModel {
             if state != .loaded { state = .loaded }
         } catch {
             state = .failed(String(describing: error))
+            // Ask why. A runtime stopped outside Flotilla — `container system stop` in Terminal —
+            // left preflight saying "running", so Overview and the menu-bar badge stayed green
+            // over a stopped Mac (found 8 October). Diagnosis only: a stop somebody chose is not
+            // undone behind their back.
+            if !startingRuntime { await runPreflight(autoStartingService: false) }
         }
     }
 
