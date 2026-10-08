@@ -1943,7 +1943,8 @@ stay a single helper for every privileged job, as Jamf does with its one managem
 - **Renamed now, before the first release**, because the label is what a managed Login Items
   profile names: `dev.melonfleet.Flotilla.helper` (was `…dns-helper`). Binary `FlotillaHelper`.
 - **Moving over:** on launch, a Mac that registered the old name has it unregistered and the
-  helper registered under the new one. That continues the owner's choice to install it and grants
-  nothing: macOS lists it off in Login Items until the owner switches it on, on each Mac. The old
+  helper registered under the new one. That continues the owner's choice to install it. Measured
+  8 October on the admin Mac: it stayed **on** with no new prompt, because Login Items approves
+  Flotilla's background items as one switch per app, not per label. The old
   plist stays in the bundle as a stub with no Mach service or RunAtLoad, only so it can be
   unregistered.

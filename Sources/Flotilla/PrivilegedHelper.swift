@@ -50,8 +50,9 @@ enum PrivilegedHelper {
     /// Q41: the helper was `dev.melonfleet.Flotilla.dns-helper` until it took on more than DNS. A
     /// Mac that installed it under that name has it unregistered here, once, and the helper
     /// registered under its own name in its place. That carries the owner's earlier choice to
-    /// install it, nothing more: the new name is off until they switch it on in Login Items, and
-    /// macOS says so in its own notification.
+    /// install it, nothing more. Login Items approves an app's background items with one switch, so
+    /// a Mac that had the old name on keeps the helper on (measured 8 October); one that never
+    /// switched it on still has to.
     static func moveFromLegacyName() async {
         guard team != nil else { return }
         switch legacyService.status {

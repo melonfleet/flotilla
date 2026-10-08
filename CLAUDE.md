@@ -591,7 +591,7 @@ must preserve all of the following:
     app side `PrivilegedHelper`, and `AppModel.runPrivileged` is the one place that chooses. One
     helper for every privileged job, ever: a new job is a new typed operation on it, never a
     second daemon. The old `dns-helper` plist ships only as a launch-less stub so the app can
-    unregister it.
+    unregister it; Login Items approval is per app, so the move keeps the helper on.
 
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.
