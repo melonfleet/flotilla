@@ -223,6 +223,13 @@ public enum SettingsKeys {
         summary: "Install Flotilla updates the admin Mac sends. Only genuine, newer Flotilla is ever installed."
     )
 
+    /// Whether a host installs `container` and its kernel by itself, and upgrades `container` when
+    /// nothing is running (DECISIONS Q39). Needs the DNS helper. A profile can set it for zero-touch.
+    public static let autoInstallRuntime = SettingsKey<Bool>(
+        "autoInstallRuntime", default: true, scope: .host,
+        summary: "On a host, install container and its kernel automatically, and upgrade container when nothing is running."
+    )
+
     /// Whether the admin Mac updates its hosts by itself, one at a time, when it is newer (Q38).
     /// Off: each host shows Update available, and you update it from Hosts.
     public static let autoUpdateHosts = SettingsKey<Bool>(
@@ -368,6 +375,7 @@ public enum SettingsRegistry {
         SettingsKeys.fleetDNSDomain.descriptor,
         SettingsKeys.fleetNamesEnabled.descriptor,
         SettingsKeys.acceptAdminUpdates.descriptor,
+        SettingsKeys.autoInstallRuntime.descriptor,
         SettingsKeys.autoUpdateHosts.descriptor,
         SettingsKeys.identityKeychainLabel.descriptor,
         SettingsKeys.peerAllowlist.descriptor,

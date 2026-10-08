@@ -75,6 +75,11 @@ enum DNSHelper {
             return "This copy of Flotilla isn't signed, so it can't use the DNS helper."
         }
         switch request {
+        case .installContainer:
+            if let version = await runningVersion(), version < 3 {
+                return "The DNS helper is from an older Flotilla. Switch it off and on again in "
+                    + "Settings ▸ Advanced to update it."
+            }
         case .syncFleetResolvers, .removeFleetResolvers:
             // Added in version 2: an older helper would not know the request at all.
             if let version = await runningVersion(), version < 2 {
@@ -109,6 +114,8 @@ enum DNSHelper {
                 proxy.syncFleetResolvers(fleetDomain: fleetDomain, zones: zones) { once.resume($0) }
             case .removeFleetResolvers:
                 proxy.removeFleetResolvers { once.resume($0) }
+            case .installContainer(let path, let version):
+                proxy.installContainer(packageAt: path, version: version) { once.resume($0) }
             }
         }
     }
@@ -121,6 +128,8 @@ enum PrivilegedDNSRequest: Sendable {
     /// Q37: the resolver files for other Macs' zones. Helper only — never the password prompt.
     case syncFleetResolvers(fleetDomain: String, zones: [String])
     case removeFleetResolvers
+    /// Q39: Apple's `container` package, checked by the helper as root. Helper only.
+    case installContainer(path: String, version: String)
 }
 
 private final class VersionOnce: @unchecked Sendable {
@@ -166,6 +175,8 @@ extension AppModel {
         switch request {
         case .syncFleetResolvers, .removeFleetResolvers:
             return .failed("Names across Macs need Flotilla's DNS helper switched on. Turn it on in Settings ▸ Advanced.")
+        case .installContainer:
+            return .failed("Installing container without a person here needs Flotilla's DNS helper switched on.")
         case .create(let domain, let localhost):
             switch ContainerCLI.dnsCreateCommand(domain: domain, localhost: localhost) {
             case .success(let command): commands = [command]

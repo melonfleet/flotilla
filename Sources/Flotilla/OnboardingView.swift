@@ -15,12 +15,17 @@ import FlotillaCore
 /// host, or both — decides whether it listens on the network at all, which nobody should find out
 /// about later. Admin is pre-selected: it listens on nothing. A profile that sets the mode answers
 /// that question, and the sheet says so instead of asking.
+///
+/// A third section appears only on a Mac without `container` (the owner, 8 October; DECISIONS
+/// Q39): an admin is offered Apple's installer — downloaded and checked by Flotilla, approved by the
+/// owner in Apple's Installer — and a host is told it will install `container` itself.
 struct OnboardingView: View {
     let model: AppModel
 
     /// Pre-selected, not defaulted — the distinction the store keeps.
     @State private var selection: AppearanceMode = .auto
     @State private var mode: RunMode = .client
+    @State private var installContainer = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -70,11 +75,35 @@ struct OnboardingView: View {
                 }
             }
 
+            if model.needsContainerInstall {
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("container").font(.headline)
+                    if effectiveMode == .host {
+                        Text("Apple's container isn't installed on this Mac. As a host, Flotilla installs container "
+                             + "\(ContainerRuntime.expectedVersion) and its kernel by itself once its DNS helper is switched "
+                             + "on — in Settings ▸ Advanced, or by your organisation's profile.")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Toggle("Download and install container \(ContainerRuntime.expectedVersion) when I continue",
+                               isOn: $installContainer)
+                            .toggleStyle(.checkbox)
+                        Text("Apple's installer, about 118 MB from Apple's GitHub releases. Flotilla checks it is Apple's, "
+                             + "then Apple's Installer asks for your password. Then the kernel containers run on.")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
             HStack {
                 Spacer()
                 Button("Continue") {
                     if !modeLocked { try? model.settingsStore.set(mode, for: SettingsKeys.mode) }
+                    let install = model.needsContainerInstall && installContainer && effectiveMode != .host
                     model.chooseAppearance(selection)
+                    if install { Task { await model.installContainerInteractively() } }
                 }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
@@ -85,6 +114,7 @@ struct OnboardingView: View {
     }
 
     private var modeLocked: Bool { model.settingsStore.isLocked(SettingsKeys.mode) }
+    private var effectiveMode: RunMode { modeLocked ? model.settingsStore[SettingsKeys.mode] : mode }
 
     private static func title(for mode: AppearanceMode) -> String {
         switch mode {

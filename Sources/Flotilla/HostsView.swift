@@ -162,6 +162,9 @@ struct HostsView: View {
     @State private var showingAdd = false
     @State private var tagSheet: TagSheetTarget?
     @State private var pendingForget: HostRow?
+    /// A host whose `container` the owner asked to install or upgrade (Q39) — confirmed first.
+    @State private var pendingRuntime: HostRow?
+    @State private var runtimeError: String?
     /// An imported host being paired: Add Host, holding the key it must present.
     @State private var pairing: HostModeController.ImportedHost?
     /// The host being given the owner's own name, and the text so far.
@@ -248,6 +251,22 @@ struct HostsView: View {
             Button("Cancel", role: .cancel) { renaming = nil }
         } message: {
             Text("A name for this host on this Mac only. Leave it empty to use the name the host gives itself.")
+        }
+        .confirmationDialog(runtimeQuestion,
+                            isPresented: Binding(get: { pendingRuntime != nil }, set: { if !$0 { pendingRuntime = nil } }),
+                            titleVisibility: .visible, presenting: pendingRuntime) { row in
+            Button(runtimeButton(row)) {
+                guard let peer = row.peer else { return }
+                Task { if let failure = await model.setUpRuntime(on: peer.fingerprint) { runtimeError = failure } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { row in
+            Text(runtimeMessage(row))
+        }
+        .alert("container wasn't set up", isPresented: Binding(get: { runtimeError != nil }, set: { if !$0 { runtimeError = nil } })) {
+            Button("OK") { runtimeError = nil }
+        } message: {
+            Text(runtimeError ?? "")
         }
         .confirmationDialog("Remove “\(pendingForget?.name ?? "")”?",
                             isPresented: Binding(get: { pendingForget != nil }, set: { if !$0 { pendingForget = nil } }),
@@ -475,10 +494,9 @@ struct HostsView: View {
             .customizationID("macos")
 
             TableColumn("container", value: \.containerSortKey) { row in
-                versionCell(row.containerVersion, skew: row.containerSkew, warnAt: .minor,
-                            what: "container", host: row.name)
+                containerCell(row)
             }
-            .width(min: 64, ideal: 80)
+            .width(min: 64, ideal: 100)
             .customizationID("container")
 
             // Shown since Phase C, so a host still on an older Flotilla is visible before it
@@ -593,6 +611,55 @@ struct HostsView: View {
         } else {
             versionCell(row.appVersion, skew: row.appSkew, warnAt: .build, what: "Flotilla", host: row.name)
         }
+    }
+
+    /// A host's `container`: its version, and Install or Upgrade when it is missing or behind the
+    /// version this Flotilla expects (Q39). This Mac's row keeps the plain version and skew mark.
+    @ViewBuilder
+    private func containerCell(_ row: HostRow) -> some View {
+        if let peer = row.peer, peer.isTrusted {
+            HStack(spacing: 6) {
+                Text(row.containerVersion ?? "—").monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+                switch model.hostRuntimeState(peer.fingerprint) {
+                case .behind, .missing:
+                    Button(model.hostRuntimeState(peer.fingerprint) == .missing ? "Install" : "Upgrade") { pendingRuntime = row }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                        .help("Set up container \(ContainerRuntime.expectedVersion) on \(row.name) — the version this Flotilla expects.")
+                case .working:
+                    ProgressView().controlSize(.mini).help("Setting up container on \(row.name)…")
+                case .tooOldToAsk:
+                    Image(systemName: "exclamationmark.triangle.fill").font(.caption2).foregroundStyle(Theme.warning)
+                        .help("\(row.name) needs container \(ContainerRuntime.expectedVersion); update its Flotilla first.")
+                case .current, .newer, .unknown:
+                    EmptyView()
+                }
+            }
+        } else {
+            versionCell(row.containerVersion, skew: row.containerSkew, warnAt: .minor, what: "container", host: row.name)
+        }
+    }
+
+    private var runtimeQuestion: String {
+        guard let row = pendingRuntime else { return "" }
+        return row.containerVersion == nil
+            ? "Install container \(ContainerRuntime.expectedVersion) on \(row.name)?"
+            : "Upgrade container on \(row.name) to \(ContainerRuntime.expectedVersion)?"
+    }
+
+    private func runtimeButton(_ row: HostRow) -> String {
+        row.containerVersion == nil ? "Install" : ((row.containersRunning ?? 0) > 0 ? "Stop Containers and Upgrade" : "Upgrade")
+    }
+
+    private func runtimeMessage(_ row: HostRow) -> String {
+        var text = "\(row.name) downloads Apple's container installer, and its DNS helper installs it after checking it is Apple's. "
+        if row.containerVersion != nil {
+            let running = row.containersRunning ?? 0
+            text += running > 0
+                ? "container restarts there, which stops the \(running) running container\(running == 1 ? "" : "s"); start them again afterwards. "
+                : "container restarts there; nothing is running. "
+        }
+        return text + "Then the recommended kernel, if it has none."
     }
 
     /// Updates for the fleet (Q38): update every host now, one at a time, or let This Mac do it by

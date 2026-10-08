@@ -207,6 +207,8 @@ final class HostModeController {
 
     /// Hosts being sent or installing an update now.
     var updating: Set<PeerFingerprint> = []
+    /// Hosts installing or upgrading `container` now (Q39).
+    var settingUpRuntime: Set<PeerFingerprint> = []
     /// The admin build a host last failed to update to, and why — not retried automatically.
     var updateFailures: [PeerFingerprint: (build: Int, message: String)] = [:]
     /// A rolling update is under way.

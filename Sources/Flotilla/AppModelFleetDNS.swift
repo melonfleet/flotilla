@@ -14,6 +14,12 @@ extension AppModel {
     /// Performs an admin's host call, already validated by the wire session.
     func performHostCall(_ call: HostCall) async -> Result<String, HostCallFailure> {
         switch call {
+        case .setUpRuntime:
+            if let problem = await ensureHostRuntime(allowStoppingContainers: true) {
+                return .failure(HostCallFailure(.internalError, problem))
+            }
+            return .success(ContainerRuntime.expectedVersion)
+
         case .setFleetNames(let table):
             if let problem = await applyFleetNames(table.zones.isEmpty ? nil : table) {
                 return .failure(HostCallFailure(.refused, problem))

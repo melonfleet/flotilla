@@ -18,7 +18,8 @@ public enum WireProtocol {
     /// Version 5 adds `.setFleetNames` — the table each Mac answers other Macs' zones from (Q37).
     /// Version 6 adds uploads of purpose `app-update` — the admin's own build, for a host to install
     /// (DECISIONS Q38).
-    public static let supportedVersions: ClosedRange<UInt16> = 1...6
+    /// Version 7 adds `.setUpRuntime` — install or upgrade `container` on a host (DECISIONS Q39).
+    public static let supportedVersions: ClosedRange<UInt16> = 1...7
     /// The first version that carries streams.
     public static let streamsVersion: UInt16 = 2
     /// The first version that carries host calls.
@@ -29,6 +30,8 @@ public enum WireProtocol {
     public static let fleetNamesVersion: UInt16 = 5
     /// The first version that takes an `app-update` upload.
     public static let appUpdatesVersion: UInt16 = 6
+    /// The first version that takes `.setUpRuntime`.
+    public static let runtimeSetupVersion: UInt16 = 7
     /// The owner's choice, 7 October. Changeable in Settings.
     public static let defaultPort: UInt16 = 7868
 

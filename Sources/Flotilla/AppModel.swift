@@ -119,6 +119,7 @@ final class AppModel {
         syncLoginItem()
         hostMode.recordActivity = { [weak self] event in self?.recordActivity(event) }
         updater.apply(isAdmin: hostMode.isAdmin)
+        startHostRuntimeWatch()
         hostMode.onRefreshed = { [weak self] in
             Task {
                 await self?.updateFleetNames()
@@ -1655,6 +1656,8 @@ final class AppModel {
     @ObservationIgnored let hostMetrics = HostMetricsSampler()
     /// Sparkle, for this Mac's own Flotilla (Q40). Admins only.
     @ObservationIgnored lazy var updater = AppUpdater(settings: settingsStore)
+    /// A `container` install or upgrade in progress, for the banner and onboarding (Q39).
+    var runtimeSetup: RuntimeSetupProgress?
 
     /// Retained history for one container, for the dashboard's charts and the detail sparkline.
     func statsHistory(for id: String) -> [StatsSampler.HistoryPoint] { sampler.history(for: id) }

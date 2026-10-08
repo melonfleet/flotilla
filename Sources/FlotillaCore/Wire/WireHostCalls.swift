@@ -17,6 +17,9 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// The names of every other Mac's containers, for the host to answer (version 5, Q37). An
     /// empty table turns names across Macs off there.
     case setFleetNames(FleetNameTable)
+    /// Install or upgrade `container` to the version the host's Flotilla expects, then the kernel —
+    /// even if that stops running containers: the admin confirmed, with the count (version 7, Q39).
+    case setUpRuntime
     /// `system dns create`, run by the host's DNS helper.
     case dnsCreate(domain: String, localhost: String?)
     /// `system dns delete`, run by the host's DNS helper.
@@ -37,7 +40,7 @@ public enum HostCall: Sendable, Equatable, Codable {
             return nil
         }
         switch self {
-        case .dnsStatus, .hostFacts: return nil
+        case .dnsStatus, .hostFacts, .setUpRuntime: return nil
         case .setFleetNames(let table): return table.problem
         case .dnsCreate(let domain, let localhost):
             if let reserved = LocalDNS.reservedProblem(domain) { return reserved }
@@ -63,6 +66,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         switch self {
         case .hostFacts: WireProtocol.hostFactsVersion
         case .setFleetNames: WireProtocol.fleetNamesVersion
+        case .setUpRuntime: WireProtocol.runtimeSetupVersion
         default: WireProtocol.hostCallsVersion
         }
     }
@@ -72,6 +76,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         switch self {
         case .dnsStatus, .hostFacts: 30
         case .dnsCreate, .dnsDelete, .setFleetNames: 60
+        case .setUpRuntime: 1800
         case .setContainerDNSDomain: 300
         }
     }
@@ -81,6 +86,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         switch self {
         case .dnsStatus: "read DNS settings"
         case .hostFacts: "read its chip, memory and disk"
+        case .setUpRuntime: "installed or upgraded container"
         case .setFleetNames(let table): table.zones.isEmpty ? "turned off names across Macs"
                                                             : "updated names across Macs (\(table.zones.count) zones)"
         case .dnsCreate(let domain, let localhost): localhost == nil ? "created DNS domain \(domain)" : "created host alias \(domain)"

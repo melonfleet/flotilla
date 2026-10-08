@@ -111,6 +111,71 @@ final class DNSHelperService: NSObject, NSXPCListenerDelegate, DNSHelperProtocol
         }
     }
 
+    // MARK: Installing container (DECISIONS Q39)
+    //
+    // Apple's package and nothing else. The caller names a file; the helper copies it into a folder
+    // only root can write, and every check — signature, notarisation, identifier, version, no
+    // downgrade — is made on that copy, which is what `installer` then installs. A swap of the
+    // caller's file after the check therefore changes nothing.
+
+    private static let installStaging = URL(fileURLWithPath: "/Library/Application Support/dev.melonfleet.Flotilla/Installers",
+                                            isDirectory: true)
+
+    func installContainer(packageAt path: String, version: String, reply: @escaping @Sendable (String?) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard ContainerRuntime.isVersion(version) else { reply("That isn't a container version."); return }
+        // A regular file, not a link, of a sane size.
+        var info = stat()
+        guard path.hasPrefix("/"), lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              Int64(info.st_size) <= ContainerRuntime.maxPackageBytes else {
+            reply("The helper was given something that isn't a package file."); return
+        }
+        let fileManager = FileManager.default
+        let staging = Self.installStaging.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? fileManager.removeItem(at: staging) }
+        do {
+            try fileManager.createDirectory(at: staging, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700, .ownerAccountID: 0])
+            let copy = staging.appendingPathComponent("container.pkg")
+            try fileManager.copyItem(at: URL(fileURLWithPath: path), to: copy)
+
+            let signature = PackageSignatureReport.parse(capture("/usr/sbin/pkgutil", ["--check-signature", copy.path]).output)
+            let expanded = staging.appendingPathComponent("expanded")
+            _ = capture("/usr/sbin/pkgutil", ["--expand", copy.path, expanded.path])
+            let packageInfo = (try? String(contentsOf: expanded.appendingPathComponent("PackageInfo"), encoding: .utf8))
+                .flatMap(ComponentPackageInfo.parse)
+            let installed = ContainerPackageCheck.receiptVersion(
+                capture("/usr/sbin/pkgutil", ["--pkg-info", ContainerRuntime.packageIdentifier]).output)
+            if let problem = ContainerPackageCheck.problem(signature: signature, info: packageInfo,
+                                                           requestedVersion: version, installedVersion: installed) {
+                reply(problem); return
+            }
+            if installed == version { reply(nil); return }
+
+            let result = capture("/usr/sbin/installer", ["-pkg", copy.path, "-target", "/"])
+            reply(result.status == 0 ? nil : "Apple's installer failed: " + result.output.suffix(600))
+        } catch {
+            reply("The helper couldn't stage the package: \(error.localizedDescription)")
+        }
+    }
+
+    /// Runs a system tool directly — no shell — and returns its exit status and output.
+    private func capture(_ tool: String, _ arguments: [String]) -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": "/var/root"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch { return (-1, "\(tool) couldn't start") }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return (process.terminationStatus, String(decoding: data.prefix(64_000), as: UTF8.self))
+    }
+
     /// Removes one entry of ours — a file or a link, never a directory, and never by following a link.
     private func removeFile(named name: String) throws {
         let path = Self.resolverDirectory.appendingPathComponent(name).path

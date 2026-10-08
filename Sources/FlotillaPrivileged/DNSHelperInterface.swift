@@ -21,7 +21,8 @@ public enum DNSHelperInterface {
     public static let appIdentifier = "dev.melonfleet.Flotilla"
     /// Bumped when the interface changes, so an app can tell an old helper from a current one.
     /// 2 (8 October, Q37): adds the fleet resolver files.
-    public static let version = 2
+    /// 3 (8 October, Q39): adds installing Apple's `container` package.
+    public static let version = 3
 
     /// A code requirement for `identifier`, signed by Apple-issued Developer ID under `team`.
     /// Both ends use it: the helper on the app, and the app on the helper.
@@ -56,4 +57,7 @@ public enum DNSHelperInterface {
     func syncFleetResolvers(fleetDomain: String, zones: [String], reply: @escaping @Sendable (String?) -> Void)
     /// Removes every `/etc/resolver/flotilla.*` file. Version 2.
     func removeFleetResolvers(reply: @escaping @Sendable (String?) -> Void)
+    /// Installs Apple's `container` package at `path` — only if it is Apple's, notarised, exactly
+    /// `version`, and not older than what is installed (DECISIONS Q39). Version 3.
+    func installContainer(packageAt path: String, version: String, reply: @escaping @Sendable (String?) -> Void)
 }

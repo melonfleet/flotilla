@@ -122,7 +122,10 @@ struct DashboardView: View {
         let stopped: Bool = if case .serviceStopped = model.preflight { true } else { false }
         // A missing kernel is the same kind of state: not a fault, one button from working.
         let noKernel: Bool = if case .needsKernel = model.preflight { true } else { false }
-        let fixable = stopped || noKernel
+        // Missing or too old (Q39): one button from working too — Apple's installer, downloaded here.
+        let needsContainer = model.needsContainerInstall
+        let setup = model.runtimeSetup
+        let fixable = stopped || noKernel || needsContainer
         // The kernel install reports here rather than in a progress panel (the owner, 5 October):
         // the banner already says what is wrong, so it is the natural place to say it is being
         // fixed — and a failure stays here, beside the button that tries again.
@@ -131,17 +134,22 @@ struct DashboardView: View {
         let installFailure = install?.failure
         return HStack(spacing: 10) {
             Image(systemName: stopped ? "pause.circle.fill"
-                  : noKernel ? "arrow.down.circle.fill" : "exclamationmark.triangle.fill")
+                  : (noKernel || needsContainer) ? "arrow.down.circle.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(fixable ? Theme.warning : Theme.danger)
             VStack(alignment: .leading, spacing: 2) {
-                Text(installing ? "Installing the kernel…"
+                Text(setup.map(Self.setupTitle)
+                     ?? (installing ? "Installing the kernel…"
                      : installFailure != nil ? "The kernel didn't install"
                      : model.startingRuntime ? "Starting the container runtime…"
                      : stopped ? "The container runtime isn't running"
                      : noKernel ? "No kernel is installed"
-                               : "The container runtime is not available")
+                     : needsContainer ? "container isn't installed"
+                               : "The container runtime is not available"))
                     .font(.headline)
-                if installing, let install {
+                if let setup {
+                    Text(Self.setupDetail(setup)).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(3).textSelection(.enabled)
+                } else if installing, let install {
                     kernelInstallDetail(install)
                 } else if let installFailure {
                     // The CLI's own words, selectable and in full on hover: a download that
@@ -163,6 +171,13 @@ struct DashboardView: View {
                 // is why the spinner above exists rather than a button that looks inert.
                 Button("Start") { Task { await model.startRuntime() } }
                     .buttonStyle(.borderedProminent)
+            } else if needsContainer, setup == nil || { if case .failed = setup?.phase { true } else { false } }() {
+                // Says it downloads, and from whom: the click starts a 118 MB transfer, and the
+                // installer that follows is Apple's.
+                Button(setup == nil ? "Download and Install container \(ContainerRuntime.expectedVersion)" : "Try Again") {
+                    Task { await model.installContainerInteractively() }
+                }
+                .buttonStyle(.borderedProminent)
             } else if noKernel {
                 // Says what it does and that it downloads, because it does: a click should not
                 // start a transfer the label did not mention.
@@ -178,6 +193,31 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background((fixable ? Theme.warning : Theme.danger).opacity(0.10),
                     in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    static func setupTitle(_ setup: AppModel.RuntimeSetupProgress) -> String {
+        switch setup.phase {
+        case .downloading: "Downloading container \(setup.version)…"
+        case .checking: "Checking it is Apple's…"
+        case .waitingForInstaller: "Finish installing in Apple's Installer"
+        case .installing: "Installing container \(setup.version)…"
+        case .starting: "Starting the container runtime…"
+        case .installingKernel: "Installing the kernel…"
+        case .failed: "container wasn't installed"
+        }
+    }
+
+    static func setupDetail(_ setup: AppModel.RuntimeSetupProgress) -> String {
+        switch setup.phase {
+        case .downloading(let started):
+            "From Apple's container releases on GitHub, about 118 MB — \(Int(Date().timeIntervalSince(started))) s so far."
+        case .checking: "Signed by Apple's Containerization team and notarised, and the version this Flotilla expects."
+        case .waitingForInstaller: "It asks for your password. Flotilla carries on by itself when it has finished."
+        case .installing: "Through Flotilla's DNS helper."
+        case .starting: "container \(setup.version) is installed."
+        case .installingKernel: "Apple's recommended kernel, so containers can start."
+        case .failed(let why): why
+        }
     }
 
     /// What the CLI says it is fetching, and for how long. There is no percentage to show: 1.5.0
