@@ -1,5 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 22" width="36" height="22" role="img" aria-label="Flotilla menu bar icon — three sails (template)">
-  <path d="M12 18 L12 8 L6 18 Z" fill="currentColor"/>
-  <path d="M19 18 L19 4 L12.5 18 Z" fill="currentColor"/>
-  <path d="M27 18 L27 10 L21 18 Z" fill="currentColor"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="72" height="72" role="img" aria-label="Flotilla menu bar icon — three sails in an outlined squircle, with a status badge">
+  <!-- Reference only: the app draws this in Sources/Flotilla/MenuBarIcon.swift. Badge shown: running. -->
+  <defs><mask id="cut"><rect width="18" height="18" fill="white"/><circle cx="14.8" cy="14.8" r="4.4" fill="black"/></mask></defs>
+  <g mask="url(#cut)" fill="none" stroke="currentColor" stroke-width="1.2">
+    <rect x="1.5" y="1.5" width="15" height="15" rx="4.6"/>
+  </g>
+  <g fill="currentColor" mask="url(#cut)">
+    <path d="M5.72 12.11 L5.72 6.63 L3.5 12.11 Z"/>
+    <path d="M8.85 12.11 L8.85 4.29 L6.11 12.11 Z"/>
+    <path d="M12.5 12.11 L12.5 7.68 L10.02 12.11 Z"/>
+  </g>
+  <circle cx="14.8" cy="14.8" r="3.2" fill="#34C759"/>
 </svg>

@@ -1873,6 +1873,14 @@ final class AppModel {
         showingSupportBundle = true
     }
 
+    /// About is a sheet in Settings, opened from there or from the menu-bar menu.
+    var showingAbout = false
+
+    func requestAbout() {
+        pendingSection = .settings
+        showingAbout = true
+    }
+
     func requestRunSheet() {
         // Run lives on the containers screen, so ask for both — otherwise the sheet would
         // open behind whatever section happened to be selected.

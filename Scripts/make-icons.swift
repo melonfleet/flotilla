@@ -1,5 +1,5 @@
 #!/usr/bin/env swift
-// Generates Flotilla's app icon and menu-bar glyph from the brand geometry.
+// Generates Flotilla's app icon from the brand geometry.
 //
 // WHY GENERATE RATHER THAN RASTERISE THE SVG
 //
@@ -17,7 +17,7 @@
 // geometry instead of being a separate drawing that drifts.
 //
 // Run:  swift Scripts/make-icons.swift
-// Out:  build/icons/Flotilla.icns  and  Resources/MenuBarIconTemplate{,@2x}.png
+// Out:  build/icons/Flotilla.icns
 
 import AppKit
 import CoreGraphics
@@ -89,54 +89,8 @@ func appIcon(_ size: Int) -> CGImage {
     return ctx.makeImage()!
 }
 
-/// The menu-bar glyph: **the sails only, solid black on transparent**.
-///
-/// A template image. macOS inverts it for a dark menu bar automatically, so one asset serves
-/// light and dark — there is no need for two, and shipping two would guarantee they drift.
-/// Colour is deliberately absent: `research/FEATURES.md` calls for a monochrome template with
-/// state shown by shape or badge, which is also what every system menu-bar item does.
-///
-/// Just the sails, not the whole slice: at 16pt the bands and seeds collapse into mud, while
-/// three sails stay legible and read as a flotilla.
-func menuBarGlyph(_ size: Int) -> CGImage {
-    guard let ctx = CGContext(
-        data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpace(name: CGColorSpace.sRGB)!,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-    ) else { fatalError("could not create a \(size)×\(size) context") }
-
-    // Points are mapped explicitly rather than by stacking CTM transforms. The first attempt
-    // chained translate/scale/flip calls and collapsed the sails into a two-pixel smudge —
-    // easy to get wrong, and impossible to read back from the code. This is verifiable by eye.
-    let minX: CGFloat = 23, maxX: CGFloat = 92
-    let minY: CGFloat = 26, maxY: CGFloat = 86
-    let sourceWidth = maxX - minX, sourceHeight = maxY - minY
-
-    // A 1pt breathing space, then fit preserving aspect and centre what is left over.
-    let inset: CGFloat = 1
-    let box = CGFloat(size) - inset * 2
-    let scale = min(box / sourceWidth, box / sourceHeight)
-    let drawnWidth = sourceWidth * scale, drawnHeight = sourceHeight * scale
-    let offsetX = (CGFloat(size) - drawnWidth) / 2
-    let offsetY = (CGFloat(size) - drawnHeight) / 2
-
-    // SVG y grows downward, CoreGraphics upward — flipped in the mapping itself.
-    func map(_ point: (CGFloat, CGFloat)) -> CGPoint {
-        CGPoint(
-            x: offsetX + (point.0 - minX) * scale,
-            y: offsetY + (maxY - point.1) * scale
-        )
-    }
-
-    ctx.setFillColor(CGColor(gray: 0, alpha: 1))
-    for sail in sails {
-        ctx.move(to: map(sail[0]))
-        for point in sail.dropFirst() { ctx.addLine(to: map(point)) }
-        ctx.closePath()
-    }
-    ctx.fillPath()
-    return ctx.makeImage()!
-}
+// The menu-bar icon is drawn at runtime by `Sources/Flotilla/MenuBarIcon.swift` (8 October): its
+// status badge is colour, so it cannot be a template PNG made here. It uses the same `sails`.
 
 func write(_ image: CGImage, to url: URL) {
     let rep = NSBitmapImageRep(cgImage: image)
@@ -149,9 +103,7 @@ func write(_ image: CGImage, to url: URL) {
 
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let iconset = root.appendingPathComponent("build/icons/Flotilla.iconset")
-let resources = root.appendingPathComponent("Resources")
 try? FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
-try? FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
 
 // The sizes `iconutil` expects.
 for (size, name) in [(16, "icon_16x16"), (32, "icon_16x16@2x"), (32, "icon_32x32"),
@@ -161,8 +113,3 @@ for (size, name) in [(16, "icon_16x16"), (32, "icon_16x16@2x"), (32, "icon_32x32
     write(appIcon(size), to: iconset.appendingPathComponent("\(name).png"))
 }
 print("✓ \(iconset.path)")
-
-// Menu-bar template, at 1× and 2×. 18pt is the conventional menu-bar glyph box.
-write(menuBarGlyph(18), to: resources.appendingPathComponent("MenuBarIconTemplate.png"))
-write(menuBarGlyph(36), to: resources.appendingPathComponent("MenuBarIconTemplate@2x.png"))
-print("✓ \(resources.path)/MenuBarIconTemplate.png (+@2x)")

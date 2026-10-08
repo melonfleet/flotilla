@@ -293,24 +293,6 @@ private struct FlotillaCommands: Commands {
 
 @main
 struct FlotillaApp: App {
-    /// Loaded once. `isTemplate` is set explicitly rather than relying on the filename
-    /// convention, which only applies to `NSImage(named:)` and would silently do nothing for
-    /// an image loaded from a bundle URL — leaving a black glyph that vanishes on a dark menu
-    /// bar. Falls back to an SF Symbol if the resource is missing, so a packaging mistake
-    /// degrades to a visible placeholder rather than an invisible menu-bar item.
-    static let menuBarIcon: NSImage = {
-        if let url = Bundle.main.url(forResource: "MenuBarIconTemplate", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            image.isTemplate = true
-            image.size = NSSize(width: 18, height: 18)
-            return image
-        }
-        let fallback = NSImage(systemSymbolName: "sailboat", accessibilityDescription: "Flotilla")
-            ?? NSImage(systemSymbolName: "shippingbox", accessibilityDescription: "Flotilla")!
-        fallback.isTemplate = true
-        return fallback
-    }()
-
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
 
@@ -329,36 +311,16 @@ struct FlotillaApp: App {
     }
 
     var body: some Scene {
-        // The glance. `.menuBarExtraStyle(.window)` gives a real popover we can lay out,
-        // rather than a plain menu of NSMenuItems.
+        // A native menu, as Docker Desktop's is (the owner, 8 October): see `MenuBarView`.
+        // Being a real NSMenu, it takes the system's appearance by itself — the popover's
+        // `\.themeChoice` and the appearance notes that went with it are gone with the popover.
         MenuBarExtra {
             MenuBarView(model: model)
-                // The popover needs it too: appearance applied only to the main window
-                // would leave the menu bar disagreeing with the rest of the app.
-                // **No `preferredColorScheme`.** It was here, and it was the second writer in a
-                // two-writer bug. SwiftUI implements it by setting the *window's* `NSAppearance`
-                // — and it does not clear that override when the value goes back to `nil`, nor
-                // immediately re-apply on change. So Light and Dark worked, Auto left the window
-                // on its last explicit appearance, and switching apps and back fixed it, because
-                // reactivation is when SwiftUI finally re-evaluated. The owner found it exactly that
-                // way.
-                //
-                // `AppModel.applyAppKitAppearance()` now owns appearance for app *and* windows,
-                // and SwiftUI reads `\.colorScheme` from the window it is drawing in, so views
-                // still follow. One authority.
-                //
-                // The themes, so the popover's colours agree with the window's. There is no
-                // `.tint` any more: controls take the system accent, as they do in Finder.
-                .environment(\.themeChoice, model.themeChoice)
         } label: {
-            // The brand mark, as a **template** image: macOS inverts it for a light or dark
-            // menu bar automatically, so one asset serves both and there is no pair to drift.
-            // Monochrome is not a compromise here — `research/FEATURES.md` specifies a
-            // monochrome template with state shown by shape or badge, which is what every
-            // system menu-bar item does. `shippingbox` was a placeholder SF Symbol.
-            Image(nsImage: Self.menuBarIcon)
+            // Drawn, not a template: the badge is colour. See `MenuBarIcon`.
+            Image(nsImage: MenuBarIcon.image(for: model.menuBarStatus))
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         Window("Flotilla", id: "main") {
             MainWindowView(model: model)

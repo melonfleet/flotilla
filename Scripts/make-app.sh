@@ -169,11 +169,6 @@ cp "$ROOT/Resources/$HELPER_ID.plist" "$APP/Contents/Library/LaunchDaemons/"
 cp "$ROOT/Resources/dev.melonfleet.Flotilla.dns-helper.plist" "$APP/Contents/Library/LaunchDaemons/"
 
 cp "$ROOT/build/icons/Flotilla.icns" "$APP/Contents/Resources/Flotilla.icns"
-# The menu-bar template, at both scales. Loaded by URL at runtime and marked isTemplate
-# explicitly — the "…Template" filename convention only applies to NSImage(named:).
-cp "$ROOT/Resources/MenuBarIconTemplate.png" "$APP/Contents/Resources/"
-cp "$ROOT/Resources/MenuBarIconTemplate@2x.png" "$APP/Contents/Resources/"
-
 # No asset catalog, and no `NSAccentColorName`, on purpose (26 September, `design/THEMES.md`).
 #
 # There used to be one here, holding a single `AccentColor`: macOS takes the accent AppKit uses for

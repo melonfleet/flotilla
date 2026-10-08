@@ -1,733 +1,182 @@
 import SwiftUI
+import AppKit
 import FlotillaCore
 
-/// The menu-bar popover: **a glance, not the product**.
+/// The menu-bar menu: **a status line and a way in, not a second app** (the owner, 8 October).
 ///
-/// Rebuilt to `research/review/mockups/menubar.html`. The previous version had the right
-/// principles in its comments and almost none of them on screen: a title, a bare list of
-/// names with the word "running" beside each, and three word-buttons in a row. What the
-/// mockup argues for, and what this now does:
+/// It was a 380-point popover with a rollup, per-container rows with inline start and stop, hover
+/// boxes and meters — which grew with every container and every host until it no longer fitted
+/// the job. The owner pointed at Docker Desktop's menu instead: one status line, the dashboard,
+/// a few submenus, settings, troubleshooting, updates, quit. So this is a native menu now
+/// (`.menuBarExtraStyle(.menu)`), and every item is a door into the window rather than a copy of
+/// part of it:
 ///
-/// - **Fixed section order** — rollup, This Mac, Fleet, Needs attention, actions. The mockup
-///   cites Tailscale's own post-mortem on their flat list; sectioning was the fix.
-/// - **Every row is name + image + port**, never a bare identifier. OrbStack #691: users
-///   could not tell rows apart when the primary label was generated.
-/// - **Status is dot + glyph + text**, never colour alone. Podman filed #12908 against
-///   themselves for exactly this.
-/// - **Inline one-tap start/stop** on each row, so the common action does not need the window.
-/// - **Quit says what it does to your containers.** `research/FEATURES.md` calls Docker
-///   Desktop's ambiguous Quit its most-cited UX failure.
-/// - **No text entry, no confirmations.** A popover dismisses on an outside click, so anything
-///   destructive or multi-step escalates to the window.
+/// - **The status line** says what the icon's badge says, in words, from the same
+///   `AppModel.menuBarStatus` — and the fleet in one clause.
+/// - **Needs Attention** is Overview's list (`AppModel.attentionItems`), shown only when there is
+///   something on it; each item opens the section that deals with it.
+/// - **Hosts** is a submenu, like Docker's Kubernetes contexts, so thirty Macs are thirty short
+///   rows one level down rather than thirty tall rows in the menu itself.
+/// - **Troubleshoot** holds what you reach for when something is wrong: the container system's
+///   start, stop and restart (asking first, as everywhere else), and the support bundle.
+/// - **Quit says what it does to your containers** — Docker Desktop's most-cited gap, kept from
+///   the popover.
+///
+/// Nothing here exists only here. Every item is a command the window or the app menu already has.
 struct MenuBarView: View {
     let model: AppModel
-
-    /// Closes the popover. A `MenuBarExtra` in `.window` style provides this through the
-    /// environment; nothing closes it automatically when a control inside it is used.
-    @Environment(\.dismiss) private var dismiss
-
-    /// Which summary box is expanded, if any — see `hovering(_:_:)`.
-    @State private var expandedKind: ActivityKind?
-    /// Invalidates in-flight hover timers whose intent has been superseded.
-    @State private var hoverToken = 0
-    /// Which boxes the pointer is inside, most recent last — see `hovering(_:_:)`.
-    @State private var hoverOrder: [ActivityKind] = []
     @Environment(\.openWindow) private var openWindow
 
-    /// The mockup's width. Wider than the old 320 because rows now carry two lines and a
-    /// trailing control, and the whole point is that names are not truncated into ambiguity.
-    private let width: CGFloat = 380
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            rollup
-            separator
+        statusLine
+        Button("Open Flotilla") { present { model.requestSection(.overview) } }
+            .keyboardShortcut("o")
 
-            switch model.state {
-            case .idle, .loading:
-                message("Loading…", systemImage: "hourglass", tint: .secondary)
-            case .unavailable(let reason), .failed(let reason):
-                // Never render an empty list as if the fleet were simply idle — an
-                // unreachable runtime and a fleet with no containers look identical
-                // otherwise, and that is exactly the failure the offline-detection bug
-                // taught us to avoid.
-                message(reason, systemImage: "exclamationmark.triangle", tint: Theme.warning)
-            case .loaded where model.containers.isEmpty:
-                message("No containers on this Mac", systemImage: "tray", tint: .secondary)
-            case .loaded:
-                needsAttention
+        let attention = model.attentionItems
+        if !attention.isEmpty {
+            Divider()
+            Menu("Needs Attention (\(attention.count))") {
+                ForEach(attention) { item in
+                    Button(item.text) { present { model.requestSection(item.section) } }
+                }
             }
-
-            separator
-            actions
         }
-        .frame(width: width)
-        .padding(.vertical, 6)
+        hostsMenu
+
+        Divider()
+        Button("Run Container…") { present(model.requestRunSheet) }
+            .disabled(!model.runtimeUsable)
+        Button("Pull Image…") { present(model.requestPullForm) }
+            .disabled(!model.runtimeUsable)
+
+        Divider()
+        Button("Settings…") { present { model.requestSection(.settings) } }
+            .keyboardShortcut(",")
+        troubleshootMenu
+        Button("About Flotilla") { present(model.requestAbout) }
+
+        Divider()
+        Button(model.hostMode.isAdmin || !AppUpdater.isConfigured ? "Check for Updates…"
+                                                                : "Updated by Your Admin Mac") {
+            model.updater.checkForUpdates()
+        }
+        .disabled(!model.updater.isRunning)
+        Button {
+            NSApplication.shared.terminate(nil)
+        } label: {
+            Text("Quit Flotilla")
+            Text("Containers keep running")
+        }
+        .keyboardShortcut("q")
     }
 
-    // MARK: Rollup
+    // MARK: Status
 
-    /// The glanceable header: brand, total running, and a metered summary.
-    ///
-    /// The mockup pairs "This Mac" with "Fleet". Fleet is Phase 2, so rather than draw an
-    /// empty meter beside a real one — which would read as *zero hosts online* rather than
-    /// *no fleet yet* — the second column states the phase plainly.
-    private var rollup: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 8) {
-                Wordmark(size: 13).fixedSize()
-                Spacer()
-                // Says out loud that the glance is live.
-                //
-                // The owner asked whether the popover was frozen, and the honest answer — that
-                // both poll tasks start in `AppModel.init` and are never cancelled, so it is
-                // not — is not something a user can see. A timestamp is checkable: if it
-                // stops advancing while the popover is open, it really has stalled. That is
-                // worth more than any assurance, and it is the same "Updated …" convention
-                // the section toolbars already use.
-                if let last = model.lastRefresh {
-                    Text(last.formatted(date: .omitted, time: .standard))
-                        .font(.system(size: 10)).monospacedDigit()
-                        .foregroundStyle(.tertiary)
-                        .help("Last refreshed. This updates while the popover is open.")
-                }
-                // No "N running" pill. It counted **containers only**, so it read "4 running"
-                // on a Mac with a running machine as well — a wrong number, not merely a
-                // redundant one. The two boxes below now state running and stopped per kind,
-                // which is both correct and more informative, so the pill had nothing left to
-                // add. The owner spotted it.
+    /// One line, in the words the runtime band uses (`RuntimeStatus.describe`), with the fleet
+    /// beneath it when there is one. Disabled, as Docker's is: it is a statement, not a command.
+    private var statusLine: some View {
+        let runtime = RuntimeStatus.describe(model.preflight)
+        let hosts = model.hostMode.trustedHosts
+        let connected = hosts.filter {
+            if case .connected? = model.hostMode.live[$0.fingerprint]?.state { return true }
+            return false
+        }.count
+        return Button {} label: {
+            Image(nsImage: Self.dot(for: model.menuBarStatus))
+            Text(runtime.title)
+            if !hosts.isEmpty {
+                Text("\(connected) of \(hosts.count) host\(hosts.count == 1 ? "" : "s") connected")
+            } else if let detail = runtime.detail {
+                Text(detail)
             }
+        }
+        .disabled(true)
+    }
 
-            // This Mac's own figures, on one line. The two-column "This Mac | Fleet" layout
-            // spent half the width saying pairing is a Phase 2 feature; that is one quiet
-            // sentence, not a column.
-            HStack(spacing: 6) {
-                Circle().fill(hostDot).frame(width: 7, height: 7)
-                Text(model.hostLabel).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Text(hostUsage)
-                    .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+    /// The badge's colour as a menu image. Not a template, so the menu keeps the colour.
+    private static func dot(for status: MenuBarStatus) -> NSImage {
+        let color: NSColor = switch status {
+        case .checking: .secondaryLabelColor
+        case .running: .systemGreen
+        case .attention, .off: .systemRed
+        }
+        let image = NSImage(size: NSSize(width: 10, height: 10), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    // MARK: Hosts
+
+    /// This Mac and every paired host; each opens its page under Hosts. A host that is not
+    /// answering says so in the row, so the submenu is a roll-call as well as a list.
+    private var hostsMenu: some View {
+        Menu("Hosts") {
+            Button(model.hostLabel) {
+                present { model.requestDetail(kind: .host, subject: HostRow.thisMacID) }
             }
-
-            // A box per kind, each a menu.
-            //
-            // The owner asked for hover to open them. That is `NSMenu` behaviour and a
-            // window-style `MenuBarExtra` does not get it — SwiftUI's `Menu` opens on click.
-            // Once open, the per-item submenus *do* reveal on hover, so the second level
-            // behaves as asked; the first needs a click, and pretending otherwise would mean
-            // hand-rolling menu behaviour that fights the system's own.
-            // Stacked, not side by side: each box carries three lines and a graph, and two of
-            // those squeezed into half a popover's width had nowhere to put any of it.
-            VStack(spacing: 6) {
-                MenuKindBox(title: "Containers",
-                            systemImage: ActivityKind.container.systemImage,
-                            running: model.running.count,
-                            total: model.containers.count,
-                            loaded: model.state == .loaded,
-                            detail: containerUsage,
-                            history: aggregateCPUHistory,
-                            expanded: binding(for: .container),
-                            hoverChanged: { hovering(.container, $0) }) {
-                    containerMenuItems
-                }
-                MenuKindBox(title: "Machines",
-                            systemImage: ActivityKind.machine.systemImage,
-                            running: model.machines.filter { MachinesView.isRunning($0) }.count,
-                            total: model.machines.count,
-                            loaded: model.machinesState == .loaded,
-                            detail: machineAllocation,
-                            // **No graph, deliberately.** `container machine list` reports the
-                            // cpus and memory a machine was *allocated*, not what it is using —
-                            // there is no per-machine sampling anywhere in the runtime. A line
-                            // drawn from allocations would look like usage and be fiction, so
-                            // the box shows the allocation as text and a running/total bar.
-                            history: nil,
-                            expanded: binding(for: .machine),
-                            hoverChanged: { hovering(.machine, $0) }) {
-                    machineMenuItems
-                }
-                // Only when there are groups. A box reading "0 / 0" on a Mac that has never made
-                // one is a row of furniture: Containers and Machines always have something to
-                // count, and a group is something you opt into.
-                if !model.groups.groups.isEmpty {
-                    MenuKindBox(title: "Groups",
-                                systemImage: ActivityKind.group.systemImage,
-                                running: model.groups.groups
-                                    .filter { model.state(of: $0) == .running }.count,
-                                total: model.groups.groups.count,
-                                loaded: model.state == .loaded,
-                                detail: groupSummary,
-                                // **No graph.** A group has no usage of its own — it is a name
-                                // over containers that each have their own, and a line drawn by
-                                // adding them up would be the Containers graph with a different
-                                // label. Same reasoning as Machines.
-                                history: nil,
-                                expanded: binding(for: .group),
-                                hoverChanged: { hovering(.group, $0) }) {
-                        groupMenuItems
+            ForEach(model.hostMode.trustedHosts, id: \.fingerprint) { peer in
+                Button {
+                    present { model.requestDetail(kind: .host, subject: peer.fingerprint.hex) }
+                } label: {
+                    Text(peer.displayName)
+                    switch model.hostMode.live[peer.fingerprint]?.state {
+                    case .failed?: Text("Not answering")
+                    case .checking?, nil: Text("Checking…")
+                    case .connected?: EmptyView()
                     }
                 }
             }
-
-            // The fleet note, as a line rather than a column.
-            Text("Fleet: not paired — remote hosts arrive in Phase 2")
-                .font(.caption2).foregroundStyle(.tertiary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
-    }
-
-    /// The container list inside the hover popover.
-    ///
-    /// Plain views, not `Menu` items: the actions sit **on** each row as icon buttons, so
-    /// starting something is one click from pointing at the box rather than three from opening
-    /// nested menus. That is the iStat Menus shape the owner pointed at.
-    @ViewBuilder
-    private var containerMenuItems: some View {
-        if model.containers.isEmpty {
-            emptyPopoverNote("No containers on this Mac.")
-        } else {
-            ForEach(model.running + model.stopped) { container in
-                containerPopoverRow(container)
-            }
+            Divider()
+            Button("Show All Hosts") { present { model.requestSection(.hosts) } }
         }
     }
 
-    /// One line under the Groups box: how much of the fleet of groups is up.
-    private var groupSummary: String {
-        let groups = model.groups.groups
-        let services = groups.reduce(0) { $0 + $1.members.count }
-        let up = groups.flatMap(\.memberNames).filter(runningNames.contains).count
-        return "\(services) service\(services == 1 ? "" : "s") · \(up) running"
-    }
+    // MARK: Troubleshoot
 
-    private var runningNames: Set<String> { Set(model.running.map(\.id)) }
-
-    @ViewBuilder
-    private var groupMenuItems: some View {
-        // The box is hidden when there are none, so this is only reachable in the moment a
-        // group is deleted while the popover is open.
-        if model.groups.groups.isEmpty {
-            emptyPopoverNote("No groups yet.")
-        } else {
-            ForEach(model.groups.groups) { group in
-                groupPopoverRow(group)
-            }
+    private var troubleshootMenu: some View {
+        let enablement = RuntimeStatus.enablement(model.preflight)
+        return Menu("Troubleshoot") {
+            Button("Start Container System") { Task { await model.startRuntime() } }
+                .disabled(!enablement.start || model.startingRuntime)
+            Button("Restart Container System…") { confirm(.restart) }
+                .disabled(!enablement.stopRestart || model.startingRuntime)
+            Button("Stop Container System…") { confirm(.stop) }
+                .disabled(!enablement.stopRestart || model.startingRuntime)
+            Divider()
+            Button("Show Logs") { present { model.requestSection(.logs) } }
+            Button("Show Activity") { present { model.requestSection(.activity) } }
+            Button("Create Support Bundle…") { present(model.requestSupportBundle) }
         }
     }
 
-    @ViewBuilder
-    private var machineMenuItems: some View {
-        if model.machines.isEmpty {
-            emptyPopoverNote("No machines. Containers each run in their own VM; a named machine "
-                             + "is one you create and can shell into.")
-        } else {
-            ForEach(model.machines) { machine in
-                machinePopoverRow(machine)
-            }
+    /// Stop and Restart ask first, in the same words as the Hosts menu and the runtime band
+    /// (`RuntimeLifecycleAction`). A menu has no sheet to show, so it is an alert.
+    private func confirm(_ action: RuntimeLifecycleAction) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = action.question
+        alert.informativeText = action.consequence
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: action.verb)
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        switch action {
+        case .stop: Task { await model.stopRuntime() }
+        case .restart: Task { await model.restartRuntime() }
         }
-    }
-
-    /// Extracted from the `ForEach` bodies: the ten-argument call inline inside a `ViewBuilder`
-    /// defeated the type-checker outright ("unable to type-check this expression in reasonable
-    /// time"), which is this project's usual signal that a view body is doing too much at once.
-    private func containerPopoverRow(_ container: Container) -> some View {
-        let running = AppModel.isRunning(container)
-        return popoverRow(name: container.id,
-                          subtitle: ContainerImage.shortReference(container.imageReference),
-                          dot: container.stateColor,
-                          running: running,
-                          busy: model.isBusy(container.id, kind: .container),
-                          start: { Task { await model.perform(.start, on: container) } },
-                          stop: { Task { await model.perform(.stop, on: container) } },
-                          restart: { Task { await model.perform(.restart, on: container) } },
-                          openDetail: { openDetail(.container, container.id) })
-    }
-
-    /// A group's row. The same three controls a container gets, acting on the whole group.
-    ///
-    /// `running` is true only when **every** service is up, so a partly-running group offers
-    /// Start — which is what you want from a group that is half down. Restart is allowed as soon
-    /// as anything is running, because on a partial group it is the one control that gets you
-    /// back to a known state.
-    private func groupPopoverRow(_ group: ContainerGroup) -> some View {
-        let state = model.state(of: group)
-        return popoverRow(name: group.name,
-                          subtitle: state.title,
-                          dot: state.tint,
-                          running: state == .running,
-                          restartable: state != .empty && state != .notCreated,
-                          busy: false,
-                          start: { Task { await model.startGroup(group) } },
-                          stop: { Task { await model.stopGroup(group) } },
-                          restart: { Task { await model.restartGroup(group) } },
-                          openDetail: { openDetail(.group, group.name) })
-    }
-
-    private func machinePopoverRow(_ machine: ContainerMachine) -> some View {
-        let memory = ByteCountFormatter.string(fromByteCount: machine.memory, countStyle: .memory)
-        return popoverRow(name: machine.id,
-                          subtitle: "\(machine.cpus) vCPU · \(memory)",
-                          dot: MachinesView.stateColor(machine),
-                          running: MachinesView.isRunning(machine),
-                          busy: model.isBusy(machine.id, kind: .machine),
-                          start: { Task { await model.perform(.start, on: machine) } },
-                          stop: { Task { await model.perform(.stop, on: machine) } },
-                          restart: { Task { await model.perform(.restart, on: machine) } },
-                          openDetail: { openDetail(.machine, machine.id) })
-    }
-
-    /// Opens the window **on that item's detail**, not merely on its section.
-    ///
-    /// The button looked like it would — a square with an arrow leaving it — and all it did was
-    /// bring the window forward, which the owner reasonably read as broken. An affordance that
-    /// promises a destination and delivers a raise is worse than no affordance.
-    private func openDetail(_ kind: ActivityKind, _ subject: String) {
-        open()
-        model.requestDetail(kind: kind, subject: subject)
-    }
-
-    private func emptyPopoverNote(_ text: String) -> some View {
-        Text(text)
-            .font(.caption).foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 11).padding(.vertical, 6)
-            .frame(maxWidth: 260, alignment: .leading)
-    }
-
-    /// One row in a box's popover: state, name over detail, then the actions.
-    ///
-    /// Start and Stop swap rather than both showing — offering Stop on a stopped thing is a
-    /// control that does nothing, which is the failure this project keeps re-learning. Restart
-    /// appears only while running, for the same reason.
-    /// - Parameter restartable: whether Restart is offered, defaulting to `running`. A container
-    ///   or a machine is either up or not, so those two are the same question; a **group** can be
-    ///   half up, and that is precisely when restarting is the useful thing to do.
-    private func popoverRow(
-        name: String, subtitle: String, dot: Color, running: Bool,
-        restartable: Bool? = nil, busy: Bool,
-        start: @escaping () -> Void, stop: @escaping () -> Void,
-        restart: @escaping () -> Void, openDetail: @escaping () -> Void
-    ) -> some View {
-        HStack(spacing: 8) {
-            Circle().fill(dot).frame(width: 7, height: 7)
-            // **The name is the way in.** There used to be a third button here — a square with an
-            // arrow leaving it — and the owner's point is that a row about `web` does not need a
-            // separate control to mean "web": clicking the thing itself is what everyone tries
-            // first. It also buys back the width the button was taking, on a popover where every
-            // row was three buttons wide.
-            //
-            // A `.plain` button, so the row does not gain a chrome outline it never had; the
-            // pointer changes to a hand on hover, which is the affordance.
-            Button(action: openDetail) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(name)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.link)
-                        .lineLimit(1)
-                    Text(subtitle).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
-                }
-            }
-            .buttonStyle(.plain)
-            .help("Open \(name) in Flotilla")
-            .accessibilityLabel("Open \(name) in Flotilla")
-            .pointerStyle(.link)
-
-            Spacer(minLength: 10)
-            IconActionButton(systemImage: running ? "stop.fill" : "play.fill",
-                             label: running ? "Stop \(name)" : "Start \(name)",
-                             help: running ? "Stop \(name)" : "Start \(name)",
-                             busy: busy, action: running ? stop : start)
-            IconActionButton(systemImage: "arrow.clockwise",
-                             label: "Restart \(name)", help: "Restart \(name)",
-                             busy: busy, disabled: !(restartable ?? running), action: restart)
-        }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 5)
-    }
-
-    // MARK: Which box is open
-    //
-    // One owner, so the two boxes cannot race. `expandedKind` is the single truth; a box asks to
-    // open and the parent grants it, which makes switching from one box to the other a change of
-    // value rather than a close-then-open sequence that could interleave with a stale timer.
-
-    private func binding(for kind: ActivityKind) -> Binding<Bool> {
-        Binding(get: { expandedKind == kind },
-                set: { isOpen in expandedKind = isOpen ? kind : nil })
-    }
-
-    /// Debounced hover, driven by **what is currently hovered** rather than by the last event.
-    ///
-    /// The previous version keyed off the individual event and lost a race: moving from
-    /// Containers to Machines can deliver the machines hover-*in* before the containers
-    /// hover-*out*, and the out-handler then scheduled a clear that wiped the machine popover
-    /// 450ms later. Machines therefore opened and instantly vanished, which looks exactly like
-    /// nothing happening — the owner's report. Bumping `hoverToken` did not save it, because the
-    /// out-event was the *newer* one and so held the valid token.
-    ///
-    /// So the state is now the set of hovered boxes, and every event reconciles against it: if
-    /// anything is hovered, that box should be open; only when nothing is does a close get
-    /// scheduled. Ordering no longer matters, because the decision is made from the world's
-    /// current state and not from the order it was described in.
-    ///
-    /// Kept as an ordered array rather than a `Set` so that with two boxes transiently hovered
-    /// the most recent wins, which is what the pointer is actually over.
-    private func hovering(_ kind: ActivityKind, _ inside: Bool) {
-        hoverOrder.removeAll { $0 == kind }
-        if inside { hoverOrder.append(kind) }
-
-        hoverToken += 1
-        let token = hoverToken
-
-        if let target = hoverOrder.last {
-            // Immediate when switching: waiting 180ms to cross between two adjacent boxes reads
-            // as lag. The delay exists only to stop a pointer sweeping past from opening one.
-            let delay: Duration = expandedKind == nil ? .milliseconds(180) : .zero
-            Task { @MainActor in
-                try? await Task.sleep(for: delay)
-                guard token == hoverToken, hoverOrder.last == target else { return }
-                expandedKind = target
-            }
-        } else {
-            Task { @MainActor in
-                // Long enough to travel from a box into its popover.
-                try? await Task.sleep(for: .milliseconds(450))
-                guard token == hoverToken, hoverOrder.isEmpty else { return }
-                expandedKind = nil
-            }
-        }
-    }
-
-    /// **This Mac's own** CPU and memory, from `HostMetricsSampler`.
-    ///
-    /// This line used to print the summed *container* figures under the heading "This Mac" — the
-    /// same string the Containers box shows — so it read "CPU 100%" while the host was nowhere
-    /// near it. A host row that quotes container totals is not a rounding problem, it is the
-    /// wrong measurement under the wrong label.
-    private var hostUsage: String {
-        guard let latest = model.hostMetrics.latest else { return "CPU — · Memory —" }
-        let cpu = latest.cpuPercent.map { String(format: "%.0f%%", $0) } ?? "—"
-        let memory = latest.memoryTotalBytes > 0
-            ? String(format: "%.0f%%",
-                     Double(latest.memoryUsedBytes) / Double(latest.memoryTotalBytes) * 100)
-            : "—"
-        return "CPU \(cpu) · Memory \(memory)"
-    }
-
-    /// Container CPU as a share of **the whole machine**, and total container memory.
-    ///
-    /// `container stats` reports CPU the way Docker does: per-core, so a container pinning one
-    /// core reads 100%. Summing those gives cores-used × 100, which is why a single spinning
-    /// container made this say "CPU 100%" on a 12-core Mac — read, reasonably, as the machine
-    /// being pegged. Dividing by the core count gives a figure comparable with the host line
-    /// above it, and naming the core count says what the percentage is of.
-    private var containerUsage: String {
-        let cpus = model.running.compactMap { model.cpuPercent(for: $0.id) }
-        let bytes = model.running.compactMap { model.memoryBytes(for: $0.id) }
-        guard !cpus.isEmpty || !bytes.isEmpty else { return "CPU — · Memory —" }
-        let cores = ProcessInfo.processInfo.processorCount
-        let cpu = cpus.isEmpty
-            ? "—"
-            : String(format: "%.0f%%", cpus.reduce(0, +) / Double(max(1, cores)))
-        let memory = bytes.isEmpty
-            ? "—"
-            : ByteCountFormatter.string(fromByteCount: bytes.reduce(0, +), countStyle: .file)
-        return "CPU \(cpu) of \(cores) cores · \(memory)"
-    }
-
-    /// **Allocated**, and the wording says so. This is what the machines were given, not what
-    /// they are consuming — the runtime does not report the latter.
-    private var machineAllocation: String {
-        let running = model.machines.filter { MachinesView.isRunning($0) }
-        guard !running.isEmpty else { return "nothing running" }
-        let cpus = running.reduce(0) { $0 + $1.cpus }
-        let memory = running.reduce(Int64(0)) { $0 + $1.memory }
-        return "\(cpus) vCPU · "
-            + ByteCountFormatter.string(fromByteCount: memory, countStyle: .memory)
-            + " allocated"
-    }
-
-    /// Total container CPU over time, **normalised to the whole machine** — the same scale as
-    /// the `detail` line above the graph.
-    ///
-    /// It used to plot the raw sum of per-core percentages while the text beside it divided by
-    /// the core count. Both were defensible in isolation and together they disagreed: measured
-    /// on this Mac with one spinning container, the line drew a peak of ~145 while the label
-    /// under the same title read "CPU 12% of 12 cores". A graph and a number sitting in the same
-    /// box must answer the same question, or the reader has to guess which one to believe.
-    ///
-    /// A sample is `nil` when *no* container reported a figure for it — the first reading has no
-    /// previous sample to diff against — which `Sparkline` renders as a gap rather than a zero.
-    private var aggregateCPUHistory: [Double?] {
-        let histories = model.running.map { model.cpuHistory(for: $0.id) }
-        guard let length = histories.map(\.count).max(), length > 1 else { return [] }
-        return (0..<length).map { index in
-            let sample = histories.compactMap { history -> Double? in
-                let offset = history.count - length + index
-                guard offset >= 0, offset < history.count else { return nil }
-                return history[offset]
-            }
-            guard !sample.isEmpty else { return nil }
-            return sample.reduce(0, +) / Double(max(1, ProcessInfo.processInfo.processorCount))
-        }
-    }
-
-    private var hostDot: Color {
-        switch model.state {
-        case .loaded: Theme.online
-        case .unavailable, .failed: Theme.danger
-        case .idle, .loading: .secondary
-        }
-    }
-
-    /// Real sampled figures, or an em dash. Never a zero standing in for "not measured yet" —
-    /// the same rule the table's CPU column follows.
-
-    // MARK: This Mac
-
-    /// One container: state dot, a glyph that varies by *kind*, name over image-and-port, the
-    /// CPU figure, and a one-tap start/stop.
-    private func containerRow(_ container: Container) -> some View {
-        let running = AppModel.isRunning(container)
-        let busy = model.isBusy(container.id, kind: .container)
-
-        return HStack(spacing: 8) {
-            Circle().fill(container.stateColor).frame(width: 8, height: 8)
-
-            Image(systemName: Self.glyph(for: container))
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(container.id)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(subtitle(for: container))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            Spacer(minLength: 6)
-
-            if running, let cpu = model.cpuPercent(for: container.id) {
-                Text(String(format: "%.0f%%", cpu))
-                    .font(.system(size: 11))
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
-            }
-
-            // Start and stop swap; they never both show. Offering Stop on a stopped
-            // container would be a control that does nothing.
-            Button {
-                Task { await model.perform(running ? .stop : .start, on: container) }
-            } label: {
-                Image(systemName: running ? "stop.fill" : "play.fill")
-                    .font(.system(size: 10))
-                    .frame(width: 20, height: 20)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(MenuRowStyle())
-            .foregroundStyle(.secondary)
-            .disabled(busy)
-            .help(running ? "Stop \(container.id)" : "Start \(container.id)")
-            .accessibilityLabel(running ? "Stop \(container.id)" : "Start \(container.id)")
-        }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 5)
-        .opacity(running ? 1 : 0.72)
-        // The whole row opens the container, matching the mockup's `<a class="pop-row">`.
-        // `menuRowHighlight` rather than a bare `onTapGesture`: the gesture worked and looked
-        // like nothing, which reads as a dead row.
-        .menuRowHighlight { open() }
-    }
-
-    /// Name plus image and port — never the identifier alone. Falls back to the state word
-    /// when a stopped container has no port to show, so the second line is never empty.
-    private func subtitle(for container: Container) -> String {
-        let image = ContainerImage.shortReference(container.imageReference)
-        if let ports = container.portSummary { return "\(image) · \(ports)" }
-        if AppModel.isRunning(container) { return image }
-        return "\(image) · \(container.status.state.lowercased())"
-    }
-
-    /// A glyph that differs by what the container *is*, so rows are distinguishable at a
-    /// glance and state is never carried by colour alone. Inferred from the image name, which
-    /// is a guess — hence a generic box as the default rather than a wrong specific icon.
-    private static func glyph(for container: Container) -> String {
-        let image = container.imageReference.lowercased()
-        if image.contains("nginx") || image.contains("caddy") || image.contains("httpd")
-            || image.contains("traefik") { return "globe" }
-        if image.contains("redis") || image.contains("memcached") { return "memorychip" }
-        if image.contains("postgres") || image.contains("mysql") || image.contains("maria")
-            || image.contains("mongo") { return "cylinder.split.1x2" }
-        return "shippingbox"
-    }
-
-    // MARK: Needs attention
-
-    /// The mockup's third section, and the one with the strongest argument behind it: things
-    /// that are *wrong* get their own place rather than being left for you to spot among the
-    /// healthy rows.
-    ///
-    /// In the mockup these are unreachable and untrusted hosts, which are Phase 2. The Phase 1
-    /// equivalent is real and already on screen elsewhere: a container that **exited non-zero**
-    /// or is **stuck restarting**. A clean stop is not a problem and is deliberately excluded —
-    /// a section that cries wolf about every stopped container is one people learn to ignore.
-    ///
-    /// Renders nothing when nothing is wrong. An always-present "Needs attention (0)" heading
-    /// is noise, and worse, it makes the section itself unremarkable.
-    @ViewBuilder
-    private var needsAttention: some View {
-        let troubled = model.containers.filter(\.needsAttention)
-        if !troubled.isEmpty {
-            separator
-            sectionHead("Needs attention", systemImage: "exclamationmark.triangle", trailing: nil)
-            ForEach(troubled) { container in
-                containerRow(container)
-            }
-        }
-    }
-
-    // MARK: Actions
-
-    /// The footer, with the shortcuts the mockup shows beside each item.
-    ///
-    /// The shortcuts are **bound**, not drawn. A printed "⌘O" that does nothing is a label
-    /// pretending to be a feature, and this project has enough of those in its history. They
-    /// are live while the popover has focus, which is precisely when they are on screen.
-    private var actions: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            actionRow("Open Flotilla", systemImage: "macwindow", key: "o") { open() }
-            // Two rows, not a menu. The `Menu` version sat further left than its neighbours
-            // because `.menuStyle(.borderlessButton)` discards the row padding — the
-            // misalignment the owner spotted. Two `actionRow`s are aligned by construction, and
-            // each says plainly what it makes; "New…" made you open it to find out.
-            actionRow("Run Container…", systemImage: "plus", key: "n") {
-                open(); model.requestRunSheet()
-            }
-            actionRow("New Machine…", systemImage: "server.rack", key: "m") {
-                open(); model.requestMachineForm()
-            }
-            actionRow("Settings…", systemImage: "gearshape", key: ",") { open(section: .settings) }
-            actionRow("Refresh", systemImage: "arrow.clockwise", key: "r") {
-                Task { await model.reload() }
-            }
-            .disabled(model.state == .loading)
-
-            separator
-
-            actionRow("Quit Flotilla", systemImage: "power", key: "q",
-                      // The sentence Docker Desktop is criticised for not having.
-                      subtitle: "Containers keep running") {
-                NSApplication.shared.terminate(nil)
-            }
-        }
-    }
-
-    private func actionRow(
-        _ title: String, systemImage: String, key: KeyEquivalent,
-        subtitle: String? = nil, action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            actionRowLabel(title, systemImage: systemImage, key: key, subtitle: subtitle)
-        }
-        .buttonStyle(MenuRowStyle())
-        .keyboardShortcut(key, modifiers: .command)
-    }
-
-    /// The row's contents, without the `Button`.
-    ///
-    /// Extracted so the "New…" menu can wear the identical label. A menu that looked slightly
-    /// different from the rows either side of it would read as a different kind of thing, when
-    /// it is the same kind of thing that happens to offer two destinations.
-    private func actionRowLabel(
-        _ title: String, systemImage: String, key: KeyEquivalent, subtitle: String? = nil
-    ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 13))
-                if let subtitle {
-                    Text(subtitle).font(.system(size: 11)).foregroundStyle(.tertiary)
-                }
-            }
-            Spacer(minLength: 6)
-            Text("⌘\(String(key.character).uppercased())")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 5)
-        .contentShape(.rect)
     }
 
     // MARK: Plumbing
 
-    /// Hand over to the window: close the popover, activate, then open.
-    ///
-    /// Two things are needed and both are easy to miss. The `activate` is because the popover
-    /// holds focus, so without it the window never comes forward and "Open Flotilla" appears to
-    /// do nothing. The `dismiss` is because a `MenuBarExtra` popover does **not** close when you
-    /// act inside it — so Settings and Open left the popover sitting over the window it had just
-    /// summoned, with both competing for attention. Handing over means letting go.
-    ///
-    /// Dismiss first, so the popover is gone before the window animates in rather than
-    /// disappearing on top of it.
-    private func open(section: Section? = nil) {
-        dismiss()
+    /// As the app menu's commands do: set the one-shot request, bring Flotilla forward, open the
+    /// window — which consumes the request on appearing, even if it had been closed.
+    private func present(_ request: () -> Void) {
+        request()
         NSApp.activate(ignoringOtherApps: true)
-        if let section { model.requestSection(section) }
         openWindow(id: "main")
-    }
-
-    private func sectionHead(_ title: String, systemImage: String, trailing: String?) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage).font(.system(size: 11))
-            Text(title).font(.system(size: 11, weight: .semibold))
-            Spacer()
-            if let trailing {
-                Text(trailing).font(.system(size: 11))
-            }
-        }
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 11)
-        .padding(.top, 7)
-        .padding(.bottom, 3)
-    }
-
-    private func pill(_ text: String, dot: Color, tint: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(dot).frame(width: 6, height: 6)
-            Text(text).font(.system(size: 11, weight: .medium))
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(tint.opacity(0.14), in: Capsule())
-        .foregroundStyle(tint)
-    }
-
-    private var separator: some View {
-        Divider().padding(.horizontal, 10).padding(.vertical, 6)
-    }
-
-    private func message(_ text: String, systemImage: String, tint: Color) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.callout)
-            .foregroundStyle(tint)
-            // Wrap rather than clip: a truncated diagnosis ("…is installed but unusable:
-            // the c…") tells the user nothing they can act on.
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

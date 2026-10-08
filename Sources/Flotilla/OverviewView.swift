@@ -214,51 +214,17 @@ struct OverviewView: View {
 
     // MARK: Attention
 
-    private var attentionItems: [(String, Section)] {
-        var items: [(String, Section)] = []
-        if !model.runtimeUsable { items.append(("The container runtime on \(model.hostLabel) isn't running.", .hosts)) }
-        for network in model.disconnectedNetworks {
-            items.append(("\(network) has lost its connection to \(model.hostLabel).", .networks))
-        }
-        let fleet = model.hostMode
-        // A paired host that has stopped answering, or is waiting to be let in.
-        for peer in fleet.trustedHosts {
-            if case .failed(let reason)? = fleet.live[peer.fingerprint]?.state {
-                items.append(("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts))
-            }
-        }
-        // Versions that differ from This Mac's: `container` by a minor release or more, which can
-        // change what a command accepts, and Flotilla by any build (PLAN.md Phase C).
-        for peer in fleet.trustedHosts {
-            let host = HostRef.peer(peer.fingerprint)
-            if let warning = model.containerSkewWarning(host) { items.append((warning, .hosts)) }
-            if let skew = model.appSkew(host), skew.level != .same,
-               let theirs = fleet.live[peer.fingerprint]?.appVersion {
-                items.append(("\(peer.displayName) runs \(skew.otherIsOlder ? "an older" : "a newer") Flotilla "
-                              + "(\(theirs); This Mac \(HostModeController.appVersion)).", .hosts))
-            }
-        }
-        let waiting = fleet.hosts.filter { $0.status == .pending }.count
-        if waiting > 0 {
-            items.append(("\(waiting) Mac\(waiting == 1 ? " is" : "s are") waiting for your approval.", .hosts))
-        }
-        let flagged = (model.containers + fleet.fleetContainers.flatMap(\.snapshot.items)).filter(\.needsAttention)
-        if !flagged.isEmpty {
-            items.append(("\(flagged.count) container\(flagged.count == 1 ? " is" : "s are") in an unknown state.", .containers))
-        }
-        return items
-    }
-
     private var attention: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let attentionItems = model.attentionItems
+        return VStack(alignment: .leading, spacing: 10) {
             Text("Needs attention").font(.headline)
             if attentionItems.isEmpty {
                 Label("Nothing needs attention.", systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(attentionItems.enumerated()), id: \.offset) { _, item in
-                    Button { go(item.1) } label: {
-                        Label(item.0, systemImage: "exclamationmark.triangle")
+                ForEach(attentionItems) { item in
+                    Button { go(item.section) } label: {
+                        Label(item.text, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(Theme.warning)
                     }
                     .buttonStyle(.plain)

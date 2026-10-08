@@ -212,7 +212,6 @@ struct SettingsView: View {
     @State private var pendingReset: ResetAction?
     /// What the last settings import did, for its report — `nil` when none is showing.
     @State private var importReport: String?
-    @State private var showingAbout = false
 
     /// Which pane is showing.
     @State private var tab: Tab = .general
@@ -266,8 +265,11 @@ struct SettingsView: View {
         )) {
             SupportBundleView(model: model) { model.showingSupportBundle = false }
         }
-        .sheet(isPresented: $showingAbout) {
-            AboutView(model: model) { showingAbout = false }
+        .sheet(isPresented: Binding(
+            get: { model.showingAbout },
+            set: { model.showingAbout = $0 }
+        )) {
+            AboutView(model: model) { model.showingAbout = false }
         }
         .confirmationDialog(
             pendingReset?.title ?? "",
@@ -648,7 +650,7 @@ struct SettingsView: View {
                 HStack {
                     Text("About Flotilla")
                     Spacer()
-                    Button("Show") { showingAbout = true }
+                    Button("Show") { model.showingAbout = true }
                 }
             }
 
