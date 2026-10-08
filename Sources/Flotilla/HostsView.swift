@@ -601,6 +601,10 @@ struct HostsView: View {
         let waiting = model.hostsWithUpdates.count
         return ToolbarIconMenu(systemImage: waiting > 0 ? "arrow.down.circle.fill" : "arrow.down.circle",
                                label: waiting > 0 ? "\(waiting) host\(waiting == 1 ? "" : "s") can be updated" : "Host updates") {
+            if hostMode.rollingOut || !hostMode.updating.isEmpty {
+                Text("Updating \(hostMode.updating.count == 1 ? "a host" : "hosts")… one at a time")
+                Divider()
+            }
             Button(waiting == 0 ? "Every Host Is Up to Date" : "Update \(waiting) Host\(waiting == 1 ? "" : "s") Now") {
                 Task { await model.rollOutUpdates(automatic: false) }
             }
