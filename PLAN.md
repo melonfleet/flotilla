@@ -701,6 +701,18 @@ Tahoe one at a time with no hand on any host; in manual mode only the host whose
 pressed moved; and nginx on the mini answered all 265 requests (twice a second) while that mini
 updated and relaunched Flotilla. Not yet run for real: `release.sh`'s DMG and tarball steps.
 
+### Flotilla installs container and its kernel (DECISIONS Q39) — built; host path live-tested
+
+Onboarding and the runtime banner offer "Download and Install container <version>" on an admin
+Mac (Apple's Installer, the owner's password). A host installs it through the DNS helper's
+`installContainer`, which checks Apple's Containerization signature, notarisation, identifier,
+version and no-downgrade on a root-owned copy. Upgrades are automatic only with nothing running;
+Hosts offers Install/Upgrade (wire version 7). Live, 8 October: with container removed from the
+Tahoe VM by Apple's own uninstaller, the admin updated Tahoe's Flotilla, and Tahoe reinstalled
+container 1.5.0 by itself within minutes. Not yet exercised live: the admin Mac's own interactive
+install (this Mac runs containers) and the Hosts Install/Upgrade button. MDM cannot pre-grant Local
+Network access, so a new host still needs one click.
+
 ### Sparkle auto-updates — built, not yet published (DECISIONS Q40)
 
 Sparkle 2.10 is embedded and signed inside-out by make-app.sh; the feed is
