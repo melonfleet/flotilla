@@ -56,7 +56,20 @@ struct OverviewView: View {
         let facts: HostFacts?
         let model: String?
         let macOS: String?
+        let flotilla: String?
+        let container: String?
+        /// When it last answered this Mac — kept through failures, so a silent host says since when.
+        let lastCheckIn: Date?
     }
+
+    /// Which columns show, kept per window across launches. Host stays: it is the row's name.
+    @SceneStorage("overviewHostColumns") private var hostColumns = TableColumnCustomization<HostLine>()
+    @State private var showingHostColumns = false
+
+    private static let hostColumnSpecs: [(id: String, title: String)] = [
+        ("model", "Model"), ("cpu", "CPU"), ("memory", "Memory"), ("disk", "Disk"), ("macos", "macOS"),
+        ("flotilla", "Flotilla"), ("container", "container"), ("checkin", "Last Check-in"),
+    ]
 
     private var hostLines: [HostLine] {
         let local = model.localHostFacts()
@@ -64,7 +77,9 @@ struct OverviewView: View {
                               state: model.runtimeUsable ? "connected" : "runtime unavailable",
                               color: model.runtimeUsable ? Theme.online : Theme.warning,
                               connected: model.runtimeUsable, facts: local,
-                              model: local.model, macOS: local.macOSVersion)]
+                              model: local.model, macOS: local.macOSVersion,
+                              flotilla: HostModeController.appVersion, container: model.localContainerVersion,
+                              lastCheckIn: model.lastRefresh)]
         for peer in model.hostMode.trustedHosts {
             let status = model.hostMode.live[peer.fingerprint]
             let (state, color, connected): (String, Color, Bool) = switch status?.state {
@@ -76,7 +91,9 @@ struct OverviewView: View {
             lines.append(HostLine(id: peer.fingerprint.hex, name: peer.displayName,
                                   state: state, color: color, connected: connected, facts: facts,
                                   model: facts?.model ?? peer.details.model,
-                                  macOS: facts?.macOSVersion ?? peer.details.macOSVersion))
+                                  macOS: facts?.macOSVersion ?? peer.details.macOSVersion,
+                                  flotilla: status?.appVersion, container: status?.containerVersion,
+                                  lastCheckIn: peer.lastSeen))
         }
         return lines
     }
@@ -89,6 +106,11 @@ struct OverviewView: View {
                 Spacer()
                 Text("\(lines.filter(\.connected).count) of \(lines.count) connected")
                     .font(.caption).foregroundStyle(.secondary)
+                IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
+                                 help: "Show or hide columns") { showingHostColumns.toggle() }
+                    .popover(isPresented: $showingHostColumns, arrowEdge: .bottom) {
+                        ColumnVisibilityList(columns: Self.hostColumnSpecs, customization: $hostColumns)
+                    }
             }
             hostTable(lines)
                 // As Utilisation's card: the table draws its own header and insets.
@@ -101,7 +123,7 @@ struct OverviewView: View {
 
     /// Up to ten rows, then it scrolls — the same height whatever the fleet, past ten.
     private func hostTable(_ lines: [HostLine]) -> some View {
-        SwiftUI.Table(lines) {
+        SwiftUI.Table(lines, columnCustomization: $hostColumns) {
             TableColumn("Host") { line in
                 HStack(spacing: 7) {
                     Circle().fill(line.color).frame(width: 8, height: 8)
@@ -113,33 +135,69 @@ struct OverviewView: View {
                         .help("Open \(line.name)")
                 }
             }
-            .width(min: 140, ideal: 190)
+            .width(min: 130, ideal: 170)
+            .customizationID("host")
+            .disabledCustomizationBehavior(.visibility)
             TableColumn("Model") { line in
                 Text(line.model ?? "—").foregroundStyle(.secondary).lineLimit(1)
             }
-            .width(min: 80, ideal: 110)
+            .width(min: 90, ideal: 100)
+            .customizationID("model")
             TableColumn("CPU") { line in
                 Text(Self.chip(line.facts)).lineLimit(1)
             }
-            .width(min: 120, ideal: 170)
+            .width(min: 160, ideal: 210)
+            .customizationID("cpu")
             TableColumn("Memory") { line in
                 Text(Self.memory(line.facts)).monospacedDigit().lineLimit(1)
             }
-            .width(min: 100, ideal: 130)
+            .width(min: 60, ideal: 70)
+            .customizationID("memory")
             TableColumn("Disk") { line in
                 Text(Self.disk(line.facts)).monospacedDigit().lineLimit(1)
                     .help("The startup disk's capacity")
             }
-            .width(min: 110, ideal: 150)
+            .width(min: 70, ideal: 80)
+            .customizationID("disk")
             TableColumn("macOS") { line in
                 Text(line.macOS ?? "—").foregroundStyle(.secondary).monospacedDigit()
             }
-            .width(min: 60, ideal: 80)
+            .width(min: 60, ideal: 70)
+            .customizationID("macos")
+            TableColumn("Flotilla") { line in
+                Text(line.flotilla ?? "—").foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+            }
+            .width(min: 70, ideal: 90)
+            .customizationID("flotilla")
+            TableColumn("container") { line in
+                Text(line.container ?? "—").foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+            }
+            .width(min: 60, ideal: 70)
+            .customizationID("container")
+            TableColumn("Last Check-in") { line in
+                Group {
+                    if let date = line.lastCheckIn {
+                        Text(Self.checkIn(date)).help(date.formatted(date: .abbreviated, time: .standard))
+                    } else {
+                        Text("—")
+                    }
+                }
+                .foregroundStyle(line.connected ? Color.secondary : Theme.warning)
+                .monospacedDigit().lineLimit(1)
+            }
+            .width(min: 80, ideal: 100)
+            .customizationID("checkin")
         }
         // 24 a row plus the header and its rule, measured off the rendered table.
         .frame(height: CGFloat(min(max(lines.count, 1), 10)) * 24 + 40)
         // Only a fleet past ten rows scrolls; below that a scroller is a promise of rows not there.
         .scrollIndicators(lines.count > 10 ? .automatic : .never)
+    }
+
+    /// `just now`, `40 sec ago`, `12 min ago` — re-read on each poll, which redraws Overview.
+    static func checkIn(_ date: Date) -> String {
+        if Date().timeIntervalSince(date) < 5 { return "just now" }
+        return date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
     }
 
     /// `Apple M1 · 8 cores`.

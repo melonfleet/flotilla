@@ -93,24 +93,7 @@ struct ResourceListControls<Row: Identifiable>: View {
     }
 
     private var columnsPopover: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(columns, id: \.id) { column in
-                Toggle(column.title, isOn: binding(for: column.id))
-                    .toggleStyle(.checkbox)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 2)
-            }
-            Divider().padding(.vertical, 6)
-            HStack {
-                Button("Hide All") { setAll(.hidden) }
-                Spacer()
-                Button("Show All") { setAll(.visible) }
-            }
-            .controlSize(.small)
-            .padding(.horizontal, 12)
-        }
-        .padding(.vertical, 10)
-        .frame(width: 210)
+        ColumnVisibilityList(columns: columns, customization: $columnCustomization)
     }
 
     private var filterPopover: some View {
@@ -142,14 +125,43 @@ struct ResourceListControls<Row: Identifiable>: View {
         .padding(14)
     }
 
+}
+
+/// The columns picker's contents: a checkbox per column, then Hide All / Show All. One view for
+/// every table that offers it — the resource sections and Overview's Hosts — so they cannot drift.
+struct ColumnVisibilityList<Row: Identifiable>: View {
+    let columns: [(id: String, title: String)]
+    @Binding var customization: TableColumnCustomization<Row>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(columns, id: \.id) { column in
+                Toggle(column.title, isOn: binding(for: column.id))
+                    .toggleStyle(.checkbox)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 2)
+            }
+            Divider().padding(.vertical, 6)
+            HStack {
+                Button("Hide All") { setAll(.hidden) }
+                Spacer()
+                Button("Show All") { setAll(.visible) }
+            }
+            .controlSize(.small)
+            .padding(.horizontal, 12)
+        }
+        .padding(.vertical, 10)
+        .frame(width: 210)
+    }
+
     private func binding(for id: String) -> Binding<Bool> {
         Binding(
-            get: { columnCustomization[visibility: id] != .hidden },
-            set: { columnCustomization[visibility: id] = $0 ? .visible : .hidden }
+            get: { customization[visibility: id] != .hidden },
+            set: { customization[visibility: id] = $0 ? .visible : .hidden }
         )
     }
 
     private func setAll(_ visibility: Visibility) {
-        for column in columns { columnCustomization[visibility: column.id] = visibility }
+        for column in columns { customization[visibility: column.id] = visibility }
     }
 }
