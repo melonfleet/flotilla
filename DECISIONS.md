@@ -1911,8 +1911,13 @@ clicks at all. His answers:
   "container update available" in Hosts, and the owner upgrades it — one host or rolling — with the
   number it will stop shown first.
 - **Zero-touch**: a configuration profile can pre-approve the helper (managed Login Items) and turn
-  automatic setup on. To verify: whether macOS lets MDM pre-grant Local Network access; if not, a new
-  host needs that one click (the 8 October mini failure).
+  automatic setup on. **Checked 8 October: MDM cannot pre-grant Local Network access.** Apple's
+  TN3179 says the setting is per user and cannot be set by a profile or MDM; a launchd *daemon* is
+  exempt, but Flotilla's host listener runs in the app because `container` needs a user session
+  (Q32). So a new host still needs that one click — the 8 October mini failure. Unverified
+  possibility: macOS 15.5's `AllowedEthernetLocalNetworkAddresses` / `AllowedWiFiLocalNetworkAddresses`
+  user defaults (reported by a commenter, not Apple). Open: whether host mode's network side can move
+  to a daemon.
 
 ## Q40 — Sparkle for the admin Mac (settled 2026-10-08)
 
