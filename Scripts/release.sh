@@ -80,8 +80,14 @@ if [ -z "$VERSION" ]; then
         fail "no git tag to take a version from. Tag the release (git tag -a v0.1.0 -m 'v0.1.0') or pass --version."
     fi
 fi
+# The same shapes `make-pkg.sh` takes. A pre-release used to be refused here, which left betas
+# without the zip Sparkle installs, while `publish-release.sh` already sends a `-beta` to Sparkle's
+# beta channel (8 October).
 case "$VERSION" in
-    *[!0-9.]*|"") fail "version '$VERSION' is not dot-separated numbers. Flotilla's shape is <container version>.<revision> — 1.4.1.0, 1.4.1.2 — see DECISIONS.md." ;;
+    [0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*|\
+    [0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
+    [0-9]*.[0-9]*.[0-9]*-rc.[0-9]*) : ;;
+    *[!0-9.]*|"") fail "version '$VERSION' is not X.Y.Z.R or X.Y.Z.R-{alpha,beta,rc}.N — <container version>.<revision>, see DECISIONS.md." ;;
 esac
 
 # 3. A signing identity. Auto-detected only when the choice is unambiguous — picking one of several
