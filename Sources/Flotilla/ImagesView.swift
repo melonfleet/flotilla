@@ -18,6 +18,9 @@ struct ImagesView: View {
     /// The merged New Image form, and which half it opened on — `nil` when it is closed.
     /// One screen where there were two: see `NewImageView`.
     @State private var newImageMode: NewImageView.Mode?
+    /// Browse Docker Hub, and the reference it handed the Pull form.
+    @State private var browsing = false
+    @State private var pullFromBrowse: String?
     @State private var pendingDelete: HostedImage?
     /// Set from the row menu's Run — presents the run sheet with this reference already in
     /// place, on the image's own Mac. Nothing is launched from here; the sheet's validated
@@ -58,7 +61,17 @@ struct ImagesView: View {
             } else if let image = sendingImage {
                 SendImageView(model: model, image: image) { sendingImage = nil }
             } else if let mode = newImageMode {
-                NewImageView(model: model, initialMode: mode, initialHost: ui.hostFilter ?? .local) { newImageMode = nil }
+                NewImageView(model: model, initialMode: mode, initialHost: ui.hostFilter ?? .local,
+                             initialReference: pullFromBrowse,
+                             onBrowseDockerHub: { newImageMode = nil; pullFromBrowse = nil; browsing = true }) {
+                    newImageMode = nil; pullFromBrowse = nil
+                }
+            } else if browsing {
+                RegistryBrowserView(model: model, onPull: { reference in
+                    pullFromBrowse = reference
+                    browsing = false
+                    newImageMode = .pull
+                }, dismiss: { browsing = false })
             } else if let image = taggingImage {
                 tagScreen(for: image)
             } else if let target = detailTarget {
@@ -220,6 +233,9 @@ struct ImagesView: View {
             ToolbarIconButton(systemImage: "plus", label: "New image — pull or build…") {
                 newImageMode = .pull
             }
+            ToolbarIconButton(systemImage: "magnifyingglass", label: "Browse Docker Hub…") {
+                browsing = true
+            }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh images") {
                 Task { await model.refreshImages() }
             }
@@ -310,6 +326,7 @@ struct ImagesView: View {
                 } else {
                     Button("Pull an Image…") { newImageMode = .pull }
                         .buttonStyle(.borderedProminent)
+                    Button("Browse Docker Hub…") { browsing = true }
                 }
             }
 

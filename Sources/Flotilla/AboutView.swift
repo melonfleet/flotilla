@@ -86,9 +86,8 @@ struct AboutView: View {
             destinationRow(
                 status: .noConnection,
                 title: "Flotilla itself",
-                body: "No analytics, no crash reporting, no licence check, nothing on a timer "
-                    + "and nothing in the background. There is exactly one destination it can "
-                    + "reach, below, and you decide when."
+                body: "No analytics, no crash reporting, no licence check, and nothing about this "
+                    + "Mac sent anywhere. Every place it can reach is listed below, with when."
             )
             destinationRow(
                 status: launchCheckEnabled ? .active : .onRequest,
@@ -104,6 +103,25 @@ struct AboutView: View {
                          + "never at launch, unless you turn on \"Check for new releases at "
                          + "launch\" in Settings → Updates.")
             )
+            if model.updater.isRunning {
+                destinationRow(
+                    status: model.updater.checksAutomatically ? .active : .onRequest,
+                    title: "Sparkle updates",
+                    body: "Reads melonfleet.github.io/flotilla/appcast.xml for a newer Flotilla and, "
+                        + "if you install one, downloads it from github.com. Only on the Mac you "
+                        + "manage your fleet from. "
+                        + (model.updater.checksAutomatically
+                           ? "Automatic checks are on; turn them off in Settings → Updates."
+                           : "Only when you choose Check for Updates.")
+                )
+            }
+            destinationRow(
+                status: .onRequest,
+                title: "Searching Docker Hub",
+                body: "Images → Browse Docker Hub asks hub.docker.com for images and their tags when "
+                    + "you open it or type a search. The request carries what you typed and nothing "
+                    + "else: no account, no cookies, a plain \"Flotilla\" user agent."
+            )
             destinationRow(
                 status: .active,
                 title: "Apple's container CLI",
@@ -113,16 +131,12 @@ struct AboutView: View {
                     + "your instruction, not Flotilla phoning home."
             )
             destinationRow(
-                status: .noConnection,
-                title: "Local resources only",
-                body: "This build manages container resources and machines on this Mac only."
-            )
-            destinationRow(
-                status: .future,
-                title: "Automatic updates (Phase 5)",
-                body: "Not built yet — today's check is manual and installs nothing. Automatic "
-                    + "updates will apply only to unmanaged installs; Jamf-managed Macs get "
-                    + "updates from Jamf instead."
+                status: model.hostMode.trustedHosts.isEmpty ? .noConnection : .active,
+                title: "Your other Macs",
+                body: "Talks only to Macs you have paired, on your own network, each checked by its "
+                    + "key — never through a server of ours. "
+                    + (model.hostMode.trustedHosts.isEmpty ? "None are paired."
+                       : "\(model.hostMode.trustedHosts.count) paired.")
             )
         }
         .padding(.vertical, 4)

@@ -65,10 +65,19 @@ struct NewImageView: View {
 
     @State private var edits = FormEditTracker()
 
+    /// A reference to pull, from Browse Docker Hub — seeded with Docker Hub as its registry.
+    let initialReference: String?
+    /// Opens Images ▸ Browse Docker Hub. When set, the Docker Hub link below goes there rather than
+    /// to the website, so the two things called "Browse Docker Hub" do the same thing.
+    let onBrowseDockerHub: (() -> Void)?
+
     init(model: AppModel, initialMode: Mode = .pull, initialHost: HostRef = .local,
+         initialReference: String? = nil, onBrowseDockerHub: (() -> Void)? = nil,
          dismiss: @escaping () -> Void) {
         self.model = model
         self.initialMode = initialMode
+        self.initialReference = initialReference
+        self.onBrowseDockerHub = onBrowseDockerHub
         self.dismiss = dismiss
         _mode = State(initialValue: initialMode)
         _targets = State(initialValue: [initialHost])
@@ -124,6 +133,10 @@ struct NewImageView: View {
             // Seeded once, on open. Held in `@State` rather than read live so changing it for
             // one pull does not rewrite the user's default — "usually GHCR, this once from
             // Docker Hub" is an ordinary thing to want.
+            if let initialReference, reference.isEmpty {
+                reference = initialReference
+                registry = DockerHub.registryDomain
+            }
             if registry.isEmpty {
                 registry = model.settingsStore[SettingsKeys.defaultRegistryDomain]
             }
@@ -246,7 +259,15 @@ struct NewImageView: View {
         // was wrong the moment you were pulling from anywhere else — and the owner asked for
         // exactly that. Absent where the registry has no browse page: `registry.k8s.io` genuinely
         // has none, and a link to nothing is worse than no link.
-        if let url = selectedRegistry?.browseURL.flatMap(URL.init(string:)) {
+        if let onBrowseDockerHub, selectedRegistry.map({ KnownRegistry.canonicalHost($0.id)
+            == KnownRegistry.canonicalHost(DockerHub.registryDomain) }) == true {
+            Button(action: onBrowseDockerHub) {
+                Label("Browse Docker Hub", systemImage: "magnifyingglass")
+                    .font(.callout)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.link)
+        } else if let url = selectedRegistry?.browseURL.flatMap(URL.init(string:)) {
             Link(destination: url) {
                 Label("Browse \(selectedRegistry?.name ?? "registry")",
                       systemImage: "arrow.up.right.square")

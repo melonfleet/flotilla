@@ -50,6 +50,9 @@ final class AppUpdater: NSObject, SPUUpdaterDelegate {
         }
     }
 
+    /// Whether Sparkle checks on its own schedule, as the About page reports it.
+    var checksAutomatically: Bool { controller?.updater.automaticallyChecksForUpdates ?? false }
+
     var canCheck: Bool { controller?.updater.canCheckForUpdates ?? false }
 
     func checkForUpdates() { controller?.checkForUpdates(nil) }

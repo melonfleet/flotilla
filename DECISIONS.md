@@ -1948,3 +1948,25 @@ stay a single helper for every privileged job, as Jamf does with its one managem
   Flotilla's background items as one switch per app, not per label. The old
   plist stays in the bundle as a stub with no Mach service or RunAtLoad, only so it can be
   unregistered.
+
+## Q42 — The registry browser searches Docker Hub (settled 2026-10-08)
+
+The owner approved the four points PLAN.md left open, and the build settled the rest:
+
+- **Docker Hub only.** It has a public search; GitHub's registry has none without a signed-in
+  account. When the default registry is not Docker Hub the page says so and still searches Docker
+  Hub, stating that pulls from it come from Docker Hub.
+- **Search is `hub.docker.com/api/search/v4`**, what Docker Hub's own site uses: it ranks the
+  official `redis` first (the older `/v2/search/repositories` put `mcp/redis` first) and lists each
+  image's architectures. It is not a documented API, so a changed answer is reported as such, never
+  shown as "no results". Tags come from the documented `/v2/namespaces/…/tags`, plus `latest` by
+  name when it is not among the newest.
+- **Only on request.** Opening the page or typing (after a short pause) are the only requests: an
+  ephemeral session, no cookies or cache, a plain "Flotilla" user agent, nothing about the Mac. The
+  About page lists it.
+- **Untrusted text.** Names reaching a URL path are checked against Docker Hub's own naming rules;
+  tags against the tag grammar. Nothing pulls from the page: Pull opens the Pull form with the
+  reference filled in, which validates it like a typed one. Listings that are not images on
+  docker.io (Docker Hardened Images, MCP servers) are shown greyed with the reason.
+- **Credentials** are untouched: no Docker Hub sign-in; registry logins stay in the Keychain (Q20).
+

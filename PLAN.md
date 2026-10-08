@@ -653,7 +653,11 @@ shows the system model falls short. Her 15 open questions are the owner's.
 
 ### Registry browser (the owner, 7 October)
 
-Agreed for after Phase C; not started. Docker Desktop lists and searches Docker Hub from inside
+**Built 8 October (DECISIONS Q42):** Images ▸ Browse Docker Hub — official images on open, search
+as you type, a result's tags with Apple-silicon builds marked, and Pull handing the reference to the
+Pull form. Notes below kept as the brief it was built to.
+
+Agreed for after Phase C. Docker Desktop lists and searches Docker Hub from inside
 the app. Flotilla gains the same: a Browse button in Images that opens the **default registry**
 (`defaultRegistryDomain`, set from the Registries table — Docker Hub or GitHub's, whichever it is
 at the time), lists its images, searches them, and offers Pull (to This Mac or, with Phase C's
