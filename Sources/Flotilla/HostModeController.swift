@@ -730,7 +730,10 @@ final class HostModeController {
             volumeSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             backoff[fingerprint, default: HostBackoff()].failed(at: now)
-            live[fingerprint] = LiveStatus(state: .failed(Self.describe(error)), checkedAt: Date())
+            // Its Flotilla still answered: keep its version, so a host without `container` is still
+            // seen as behind and can be updated (measured 8 October, Tahoe showed "—" and was skipped).
+            live[fingerprint] = LiveStatus(state: .failed(Self.describe(error)), appVersion: remote.hostInfo?.appVersion,
+                                           checkedAt: Date())
             // Connected but a command failed — a host without `container` — still says who it is.
             // Measured 7 October: a renamed VM kept its old name because only success refreshed it.
             if let info = remote.hostInfo,
