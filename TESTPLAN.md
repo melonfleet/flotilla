@@ -24,13 +24,32 @@ Running containers on the test Macs may be stopped by some cases — each such c
 
 ## 0. Regression: beta 1's findings
 
-Beta 1 returned 20 FAIL and 3 BLOCK. **The list is needed here** — it was reported in chat and is
-not in the repository. Items 1–6 and 9.1 were fixed for beta 2; 5.1 (the list not refreshing after
-a run) never reproduced. Re-test every beta 1 FAIL and BLOCK first, by its beta 1 number.
+Beta 1 was tested on 7 September (MacBook Pro 13-inch M1, 2020, macOS 26.6.2): 20 FAIL, 3 BLOCK.
+The results came from the beta 1 test page's Copy results, pasted into the development session.
+Re-test each one first. "Changed" says what was done about it, and in which commit.
 
-| Beta 1 ID | What failed | Beta 2 result |
-|---|---|---|
-| … | *(to be filled in from the beta 1 results)* | |
+| Beta 1 | What happened | Changed | Re-test in beta 2 |
+|---|---|---|---|
+| 1.5 BLOCK | No Mac on macOS 15 to try. | The pkg refuses macOS earlier than 26 (checked at build). | Still BLOCK unless an older Mac turns up. |
+| 2.1 FAIL | No container: "not available", no link to Apple's project. | Flotilla now offers to download and install container 1.5.0 itself (Q39). | 1.2, 1.3 |
+| 2.2 FAIL | Stopped service: no warning. | Started automatically by default; if stopped later, Needs attention says so with Start, and the menu bar badge shows no-entry. | 2.3 |
+| 3.1–3.3 FAIL | Launch at login toggle did nothing. | Fixed (d081358): a never-registered signed app is now registrable. | Settings ▸ General ▸ Launch at login: on, reboot, starts; off, reboot, doesn't. |
+| 4.2 FAIL | Range 5m/15m/1h didn't change the graph. | Fixed (2b33832): the axis is the chosen range, and the header says how much history exists. | This Mac's page ▸ Pressure: switch ranges. |
+| 5.1 FAIL | A run container appeared only after another was run in Terminal. | Never reproduced; the list now also refreshes on a timer and after every action. | 4.1 — watch for it. |
+| 5.4, 5.5 FAIL | Deleting a running container failed. | Fixed (2b33832): delete stops it first, and the confirmation says so. | 4.2, 4.3 on running containers. |
+| 5.6 FAIL | Run Again with Changes made a container that wouldn't stay up. | Fixed (2b33832): a host port still in use is left out and named. | Containers ▸ ⋯ ▸ Run Again with Changes… on a running container with a published port. |
+| 9.2 FAIL | Couldn't work out Build from a Dockerfile. | One New Image form with Pull and Build, each field explained in the side panel (c1c1cba). | 5.4 |
+| 10.1–10.3 FAIL | New Volume / New Network blanked the window. | Fixed (d081358), with a check that stops the layout bug returning. | 6.1 |
+| 11.3, 11.4 FAIL | Couldn't find how to make a support bundle. | Help ▸ Create Support Bundle…. | 9.4, then search it for your username. |
+| 13.1, 13.6 FAIL | Login item couldn't be set, so not checked. | Follows 3.1. | 14.1 |
+| 13.3, 13.4 FAIL | Cleanup script couldn't remove the root-owned app. | Fixed (d081358): asks for sudo for exactly those paths, and says why. | `Scripts/uninstall-test-build.sh`, twice: the second run finds nothing. |
+| 8.2 BLOCK | "What images the form offers" unclear. | The machine form offers only images that boot. | Machines ▸ New Machine…: no Ubuntu, Debian or Fedora offered. |
+| 8.7 BLOCK | Relationship between machines and containers unclear. | — | 8.1. A machine is a Linux VM you work in; containers each run in their own small VM. Say if the app should explain this itself. |
+
+Notes from beta 1 passes, also addressed: image pulls now show progress and Browse Docker Hub
+exists (9.1); every list has a checkbox column and select-all (5.4); the machine tab is called
+Terminal like the container's (8.5); the menu bar opens the right container or machine (12.4 —
+the menu is now a native menu with no item list).
 
 ---
 
