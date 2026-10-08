@@ -33,8 +33,18 @@ extension AppModel {
             if let warning = containerSkewWarning(host) { items.append(AttentionItem(warning, .hosts)) }
             if let skew = appSkew(host), skew.level != .same,
                let theirs = fleet.live[peer.fingerprint]?.appVersion {
-                items.append(AttentionItem("\(peer.displayName) runs \(skew.otherIsOlder ? "an older" : "a newer") Flotilla "
-                              + "(\(theirs); This Mac \(HostModeController.appVersion)).", .hosts))
+                switch updateState(peer.fingerprint) {
+                case .available, .updating:
+                    // An update waiting or under way is new work, not a fault: Overview's Updates
+                    // block (Iris, 8 October). Left here, every routine rollout turned the
+                    // menu-bar badge red.
+                    break
+                case .failed(let message):
+                    items.append(AttentionItem("\(peer.displayName) couldn\u{2019}t update Flotilla: \(message)", .hosts))
+                default:
+                    items.append(AttentionItem("\(peer.displayName) runs \(skew.otherIsOlder ? "an older" : "a newer") Flotilla "
+                                  + "(\(theirs); This Mac \(HostModeController.appVersion)).", .hosts))
+                }
             }
         }
         let waiting = fleet.hosts.filter { $0.status == .pending }.count

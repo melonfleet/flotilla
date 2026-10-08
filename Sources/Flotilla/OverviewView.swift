@@ -14,10 +14,13 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
+            // Iris's order (8 October): is anything wrong, is anything ready to update, what does
+            // the fleet hold, which Macs make it up.
             VStack(alignment: .leading, spacing: 22) {
-                hosts
-                totals
                 attention
+                updates
+                totals
+                hosts
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -214,14 +217,19 @@ struct OverviewView: View {
 
     // MARK: Attention
 
+    /// What needs the owner, first. When nothing does, one quiet line that says so and when it was
+    /// last true, rather than a heading over an empty list.
+    @ViewBuilder
     private var attention: some View {
         let attentionItems = model.attentionItems
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Needs attention").font(.headline)
-            if attentionItems.isEmpty {
-                Label("Nothing needs attention.", systemImage: "checkmark.circle")
-                    .foregroundStyle(.secondary)
-            } else {
+        if attentionItems.isEmpty {
+            let hosts = model.hostMode.trustedHosts.count
+            Label(hosts == 0 ? "Nothing needs attention" : "Nothing needs attention on \(hosts + 1) Macs",
+                  systemImage: "checkmark.circle")
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Needs attention").font(.headline)
                 ForEach(attentionItems) { item in
                     Button { go(item.section) } label: {
                         Label(item.text, systemImage: "exclamationmark.triangle")
@@ -229,6 +237,39 @@ struct OverviewView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+        }
+    }
+
+    /// Hosts that can take this Mac's Flotilla, with the same action as Hosts' Updates menu. Shown
+    /// only when there is one; an update is work to do, not a fault, so it is not in the list above.
+    @ViewBuilder
+    private var updates: some View {
+        let waiting = model.hostsWithUpdates
+        let underWay = model.hostMode.updating.count
+        if !waiting.isEmpty || underWay > 0 {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Updates").font(.headline)
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.down.circle").foregroundStyle(Theme.info)
+                    if underWay > 0 {
+                        Text("Updating Flotilla on \(underWay) host\(underWay == 1 ? "" : "s")…")
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("\(waiting.count) host\(waiting.count == 1 ? " runs" : "s run") an older Flotilla than This Mac (\(HostModeController.appVersion)).")
+                    }
+                    Spacer()
+                    if !waiting.isEmpty {
+                        Button("Update \(waiting.count) Host\(waiting.count == 1 ? "" : "s") Now") {
+                            Task { await model.rollOutUpdates(automatic: false) }
+                        }
+                        .disabled(model.hostMode.rollingOut)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
             }
         }
     }
