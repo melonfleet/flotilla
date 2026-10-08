@@ -65,7 +65,7 @@ for extra in "$DIST/Flotilla-$VERSION.tar.gz" "$DIST/Flotilla-$VERSION.dmg" "$DI
     [ -f "$extra" ] && ASSETS+=("$extra")
 done
 
-echo "▸ creating the GitHub release v$VERSION…"
+echo "▸ creating the GitHub release v${VERSION}…"
 RELEASE_FLAGS=(--title "Flotilla $VERSION")
 [ "$PRERELEASE" -eq 1 ] && RELEASE_FLAGS+=(--prerelease)
 if [ -n "$NOTES" ]; then RELEASE_FLAGS+=(--notes-file "$NOTES"); else RELEASE_FLAGS+=(--generate-notes); fi
