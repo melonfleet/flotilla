@@ -118,6 +118,7 @@ final class AppModel {
         // or a user who removed Flotilla in System Settings ▸ Login Items since last time.
         syncLoginItem()
         hostMode.recordActivity = { [weak self] event in self?.recordActivity(event) }
+        updater.apply(isAdmin: hostMode.isAdmin)
         hostMode.onRefreshed = { [weak self] in
             Task {
                 await self?.updateFleetNames()
@@ -230,6 +231,8 @@ final class AppModel {
         notifier.updateCategories(Self.notificationSettings(from: settingsStore))
         // The mode, the port or Bonjour may have changed. Idempotent when nothing did.
         hostMode.apply()
+        // The role decides whether Sparkle runs; an update setting may have changed.
+        updater.apply(isAdmin: hostMode.isAdmin)
     }
 
     private static func themeChoice(from store: SettingsStore) -> ThemeChoice {
@@ -1650,6 +1653,8 @@ final class AppModel {
     /// See `HostMetricsSampler` — host and container metrics answer different questions and
     /// the dashboard shows both, labelled distinctly.
     @ObservationIgnored let hostMetrics = HostMetricsSampler()
+    /// Sparkle, for this Mac's own Flotilla (Q40). Admins only.
+    @ObservationIgnored lazy var updater = AppUpdater(settings: settingsStore)
 
     /// Retained history for one container, for the dashboard's charts and the detail sparkline.
     func statsHistory(for id: String) -> [StatsSampler.HistoryPoint] { sampler.history(for: id) }

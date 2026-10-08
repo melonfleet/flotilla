@@ -65,9 +65,8 @@ import Testing
 @Test func theKnownUnbuiltSetIsExactlyWhatWeThinkItIs() {
     // Pinned deliberately. A new setting arriving unwired should force a decision here rather than
     // joining a list nobody reads — and a setting that gets *built* should have to remove itself.
+    // The four Sparkle keys left on 8 October, when Sparkle arrived (DECISIONS Q40).
     #expect(Set(SettingsRegistry.notBuilt.map(\.name)) == [
         "identityKeychainLabel",
-        "SUEnableAutomaticChecks", "SUAutomaticallyUpdate", "SUScheduledCheckInterval",
-        "updateChannel",
     ])
 }

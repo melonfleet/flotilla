@@ -153,6 +153,14 @@ cp "$BINARY" "$APP/Contents/MacOS/Flotilla"
 # in every build; it only runs once the owner approves it in Login Items, and only in a Developer
 # ID build — an ad-hoc helper has no team to require of its callers and refuses to start.
 cp "$HELPER_BINARY" "$APP/Contents/MacOS/FlotillaDNSHelper"
+
+# Sparkle (DECISIONS Q40): a dynamic framework, so it is embedded and the executable is told where
+# to find it. SwiftPM leaves it beside the binary; the bundle keeps it in Contents/Frameworks.
+SPARKLE_FRAMEWORK="$(dirname "$BINARY")/Sparkle.framework"
+[ -d "$SPARKLE_FRAMEWORK" ] || { echo "✗ Sparkle.framework not found beside $BINARY" >&2; exit 1; }
+mkdir -p "$APP/Contents/Frameworks"
+/usr/bin/ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Flotilla" 2>/dev/null || true
 mkdir -p "$APP/Contents/Library/LaunchDaemons"
 cp "$ROOT/Resources/$HELPER_ID.plist" "$APP/Contents/Library/LaunchDaemons/"
 
@@ -193,6 +201,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          narrows to .accessory for menu-bar-only users before any scene exists. -->
     <key>LSUIElement</key>                  <$LSUIELEMENT/>
     <key>NSHighResolutionCapable</key>      <true/>
+    <!-- Sparkle (Q40): the appcast on GitHub Pages, and the public half of the EdDSA key every
+         update is signed with. The private half is in the owner's Keychain, never here. -->
+    <key>SUFeedURL</key>                    <string>https://melonfleet.github.io/flotilla/appcast.xml</string>
+    <key>SUPublicEDKey</key>                <string>pV97YwpduTDPjELSVIM8vE9rOHtx82OAngnMyR34psk=</string>
     <!-- .flotilla configuration files (Q29): Flotilla owns the type, so a double-click opens
          its import review. JSON inside, so it conforms to public.json. -->
     <key>UTExportedTypeDeclarations</key>
@@ -238,6 +250,24 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # rather than preferences — `notarytool` rejects a bundle without them — so they are attached here
 # at signing time and not bolted on by the release script. `Scripts/release.sh` sets the variable;
 # nothing else needs to.
+# Sparkle's parts, inside-out, as Sparkle's own documentation lays out for a non-sandboxed app: its
+# two XPC services (the Downloader keeping its entitlements), Autoupdate, Updater.app, then the
+# framework. Signed with our identity, so a host checking an update (Q38) finds every nested binary
+# ours.
+sign_sparkle() {
+    local identity="$1" stamp="$2" framework="$APP/Contents/Frameworks/Sparkle.framework"
+    for item in "$framework/Versions/B/XPCServices/Installer.xpc" \
+                "$framework/Versions/B/XPCServices/Downloader.xpc" \
+                "$framework/Versions/B/Autoupdate" \
+                "$framework/Versions/B/Updater.app" \
+                "$framework"; do
+        [ -e "$item" ] || continue
+        local keep=()
+        [[ "$item" == *Downloader.xpc ]] && keep=(--preserve-metadata=entitlements)
+        codesign --force --options runtime "$stamp" ${keep[@]+"${keep[@]}"} --sign "$identity" "$item" 2>&1 | sed 's/^/   /'
+    done
+}
+
 if [ -n "${FLOTILLA_SIGN_IDENTITY:-}" ]; then
     echo "▸ signing (Developer ID, hardened runtime)…"
     # No `--deep`: Apple's guidance is to sign inside-out. The one nested binary is the DNS helper,
@@ -246,6 +276,7 @@ if [ -n "${FLOTILLA_SIGN_IDENTITY:-}" ]; then
     codesign --force --options runtime --timestamp \
              --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$HELPER_ID" \
              "$APP/Contents/MacOS/FlotillaDNSHelper" 2>&1 | sed 's/^/   /'
+    sign_sparkle "$FLOTILLA_SIGN_IDENTITY" --timestamp
     codesign --force --options runtime --timestamp \
              --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$APP" 2>&1 | sed 's/^/   /'
     SIGN_MODE="Developer ID"
@@ -253,6 +284,7 @@ else
     echo "▸ signing (ad-hoc)…"
     codesign --force --sign - --identifier "$HELPER_ID" --timestamp=none \
              "$APP/Contents/MacOS/FlotillaDNSHelper" 2>&1 | sed 's/^/   /'
+    sign_sparkle - --timestamp=none
     codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>&1 | sed 's/^/   /'
     SIGN_MODE="ad-hoc"
 fi

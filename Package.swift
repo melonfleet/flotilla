@@ -24,6 +24,9 @@ let package = Package(
         // FlotillaTrust only; FlotillaCore stays dependency-free and Linux-clean.
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-asn1.git", from: "1.0.0"),
+        // Sparkle (MIT) — the admin Mac's own updates from GitHub releases (decision 13, DECISIONS
+        // Q40). The Flotilla target only; make-app.sh embeds and signs the framework.
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.0"),
     ],
     targets: [
         // UI-free spine shared by client and host modes.
@@ -40,7 +43,8 @@ let package = Package(
         // start to matter (see CLAUDE.md).
         .executableTarget(name: "Flotilla",
                           dependencies: ["FlotillaCore", "FlotillaPrivileged", "FlotillaTrust", "FlotillaNet",
-                                         .product(name: "SwiftTerm", package: "SwiftTerm")]),
+                                         .product(name: "SwiftTerm", package: "SwiftTerm"),
+                                         .product(name: "Sparkle", package: "Sparkle")]),
 
         // The DNS helper (decision 19, amended 7 October): a root SMAppService daemon that runs
         // `system dns create|delete` for the signed app and nothing else. Its interface lives in

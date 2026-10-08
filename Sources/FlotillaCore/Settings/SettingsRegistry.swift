@@ -287,32 +287,28 @@ public enum SettingsKeys {
             + "Off by default; the version in the Dashboard's corner checks when clicked either way."
     )
 
-    /// **Not built.** The four update keys use Sparkle's own `SU…` names, which was forward
-    /// planning; Sparkle is not a dependency and `DECISIONS.md` keeps it out for now. Defaulting
-    /// this to `true` while nothing checks is the most misleading combination available, so the row
-    /// is disabled and says so.
+    /// Sparkle's own preference names (DECISIONS Q40), so Sparkle and this registry agree on one
+    /// value. Applied by `AppUpdater` only when set by the owner or a profile: left at the built-in
+    /// default, Sparkle asks the owner once instead — an automatic check reaches GitHub, and Flotilla
+    /// does not do that unasked. Admin Macs only; a host is updated by its admin.
     public static let automaticUpdateChecks = SettingsKey<Bool>(
         "SUEnableAutomaticChecks", default: true,
-        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater. It can tell you a release exists — see the row above — but it cannot fetch or install one."),
-        summary: "Let Sparkle check for Flotilla updates automatically."
+        summary: "Let Sparkle check GitHub for Flotilla updates automatically. Asked once if not set."
     )
 
     public static let automaticallyDownloadUpdates = SettingsKey<Bool>(
         "SUAutomaticallyUpdate", default: false,
-        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater. It can tell you a release exists — see the row above — but it cannot fetch or install one."),
-        summary: "Download updates in the background without asking."
+        summary: "Download and install updates in the background without asking."
     )
 
     public static let updateCheckIntervalSeconds = SettingsKey<Int>(
         "SUScheduledCheckInterval", default: 86_400,
-        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater yet, so nothing checks for updates."),
-        summary: "Seconds between Sparkle update checks."
+        summary: "Seconds between Sparkle update checks (at least an hour)."
     )
 
     public static let updateChannel = SettingsKey<UpdateChannel>(
         "updateChannel", default: .stable,
-        availability: SettingAvailability.notBuilt(reason: "Flotilla has no updater yet, so nothing checks for updates."),
-        summary: "Which appcast to follow."
+        summary: "Stable releases only, or pre-releases too."
     )
 
     // MARK: Diagnostics

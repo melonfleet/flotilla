@@ -1888,3 +1888,39 @@ His answers:
   transfer in flight), waiting up to ten minutes for that.
 - **Releases publish signed artefacts only**, in four forms: a zip (what Sparkle and the fleet use),
   a pkg (MDM), a DMG and a tarball. This replaces the earlier "PKG only" instruction.
+
+## Q39 — Flotilla installs its prerequisites: `container` and the kernel (settled 2026-10-08)
+
+The owner, 8 October: an admin Mac's first start should offer to download and install `container`
+when it is missing, as the kernel button already does for the kernel; a host should install both
+by itself; and with an MDM profile pre-approving everything, a freshly installed host should need no
+clicks at all. His answers:
+
+- **Admin Mac**: first start offers "Download and Install container <version>" — the version this
+  Flotilla build names. Flotilla downloads Apple's signed installer from apple/container's GitHub
+  releases, checks it carries Apple's Containerization signature and notarisation, and hands it to
+  Apple's Installer, where the owner approves with their password. Then the recommended kernel
+  (`system kernel set --recommended`, no root). Never silent (decision 13 unchanged here).
+- **Hosts: the DNS helper installs Apple's package** — one more typed operation, `installContainer`,
+  amending decisions 13 and 19: as root, it installs a package only if it is signed
+  "Developer ID Installer: Apple Inc. - Containerization (UPBK2H6LZM)", notarised by Apple, and is
+  exactly the version Flotilla asked for; never a downgrade. It can install genuine Apple `container`
+  and nothing else. The kernel follows without root.
+- **Upgrading `container` stops every running container**, so it is never tied to a Flotilla update.
+  A host with no running containers upgrades by itself; one with containers running shows
+  "container update available" in Hosts, and the owner upgrades it — one host or rolling — with the
+  number it will stop shown first.
+- **Zero-touch**: a configuration profile can pre-approve the helper (managed Login Items) and turn
+  automatic setup on. To verify: whether macOS lets MDM pre-grant Local Network access; if not, a new
+  host needs that one click (the 8 October mini failure).
+
+## Q40 — Sparkle for the admin Mac (settled 2026-10-08)
+
+- The appcast is published to **GitHub Pages on the repo** (`melonfleet.github.io/flotilla/appcast.xml`)
+  by the release script, alongside signed, notarised zips on GitHub releases (Q38). It can move to
+  the owner's domain later.
+- **The EdDSA signing key** is created with Sparkle's own `generate_keys`, which keeps the private key
+  in the owner's login Keychain and prints only the public key for the app; the owner backs the
+  private key up to 1Password. Losing it means existing installs cannot verify new updates.
+- Sparkle updates Macs that are admins. A host-only Mac is updated by its admin (Q38), so it does
+  not check Sparkle as well.

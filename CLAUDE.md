@@ -516,7 +516,11 @@ must preserve all of the following:
     (wire version 6); a host installs it only if it is genuine Flotilla signed by the host's own
     Developer ID team and newer than its own, only while idle, and never touches the `container`
     runtime. A host's `acceptAdminUpdates` can be locked off by a profile, so Jamf keeps managed
-    minis. Releases publish signed artefacts only: zip, pkg, DMG and tarball.
+    minis. Releases publish signed artefacts only: zip, pkg, DMG and tarball. **Amended 2026-10-08 (Q39):** a host
+    installs `container` itself, through the DNS helper, and only Apple's package (Containerization
+    signature, notarised, the exact version asked for, never a downgrade); an admin Mac's first start
+    offers the same download through Apple's Installer. Upgrading `container` stops running
+    containers, so it is automatic only on a host with none running.
 14. **Tags are content, not settings (Q19):** the user's tags live in `TagBook`
     (Foundation-only, in `FlotillaCore`, with the rules and the tests) and are
     persisted by `TagStore` as plist-native keys `tagDefinitions` /
@@ -580,7 +584,9 @@ must preserve all of the following:
     `/etc/resolver/flotilla.<zone>` files for other Macs' DNS zones — `syncFleetResolvers` and
     `removeFleetResolvers`, typed, each file always pointing at Flotilla's own responder on
     127.0.0.1:7869, only under a `.internal`, `.test` or `.home.arpa` fleet domain, never touching a
-    file not named `flotilla.*`. Still nothing else.
+    file not named `flotilla.*`. **Amended 2026-10-08 (Q39):** and `installContainer` — Apple's signed,
+    notarised `container` package, at the version asked for, via `/usr/sbin/installer`. Still nothing
+    else.
 
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.

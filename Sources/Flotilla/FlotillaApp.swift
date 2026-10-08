@@ -154,13 +154,14 @@ private struct FlotillaCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
-        // A check is an explicit trip to Apple's releases page, never a request made by
-        // Flotilla itself. A silent comparison would break the app's no-phone-home promise;
-        // handing this URL to the browser keeps the network boundary visible to the user.
+        // Sparkle (Q40): an explicit check is the owner's request. On a host-only Mac its admin
+        // updates it (Q38), and a development build has no feed; the item says which.
         CommandGroup(after: .appInfo) {
-            Button("Check for Updates…") {
-                NSWorkspace.shared.open(ExternalLinks.appleContainerReleases)
+            Button(model.hostMode.isAdmin || !AppUpdater.isConfigured ? "Check for Updates…"
+                                                                    : "Updated by Your Admin Mac") {
+                model.updater.checkForUpdates()
             }
+            .disabled(!model.updater.isRunning)
         }
 
         // Settings is a section of the one main window, not a separate Settings scene. Replacing

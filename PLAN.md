@@ -701,7 +701,16 @@ Tahoe one at a time with no hand on any host; in manual mode only the host whose
 pressed moved; and nginx on the mini answered all 265 requests (twice a second) while that mini
 updated and relaunched Flotilla. Not yet run for real: `release.sh`'s DMG and tarball steps.
 
-### Sparkle auto-updates
+### Sparkle auto-updates — built, not yet published (DECISIONS Q40)
+
+Sparkle 2.10 is embedded and signed inside-out by make-app.sh; the feed is
+`melonfleet.github.io/flotilla/appcast.xml`; the EdDSA key is in the owner's Keychain (public half in
+Info.plist). Admins only; the four update settings drive it, applied only when set, so an automatic
+check is consented to rather than defaulted. `Scripts/publish-release.sh` creates the GitHub release
+and the appcast entry on gh-pages — run per release with the owner's OK; GitHub Pages must be
+switched on once. First real release: the end-to-end test.
+
+### Sparkle auto-updates (original plan)
 
 - Integrate Sparkle 2 for unmanaged Macs with an HTTPS appcast, Ed25519 artefact
   signatures, Developer ID and notarisation.
