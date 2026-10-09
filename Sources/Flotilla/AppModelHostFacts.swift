@@ -120,7 +120,7 @@ extension AppModel {
         return Date(timeIntervalSince1970: TimeInterval(time.tv_sec))
     }
 
-    /// IPv4 addresses on interfaces that are up, loopback left out.
+    /// IPv4 addresses on interfaces that are up — loopback and virtual-machine bridges left out.
     nonisolated private static var ipv4Addresses: [String] {
         var list: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&list) == 0, let first = list else { return [] }
@@ -130,6 +130,10 @@ extension AppModel {
             let entry = pointer.pointee
             guard let address = entry.ifa_addr, address.pointee.sa_family == UInt8(AF_INET),
                   entry.ifa_flags & UInt32(IFF_UP) != 0, entry.ifa_flags & UInt32(IFF_LOOPBACK) == 0 else { continue }
+            // Not the bridges `container` and other virtual machines make for their guests: those
+            // addresses are this Mac's own and no other Mac can reach them.
+            let interface = String(cString: entry.ifa_name)
+            if ["bridge", "vmenet", "anpi"].contains(where: { interface.hasPrefix($0) }) { continue }
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
                 let text = String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)

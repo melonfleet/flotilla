@@ -123,6 +123,8 @@ extension AppModel {
     /// Downloads, checks, and opens Apple's Installer; then waits for the install, starts the
     /// service and installs the kernel. Only ever from a button.
     func installContainerInteractively(version: String = ContainerRuntime.expectedVersion) async {
+        let keepAwake = power.begin("installing container")
+        defer { power.end(keepAwake) }
         guard runtimeSetup == nil || isSetupFinished else { return }
         do {
             let package = try await downloadContainerPackage(version)
@@ -194,6 +196,8 @@ extension AppModel {
         guard helperEnabled else {
             return "\(hostLabel) needs its Flotilla Helper switched on to install container by itself."
         }
+        let keepAwake = power.begin("installing container")
+        defer { power.end(keepAwake) }
         do {
             let package = try await downloadContainerPackage(version)
             defer { try? FileManager.default.removeItem(at: package) }
@@ -280,6 +284,8 @@ extension AppModel {
         let name = hostMode.hostName(.peer(fingerprint), local: hostLabel)
         hostMode.settingUpRuntime.insert(fingerprint)
         defer { hostMode.settingUpRuntime.remove(fingerprint) }
+        let keepAwake = power.begin("setting up container on a host")
+        defer { power.end(keepAwake) }
         do {
             _ = try await remote.call(.setUpRuntime)
             recordActivity(ContainerEvent(date: Date(), from: "", to: ContainerRuntime.expectedVersion, kind: .host,

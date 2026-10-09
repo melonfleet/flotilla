@@ -13,6 +13,8 @@ extension AppModel {
     // MARK: Host side
 
     func performInstallUpdate(_ archive: URL, isIdle: @escaping @Sendable () -> Bool) async -> Result<String, HostCallFailure> {
+        let keepAwake = power.begin("installing a Flotilla update")
+        defer { power.end(keepAwake) }
         let prepared: Result<SelfUpdate.Prepared, Error> = await Task.detached {
             Result { try SelfUpdate.prepare(archive: archive, isIdle: isIdle) }
         }.value
@@ -171,6 +173,8 @@ extension AppModel {
         if automatic && !autoUpdateHosts { return }
         hostMode.rollingOut = true
         defer { hostMode.rollingOut = false }
+        let keepAwake = power.begin("updating hosts")
+        defer { power.end(keepAwake) }
         while let next = FleetUpdate.next(updateCandidates, admin: target),
               let fingerprint = PeerFingerprint(hex: next.id) {
             if await updateHost(fingerprint) != nil { break }

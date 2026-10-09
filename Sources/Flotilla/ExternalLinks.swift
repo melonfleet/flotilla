@@ -26,4 +26,9 @@ enum ExternalLinks {
 
     /// Flotilla's own releases. Updates themselves come through Sparkle (DECISIONS Q40).
     static let flotillaReleases = URL(string: "https://github.com/melonfleet/flotilla/releases")!
+
+    /// Apple's own instructions for the two ways into a Mac that a host's page offers (Q44): Flotilla
+    /// opens macOS's tools rather than carrying a remote shell of its own. Checked 9 October.
+    static let appleRemoteLogin = URL(string: "https://support.apple.com/guide/mac-help/allow-a-remote-computer-to-access-your-mac-mchlp1066/mac")!
+    static let appleScreenSharing = URL(string: "https://support.apple.com/guide/mac-help/turn-screen-sharing-on-or-off-mh11848/mac")!
 }

@@ -84,7 +84,10 @@ struct MenuBarView: View {
         return Button {} label: {
             Image(nsImage: Self.dot(for: model.menuBarStatus))
             Text(runtime.title)
-            if !hosts.isEmpty {
+            if !model.power.reasons.isEmpty {
+                // Whenever Flotilla is keeping this Mac awake, the menu says so, and why (Q44).
+                Text("Keeping this Mac awake: " + model.power.reasons.joined(separator: ", "))
+            } else if !hosts.isEmpty {
                 Text("\(connected) of \(hosts.count) host\(hosts.count == 1 ? "" : "s") connected")
             } else if let detail = runtime.detail {
                 Text(detail)

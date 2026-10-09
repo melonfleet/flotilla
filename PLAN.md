@@ -677,6 +677,17 @@ To settle before building:
 - Results are untrusted text from the internet: shown, never executed, and a reference only ever
   reaches `image pull` through the `Allowlist` like a typed one.
 
+### Host pages and power, next steps (9 October, Q44)
+
+- Live charts on a host's page, from its own `container stats --no-stream` and new network and disk
+  counters in its host facts, polled every 10 seconds while the page is open.
+- Recommend Energy settings on a host's System tab (restart after a power failure, sleep when the
+  display is off) with Apple's instructions; never change them.
+- An admin's time-bounded keep-awake request to a host, refused on battery and shown on both Macs.
+- Runtime Saver, experimental: stop `container` after a while with nothing running; a moon in the
+  menu bar; wake on demand. Only after measuring savings and wake latency.
+- The sleep/wake matrix from Iris's report, on a mini and a laptop, before claiming behaviour.
+
 ### Host-run policies and streaming
 
 - Add live log and stats streams over persistent connections.

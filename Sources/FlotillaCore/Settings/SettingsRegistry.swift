@@ -230,6 +230,21 @@ public enum SettingsKeys {
         summary: "On a host, install container and its kernel automatically, and upgrade container when nothing is running."
     )
 
+    /// Whether a host keeps its Mac from idle-sleeping while host mode is on (DECISIONS Q44), so its
+    /// admin can reach it. The display may still sleep; a laptop only on its power adapter; closing
+    /// the lid or choosing Sleep always wins. Off follows the Mac's own Energy settings.
+    public static let keepAwakeAsHost = SettingsKey<Bool>(
+        "keepAwakeAsHost", default: true, scope: .host,
+        summary: "While host mode is on, keep this Mac awake so its admin can reach it. The display can still sleep; a laptop only on its power adapter."
+    )
+
+    /// Whether this Mac stays awake while its own containers run (Q44). Off by default: a Mac that
+    /// sleeps pauses its containers, which is what most people expect of a desktop app.
+    public static let keepAwakeWhileContainersRun = SettingsKey<Bool>(
+        "keepAwakeWhileContainersRun", default: false, scope: .host,
+        summary: "Keep this Mac awake while any of its containers are running. Never on battery."
+    )
+
     /// Whether the admin Mac updates its hosts by itself, one at a time, when it is newer (Q38).
     /// Off: each host shows Update available, and you update it from Hosts.
     public static let autoUpdateHosts = SettingsKey<Bool>(
@@ -355,6 +370,8 @@ public enum SettingsRegistry {
         SettingsKeys.fleetNamesEnabled.descriptor,
         SettingsKeys.acceptAdminUpdates.descriptor,
         SettingsKeys.autoInstallRuntime.descriptor,
+        SettingsKeys.keepAwakeAsHost.descriptor,
+        SettingsKeys.keepAwakeWhileContainersRun.descriptor,
         SettingsKeys.autoUpdateHosts.descriptor,
         SettingsKeys.identityKeychainLabel.descriptor,
         SettingsKeys.peerAllowlist.descriptor,

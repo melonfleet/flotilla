@@ -27,6 +27,8 @@ extension AppModel {
     func buildImage(context: URL, dockerfile: String?, tag: String?,
                     buildArgs: [String], labels: [String],
                     noCache: Bool, platform: String?, target: String?) async -> Bool {
+        let keepAwake = power.begin("building an image")
+        defer { power.end(keepAwake) }
         // Resolve symlinks before validating, so the policy is granted for — and the CLI is
         // handed — the path the build will actually read. Choosing the folder in a panel and
         // having a link in it silently redirect the build elsewhere is the same TOCTOU shape

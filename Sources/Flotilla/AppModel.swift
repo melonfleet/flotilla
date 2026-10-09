@@ -128,6 +128,7 @@ final class AppModel {
         Task { await reloadUnlessLoading() }
         startFleetWatch()
         startSystemFactsWatch()
+        startPowerPolicy()
         hostMode.onRefreshed = { [weak self] in
             Task {
                 await self?.updateFleetNames()
@@ -168,7 +169,10 @@ final class AppModel {
     private func observeSettings() {
         settingsObservation = settingsStore.observeChanges { [weak self] _ in
             // The store may notify from any thread; this state is main-actor isolated.
-            Task { @MainActor [weak self] in self?.reloadAppearance() }
+            Task { @MainActor [weak self] in
+                self?.reloadAppearance()
+                self?.updateStandingPower()
+            }
         }
     }
 
@@ -612,13 +616,23 @@ final class AppModel {
         }
     }
 
+    /// A Flotilla window someone could be looking at: not the menu-bar item's, and not minimised.
+    static var hasVisibleWindow: Bool {
+        NSApplication.shared.windows.contains {
+            $0.isVisible && !$0.isMiniaturized && !$0.className.contains("StatusBar") && $0.level == .normal
+        }
+    }
+
     private func sampleStats() async {
         // The HOST sample is taken unconditionally, before the runtime guard. Machine CPU and
         // memory are true whether or not `container` is usable, and a dashboard that goes blank
         // because the runtime is down is least useful exactly when you are diagnosing why.
         hostMetrics.sample()
 
-        guard runtimeUsable else { return }
+        // Per-container stats start a process each time and only feed what is on screen, so they
+        // wait while no Flotilla window is open — a menu-bar-only or headless Flotilla otherwise
+        // ran `container stats` every ten seconds for nobody (Q44, quiet when idle).
+        guard runtimeUsable, Self.hasVisibleWindow else { return }
         do {
             let samples = try await Task.detached { [cli] in try cli.stats() }.value
             let now = Date()
@@ -741,6 +755,8 @@ final class AppModel {
     /// a failure on screen with the button still there to try again. Only ever from a button:
     /// nothing calls this on its own.
     func installKernel() async {
+        let keepAwake = power.begin("installing the kernel")
+        defer { power.end(keepAwake) }
         guard !startingRuntime else { return }
         startingRuntime = true
         kernelInstall = KernelInstall(started: Date())
@@ -948,7 +964,10 @@ final class AppModel {
             // write regardless of equality, so an unconditional assignment invalidates every
             // view reading `containers` on each poll even when the fleet is completely
             // static — the second half of the flicker.
-            if fetched != containers { containers = fetched }
+            if fetched != containers {
+                containers = fetched
+                updateStandingPower()
+            }
 
             lastRefresh = Date()
             if state != .loaded { state = .loaded }
@@ -1221,6 +1240,8 @@ final class AppModel {
                    scheme: ContainerCLI.RegistryScheme = .default) async -> Bool {
         activePull = ImagePull(reference: reference, startedAt: Date())
         defer { activePull = nil }
+        let keepAwake = power.begin("pulling an image")
+        defer { power.end(keepAwake) }
         // The panel and `activePull` are not duplicates: the panel is the report you watch, and
         // `activePull` is what the Images list shows after you dismiss it, so pressing Back
         // during a forty-second pull still does not look like a cancelled pull.
@@ -1284,6 +1305,8 @@ final class AppModel {
         guard hosts != [.local] else { return await pullImage(reference, scheme: scheme) }
         activePull = ImagePull(reference: reference, startedAt: Date())
         defer { activePull = nil }
+        let keepAwake = power.begin("pulling an image")
+        defer { power.end(keepAwake) }
         let panel = OperationProgress(
             title: "Pull an image to \(hosts.count) Mac\(hosts.count == 1 ? "" : "s")",
             command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
@@ -1695,6 +1718,8 @@ final class AppModel {
     /// On a host: why its own automatic install of `container` is waiting, if it is — shown in the
     /// runtime banner so a host that is "doing nothing" says what it is waiting for.
     var hostRuntimeNote: String?
+    /// When this Mac is kept awake, and why (Q44).
+    let power = PowerKeeper()
     /// The slower half of this Mac's host facts — power, FileVault, sharing, the helper's version —
     /// read in the background every five minutes rather than on every call (`refreshSystemFacts`).
     var systemFacts: HostFacts?

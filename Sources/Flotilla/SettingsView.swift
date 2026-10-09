@@ -378,6 +378,10 @@ struct SettingsView: View {
                 SettingRow(store: store, key: SettingsKeys.confirmDestructiveActions, title: "Confirm destructive actions") { binding in
                     Toggle("", isOn: binding).labelsHidden()
                 }
+                SettingRow(store: store, key: SettingsKeys.keepAwakeWhileContainersRun,
+                           title: "Keep this Mac awake while containers run") { binding in
+                    Toggle("", isOn: binding).labelsHidden()
+                }
             }
 
             // Everything about how the app looks, together: the mode, then the pair of themes the

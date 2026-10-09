@@ -38,6 +38,8 @@ extension AppModel {
     /// - Returns: whether every host loaded it.
     @discardableResult
     func sendImage(_ image: ContainerImage, to hosts: [HostRef]) async -> Bool {
+        let keepAwake = power.begin("sending an image")
+        defer { power.end(keepAwake) }
         let reference = image.reference
         let panel = OperationProgress(title: "Send an image to \(hosts.count) host\(hosts.count == 1 ? "" : "s")",
                                       command: (["container"] + ContainerCLI.saveImageArguments(

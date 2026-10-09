@@ -172,6 +172,25 @@ struct HostDetailView: View {
                     monospaced: true)
                 row("Remote Login (SSH)", onOff(facts?.remoteLogin))
                 row("Screen Sharing", onOff(facts?.screenSharing))
+                // macOS's own ways in, not one of Flotilla's (the owner, 9 October): Terminal over
+                // SSH and Screen Sharing, each behind the Mac's own login. Where one is off, Apple's
+                // instructions for turning it on.
+                HStack(spacing: 8) {
+                    if !host.isLocal, facts?.remoteLogin == true, let address = connectAddress {
+                        Button("Open in Terminal (SSH)") { open("ssh://\(address)") }.controlSize(.small)
+                    }
+                    if !host.isLocal, facts?.screenSharing == true, let address = connectAddress {
+                        Button("Share Screen") { open("vnc://\(address)") }.controlSize(.small)
+                    }
+                }
+                if facts?.remoteLogin == false {
+                    Link("How to turn on Remote Login", destination: ExternalLinks.appleRemoteLogin)
+                        .font(.caption).foregroundStyle(Theme.link)
+                }
+                if facts?.screenSharing == false {
+                    Link("How to turn on Screen Sharing", destination: ExternalLinks.appleScreenSharing)
+                        .font(.caption).foregroundStyle(Theme.link)
+                }
             }
             card("Power") {
                 row("Power source", powerSource)
@@ -328,6 +347,17 @@ struct HostDetailView: View {
     }
 
     // MARK: Pieces
+
+    /// Where to reach this host: the address the admin connects to, else its own first address.
+    private var connectAddress: String? {
+        if case .address(let address, _)? = peer?.endpoint { return address }
+        return facts?.ipv4Addresses?.first
+    }
+
+    private func open(_ link: String) {
+        guard let url = URL(string: link) else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     private func grid<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12, alignment: .top),

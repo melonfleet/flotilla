@@ -1990,3 +1990,27 @@ typed helper job, `installFlotillaUpdate(appAt:)` (interface version 4):
 - With the helper off, the host says why it cannot update and how to: switch the helper on, or
   install with the package. A host whose helper predates version 4 needs the package once.
 
+## Q44 — Power, and the ways into a host (settled 2026-10-09)
+
+From Iris's research (`experiments/power-management-2026-10-09`) and the owner's answers. Before this,
+Flotilla never kept a Mac awake, never noticed sleep or wake, and polled whatever was on screen.
+
+- **One assertion, with reasons** (`PowerKeeper`): `PreventUserIdleSystemSleep` named
+  "Flotilla: <reasons>", so `pmset -g assertions` and a host's System tab say what holds it. Idle
+  sleep only: the display sleeps, and the lid, Sleep and battery emergencies always win. No helper.
+- **A host keeps awake while host mode is on** (`keepAwakeAsHost`, default on) — a laptop only on
+  its power adapter, never on battery, with **no battery override** in the first release.
+- **An admin Mac sleeps normally.** It keeps awake only during finite work that breaks if
+  interrupted: updates (sending and installing), pulls, builds, image transfers, `container` and
+  kernel installs. `keepAwakeWhileContainersRun` is an opt-in, off by default, never on battery.
+- **Live logs and open terminals do not keep a Mac awake.**
+- **Quiet when idle:** per-container stats pause while no Flotilla window is visible; after wake,
+  one refresh and a reconnect to every host. The menu bar says when, and why, Flotilla keeps the Mac
+  awake. Running containers are never stopped to save power.
+- **Later:** a Runtime Saver (stop `container` after a while with nothing running), **experimental**
+  until measured; an admin's time-bounded keep-awake request to a host; a sleep/wake test matrix
+  before Flotilla claims anything about containers across sleep.
+- **No remote shell of Flotilla's own.** A host's System tab offers macOS's own ways in — Terminal
+  over SSH and Screen Sharing — behind each Mac's own login, and links to Apple's instructions for
+  turning Remote Login or Screen Sharing on where they are off.
+
