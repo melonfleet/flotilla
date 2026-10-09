@@ -70,7 +70,7 @@ struct OverviewView: View {
     @State private var showingHostColumns = false
 
     private static let hostColumnSpecs: [(id: String, title: String)] = [
-        ("model", "Model"), ("cpu", "CPU"), ("memory", "Memory"), ("disk", "Disk"), ("macos", "macOS"),
+        ("tags", "Tags"), ("model", "Model"), ("cpu", "CPU"), ("memory", "Memory"), ("disk", "Disk"), ("macos", "macOS"),
         ("flotilla", "Flotilla"), ("container", "container"), ("checkin", "Last Check-in"),
     ]
 
@@ -136,12 +136,17 @@ struct OverviewView: View {
                         .foregroundStyle(Theme.link)
                         .lineLimit(1)
                         .help("Open \(line.name)")
-                    if line.id == HostRow.thisMacID { ThisMacPill() }
                 }
             }
             .width(min: 130, ideal: 170)
             .customizationID("host")
             .disabledCustomizationBehavior(.visibility)
+            TableColumn("Tags") { line in
+                TagPillRow(tags: model.tags.tags(on: .host, line.id), compact: true,
+                           builtIns: BuiltInHostTag.tags(isThisMac: line.id == HostRow.thisMacID, role: line.facts?.role))
+            }
+            .width(min: 90, ideal: 150)
+            .customizationID("tags")
             TableColumn("Model") { line in
                 Text(line.model ?? "—").foregroundStyle(.secondary).lineLimit(1)
             }

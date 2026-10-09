@@ -48,15 +48,18 @@ struct TagPillRow: View {
     let tags: [Tag]
     var compact = false
     var limit = 2
+    /// Flotilla's own tags for a Mac, drawn first and never counted against `limit`.
+    var builtIns: [BuiltInHostTag] = []
 
     var body: some View {
-        if tags.isEmpty {
+        if tags.isEmpty && builtIns.isEmpty {
             // Deliberately empty rather than an em dash. Every other column in these tables
             // shows "—" for a missing value because the value is expected; a tag is not, and a
             // column of forty dashes is noise.
             Color.clear.frame(height: 0)
         } else {
             HStack(spacing: 4) {
+                ForEach(builtIns) { BuiltInTagPill(tag: $0, compact: compact) }
                 ForEach(tags.prefix(limit)) { TagPill(tag: $0, compact: compact) }
                 if tags.count > limit {
                     Text("+\(tags.count - limit)")

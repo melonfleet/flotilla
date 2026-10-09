@@ -421,7 +421,7 @@ struct HostsView: View {
         if !query.isEmpty {
             rows = rows.filter { row in
                 row.name.lowercased().contains(query)
-                    || (row.isThisMac && "this mac".contains(query))
+                    || builtIns(row).contains { $0.name.lowercased().contains(query) }
                     || row.status.lowercased().contains(query)
                     || (row.modelIdentifier?.lowercased().contains(query) ?? false)
                     || (row.peer?.details.serialNumber?.lowercased().contains(query) ?? false)
@@ -430,6 +430,12 @@ struct HostsView: View {
             }
         }
         return rows.sorted(using: ui.sortOrder)
+    }
+
+    private func builtIns(_ row: HostRow) -> [BuiltInHostTag] {
+        BuiltInHostTag.tags(isThisMac: row.isThisMac,
+                            role: row.isThisMac ? hostMode.mode.rawValue
+                                                : row.peer.flatMap { hostMode.facts[$0.fingerprint]?.role })
     }
 
     private var visibleIDs: Set<HostRow.ID> { Set(displayedRows.map(\.id)) }
@@ -562,15 +568,14 @@ struct HostsView: View {
                         .buttonStyle(.link)
                         .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
                         .help("Open \(row.name)")
-                    if row.isThisMac { ThisMacPill() }
                 }
             }
-            .width(min: 150, ideal: 230)
+            .width(min: 130, ideal: 170)
 
             TableColumn("Tags") { row in
-                TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true)
+                TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true, builtIns: builtIns(row))
             }
-            .width(min: 60, ideal: 90)
+            .width(min: 90, ideal: 170)
             .customizationID("tags")
 
             TableColumn("Status", value: \.statusSortKey) { row in
