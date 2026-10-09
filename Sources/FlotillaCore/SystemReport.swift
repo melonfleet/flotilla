@@ -68,6 +68,16 @@ public enum SystemReport {
         return nil
     }
 
+    /// Whether the macOS firewall is on, from `socketfilterfw --getglobalstate`: "(State = 1)" is
+    /// on, 2 is on and blocking everything, 0 is off. Nil when the output says neither.
+    public static func firewallEnabled(_ output: String) -> Bool? {
+        guard let range = output.range(of: "(State = ") else { return nil }
+        let digits = output[range.upperBound...].prefix { $0.isNumber }
+        return Int(digits).map { $0 > 0 }
+    }
+
+    public static let firewallTool = "/usr/libexec/ApplicationFirewall/socketfilterfw"
+
     /// Remote Login (SSH) and Screen Sharing, by their launchd labels.
     public static let remoteLoginLabel = "com.openssh.sshd"
     public static let screenSharingLabel = "com.apple.screensharing"

@@ -172,12 +172,17 @@ struct HostDetailView: View {
     @ViewBuilder
     private var systemTab: some View {
         grid {
-            card("Identity") {
+            // Identity and security in one box (the owner, 9 October), each half under its own rule.
+            card("General") {
                 row("Computer name", host.isLocal ? HostModeController.computerName : name)
                 row("Serial number", facts?.serialNumber ?? peer?.details.serialNumber ?? "—", monospaced: true)
                 row("Model identifier", facts?.model ?? peer?.details.model ?? "—")
                 row("macOS", facts?.macOSVersion ?? "—")
                 row("Time zone", facts?.timeZone ?? "—")
+                row("Up since", facts?.bootTime.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—")
+                Divider()
+                row("FileVault", onOff(facts?.fileVault))
+                row("Firewall", onOff(facts?.firewall))
             }
             card("Network and sharing") {
                 row("Addresses", facts?.ipv4Addresses.map { $0.isEmpty ? "None" : $0.joined(separator: ", ") } ?? "—",
@@ -219,10 +224,6 @@ struct HostDetailView: View {
                 if let awake = facts?.power?.sleepPreventedBy, !awake.isEmpty {
                     row("Kept awake by", awake.joined(separator: ", "))
                 }
-            }
-            card("Security") {
-                row("FileVault", onOff(facts?.fileVault))
-                row("Up since", facts?.bootTime.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—")
             }
         }
         if facts?.readAt == nil && !host.isLocal {

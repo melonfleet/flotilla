@@ -30,4 +30,9 @@ private func fixture(_ name: String) throws -> String {
         // A label that is a prefix of another must not match it.
         #expect(SystemReport.serviceEnabled("dev.melonfleet.Flotilla", in: list) == nil)
     }
+
+    @Test func firewallStateFromCapturedOutput() throws {
+        #expect(SystemReport.firewallEnabled(try fixture("socketfilterfw-getglobalstate-on")) == true)
+        #expect(SystemReport.firewallEnabled("") == nil)
+    }
 }

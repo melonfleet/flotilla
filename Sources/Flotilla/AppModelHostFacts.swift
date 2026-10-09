@@ -91,6 +91,7 @@ extension AppModel {
         facts.power = SystemReport.PowerSettings.parse(run("/usr/bin/pmset", ["-g"]))
         let vault = run("/usr/bin/fdesetup", ["isactive"]).trimmingCharacters(in: .whitespacesAndNewlines)
         facts.fileVault = vault == "true" ? true : vault == "false" ? false : nil
+        facts.firewall = SystemReport.firewallEnabled(run(SystemReport.firewallTool, ["--getglobalstate"]))
         let services = run("/bin/launchctl", ["print-disabled", "system"])
         facts.remoteLogin = SystemReport.serviceEnabled(SystemReport.remoteLoginLabel, in: services) ?? false
         facts.screenSharing = SystemReport.serviceEnabled(SystemReport.screenSharingLabel, in: services) ?? false

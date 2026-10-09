@@ -138,6 +138,8 @@ public struct HostFacts: Sendable, Equatable, Codable {
     public var batteryPercent: Int?
     public var power: SystemReport.PowerSettings?
     public var fileVault: Bool?
+    /// The macOS firewall (System Settings ▸ Network ▸ Firewall).
+    public var firewall: Bool?
     public var remoteLogin: Bool?
     public var screenSharing: Bool?
     public var fileSharing: Bool?
