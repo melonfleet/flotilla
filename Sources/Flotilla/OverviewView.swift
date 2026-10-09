@@ -286,19 +286,26 @@ struct OverviewView: View {
 
     // MARK: Attention
 
-    /// What needs the owner, first. When nothing does, one quiet line that says so and when it was
-    /// last true, rather than a heading over an empty list.
-    @ViewBuilder
+    /// What needs the owner, first, in a box like the others (the owner, 9 October) — a quiet
+    /// grey line on the page background read as a footnote. When nothing does, one line that says so.
     private var attention: some View {
+        attentionContent
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
+    }
+
+    @ViewBuilder
+    private var attentionContent: some View {
         let attentionItems = model.attentionItems
         if attentionItems.isEmpty {
             let hosts = model.hostMode.trustedHosts.count
             Label(hosts == 0 ? "Nothing needs attention" : "Nothing needs attention on \(hosts + 1) Macs",
                   systemImage: "checkmark.circle")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.online)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Needs attention").font(.headline)
                 ForEach(attentionItems) { item in
                     HStack(spacing: 10) {
                         Button { go(item.section) } label: {
@@ -367,6 +374,20 @@ struct OverviewView: View {
                 .frame(maxWidth: .infinity)
                 .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.hairline))
+                // Closed for good, like after the first container (the owner, 9 October).
+                .overlay(alignment: .topTrailing) {
+                    Button { getStartedDone = true } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(10)
+                    .help("Close Get started")
+                    .accessibilityLabel("Close Get started")
+                }
             } else {
                 Color.clear.frame(height: 0).onAppear { getStartedDone = true }
             }
