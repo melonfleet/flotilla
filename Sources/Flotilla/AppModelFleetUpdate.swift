@@ -141,11 +141,21 @@ extension AppModel {
         return failUpdate(fingerprint, name: name, target: target, "It installed the update but didn't come back on build \(target) within four minutes.")
     }
 
-    private func failUpdate(_ fingerprint: PeerFingerprint, name: String, target: Int, _ message: String) -> String {
+    private func failUpdate(_ fingerprint: PeerFingerprint, name: String, target: Int, _ raw: String) -> String {
+        let message = Self.explainUpdateFailure(raw)
         hostMode.updateFailures[fingerprint] = (target, message)
         recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: name,
                                       action: "Flotilla update failed: \(message)"))
         return message
+    }
+
+    /// A host on a build from before Q43 answers a root-owned app with macOS's bare permission error;
+    /// say what it means and what to do instead (beta 2's test, 9 October).
+    static func explainUpdateFailure(_ message: String) -> String {
+        guard message.localizedCaseInsensitiveContains("permission to save the file") else { return message }
+        return "Flotilla there was installed by a package, so it can't replace itself, and its version is too old "
+            + "to hand the update to its Flotilla Helper. Install this build there once with the package; "
+            + "after that it updates like the others."
     }
 
     /// The hosts behind this Mac, as the rolling order sees them.
