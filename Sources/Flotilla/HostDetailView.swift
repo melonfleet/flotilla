@@ -8,6 +8,7 @@ enum HostDetailTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case system = "System"
     case flotilla = "Flotilla"
+    case settings = "Settings"
     case updates = "Updates"
     case activity = "Activity"
     var id: Self { self }
@@ -17,6 +18,7 @@ enum HostDetailTab: String, CaseIterable, Identifiable {
         case .overview: "square.grid.2x2"
         case .system: "desktopcomputer"
         case .flotilla: "sailboat"
+        case .settings: "slider.horizontal.3"
         case .updates: "arrow.down.circle"
         case .activity: "clock.arrow.circlepath"
         }
@@ -58,6 +60,7 @@ struct HostDetailView: View {
                 case .overview: overview
                 case .system: scrolling { systemTab }
                 case .flotilla: scrolling { flotillaTab }
+                case .settings: HostSettingsTab(model: model, host: host)
                 case .updates: scrolling { updatesTab }
                 case .activity: scrolling { activityTab }
                 }
@@ -170,36 +173,32 @@ struct HostDetailView: View {
             card("Network and sharing") {
                 row("Addresses", facts?.ipv4Addresses.map { $0.isEmpty ? "None" : $0.joined(separator: ", ") } ?? "—",
                     monospaced: true)
-                row("Remote Login (SSH)", onOff(facts?.remoteLogin))
-                row("Screen Sharing (VNC)", onOff(facts?.screenSharing))
-                row("File Sharing (SMB)", onOff(facts?.fileSharing))
+                serviceRow("Remote Login (SSH)", facts?.remoteLogin, .ssh)
+                serviceRow("Screen Sharing (VNC)", facts?.screenSharing, .vnc)
+                serviceRow("File Sharing (SMB)", facts?.fileSharing, .smb)
                 row("Signed-in user", facts?.loginUser ?? "—", monospaced: true)
-                // macOS's own ways in, not one of Flotilla's (the owner, 9 October): SSH in Apple's
-                // Terminal, VNC in Screen Sharing and SMB in Finder, each behind that Mac's own login
-                // and each app named, so another app that claims the link (Termius, iTerm) is not
-                // used. They connect as the user signed in there unless "Connect as" says otherwise
-                // — an `ssh://host` link alone would use this Mac's user name.
-                if !host.isLocal {
+                // macOS's own ways in, not one of Flotilla's (the owner, 9 October) — `HostConnect`.
+                // One above the other, each with Apple's guide to turning it on behind a ? (the owner).
+                if let fingerprint {
                     HStack(spacing: 8) {
                         Text("Connect as").font(.system(size: 12)).foregroundStyle(.secondary)
                         TextField(facts?.loginUser ?? "user name", text: connectAsBinding)
                             .textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced))
                             .frame(maxWidth: 180)
                     }
-                    HStack(spacing: 8) {
+                    let reachable = HostConnect.address(model, fingerprint) != nil
+                    VStack(alignment: .leading, spacing: 6) {
                         ForEach(HostConnect.Kind.allCases, id: \.self) { kind in
-                            Button(kind.title) { if let fingerprint { HostConnect.open(kind, model, fingerprint) } }
+                            HStack(spacing: 6) {
+                                Button(kind.title) { HostConnect.open(kind, model, fingerprint) }
+                                    .controlSize(.small)
+                                    .frame(minWidth: 210, alignment: .leading)
+                                    .disabled(!reachable)
+                                guideButton(kind)
+                            }
                         }
                     }
-                    .controlSize(.small)
-                    .disabled(fingerprint.flatMap { HostConnect.address(model, $0) } == nil)
                 }
-                Link("How to turn on Remote Login (SSH)", destination: ExternalLinks.appleRemoteLogin)
-                    .font(.caption).foregroundStyle(Theme.link)
-                Link("How to turn on Screen Sharing (VNC)", destination: ExternalLinks.appleScreenSharing)
-                    .font(.caption).foregroundStyle(Theme.link)
-                Link("How to turn on File Sharing (SMB)", destination: ExternalLinks.appleFileSharing)
-                    .font(.caption).foregroundStyle(Theme.link)
             }
             card("Power") {
                 row("Power source", powerSource)
@@ -356,6 +355,24 @@ struct HostDetailView: View {
     }
 
     // MARK: Pieces
+
+    /// On, Off or "—", and on This Mac's own page — where there are no connect buttons — the guide.
+    private func serviceRow(_ label: String, _ on: Bool?, _ kind: HostConnect.Kind) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            row(label, onOff(on))
+            if host.isLocal { guideButton(kind) }
+        }
+    }
+
+    /// A question mark that opens Apple's guide; its tooltip names the guide.
+    private func guideButton(_ kind: HostConnect.Kind) -> some View {
+        Button { NSWorkspace.shared.open(kind.guide) } label: {
+            Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Apple: \(kind.guideTitle)")
+        .accessibilityLabel("Apple: \(kind.guideTitle)")
+    }
 
 
     /// What the admin typed for this host in Connect as — kept by `HostConnect`, per host.

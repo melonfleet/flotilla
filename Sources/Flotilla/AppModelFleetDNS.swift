@@ -32,6 +32,12 @@ extension AppModel {
             }
             return .success(String(decoding: json, as: UTF8.self))
 
+        case .settingsReport:
+            guard let json = try? JSONEncoder().encode(SettingsReport.make(settingsStore)) else {
+                return .failure(HostCallFailure(.internalError, "This host couldn't list its settings."))
+            }
+            return .success(String(decoding: json, as: UTF8.self))
+
         case .dnsStatus:
             await refreshDNS()
             let status = HostDNSStatus(domains: dnsDomains, containerDomain: containerDNSDomain,
@@ -291,4 +297,16 @@ struct HostedDNS: Identifiable {
     var nameSortKey: String { domain.nameSortKey }
     var kindSortKey: String { domain.kindSortKey }
     var statusSortKey: Int { domain.statusSortKey }
+}
+
+extension AppModel {
+    /// A Mac's Flotilla settings: This Mac's own, or a host's answer to `.settingsReport`.
+    func settingsReport(on host: HostRef) async throws -> SettingsReport {
+        guard case .peer(let fingerprint) = host else { return SettingsReport.make(settingsStore) }
+        guard let remote = hostMode.remoteHost(for: fingerprint) else {
+            throw HostCallFailure(.refused, "That host isn't connected.")
+        }
+        let result = try await remote.call(.settingsReport)
+        return try JSONDecoder().decode(SettingsReport.self, from: Data(result.stdout.utf8))
+    }
 }

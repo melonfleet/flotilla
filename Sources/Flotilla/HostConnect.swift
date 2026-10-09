@@ -29,6 +29,23 @@ enum HostConnect {
             }
         }
 
+        /// Apple's instructions for turning it on, and their title as Apple gives it.
+        var guide: URL {
+            switch self {
+            case .ssh: ExternalLinks.appleRemoteLogin
+            case .vnc: ExternalLinks.appleScreenSharing
+            case .smb: ExternalLinks.appleFileSharing
+            }
+        }
+
+        var guideTitle: String {
+            switch self {
+            case .ssh: "Allow a remote computer to access your Mac"
+            case .vnc: "Turn Mac screen sharing on or off"
+            case .smb: "Set up file sharing on Mac"
+            }
+        }
+
         var app: String {
             switch self {
             case .ssh: "com.apple.Terminal"

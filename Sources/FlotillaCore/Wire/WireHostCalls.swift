@@ -14,6 +14,9 @@ public enum HostCall: Sendable, Equatable, Codable {
     case dnsStatus
     /// The host's chip, memory and disk, for Overview (version 4).
     case hostFacts
+    /// The host's Flotilla settings — values, sources, sensitive ones without their value — for
+    /// its page's Settings tab (version 8).
+    case settingsReport
     /// The names of every other Mac's containers, for the host to answer (version 5, Q37). An
     /// empty table turns names across Macs off there.
     case setFleetNames(FleetNameTable)
@@ -40,7 +43,7 @@ public enum HostCall: Sendable, Equatable, Codable {
             return nil
         }
         switch self {
-        case .dnsStatus, .hostFacts, .setUpRuntime: return nil
+        case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime: return nil
         case .setFleetNames(let table): return table.problem
         case .dnsCreate(let domain, let localhost):
             if let reserved = LocalDNS.reservedProblem(domain) { return reserved }
@@ -59,7 +62,7 @@ public enum HostCall: Sendable, Equatable, Codable {
     }
 
     /// Whether it changes the host.
-    public var mutates: Bool { self != .dnsStatus && self != .hostFacts }
+    public var mutates: Bool { self != .dnsStatus && self != .hostFacts && self != .settingsReport }
 
     /// The protocol version a host must speak to be asked this.
     public var minimumVersion: UInt16 {
@@ -67,6 +70,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .hostFacts: WireProtocol.hostFactsVersion
         case .setFleetNames: WireProtocol.fleetNamesVersion
         case .setUpRuntime: WireProtocol.runtimeSetupVersion
+        case .settingsReport: WireProtocol.settingsReportVersion
         default: WireProtocol.hostCallsVersion
         }
     }
@@ -74,7 +78,7 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// How long the host may take. A runtime restart waits for every container to stop.
     public var timeout: TimeInterval {
         switch self {
-        case .dnsStatus, .hostFacts: 30
+        case .dnsStatus, .hostFacts, .settingsReport: 30
         case .dnsCreate, .dnsDelete, .setFleetNames: 60
         case .setUpRuntime: 1800
         case .setContainerDNSDomain: 300
@@ -86,6 +90,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         switch self {
         case .dnsStatus: "read DNS settings"
         case .hostFacts: "read its chip, memory and disk"
+        case .settingsReport: "read its Flotilla settings"
         case .setUpRuntime: "installed or upgraded container"
         case .setFleetNames(let table): table.zones.isEmpty ? "turned off names across Macs"
                                                             : "updated names across Macs (\(table.zones.count) zones)"
