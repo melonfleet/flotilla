@@ -157,6 +157,26 @@ Running containers on the test Macs may be stopped by some cases — each such c
 
 ---
 
+## 15. Host pages
+
+| ID | Do | Expect |
+|---|---|---|
+| 15.1 | Hosts ▸ This Mac, then each tab. | Overview (cards, then this Mac's charts), System, Flotilla, Updates, Activity — every value real or "—", none invented. |
+| 15.2 | Hosts ▸ a paired host on this build. | The same tabs. System shows its serial, addresses, sharing, power and FileVault; Flotilla shows where it is installed, whether a package installed it, its helper's version, Enrolled and Last inventory update. |
+| 15.3 | On a host with Remote Login on: System ▸ Open in Terminal (SSH). | Terminal opens an SSH session to it, asking for that Mac's own login. With it off, the card links Apple's instructions instead. |
+| 15.4 | The same for Screen Sharing ▸ Share Screen. | macOS Screen Sharing opens to that host. |
+
+## 16. Power
+
+| ID | Do | Expect |
+|---|---|---|
+| 16.1 | On a host (desktop), host mode on: in Terminal, `pmset -g assertions`. | A `PreventUserIdleSystemSleep` named "Flotilla: host mode". The display still sleeps. Its System tab lists Flotilla under Kept awake by. |
+| 16.2 | Settings ▸ Host Mode ▸ Keep this Mac awake for its admin: off. | The assertion goes; the Mac sleeps on its own schedule. |
+| 16.3 | A laptop host: unplug the power adapter. | The host-mode assertion goes within seconds; plug back in and it returns. |
+| 16.4 | On the admin, pull a large image and run `pmset -g assertions` while it pulls. | "Flotilla: pulling an image" while it runs, gone when it ends. The menu bar's status line says "Keeping this Mac awake: pulling an image". |
+| 16.5 | Settings ▸ General ▸ Keep this Mac awake while containers run: on, with a container running. | "Flotilla: running containers"; stop the container and it goes. Never on battery. |
+| 16.6 | Sleep the admin Mac, then wake it. | Within a few seconds it refreshes and reconnects to every host by itself. |
+
 ## Known limits in beta 2
 
 - A new host needs one click on macOS's local-network prompt; a configuration profile cannot grant it (Apple TN3179).
