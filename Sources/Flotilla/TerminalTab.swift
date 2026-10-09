@@ -288,7 +288,7 @@ struct TerminalTab: View {
                 if let reason { failure = reason }
             }
         } catch {
-            failure = "Flotilla would not permit that command: \(error)"
+            failure = "flotilla would not permit that command: \(error)"
             model.record("Refused to open a shell in \(container.id): \(error)",
                          subsystem: "terminal")
         }

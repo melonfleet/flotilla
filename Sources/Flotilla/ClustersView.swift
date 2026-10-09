@@ -164,7 +164,7 @@ struct ClustersView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "flask")
                 .foregroundStyle(Theme.warning)
-            Text("Experimental. `container k8s` describes itself that way, and its output has no machine-readable form — Flotilla reads the printed table, so a change to it will show up here first.")
+            Text("Experimental. `container k8s` describes itself that way, and its output has no machine-readable form — flotilla reads the printed table, so a change to it will show up here first.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -245,7 +245,7 @@ struct ClustersView: View {
             } description: {
                 Text(isFiltered
                      ? "No cluster matches the current search."
-                     : "A cluster is a single-node Kubernetes running in its own VM. You reach it with kubectl; Flotilla creates it, loads images into it, and recreates it if it stops.")
+                     : "A cluster is a single-node Kubernetes running in its own VM. You reach it with kubectl; flotilla creates it, loads images into it, and recreates it if it stops.")
             } actions: {
                 if isFiltered {
                     Button("Clear Search") { ui.search = "" }

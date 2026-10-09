@@ -93,23 +93,23 @@ enum PrivilegedHelper {
     /// One request. `nil` means it worked; otherwise the reason, in words fit for an alert.
     static func send(_ request: HelperRequest) async -> String? {
         guard let team else {
-            return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
+            return "This copy of flotilla isn't signed, so it can't use the flotilla Helper."
         }
         switch request {
         case .installFlotillaUpdate:
             if let version = await runningVersion(), version < 4 {
-                return "This Mac's Flotilla Helper is from an older Flotilla and can't install updates. "
+                return "This Mac's flotilla Helper is from an older flotilla and can't install updates. "
                     + "Install this update with the package once; after that the helper installs them."
             }
         case .installContainer:
             if let version = await runningVersion(), version < 3 {
-                return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
+                return "The flotilla Helper is from an older flotilla. Switch it off and on again in "
                     + "Settings ▸ Advanced to update it."
             }
         case .syncFleetResolvers, .removeFleetResolvers:
             // Added in version 2: an older helper would not know the request at all.
             if let version = await runningVersion(), version < 2 {
-                return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
+                return "The flotilla Helper is from an older flotilla. Switch it off and on again in "
                     + "Settings ▸ Advanced to update it."
             }
         default: break
@@ -126,10 +126,10 @@ enum PrivilegedHelper {
             let once = ResumeOnce(continuation)
             // `@Sendable` for the same reason as in `runningVersion`.
             let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable error in
-                once.resume("Flotilla couldn't reach its Flotilla Helper: \(error.localizedDescription)")
+                once.resume("flotilla couldn't reach its flotilla Helper: \(error.localizedDescription)")
             } as? HelperProtocol
             guard let proxy else {
-                once.resume("Flotilla couldn't reach its Flotilla Helper.")
+                once.resume("flotilla couldn't reach its flotilla Helper.")
                 return
             }
             switch request {
@@ -205,11 +205,11 @@ extension AppModel {
         var commands: [ValidatedCommand] = []
         switch request {
         case .syncFleetResolvers, .removeFleetResolvers:
-            return .failed("Names across Macs need the Flotilla Helper switched on. Turn it on in Settings ▸ Advanced.")
+            return .failed("Names across Macs need the flotilla Helper switched on. Turn it on in Settings ▸ Advanced.")
         case .installContainer:
-            return .failed("Installing container without a person here needs the Flotilla Helper switched on.")
+            return .failed("Installing container without a person here needs the flotilla Helper switched on.")
         case .installFlotillaUpdate:
-            return .failed("Flotilla here was installed by a package, so only its Flotilla Helper can update it. "
+            return .failed("flotilla here was installed by a package, so only its flotilla Helper can update it. "
                            + "Switch the helper on in Settings ▸ Advanced, or install the update with the package.")
         case .create(let domain, let localhost):
             switch ContainerCLI.dnsCreateCommand(domain: domain, localhost: localhost) {

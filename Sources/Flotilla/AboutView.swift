@@ -18,7 +18,7 @@ struct AboutView: View {
     let dismiss: () -> Void
 
     var body: some View {
-        ModalCard(title: "About Flotilla", onClose: dismiss) {
+        ModalCard(title: "About flotilla", onClose: dismiss) {
             Form {
                 SwiftUI.Section {
                     identity
@@ -79,7 +79,7 @@ struct AboutView: View {
         VStack(alignment: .leading, spacing: 12) {
             destinationRow(
                 status: .noConnection,
-                title: "Flotilla itself",
+                title: "flotilla itself",
                 body: "No analytics, no crash reporting, no licence check, and nothing about this "
                     + "Mac sent anywhere. Every place it can reach is listed below, with when."
             )
@@ -87,7 +87,7 @@ struct AboutView: View {
                 destinationRow(
                     status: model.updater.checksAutomatically ? .active : .onRequest,
                     title: "Sparkle updates",
-                    body: "Reads melonfleet.github.io/flotilla/appcast.xml for a newer Flotilla and, "
+                    body: "Reads melonfleet.github.io/flotilla/appcast.xml for a newer flotilla and, "
                         + "if you install one, downloads it from github.com. Only on the Mac you "
                         + "manage your fleet from. "
                         + (model.updater.checksAutomatically
@@ -100,7 +100,7 @@ struct AboutView: View {
                 title: "Searching Docker Hub",
                 body: "Images → Browse Docker Hub asks hub.docker.com for images and their tags when "
                     + "you open it or type a search. The request carries what you typed and nothing "
-                    + "else: no account, no cookies, a plain \"Flotilla\" user agent."
+                    + "else: no account, no cookies, a plain \"flotilla\" user agent."
             )
             destinationRow(
                 status: .active,
@@ -108,7 +108,7 @@ struct AboutView: View {
                 body: "Reaches container registries when you pull an image — currently "
                     + "\(registryDomain), your configured default registry (Settings → "
                     + "Defaults for new containers). That is the container runtime acting on "
-                    + "your instruction, not Flotilla phoning home."
+                    + "your instruction, not flotilla phoning home."
             )
             destinationRow(
                 status: model.hostMode.trustedHosts.isEmpty ? .noConnection : .active,
@@ -192,7 +192,7 @@ struct AboutView: View {
     /// app and its MIT licence asks for attribution.
     private var licence: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Flotilla is a personal project, licensed under Apache-2.0.")
+            Text("flotilla is a personal project, licensed under Apache-2.0.")
             Text("Terminal emulation by SwiftTerm (MIT).")
             Text("Drives Apple\u{2019}s container CLI, which is not bundled.")
         }

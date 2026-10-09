@@ -43,7 +43,7 @@ struct TagManagerPane: View {
         } header: {
             Text("Your tags")
         } footer: {
-            Text("Tags are yours alone: they are stored on this Mac in Flotilla’s own "
+            Text("Tags are yours alone: they are stored on this Mac in flotilla’s own "
                  + "preferences and are never sent to the container runtime, so tagging "
                  + "something changes nothing about how it runs.")
                 .font(.caption)

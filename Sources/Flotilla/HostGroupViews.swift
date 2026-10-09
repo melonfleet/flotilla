@@ -159,7 +159,7 @@ struct HostCategoriesSheet: View {
                         Image(systemName: "network").foregroundStyle(.secondary).frame(width: 16)
                         Text(HostCategoryBook.subnetName)
                         Spacer()
-                        Text("Filled in by Flotilla").font(.caption).foregroundStyle(.tertiary)
+                        Text("Filled in by flotilla").font(.caption).foregroundStyle(.tertiary)
                     }
                     .moveDisabled(true)
                     ForEach(store.categories) { category in

@@ -217,7 +217,7 @@ extension StackSuggestion {
             title: "Redis + RedisInsight",
             summary: "A persistent Redis 8 server, and RedisInsight to browse it.",
             licenceNote: "Redis 8 is offered under RSALv2, SSPLv1 or AGPLv3, and RedisInsight under "
-                + "SSPL. Flotilla only names the images; check the terms suit how you use them.",
+                + "SSPL. flotilla only names the images; check the terms suit how you use them.",
             services: [
                 // No volume, measured 6 October: a fresh volume holds `lost+found`, so the image's
                 // entrypoint declines to fix ownership ("Unknown file './lost+found'… Permissions

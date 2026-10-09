@@ -122,7 +122,7 @@ if [ "$SKIP_NOTARIZE" -eq 0 ]; then
     fi
 fi
 
-echo "▸ releasing Flotilla $VERSION"
+echo "▸ releasing flotilla $VERSION"
 echo "   identity: $FLOTILLA_SIGN_IDENTITY"
 
 # ---------------------------------------------------------------- build & sign
@@ -221,7 +221,7 @@ STAGE="$(mktemp -d)"
 /usr/bin/ditto "$APP" "$STAGE/Flotilla.app"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG"
-hdiutil create -quiet -volname "Flotilla" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+hdiutil create -quiet -volname "flotilla" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 codesign --sign "$FLOTILLA_SIGN_IDENTITY" --timestamp "$DMG"
 echo "▸ notarising the disk image…"
@@ -239,7 +239,7 @@ if [ "$SKIP_PKG" -eq 0 ]; then
 fi
 
 echo
-echo "✓ Flotilla $VERSION — signed, notarised, stapled"
+echo "✓ flotilla $VERSION — signed, notarised, stapled"
 echo "   $ZIP"
 echo "   $TARBALL"
 echo "   $DMG"

@@ -233,7 +233,7 @@ extension ValueShape {
         case .hostBuildPath:
             "Expected an absolute path on this Mac that the mount policy permits the build to read."
         case .transferArchive:
-            "Expected an archive in Flotilla's own transfer folder."
+            "Expected an archive in flotilla's own transfer folder."
         case .progressType:
             "Expected auto, plain or tty."
         case .registryScheme:

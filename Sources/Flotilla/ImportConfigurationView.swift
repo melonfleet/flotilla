@@ -140,7 +140,7 @@ struct ImportConfigurationView: View {
                 if !dns.domains.isEmpty {
                     FormSectionHeader(title: "DNS",
                                       note: "Adding \(dns.domains.map(\.name).joined(separator: ", ")) "
-                                          + (model.helperEnabled ? "goes through the Flotilla Helper."
+                                          + (model.helperEnabled ? "goes through the flotilla Helper."
                                                                     : "asks for an administrator password, once."))
                 }
                 if let domain = dns.containerDomain, domain != model.containerDNSDomain {

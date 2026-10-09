@@ -38,7 +38,7 @@ public enum SettingsKeys {
 
     public static let launchAtLogin = SettingsKey<Bool>(
         "launchAtLogin", default: false,
-        summary: "Register Flotilla as a login item (SMAppService)."
+        summary: "Register flotilla as a login item (SMAppService)."
     )
 
     /// **Default on, and a toggle rather than a three-way picker.**
@@ -61,7 +61,7 @@ public enum SettingsKeys {
     /// remaining way in is a preference for locking yourself out.
     public static let showDockIcon = SettingsKey<Bool>(
         "showDockIcon", default: true,
-        summary: "Show Flotilla in the Dock. The menu bar item is always shown."
+        summary: "Show flotilla in the Dock. The menu bar item is always shown."
     )
 
     /// Applies to **single** deletes. Deleting more than one thing at a time always asks, and no
@@ -155,7 +155,7 @@ public enum SettingsKeys {
     /// rather than leaving the smaller claim implied. See `ImageReferenceHost`.
     public static let defaultRegistryDomain = SettingsKey<String>(
         "defaultRegistryDomain", default: "docker.io",
-        summary: "Registry that Flotilla's own Pull form completes an unqualified image reference against. Does not change what the `container` CLI does on its own."
+        summary: "Registry that flotilla's own Pull form completes an unqualified image reference against. Does not change what the `container` CLI does on its own."
     )
 
     // MARK: Logs
@@ -221,7 +221,7 @@ public enum SettingsKeys {
     /// lock it off, so Jamf stays the update authority on managed minis.
     public static let acceptAdminUpdates = SettingsKey<Bool>(
         "acceptAdminUpdates", default: true, scope: .host,
-        summary: "Install Flotilla updates the admin Mac sends. Only genuine, newer Flotilla is ever installed."
+        summary: "Install flotilla updates the admin Mac sends. Only genuine, newer flotilla is ever installed."
     )
 
     /// Whether a host installs `container` and its kernel by itself, and upgrades `container` when
@@ -250,7 +250,7 @@ public enum SettingsKeys {
     /// Off: each host shows Update available, and you update it from Hosts.
     public static let autoUpdateHosts = SettingsKey<Bool>(
         "autoUpdateHosts", default: true,
-        summary: "Update hosts to this Mac's Flotilla automatically, one at a time."
+        summary: "Update hosts to this Mac's flotilla automatically, one at a time."
     )
 
     /// The fleet enrolment key a configuration profile hands a host (PLAN.md Phase B). Sensitive:
@@ -265,7 +265,7 @@ public enum SettingsKeys {
     /// identity in the Keychain, so this labels nothing. A summary describing how key material is
     /// protected, attached to a feature that does not exist, reads as a security guarantee.
     public static let identityKeychainLabel = SettingsKey<String>(
-        "identityKeychainLabel", default: "Flotilla Identity", scope: .host,
+        "identityKeychainLabel", default: "flotilla Identity", scope: .host,
         availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
         summary: "Keychain label of the TLS identity. The key material itself never leaves the Keychain."
     )
@@ -295,7 +295,7 @@ public enum SettingsKeys {
     /// does not do that unasked. Admin Macs only; a host is updated by its admin.
     public static let automaticUpdateChecks = SettingsKey<Bool>(
         "SUEnableAutomaticChecks", default: true,
-        summary: "Let Sparkle check GitHub for Flotilla updates automatically. Asked once if not set."
+        summary: "Let Sparkle check GitHub for flotilla updates automatically. Asked once if not set."
     )
 
     public static let automaticallyDownloadUpdates = SettingsKey<Bool>(

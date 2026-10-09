@@ -96,8 +96,8 @@ struct Wordmark: View {
         switch lockup {
         case .full: fullLockup
         case .appName:
-            Text("Flotilla").font(brandFont).foregroundStyle(appInk)
-                .accessibilityLabel("Flotilla")
+            Text("flotilla").font(brandFont).foregroundStyle(appInk)
+                .accessibilityLabel("flotilla")
         case .bar: barLockup
         }
     }
@@ -155,11 +155,11 @@ struct Wordmark: View {
                 .alignmentGuide(.firstTextBaseline) { $0[.bottom] - size * (11.0 / 72.0) }
                 .padding(.horizontal, size * 0.30)
 
-            Text("Flotilla").font(brandFont).foregroundStyle(appInk)
+            Text("flotilla").font(brandFont).foregroundStyle(appInk)
         }
         // One label for the lockup: a name, not five fragments read out in turn.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("melonfleet Flotilla")
+        .accessibilityLabel("melonfleet flotilla")
     }
 
     /// The `o` of melonfleet, as a watermelon slice seen end-on.

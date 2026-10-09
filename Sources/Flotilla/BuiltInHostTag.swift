@@ -33,9 +33,9 @@ enum BuiltInHostTag: String, CaseIterable, Identifiable {
 
     var help: String {
         switch self {
-        case .thisMac: "The Mac you're using. Set by Flotilla — it can't be changed."
-        case .admin: "Manages other Macs (Settings ▸ Host Mode). Set by Flotilla from the Mac's role — it can't be changed here."
-        case .host: "Runs containers for an admin Mac (Settings ▸ Host Mode). Set by Flotilla from the Mac's role — it can't be changed here."
+        case .thisMac: "The Mac you're using. Set by flotilla — it can't be changed."
+        case .admin: "Manages other Macs (Settings ▸ Host Mode). Set by flotilla from the Mac's role — it can't be changed here."
+        case .host: "Runs containers for an admin Mac (Settings ▸ Host Mode). Set by flotilla from the Mac's role — it can't be changed here."
         }
     }
 

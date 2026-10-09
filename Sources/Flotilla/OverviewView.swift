@@ -71,7 +71,7 @@ struct OverviewView: View {
 
     private static let hostColumnSpecs: [(id: String, title: String)] = [
         ("tags", "Tags"), ("model", "Model"), ("cpu", "CPU"), ("memory", "Memory"), ("disk", "Disk"), ("macos", "macOS"),
-        ("flotilla", "Flotilla"), ("container", "container"), ("checkin", "Last Check-in"),
+        ("flotilla", "flotilla"), ("container", "container"), ("checkin", "Last Check-in"),
     ]
 
     private var hostLines: [HostLine] {
@@ -173,7 +173,7 @@ struct OverviewView: View {
             }
             .width(min: 60, ideal: 70)
             .customizationID("macos")
-            TableColumn("Flotilla") { line in
+            TableColumn("flotilla") { line in
                 Text(line.flotilla ?? "—").foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
             }
             .width(min: 110, ideal: 170)
@@ -412,9 +412,9 @@ struct OverviewView: View {
                 VStack(spacing: 0) {
                     if !flotillaWaiting.isEmpty || flotillaUnderWay > 0 {
                         updateRow(underWay: flotillaUnderWay > 0
-                                      ? "Updating Flotilla on \(Self.hosts(flotillaUnderWay))\u{2026}" : nil,
+                                      ? "Updating flotilla on \(Self.hosts(flotillaUnderWay))\u{2026}" : nil,
                                   text: "\(Self.hosts(flotillaWaiting.count)) \(flotillaWaiting.count == 1 ? "runs" : "run") "
-                                      + "an older Flotilla than This Mac (\(HostModeController.appVersion)).") {
+                                      + "an older flotilla than This Mac (\(HostModeController.appVersion)).") {
                             if !flotillaWaiting.isEmpty {
                                 Button("Update \(Self.hosts(flotillaWaiting.count, capitalised: true)) Now") {
                                     Task { await model.rollOutUpdates(automatic: false) }
@@ -488,7 +488,7 @@ struct OverviewView: View {
     /// Hosts' wording for one host, for several: what each does, and what stops, in all.
     private func containerUpgradeMessage(_ hosts: [PeerFingerprint]) -> String {
         let running = model.runningContainers(on: hosts)
-        var text = "Each host downloads Apple's container installer, and its Flotilla Helper installs it after "
+        var text = "Each host downloads Apple's container installer, and its flotilla Helper installs it after "
             + "checking it is Apple's. One host at a time. container restarts on each, "
         text += running > 0
             ? "which stops the \(running) running container\(running == 1 ? "" : "s") on them in all; start them again afterwards. "

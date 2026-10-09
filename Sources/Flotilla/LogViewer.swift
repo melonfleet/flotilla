@@ -301,7 +301,7 @@ struct LogViewer: View {
             // Flotilla's own word, not the container's: set apart, and said to be Flotilla's.
             case .notice: .secondary
             }
-            return DisplayLine(id: line.index, text: line.stream == .notice ? "[Flotilla] \(text)" : text, color: color)
+            return DisplayLine(id: line.index, text: line.stream == .notice ? "[flotilla] \(text)" : text, color: color)
         }
     }
 

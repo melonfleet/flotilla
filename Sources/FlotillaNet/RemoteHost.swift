@@ -188,7 +188,7 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
         } catch {
             if case .closed? = error as? RemoteHostError { forget(open) }
             if case WireError.hostCallsUnsupported? = error as? WireError {
-                throw RemoteHostError.protocolError("That Mac's Flotilla is too old for this. Update it first.")
+                throw RemoteHostError.protocolError("That Mac's flotilla is too old for this. Update it first.")
             }
             throw error
         }
@@ -209,10 +209,10 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
         } catch {
             if case .closed? = error as? RemoteHostError { forget(open) }
             if case WireError.streamsUnsupported? = error as? WireError {
-                throw RemoteHostError.protocolError("That Mac's Flotilla is too old to receive images. Update it first.")
+                throw RemoteHostError.protocolError("That Mac's flotilla is too old to receive images. Update it first.")
             }
             if case WireError.appUpdatesUnsupported? = error as? WireError {
-                throw RemoteHostError.protocolError("That Mac's Flotilla is too old to be updated from here. Update it by hand once.")
+                throw RemoteHostError.protocolError("That Mac's flotilla is too old to be updated from here. Update it by hand once.")
             }
             throw error
         }
@@ -249,7 +249,7 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
 
     private static func describe(_ error: Error) -> String {
         if case WireError.streamsUnsupported? = error as? WireError {
-            return "That Mac's Flotilla is too old to follow logs live. Update it, or turn Live off to fetch them."
+            return "That Mac's flotilla is too old to follow logs live. Update it, or turn Live off to fetch them."
         }
         return String(describing: error)
     }
@@ -306,7 +306,7 @@ private final class RemoteFollow: @unchecked Sendable {
     func ended(_ end: WireMessage.StreamEnd) {
         let cancelled = lock.withLock { self.cancelled }
         if let dropped = end.dropped, dropped > 0, !cancelled {
-            onLine("\(dropped) lines were dropped in all: Flotilla fell behind", .notice)
+            onLine("\(dropped) lines were dropped in all: flotilla fell behind", .notice)
         }
         finish(CommandStreamEnd(exitCode: end.exitCode ?? (cancelled ? 0 : 1), cancelled: cancelled,
                                 reason: cancelled ? nil : end.reason))

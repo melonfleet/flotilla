@@ -338,7 +338,7 @@ struct LogsView: View {
             // string *literal*; this is built with `+`, so the syntax rendered on screen as
             // literal punctuation — measured, not assumed.
             Text("Apple\u{2019}s container CLI does not timestamp log lines, so this is when "
-                 + "Flotilla received the line: genuine per line while streaming, and one "
+                 + "flotilla received the line: genuine per line while streaming, and one "
                  + "shared read time per source when fetched.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -445,7 +445,7 @@ struct LogsView: View {
                                 Text(line.receivedAt.map(Self.timestamp) ?? "\u{2014}")
                                     .font(.system(size: 11).monospacedDigit())
                                     .foregroundStyle(.secondary)
-                                    .help("When Flotilla received this line. container logs "
+                                    .help("When flotilla received this line. container logs "
                                           + "has no timestamps of its own.")
                             }
                             // Sized for the whole `2026-09-13 12:04:50`, not the time
@@ -590,7 +590,7 @@ struct LogsView: View {
     /// The text alone, with no opinion about width — the caller supplies that, because the
     /// `ViewThatFits` candidates need opposite answers: one intrinsic, one greedy.
     private func messageText(_ line: AggregatedLogLine, wrapped: Bool) -> some View {
-        Text(line.stream == .notice ? "[Flotilla] \(line.text)" : line.text)
+        Text(line.stream == .notice ? "[flotilla] \(line.text)" : line.text)
             .font(.system(size: 11, design: .monospaced))
             // `stderr` here is the *CLI's* stderr, not the container's own: `container logs`
             // writes program output to stdout, so a line arriving on stderr is the runtime

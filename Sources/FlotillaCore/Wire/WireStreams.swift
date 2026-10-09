@@ -293,7 +293,7 @@ extension WireHostSession {
             follow.seq += 1
         }
         if follow.dropped > follow.reportedDropped {
-            let note = Data("\(follow.dropped - follow.reportedDropped) lines dropped: Flotilla fell behind\n".utf8)
+            let note = Data("\(follow.dropped - follow.reportedDropped) lines dropped: flotilla fell behind\n".utf8)
             if streamLimits.charge(note.count) <= follow.credit {
                 follow.credit -= streamLimits.charge(note.count)
                 follow.reportedDropped = follow.dropped

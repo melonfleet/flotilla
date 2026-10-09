@@ -90,7 +90,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         switch self {
         case .dnsStatus: "read DNS settings"
         case .hostFacts: "read its chip, memory and disk"
-        case .settingsReport: "read its Flotilla settings"
+        case .settingsReport: "read its flotilla settings"
         case .setUpRuntime: "installed or upgraded container"
         case .setFleetNames(let table): table.zones.isEmpty ? "turned off names across Macs"
                                                             : "updated names across Macs (\(table.zones.count) zones)"

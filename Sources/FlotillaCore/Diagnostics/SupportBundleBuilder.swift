@@ -251,7 +251,7 @@ public struct SupportBundleBuilder: Sendable {
             name: Self.snapshotFileName,
             contents: try Self.encoder.encode(snapshot),
             summary: """
-                Flotilla and OS versions, `container` preflight, \
+                flotilla and OS versions, `container` preflight, \
                 \(snapshot.hosts.count) host(s), effective settings and \
                 \(snapshot.recentErrors.count) recent error(s). Redacted on capture.
                 """

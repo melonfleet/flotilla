@@ -287,14 +287,14 @@ public enum AdminExecutable {
     /// Why the installed binary may not be run as root, or `nil` if it may.
     public static func problem(file: Facts?, directory: Facts?) -> String? {
         guard let directory, directory.kind == .directory, directory.isRootControlled else {
-            return "\(installDirectory) can be changed without an administrator, so Flotilla "
+            return "\(installDirectory) can be changed without an administrator, so flotilla "
                 + "won't run container from it as one."
         }
         guard let file, file.kind == .file else {
             return "\(path) isn't a plain file. Run the command in Terminal with sudo instead."
         }
         guard file.isRootControlled else {
-            return "\(path) can be changed without an administrator, so Flotilla won't run it "
+            return "\(path) can be changed without an administrator, so flotilla won't run it "
                 + "as one. Reinstall container, or run the command in Terminal with sudo."
         }
         return nil

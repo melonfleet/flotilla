@@ -2,13 +2,13 @@
   <img src="design/flotilla-logo.png" width="112" alt="">
 </p>
 
-<h1 align="center">Flotilla</h1>
+<h1 align="center">flotilla</h1>
 
 <p align="center"><strong>Apple's containers, with a window.</strong></p>
 
 <p align="center">
   Apple shipped <code>container</code> for macOS and left it on the command line.<br>
-  Flotilla is the native app on top: containers, images, volumes, networks and the<br>
+  flotilla is the native app on top: containers, images, volumes, networks and the<br>
   virtual machines they run inside — plus a real terminal in every container.
 </p>
 
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/dash.webp" width="880" alt="Flotilla's dashboard: a memory-pressure graph over five minutes, disk and network throughput, and a table of every running container with CPU, memory and I/O.">
+  <img src="docs/images/dash.webp" width="880" alt="flotilla's dashboard: a memory-pressure graph over five minutes, disk and network throughput, and a table of every running container with CPU, memory and I/O.">
 </p>
 
 ---
@@ -32,7 +32,7 @@
 
 A **native SwiftUI app** that drives Apple's own `container` CLI. It does not link the
 Containerization framework and it does not reimplement the runtime — it builds a command,
-validates it against a default-deny allowlist, runs it, and decodes the JSON. Flotilla shows you
+validates it against a default-deny allowlist, runs it, and decodes the JSON. flotilla shows you
 the exact command it used, so nothing happens that you could not have typed yourself.
 
 Free. No account, no sign-in, no telemetry, no subscription, no paid tier.
@@ -41,9 +41,9 @@ Free. No account, no sign-in, no telemetry, no subscription, no paid tier.
 
 | | |
 |---|---|
-| **macOS 26 or later** | On Apple silicon. Apple's container runtime needs both, so Flotilla does too. |
-| **Apple's `container` CLI** | Installed separately from [apple/container](https://github.com/apple/container). Flotilla drives that tool; it does not bundle or replace it, and it will offer to start the runtime service if it is not running. |
-| **Nothing else** | No account, no telemetry, no background phone-home. Even the wordmark is drawn in SwiftUI rather than loaded as a webfont. Flotilla reaches exactly one address of its own — GitHub, to ask what the latest release is — and only when you click the version in the Dashboard's corner. Nothing about you or your Mac is sent and nothing is stored. **Settings → Updates** can make that check run once at launch instead; it ships off. |
+| **macOS 26 or later** | On Apple silicon. Apple's container runtime needs both, so flotilla does too. |
+| **Apple's `container` CLI** | Installed separately from [apple/container](https://github.com/apple/container). flotilla drives that tool; it does not bundle or replace it, and it will offer to start the runtime service if it is not running. |
+| **Nothing else** | No account, no telemetry, no background phone-home. Even the wordmark is drawn in SwiftUI rather than loaded as a webfont. flotilla reaches exactly one address of its own — GitHub, to ask what the latest release is — and only when you click the version in the Dashboard's corner. Nothing about you or your Mac is sent and nothing is stored. **Settings → Updates** can make that check run once at launch instead; it ships off. |
 
 ## Getting it
 
@@ -65,10 +65,10 @@ login-item registration for an ad-hoc-signed bundle — that is expected, not a 
 
 | | |
 |---|---|
-| <img src="docs/images/containers.webp" alt="Flotilla's container list: one row per container with live CPU and memory, published ports, IP address, and start, stop and delete controls."> | **Containers.** Live CPU and memory per container, published ports, addresses, and start/stop/delete on the row. Switch to cards if you prefer. |
-| <img src="docs/images/terminal.webp" alt="Flotilla's terminal tab: a shell open inside a running nginx container, showing its version, a passing configuration test, the process table, and a live HTTP 200 response."> | **Terminal.** A real shell inside any running container or machine — test a config, read the process table, ask it for a page, without leaving the window. |
-| <img src="docs/images/logs.webp" alt="Flotilla's log view: a single combined feed of log lines from several containers, each tagged with its source, above a filter field."> | **Logs.** Every source in one feed, each line tagged with where it came from, filterable by name or text. No tab-hopping between containers. |
-| <img src="docs/images/machines.webp" alt="Flotilla's machines view: the virtual machines containers run inside, with CPU and memory allocation and controls to create, resize, start, stop and open a shell."> | **Machines.** The virtual machines your containers actually run inside — create, resize, start, stop, and open a shell in one. |
+| <img src="docs/images/containers.webp" alt="flotilla's container list: one row per container with live CPU and memory, published ports, IP address, and start, stop and delete controls."> | **Containers.** Live CPU and memory per container, published ports, addresses, and start/stop/delete on the row. Switch to cards if you prefer. |
+| <img src="docs/images/terminal.webp" alt="flotilla's terminal tab: a shell open inside a running nginx container, showing its version, a passing configuration test, the process table, and a live HTTP 200 response."> | **Terminal.** A real shell inside any running container or machine — test a config, read the process table, ask it for a page, without leaving the window. |
+| <img src="docs/images/logs.webp" alt="flotilla's log view: a single combined feed of log lines from several containers, each tagged with its source, above a filter field."> | **Logs.** Every source in one feed, each line tagged with where it came from, filterable by name or text. No tab-hopping between containers. |
+| <img src="docs/images/machines.webp" alt="flotilla's machines view: the virtual machines containers run inside, with CPU and memory allocation and controls to create, resize, start, stop and open a shell."> | **Machines.** The virtual machines your containers actually run inside — create, resize, start, stop, and open a shell in one. |
 
 ## How it works
 
@@ -130,7 +130,7 @@ and do not need `container` installed.
 ```sh
 swift build
 swift test
-swift run Flotilla
+swift run flotilla
 swift run flotilla-probe     # exercises the live container JSON surface
 ```
 
@@ -174,7 +174,7 @@ app. In the repository:
 [`container`](https://github.com/apple/container) itself, so there is no compatibility question
 either way.
 
-The names and marks are reserved separately and are **not** covered by it: *Flotilla*,
+The names and marks are reserved separately and are **not** covered by it: *flotilla*,
 *melonfleet*, the wordmark and the app icon. Fork the code freely; give the fork its own name, so
 nobody is left guessing which build they are running. Details in [`NOTICE`](NOTICE).
 

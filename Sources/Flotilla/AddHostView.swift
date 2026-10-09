@@ -43,7 +43,7 @@ struct AddHostView: View {
                 } else {
                 SwiftUI.Section("Which Mac") {
                     if hostMode.discovered.isEmpty {
-                        Text("No host found on this network yet. A Mac appears here once Flotilla on it is set to Host in Settings ▸ Host Mode — or type its address below.")
+                        Text("No host found on this network yet. A Mac appears here once flotilla on it is set to Host in Settings ▸ Host Mode — or type its address below.")
                             .font(.caption).foregroundStyle(.secondary)
                             .lineLimit(4)
                     }

@@ -13,7 +13,7 @@ extension AppModel {
     // MARK: Host side
 
     func performInstallUpdate(_ archive: URL, isIdle: @escaping @Sendable () -> Bool) async -> Result<String, HostCallFailure> {
-        let keepAwake = power.begin("installing a Flotilla update")
+        let keepAwake = power.begin("installing a flotilla update")
         defer { power.end(keepAwake) }
         let prepared: Result<SelfUpdate.Prepared, Error> = await Task.detached {
             Result { try SelfUpdate.prepare(archive: archive, isIdle: isIdle) }
@@ -29,12 +29,12 @@ extension AppModel {
             switch await runPrivileged(.installFlotillaUpdate(path: update.app.path), prompt: "") {
             case .succeeded: outcome = .success(update.version)
             case .failed(let why): outcome = .failure(SelfUpdate.Failure.refused(why))
-            default: outcome = .failure(SelfUpdate.Failure.failed("The Flotilla Helper didn't install the update."))
+            default: outcome = .failure(SelfUpdate.Failure.failed("The flotilla Helper didn't install the update."))
             }
         }
         switch outcome {
         case .success(let version):
-            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: "Flotilla",
+            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: "flotilla",
                                           action: "Updated to \(version) by the admin Mac"))
             // Answer first, then go: the admin hears "installed" before the connection drops.
             Task { @MainActor in
@@ -88,7 +88,7 @@ extension AppModel {
 
     /// This Mac's app, zipped once per build in a private folder.
     private func updatePackage() async throws -> (url: URL, bytes: UInt64, sha256: String) {
-        guard let build = ownBuild else { throw SelfUpdate.Failure.refused("This Mac's Flotilla has no build number.") }
+        guard let build = ownBuild else { throw SelfUpdate.Failure.refused("This Mac's flotilla has no build number.") }
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("dev.melonfleet.Flotilla.outgoing", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
@@ -102,7 +102,7 @@ extension AppModel {
                 process.arguments = ["-c", "-k", "--keepParent", app.path, zip.path]
                 try process.run()
                 process.waitUntilExit()
-                guard process.terminationStatus == 0 else { throw SelfUpdate.Failure.failed("Couldn't package this Mac's Flotilla.") }
+                guard process.terminationStatus == 0 else { throw SelfUpdate.Failure.failed("Couldn't package this Mac's flotilla.") }
             }
             let (bytes, digest) = try AppModel.measure(zip)
             return (zip, bytes, digest)
@@ -121,7 +121,7 @@ extension AppModel {
         do {
             let package = try await updatePackage()
             let result = try await remote.upload(file: package.url, bytes: package.bytes, sha256: package.sha256,
-                                                 label: "Flotilla build \(target)", purpose: .appUpdate) { _ in }
+                                                 label: "flotilla build \(target)", purpose: .appUpdate) { _ in }
             _ = result
         } catch {
             return failUpdate(fingerprint, name: name, target: target, HostModeController.describe(error))
@@ -134,7 +134,7 @@ extension AppModel {
             if hostBuild(fingerprint) == target {
                 hostMode.updateFailures.removeValue(forKey: fingerprint)
                 recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: name,
-                                              action: "Updated Flotilla to build \(target)"))
+                                              action: "Updated flotilla to build \(target)"))
                 return nil
             }
         }
@@ -145,7 +145,7 @@ extension AppModel {
         let message = Self.explainUpdateFailure(raw)
         hostMode.updateFailures[fingerprint] = (target, message)
         recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: name,
-                                      action: "Flotilla update failed: \(message)"))
+                                      action: "flotilla update failed: \(message)"))
         return message
     }
 
@@ -153,8 +153,8 @@ extension AppModel {
     /// say what it means and what to do instead (beta 2's test, 9 October).
     static func explainUpdateFailure(_ message: String) -> String {
         guard message.localizedCaseInsensitiveContains("permission to save the file") else { return message }
-        return "Flotilla there was installed by a package, so it can't replace itself, and its version is too old "
-            + "to hand the update to its Flotilla Helper. Install this build there once with the package; "
+        return "flotilla there was installed by a package, so it can't replace itself, and its version is too old "
+            + "to hand the update to its flotilla Helper. Install this build there once with the package; "
             + "after that it updates like the others."
     }
 

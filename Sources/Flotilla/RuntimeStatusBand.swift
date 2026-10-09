@@ -132,7 +132,7 @@ struct RuntimeStatusBand: View {
                 openURL(ExternalLinks.appleContainerReleases)
             }
             Button("Apple `container` on GitHub") { openURL(ExternalLinks.appleContainer) }
-            Button("Flotilla on GitHub") { openURL(ExternalLinks.flotilla) }
+            Button("flotilla on GitHub") { openURL(ExternalLinks.flotilla) }
         } label: {
             // `RowOverflowLabel`, the same vertical dots every row menu in the app uses — and the
             // same reason they are a rotated `ellipsis`: `ellipsis.vertical` is not a real SF

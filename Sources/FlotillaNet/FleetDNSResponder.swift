@@ -34,7 +34,7 @@ public final class FleetDNSResponder: @unchecked Sendable {
             listener.newConnectionHandler = { [weak self] connection in self?.serve(connection) }
             listener.stateUpdateHandler = { [weak self] state in
                 if case .failed(let error) = state {
-                    self?.lastError = "Flotilla couldn't answer names on port \(FleetResolvers.port): \(error.localizedDescription)"
+                    self?.lastError = "flotilla couldn't answer names on port \(FleetResolvers.port): \(error.localizedDescription)"
                     self?.queue.async { self?.stop() }
                 }
             }
@@ -42,7 +42,7 @@ public final class FleetDNSResponder: @unchecked Sendable {
             self.listener = listener
             lastError = nil
         } catch {
-            lastError = "Flotilla couldn't answer names on port \(FleetResolvers.port): \(error.localizedDescription)"
+            lastError = "flotilla couldn't answer names on port \(FleetResolvers.port): \(error.localizedDescription)"
         }
     }
 

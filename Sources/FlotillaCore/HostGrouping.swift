@@ -65,7 +65,7 @@ public struct HostCategoryBook: Codable, Sendable, Equatable {
         if name.isEmpty { return "A category needs a name." }
         if name.count > Self.maxNameLength { return "Keep it to \(Self.maxNameLength) characters." }
         if name.caseInsensitiveCompare(Self.subnetName) == .orderedSame {
-            return "Subnet is filled in by Flotilla from each host's address — it's already in Group By."
+            return "Subnet is filled in by flotilla from each host's address — it's already in Group By."
         }
         if categories.contains(where: { $0.id != excluded && $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
             return "There is already a category called “\(name)”."

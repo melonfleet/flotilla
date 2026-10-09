@@ -21,7 +21,7 @@ public enum SettingsError: Error, Equatable, CustomStringConvertible {
         case .locked(let k):
             "‘\(k)’ is managed by a configuration profile and cannot be changed here."
         case .unknownKey(let k):
-            "‘\(k)’ is not a known Flotilla setting."
+            "‘\(k)’ is not a known flotilla setting."
         case .typeMismatch(let k, let expected, let found):
             "‘\(k)’ expects \(expected.rawValue) but the value is \(found.rawValue)."
         case .disallowedValue(let k, let v):

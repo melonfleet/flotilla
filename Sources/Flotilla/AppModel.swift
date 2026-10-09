@@ -347,7 +347,7 @@ final class AppModel {
     /// that read as missing data.
     private var appInfo: DiagnosticsSnapshot.AppInfo {
         DiagnosticsSnapshot.AppInfo(
-            name: "Flotilla",
+            name: "flotilla",
             version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
             // `CFBundleVersion` is now a plain commit count, because Apple's rule for that key is
             // one to three integers and `make-app.sh` used to put a git hash there. The hash is the

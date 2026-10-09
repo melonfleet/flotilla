@@ -206,7 +206,7 @@ struct MachineDetailView: View {
         DetailCard(title: "Recent events", minHeight: nil) {
             let events = model.events(for: machine.id, kind: .machine)
             if events.isEmpty {
-                Text("Nothing has changed since Flotilla started. State changes appear here as "
+                Text("Nothing has changed since flotilla started. State changes appear here as "
                      + "they happen; history from before launch is not recorded.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -349,7 +349,7 @@ private struct MachineShellTab: View {
                 if let reason { failure = reason }
             }
         } catch {
-            failure = "Flotilla would not permit that command: \(error)"
+            failure = "flotilla would not permit that command: \(error)"
             model.record("Refused to open a machine shell in \(machine.id): \(error)",
                          subsystem: "machines")
         }

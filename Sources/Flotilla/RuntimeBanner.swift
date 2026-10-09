@@ -83,8 +83,8 @@ struct RuntimeBanner: View {
                     // going without being at the keyboard.
                     if needsContainer, model.hostMode.mode == .host {
                         Text(model.hostRuntimeNote
-                             ?? (model.helperEnabled ? "This Mac installs it by itself through its Flotilla Helper."
-                                 : "Switch on the Flotilla Helper in Settings ▸ Advanced and this Mac installs it by itself, or install it now."))
+                             ?? (model.helperEnabled ? "This Mac installs it by itself through its flotilla Helper."
+                                 : "Switch on the flotilla Helper in Settings ▸ Advanced and this Mac installs it by itself, or install it now."))
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -142,9 +142,9 @@ struct RuntimeBanner: View {
         switch setup.phase {
         case .downloading(let started):
             "From Apple's container releases on GitHub, about 118 MB — \(Int(Date().timeIntervalSince(started))) s so far."
-        case .checking: "Signed by Apple's Containerization team and notarised, and the version this Flotilla expects."
-        case .waitingForInstaller: "It asks for your password. Flotilla carries on by itself when it has finished."
-        case .installing: "Through the Flotilla Helper."
+        case .checking: "Signed by Apple's Containerization team and notarised, and the version this flotilla expects."
+        case .waitingForInstaller: "It asks for your password. flotilla carries on by itself when it has finished."
+        case .installing: "Through the flotilla Helper."
         case .starting: "container \(setup.version) is installed."
         case .installingKernel: "Apple's recommended kernel, so containers can start."
         case .failed(let why): why

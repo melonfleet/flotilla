@@ -136,7 +136,7 @@ struct HostSettingsTab: View {
             error = nil
         } catch {
             self.error = (error as? HostCallFailure)?.message
-                ?? "\(model.hostMode.hostName(host, local: "This Mac")) didn't answer. A host needs this build of Flotilla to list its settings."
+                ?? "\(model.hostMode.hostName(host, local: "This Mac")) didn't answer. A host needs this build of flotilla to list its settings."
         }
     }
 }

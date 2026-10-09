@@ -345,7 +345,7 @@ struct RunSheetView: View {
                           : FieldHelp(
                               "Containers on the same network reach each other by IP.",
                               detail: "Networks are isolated from one another, so every part of an app has to share one. Left as Default, container chooses.",
-                              warning: "Names do not resolve. An app reaches a database at 192.168.64.40, not at db, and that address can change when the container is recreated. Choose the network now, too: neither the CLI nor Flotilla can move a container onto one after it exists."),
+                              warning: "Names do not resolve. An app reaches a database at 192.168.64.40, not at db, and that address can change when the container is recreated. Choose the network now, too: neither the CLI nor flotilla can move a container onto one after it exists."),
                       optional: true) {
                 Picker("", selection: $network) {
                     Text("Default").tag("")
@@ -372,7 +372,7 @@ struct RunSheetView: View {
                               NODE_ENV=production
                               TZ=Europe/London
                               """,
-                          warning: "The CLI also accepts a bare KEY to inherit that variable from this Mac. Flotilla refuses it deliberately — it exports your shell environment into the container without saying which values went."),
+                          warning: "The CLI also accepts a bare KEY to inherit that variable from this Mac. flotilla refuses it deliberately — it exports your shell environment into the container without saying which values went."),
                       problem: message(for: .env),
                       optional: true) {
                 rows($env, placeholder: "KEY=VALUE", max: Self.maxEnv)

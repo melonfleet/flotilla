@@ -11,7 +11,7 @@ struct HelperSettingsSection: View {
     @State private var problem: String?
 
     var body: some View {
-        SwiftUI.Section("Flotilla Helper") {
+        SwiftUI.Section("flotilla Helper") {
             HStack(alignment: .firstTextBaseline) {
                 Label(title, systemImage: symbol)
                     .foregroundStyle(tint)
@@ -75,17 +75,17 @@ struct HelperSettingsSection: View {
     private var explanation: String {
         switch status {
         case .unavailable:
-            "Only a signed copy of Flotilla can use the helper. Creating or deleting a DNS domain "
+            "Only a signed copy of flotilla can use the helper. Creating or deleting a DNS domain "
                 + "asks for an administrator password instead."
         case .notInstalled:
-            "Flotilla's one helper for the jobs that need an administrator: DNS domains, names "
-                + "across Macs, and installing Apple's container. Approve it once; Flotilla still "
+            "flotilla's one helper for the jobs that need an administrator: DNS domains, names "
+                + "across Macs, and installing Apple's container. Approve it once; flotilla still "
                 + "asks you to confirm every change, and a host can't do these jobs without it."
         case .awaitingApproval:
-            "Switch on Flotilla in System Settings ▸ General ▸ Login Items & Extensions. Until "
+            "Switch on flotilla in System Settings ▸ General ▸ Login Items & Extensions. Until "
                 + "then, DNS changes ask for an administrator password."
         case .enabled:
-            "DNS changes no longer ask for a password; Flotilla asks you to confirm each change "
+            "DNS changes no longer ask for a password; flotilla asks you to confirm each change "
                 + "instead. Remove the helper to go back to the password."
         }
     }

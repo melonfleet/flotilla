@@ -189,8 +189,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>                 <string>Flotilla</string>
-    <key>CFBundleDisplayName</key>          <string>Flotilla</string>
+    <key>CFBundleName</key>                 <string>flotilla</string>
+    <key>CFBundleDisplayName</key>          <string>flotilla</string>
     <key>CFBundleIdentifier</key>           <string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key>           <string>Flotilla</string>
     <key>CFBundleIconFile</key>             <string>Flotilla</string>
@@ -216,7 +216,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <array>
       <dict>
         <key>UTTypeIdentifier</key>         <string>dev.melonfleet.flotilla-configuration</string>
-        <key>UTTypeDescription</key>        <string>Flotilla Configuration</string>
+        <key>UTTypeDescription</key>        <string>flotilla Configuration</string>
         <key>UTTypeConformsTo</key>         <array><string>public.json</string></array>
         <key>UTTypeTagSpecification</key>
         <dict>
@@ -227,7 +227,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDocumentTypes</key>
     <array>
       <dict>
-        <key>CFBundleTypeName</key>         <string>Flotilla Configuration</string>
+        <key>CFBundleTypeName</key>         <string>flotilla Configuration</string>
         <key>CFBundleTypeRole</key>         <string>Viewer</string>
         <key>LSHandlerRank</key>            <string>Owner</string>
         <key>LSItemContentTypes</key>       <array><string>dev.melonfleet.flotilla-configuration</string></array>

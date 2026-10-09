@@ -58,7 +58,7 @@ enum SelfUpdate {
     /// actor. Nothing is replaced yet — `swap` does that, or the helper.
     static func prepare(archive: URL, isIdle: @Sendable () -> Bool) throws -> Prepared {
         guard let team = HelperInterface.ownTeamIdentifier() else {
-            throw Failure.refused("This host's Flotilla isn't Developer ID signed, so it can't check an update. Update it by hand.")
+            throw Failure.refused("This host's flotilla isn't Developer ID signed, so it can't check an update. Update it by hand.")
         }
         guard Bundle.main.bundleURL.pathExtension == "app" else { throw Failure.refused("This host isn't running from an app bundle.") }
 
@@ -80,7 +80,7 @@ enum SelfUpdate {
         }
         let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode)
         guard SecStaticCodeCheckValidity(code, flags, requirement) == errSecSuccess else {
-            throw Failure.refused("The update isn't Flotilla signed by this host's own team, so it wasn't installed.")
+            throw Failure.refused("The update isn't flotilla signed by this host's own team, so it wasn't installed.")
         }
 
         // Newer, by build number — read from the bundle the signature just covered.
@@ -114,7 +114,7 @@ enum SelfUpdate {
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: staging)
         } catch {
             try? FileManager.default.removeItem(at: staging)
-            throw Failure.failed("Flotilla couldn't be replaced: \(error.localizedDescription)")
+            throw Failure.failed("flotilla couldn't be replaced: \(error.localizedDescription)")
         }
     }
 

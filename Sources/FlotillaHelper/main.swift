@@ -188,7 +188,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol, @unc
         defer { lock.unlock() }
         guard let team = HelperInterface.ownTeamIdentifier() else { reply("The helper isn't Developer ID signed."); return }
         guard let destination = Self.ownApp, let installedBuild = Self.build(of: destination) else {
-            reply("The helper couldn't find the Flotilla it belongs to."); return
+            reply("The helper couldn't find the flotilla it belongs to."); return
         }
         // A real app folder, not a link to one.
         var info = stat()
@@ -215,7 +215,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol, @unc
                   SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement,
                   SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate
                                                               | kSecCSCheckNestedCode), requirement) == errSecSuccess else {
-                reply("The update isn't Flotilla signed by this Mac's own team, so it wasn't installed."); return
+                reply("The update isn't flotilla signed by this Mac's own team, so it wasn't installed."); return
             }
             // Newer, never a downgrade or a sideways swap.
             guard let newBuild = Self.build(of: copy) else { reply("The update has no build number."); return }
@@ -227,7 +227,7 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol, @unc
             // The app now holds a newer helper; exit so launchd starts that one on the next request.
             DispatchQueue.global().asyncAfter(deadline: .now() + 2) { exit(0) }
         } catch {
-            reply("Flotilla couldn't be replaced: \(error.localizedDescription)")
+            reply("flotilla couldn't be replaced: \(error.localizedDescription)")
         }
     }
 

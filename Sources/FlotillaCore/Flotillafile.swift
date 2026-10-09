@@ -97,7 +97,7 @@ extension FlotillafileError: CustomStringConvertible {
             "Flotillafile is missing the required 'version' field"
         case .unsupportedVersion(let found, let supported):
             "Flotillafile version \(found) is newer than this build supports (max \(supported)) " +
-            "— upgrade Flotilla, or change the file's 'version'"
+            "— upgrade flotilla, or change the file's 'version'"
         case .missingField(let context, let field):
             "\(context) is missing required field '\(field)'"
         case .unknownField(let context, let field):
