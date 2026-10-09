@@ -536,7 +536,7 @@ struct HostsView: View {
             TableColumn("Flotilla", value: \.appSortKey) { row in
                 flotillaCell(row)
             }
-            .width(min: 100, ideal: 150)
+            .width(min: 100, ideal: 200)
             .customizationID("flotilla")
 
             TableColumn("Model", value: \.modelSortKey) { row in
