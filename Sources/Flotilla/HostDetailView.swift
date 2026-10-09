@@ -187,12 +187,12 @@ struct HostDetailView: View {
                             .frame(maxWidth: 180)
                     }
                     HStack(spacing: 8) {
-                        Button("Open in Terminal (SSH)") { connect("ssh", with: "com.apple.Terminal") }
-                        Button("Share Screen (VNC)") { connect("vnc", with: "com.apple.ScreenSharing") }
-                        Button("Connect to File Sharing (SMB)") { connect("smb", with: "com.apple.finder") }
+                        ForEach(HostConnect.Kind.allCases, id: \.self) { kind in
+                            Button(kind.title) { if let fingerprint { HostConnect.open(kind, model, fingerprint) } }
+                        }
                     }
                     .controlSize(.small)
-                    .disabled(connectAddress == nil)
+                    .disabled(fingerprint.flatMap { HostConnect.address(model, $0) } == nil)
                 }
                 Link("How to turn on Remote Login (SSH)", destination: ExternalLinks.appleRemoteLogin)
                     .font(.caption).foregroundStyle(Theme.link)
@@ -357,45 +357,17 @@ struct HostDetailView: View {
 
     // MARK: Pieces
 
-    /// Where to reach this host: the address the admin connects to, else its own first address.
-    private var connectAddress: String? {
-        if case .address(let address, _)? = peer?.endpoint { return address }
-        return facts?.ipv4Addresses?.first
-    }
 
-    /// Who to connect as on this host: what the admin typed for it, else the user signed in there.
-    /// A user name, never a password — those stay with Terminal, Screen Sharing and Finder, which
-    /// offer to keep them in the Keychain.
-    @AppStorage("connectAs") private var connectAsByHost: String = "{}"
-
-    private var connectAsKey: String { fingerprint?.hex ?? "local" }
+    /// What the admin typed for this host in Connect as — kept by `HostConnect`, per host.
+    @State private var connectAsRevision = 0
 
     private var connectAsBinding: Binding<String> {
-        Binding(get: {
-            (try? JSONDecoder().decode([String: String].self, from: Data(connectAsByHost.utf8)))?[connectAsKey] ?? ""
-        }, set: { value in
-            var all = (try? JSONDecoder().decode([String: String].self, from: Data(connectAsByHost.utf8))) ?? [:]
-            let trimmed = value.trimmingCharacters(in: .whitespaces)
-            all[connectAsKey] = trimmed.isEmpty ? nil : trimmed
-            connectAsByHost = (try? String(decoding: JSONEncoder().encode(all), as: UTF8.self)) ?? "{}"
-        })
-    }
-
-    private var connectUser: String? {
-        let typed = connectAsBinding.wrappedValue
-        return typed.isEmpty ? facts?.loginUser : typed
-    }
-
-    /// Opens `scheme://user@address` in one named app — Terminal, Screen Sharing or Finder.
-    private func connect(_ scheme: String, with bundleIdentifier: String) {
-        guard let address = connectAddress else { return }
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = address
-        components.user = connectUser
-        guard let url = components.url,
-              let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else { return }
-        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+        Binding(get: { _ = connectAsRevision; return fingerprint.map(HostConnect.typedUser) ?? "" },
+                set: { value in
+                    guard let fingerprint else { return }
+                    HostConnect.setTypedUser(value, for: fingerprint)
+                    connectAsRevision += 1
+                })
     }
 
     private func grid<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {

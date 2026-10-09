@@ -104,7 +104,13 @@ if [ -n "${FLOTILLA_RELEASE_VERSION:-}" ]; then
     SHORT_VERSION="$FLOTILLA_RELEASE_VERSION"
 # The tag, when there is one (`v1.2.3` → `1.2.3`); `0.0.0` when there is not. Never a hash.
 elif git describe --tags --abbrev=0 >/dev/null 2>&1; then
-    SHORT_VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
+    LAST_TAG="$(git describe --tags --abbrev=0)"
+    SHORT_VERSION="$(printf '%s' "$LAST_TAG" | sed 's/^v//')"
+    # A build after the tag says how far past it it is — `1.5.0.0-beta.2+12` — rather than
+    # claiming to be the tagged release. Every dev build after beta 2 called itself beta 2, so a
+    # host updated past a later test package read as having gone backwards (9 October).
+    SINCE_TAG="$(git rev-list --count "$LAST_TAG"..HEAD 2>/dev/null || echo 0)"
+    if [ "$SINCE_TAG" -gt 0 ]; then SHORT_VERSION="$SHORT_VERSION+$SINCE_TAG"; fi
 else
     SHORT_VERSION="0.0.0"
 fi

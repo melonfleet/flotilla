@@ -170,7 +170,7 @@ struct OverviewView: View {
             TableColumn("Flotilla") { line in
                 Text(line.flotilla ?? "—").foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
             }
-            .width(min: 70, ideal: 90)
+            .width(min: 110, ideal: 170)
             .customizationID("flotilla")
             TableColumn("container") { line in
                 Text(line.container ?? "—").foregroundStyle(.secondary).monospacedDigit().lineLimit(1)

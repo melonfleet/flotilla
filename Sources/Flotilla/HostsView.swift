@@ -299,7 +299,19 @@ struct HostsView: View {
         VStack(spacing: 0) {
             FormHeader(title: row?.name ?? model.hostLabel,
                        systemImage: Section.hosts.systemImage,
-                       hasUnsavedChanges: false, onBack: { openHost = nil })
+                       hasUnsavedChanges: false, onBack: { openHost = nil }) {
+                // Ask this Mac again now rather than waiting for the next look (the owner, 9 October).
+                ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh \(row?.name ?? model.hostLabel)") {
+                    Task {
+                        if let peer = row?.peer, peer.isTrusted {
+                            await hostMode.refreshHost(peer.fingerprint)
+                        } else if row?.peer == nil {
+                            await model.reload()
+                            await model.refreshSystemFacts()
+                        }
+                    }
+                }
+            }
             Divider()
             // One tabbed page for This Mac and every trusted host (the owner, 9 October). A host
             // still waiting for approval keeps the approve/turn-away screen until it is trusted.
@@ -516,7 +528,7 @@ struct HostsView: View {
             TableColumn("Flotilla", value: \.appSortKey) { row in
                 flotillaCell(row)
             }
-            .width(min: 64, ideal: 110)
+            .width(min: 100, ideal: 170)
             .customizationID("flotilla")
 
             TableColumn("Model", value: \.modelSortKey) { row in
@@ -798,6 +810,13 @@ struct HostsView: View {
                 default:
                     EmptyView()
                 }
+                // macOS's own ways in, straight from the table (the owner, 9 October): no need to open
+                // the host first. The same helper as its page's buttons.
+                ForEach(HostConnect.Kind.allCases, id: \.self) { kind in
+                    Button(kind.title) { HostConnect.open(kind, model, peer.fingerprint) }
+                        .disabled(HostConnect.address(model, peer.fingerprint) == nil)
+                }
+                Divider()
                 Button("Remove Access") { hostMode.revoke(peer.fingerprint) }
             case .rejected, .revoked:
                 Button("Approve") { hostMode.approve(peer.fingerprint) }
