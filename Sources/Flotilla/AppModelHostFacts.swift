@@ -1,4 +1,6 @@
 import Foundation
+import IOKit
+import IOKit.ps
 import FlotillaCore
 import FlotillaNet
 
@@ -12,15 +14,147 @@ extension AppModel {
         let root = URL(fileURLWithPath: "/")
         let volume = try? root.resourceValues(forKeys: [.volumeTotalCapacityKey,
                                                         .volumeAvailableCapacityForImportantUsageKey])
-        return HostFacts(chip: Self.sysctlString("machdep.cpu.brand_string"),
-                         cores: Self.sysctlInt("hw.ncpu"),
-                         model: Self.sysctlString("hw.model"),
-                         macOSVersion: Self.macOSVersion,
-                         memoryTotalBytes: latest?.memoryTotalBytes ?? Self.sysctlInt64("hw.memsize"),
-                         memoryUsedBytes: latest?.memoryUsedBytes,
-                         cpuPercent: latest?.cpuPercent,
-                         diskTotalBytes: volume?.volumeTotalCapacity.map(Int64.init),
-                         diskFreeBytes: volume?.volumeAvailableCapacityForImportantUsage)
+        var facts = HostFacts(chip: Self.sysctlString("machdep.cpu.brand_string"),
+                              cores: Self.sysctlInt("hw.ncpu"),
+                              model: Self.sysctlString("hw.model"),
+                              macOSVersion: Self.macOSVersion,
+                              memoryTotalBytes: latest?.memoryTotalBytes ?? Self.sysctlInt64("hw.memsize"),
+                              memoryUsedBytes: latest?.memoryUsedBytes,
+                              cpuPercent: latest?.cpuPercent,
+                              diskTotalBytes: volume?.volumeTotalCapacity.map(Int64.init),
+                              diskFreeBytes: volume?.volumeAvailableCapacityForImportantUsage)
+        // The host page's inventory (the owner, 9 October): quick reads here, the rest from the
+        // background cache.
+        facts.readAt = Date()
+        facts.bootTime = Self.bootTime
+        facts.ipv4Addresses = Self.ipv4Addresses
+        facts.timeZone = TimeZone.current.identifier
+        let battery = Self.battery
+        facts.hasBattery = battery.present
+        facts.onBattery = battery.present ? battery.onBattery : nil
+        facts.batteryPercent = battery.percent
+        let app = Bundle.main.bundleURL
+        facts.appPath = app.pathExtension == "app" ? app.path : nil
+        facts.appOwnedByRoot = app.pathExtension == "app" ? !SelfUpdate.canReplaceItself : nil
+        facts.role = hostMode.mode.rawValue
+        facts.helper = Self.helperState
+        facts.acceptsAdminUpdates = settingsStore[SettingsKeys.acceptAdminUpdates]
+        facts.installsContainerItself = settingsStore[SettingsKeys.autoInstallRuntime]
+        facts.kernelInstalled = preflight.map { if case .needsKernel = $0 { false } else { true } }
+        if let slow = systemFacts {
+            facts.serialNumber = slow.serialNumber
+            facts.power = slow.power
+            facts.fileVault = slow.fileVault
+            facts.remoteLogin = slow.remoteLogin
+            facts.screenSharing = slow.screenSharing
+            facts.helperVersion = slow.helperVersion
+        }
+        return facts
+    }
+
+    private static var helperState: HostDNSStatus.Helper {
+        switch PrivilegedHelper.status {
+        case .enabled: .enabled
+        case .awaitingApproval: .awaitingApproval
+        case .notInstalled: .notInstalled
+        case .unavailable: .unavailable
+        }
+    }
+
+    /// Reads the slower facts now, off the main actor.
+    func refreshSystemFacts() async {
+        var slow = await Task.detached { Self.readSlowSystemFacts() }.value
+        slow.helperVersion = PrivilegedHelper.status == .enabled ? await PrivilegedHelper.runningVersion() : nil
+        systemFacts = slow
+    }
+
+    func startSystemFactsWatch() {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.refreshSystemFacts()
+                try? await Task.sleep(for: .seconds(300))
+            }
+        }
+    }
+
+    /// Serial number, power settings, FileVault, Remote Login and Screen Sharing — each from the
+    /// tool that reports it without admin rights. Blocking: runs three short processes.
+    nonisolated static func readSlowSystemFacts() -> HostFacts {
+        var facts = HostFacts()
+        facts.serialNumber = serialNumber
+        facts.power = SystemReport.PowerSettings.parse(run("/usr/bin/pmset", ["-g"]))
+        let vault = run("/usr/bin/fdesetup", ["isactive"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        facts.fileVault = vault == "true" ? true : vault == "false" ? false : nil
+        let services = run("/bin/launchctl", ["print-disabled", "system"])
+        facts.remoteLogin = SystemReport.serviceEnabled(SystemReport.remoteLoginLabel, in: services) ?? false
+        facts.screenSharing = SystemReport.serviceEnabled(SystemReport.screenSharingLabel, in: services) ?? false
+        return facts
+    }
+
+    nonisolated private static func run(_ tool: String, _ arguments: [String]) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return "" }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(decoding: data.prefix(64_000), as: UTF8.self)
+    }
+
+    nonisolated private static var serialNumber: String? {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+        return IORegistryEntryCreateCFProperty(service, kIOPlatformSerialNumberKey as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? String
+    }
+
+    nonisolated private static var bootTime: Date? {
+        var time = timeval()
+        var size = MemoryLayout<timeval>.size
+        guard sysctlbyname("kern.boottime", &time, &size, nil, 0) == 0, time.tv_sec > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(time.tv_sec))
+    }
+
+    /// IPv4 addresses on interfaces that are up, loopback left out.
+    nonisolated private static var ipv4Addresses: [String] {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return [] }
+        defer { freeifaddrs(list) }
+        var addresses: [String] = []
+        for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            let entry = pointer.pointee
+            guard let address = entry.ifa_addr, address.pointee.sa_family == UInt8(AF_INET),
+                  entry.ifa_flags & UInt32(IFF_UP) != 0, entry.ifa_flags & UInt32(IFF_LOOPBACK) == 0 else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+                let text = String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+                if !addresses.contains(text) { addresses.append(text) }
+            }
+        }
+        return addresses
+    }
+
+    /// Whether there is a battery, whether the Mac is running on it, and its charge.
+    nonisolated private static var battery: (present: Bool, onBattery: Bool, percent: Int?) {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else {
+            return (false, false, nil)
+        }
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
+            let onBattery = description[kIOPSPowerSourceStateKey] as? String == kIOPSBatteryPowerValue
+            let current = description[kIOPSCurrentCapacityKey] as? Int
+            let maximum = description[kIOPSMaxCapacityKey] as? Int
+            let percent = current.flatMap { c in maximum.map { m in m > 0 ? Int((Double(c) / Double(m) * 100).rounded()) : c } }
+            return (true, onBattery, percent)
+        }
+        return (false, false, nil)
     }
 
     /// A Mac's facts: This Mac's own, or the last a host sent.

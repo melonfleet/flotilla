@@ -301,10 +301,14 @@ struct HostsView: View {
                        systemImage: Section.hosts.systemImage,
                        hasUnsavedChanges: false, onBack: { openHost = nil })
             Divider()
-            if let peer = row?.peer {
+            // One tabbed page for This Mac and every trusted host (the owner, 9 October). A host
+            // still waiting for approval keeps the approve/turn-away screen until it is trusted.
+            if let peer = row?.peer, !peer.isTrusted {
                 PeerDetailView(peer: peer, model: model) { openHost = nil }
+            } else if let peer = row?.peer {
+                HostDetailView(model: model, host: .peer(peer.fingerprint), go: go)
             } else {
-                DashboardView(model: model, go: go)
+                HostDetailView(model: model, host: .local, go: go)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

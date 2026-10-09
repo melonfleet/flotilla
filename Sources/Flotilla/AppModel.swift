@@ -127,6 +127,7 @@ final class AppModel {
         // status line and a badge to show it.
         Task { await reloadUnlessLoading() }
         startFleetWatch()
+        startSystemFactsWatch()
         hostMode.onRefreshed = { [weak self] in
             Task {
                 await self?.updateFleetNames()
@@ -1694,6 +1695,9 @@ final class AppModel {
     /// On a host: why its own automatic install of `container` is waiting, if it is — shown in the
     /// runtime banner so a host that is "doing nothing" says what it is waiting for.
     var hostRuntimeNote: String?
+    /// The slower half of this Mac's host facts — power, FileVault, sharing, the helper's version —
+    /// read in the background every five minutes rather than on every call (`refreshSystemFacts`).
+    var systemFacts: HostFacts?
 
     /// Retained history for one container, for the dashboard's charts and the detail sparkline.
     func statsHistory(for id: String) -> [StatsSampler.HistoryPoint] { sampler.history(for: id) }

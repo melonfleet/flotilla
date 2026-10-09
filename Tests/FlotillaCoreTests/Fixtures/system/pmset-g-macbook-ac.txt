@@ -1,0 +1,16 @@
+System-wide power settings:
+ DestroyFVKeyOnStandby		0
+Currently in use:
+ standby              1
+ Sleep On Power Button 1
+ hibernatefile        /var/vm/sleepimage
+ powernap             1
+ networkoversleep     0
+ disksleep            10
+ sleep                0 (sleep prevented by Claude, powerd)
+ hibernatemode        3
+ ttyskeepawake        1
+ displaysleep         10
+ tcpkeepalive         1
+ powermode            0
+ womp                 1

@@ -19,6 +19,9 @@ struct DashboardView: View {
     /// Set to navigate the sidebar — the panels are drill-downs, not decoration. A tile that
     /// shows you a problem and then cannot take you to it is a poster.
     let go: (Section) -> Void
+    /// Shown above the panels — This Mac's host page puts its inventory cards here, so the cards
+    /// and the charts scroll as one page.
+    var header: AnyView? = nil
 
     @State private var diskUsage: SystemDiskUsage?
     @State private var diskFailure: String?
@@ -67,6 +70,7 @@ struct DashboardView: View {
     private var content: some View {
         ScrollView {
             VStack(spacing: 12) {
+                if let header { header }
                 if RuntimeBanner.isShown(model) { RuntimeBanner(model: model) }
 
                 // **Utilisation first.** The per-container rows are what you open a container

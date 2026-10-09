@@ -7,9 +7,11 @@ struct AttentionItem: Identifiable {
     let text: String
     let section: Section
     var fix: (title: String, run: @MainActor () -> Void)?
+    /// The Mac it is about, when it is about one — so a host's page lists only its own.
+    var host: HostRef?
     var id: String { text }
-    init(_ text: String, _ section: Section, fix: (title: String, run: @MainActor () -> Void)? = nil) {
-        self.text = text; self.section = section; self.fix = fix
+    init(_ text: String, _ section: Section, host: HostRef? = nil, fix: (title: String, run: @MainActor () -> Void)? = nil) {
+        self.text = text; self.section = section; self.host = host; self.fix = fix
     }
 }
 
@@ -22,30 +24,30 @@ extension AppModel {
         // Stopped is attention, amber, with Start beside it (the owner, 8 October): it may be
         // deliberate, but nothing runs until it starts.
         if case .serviceStopped? = preflight {
-            items.append(AttentionItem("container is stopped on \(hostLabel).", .hosts,
+            items.append(AttentionItem("container is stopped on \(hostLabel).", .hosts, host: .local,
                                        fix: ("Start", { [weak self] in Task { await self?.startRuntime() } })))
         } else if case .needsKernel? = preflight {
-            items.append(AttentionItem("\(hostLabel) has no kernel, so containers can't start.", .hosts,
+            items.append(AttentionItem("\(hostLabel) has no kernel, so containers can't start.", .hosts, host: .local,
                                        fix: ("Download Kernel", { [weak self] in Task { await self?.installKernel() } })))
         } else if !runtimeUsable && !needsContainerInstall && runtimeSetup == nil {
             // Missing or being installed is Overview's setup banner, not a line here.
-            items.append(AttentionItem("The container runtime on \(hostLabel) isn't running.", .hosts))
+            items.append(AttentionItem("The container runtime on \(hostLabel) isn't running.", .hosts, host: .local))
         }
         for network in disconnectedNetworks {
-            items.append(AttentionItem("\(network) has lost its connection to \(hostLabel).", .networks))
+            items.append(AttentionItem("\(network) has lost its connection to \(hostLabel).", .networks, host: .local))
         }
         let fleet = hostMode
         // A paired host that has stopped answering, or is waiting to be let in.
         for peer in fleet.trustedHosts {
             if case .failed(let reason)? = fleet.live[peer.fingerprint]?.state {
-                items.append(AttentionItem("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts))
+                items.append(AttentionItem("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts, host: .peer(peer.fingerprint)))
             }
         }
         // Versions that differ from This Mac's: `container` by a minor release or more, which can
         // change what a command accepts, and Flotilla by any build (PLAN.md Phase C).
         for peer in fleet.trustedHosts {
             let host = HostRef.peer(peer.fingerprint)
-            if let warning = containerSkewWarning(host) { items.append(AttentionItem(warning, .hosts)) }
+            if let warning = containerSkewWarning(host) { items.append(AttentionItem(warning, .hosts, host: host)) }
             if let skew = appSkew(host), skew.level != .same,
                let theirs = fleet.live[peer.fingerprint]?.appVersion {
                 switch updateState(peer.fingerprint) {
@@ -55,10 +57,10 @@ extension AppModel {
                     // menu-bar badge red.
                     break
                 case .failed(let message):
-                    items.append(AttentionItem("\(peer.displayName) couldn\u{2019}t update Flotilla: \(message)", .hosts))
+                    items.append(AttentionItem("\(peer.displayName) couldn\u{2019}t update Flotilla: \(message)", .hosts, host: host))
                 default:
                     items.append(AttentionItem("\(peer.displayName) runs \(skew.otherIsOlder ? "an older" : "a newer") Flotilla "
-                                  + "(\(theirs); This Mac \(HostModeController.appVersion)).", .hosts))
+                                  + "(\(theirs); This Mac \(HostModeController.appVersion)).", .hosts, host: host))
                 }
             }
         }

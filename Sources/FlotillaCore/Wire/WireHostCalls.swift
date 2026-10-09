@@ -114,6 +114,35 @@ public struct HostFacts: Sendable, Equatable, Codable {
     /// Free for important use, as Finder counts it.
     public var diskFreeBytes: Int64?
 
+    // For a host's page (the owner, 9 October). Added without a protocol bump: every field is
+    // optional, so an older host's answer simply leaves them out.
+
+    /// When the host read these facts — the page's "Last inventory update".
+    public var readAt: Date?
+    public var serialNumber: String?
+    public var bootTime: Date?
+    /// This Mac's IPv4 addresses on its network interfaces, loopback left out.
+    public var ipv4Addresses: [String]?
+    public var timeZone: String?
+    /// Whether the Mac has a battery, whether it is running on it, and its charge.
+    public var hasBattery: Bool?
+    public var onBattery: Bool?
+    public var batteryPercent: Int?
+    public var power: SystemReport.PowerSettings?
+    public var fileVault: Bool?
+    public var remoteLogin: Bool?
+    public var screenSharing: Bool?
+    /// Flotilla itself: where it is, whether a package installed it owned by root (so updates go
+    /// through the helper, Q43), its role, and its helper.
+    public var appPath: String?
+    public var appOwnedByRoot: Bool?
+    public var role: String?
+    public var helper: HostDNSStatus.Helper?
+    public var helperVersion: Int?
+    public var acceptsAdminUpdates: Bool?
+    public var installsContainerItself: Bool?
+    public var kernelInstalled: Bool?
+
     public init(chip: String? = nil, cores: Int? = nil, model: String? = nil, macOSVersion: String? = nil,
                 memoryTotalBytes: Int64? = nil, memoryUsedBytes: Int64? = nil, cpuPercent: Double? = nil,
                 diskTotalBytes: Int64? = nil, diskFreeBytes: Int64? = nil) {

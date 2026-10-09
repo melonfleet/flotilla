@@ -1,0 +1,15 @@
+
+	disabled services = {
+		"com.apple.auditd" => enabled
+		"com.apple.AEServer" => disabled
+		"com.apple.CSCSupportd" => disabled
+		"com.apple.screensharing" => disabled
+		"com.apple.ftpd" => disabled
+		"com.apple.mdmclient.daemon.runatboot" => enabled
+		"com.openssh.sshd" => disabled
+		"dev.melonfleet.Flotilla.dns-helper" => enabled
+		"com.apple.dhcp6d" => enabled
+		"com.apple.bootpd" => enabled
+		"com.apple.ftp-proxy" => enabled
+		"dev.melonfleet.Flotilla.helper" => enabled
+	}
