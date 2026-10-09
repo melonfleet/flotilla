@@ -201,14 +201,18 @@ public struct HostSpec: Sendable, Equatable, Codable {
     public var port: Int?
     /// SHA-256 of its public key, as 64 hex characters.
     public var fingerprint: String
+    /// Its value in each of the admin's host categories, by category **name** — `{"Rack": "R1"}`.
+    /// Every name is one listed in the file's `hostCategories`.
+    public var categories: [String: String]?
 
     public init(name: String, bonjourName: String? = nil, address: String? = nil, port: Int? = nil,
-                fingerprint: String) {
+                fingerprint: String, categories: [String: String]? = nil) {
         self.name = name
         self.bonjourName = bonjourName
         self.address = address
         self.port = port
         self.fingerprint = fingerprint
+        self.categories = categories
     }
 }
 
@@ -228,12 +232,16 @@ public struct ConfigurationFile: Sendable, Equatable {
     /// Paired hosts, as claims to verify (Q34). Optional in the file, so a file without them is
     /// still read by a Flotilla that predates them.
     public var hosts: [HostSpec]
+    /// The admin's host categories, by name and in order (Site, Rack, VLAN…) — how Hosts can be
+    /// grouped (Q45). Each host's values travel on its `HostSpec`.
+    public var hostCategories: [String]?
 
     public init(networks: [NetworkSpec] = [], volumes: [VolumeSpec] = [], machines: [MachineSpec] = [],
                 clusters: [ClusterSpec] = [], containers: [ServiceSpec] = [], groups: [GroupSpec] = [],
                 tags: TagsSpec? = nil, registries: RegistriesSpec? = nil, dns: DNSSpec? = nil,
-                hosts: [HostSpec] = []) {
+                hosts: [HostSpec] = [], hostCategories: [String]? = nil) {
         self.hosts = hosts
+        self.hostCategories = hostCategories
         self.networks = networks
         self.volumes = volumes
         self.machines = machines
@@ -248,7 +256,7 @@ public struct ConfigurationFile: Sendable, Equatable {
     public var isEmpty: Bool {
         networks.isEmpty && volumes.isEmpty && machines.isEmpty && clusters.isEmpty
             && containers.isEmpty && groups.isEmpty && tags == nil && registries == nil && dns == nil
-            && hosts.isEmpty
+            && hosts.isEmpty && hostCategories == nil
     }
 }
 
@@ -347,6 +355,7 @@ extension ConfigurationFile {
         let file: ConfigurationFile
         enum CodingKeys: String, CodingKey {
             case version, networks, volumes, machines, clusters, containers, groups, tags, registries, dns, hosts
+            case hostCategories
         }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
@@ -361,6 +370,7 @@ extension ConfigurationFile {
             try c.encodeIfPresent(file.registries, forKey: .registries)
             try c.encodeIfPresent(file.dns, forKey: .dns)
             if !file.hosts.isEmpty { try c.encode(file.hosts, forKey: .hosts) }
+            try c.encodeIfPresent(file.hostCategories, forKey: .hostCategories)
         }
     }
 }
@@ -426,6 +436,7 @@ extension ConfigurationFile {
         let file: ConfigurationFile
         enum CodingKeys: String, CodingKey {
             case networks, volumes, machines, clusters, containers, groups, tags, registries, dns, hosts
+            case hostCategories
         }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -439,7 +450,8 @@ extension ConfigurationFile {
                 tags: try c.decodeIfPresent(TagsSpec.self, forKey: .tags),
                 registries: try c.decodeIfPresent(RegistriesSpec.self, forKey: .registries),
                 dns: try c.decodeIfPresent(DNSSpec.self, forKey: .dns),
-                hosts: try c.decodeIfPresent([HostSpec].self, forKey: .hosts) ?? [])
+                hosts: try c.decodeIfPresent([HostSpec].self, forKey: .hosts) ?? [],
+                hostCategories: try c.decodeIfPresent([String].self, forKey: .hostCategories))
         }
     }
 
@@ -499,7 +511,10 @@ extension ConfigurationFile {
                                    "defaultRegistry": .leaf]),
             "dns": .object(["domains": .array(.object(leaves(["name", "localhost"]))),
                             "containerDomain": .leaf]),
-            "hosts": .array(.object(leaves(["name", "bonjourName", "address", "port", "fingerprint"]))),
+            // A host's categories are keyed by the owner's own names, so not screened by key here;
+            // validation checks each against `hostCategories`.
+            "hosts": .array(.object(leaves(["name", "bonjourName", "address", "port", "fingerprint", "categories"]))),
+            "hostCategories": .array(.leaf),
         ])
     }
 }
@@ -695,6 +710,30 @@ extension ConfigurationFile {
             }
             try check(host.bonjourName != nil || host.address != nil, context, "address", "",
                       "Expected a Bonjour name or an address.")
+            if let categories = host.categories {
+                try count(categories.count, "\(context).categories", 32)
+                let listed = Set(hostCategories ?? [])
+                for (name, value) in categories.sorted(by: { $0.key < $1.key }) {
+                    try check(listed.contains(name), context, "categories", name,
+                              "Every category used must be listed in hostCategories.")
+                    try check(printable(value) && value.count <= HostCategoryBook.maxValueLength,
+                              "\(context).categories", name, value,
+                              "Expected 1 to \(HostCategoryBook.maxValueLength) printable characters.")
+                }
+            }
+        }
+
+        if let hostCategories {
+            try count(hostCategories.count, "hostCategories", 32)
+            try check(Set(hostCategories.map { $0.lowercased() }).count == hostCategories.count,
+                      "hostCategories", "name", hostCategories.joined(separator: ", "), "Expected each name once.")
+            let book = HostCategoryBook()
+            for (i, name) in hostCategories.enumerated() {
+                try check(!name.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+                          && book.problem(withName: name) == nil && name == name.trimmingCharacters(in: .whitespaces),
+                          "hostCategories[\(i)]", "name", name,
+                          book.problem(withName: name) ?? "Expected 1 to \(HostCategoryBook.maxNameLength) printable characters.")
+            }
         }
     }
 }

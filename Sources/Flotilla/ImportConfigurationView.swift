@@ -259,6 +259,7 @@ struct ImportConfigurationView: View {
                     ("machine", "machines", resolved.machines.count),
                     ("cluster", "clusters", resolved.clusters.count),
                     ("host to pair", "hosts to pair", resolved.hosts.count),
+                    ("host category", "host categories", resolved.hostCategories?.count ?? 0),
                 ]
                 let lines: [String] = counts.filter { $0.2 > 0 }.map { "\($0.2) \($0.2 == 1 ? $0.0 : $0.1)" }
                 Text(lines.isEmpty ? "Nothing — everything is skipped." : lines.joined(separator: "\n"))

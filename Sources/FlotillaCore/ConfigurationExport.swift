@@ -29,6 +29,8 @@ public enum ConfigurationExport {
         public var dns = false
         /// Paired hosts, by fingerprint (hex).
         public var hosts: Set<String> = []
+        /// The host categories, and the values of the hosts in the file (Q45).
+        public var hostCategories = false
         public init() {}
     }
 
@@ -49,6 +51,8 @@ public enum ConfigurationExport {
         public var containerDNSDomain: String?
         /// The admin's host book. Only trusted hosts are written.
         public var hosts: [Peer] = []
+        /// The admin's host categories and values, keyed by Hosts row id.
+        public var hostCategories = HostCategoryBook()
         public init() {}
     }
 
@@ -197,6 +201,12 @@ public enum ConfigurationExport {
             .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
             .map { peer -> HostSpec in
                 var spec = HostSpec(name: String(peer.displayName.prefix(64)), fingerprint: peer.fingerprint.hex)
+                if selection.hostCategories {
+                    let values = inputs.hostCategories.categories.compactMap { category in
+                        inputs.hostCategories.value(of: category.id, for: peer.fingerprint.hex).map { (category.name, $0) }
+                    }
+                    if !values.isEmpty { spec.categories = Dictionary(uniqueKeysWithValues: values) }
+                }
                 switch peer.endpoint {
                 case .bonjour(let name)?: spec.bonjourName = name
                 case .address(let host, let port)?: spec.address = host; spec.port = Int(port)
@@ -209,9 +219,23 @@ public enum ConfigurationExport {
                                       reason: "their trust and keys — each is paired again on the other Mac, and must present the same key"))
         }
 
+        // Categories by name; values only on the hosts in the file. This Mac is never one of them —
+        // on the other Mac, "this Mac" is a different machine.
+        var hostCategories: [String]?
+        if selection.hostCategories {
+            hostCategories = inputs.hostCategories.categories.map(\.name)
+            let inFile = Set(hosts.map(\.fingerprint))
+            let elsewhere = inputs.hostCategories.values.keys.filter { !inFile.contains($0) }
+            if !elsewhere.isEmpty {
+                omissions.append(Omission(subject: "host categories",
+                                          reason: "the values of Macs not in the file, This Mac's included"))
+            }
+        }
+
         let file = ConfigurationFile(networks: networks, volumes: volumes, machines: machines,
                                      clusters: clusters, containers: containers, groups: groups,
-                                     tags: tags, registries: registries, dns: dns, hosts: hosts)
+                                     tags: tags, registries: registries, dns: dns, hosts: hosts,
+                                     hostCategories: hostCategories)
         return Result(file: file, omissions: Array(Set(omissions)).sorted { ($0.subject, $0.reason) < ($1.subject, $1.reason) })
     }
 

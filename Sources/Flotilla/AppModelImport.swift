@@ -262,6 +262,23 @@ extension AppModel {
                         notes.append("\(added) host\(added == 1 ? " is" : "s are") in Hosts, waiting to be paired.")
                     }
                 }
+                // 10. Host categories (Q45) — merged by name, and a host's values filled in only
+                // where this Mac has none, so nothing set here is overwritten.
+                if let names = file.hostCategories {
+                    for name in names where !hostCategories.categories.contains(where: {
+                        $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                        hostCategories.addCategory(named: name)
+                    }
+                    for host in file.hosts {
+                        let id = host.fingerprint.lowercased()
+                        for (name, value) in host.categories ?? [:] {
+                            guard let category = hostCategories.categories.first(where: {
+                                $0.name.caseInsensitiveCompare(name) == .orderedSame }),
+                                  hostCategories.value(category, for: id) == nil else { continue }
+                            hostCategories.setValue(value, of: category, for: [id])
+                        }
+                    }
+                }
 
                 return notes.isEmpty ? "Built. Nothing was started." : "Built. " + notes.joined(separator: " ")
             })

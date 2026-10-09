@@ -2034,4 +2034,10 @@ Flotilla never kept a Mac awake, never noticed sleep or wake, and polled whateve
    Subnet is read-only, and no category may take its name.
 4. **Kept on the admin Mac only**, like tags: two plist-native keys, `hostCategories` and
    `hostCategoryValues`. Nothing is sent to hosts. The wire has no new call; `ipv4Interfaces` is a
-   new optional fact. The `.flotilla` export does not carry them yet.
+   new optional fact.
+5. **In a `.flotilla` file** (amended the same day): a "Host categories" box writes the category
+   names in order as `hostCategories`. Each exported host carries its values by name in its own
+   `categories`. This Mac's values stay behind, and the export says so. On import, categories are
+   merged by name. A host's values fill in only where the importing Mac has none, so nothing it
+   set is overwritten. A host the import skips takes its values with it. The file version stays 2;
+   an older Flotilla refuses the new keys by name, as it did for `hosts`.

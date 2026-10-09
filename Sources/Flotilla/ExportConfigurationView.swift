@@ -88,6 +88,8 @@ struct ExportConfigurationView: View {
         VStack(alignment: .leading, spacing: 8) {
             FormSectionHeader(title: "Also")
             Toggle("Tags — on the things above", isOn: $selection.tags).toggleStyle(.checkbox)
+            Toggle("Host categories — Site, Rack… and the values of the hosts above",
+                   isOn: $selection.hostCategories).toggleStyle(.checkbox)
             Toggle("Registry list — never sign-ins", isOn: $selection.registries).toggleStyle(.checkbox)
             Toggle("DNS domains — recreating them needs an administrator, or the Flotilla Helper",
                    isOn: $selection.dns).toggleStyle(.checkbox)
@@ -161,6 +163,7 @@ struct ExportConfigurationView: View {
         if let registries = file.registries { add(registries.entries.count, "registry", "registries") }
         if let dns = file.dns { add(dns.domains.count, "DNS domain") }
         add(file.hosts.count, "host")
+        if let categories = file.hostCategories { add(categories.count, "host category", "host categories") }
         return lines.isEmpty ? "Nothing yet — tick something." : lines.joined(separator: "\n")
     }
 
@@ -194,6 +197,7 @@ struct ExportConfigurationView: View {
         all.machines = Set(gathered.machines.map(\.id))
         all.clusters = Set(gathered.clusters.map(\.name))
         all.tags = true
+        all.hostCategories = true
         all.registries = true
         all.dns = !gathered.dnsDomains.isEmpty
         all.hosts = Set(gathered.hosts.map(\.fingerprint.hex))

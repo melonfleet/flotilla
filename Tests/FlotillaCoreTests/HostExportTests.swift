@@ -90,4 +90,73 @@ struct HostExportTests {
         let items = ConfigurationImport.items(file, existing: .init())
         #expect(Set(items.map(\.id)).count == 2)
     }
+
+    // MARK: Host categories (Q45)
+
+    func categorised() -> (ConfigurationExport.Result, HostCategoryBook) {
+        var categories = HostCategoryBook.starter
+        let site = categories.categories[0], rack = categories.categories[1]
+        categories.setValue("Doha", of: site.id, for: [mini.hex, "this-mac"])
+        categories.setValue("R1", of: rack.id, for: [mini.hex])
+        var inputs = ConfigurationExport.Inputs()
+        inputs.hosts = book().peers
+        inputs.hostCategories = categories
+        var selection = ConfigurationExport.Selection()
+        selection.hosts = [mini.hex, vm.hex]
+        selection.hostCategories = true
+        return (ConfigurationExport.build(inputs, selection: selection), categories)
+    }
+
+    @Test func categoriesTravelByNameWithTheHostsInTheFile() throws {
+        let (result, _) = categorised()
+        #expect(result.file.hostCategories == ["Site", "Rack", "VLAN"])
+        let host = try #require(result.file.hosts.first { $0.fingerprint == mini.hex })
+        #expect(host.categories == ["Site": "Doha", "Rack": "R1"])
+        #expect(result.file.hosts.first { $0.fingerprint == vm.hex }?.categories == nil)
+        // This Mac's own value stays behind, and the file says so.
+        #expect(result.omissions.contains { $0.subject == "host categories" })
+        let back = try ConfigurationFile.parse(try result.file.encoded())
+        #expect(back == result.file)
+    }
+
+    @Test func categoriesAreLeftOutUnlessTicked() throws {
+        var inputs = ConfigurationExport.Inputs()
+        inputs.hosts = book().peers
+        inputs.hostCategories = .starter
+        var selection = ConfigurationExport.Selection()
+        selection.hosts = [mini.hex]
+        let file = ConfigurationExport.build(inputs, selection: selection).file
+        #expect(file.hostCategories == nil)
+        #expect(!String(decoding: try file.encoded(), as: UTF8.self).contains("ategories"))
+    }
+
+    @Test func importRefusesCategoriesItCannotTrust() throws {
+        let host = #"{"name": "m", "bonjourName": "m", "fingerprint": "\#(mini.hex)""#
+        let bad = [
+            // A value in a category the file does not list.
+            #"{"version": 2, "hostCategories": ["Site"], "hosts": [\#(host), "categories": {"Rack": "R1"}}]}"#,
+            // The name Flotilla keeps for itself.
+            #"{"version": 2, "hostCategories": ["Subnet"]}"#,
+            // The same name twice.
+            #"{"version": 2, "hostCategories": ["Rack", "rack"]}"#,
+            // A value too long.
+            #"{"version": 2, "hostCategories": ["Site"], "hosts": [\#(host), "categories": {"Site": "\#(String(repeating: "x", count: 61))"}}]}"#,
+        ]
+        for text in bad {
+            #expect(throws: ConfigurationFileError.self) { _ = try ConfigurationFile.parse(Data(text.utf8)) }
+        }
+        let good = #"{"version": 2, "hostCategories": ["Site"], "hosts": [\#(host), "categories": {"Site": "Doha"}}]}"#
+        #expect(try ConfigurationFile.parse(Data(good.utf8)).hosts.first?.categories == ["Site": "Doha"])
+    }
+
+    @Test func aSkippedHostTakesItsValuesWithIt() throws {
+        let (result, _) = categorised()
+        var existing = ConfigurationImport.Existing()
+        existing.hosts = [mini.hex]
+        let items = ConfigurationImport.items(result.file, existing: existing)
+        let resolved = ConfigurationImport.resolve(result.file, resolutions: ConfigurationImport.initialResolutions(items),
+                                                   existing: existing)
+        #expect(resolved.hosts.map(\.fingerprint) == [vm.hex])
+        #expect(resolved.hostCategories == ["Site", "Rack", "VLAN"])
+    }
 }

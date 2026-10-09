@@ -51,6 +51,7 @@ extension AppModel {
         inputs.dnsDomains = dnsDomains
         inputs.containerDNSDomain = containerDNSDomain
         inputs.hosts = hostMode.trustedHosts
+        inputs.hostCategories = hostCategories.book
         return inputs
     }
 
