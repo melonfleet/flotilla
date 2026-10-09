@@ -28,6 +28,9 @@ final class ResourceUIState<Row: Identifiable> {
     /// group would silently collapse the moment you looked at Containers and came back.
     var expandedIDs: Set<String> = []
 
+    /// Group rows the user has closed — Hosts' groups start open, so it keeps the closed ones.
+    var collapsedIDs: Set<String> = []
+
     /// Whether the recent-activity band is open.
     ///
     /// The owner chose to put the band on these three sections too, for uniformity, having been told

@@ -27,7 +27,9 @@ extension AppModel {
         // background cache.
         facts.readAt = Date()
         facts.bootTime = Self.bootTime
-        facts.ipv4Addresses = Self.ipv4Addresses
+        let interfaces = Self.ipv4Interfaces
+        facts.ipv4Addresses = interfaces.map { String($0.split(separator: "/")[0]) }
+        facts.ipv4Interfaces = interfaces
         facts.timeZone = TimeZone.current.identifier
         facts.loginUser = NSUserName()
         let battery = Self.battery
@@ -85,6 +87,7 @@ extension AppModel {
     nonisolated static func readSlowSystemFacts() -> HostFacts {
         var facts = HostFacts()
         facts.serialNumber = serialNumber
+        facts.ipv4Interfaces = ipv4Interfaces
         facts.power = SystemReport.PowerSettings.parse(run("/usr/bin/pmset", ["-g"]))
         let vault = run("/usr/bin/fdesetup", ["isactive"]).trimmingCharacters(in: .whitespacesAndNewlines)
         facts.fileVault = vault == "true" ? true : vault == "false" ? false : nil
@@ -126,12 +129,13 @@ extension AppModel {
         return Date(timeIntervalSince1970: TimeInterval(time.tv_sec))
     }
 
-    /// IPv4 addresses on interfaces that are up — loopback and virtual-machine bridges left out.
-    nonisolated private static var ipv4Addresses: [String] {
+    /// IPv4 addresses on interfaces that are up, with their prefix (`10.20.4.17/23`) — loopback
+    /// and virtual-machine bridges left out.
+    nonisolated private static var ipv4Interfaces: [String] {
         var list: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&list) == 0, let first = list else { return [] }
         defer { freeifaddrs(list) }
-        var addresses: [String] = []
+        var interfaces: [String] = []
         for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
             let entry = pointer.pointee
             guard let address = entry.ifa_addr, address.pointee.sa_family == UInt8(AF_INET),
@@ -140,13 +144,29 @@ extension AppModel {
             // addresses are this Mac's own and no other Mac can reach them.
             let interface = String(cString: entry.ifa_name)
             if ["bridge", "vmenet", "anpi"].contains(where: { interface.hasPrefix($0) }) { continue }
-            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
-                let text = String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-                if !addresses.contains(text) { addresses.append(text) }
-            }
+            guard let text = numeric(address) else { continue }
+            let prefix = entry.ifa_netmask.flatMap(prefixLength) ?? 24
+            let item = "\(text)/\(prefix)"
+            if !interfaces.contains(item) { interfaces.append(item) }
         }
-        return addresses
+        return interfaces
+    }
+
+    /// A netmask's prefix length. The kernel may trim a netmask's trailing zero bytes and say so
+    /// in `sa_len`, so only that many bytes are copied over a zeroed address.
+    nonisolated private static func prefixLength(_ mask: UnsafeMutablePointer<sockaddr>) -> Int? {
+        var full = sockaddr_in()
+        let length = min(Int(mask.pointee.sa_len), MemoryLayout<sockaddr_in>.size)
+        withUnsafeMutableBytes(of: &full) { $0.copyMemory(from: UnsafeRawBufferPointer(start: mask, count: length)) }
+        let bits = UInt32(bigEndian: full.sin_addr.s_addr)
+        let ones = bits.nonzeroBitCount
+        return bits == (ones == 0 ? 0 : ~UInt32(0) << UInt32(32 - ones)) ? ones : nil
+    }
+
+    nonisolated private static func numeric(_ address: UnsafeMutablePointer<sockaddr>) -> String? {
+        var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        guard getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 else { return nil }
+        return String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     /// Whether there is a battery, whether the Mac is running on it, and its charge.

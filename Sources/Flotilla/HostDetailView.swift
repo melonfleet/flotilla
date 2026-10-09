@@ -128,6 +128,15 @@ struct HostDetailView: View {
                     row("container", host.isLocal ? (model.localContainerVersion ?? "—") : (live?.containerVersion ?? "—"))
                     row("Role", roleText)
                 }
+                // Where this Mac sits — what Hosts can group by (the owner, 9 October). Kept on this
+                // admin Mac; the host is not told.
+                card("Groups") {
+                    row(HostCategoryBook.subnetName, model.subnet(of: host) ?? "—", monospaced: true)
+                    ForEach(model.hostCategories.categories) { category in
+                        HostCategoryValueField(store: model.hostCategories, category: category,
+                                               host: fingerprint?.hex ?? HostRow.thisMacID)
+                    }
+                }
             }
             let attention = model.attentionItems.filter { $0.host == host }
             if !attention.isEmpty {

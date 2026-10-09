@@ -30,8 +30,17 @@ struct HostRow: Identifiable, Hashable {
     var appSkew: VersionSkew? = nil
     /// Set for a host named in an imported file and not paired yet (Q34) — not a peer.
     var imported: HostModeController.ImportedHost? = nil
+    /// Set when the row is a group's header rather than a Mac (Group By).
+    var header: HostGroupHeader? = nil
 
     static let thisMacID = "this-mac"
+
+    static func header(_ header: HostGroupHeader, running: Int?, total: Int?, machines: Int?) -> HostRow {
+        HostRow(id: "group:" + (header.value ?? "\u{0}none"), name: header.title, isThisMac: false, peer: nil,
+                status: "\(header.connected) of \(header.hostIDs.count) connected", connected: header.connected > 0,
+                containersRunning: running, containersTotal: total, machines: machines,
+                macOS: nil, containerVersion: nil, modelIdentifier: nil, header: header)
+    }
 
     var isPending: Bool { peer?.status == .pending }
     var nameSortKey: String { name.lowercased() }
@@ -174,6 +183,17 @@ struct HostsView: View {
     /// binding over an optional did not present the dialog at all.
     @State private var confirming: RuntimeLifecycleAction = .stop
     @State private var showingConfirmation = false
+    /// Group By — kept across launches; "none", "subnet" or "category:<id>".
+    @AppStorage("hostsGroupBy") private var groupByKey = "none"
+    @State private var showingCategories = false
+    @State private var valueTarget: ValueTarget?
+
+    /// A category and the hosts a new value is for, for `.sheet(item:)`.
+    struct ValueTarget: Identifiable {
+        let category: HostCategory
+        let hosts: [String]
+        var id: String { category.id + hosts.joined() }
+    }
 
     private static let removeHelp = "This Mac is the admin machine — it can’t be removed"
     private var hostMode: HostModeController { model.hostMode }
@@ -240,6 +260,12 @@ struct HostsView: View {
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
+        .sheet(isPresented: $showingCategories) {
+            HostCategoriesSheet(store: model.hostCategories) { showingCategories = false }
+        }
+        .sheet(item: $valueTarget) { target in
+            HostValueSheet(store: model.hostCategories, category: target.category, hosts: target.hosts) { valueTarget = nil }
+        }
         .confirmationDialog(confirming.question,
                             isPresented: $showingConfirmation,
                             titleVisibility: .visible) {
@@ -281,6 +307,7 @@ struct HostsView: View {
             Button("Remove", role: .destructive) {
                 if let peer = row.peer { hostMode.remove(peer.fingerprint) }
                 if let imported = row.imported { hostMode.removeImported(imported.fingerprint) }
+                model.hostCategories.forgetHost(row.id)
                 selection.remove(row.id)
             }
             Button("Cancel", role: .cancel) {}
@@ -373,6 +400,7 @@ struct HostsView: View {
                                              set: { ui.columnCustomization = $0 }),
                 columns: Self.columnSpecs,
                 filters: Self.filters)
+            HostGroupByMenu(store: model.hostCategories, grouping: groupingBinding) { showingCategories = true }
         }, trailing: {
             if model.startingRuntime { ProgressView().controlSize(.small) }
             ToolbarIconButton(systemImage: "plus", label: "Add a host",
@@ -427,9 +455,100 @@ struct HostsView: View {
                     || (row.peer?.details.serialNumber?.lowercased().contains(query) ?? false)
                     || model.tags.tags(on: .host, row.id)
                         .contains { $0.name.lowercased().contains(query) }
+                    || (model.hostCategories.book.values[row.id]?.values
+                        .contains { $0.lowercased().contains(query) } ?? false)
             }
         }
         return rows.sorted(using: ui.sortOrder)
+    }
+
+    // MARK: Group By
+
+    private var grouping: HostGrouping {
+        let stored = HostGrouping(storageKey: groupByKey)
+        // A category that has since been removed groups by nothing.
+        if case .category(let id) = stored, model.hostCategories.book.category(id: id) == nil { return .none }
+        return stored
+    }
+
+    private var groupingBinding: Binding<HostGrouping> {
+        Binding(get: { grouping }, set: { groupByKey = $0.storageKey })
+    }
+
+    /// The value a host is grouped under, for the current grouping.
+    private func groupValue(_ row: HostRow) -> String? {
+        switch grouping {
+        case .none: nil
+        case .subnet: subnet(row)
+        case .category(let id): model.hostCategories.book.value(of: id, for: row.id)
+        }
+    }
+
+    private func subnet(_ row: HostRow) -> String? {
+        if row.isThisMac { return model.subnet(of: .local) }
+        return row.peer.flatMap { model.subnet(of: .peer($0.fingerprint)) }
+    }
+
+    private var groupNoun: String {
+        switch grouping {
+        case .none: ""
+        case .subnet: "subnet"
+        case .category(let id): model.hostCategories.book.category(id: id)?.name ?? ""
+        }
+    }
+
+    /// Each group's header and its hosts, in table order.
+    private var groups: [(header: HostGroupHeader, rows: [HostRow])] {
+        let rows = displayedRows
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        return HostGrouping.buckets(rows.map(\.id)) { id in byID[id].flatMap(groupValue) }.map { bucket in
+            let members = bucket.hosts.compactMap { byID[$0] }
+            let title = bucket.value.map { grouping == .subnet ? $0 : "\(groupNoun) \($0)" } ?? "No \(groupNoun.lowercased())"
+            return (HostGroupHeader(value: bucket.value, title: title, hostIDs: bucket.hosts,
+                                    connected: members.filter(\.connected).count), members)
+        }
+    }
+
+    /// The table's rows: hosts, or each group's header followed by its hosts unless it is closed.
+    private var tableRows: [HostRow] {
+        guard grouping != .none else { return displayedRows }
+        return groups.flatMap { group -> [HostRow] in
+            let sum = { (key: KeyPath<HostRow, Int?>) -> Int? in
+                let known = group.rows.compactMap { $0[keyPath: key] }
+                return known.isEmpty ? nil : known.reduce(0, +)
+            }
+            let header = HostRow.header(group.header, running: sum(\.containersRunning),
+                                        total: sum(\.containersTotal), machines: sum(\.machines))
+            return [header] + (ui.collapsedIDs.contains(header.id) ? [] : group.rows)
+        }
+    }
+
+    /// The disclosure caret on a group's header.
+    private func caret(_ row: HostRow) -> some View {
+        let open = !ui.collapsedIDs.contains(row.id)
+        return Button {
+            if open { ui.collapsedIDs.insert(row.id) } else { ui.collapsedIDs.remove(row.id) }
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(open ? 90 : 0))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(open ? "Hide the hosts in \(row.name)" : "Show the hosts in \(row.name)")
+        .help(open ? "Hide hosts" : "Show \(row.header?.hostIDs.count ?? 0) hosts")
+    }
+
+    /// A header's checkbox selects or clears every host in its group.
+    private func groupToggle(_ header: HostGroupHeader, name: String) -> some View {
+        let ids = Set(header.hostIDs)
+        return Toggle("", isOn: Binding(get: { !ids.isEmpty && ids.isSubset(of: selection) },
+                                        set: { on in if on { selection.formUnion(ids) } else { selection.subtract(ids) } }))
+            .labelsHidden()
+            .accessibilityLabel("Select the hosts in \(name)")
+            .help("Select the \(ids.count) hosts in \(name)")
     }
 
     private func builtIns(_ row: HostRow) -> [BuiltInHostTag] {
@@ -477,6 +596,12 @@ struct HostsView: View {
                     Button("Approve \(pending.count)") { pending.forEach { hostMode.approve($0.fingerprint) } }
                         .controlSize(.small)
                 }
+                HostCategoryMenu(store: model.hostCategories, hosts: selectedRows.map(\.id),
+                                 newValue: { valueTarget = ValueTarget(category: $0, hosts: selectedRows.map(\.id)) },
+                                 editCategories: { showingCategories = true })
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Group the \(selectedRows.count) selected hosts")
                 BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
                     tagSheet = TagSheetTarget(selectedTagSubjects)
                 }
@@ -519,13 +644,15 @@ struct HostsView: View {
     @TableColumnBuilder<HostRow, KeyPathComparator<HostRow>>
     private var trailingColumns: some TableColumnContent<HostRow, KeyPathComparator<HostRow>> {
             TableColumn("macOS", value: \.macOSSortKey) { row in
-                Text(row.macOS ?? "—").monospacedDigit().foregroundStyle(.secondary)
+                if row.header == nil {
+                    Text(row.macOS ?? "—").monospacedDigit().foregroundStyle(.secondary)
+                }
             }
             .width(min: 60, ideal: 76)
             .customizationID("macos")
 
             TableColumn("container", value: \.containerSortKey) { row in
-                containerCell(row)
+                if row.header == nil { containerCell(row) }
             }
             .width(min: 64, ideal: 100)
             .customizationID("container")
@@ -534,25 +661,27 @@ struct HostsView: View {
             // matters. A different build is worth a mark; the wire version, which actually decides
             // whether the two can talk, is checked when they connect.
             TableColumn("Flotilla", value: \.appSortKey) { row in
-                flotillaCell(row)
+                if row.header == nil { flotillaCell(row) }
             }
             .width(min: 100, ideal: 200)
             .customizationID("flotilla")
 
             TableColumn("Model", value: \.modelSortKey) { row in
-                Text(row.modelIdentifier ?? "—").foregroundStyle(.secondary).lineLimit(1)
+                if row.header == nil {
+                    Text(row.modelIdentifier ?? "—").foregroundStyle(.secondary).lineLimit(1)
+                }
             }
             .width(min: 70, ideal: 84)
             .customizationID("model")
 
             TableColumn("Actions") { row in
-                rowActions(for: row)
+                if row.header == nil { rowActions(for: row) }
             }
             .width(min: 78, ideal: 88)
     }
 
     private var table: some View {
-        SwiftUI.Table(displayedRows,
+        SwiftUI.Table(tableRows,
                       selection: $selection,
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
@@ -562,8 +691,13 @@ struct HostsView: View {
             // host's page carries it as a line (the owner, 9 October).
             TableColumn("", value: \.statusSortKey) { row in
                 HStack(spacing: 6) {
-                    selectionToggle(for: row)
-                    HostStatusDot(model: model, row: row)
+                    if let header = row.header {
+                        groupToggle(header, name: row.name)
+                        HostGroupDot(header: header)
+                    } else {
+                        selectionToggle(for: row)
+                        HostStatusDot(model: model, row: row)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -571,16 +705,26 @@ struct HostsView: View {
 
             TableColumn("Name", value: \.nameSortKey) { row in
                 HStack(spacing: 6) {
-                    Button { open(row) } label: { Text(row.name).lineLimit(1).truncationMode(.middle) }
-                        .buttonStyle(.link)
-                        .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                        .help("Open \(row.name)")
+                    if let header = row.header {
+                        caret(row)
+                        Text(row.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
+                        Text("\(header.hostIDs.count)").font(.caption).foregroundStyle(.secondary)
+                            .help("\(header.hostIDs.count) host\(header.hostIDs.count == 1 ? "" : "s"), \(header.connected) connected")
+                    } else {
+                        if grouping != .none { Color.clear.frame(width: 16, height: 16) }
+                        Button { open(row) } label: { Text(row.name).lineLimit(1).truncationMode(.middle) }
+                            .buttonStyle(.link)
+                            .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
+                            .help("Open \(row.name)")
+                    }
                 }
             }
             .width(min: 130, ideal: 170)
 
             TableColumn("Tags") { row in
-                TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true, builtIns: builtIns(row))
+                if row.header == nil {
+                    TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true, builtIns: builtIns(row))
+                }
             }
             .width(min: 90, ideal: 170)
             .customizationID("tags")
@@ -605,8 +749,12 @@ struct HostsView: View {
                 menu(for: row)
             }
         } primaryAction: { ids in
-            guard ids.count == 1, let id = ids.first,
-                  let row = model.hostRows.first(where: { $0.id == id }) else { return }
+            guard ids.count == 1, let id = ids.first else { return }
+            if id.hasPrefix("group:") {
+                if ui.collapsedIDs.contains(id) { ui.collapsedIDs.remove(id) } else { ui.collapsedIDs.insert(id) }
+                return
+            }
+            guard let row = model.hostRows.first(where: { $0.id == id }) else { return }
             open(row)
         }
     }
@@ -738,26 +886,45 @@ struct HostsView: View {
         }
     }
 
+    /// Cards, under a heading per group when Hosts is grouped.
     private var cards: some View {
         ResourceCardGrid {
-            ForEach(displayedRows) { row in
-                ResourceCard(
-                    title: row.name,
-                    badge: row.isThisMac ? "this Mac" : (row.isPending ? "waiting" : nil),
-                    fields: [("Status", row.status),
-                             ("Containers", row.containersText),
-                             ("Machines", row.machinesText),
-                             ("macOS", row.macOS),
-                             ("container", row.containerVersion),
-                             ("Flotilla", row.appVersion)],
-                    tags: model.tags.tags(on: .host, row.id),
-                    onOpen: { open(row) }
-                ) {
-                    rowActions(for: row)
+            if grouping == .none {
+                ForEach(displayedRows) { card($0) }
+            } else {
+                ForEach(groups, id: \.header) { group in
+                    SwiftUI.Section {
+                        ForEach(group.rows) { card($0) }
+                    } header: {
+                        HStack(spacing: 6) {
+                            HostGroupDot(header: group.header)
+                            Text(group.header.title).font(.headline)
+                            Text("\(group.rows.count)").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.top, 6)
+                    }
                 }
-                .contextMenu { menu(for: row) }
             }
         }
+    }
+
+    private func card(_ row: HostRow) -> some View {
+        ResourceCard(
+            title: row.name,
+            badge: row.isThisMac ? "this Mac" : (row.isPending ? "waiting" : nil),
+            fields: [("Status", row.status),
+                     ("Containers", row.containersText),
+                     ("Machines", row.machinesText),
+                     ("macOS", row.macOS),
+                     ("container", row.containerVersion),
+                     ("Flotilla", row.appVersion)],
+            tags: model.tags.tags(on: .host, row.id),
+            onOpen: { open(row) }
+        ) {
+            rowActions(for: row)
+        }
+        .contextMenu { menu(for: row) }
     }
 
     // MARK: Row actions and menu
@@ -848,6 +1015,9 @@ struct HostsView: View {
         TagMenu(store: model.tags, subject: TagSubject(kind: .host, id: row.id)) {
             tagSheet = TagSheetTarget(kind: .host, id: row.id)
         }
+        HostCategoryMenu(store: model.hostCategories, hosts: [row.id],
+                         newValue: { valueTarget = ValueTarget(category: $0, hosts: [row.id]) },
+                         editCategories: { showingCategories = true })
         Divider()
         CopyMenu([("Name", row.name),
                   ("macOS version", row.macOS),

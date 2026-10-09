@@ -61,6 +61,8 @@ final class AppModel {
     ///
     /// Deliberately not a setting; `TagStore` says why it is not in `SettingsStore`.
     let tags = TagStore()
+    /// Site, Rack, VLAN… and each host's value — how Hosts can be grouped (the owner, 9 October).
+    let hostCategories = HostCategoryStore()
 
     /// Registries the user has added by hand, on top of the built-in catalogue. Held here for
     /// the reason `tags` is: data rather than view state. Carries no credentials — see

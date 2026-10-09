@@ -128,6 +128,9 @@ public struct HostFacts: Sendable, Equatable, Codable {
     public var bootTime: Date?
     /// This Mac's IPv4 addresses on its network interfaces, loopback left out.
     public var ipv4Addresses: [String]?
+    /// The same addresses with their interface's prefix, `10.20.4.17/23` — what Hosts groups by
+    /// when it groups by subnet.
+    public var ipv4Interfaces: [String]?
     public var timeZone: String?
     /// Whether the Mac has a battery, whether it is running on it, and its charge.
     public var hasBattery: Bool?
