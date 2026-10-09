@@ -55,9 +55,9 @@ final class HostMetricsSampler {
     /// would inherit that ambiguity.
     let coreCount = ProcessInfo.processInfo.processorCount
 
-    /// Matches `StatsSampler.historyLimit`, so the host and container charts cover the same
-    /// window and a range selector means the same thing on both.
-    private static let historyLimit = 720
+    /// Only the latest sample is read (This Mac's host facts) since the charts were dropped
+    /// (the owner, 9 October), so only the latest is kept.
+    private static let historyLimit = 1
 
     private var previousTicks: CPUTicks?
     private var previousNetwork: (rx: UInt64, tx: UInt64, at: Date)?

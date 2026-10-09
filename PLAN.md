@@ -679,8 +679,8 @@ To settle before building:
 
 ### Host pages and power, next steps (9 October, Q44)
 
-- Live charts on a host's page, from its own `container stats --no-stream` and new network and disk
-  counters in its host facts, polled every 10 seconds while the page is open.
+- ~~Live charts on a host's page~~ — dropped (the owner, 9 October): This Mac's charts went too,
+  so every Mac's page is the same cards and "Usage now".
 - Recommend Energy settings on a host's System tab (restart after a power failure, sleep when the
   display is off) with Apple's instructions; never change them.
 - An admin's time-bounded keep-awake request to a host, refused on battery and shown on both Macs.

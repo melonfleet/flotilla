@@ -85,15 +85,12 @@ struct HostDetailView: View {
     // MARK: Overview
 
     @ViewBuilder
+    /// The same page for every Mac (the owner, 9 October): a host cannot send live charts, so This
+    /// Mac's were dropped rather than kept as the one page that differs.
     private var overview: some View {
-        if host.isLocal {
-            // This Mac keeps its live charts, under the same cards a host's page opens with.
-            DashboardView(model: model, go: go, header: AnyView(overviewCards))
-        } else {
-            scrolling {
-                overviewCards
-                usageNowCard
-            }
+        scrolling {
+            overviewCards
+            usageNowCard
         }
     }
 
@@ -156,7 +153,7 @@ struct HostDetailView: View {
         }
     }
 
-    /// A host's CPU, memory and disk as it last reported them. Its charts follow in the next step.
+    /// A Mac's CPU, memory and disk as it last reported them.
     private var usageNowCard: some View {
         DetailCard(title: "Usage now", minHeight: nil) {
             row("CPU", facts?.cpuPercent.map { "\(Int($0.rounded()))% of all cores" } ?? "—")

@@ -161,7 +161,7 @@ Running containers on the test Macs may be stopped by some cases — each such c
 
 | ID | Do | Expect |
 |---|---|---|
-| 15.1 | Hosts ▸ This Mac, then each tab. | Overview (cards, then this Mac's charts), System, Flotilla, Updates, Activity — every value real or "—", none invented. |
+| 15.1 | Hosts ▸ This Mac, then each tab. | Overview (cards and Usage now, as on every host — no charts), System, Flotilla, Updates, Activity — every value real or "—", none invented. |
 | 15.2 | Hosts ▸ a paired host on this build. | The same tabs. System shows its serial, addresses, sharing, power and FileVault; Flotilla shows where it is installed, whether a package installed it, its helper's version, Enrolled and Last inventory update. |
 | 15.3 | On a host with Remote Login on: System ▸ Open in Terminal (SSH). | Apple's Terminal (not another SSH app) opens `ssh` to it as the user signed in there — or the one typed in Connect as — and asks that account's password. |
 | 15.4 | Share Screen (VNC). | macOS Screen Sharing opens to that host with the user name filled in; "Remember this password in my keychain" works. |
