@@ -172,25 +172,23 @@ struct HostDetailView: View {
                     monospaced: true)
                 row("Remote Login (SSH)", onOff(facts?.remoteLogin))
                 row("Screen Sharing", onOff(facts?.screenSharing))
-                // macOS's own ways in, not one of Flotilla's (the owner, 9 October): Terminal over
-                // SSH and Screen Sharing, each behind the Mac's own login. Where one is off, Apple's
-                // instructions for turning it on.
-                HStack(spacing: 8) {
-                    if !host.isLocal, facts?.remoteLogin == true, let address = connectAddress {
-                        Button("Open in Terminal (SSH)") { open("ssh://\(address)") }.controlSize(.small)
+                // macOS's own ways in, not one of Flotilla's (the owner, 9 October): SSH in Apple's
+                // Terminal and VNC in Screen Sharing, each behind the Mac's own login — named
+                // explicitly, so another app that claims ssh:// (Termius, iTerm) is not used. Both
+                // always offered on a host; the rows above say whether each is switched on there.
+                if !host.isLocal {
+                    HStack(spacing: 8) {
+                        Button("Open in Terminal (SSH)") { connect("ssh", with: "com.apple.Terminal") }
+                            .controlSize(.small)
+                        Button("Share Screen (VNC)") { connect("vnc", with: "com.apple.ScreenSharing") }
+                            .controlSize(.small)
                     }
-                    if !host.isLocal, facts?.screenSharing == true, let address = connectAddress {
-                        Button("Share Screen") { open("vnc://\(address)") }.controlSize(.small)
-                    }
+                    .disabled(connectAddress == nil)
                 }
-                if facts?.remoteLogin == false {
-                    Link("How to turn on Remote Login", destination: ExternalLinks.appleRemoteLogin)
-                        .font(.caption).foregroundStyle(Theme.link)
-                }
-                if facts?.screenSharing == false {
-                    Link("How to turn on Screen Sharing", destination: ExternalLinks.appleScreenSharing)
-                        .font(.caption).foregroundStyle(Theme.link)
-                }
+                Link("How to turn on Remote Login (SSH)", destination: ExternalLinks.appleRemoteLogin)
+                    .font(.caption).foregroundStyle(Theme.link)
+                Link("How to turn on Screen Sharing (VNC)", destination: ExternalLinks.appleScreenSharing)
+                    .font(.caption).foregroundStyle(Theme.link)
             }
             card("Power") {
                 row("Power source", powerSource)
@@ -354,9 +352,11 @@ struct HostDetailView: View {
         return facts?.ipv4Addresses?.first
     }
 
-    private func open(_ link: String) {
-        guard let url = URL(string: link) else { return }
-        NSWorkspace.shared.open(url)
+    /// Opens `scheme://address` in one named app — Terminal for SSH, Screen Sharing for VNC.
+    private func connect(_ scheme: String, with bundleIdentifier: String) {
+        guard let address = connectAddress, let url = URL(string: "\(scheme)://\(address)"),
+              let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else { return }
+        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
     }
 
     private func grid<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
