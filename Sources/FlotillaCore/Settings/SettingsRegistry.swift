@@ -182,13 +182,14 @@ public enum SettingsKeys {
     // from the start.
 
     /// How this Mac is used (Phase B, 7 October): `client` is shown as **Admin** — it manages this
-    /// Mac and others — `host` lets an admin Mac manage it, `both` does both. The stored values
+    /// Mac and others — and `host` lets an admin Mac manage it. `both` is retired and read as
+    /// `client` (9 October, `RunMode.effective`). The stored values
     /// keep the names `reference/jamf-config-profile.md` documents. Asked at first run unless a
     /// profile sets it; never switchable by a peer. Applied live — `HostModeController.apply()`
     /// starts or stops the listener — as are the port and Bonjour below.
     public static let mode = SettingsKey<RunMode>(
         "mode", default: .client, scope: .host,
-        summary: "Admin (manage Macs from here), host (be managed by an admin Mac), or both."
+        summary: "Admin (manage Macs from here) or host (be managed by an admin Mac). Both run their own containers."
     )
 
     /// 7868 since 7 October (the owner's choice); it was a placeholder 7443 while nothing listened.

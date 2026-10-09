@@ -253,7 +253,7 @@ final class HostModeController {
         self.identityStore = identityStore
         book = bookStore.load()
         adminKey = keyStore.adminKey()
-        mode = settings[SettingsKeys.mode]
+        mode = settings[SettingsKeys.mode].effective
         bridge.controller = self
     }
 
@@ -270,7 +270,7 @@ final class HostModeController {
 
     /// Called once at launch, and again when the mode or port changes.
     func apply() {
-        let newMode = settings[SettingsKeys.mode]
+        let newMode = settings[SettingsKeys.mode].effective
         if newMode != mode { mode = newMode }
         let lapsed = book.expirePending(at: Date())
         if !lapsed.isEmpty {

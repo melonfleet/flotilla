@@ -363,3 +363,15 @@ import Testing
     #expect(restored.needsAppearanceOnboarding == false)
     #expect(restored.chosenAppearance == .auto)
 }
+
+/// Admin + Host retired, 9 October.
+@Suite struct RetiredModeTests {
+    @Test func aStoredBothBecomesAdminAndAProfileBothReadsAsAdmin() {
+        let stored = SettingsStore(userValues: [SettingsKeys.mode.name: .string("both")])
+        #expect(stored[SettingsKeys.mode] == .client)
+        let locked = SettingsStore(managed: StaticManagedPreferences(locked: [SettingsKeys.mode.name: .string("both")]))
+        #expect(locked[SettingsKeys.mode] == .both && locked[SettingsKeys.mode].effective == .client)
+        #expect(RunMode.offered == [.client, .host])
+        #expect(RunMode.host.effective == .host)
+    }
+}

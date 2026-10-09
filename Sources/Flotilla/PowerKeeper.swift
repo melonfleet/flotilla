@@ -124,7 +124,7 @@ extension AppModel {
     /// The standing reasons, from the settings, the role and the power source (Q44). Recomputed when
     /// any of them changes, and when the containers do.
     func updateStandingPower() {
-        let host = hostMode.mode == .host || hostMode.mode == .both
+        let host = hostMode.isHost
         power.setStanding("host mode", host && settingsStore[SettingsKeys.keepAwakeAsHost] && !power.onBattery)
         let running = containers.contains(where: AppModel.isRunning)
         power.setStanding("running containers",

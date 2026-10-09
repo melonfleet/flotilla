@@ -98,10 +98,22 @@ public enum DarkTheme: String, SettingEnum, Codable {
     }
 }
 
-/// Client / host / both. A `UserDefaults`-backed key from day one so a Phase 6
+/// Client (shown as Admin) or host. A `UserDefaults`-backed key from day one so a Phase 6
 /// profile can pin a mini to host mode without a code change.
+///
+/// **`both` is retired** (the owner, 9 October). Every Mac runs its own containers whatever its
+/// mode — "host" only means another Mac may manage this one — so a Mac that manages others and is
+/// itself managed by a different admin was rare and read as confusing. The case stays so a stored
+/// or profile value still decodes: a stored one becomes `client` at load, a managed one is read as
+/// `client` (`effective`).
 public enum RunMode: String, SettingEnum, Codable {
     case client, host, both
+
+    /// The modes Settings and first run offer.
+    public static let offered: [RunMode] = [.client, .host]
+
+    /// What the Mac does: `both` is treated as `client`.
+    public var effective: RunMode { self == .both ? .client : self }
 }
 
 /// **Retired.** Kept only so `SettingsStore.migrateLegacyKeys` can recognise a stored

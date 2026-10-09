@@ -10,15 +10,14 @@ extension RunMode {
         switch self {
         case .client: "Admin"
         case .host: "Host"
-        case .both: "Admin and host"
+        case .both: "Admin"
         }
     }
 
     var explanation: String {
         switch self {
-        case .client: "Manage this Mac and other Macs from here."
-        case .host: "Let an admin Mac manage the containers on this Mac."
-        case .both: "Manage other Macs from here, and let another admin Mac manage this one."
+        case .client, .both: "Manage other Macs from here. This Mac runs its own containers too."
+        case .host: "Let an admin Mac manage this Mac. It runs its own containers either way."
         }
     }
 }
@@ -73,7 +72,7 @@ struct HostModePane: View {
         SwiftUI.Section("This Mac") {
             SettingRow(store: store, key: SettingsKeys.mode, title: "Use this Mac as") { binding in
                 Picker("", selection: binding) {
-                    ForEach(RunMode.allCases, id: \.rawValue) { mode in Text(mode.title).tag(mode) }
+                    ForEach(RunMode.offered, id: \.rawValue) { mode in Text(mode.title).tag(mode) }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()

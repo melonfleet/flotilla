@@ -12,7 +12,7 @@ import FlotillaCore
 /// Two questions and no more (the owner, 7 October, added the second). Onboarding that marches
 /// through every preference gets dismissed blind. Appearance has no defensible default, because
 /// "follow the system" is a choice rather than an absence of one; and how a Mac is used — admin,
-/// host, or both — decides whether it listens on the network at all, which nobody should find out
+/// or host — decides whether it listens on the network at all, which nobody should find out
 /// about later. Admin is pre-selected: it listens on nothing. A profile that sets the mode answers
 /// that question, and the sheet says so instead of asking.
 ///
@@ -63,7 +63,7 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     Picker("Use this Mac as", selection: $mode) {
-                        ForEach(RunMode.allCases, id: \.rawValue) { option in Text(option.title).tag(option) }
+                        ForEach(RunMode.offered, id: \.rawValue) { option in Text(option.title).tag(option) }
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
