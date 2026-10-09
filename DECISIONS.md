@@ -2014,3 +2014,24 @@ Flotilla never kept a Mac awake, never noticed sleep or wake, and polled whateve
   over SSH and Screen Sharing — behind each Mac's own login, and links to Apple's instructions for
   turning Remote Login or Screen Sharing on where they are off.
 
+
+## Q45 — Hosts: built-in tags, a status dot, and groups by category (settled 2026-10-09)
+
+**The owner's design**, decided in conversation:
+
+1. **Built-in tags.** This Mac, Admin and Host are tags Flotilla gives a Mac itself, shown first in
+   the Tags column (Hosts and Overview). They are read from state, never stored, and cannot be
+   removed. Admin and Host come from the Mac's role, which a host reports in its facts; a host that
+   doesn't say is a Host. The Name column holds only the name, so it stays on one line.
+2. **Status is a dot in column one**, beside the checkbox, as in Containers. The full status is on
+   hover, and on the host's page as a line. Green means connected. Amber means waiting for approval
+   or the runtime is down. Red means not answering. Grey means checking. A spinner shows while
+   starting or updating.
+3. **Groups are categories, not named groups.** The owner keeps a list of categories (Site, Rack and
+   VLAN to start) and gives each host a value in each. Categories can be added from suggestions,
+   renamed, reordered and removed. **Group By** picks one of them, or **Subnet**, which Flotilla
+   works out from the address it connects to and the prefix of the interface the host reports.
+   Subnet is read-only, and no category may take its name.
+4. **Kept on the admin Mac only**, like tags: two plist-native keys, `hostCategories` and
+   `hostCategoryValues`. Nothing is sent to hosts. The wire has no new call; `ipv4Interfaces` is a
+   new optional fact. The `.flotilla` export does not carry them yet.
