@@ -393,7 +393,7 @@ struct HostsView: View {
     }
 
     private static let columnSpecs: [(id: String, title: String)] = [
-        ("tags", "Tags"), ("status", "Status"), ("containers", "Containers"),
+        ("tags", "Tags"), ("containers", "Containers"),
         ("machines", "Machines"), ("macos", "macOS"), ("container", "container"), ("flotilla", "Flotilla"),
         ("model", "Model"),
     ]
@@ -557,10 +557,17 @@ struct HostsView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
-            TableColumn("") { row in
-                selectionToggle(for: row)
+            // Column one carries the selection checkbox and the status dot together, as in
+            // Containers: the dot's colour says how the Mac is, its tooltip says it in full, and the
+            // host's page carries it as a line (the owner, 9 October).
+            TableColumn("", value: \.statusSortKey) { row in
+                HStack(spacing: 6) {
+                    selectionToggle(for: row)
+                    HostStatusDot(model: model, row: row)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .width(min: 28, ideal: 30, max: 34)
+            .width(min: 52, ideal: 56, max: 64)
 
             TableColumn("Name", value: \.nameSortKey) { row in
                 HStack(spacing: 6) {
@@ -577,12 +584,6 @@ struct HostsView: View {
             }
             .width(min: 90, ideal: 170)
             .customizationID("tags")
-
-            TableColumn("Status", value: \.statusSortKey) { row in
-                HostStatusLabel(model: model, row: row)
-            }
-            .width(min: 120, ideal: 160)
-            .customizationID("status")
 
             TableColumn("Containers", value: \.containersSortKey) { row in
                 Text(row.containersText).monospacedDigit().foregroundStyle(.secondary)
@@ -884,31 +885,40 @@ struct HostsView: View {
 }
 
 /// A host's status: This Mac's runtime, or a host's place in the book.
-struct HostStatusLabel: View {
+struct HostStatusDot: View {
     let model: AppModel
     let row: HostRow
 
     var body: some View {
-        HStack(spacing: 6) {
-            if row.isThisMac, model.startingRuntime {
-                ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 8, height: 8)
+        Group {
+            if busy {
+                ProgressView().controlSize(.small).scaleEffect(0.5).frame(width: 8, height: 8)
             } else {
-                Circle().fill(tint).frame(width: 7, height: 7)
+                Circle().fill(tint).frame(width: 8, height: 8)
             }
-            Text(row.status).lineLimit(1)
         }
-        .font(.caption)
-        .help(row.isThisMac ? (RuntimeStatus.describe(model.preflight).detail ?? row.status) : row.status)
+        .frame(width: 10, height: 10)
+        .contentShape(Rectangle())
+        .help(row.isThisMac ? (RuntimeStatus.describe(model.preflight).detail.map { "\(row.status) — \($0)" } ?? row.status)
+                            : row.status)
+        .accessibilityLabel(row.status)
     }
 
+    /// Starting this Mac's runtime, or updating Flotilla on a host: work under way, not a state.
+    private var busy: Bool {
+        if row.isThisMac { return model.startingRuntime }
+        guard let peer = row.peer else { return false }
+        return model.hostMode.updating.contains(peer.fingerprint) && model.hostMode.live[peer.fingerprint]?.state != .connected
+    }
+
+    /// Green connected, amber waiting on someone, red not answering, grey not known yet.
     private var tint: Color {
         if row.isThisMac { return RuntimeStatus.describe(model.preflight).tint }
-        if let peer = row.peer, model.hostMode.updating.contains(peer.fingerprint) { return .secondary }
         if let peer = row.peer, peer.isTrusted, let live = model.hostMode.live[peer.fingerprint] {
             switch live.state {
             case .connected: return Theme.online
             case .checking: return .secondary
-            case .failed: return Theme.warning
+            case .failed: return Theme.danger
             }
         }
         switch row.peer?.status {

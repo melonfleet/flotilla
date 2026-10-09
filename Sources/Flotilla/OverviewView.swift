@@ -87,7 +87,7 @@ struct OverviewView: View {
             let status = model.hostMode.live[peer.fingerprint]
             let (state, color, connected): (String, Color, Bool) = switch status?.state {
             case .connected?: ("connected", Theme.online, true)
-            case .failed?: ("not answering", Theme.warning, false)
+            case .failed?: ("not answering", Theme.danger, false)
             case .checking?, nil: ("checking…", Color.secondary, false)
             }
             let facts = model.hostMode.facts[peer.fingerprint]

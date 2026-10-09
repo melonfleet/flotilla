@@ -451,7 +451,7 @@ struct HostDetailView: View {
         if host.isLocal { return model.runtimeUsable ? Theme.online : Theme.warning }
         switch live?.state {
         case .connected?: return Theme.online
-        case .failed?: return Theme.warning
+        case .failed?: return Theme.danger
         default: return .secondary
         }
     }
