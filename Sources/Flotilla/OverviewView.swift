@@ -324,72 +324,64 @@ struct OverviewView: View {
         }
     }
 
-    /// The first things to do, on an install with nothing in it yet (Iris, 8 October; Add Host, the
-    /// owner). Only once `container` is usable — until then the top line is its setup — and gone
-    /// for good after the first container, group or paired host: deleting everything later does
-    /// not bring it back, since each section has its own empty-state actions.
-    @AppStorage("overviewGetStartedDone") private var getStartedDone = false
-
-    private var isEmptyInstall: Bool {
-        model.containers.isEmpty && model.groups.book.groups.isEmpty && model.hostMode.trustedHosts.isEmpty
-    }
+    /// The first things to do (Iris, 8 October; Add Host, the owner). Shown once `container` is
+    /// usable — until then the top line is its setup — and **until the owner closes it** with the X
+    /// (the owner, 9 October), which records `getStartedDismissed` in the preferences domain.
+    /// Nothing else hides it: having containers already does not.
+    @AppStorage("getStartedDismissed") private var getStartedDismissed = false
 
     @ViewBuilder
     private var getStarted: some View {
-        if !getStartedDone, model.runtimeUsable, model.state == .loaded {
-            if isEmptyInstall {
-                // A card of its own, centred, with the first step in colour (the owner, beta 2's
-                // test): left-aligned plain buttons under a small heading read as a footnote.
-                VStack(spacing: 14) {
-                    Image(systemName: "shippingbox")
-                        .font(.system(size: 30, weight: .light))
-                        .foregroundStyle(Theme.info)
-                    VStack(spacing: 4) {
-                        Text("Get started").font(.title2.weight(.semibold))
-                        Text("Run your first container, bring in an image, or add another Mac.")
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    HStack(spacing: 10) {
-                        Button { model.requestRunSheet() } label: {
-                            Label("Run a Container\u{2026}", systemImage: "play.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        Button { model.requestPullForm() } label: {
-                            Label("Pull Image\u{2026}", systemImage: "arrow.down.circle")
-                        }
-                        if model.hostMode.isAdmin {
-                            Button { model.requestAddHost() } label: {
-                                Label("Add Host\u{2026}", systemImage: "desktopcomputer")
-                            }
-                        }
-                        Button { model.requestSuggestions(.containers) } label: {
-                            Label("Try a Suggested Stack\u{2026}", systemImage: "square.grid.2x2")
-                        }
-                    }
-                    .controlSize(.large)
+        if !getStartedDismissed, model.runtimeUsable, model.state == .loaded {
+            // A card of its own, centred, with the first step in colour (the owner, beta 2's
+            // test): left-aligned plain buttons under a small heading read as a footnote.
+            VStack(spacing: 14) {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(Theme.info)
+                VStack(spacing: 4) {
+                    Text("Get started").font(.title2.weight(.semibold))
+                    Text("Run your first container, bring in an image, or add another Mac.")
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-                .padding(.vertical, 28)
-                .padding(.horizontal, 20)
-                .frame(maxWidth: .infinity)
-                .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.hairline))
-                // Closed for good, like after the first container (the owner, 9 October).
-                .overlay(alignment: .topTrailing) {
-                    Button { getStartedDone = true } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
+                HStack(spacing: 10) {
+                    Button { model.requestRunSheet() } label: {
+                        Label("Run a Container\u{2026}", systemImage: "play.fill")
                     }
-                    .buttonStyle(.plain)
-                    .padding(10)
-                    .help("Close Get started")
-                    .accessibilityLabel("Close Get started")
+                    .buttonStyle(.borderedProminent)
+                    Button { model.requestPullForm() } label: {
+                        Label("Pull Image\u{2026}", systemImage: "arrow.down.circle")
+                    }
+                    if model.hostMode.isAdmin {
+                        Button { model.requestAddHost() } label: {
+                            Label("Add Host\u{2026}", systemImage: "desktopcomputer")
+                        }
+                    }
+                    Button { model.requestSuggestions(.containers) } label: {
+                        Label("Try a Suggested Stack\u{2026}", systemImage: "square.grid.2x2")
+                    }
                 }
-            } else {
-                Color.clear.frame(height: 0).onAppear { getStartedDone = true }
+                .controlSize(.large)
+            }
+            .padding(.vertical, 28)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.hairline))
+            // Closed for good, like after the first container (the owner, 9 October).
+            .overlay(alignment: .topTrailing) {
+                Button { getStartedDismissed = true } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(10)
+                .help("Close Get started")
+                .accessibilityLabel("Close Get started")
             }
         }
     }
