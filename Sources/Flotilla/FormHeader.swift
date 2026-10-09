@@ -25,6 +25,8 @@ struct FormHeader<Trailing: View>: View {
     /// them has an answer.
     let hasUnsavedChanges: Bool
     let onBack: () -> Void
+    /// A small pill after the title — "This Mac" on this Mac's own page.
+    var titleBadge: String? = nil
     /// Controls that belong to the whole form rather than to a field — the machine form's
     /// "Import Flotillafile…" is the only one so far.
     ///
@@ -45,6 +47,7 @@ struct FormHeader<Trailing: View>: View {
                 .font(.system(size: 17))
                 .foregroundStyle(.secondary)
             Text(title).font(.system(size: 15, weight: .semibold))
+            if titleBadge != nil { ThisMacPill() }
             Spacer()
             trailing
         }

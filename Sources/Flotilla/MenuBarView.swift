@@ -118,8 +118,11 @@ struct MenuBarView: View {
     /// answering says so in the row, so the submenu is a roll-call as well as a list.
     private var hostsMenu: some View {
         Menu("Hosts") {
-            Button(model.hostLabel) {
+            Button {
                 present { model.requestDetail(kind: .host, subject: HostRow.thisMacID) }
+            } label: {
+                Text(HostModeController.computerName)
+                Text("This Mac")
             }
             ForEach(model.hostMode.trustedHosts, id: \.fingerprint) { peer in
                 Button {

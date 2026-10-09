@@ -76,7 +76,7 @@ struct OverviewView: View {
 
     private var hostLines: [HostLine] {
         let local = model.localHostFacts()
-        var lines = [HostLine(id: HostRow.thisMacID, name: model.hostLabel,
+        var lines = [HostLine(id: HostRow.thisMacID, name: HostModeController.computerName,
                               state: model.runtimeUsable ? "connected" : "runtime unavailable",
                               color: model.runtimeUsable ? Theme.online : Theme.warning,
                               connected: model.runtimeUsable, facts: local,
@@ -136,6 +136,7 @@ struct OverviewView: View {
                         .foregroundStyle(Theme.link)
                         .lineLimit(1)
                         .help("Open \(line.name)")
+                    if line.id == HostRow.thisMacID { ThisMacPill() }
                 }
             }
             .width(min: 130, ideal: 170)

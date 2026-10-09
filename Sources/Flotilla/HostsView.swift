@@ -99,7 +99,7 @@ extension AppModel {
     var hostRows: [HostRow] {
         let version = localContainerVersion
         let system = systemInfo
-        let thisMac = HostRow(id: HostRow.thisMacID, name: hostLabel, isThisMac: true, peer: nil,
+        let thisMac = HostRow(id: HostRow.thisMacID, name: HostModeController.computerName, isThisMac: true, peer: nil,
                               status: RuntimeStatus.describe(preflight).title,
                               connected: runtimeUsable,
                               containersRunning: containers.filter(AppModel.isRunning).count,
@@ -297,9 +297,10 @@ struct HostsView: View {
     private func hostPage(_ id: HostRow.ID) -> some View {
         let row = model.hostRows.first { $0.id == id }
         VStack(spacing: 0) {
-            FormHeader(title: row?.name ?? model.hostLabel,
+            FormHeader(title: row?.name ?? HostModeController.computerName,
                        systemImage: Section.hosts.systemImage,
-                       hasUnsavedChanges: false, onBack: { openHost = nil }) {
+                       hasUnsavedChanges: false, onBack: { openHost = nil },
+                       titleBadge: row?.isThisMac == true ? "This Mac" : nil) {
                 // Ask this Mac again now rather than waiting for the next look (the owner, 9 October).
                 ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh \(row?.name ?? model.hostLabel)") {
                     Task {
@@ -420,6 +421,7 @@ struct HostsView: View {
         if !query.isEmpty {
             rows = rows.filter { row in
                 row.name.lowercased().contains(query)
+                    || (row.isThisMac && "this mac".contains(query))
                     || row.status.lowercased().contains(query)
                     || (row.modelIdentifier?.lowercased().contains(query) ?? false)
                     || (row.peer?.details.serialNumber?.lowercased().contains(query) ?? false)
@@ -555,11 +557,14 @@ struct HostsView: View {
             .width(min: 28, ideal: 30, max: 34)
 
             TableColumn("Name", value: \.nameSortKey) { row in
-                Button(row.name) { open(row) }
-                    .buttonStyle(.link)
-                    .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                    .lineLimit(1)
-                    .help("Open \(row.name)")
+                HStack(spacing: 6) {
+                    Button(row.name) { open(row) }
+                        .buttonStyle(.link)
+                        .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
+                        .lineLimit(1)
+                        .help("Open \(row.name)")
+                    if row.isThisMac { ThisMacPill() }
+                }
             }
             .width(min: 130, ideal: 170)
 

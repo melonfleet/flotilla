@@ -48,7 +48,7 @@ struct HostChecklist: View {
     private var rows: [Row] {
         hosts.map { host in
             let state = state(host)
-            return Row(id: host, name: model.hostMode.hostName(host, local: model.hostLabel),
+            return Row(id: host, name: model.hostMode.hostName(host, local: HostModeController.computerName),
                        tags: model.tags.tags(on: .host, tagID(host)),
                        state: state.text, warning: state.warning,
                        selectable: isSelectable(host), extra: extra(host))
@@ -139,6 +139,7 @@ struct HostChecklist: View {
                     Text(row.name).lineLimit(1)
                         .foregroundStyle(row.selectable ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                         .layoutPriority(1)
+                    if row.id.isLocal { ThisMacPill() }
                     // Only when there are some: an empty `TagPillRow` is a flexible clear view,
                     // which took half the cell and cut the name short.
                     if !row.tags.isEmpty { TagPillRow(tags: row.tags, compact: true, limit: 1) }
