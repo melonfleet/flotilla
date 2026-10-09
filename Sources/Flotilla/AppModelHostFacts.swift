@@ -48,6 +48,7 @@ extension AppModel {
             facts.serialNumber = slow.serialNumber
             facts.power = slow.power
             facts.fileVault = slow.fileVault
+            facts.firewall = slow.firewall
             facts.remoteLogin = slow.remoteLogin
             facts.screenSharing = slow.screenSharing
             facts.fileSharing = slow.fileSharing
