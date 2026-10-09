@@ -132,6 +132,10 @@ public struct HostFacts: Sendable, Equatable, Codable {
     public var fileVault: Bool?
     public var remoteLogin: Bool?
     public var screenSharing: Bool?
+    public var fileSharing: Bool?
+    /// The account Flotilla runs under there — the one signed in. What SSH, Screen Sharing and File
+    /// Sharing connect as unless the admin says otherwise.
+    public var loginUser: String?
     /// Flotilla itself: where it is, whether a package installed it owned by root (so updates go
     /// through the helper, Q43), its role, and its helper.
     public var appPath: String?

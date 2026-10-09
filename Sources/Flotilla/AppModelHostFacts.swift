@@ -29,6 +29,7 @@ extension AppModel {
         facts.bootTime = Self.bootTime
         facts.ipv4Addresses = Self.ipv4Addresses
         facts.timeZone = TimeZone.current.identifier
+        facts.loginUser = NSUserName()
         let battery = Self.battery
         facts.hasBattery = battery.present
         facts.onBattery = battery.present ? battery.onBattery : nil
@@ -47,6 +48,7 @@ extension AppModel {
             facts.fileVault = slow.fileVault
             facts.remoteLogin = slow.remoteLogin
             facts.screenSharing = slow.screenSharing
+            facts.fileSharing = slow.fileSharing
             facts.helperVersion = slow.helperVersion
         }
         return facts
@@ -89,6 +91,10 @@ extension AppModel {
         let services = run("/bin/launchctl", ["print-disabled", "system"])
         facts.remoteLogin = SystemReport.serviceEnabled(SystemReport.remoteLoginLabel, in: services) ?? false
         facts.screenSharing = SystemReport.serviceEnabled(SystemReport.screenSharingLabel, in: services) ?? false
+        // File Sharing is absent from that list until it has been turned on once; a loaded SMB
+        // service is the other sign it is on.
+        facts.fileSharing = SystemReport.serviceEnabled(SystemReport.fileSharingLabel, in: services)
+            ?? !run("/bin/launchctl", ["print", "system/\(SystemReport.fileSharingLabel)"]).isEmpty
         return facts
     }
 

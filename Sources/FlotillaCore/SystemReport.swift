@@ -71,4 +71,5 @@ public enum SystemReport {
     /// Remote Login (SSH) and Screen Sharing, by their launchd labels.
     public static let remoteLoginLabel = "com.openssh.sshd"
     public static let screenSharingLabel = "com.apple.screensharing"
+    public static let fileSharingLabel = "com.apple.smbd"
 }

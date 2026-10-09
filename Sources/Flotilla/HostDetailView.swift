@@ -171,23 +171,34 @@ struct HostDetailView: View {
                 row("Addresses", facts?.ipv4Addresses.map { $0.isEmpty ? "None" : $0.joined(separator: ", ") } ?? "—",
                     monospaced: true)
                 row("Remote Login (SSH)", onOff(facts?.remoteLogin))
-                row("Screen Sharing", onOff(facts?.screenSharing))
+                row("Screen Sharing (VNC)", onOff(facts?.screenSharing))
+                row("File Sharing (SMB)", onOff(facts?.fileSharing))
+                row("Signed-in user", facts?.loginUser ?? "—", monospaced: true)
                 // macOS's own ways in, not one of Flotilla's (the owner, 9 October): SSH in Apple's
-                // Terminal and VNC in Screen Sharing, each behind the Mac's own login — named
-                // explicitly, so another app that claims ssh:// (Termius, iTerm) is not used. Both
-                // always offered on a host; the rows above say whether each is switched on there.
+                // Terminal, VNC in Screen Sharing and SMB in Finder, each behind that Mac's own login
+                // and each app named, so another app that claims the link (Termius, iTerm) is not
+                // used. They connect as the user signed in there unless "Connect as" says otherwise
+                // — an `ssh://host` link alone would use this Mac's user name.
                 if !host.isLocal {
                     HStack(spacing: 8) {
-                        Button("Open in Terminal (SSH)") { connect("ssh", with: "com.apple.Terminal") }
-                            .controlSize(.small)
-                        Button("Share Screen (VNC)") { connect("vnc", with: "com.apple.ScreenSharing") }
-                            .controlSize(.small)
+                        Text("Connect as").font(.system(size: 12)).foregroundStyle(.secondary)
+                        TextField(facts?.loginUser ?? "user name", text: connectAsBinding)
+                            .textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced))
+                            .frame(maxWidth: 180)
                     }
+                    HStack(spacing: 8) {
+                        Button("Open in Terminal (SSH)") { connect("ssh", with: "com.apple.Terminal") }
+                        Button("Share Screen (VNC)") { connect("vnc", with: "com.apple.ScreenSharing") }
+                        Button("Connect to File Sharing (SMB)") { connect("smb", with: "com.apple.finder") }
+                    }
+                    .controlSize(.small)
                     .disabled(connectAddress == nil)
                 }
                 Link("How to turn on Remote Login (SSH)", destination: ExternalLinks.appleRemoteLogin)
                     .font(.caption).foregroundStyle(Theme.link)
                 Link("How to turn on Screen Sharing (VNC)", destination: ExternalLinks.appleScreenSharing)
+                    .font(.caption).foregroundStyle(Theme.link)
+                Link("How to turn on File Sharing (SMB)", destination: ExternalLinks.appleFileSharing)
                     .font(.caption).foregroundStyle(Theme.link)
             }
             card("Power") {
@@ -352,9 +363,37 @@ struct HostDetailView: View {
         return facts?.ipv4Addresses?.first
     }
 
-    /// Opens `scheme://address` in one named app — Terminal for SSH, Screen Sharing for VNC.
+    /// Who to connect as on this host: what the admin typed for it, else the user signed in there.
+    /// A user name, never a password — those stay with Terminal, Screen Sharing and Finder, which
+    /// offer to keep them in the Keychain.
+    @AppStorage("connectAs") private var connectAsByHost: String = "{}"
+
+    private var connectAsKey: String { fingerprint?.hex ?? "local" }
+
+    private var connectAsBinding: Binding<String> {
+        Binding(get: {
+            (try? JSONDecoder().decode([String: String].self, from: Data(connectAsByHost.utf8)))?[connectAsKey] ?? ""
+        }, set: { value in
+            var all = (try? JSONDecoder().decode([String: String].self, from: Data(connectAsByHost.utf8))) ?? [:]
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            all[connectAsKey] = trimmed.isEmpty ? nil : trimmed
+            connectAsByHost = (try? String(decoding: JSONEncoder().encode(all), as: UTF8.self)) ?? "{}"
+        })
+    }
+
+    private var connectUser: String? {
+        let typed = connectAsBinding.wrappedValue
+        return typed.isEmpty ? facts?.loginUser : typed
+    }
+
+    /// Opens `scheme://user@address` in one named app — Terminal, Screen Sharing or Finder.
     private func connect(_ scheme: String, with bundleIdentifier: String) {
-        guard let address = connectAddress, let url = URL(string: "\(scheme)://\(address)"),
+        guard let address = connectAddress else { return }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = address
+        components.user = connectUser
+        guard let url = components.url,
               let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else { return }
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
     }

@@ -31,4 +31,5 @@ enum ExternalLinks {
     /// opens macOS's tools rather than carrying a remote shell of its own. Checked 9 October.
     static let appleRemoteLogin = URL(string: "https://support.apple.com/guide/mac-help/allow-a-remote-computer-to-access-your-mac-mchlp1066/mac")!
     static let appleScreenSharing = URL(string: "https://support.apple.com/guide/mac-help/turn-screen-sharing-on-or-off-mh11848/mac")!
+    static let appleFileSharing = URL(string: "https://support.apple.com/guide/mac-help/set-up-file-sharing-on-mac-mh17131/mac")!
 }
