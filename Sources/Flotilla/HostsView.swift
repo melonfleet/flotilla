@@ -530,7 +530,7 @@ struct HostsView: View {
             TableColumn("Flotilla", value: \.appSortKey) { row in
                 flotillaCell(row)
             }
-            .width(min: 100, ideal: 170)
+            .width(min: 100, ideal: 150)
             .customizationID("flotilla")
 
             TableColumn("Model", value: \.modelSortKey) { row in
@@ -558,15 +558,14 @@ struct HostsView: View {
 
             TableColumn("Name", value: \.nameSortKey) { row in
                 HStack(spacing: 6) {
-                    Button(row.name) { open(row) }
+                    Button { open(row) } label: { Text(row.name).lineLimit(1).truncationMode(.middle) }
                         .buttonStyle(.link)
                         .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                        .lineLimit(1)
                         .help("Open \(row.name)")
                     if row.isThisMac { ThisMacPill() }
                 }
             }
-            .width(min: 130, ideal: 170)
+            .width(min: 150, ideal: 230)
 
             TableColumn("Tags") { row in
                 TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true)
