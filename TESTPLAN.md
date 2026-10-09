@@ -146,6 +146,7 @@ Running containers on the test Macs may be stopped by some cases — each such c
 | 13.2 | Turn automatic host updates off; install a newer build. | Hosts wait; Updates offers **Update N Hosts Now**. |
 | 13.3 | Flotilla ▸ Check for Updates… on the admin. | Sparkle checks melonfleet.github.io. Until the first release is published it says it can't reach the update feed; once one is, it says Flotilla is up to date or offers the newer build. |
 | 13.4 | Turn a host off. | Within a minute: not answering in Overview, the badge turns red, Last Check-in stops and turns amber. Turn it on: recovers by itself. |
+| 13.5 | A host where Flotilla was installed from the `.pkg`, with its Flotilla Helper on: install a newer build on the admin. | The host updates like the others (its helper installs it, the app stays owned by root). With the helper off, Hosts says why it can't update and how to. |
 
 ## 14. Uninstall and reset
 

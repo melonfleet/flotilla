@@ -13,7 +13,23 @@ extension AppModel {
     // MARK: Host side
 
     func performInstallUpdate(_ archive: URL, isIdle: @escaping @Sendable () -> Bool) async -> Result<String, HostCallFailure> {
-        let outcome: Result<String, Error> = await Task.detached { Result { try SelfUpdate.install(archive: archive, isIdle: isIdle) } }.value
+        let prepared: Result<SelfUpdate.Prepared, Error> = await Task.detached {
+            Result { try SelfUpdate.prepare(archive: archive, isIdle: isIdle) }
+        }.value
+        let outcome: Result<String, Error>
+        switch prepared {
+        case .failure(let error):
+            outcome = .failure(error)
+        case .success(let update) where SelfUpdate.canReplaceItself:
+            outcome = await Task.detached { Result { try SelfUpdate.swap(update); return update.version } }.value
+        case .success(let update):
+            // Installed by a package, owned by root: the helper swaps it (Q43).
+            switch await runPrivileged(.installFlotillaUpdate(path: update.app.path), prompt: "") {
+            case .succeeded: outcome = .success(update.version)
+            case .failed(let why): outcome = .failure(SelfUpdate.Failure.refused(why))
+            default: outcome = .failure(SelfUpdate.Failure.failed("The Flotilla Helper didn't install the update."))
+            }
+        }
         switch outcome {
         case .success(let version):
             recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: "Flotilla",

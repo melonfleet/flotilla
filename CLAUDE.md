@@ -592,6 +592,8 @@ must preserve all of the following:
     helper for every privileged job, ever: a new job is a new typed operation on it, never a
     second daemon. The old `dns-helper` plist ships only as a launch-less stub so the app can
     unregister it; Login Items approval is per app, so the move keeps the helper on.
+    **Amended 2026-10-09 (Q43):** and `installFlotillaUpdate` — over the app the helper is inside,
+    only a newer build signed by its own team, checked as root on a root-owned copy.
 
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.

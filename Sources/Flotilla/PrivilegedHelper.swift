@@ -92,6 +92,11 @@ enum PrivilegedHelper {
             return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
         }
         switch request {
+        case .installFlotillaUpdate:
+            if let version = await runningVersion(), version < 4 {
+                return "This Mac's Flotilla Helper is from an older Flotilla and can't install updates. "
+                    + "Install this update with the package once; after that the helper installs them."
+            }
         case .installContainer:
             if let version = await runningVersion(), version < 3 {
                 return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
@@ -133,6 +138,8 @@ enum PrivilegedHelper {
                 proxy.removeFleetResolvers { once.resume($0) }
             case .installContainer(let path, let version):
                 proxy.installContainer(packageAt: path, version: version) { once.resume($0) }
+            case .installFlotillaUpdate(let path):
+                proxy.installFlotillaUpdate(appAt: path) { once.resume($0) }
             }
         }
     }
@@ -147,6 +154,8 @@ enum HelperRequest: Sendable {
     case removeFleetResolvers
     /// Q39: Apple's `container` package, checked by the helper as root. Helper only.
     case installContainer(path: String, version: String)
+    /// Q43: a Flotilla update over a root-owned app, checked by the helper as root. Helper only.
+    case installFlotillaUpdate(path: String)
 }
 
 private final class VersionOnce: @unchecked Sendable {
@@ -194,6 +203,9 @@ extension AppModel {
             return .failed("Names across Macs need the Flotilla Helper switched on. Turn it on in Settings ▸ Advanced.")
         case .installContainer:
             return .failed("Installing container without a person here needs the Flotilla Helper switched on.")
+        case .installFlotillaUpdate:
+            return .failed("Flotilla here was installed by a package, so only its Flotilla Helper can update it. "
+                           + "Switch the helper on in Settings ▸ Advanced, or install the update with the package.")
         case .create(let domain, let localhost):
             switch ContainerCLI.dnsCreateCommand(domain: domain, localhost: localhost) {
             case .success(let command): commands = [command]

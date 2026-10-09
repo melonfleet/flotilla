@@ -1974,3 +1974,19 @@ The owner approved the four points PLAN.md left open, and the build settled the 
   docker.io (Docker Hardened Images, MCP servers) are shown greyed with the reason.
 - **Credentials** are untouched: no Docker Hub sign-in; registry logins stay in the Keychain (Q20).
 
+## Q43 — The Flotilla Helper installs updates over a root-owned app (settled 2026-10-09)
+
+Found in beta 2's test: a host set up from the `.pkg` — the MDM route — has Flotilla owned by root,
+and Flotilla runs as the user, so the admin's update could never be swapped in ("You don't have
+permission to save the file 'Flotilla' in the folder 'Applications'"). The owner approved one more
+typed helper job, `installFlotillaUpdate(appAt:)` (interface version 4):
+
+- The app still checks the update first and waits until the host is idle (Q38). Where it can write
+  its own app it swaps it itself, as before; otherwise it asks the helper.
+- The helper is never told where to install: it replaces **the app it is inside**, and only that.
+- As root, on its own root-owned copy, it checks again: Flotilla's identifier, signed by the helper's
+  own Developer ID team, every nested binary valid (strict), and a **newer** build than the one it
+  replaces. Then it swaps the copy in, still owned by root, and exits so the new helper starts next.
+- With the helper off, the host says why it cannot update and how to: switch the helper on, or
+  install with the package. A host whose helper predates version 4 needs the package once.
+

@@ -27,7 +27,8 @@ public enum HelperInterface {
     /// Bumped when the interface changes, so an app can tell an old helper from a current one.
     /// 2 (8 October, Q37): adds the fleet resolver files.
     /// 3 (8 October, Q39): adds installing Apple's `container` package.
-    public static let version = 3
+    /// 4 (9 October, Q43): adds installing a Flotilla update over a root-owned app.
+    public static let version = 4
 
     /// A code requirement for `identifier`, signed by Apple-issued Developer ID under `team`.
     /// Both ends use it: the helper on the app, and the app on the helper.
@@ -65,4 +66,9 @@ public enum HelperInterface {
     /// Installs Apple's `container` package at `path` — only if it is Apple's, notarised, exactly
     /// `version`, and not older than what is installed (DECISIONS Q39). Version 3.
     func installContainer(packageAt path: String, version: String, reply: @escaping @Sendable (String?) -> Void)
+    /// Replaces the Flotilla this helper belongs to with the app at `path` — only if it is Flotilla,
+    /// signed by this helper's own Developer ID team with every nested binary valid, and a newer
+    /// build. The destination is never given: it is the app the helper is inside. For a Mac where a
+    /// package installed Flotilla owned by root, so the app cannot replace itself (Q43). Version 4.
+    func installFlotillaUpdate(appAt path: String, reply: @escaping @Sendable (String?) -> Void)
 }

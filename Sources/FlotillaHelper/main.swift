@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import FlotillaCore
 import FlotillaPrivileged
 
@@ -158,6 +159,75 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol, @unc
             reply(result.status == 0 ? nil : "Apple's installer failed: " + result.output.suffix(600))
         } catch {
             reply("The helper couldn't stage the package: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: Flotilla updates over a root-owned app (DECISIONS Q43)
+    //
+    // A package installs Flotilla owned by root, and Flotilla runs as the user, so on such a Mac the
+    // admin's update could never be swapped in (beta 2's test, 9 October). The helper does the swap —
+    // of its own app only — after checking, as root and on its own copy, everything the app checks.
+
+    /// The app this helper is inside: `…/Flotilla.app/Contents/MacOS/FlotillaHelper`, three up.
+    private static var ownApp: URL? {
+        guard let executable = Bundle.main.executableURL?.resolvingSymlinksInPath() else { return nil }
+        let app = executable.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        guard app.pathExtension == "app",
+              (NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist")) as? [String: Any])?["CFBundleIdentifier"]
+                as? String == HelperInterface.appIdentifier else { return nil }
+        return app
+    }
+
+    private static func build(of app: URL) -> Int? {
+        ((NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist")) as? [String: Any])?["CFBundleVersion"]
+            as? String).flatMap { Int($0) }
+    }
+
+    func installFlotillaUpdate(appAt path: String, reply: @escaping @Sendable (String?) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let team = HelperInterface.ownTeamIdentifier() else { reply("The helper isn't Developer ID signed."); return }
+        guard let destination = Self.ownApp, let installedBuild = Self.build(of: destination) else {
+            reply("The helper couldn't find the Flotilla it belongs to."); return
+        }
+        // A real app folder, not a link to one.
+        var info = stat()
+        guard path.hasPrefix("/"), path.hasSuffix(".app"), lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else {
+            reply("The helper was given something that isn't an app."); return
+        }
+        let fileManager = FileManager.default
+        let staging = Self.installStaging.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? fileManager.removeItem(at: staging) }
+        do {
+            try fileManager.createDirectory(at: staging, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700, .ownerAccountID: 0])
+            // Our own copy, owned by root, so what is checked is what is installed.
+            let copy = staging.appendingPathComponent("Flotilla.app")
+            guard capture("/usr/bin/ditto", [path, copy.path]).status == 0,
+                  capture("/usr/sbin/chown", ["-R", "root:wheel", copy.path]).status == 0 else {
+                reply("The helper couldn't copy the update."); return
+            }
+            // Genuine: Flotilla, this helper's own team, every nested binary valid.
+            var code: SecStaticCode?
+            var requirement: SecRequirement?
+            let text = HelperInterface.requirement(identifier: HelperInterface.appIdentifier, team: team)
+            guard SecStaticCodeCreateWithPath(copy as CFURL, [], &code) == errSecSuccess, let code,
+                  SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement,
+                  SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate
+                                                              | kSecCSCheckNestedCode), requirement) == errSecSuccess else {
+                reply("The update isn't Flotilla signed by this Mac's own team, so it wasn't installed."); return
+            }
+            // Newer, never a downgrade or a sideways swap.
+            guard let newBuild = Self.build(of: copy) else { reply("The update has no build number."); return }
+            guard newBuild > installedBuild else {
+                reply("This Mac already has build \(installedBuild); the update is \(newBuild)."); return
+            }
+            _ = try fileManager.replaceItemAt(destination, withItemAt: copy)
+            reply(nil)
+            // The app now holds a newer helper; exit so launchd starts that one on the next request.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { exit(0) }
+        } catch {
+            reply("Flotilla couldn't be replaced: \(error.localizedDescription)")
         }
     }
 

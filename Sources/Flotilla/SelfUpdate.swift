@@ -16,7 +16,9 @@ import FlotillaPrivileged
 ///   swap.
 ///
 /// Only Flotilla is replaced and relaunched. Containers run under `container`'s own services and
-/// are not touched, and the swap waits until nothing is running for an admin.
+/// are not touched, and the swap waits until nothing is running for an admin. Where a package
+/// installed Flotilla owned by root, the Flotilla Helper makes the swap after checking it all again
+/// as root (Q43).
 enum SelfUpdate {
     static let bundleIdentifier = HelperInterface.appIdentifier
     /// How long an update waits for the host to be idle before giving up.
@@ -34,19 +36,31 @@ enum SelfUpdate {
         }
     }
 
-    /// Unpacks `archive`, checks the app inside, waits for `isIdle`, and puts it in place of the
-    /// running app. Returns the installed version, as hosts report it. Blocking: call off the main
-    /// actor.
-    static func install(archive: URL, isIdle: @Sendable () -> Bool) throws -> String {
+    /// A checked update, waiting to be swapped in.
+    struct Prepared: Sendable {
+        let app: URL
+        /// As hosts report it: `1.5.0.0-beta.3 (352)`.
+        let version: String
+    }
+
+    /// Whether this process can replace its own app. Not where a package installed it: that app is
+    /// owned by root, and the swap goes through the Flotilla Helper instead (Q43).
+    static var canReplaceItself: Bool {
+        let app = Bundle.main.bundleURL
+        let fileManager = FileManager.default
+        return app.pathExtension == "app"
+            && fileManager.isWritableFile(atPath: app.deletingLastPathComponent().path)
+            && fileManager.isWritableFile(atPath: app.path)
+            && fileManager.isWritableFile(atPath: app.appendingPathComponent("Contents").path)
+    }
+
+    /// Unpacks `archive`, checks the app inside, and waits for `isIdle`. Blocking: call off the main
+    /// actor. Nothing is replaced yet — `swap` does that, or the helper.
+    static func prepare(archive: URL, isIdle: @Sendable () -> Bool) throws -> Prepared {
         guard let team = HelperInterface.ownTeamIdentifier() else {
             throw Failure.refused("This host's Flotilla isn't Developer ID signed, so it can't check an update. Update it by hand.")
         }
-        let destination = Bundle.main.bundleURL
-        guard destination.pathExtension == "app" else { throw Failure.refused("This host isn't running from an app bundle.") }
-        let parent = destination.deletingLastPathComponent()
-        guard FileManager.default.isWritableFile(atPath: parent.path) else {
-            throw Failure.refused("This host can't replace Flotilla in \(parent.lastPathComponent).")
-        }
+        guard Bundle.main.bundleURL.pathExtension == "app" else { throw Failure.refused("This host isn't running from an app bundle.") }
 
         // Unpacked beside the archive, in the upload's own private folder.
         let unpacked = archive.deletingLastPathComponent().appendingPathComponent("unpacked", isDirectory: true)
@@ -86,17 +100,22 @@ enum SelfUpdate {
             guard Date() < deadline else { throw Failure.failed("This host stayed busy for ten minutes, so the update waited. Try again.") }
             Thread.sleep(forTimeInterval: 2)
         }
+        return Prepared(app: app, version: "\(short) (\(newBuild))")
+    }
 
+    /// Puts a prepared update in place of the running app, as this user. Blocking.
+    static func swap(_ prepared: Prepared) throws {
+        let destination = Bundle.main.bundleURL
+        let parent = destination.deletingLastPathComponent()
         // Copied beside the running app (same volume), then swapped in in one step.
         let staging = parent.appendingPathComponent(".Flotilla-update-\(UUID().uuidString).app")
-        try run("/usr/bin/ditto", [app.path, staging.path])
+        try run("/usr/bin/ditto", [prepared.app.path, staging.path])
         do {
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: staging)
         } catch {
             try? FileManager.default.removeItem(at: staging)
             throw Failure.failed("Flotilla couldn't be replaced: \(error.localizedDescription)")
         }
-        return "\(short) (\(newBuild))"
     }
 
     /// Quits, and opens the app again once this process has gone. The relaunch waits on this
