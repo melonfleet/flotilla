@@ -376,6 +376,14 @@ that we *built* the right command; almost nothing checked the command was
   the first `-` onward is dropped, because argv is where `--env TOKEN=…` and home-directory mount
   paths live.
 
+- **A callback written inside `@MainActor` code is main-actor isolated, and Swift 6 traps when it
+  runs anywhere else.** `PrivilegedHelper.runningVersion` passed an unmarked closure to
+  `remoteObjectProxyWithErrorHandler`; XPC calls that on its own queue, so the first helper connection
+  error crashed the app (`_swift_task_checkIsolatedSwift` → `dispatch_assert_queue_fail`, SIGTRAP).
+  It shipped unseen because this Mac's helper always answered: the mini crashed two seconds after
+  launch on build 352, and Tahoe as its helper exited after installing an update (9 October). Any
+  closure handed to an Objective-C callback that may run off the main thread is `@Sendable`, and the
+  error path gets exercised on purpose — a stand-alone repro reproduced exit 133 before the fix.
 - **`case A, B where cond:` binds `where` to `B` only.** Written as
   `case .loaded, .loading where displayed.isEmpty:` the `.loaded` arm matched
   unconditionally, so the Machines list rendered "No matching machines" with two

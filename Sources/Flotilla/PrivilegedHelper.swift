@@ -80,7 +80,11 @@ enum PrivilegedHelper {
         defer { connection.invalidate() }
         return await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
             let once = VersionOnce(continuation)
-            let proxy = connection.remoteObjectProxyWithErrorHandler { _ in once.resume(nil) } as? HelperProtocol
+            // `@Sendable`: XPC calls this on its own queue. Written inside this `@MainActor` type, an
+            // unmarked closure is main-actor isolated, and Swift traps the moment XPC calls it off the
+            // main thread — which crashed every host whose helper connection reported an error (the
+            // mini at launch, Tahoe as its helper exited after installing an update; 9 October).
+            let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable _ in once.resume(nil) } as? HelperProtocol
             guard let proxy else { once.resume(nil); return }
             proxy.helperVersion { once.resume($0) }
         }
@@ -120,7 +124,8 @@ enum PrivilegedHelper {
 
         return await withCheckedContinuation { continuation in
             let once = ResumeOnce(continuation)
-            let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+            // `@Sendable` for the same reason as in `runningVersion`.
+            let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable error in
                 once.resume("Flotilla couldn't reach its Flotilla Helper: \(error.localizedDescription)")
             } as? HelperProtocol
             guard let proxy else {
