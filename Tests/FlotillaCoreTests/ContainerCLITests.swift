@@ -558,6 +558,19 @@ private extension Result {
     #expect(validated.arguments.first == "run")
 }
 
+@Test func architectureAndRosettaReachTheCommandAndAreAccepted() throws {
+    let args = ContainerCLI.runArguments(image: "alpine",
+                                         options: .init(platform: "linux/amd64", rosetta: true))
+    #expect(args == ["run", "-d", "--platform", "linux/amd64", "--rosetta", "alpine"])
+    let validated = try Allowlist.validated(args)
+    #expect(validated.arguments.contains("--rosetta"))
+    // And `create`, which takes run's options, accepts them too.
+    let created = ContainerCLI.createArguments(image: "alpine", options: .init(rosetta: true))
+    #expect(try Allowlist.validated(created).arguments.contains("--rosetta"))
+    // A value is not a switch's: `--rosetta yes` makes `yes` the image and `alpine` a command.
+    #expect(!ContainerCLI.runArguments(image: "alpine").contains("--rosetta"))
+}
+
 @Test func aTrailingCommandIsSeparatedSoItCannotBeReadAsAFlag() throws {
     let args = ContainerCLI.runArguments(
         image: "alpine", options: .init(detach: false), command: ["--version"]

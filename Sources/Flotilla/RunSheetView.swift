@@ -137,10 +137,27 @@ struct RunSheetView: View {
          ports.map(\.value).joined(separator: ","),
          env.map(\.value).joined(separator: ","),
          volumes.map(\.value).joined(separator: ","),
-         "\(detach)", "\(limitResources)", "\(cpus)", "\(memoryMB)"].joined(separator: "\u{1}")
+         "\(detach)", "\(limitResources)", "\(cpus)", "\(memoryMB)",
+         architecture.rawValue, "\(rosetta)"].joined(separator: "\u{1}")
     }
 
     @State private var detach = true
+    /// `--platform`, for an image built for more than one architecture (Phase 1 leftover).
+    @State private var architecture: Architecture = .automatic
+    @State private var rosetta = false
+
+    enum Architecture: String, CaseIterable, Identifiable {
+        case automatic = "Automatic", arm64 = "arm64", amd64 = "amd64"
+        var id: Self { self }
+        /// `nil` sends no flag, and `container` picks this Mac's own.
+        var platform: String? {
+            switch self {
+            case .automatic: nil
+            case .arm64: "linux/arm64"
+            case .amd64: "linux/amd64"
+            }
+        }
+    }
     @State private var cpus: Int
     @State private var memoryMB: Int
     /// Whether to pass the limits at all. Off by default, so the sheet's behaviour does not change
@@ -427,6 +444,25 @@ struct RunSheetView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            FormField("Architecture",
+                      help: FieldHelp(
+                          "Which build of the image to run, when it has more than one.",
+                          detail: "Automatic runs the arm64 build on Apple silicon. amd64 runs the Intel build under Rosetta; an image with only one build ignores this.")) {
+                Picker("Architecture", selection: $architecture) {
+                    ForEach(Architecture.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("Rosetta inside the container", isOn: $rosetta)
+                Text("Lets an arm64 container run Intel (x86-64) programs as well. Not needed to run an amd64 image, and needs Rosetta installed on this Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Toggle("Limit CPU and memory", isOn: $limitResources)
 
             if limitResources {
@@ -695,7 +731,9 @@ struct RunSheetView: View {
             // `.memorySize` shape — digits plus an optional K/M/G suffix. The stepper is in MB, so
             // the suffix is fixed and cannot drift into something the allowlist would refuse.
             memory: limitResources ? "\(memoryMB)M" : nil,
-            network: network.isEmpty ? nil : network
+            network: network.isEmpty ? nil : network,
+            platform: architecture.platform,
+            rosetta: rosetta
         )
     }
 

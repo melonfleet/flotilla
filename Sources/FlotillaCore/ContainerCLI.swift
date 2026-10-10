@@ -545,11 +545,14 @@ public struct ContainerCLI: Sendable {
         public var network: String?
         /// `--platform`: `os/arch[/variant]`.
         public var platform: String?
+        /// `--rosetta`: Rosetta inside the container, so an arm64 container can also run Intel
+        /// (x86-64) programs. Not needed to run an amd64 image.
+        public var rosetta: Bool
 
         public init(name: String? = nil, ports: [String] = [], env: [String] = [],
                     volumes: [String] = [], detach: Bool = true, rm: Bool = false,
                     cpus: Int? = nil, memory: String? = nil, network: String? = nil,
-                    platform: String? = nil) {
+                    platform: String? = nil, rosetta: Bool = false) {
             self.name = name
             self.ports = ports
             self.env = env
@@ -560,6 +563,7 @@ public struct ContainerCLI: Sendable {
             self.memory = memory
             self.network = network
             self.platform = platform
+            self.rosetta = rosetta
         }
     }
 
@@ -606,6 +610,7 @@ public struct ContainerCLI: Sendable {
         if let memory = options.memory { args += ["--memory", memory] }
         if let network = options.network { args += ["--network", network] }
         if let platform = options.platform { args += ["--platform", platform] }
+        if options.rosetta { args.append("--rosetta") }
         args.append(image)
         // An explicit `--` before the in-container command. This is the **input** grammar, not
         // what runs: without it `Allowlist` would read a trailing `-la` as an unknown flag and

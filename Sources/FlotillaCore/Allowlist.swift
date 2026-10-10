@@ -829,7 +829,10 @@ public enum Allowlist {
                                 FlagSpec(long: "cpus", short: "c", value: .count),
                                 FlagSpec(long: "memory", short: "m", value: .memorySize),
                                 FlagSpec(long: "network", value: .identifier),
-                                FlagSpec(long: "platform", value: .platform)],
+                                FlagSpec(long: "platform", value: .platform),
+                                // A switch, no value (1.5.0 `--help`: "Enable Rosetta in the
+                                // container"); the Run form's Rosetta toggle.
+                                FlagSpec(long: "rosetta")],
                         operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
                         trailing: .command(maxTokens: 24)),
 
@@ -852,7 +855,10 @@ public enum Allowlist {
                                 FlagSpec(long: "cpus", short: "c", value: .count),
                                 FlagSpec(long: "memory", short: "m", value: .memorySize),
                                 FlagSpec(long: "network", value: .identifier),
-                                FlagSpec(long: "platform", value: .platform)],
+                                FlagSpec(long: "platform", value: .platform),
+                                // A switch, no value (1.5.0 `--help`: "Enable Rosetta in the
+                                // container"); the Run form's Rosetta toggle.
+                                FlagSpec(long: "rosetta")],
                         operands: OperandSpec(shape: .imageReference, min: 1, max: 1),
                         trailing: .command(maxTokens: 24)),
 
