@@ -75,6 +75,15 @@ extension AppModel {
         if !flagged.isEmpty {
             items.append(AttentionItem("\(flagged.count) container\(flagged.count == 1 ? " is" : "s are") in an unknown state.", .containers))
         }
+        // For looking at a long list without breaking anything: launched with
+        // FLOTILLA_FAKE_ATTENTION=12, Flotilla adds that many made-up items. Nothing sets it.
+        if let fake = ProcessInfo.processInfo.environment["FLOTILLA_FAKE_ATTENTION"].flatMap(Int.init), fake > 0 {
+            let hosts = ["mini-01", "mini-02", "studio-lab", "rack2-mini-07", "build-host"]
+            for n in 1...min(fake, 50) {
+                items.append(AttentionItem("\(hosts[n % hosts.count])-\(n) isn\u{2019}t answering: Couldn't reach the host: "
+                    + "the connection timed out after 30 seconds while waiting for a reply on port 7868.", .hosts))
+            }
+        }
         return items
     }
 

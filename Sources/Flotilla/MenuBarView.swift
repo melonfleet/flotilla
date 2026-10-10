@@ -27,6 +27,24 @@ struct MenuBarView: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
 
+    /// How many headings the menu lists before "Show All".
+    static let attentionShown = 10
+
+    /// A message as menu lines of about `width` characters, broken between words — a menu cannot
+    /// wrap. At most eight lines; the rest is in Flotilla.
+    static func wrapped(_ text: String, width: Int = 48) -> [String] {
+        var lines: [String] = [], current = ""
+        for word in text.split(separator: " ") {
+            if !current.isEmpty && current.count + 1 + word.count > width {
+                lines.append(current); current = ""
+            }
+            current += (current.isEmpty ? "" : " ") + word
+        }
+        if !current.isEmpty { lines.append(current) }
+        if lines.count > 8 { lines = Array(lines.prefix(7)) + ["…"] }
+        return lines
+    }
+
     /// "Golden-Gate isn't answering: Couldn't reach…" → "Golden-Gate isn't answering" over
     /// "Couldn't reach…", each kept to a menu's width.
     static func menuLines(_ text: String, limit: Int = 60) -> (String, String?) {
@@ -45,16 +63,25 @@ struct MenuBarView: View {
         let attention = model.attentionItems
         if !attention.isEmpty {
             Divider()
+            // Headings only, each opening its full message beside it when pointed at; ten at most,
+            // then the rest in Flotilla (the owner, 10 October). A menu scrolls by itself if it ever
+            // outgrows the screen.
             Menu("Needs Attention (\(attention.count))") {
-                ForEach(attention) { item in
-                    // A title and a smaller line under it, as Quit's "Containers keep running": a menu
-                    // cannot wrap, and the whole message on one line ran nearly across the screen
-                    // (the owner, 10 October). Overview shows it in full.
-                    let (title, detail) = Self.menuLines(item.text)
-                    Button { present { model.requestSection(item.section) } } label: {
-                        Text(title)
-                        if let detail { Text(detail) }
+                ForEach(attention.prefix(Self.attentionShown)) { item in
+                    Menu(Self.menuLines(item.text).0) {
+                        ForEach(Array(Self.wrapped(item.text).enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                        }
+                        Divider()
+                        if let fix = item.fix {
+                            Button(fix.title) { fix.run() }
+                        }
+                        Button("Show in Flotilla") { present { model.requestSection(item.section) } }
                     }
+                }
+                if attention.count > Self.attentionShown {
+                    Divider()
+                    Button("Show All \(attention.count) in Flotilla…") { present { model.requestSection(.overview) } }
                 }
             }
         }

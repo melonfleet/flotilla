@@ -673,8 +673,11 @@ final class HostModeController {
                                            checkedAt: Date())
             return
         }
-        var status = live[fingerprint] ?? LiveStatus(state: .checking, checkedAt: Date())
-        if status.state != .connected { status.state = .checking }
+        // A host keeps what it last said while it is asked again: "not answering" stays until it
+        // answers. Going back to "checking" at every attempt flipped Overview's attention box
+        // between green and amber each refresh and moved the hosts table under it (the owner,
+        // 10 October, with Golden Gate off). Only a host never asked yet is "checking".
+        let status = live[fingerprint] ?? LiveStatus(state: .checking, checkedAt: Date())
         live[fingerprint] = status
         let cli = ContainerCLI(host: remote, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
         let outcome = await Task.detached { () -> Result<(String?, [Container], Int), Error> in

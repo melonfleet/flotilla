@@ -327,12 +327,19 @@ struct OverviewView: View {
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(attentionItems) { item in
-                    HStack(spacing: 10) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Button { go(item.section) } label: {
+                            // Up to three lines, then the rest on hover: one line cut each message off
+                            // at the window's edge (10 October). A line limit, not a fixed size — see
+                            // CLAUDE.md on fixedSize in a screen's top band.
                             Label(item.text, systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(Theme.warning)
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
+                        .help(item.text)
                         if let fix = item.fix {
                             Button(fix.title) { fix.run() }
                                 .controlSize(.small)
