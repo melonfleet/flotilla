@@ -525,6 +525,12 @@ public struct ContainerCLI: Sendable {
         try execute(["inspect", id]).stdout
     }
 
+    /// `container system property list --format json`: the runtime's own settings, from its
+    /// `config.toml` and its defaults. Read-only.
+    public func rawSystemPropertiesJSON() throws -> String {
+        try execute(["system", "property", "list", "--format", "json"]).stdout
+    }
+
     /// Options for `container run`. Ports, env and volumes are passed as already-shaped
     /// CLI values (`HOST:CONTAINER`, `KEY=VALUE`, `SOURCE:DEST[:ro|rw]`) — `Allowlist`
     /// validates their shape at `execute` time, so there is no need to duplicate that

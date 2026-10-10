@@ -39,6 +39,15 @@ extension AppModel {
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
+    /// The runtime's own settings on a Mac (`system property list`), pretty-printed and redacted the
+    /// way the Inspect tabs redact, for its Settings tab.
+    func fetchRuntimeProperties(host: HostRef) async throws -> String {
+        let cli = try cli(for: host)
+        let raw = try await Task.detached { try cli.rawSystemPropertiesJSON() }.value
+        return Redactor(excluding: [.fingerprint, .homePath, .temporaryPath, .email])
+            .redact(JSONPrettyPrinter.prettyPrint(raw))
+    }
+
     func fetchProcesses(for id: String, host: HostRef) async throws -> String {
         let cli = try cli(for: host)
         return try await Task.detached { try cli.processes(id) }.value

@@ -36,3 +36,15 @@ private func fixture(_ name: String) throws -> String {
         #expect(SystemReport.firewallEnabled("") == nil)
     }
 }
+
+@Suite struct RuntimePropertiesTests {
+    @Test func theRuntimesSettingsAreAReadOnlyCommandAHostMayAnswer() throws {
+        let validated = try Allowlist.validated(["system", "property", "list", "--format", "json"])
+        #expect(validated.arguments == ["system", "property", "list", "--format", "json"])
+        #expect(throws: (any Error).self) { try Allowlist.validated(["system", "property", "set", "dns.domain", "x"]) }
+        let url = try #require(Bundle.module.url(forResource: "system-property-list", withExtension: "json",
+                                                 subdirectory: "Fixtures/container-1.5.0"))
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        #expect(object?["dns"] != nil && object?["container"] != nil)
+    }
+}

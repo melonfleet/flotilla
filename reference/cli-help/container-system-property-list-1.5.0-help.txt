@@ -1,0 +1,10 @@
+OVERVIEW: List system properties
+
+USAGE: container system property list [--format <format>] [--debug]
+
+OPTIONS:
+  --format <format>       Format of the output (default: toml)
+  --debug                 Enable debug output [environment: CONTAINER_DEBUG]
+  --version               Show the version.
+  -h, --help              Show help information.
+

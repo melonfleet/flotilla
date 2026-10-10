@@ -18,3 +18,9 @@ inspect`), for the configuration exporter:
   and `storefront-web` (a host folder, which 1.5.0 reports as a `virtiofs` mount). Account name
   anonymised to `example`; the demo database password replaced with `example-password`.
 - `export-images.json` — `image inspect` of their two images, reduced to the arm64 variant.
+
+Added 2026-10-10, from the live CLI on the development Mac (container 1.5.0), unedited — it names no
+account or path of the owner's:
+
+- `system-property-list.json` — `container system property list --format json`: the runtime's own
+  settings (`config.toml` merged with its defaults), for a host's Settings tab.

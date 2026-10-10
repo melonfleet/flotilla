@@ -102,7 +102,7 @@ private func requireRejected(
         "network list", "network inspect", "network create", "network delete", "network rm",
         "network prune",
         "machine list",
-        "system status", "system version", "system df",
+        "system status", "system version", "system df", "system property list",
     ]
 
     // The whole `k8s` family, **including its read**, which is the one exception in this table
@@ -599,7 +599,7 @@ private func requireRejected(
         "image save",
         "volume list", "volume inspect",
         "network list", "network inspect",
-        "system status", "system version", "system df",
+        "system status", "system version", "system df", "system property list",
         "system dns list",
         // Reads the credential store without changing it. Local-only all the same: see the
         // exposure test, and the rows.
@@ -778,6 +778,7 @@ private func requireRejected(
                     canonical: ["system", "status", "--format", "json"], mutates: false),
         AllowedCase(["system", "version"], mutates: false),
         AllowedCase(["system", "df", "--format", "table"], mutates: false),
+        AllowedCase(["system", "property", "list", "--format", "json"], mutates: false),
         // The exact argv `ContainerCLI.startSystem` sends, verified accepted by the live CLI.
         // `--disable-kernel-install` is mandatory in practice: the flag defaults to prompting,
         // and a windowed app has nowhere to show a prompt.

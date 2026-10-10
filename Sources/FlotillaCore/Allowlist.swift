@@ -1061,6 +1061,10 @@ public enum Allowlist {
             CommandSpec(["system", "status"], mutates: false, flags: [format]),
             CommandSpec(["system", "version"], mutates: false, flags: [format]),
             CommandSpec(["system", "df"], mutates: false, flags: [format]),
+            // The runtime's own settings — `config.toml` merged with its defaults — read-only, for a
+            // host's Settings tab (Phase 1's `config.toml` view, 10 October). Exposed: it names no
+            // account and no secret, and the admin's side redacts as Inspect does.
+            CommandSpec(["system", "property", "list"], mutates: false, flags: [format]),
 
             // MARK: system — the one mutation
             //
