@@ -11,7 +11,72 @@
       <sparkle:shortVersionString>1.5.0.0-beta.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
       <sparkle:channel>beta</sparkle:channel>
-      <sparkle:releaseNotesLink>https://github.com/melonfleet/flotilla/releases/tag/v1.5.0.0-beta.3</sparkle:releaseNotesLink>
+      <description><![CDATA[<style>
+:root { color-scheme: light dark; }
+body { font: 13px -apple-system, system-ui, sans-serif; line-height: 1.45; margin: 12px 16px; }
+h3 { font-size: 13px; margin: 14px 0 4px; }
+p { margin: 6px 0; }
+ul { margin: 4px 0 8px; padding-left: 18px; }
+li { margin: 2px 0; }
+code { font: 12px ui-monospace, Menlo, monospace; }
+a { color: #2C7A7B; }
+@media (prefers-color-scheme: dark) { a { color: #59B3B0; } }
+.more { margin-top: 14px; font-size: 12px; opacity: 0.8; }
+</style>
+<p>Flotilla is a native Mac app for Apple's <code>container</code>: run and manage Linux containers on this Mac, and on a fleet of Macs from one admin Mac.</p>
+<p><strong>This is a beta</strong>, built and tested against <code>container</code> 1.5.0. Expect rough edges, and please report what you find.</p>
+<h3>Requirements</h3>
+<ul>
+<li>A Mac with Apple silicon, macOS 26 or later.</li>
+<li>Apple's <code>container</code> 1.5.0. Flotilla offers to download and install it on first run, through Apple's own Installer.</li>
+</ul>
+<h3>What's new since beta 2</h3>
+<p><strong>Hosts.</strong></p>
+<ul>
+<li>Each host has its own page, with tabs for Overview, System, Flotilla, Settings, Updates and Activity.</li>
+<li>The System tab shows power, FileVault, the firewall and sharing. It has one-click SSH, Screen Sharing and File Sharing buttons, each linked to Apple's guide for turning it on.</li>
+<li>The Settings tab lists Flotilla's settings and <code>container</code>'s own settings, as a table or as a numbered property list.</li>
+<li>Status is a coloured dot. "This Mac", "Admin" and "Host" are built-in tags.</li>
+<li>Hosts can be grouped by subnet, or by your own categories such as Site, Rack and VLAN. Categories travel in <code>.flotilla</code> exports.</li>
+</ul>
+<p><strong>Getting around.</strong></p>
+<ul>
+<li>⌘K opens Go To…, which goes to any section, action, container, image or host by name.</li>
+<li>Containers search understands <code>is:running</code>, <code>is:stopped</code>, <code>image:</code>, <code>host:</code> and <code>tag:</code>.</li>
+<li>⌘F jumps to the search field in every section.</li>
+</ul>
+<p><strong>Running containers.</strong></p>
+<ul>
+<li>Run lets you choose the architecture (arm64 or amd64) and turn on Rosetta inside the container.</li>
+</ul>
+<p><strong>Accessibility.</strong></p>
+<ul>
+<li>Every control has a spoken name, and status is in words as well as colour.</li>
+<li>Flotilla follows Increase Contrast, Reduce Transparency and Reduce Motion.</li>
+</ul>
+<p><strong>Fixes.</strong></p>
+<ul>
+<li>The Flotilla Helper restarts itself after Flotilla is updated. Before, it could stop answering until the Mac restarted.</li>
+<li>A failed <code>container</code> setup clears once <code>container</code> works again.</li>
+<li>Hosts get switches for installing <code>container</code> by themselves and for taking Flotilla updates from their admin.</li>
+<li>Get started can be closed, and the version and build number show in Overview's corner.</li>
+<li>Admin + Host mode is retired: a Mac is an Admin or a Host, and both run their own containers.</li>
+</ul>
+<h3>Downloads</h3>
+<ul>
+<li><code>Flotilla-1.5.0.0-beta.3.dmg</code>: drag Flotilla to Applications.</li>
+<li><code>Flotilla-1.5.0.0-beta.3.pkg</code>: for MDM and scripted installs.</li>
+<li><code>Flotilla-1.5.0.0-beta.3.zip</code> and <code>.tar.gz</code>: the same signed, notarised app.</li>
+</ul>
+<h3>Known limits</h3>
+<ul>
+<li>A new host needs one click on macOS's local network prompt; a configuration profile cannot grant it.</li>
+<li>Containers on different Macs reach each other through published ports only.</li>
+<li>The Docker Hub browser searches Docker Hub only.</li>
+<li>Coming from beta 2 or earlier: restart each Mac's Flotilla Helper once after updating, by switching it off and on in Settings ▸ Advanced. From beta 3 on it does this itself.</li>
+</ul>
+<p>Flotilla sends no analytics and nothing about your Mac. Settings ▸ About lists every address it can contact, and when.</p>
+<p class="more"><a href="https://github.com/melonfleet/flotilla/releases/tag/v1.5.0.0-beta.3">Full release on GitHub</a></p>]]></description>
       <enclosure url="https://github.com/melonfleet/flotilla/releases/download/v1.5.0.0-beta.3/Flotilla-1.5.0.0-beta.3.zip" type="application/octet-stream" sparkle:edSignature="BJHOEUiqEhpuNlaPLy9or7qEjUCqWLloo7G90C6qU38UZa8PwrjLqm0Q9aLrDiH31R8WtK7KYxu6qCHx1f79Cw==" length="12900211"/>
     </item>
     <item>
