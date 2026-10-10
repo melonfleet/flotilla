@@ -629,8 +629,10 @@ signing work.
   property list`) beside Flotilla's on a host's Settings tab; Architecture and Rosetta in Run;
   guided `.pkg` installation, which Q39 already does (Apple's signed release, verified, handed
   to Installer with the owner's password); the accessibility pass (named controls, status in
-  words, Increase Contrast, Reduce Transparency, Reduce Motion, keyboard reach), checked in code,
-  not yet with VoiceOver on screen.
+  words, Increase Contrast, Reduce Transparency, Reduce Motion, keyboard reach), checked on screen
+  10 October: every section's accessibility tree has no unnamed control of Flotilla's own, the
+  owner ran the display settings, and a tooltip audit filled about a hundred gaps; every copy now
+  says "Copied".
 
 The package installer must remain visible and user-authorised. Flotilla must
 never silently install or upgrade Apple's privileged package.
