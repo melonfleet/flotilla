@@ -87,6 +87,11 @@ struct RuntimeStatusBand: View {
             Circle()
                 .fill(status.tint)
                 .frame(width: 7, height: 7)
+                // On the dot itself: in the collapsed sidebar the block's tooltip lost to the menu's
+                // own, so pointing at the dot said nothing (the owner, on Tahoe, 10 October).
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+                .help(status.detail.map { "\(status.title) — \($0)" } ?? status.title)
                 .accessibilityLabel(status.title)
         }
     }
@@ -224,7 +229,9 @@ enum RuntimeStatus {
         case .tooOld(let found, let required):
             ("container \(found) is too old", "needs \(required)", Theme.warning)
         case .missing:
-            ("container is not installed", nil, Theme.danger)
+            // Amber, as a host without container is on the admin's Hosts list: something to set
+            // up, not something broken (the owner, 10 October). A failed install stays red.
+            ("container is not installed", nil, Theme.warning)
         case .unusable:
             ("container is not usable", nil, Theme.danger)
         case nil:
