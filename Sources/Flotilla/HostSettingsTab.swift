@@ -41,7 +41,7 @@ struct HostSettingsTab: View {
                                      disabled: report == nil) {
                         guard let report else { return }
                         Clipboard.copy(presentation == .table
-                                       ? report.entries.map { "\($0.name) = \($0.displayValue)  (\(Self.source($0.source)))" }
+                                       ? report.entries.map { "\($0.name) = \($0.displayValue)" }
                                            .joined(separator: "\n")
                                        : report.propertyListXML())
                     }
@@ -86,27 +86,16 @@ struct HostSettingsTab: View {
         } else if report == nil {
             ProgressView("Reading the settings…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if presentation == .table {
+            // Key and value only, as the Inspect table is (the owner, 10 October). What a setting
+            // does, and where a non-default value came from, are on the key's tooltip.
             SwiftUI.Table(rows) {
-                TableColumn("Setting") { entry in
+                TableColumn("Key") { entry in
                     Text(entry.name).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
-                        .help(entry.summary)
+                        .help(Self.tooltip(entry))
                 }
-                .width(min: 160, ideal: 240)
-                // No Source column (the owner, 10 October): a column reading "Set on this Mac" row
-                // after row said nothing. A setting at its default says nothing either; one that is
-                // not carries a mark — changed here, or set by a profile.
                 TableColumn("Value") { entry in
-                    HStack(spacing: 6) {
-                        Text(entry.displayValue).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
-                            .foregroundStyle(entry.value == nil ? .tertiary : .primary)
-                        sourceMark(entry.source)
-                    }
-                }
-                .width(min: 140, ideal: 260)
-                // One line, the whole of it on hover: a two-line summary made rows of two heights.
-                TableColumn("What it does") { entry in
-                    Text(entry.summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                        .help(entry.summary)
+                    Text(entry.displayValue).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                        .foregroundStyle(entry.value == nil ? .tertiary : .primary)
                 }
             }
         } else if let report {
@@ -114,32 +103,9 @@ struct HostSettingsTab: View {
         }
     }
 
-    /// Nothing for a default; a small mark for a value changed on that Mac or set by a profile,
-    /// with the whole story on hover.
-    @ViewBuilder
-    private func sourceMark(_ source: SettingSource) -> some View {
-        switch source {
-        case .builtIn:
-            EmptyView()
-        case .user:
-            mark("Changed", systemImage: nil, help: "Changed from its default on this Mac.")
-        case .managedDefault:
-            mark("Profile", systemImage: nil, help: "Set by a configuration profile; can be changed on this Mac.")
-        case .locked:
-            mark("Locked", systemImage: "lock.fill", help: "Locked by a configuration profile.")
-        }
-    }
-
-    private func mark(_ title: String, systemImage: String?, help: String) -> some View {
-        HStack(spacing: 3) {
-            if let systemImage { Image(systemName: systemImage).font(.system(size: 8, weight: .semibold)) }
-            Text(title).font(.system(size: 10, weight: .medium))
-        }
-        .padding(.horizontal, 5).padding(.vertical, 1)
-        .background(Color.secondary.opacity(0.12), in: Capsule())
-        .foregroundStyle(.secondary)
-        .help(help)
-        .fixedSize()
+    /// What the setting does, and — when it is not at its default — where its value came from.
+    static func tooltip(_ entry: SettingsReport.Entry) -> String {
+        entry.source == .builtIn ? entry.summary : "\(entry.summary)\n\n\(source(entry.source))."
     }
 
     /// Where a value comes from, in the words Settings uses.
