@@ -1,7 +1,7 @@
 import SwiftUI
 import FlotillaCore
 
-/// The version, bottom-right of This Mac's page — and, on the Mac that manages the fleet, the way
+/// The version and build, bottom-right of Overview — and, on the Mac that manages the fleet, the way
 /// to ask whether it is the latest.
 ///
 /// Modelled on Docker Desktop's corner, from the owner's screenshot: a small version number at

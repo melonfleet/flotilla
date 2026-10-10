@@ -33,6 +33,17 @@ struct OverviewView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // This Mac's Flotilla and build, bottom-right, as Docker Desktop's corner (the owner, 10
+        // October): one glance at a host says whether its update has landed. On an admin Mac it is
+        // also Check for Updates. A strip of its own, so it never sits over the hosts table.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                Spacer()
+                VersionBadge(model: model)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+        }
         // The totals read lists the poll refreshes only every sixth tick or on a section's visit,
         // so Overview loads them itself rather than showing zeros on a fresh launch.
         // Paired hosts are asked alongside, not first: a host that is slow to answer must not hold
