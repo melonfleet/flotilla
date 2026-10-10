@@ -19,8 +19,12 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: 22) {
                 // Setting up `container` comes first and says what is happening (beta 2's test):
                 // the same banner This Mac's page has.
-                if model.runtimeSetup != nil || model.needsContainerInstall { RuntimeBanner(model: model) }
-                attention
+                let setupBanner = model.runtimeSetup != nil || model.needsContainerInstall
+                if setupBanner { RuntimeBanner(model: model) }
+                // "Nothing needs attention" under a banner saying container isn't installed contradicts
+                // it (the owner, on Tahoe, 10 October): with the banner up, the box shows only when
+                // something else needs attention too.
+                if !(setupBanner && model.attentionItems.isEmpty) { attention }
                 getStarted
                 updates
                 totals
