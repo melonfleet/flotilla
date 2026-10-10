@@ -1291,6 +1291,7 @@ final class AppModel {
             }
             panel.finish(listStep, detail: appeared ? nil : "not listed yet")
             panel.succeed("\(reference) pulled")
+            Task { [notifier] in await notifier.post(.imagePullFinished, title: "Image pulled", body: "\(reference) is ready.") }
             return true
         } catch {
             panel.fail(String(describing: error))
@@ -1400,6 +1401,9 @@ final class AppModel {
             return false
         }
         panel.succeed("\(reference) pulled on \(pulled.count) Macs")
+        Task { [notifier] in
+            await notifier.post(.imagePullFinished, title: "Image pulled", body: "\(reference) is ready on \(pulled.count) Macs.")
+        }
         return true
     }
 
@@ -1754,6 +1758,10 @@ final class AppModel {
     var pendingSection: Section?
     /// Whether the popover asked for the Run sheet. Cleared by `ContainersView`.
     var pendingRunSheet = false
+    /// A notice to open in Notifications, from a click on its macOS notification. Cleared there.
+    var pendingNotice: String?
+    /// Opens the main window from outside SwiftUI; handed over by `MainWindowView`.
+    @ObservationIgnored var openMainWindow: (() -> Void)?
 
     func requestSection(_ section: Section) { pendingSection = section }
     /// Ask a section to open one item's detail screen.

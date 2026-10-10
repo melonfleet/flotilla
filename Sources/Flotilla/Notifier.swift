@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import OSLog
 import UserNotifications
 import FlotillaCore
@@ -19,8 +19,18 @@ import FlotillaCore
 /// rather than at launch. A permission prompt before the user has done anything is the
 /// pattern people deny by reflex, and a denied prompt is far harder to recover from than a
 /// late one.
+///
+/// **Notices (Q48).** `postNotice` sends one of Flotilla's notices with its id as the request's,
+/// so `withdraw` can take it out of Notification Centre when it resolves or is dismissed, and its
+/// buttons — the notice's fix, and Dismiss — come back through `onResponse`. Nothing is shown
+/// while Flotilla is in front: the bell and Overview's banner already are.
 @MainActor
-final class Notifier {
+final class Notifier: NSObject, UNUserNotificationCenterDelegate {
+    enum Response { case open, fix, dismiss }
+
+    /// A notification was clicked (`open`) or one of its buttons pressed, by notice id.
+    var onResponse: ((String, Response) -> Void)?
+    private var registered: [String: UNNotificationCategory] = [:]
 
     private let log = Logger(subsystem: "dev.melonfleet.Flotilla", category: "notifications")
 
@@ -28,9 +38,8 @@ final class Notifier {
     private let center: UNUserNotificationCenter?
 
     private var categories: NotificationSettings
-    private var authorization: Authorization = .unknown
-
-    private enum Authorization { case unknown, granted, denied }
+    private var granted = false
+    private var authorizing: Task<Bool, Never>?
 
     init(categories: NotificationSettings = .defaults) {
         self.categories = categories
@@ -40,7 +49,18 @@ final class Notifier {
         } else {
             center = nil
         }
+        super.init()
     }
+
+    /// Becomes the centre's delegate, at launch, so a click that launched Flotilla still arrives.
+    func activate() {
+        center?.delegate = self
+    }
+
+    func isEnabled(_ category: NotificationCategory) -> Bool { categories.isEnabled(category) }
+
+    /// Whether Flotilla is the app in front, when nothing is shown.
+    var isFrontmost: Bool { NSApp.isActive }
 
     func updateCategories(_ preferences: NotificationSettings) {
         categories = preferences
@@ -58,6 +78,7 @@ final class Notifier {
         }
         // Mandatory categories (errors) ignore the toggle; everything else respects it.
         guard category.isMandatory || categories.isEnabled(category) else { return }
+        guard !isFrontmost else { return }
         guard await ensureAuthorized(center) else { return }
 
         let content = UNMutableNotificationContent()
@@ -76,32 +97,95 @@ final class Notifier {
         }
     }
 
-    /// Ask once, remember the answer. A denial is cached so we stop asking — repeatedly
-    /// prompting someone who said no is how an app gets muted entirely.
-    private func ensureAuthorized(_ center: UNUserNotificationCenter) async -> Bool {
-        switch authorization {
-        case .granted: return true
-        case .denied: return false
-        case .unknown: break
+    /// One notice, or several sent together, under `id`. `fix` names the notice's own button.
+    /// `notices` names what a combined alert carries, kept on the notification itself so a later
+    /// launch can still withdraw it.
+    func postNotice(id: String, title: String, body: String, level: NoticeBook.Level, thread: String,
+                    fix: String?, dismissible: Bool, notices: [String] = []) async {
+        guard let center, !isFrontmost, await ensureAuthorized(center) else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.threadIdentifier = thread                   // one group per Mac
+        content.interruptionLevel = level == .good ? .passive : .active
+        content.sound = level == .good ? nil : .default
+        content.categoryIdentifier = register(fix: fix, dismissible: dismissible)
+        if !notices.isEmpty { content.userInfo = ["notices": notices] }
+        do {
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        } catch {
+            log.error("Failed to post a notice: \(error.localizedDescription, privacy: .public)")
         }
+    }
 
-        let settings = await center.notificationSettings()
-        switch settings.authorizationStatus {
-        case .authorized, .provisional:
-            authorization = .granted
-        case .denied:
-            authorization = .denied
-        case .notDetermined:
-            do {
-                let granted = try await center.requestAuthorization(options: [.alert, .sound])
-                authorization = granted ? .granted : .denied
-            } catch {
-                log.error("Authorization request failed: \(error.localizedDescription, privacy: .public)")
-                authorization = .denied
+    /// Takes these out of Notification Centre, and any combined alert none of whose notices is
+    /// still `live`.
+    func withdraw(_ ids: [String], live: Set<String>) async {
+        guard let center, !ids.isEmpty else { return }
+        var gone = ids
+        for delivered in await center.deliveredNotifications() {
+            if let carried = delivered.request.content.userInfo["notices"] as? [String],
+               live.isDisjoint(with: carried) {
+                gone.append(delivered.request.identifier)
             }
-        @unknown default:
-            authorization = .denied
         }
-        return authorization == .granted
+        center.removeDeliveredNotifications(withIdentifiers: gone)
+    }
+
+    /// The buttons are fixed per category, so there is one per fix title and dismissibility.
+    private func register(fix: String?, dismissible: Bool) -> String {
+        let id = "notice|\(fix ?? "")|\(dismissible)"
+        guard registered[id] == nil, let center else { return id }
+        var actions: [UNNotificationAction] = []
+        if let fix { actions.append(UNNotificationAction(identifier: "fix", title: fix)) }
+        if dismissible { actions.append(UNNotificationAction(identifier: "dismiss", title: "Dismiss")) }
+        registered[id] = UNNotificationCategory(identifier: id, actions: actions, intentIdentifiers: [])
+        center.setNotificationCategories(Set(registered.values))
+        return id
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            didReceive response: UNNotificationResponse) async {
+        let id = response.notification.request.identifier
+        let kind: Response = switch response.actionIdentifier {
+        case "fix": .fix
+        case "dismiss": .dismiss
+        default: .open
+        }
+        await MainActor.run { onResponse?(id, kind) }
+    }
+
+    /// In front, nothing shows: Flotilla's own banner and bell already do.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        []
+    }
+
+    /// Ask once, and only when the answer is not known. A grant is remembered; a refusal is read
+    /// again each time — reading the setting never prompts, and that way turning notifications on
+    /// in System Settings works without a relaunch.
+    ///
+    /// Posts arrive together (three errors at once, 10 October), so they share one request: each
+    /// asking for itself raced the prompt, and two of three were lost as "not allowed" while it
+    /// was still on screen.
+    private func ensureAuthorized(_ center: UNUserNotificationCenter) async -> Bool {
+        if granted { return true }
+        if let authorizing { return await authorizing.value }
+        let task = Task { [log] () -> Bool in
+            switch await center.notificationSettings().authorizationStatus {
+            case .authorized, .provisional: return true
+            case .notDetermined:
+                do { return try await center.requestAuthorization(options: [.alert, .sound]) } catch {
+                    log.error("Authorization request failed: \(error.localizedDescription, privacy: .public)")
+                    return false
+                }
+            default: return false
+            }
+        }
+        authorizing = task
+        let answer = await task.value
+        authorizing = nil
+        granted = answer
+        return answer
     }
 }

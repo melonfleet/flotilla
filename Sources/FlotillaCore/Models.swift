@@ -815,11 +815,16 @@ public struct LogChunk: Codable, Sendable, Equatable {
 /// Docker we ship no announcement, survey or recommendation categories, because we
 /// have nothing to announce.
 public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Identifiable {
+    // In the order Settings lists them.
+    case error
+    case hostOffline
+    case hostOnline
+    case runtimeStopped
+    case networkDisconnected
+    case approvalWaiting
     case containerExited
     case imagePullFinished
     case buildFinished
-    case hostOffline
-    case error
 
     public var id: String { rawValue }
 
@@ -829,28 +834,50 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
 
     public var defaultEnabled: Bool {
         switch self {
-        case .error, .hostOffline: true
-        case .containerExited, .imagePullFinished, .buildFinished: false
+        case .error, .hostOffline, .runtimeStopped, .networkDisconnected, .approvalWaiting: true
+        case .hostOnline, .containerExited, .imagePullFinished, .buildFinished: false
         }
     }
 
     public var title: String {
         switch self {
+        case .error: "Errors"
+        case .hostOffline: "A Mac stopped answering"
+        case .hostOnline: "A Mac is answering again"
+        case .runtimeStopped: "container stopped on This Mac"
+        case .networkDisconnected: "A network lost its connection"
+        case .approvalWaiting: "A Mac is waiting for approval"
         case .containerExited: "Container exited unexpectedly"
         case .imagePullFinished: "Image pull finished"
         case .buildFinished: "Build finished"
-        case .hostOffline: "Host went offline"
-        case .error: "Errors"
         }
     }
 
     public var summary: String {
         switch self {
-        case .containerExited: "Notify when a container stops without being asked to."
-        case .imagePullFinished: "Notify when `container image pull` completes."
-        case .buildFinished: "Notify when a build completes."
-        case .hostOffline: "Notify when a fleet host stops responding."
-        case .error: "Notify on operation failures. Always on."
+        case .error: "Notify when the runtime is down, a host's update fails, or something you started fails. Always on."
+        case .hostOffline: "Notify when a host hasn't answered for two minutes."
+        case .hostOnline: "Notify when a host you were told about answers again."
+        case .runtimeStopped: "Notify when the container runtime on this Mac stops."
+        case .networkDisconnected: "Notify when a container network loses its connection to this Mac."
+        case .approvalWaiting: "Notify when a Mac asks to join the fleet."
+        case .containerExited: "Notify when a container on this Mac stops without being asked to."
+        case .imagePullFinished: "Notify when an image pull completes, if Flotilla isn't in front."
+        case .buildFinished: "Notify when a build completes, if Flotilla isn't in front."
+        }
+    }
+
+    /// Which category announces a notice, by its key (`AttentionItem.key`), or nil for a notice
+    /// that stays in Flotilla: version differences, updates, containers in an unknown state, a
+    /// host without `container` (Q48).
+    public static func forNotice(key: String) -> NotificationCategory? {
+        switch key.split(separator: ":", maxSplits: 1).first.map(String.init) ?? key {
+        case "runtime-down", "no-kernel", "update-failed": .error
+        case "host-unreachable": .hostOffline
+        case "runtime-stopped": .runtimeStopped
+        case "network-disconnected": .networkDisconnected
+        case "approval-waiting": .approvalWaiting
+        default: nil
         }
     }
 }

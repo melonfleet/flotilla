@@ -15,6 +15,7 @@ struct MainWindowView: View {
     /// Reduce Transparency draws the content ground solid; Reduce Motion stops the sidebar sliding.
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openWindow) private var openWindow
 
     /// Owned here, not in `ContainersView`. This view is the window's root and is built
     /// once; the detail views are destroyed and recreated on every sidebar change, so any
@@ -385,6 +386,8 @@ struct MainWindowView: View {
                 selection = requested
                 model.pendingSection = nil
             }
+            // For a click on a macOS notification, which arrives outside SwiftUI (Q48).
+            model.openMainWindow = { [openWindow] in openWindow(id: "main") }
         }
     }
 

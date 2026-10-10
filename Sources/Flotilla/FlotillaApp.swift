@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         model = Self.pendingModel
+        // Before launch finishes, or a click on a notification that launched Flotilla is lost.
+        model?.notifier.activate()
         applyPresentation()
         pruneEmptyFormatMenu()
     }

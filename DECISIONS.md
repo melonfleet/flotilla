@@ -2101,3 +2101,33 @@ The owner's design, after twelve made-up items made Overview unusable:
 6. **A host still being checked keeps its notices**, so a relaunch does not split each one in two.
    `lastSeen` advances by the minute, and the attention list changes only when its contents do,
    so an open menu is not rebuilt under the pointer.
+
+### Q48 continued — macOS Notification Centre (settled 2026-10-10)
+
+The owner's list, with three answers: combine above three a minute; "answering again" off by default;
+"container exited" stays This Mac only.
+
+- **Sent**, each once, when it becomes due (`NoticeAlerts`):
+  - a host that hasn't answered for **two minutes**;
+  - `container` stopped on This Mac, with Start;
+  - the runtime down, or no kernel, with Download Kernel;
+  - a host's failed update, with Retry;
+  - a Mac waiting for approval;
+  - a network that lost its connection;
+  - a failure of something you started;
+  - a container on This Mac exiting by itself (off by default);
+  - image pull or build finished (off by default).
+- **"Answering again"** goes only for a host whose going quiet was sent, and is off by default.
+- **Never sent:** version differences, updates, containers in an unknown state, a host without
+  `container`, anything you did yourself unless it failed, and repeats.
+- **When nothing is sent:**
+  - while Flotilla is in front, because the bell and the banner already show it;
+  - on a host Mac, because its troubles reach the admin.
+- **More than three a minute go as one:** "6 Macs stopped answering". With the minute used up,
+  they wait.
+- **A notification leaves Notification Centre when its notice resolves or is dismissed.**
+- **Each notification's buttons are the notice's fix and Dismiss.** A click opens the notice's page.
+- **Grouping is per Mac.** Focus applies; there is no Time Sensitive level.
+- Each category is a toggle under Settings → Notifications; Errors are always on. This also wired
+  the three toggles that had never sent anything: "Host went offline", "Image pull finished" and
+  "Build finished".

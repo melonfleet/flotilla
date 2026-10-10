@@ -32,22 +32,84 @@ final class NoticeStore {
     /// it reads changes, and one rebuilt under the pointer loses the click.
     private(set) var attention: [NoticeBook.Notice] = []
 
-    func reconcile(_ items: [AttentionItem], unsettled: Set<String>) {
+    /// - Returns: the notices this resolved.
+    @discardableResult
+    func reconcile(_ items: [AttentionItem], unsettled: Set<String>) -> [NoticeBook.Notice] {
         var updated = book
-        updated.reconcile(items.map(\.condition), at: Date(), unsettled: unsettled)
-        guard updated != book else { return }
+        let resolved = updated.reconcile(items.map(\.condition), at: Date(), unsettled: unsettled)
+        guard updated != book else { return [] }
         book = updated
         changed()
+        ended(resolved.map(\.id))
+        return resolved
     }
 
     func dismiss(_ ids: Set<String>) {
         guard book.dismiss(ids, at: Date()) > 0 else { return }
         changed()
+        ended(Array(ids))
     }
 
     func restore(_ ids: Set<String>) {
         book.restore(ids)
         changed()
+    }
+
+    // MARK: Notification Centre (Q48)
+
+    /// Set by `AppModel`, so a notice that ends leaves Notification Centre with it.
+    @ObservationIgnored var notifier: Notifier?
+    /// When this minute's alerts went out, for at most three a minute.
+    @ObservationIgnored private var recentAlerts: [Date] = []
+
+    /// Sends whatever is due: one each, or several as one when more than three a minute are.
+    func announce(hostName: (NoticeBook.Notice) -> String?, fix: (NoticeBook.Notice) -> String?) {
+        guard let notifier else { return }
+        let now = Date()
+        recentAlerts.removeAll { now.timeIntervalSince($0) >= NoticeAlerts.window }
+        let due = NoticeAlerts.due(book, at: now, enabled: notifier.isEnabled)
+        let plan = NoticeAlerts.plan(due, recent: recentAlerts, at: now)
+        guard !plan.isEmpty else { return }
+        book.markAnnounced(Set(plan.flatMap(\.notices).map(\.id)), at: now)
+        changed()
+        for alert in plan {
+            recentAlerts.append(now)
+            switch alert {
+            case .single(let notice):
+                let thread = notice.host ?? "flotilla"
+                let body = notice.detail ?? ""
+                let fixTitle = fix(notice)
+                Task { await notifier.postNotice(id: notice.id, title: notice.title, body: body, level: notice.level,
+                                                 thread: thread, fix: fixTitle, dismissible: notice.dismissible) }
+            case .combined(let notices):
+                let id = "combined@\(Int(now.timeIntervalSince1970 * 1000))"
+                let carried = notices.map(\.id)
+                let text = NoticeAlerts.combinedText(notices, hostName: hostName)
+                let level = notices.map(\.level).max() ?? .warning
+                Task { await notifier.postNotice(id: id, title: text.title, body: text.body, level: level,
+                                                 thread: "flotilla", fix: nil, dismissible: false, notices: carried) }
+            }
+        }
+    }
+
+    /// "Mac mini is answering again", for a host whose going quiet was announced — if that
+    /// category is on, which it is not by default.
+    func announceBack(_ resolved: [NoticeBook.Notice], hostName: (NoticeBook.Notice) -> String?) {
+        guard let notifier, notifier.isEnabled(.hostOnline) else { return }
+        for notice in resolved where notice.announced != nil
+            && NotificationCategory.forNotice(key: notice.key) == .hostOffline {
+            let name = hostName(notice) ?? notice.title
+            Task { await notifier.postNotice(id: "back:" + notice.id, title: "\(name) is answering again",
+                                             body: "", level: .good, thread: notice.host ?? "flotilla",
+                                             fix: nil, dismissible: false) }
+        }
+    }
+
+    /// Takes ended notices out of Notification Centre, and any alert that carried only ended ones.
+    private func ended(_ ids: [String]) {
+        guard let notifier, !ids.isEmpty else { return }
+        let live = Set(book.notices.filter { $0.isActive && $0.dismissed == nil }.map(\.id))
+        Task { await notifier.withdraw(ids, live: live) }
     }
 
     private func changed() {
@@ -73,12 +135,35 @@ extension AppModel {
     /// Turns what is wrong now into notices every five seconds, window or no window — the same
     /// cadence the menu bar's badge needs.
     func startNoticeWatch() {
+        notices.notifier = notifier
+        notifier.onResponse = { [weak self] id, response in self?.respond(to: id, response) }
         Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                self.notices.reconcile(self.attentionItems, unsettled: self.unsettledNoticeHosts)
+                let resolved = self.notices.reconcile(self.attentionItems, unsettled: self.unsettledNoticeHosts)
+                // A host Mac is usually a mini with no one at it: its troubles reach the admin.
+                if self.hostMode.isAdmin {
+                    self.notices.announceBack(resolved, hostName: self.noticeHostName)
+                    self.notices.announce(hostName: self.noticeHostName, fix: { self.fix(for: $0)?.title })
+                }
                 try? await Task.sleep(for: .seconds(5))
             }
+        }
+    }
+
+    /// A click on a notice's macOS notification, or one of its buttons.
+    private func respond(to id: String, _ response: Notifier.Response) {
+        let notice = notices.book.notices.first { $0.id == id }
+        switch response {
+        case .fix:
+            if let notice, let fix = fix(for: notice) { fix.run() }
+        case .dismiss:
+            if notice != nil { notices.dismiss([id]) }
+        case .open:
+            pendingNotice = notice?.id
+            pendingSection = .notifications
+            NSApp.activate(ignoringOtherApps: true)
+            openMainWindow?()
         }
     }
 

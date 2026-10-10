@@ -62,7 +62,9 @@ extension AppModel {
                                                    kind: .image,
                                                    subject: tag ?? contextPath,
                                                    action: "Built"))
-                return tag.map { "\($0) built" } ?? "Image built"
+                let done = tag.map { "\($0) built" } ?? "Image built"
+                Task { [notifier] in await notifier.post(.buildFinished, title: "Build finished", body: done + ".") }
+                return done
             },
             confirm: { [weak self] in
                 guard let self else { return true }

@@ -47,6 +47,15 @@ struct NotificationsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear(perform: openPending)
+        .onChange(of: model.pendingNotice) { _, _ in openPending() }
+    }
+
+    /// A notice whose macOS notification was clicked.
+    private func openPending() {
+        guard let id = model.pendingNotice else { return }
+        model.pendingNotice = nil
+        open = store.book.notices.contains { $0.id == id } ? id : nil
     }
 
     private var list: some View {

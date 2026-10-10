@@ -51,6 +51,8 @@ public struct NoticeBook: Codable, Sendable, Equatable {
         public var lastSeen: Date
         public var resolved: Date?
         public var dismissed: Date?
+        /// When it went to Notification Centre, or nil if it hasn't (Q48).
+        public var announced: Date?
 
         public var isActive: Bool { resolved == nil }
         /// On Overview's banner and in the menu bar: active, not dismissed, a warning or an error.
@@ -82,8 +84,11 @@ public struct NoticeBook: Codable, Sendable, Equatable {
     /// `unsettled` names the hosts whose state isn't known yet — still being checked, as every
     /// host is just after launch. Their notices are left as they are rather than resolved, or a
     /// relaunch would split each one in two: resolved at launch, started again a few seconds later.
-    public mutating func reconcile(_ current: [Condition], at now: Date, unsettled: Set<String> = []) {
+    /// - Returns: the notices this call resolved.
+    @discardableResult
+    public mutating func reconcile(_ current: [Condition], at now: Date, unsettled: Set<String> = []) -> [Notice] {
         let currentKeys = Set(current.map(\.key))
+        var resolved: [Notice] = []
         for condition in current {
             if let index = notices.lastIndex(where: { $0.key == condition.key && $0.isActive }) {
                 notices[index].level = condition.level
@@ -100,14 +105,16 @@ public struct NoticeBook: Codable, Sendable, Equatable {
                                       key: condition.key, level: condition.level, text: condition.text,
                                       host: condition.host, section: condition.section,
                                       dismissible: condition.dismissible, started: now, lastSeen: now,
-                                      resolved: nil, dismissed: nil))
+                                      resolved: nil, dismissed: nil, announced: nil))
             }
         }
         for index in notices.indices where notices[index].isActive && !currentKeys.contains(notices[index].key)
             && !(notices[index].host.map(unsettled.contains) ?? false) {
             notices[index].resolved = now
+            resolved.append(notices[index])
         }
         prune(at: now)
+        return resolved
     }
 
     /// Hides each dismissible one until its situation changes. Returns how many were dismissed.
@@ -120,6 +127,13 @@ public struct NoticeBook: Codable, Sendable, Equatable {
             count += 1
         }
         return count
+    }
+
+    /// Records that these went to Notification Centre.
+    public mutating func markAnnounced(_ ids: Set<String>, at now: Date) {
+        for index in notices.indices where ids.contains(notices[index].id) && notices[index].announced == nil {
+            notices[index].announced = now
+        }
     }
 
     /// Brings a dismissed notice back.

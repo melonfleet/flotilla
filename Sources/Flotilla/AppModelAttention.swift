@@ -108,7 +108,9 @@ extension AppModel {
             for n in 1...min(fake, 50) {
                 items.append(AttentionItem("\(hosts[n % hosts.count])-\(n) isn\u{2019}t answering: Couldn't reach the host: "
                     + "the connection timed out after 30 seconds while waiting for a reply on port 7868.", .hosts,
-                    key: "fake:\(n)", level: n % 4 == 0 ? .error : .warning, dismissible: n % 4 != 0))
+                    // Real kinds of key, so they reach Notification Centre the way real ones would.
+                    key: n % 4 == 0 ? "update-failed:fake-\(n)" : "host-unreachable:fake-\(n)",
+                    level: n % 4 == 0 ? .error : .warning, dismissible: n % 4 != 0))
             }
         }
         return items
