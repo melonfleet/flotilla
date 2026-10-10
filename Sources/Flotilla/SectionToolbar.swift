@@ -30,8 +30,14 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
     /// its own, which is how the search field there ended up 20pt narrower than everywhere else.
     var status: String?
 
+    /// What the field understands beyond plain words, on hover — Containers' `SearchQuery` grammar.
+    var searchHelp: String?
+
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
+
+    /// ⌘F puts the cursor in the search field, in every section (Phase 1 leftover).
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -40,6 +46,15 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
             TextField(searchPrompt, text: $search)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 280)
+                .focused($searchFocused)
+                .help(searchHelp ?? "Search (⌘F)")
+                .background {
+                    Button("Find") { searchFocused = true }
+                        .keyboardShortcut("f", modifiers: .command)
+                        .opacity(0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
 
             Spacer()
 

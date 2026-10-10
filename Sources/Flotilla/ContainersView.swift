@@ -445,34 +445,55 @@ struct ContainersView: View {
         }
     }
 
+    /// The search field, read as `SearchQuery`'s grammar: `is:`, `image:`, `host:`, `tag:` and words.
+    private var query: SearchQuery { SearchQuery.parse(ui.search) }
+
+    /// The state to list: the filter menu's, narrowed by `is:`. The two together must agree — Running
+    /// in the menu and `is:stopped` typed lists nothing, which is what both together say.
+    private var effectiveState: ContainerListing.StateFilter? {
+        guard let typed = query.state else { return stateFilter }
+        let wanted: ContainerListing.StateFilter = typed == .running ? .running : .stopped
+        return stateFilter == .all || stateFilter == wanted ? wanted : nil
+    }
+
+    /// This Mac's names a `host:` word can match: its computer name, its label, and "this mac".
+    private var localHostNames: [String] { [HostModeController.computerName, model.hostLabel, "This Mac"] }
+
     /// Which rows exist at all: standalone containers and groups, with each group's members,
     /// through the kind, state and search filters. The rules — a grouped container appears only
     /// inside its group, a partly running group is under both Running and Stopped — live in
     /// `ContainerListing`, where tests pin them.
     private var listing: [ContainerListing.Item] {
-        let needle = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !needle.isEmpty else {
+        let query = query
+        guard let state = effectiveState,
+              SearchQuery.all(query.hosts, in: localHostNames) else { return [] }
+        guard !query.isEmpty else {
             return ContainerListing.items(containers: model.containers, groups: model.groups.groups,
-                                          kind: ui.kindFilter, state: stateFilter)
+                                          kind: ui.kindFilter, state: state)
         }
         // **Tag names are searchable too, on every section.** This is how tags filter: one line
         // per section, the same everywhere, and it composes with whatever filter is already on.
+        // `is:` is applied as the state above; `host:` above, since every row here is This Mac's.
         return ContainerListing.items(
             containers: model.containers, groups: model.groups.groups,
-            kind: ui.kindFilter, state: stateFilter,
+            kind: ui.kindFilter, state: state,
             containerMatches: { container in
-                container.id.lowercased().contains(needle)
-                    || container.status.state.lowercased().contains(needle)
-                    || model.tags.tags(on: .container, container.id)
-                        .contains { $0.name.lowercased().contains(needle) }
+                let tags = model.tags.tags(on: .container, container.id).map(\.name)
+                return SearchQuery.all(query.images, in: [container.imageReference])
+                    && SearchQuery.all(query.tags, in: tags)
+                    && query.termsMatch([container.id, container.status.state, container.imageReference] + tags)
             },
             groupMatches: { group in
-                group.name.lowercased().contains(needle)
-                    || model.tags.tags(on: .group, group.id)
-                        .contains { $0.name.lowercased().contains(needle) }
+                let tags = model.tags.tags(on: .group, group.id).map(\.name)
+                return SearchQuery.all(query.images, in: group.members.map(\.image))
+                    && SearchQuery.all(query.tags, in: tags)
+                    && query.termsMatch([group.name] + tags)
             },
             memberMatches: { member in
-                member.name.lowercased().contains(needle) || member.image.lowercased().contains(needle)
+                let tags = model.tags.tags(on: .container, member.name).map(\.name)
+                return SearchQuery.all(query.images, in: [member.image])
+                    && SearchQuery.all(query.tags, in: tags)
+                    && query.termsMatch([member.name, member.image] + tags)
             })
     }
 
@@ -1390,6 +1411,7 @@ struct ContainersView: View {
         SectionToolbar(search: $ui.search,
                        searchPrompt: "Search containers and groups…",
                        updated: model.lastRefresh,
+                       searchHelp: SearchQuery.help + " ⌘F to search.",
                        leading: {
             // Head of the leading cluster, so it sits above the table's checkbox column. Only
             // meaningful in list view — cards have no checkbox column to select from.
@@ -1734,7 +1756,8 @@ struct ContainersView: View {
     /// Macs are a stream, which the wire does not carry yet.
     private var remoteRows: [ContainerRow] {
         guard ui.kindFilter != .groups, ui.hostFilter != .local else { return [] }
-        let needle = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
+        let query = query
+        guard let state = effectiveState else { return [] }
         let now = Date()
         var rows: [ContainerRow] = []
         for (peer, snapshot) in model.hostMode.fleetContainers {
@@ -1742,18 +1765,18 @@ struct ContainersView: View {
             if let only = ui.hostFilter, only != host { continue }
             let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
             for container in snapshot.items {
-                switch ui.filter {
+                switch state {
                 case .running where !container.isRunning: continue
                 case .stopped where container.isRunning: continue
                 default: break
                 }
-                if !needle.isEmpty {
-                    let rowID = host.rowID(container.id)
-                    let hit = container.id.lowercased().contains(needle)
-                        || container.status.state.lowercased().contains(needle)
-                        || peer.displayName.lowercased().contains(needle)
-                        || container.imageReference.lowercased().contains(needle)
-                        || model.tags.tags(on: .container, rowID).contains { $0.name.lowercased().contains(needle) }
+                if !query.isEmpty {
+                    let tags = model.tags.tags(on: .container, host.rowID(container.id)).map(\.name)
+                    let hit = SearchQuery.all(query.images, in: [container.imageReference])
+                        && SearchQuery.all(query.hosts, in: [peer.displayName, peer.details.computerName])
+                        && SearchQuery.all(query.tags, in: tags)
+                        && query.termsMatch([container.id, container.status.state, peer.displayName,
+                                             container.imageReference] + tags)
                     if !hit { continue }
                 }
                 rows.append(ContainerRow(container: container, cpu: -1, memory: -1,
