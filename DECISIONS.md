@@ -2118,6 +2118,12 @@ The owner's list, with three answers: combine above three a minute; "answering a
   - a container on This Mac exiting by itself (off by default);
   - image pull or build finished (off by default).
 - **"Answering again"** goes only for a host whose going quiet was sent, and is off by default.
+- **A host whose `container` service is stopped is not "not answering"** (Tahoe, 10 October). When a
+  host's commands fail, the admin asks its `system status`, which is read-only and open to it. A
+  stopped service becomes "container is stopped on Tahoe-Test-VM", sent at once and checked at the
+  normal 30-second pace rather than backed off. **It has no Start button:** `system start` stays
+  `.localOnly`, because starting a host's runtime is its owner's decision. The CLI's own
+  "XPC connection error: Connection invalid" was the symptom, passed through unchanged.
 - **Never sent:** version differences, updates, containers in an unknown state, a host without
   `container`, anything you did yourself unless it failed, and repeats.
 - **When nothing is sent:**

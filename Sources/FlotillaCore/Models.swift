@@ -844,7 +844,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         case .error: "Errors"
         case .hostOffline: "A Mac stopped answering"
         case .hostOnline: "A Mac is answering again"
-        case .runtimeStopped: "container stopped on This Mac"
+        case .runtimeStopped: "container stopped"
         case .networkDisconnected: "A network lost its connection"
         case .approvalWaiting: "A Mac is waiting for approval"
         case .containerExited: "Container exited unexpectedly"
@@ -858,7 +858,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         case .error: "Notify when the runtime is down, a host's update fails, or something you started fails. Always on."
         case .hostOffline: "Notify when a host hasn't answered for two minutes."
         case .hostOnline: "Notify when a host you were told about answers again."
-        case .runtimeStopped: "Notify when the container runtime on this Mac stops."
+        case .runtimeStopped: "Notify when the container service stops, on this Mac or a host."
         case .networkDisconnected: "Notify when a container network loses its connection to this Mac."
         case .approvalWaiting: "Notify when a Mac asks to join the fleet."
         case .containerExited: "Notify when a container on this Mac stops without being asked to."
@@ -874,7 +874,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         switch key.split(separator: ":", maxSplits: 1).first.map(String.init) ?? key {
         case "runtime-down", "no-kernel", "update-failed": .error
         case "host-unreachable": .hostOffline
-        case "runtime-stopped": .runtimeStopped
+        case "runtime-stopped", "host-runtime-stopped": .runtimeStopped
         case "network-disconnected": .networkDisconnected
         case "approval-waiting": .approvalWaiting
         default: nil

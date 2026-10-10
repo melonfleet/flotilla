@@ -57,11 +57,19 @@ extension AppModel {
         for peer in fleet.trustedHosts {
             if case .failed(let reason)? = fleet.live[peer.fingerprint]?.state {
                 // Answering but without `container`: it is waiting for it, not unreachable.
-                items.append(hostMissingContainer(peer.fingerprint)
-                    ? AttentionItem("container isn\u{2019}t installed on \(peer.displayName).", .hosts,
-                                    key: "host-no-container:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint))
-                    : AttentionItem("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts,
-                                    key: "host-unreachable:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
+                if hostMissingContainer(peer.fingerprint) {
+                    items.append(AttentionItem("container isn\u{2019}t installed on \(peer.displayName).", .hosts,
+                                               key: "host-no-container:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
+                } else if hostRuntimeStopped(peer.fingerprint) {
+                    // Answering, service stopped: no Start here — `system start` is the host
+                    // owner's decision and is not open to an admin (Allowlist, `.localOnly`).
+                    items.append(AttentionItem("container is stopped on \(peer.displayName): its containers can\u{2019}t run "
+                                               + "until it\u{2019}s started on that Mac.", .hosts,
+                                               key: "host-runtime-stopped:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
+                } else {
+                    items.append(AttentionItem("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts,
+                                               key: "host-unreachable:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
+                }
             }
         }
         // Versions that differ from This Mac's: `container` by a minor release or more, which can

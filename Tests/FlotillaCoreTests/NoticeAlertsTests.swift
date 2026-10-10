@@ -18,6 +18,14 @@ import Testing
         #expect(NoticeAlerts.due(book, at: t0 + NoticeAlerts.offlineGrace, enabled: all).count == 1)
     }
 
+    @Test func aHostsStoppedServiceIsAnnouncedAtOnce() {
+        var book = NoticeBook()
+        book.reconcile([.init(key: "host-runtime-stopped:a", level: .warning, text: "container is stopped on a",
+                              host: "a", section: "hosts", dismissible: true)], at: t0)
+        #expect(NotificationCategory.forNotice(key: "host-runtime-stopped:a") == .runtimeStopped)
+        #expect(NoticeAlerts.due(book, at: t0, enabled: all).count == 1)
+    }
+
     @Test func otherNoticesAreAnnouncedAtOnceAndOnlyOnce() {
         var book = NoticeBook()
         book.reconcile([.init(key: "update-failed:a", level: .error, text: "a couldn't update", section: "hosts",

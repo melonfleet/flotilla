@@ -1104,7 +1104,9 @@ struct HostStatusDot: View {
             switch live.state {
             case .connected: return Theme.online
             case .checking: return .secondary
-            case .failed: return model.hostMissingContainer(peer.fingerprint) ? Theme.warning : Theme.danger
+            case .failed:
+                return model.hostMissingContainer(peer.fingerprint) || model.hostRuntimeStopped(peer.fingerprint)
+                    ? Theme.warning : Theme.danger
             }
         }
         switch row.peer?.status {

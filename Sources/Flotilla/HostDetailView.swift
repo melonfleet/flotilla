@@ -527,6 +527,7 @@ struct HostDetailView: View {
         case .connected?: return "Connected"
         case .failed(let why)?:
             if let fingerprint, model.hostMissingContainer(fingerprint) { return "container isn't installed" }
+            if let fingerprint, model.hostRuntimeStopped(fingerprint) { return "container is stopped" }
             return "Not answering — \(why)"
         case .checking?, nil: return "Checking…"
         }
@@ -537,7 +538,9 @@ struct HostDetailView: View {
         switch live?.state {
         case .connected?: return Theme.online
         case .failed?:
-            if let fingerprint, model.hostMissingContainer(fingerprint) { return Theme.warning }
+            if let fingerprint, model.hostMissingContainer(fingerprint) || model.hostRuntimeStopped(fingerprint) {
+                return Theme.warning
+            }
             return Theme.danger
         default: return .secondary
         }

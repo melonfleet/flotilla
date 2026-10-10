@@ -73,6 +73,9 @@ final class HostModeController {
         /// The host's Flotilla, as its welcome said.
         var appVersion: String? = nil
         var checkedAt: Date
+        /// Answering, but its `container` service is stopped, as its `system status` said. The CLI's
+        /// own error ("XPC connection error: Connection invalid") is a symptom; this is the reason.
+        var runtimeStopped = false
     }
     private(set) var live: [PeerFingerprint: LiveStatus] = [:]
     /// Each paired host's containers, as last fetched — kept through failures, with their age
@@ -680,11 +683,14 @@ final class HostModeController {
         let status = live[fingerprint] ?? LiveStatus(state: .checking, checkedAt: Date())
         live[fingerprint] = status
         let cli = ContainerCLI(host: remote, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
-        let outcome = await Task.detached { () -> Result<(String?, [Container], Int), Error> in
-            Result {
+        let (outcome, stopped) = await Task.detached { () -> (Result<(String?, [Container], Int), Error>, Bool) in
+            let outcome = Result {
                 let version = try cli.versions().first { $0.appName.lowercased().contains("container") }?.version
                 return (version, try cli.listContainers(), try cli.machines().count)
             }
+            // A failure from a host that answered may be its service, stopped: ask it, read-only.
+            guard case .failure = outcome, let status = try? cli.systemStatus() else { return (outcome, false) }
+            return (outcome, !status.isRunning)
         }.value
         // The other lists, each on its own: one failing does not blank the others.
         if case .success = outcome {
@@ -732,11 +738,18 @@ final class HostModeController {
             imageSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             volumeSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
-            backoff[fingerprint, default: HostBackoff()].failed(at: now)
+            // A stopped service is a host that answers: asked at the usual pace, so starting it again
+            // shows within one interval rather than after a backoff of up to five minutes.
+            if stopped {
+                backoff[fingerprint, default: HostBackoff()].succeeded(at: now)
+            } else {
+                backoff[fingerprint, default: HostBackoff()].failed(at: now)
+            }
             // Its Flotilla still answered: keep its version, so a host without `container` is still
             // seen as behind and can be updated (measured 8 October, Tahoe showed "—" and was skipped).
-            live[fingerprint] = LiveStatus(state: .failed(Self.describe(error)), appVersion: remote.hostInfo?.appVersion,
-                                           checkedAt: Date())
+            live[fingerprint] = LiveStatus(state: .failed(stopped ? "container is stopped" : Self.describe(error)),
+                                           appVersion: remote.hostInfo?.appVersion, checkedAt: Date(),
+                                           runtimeStopped: stopped)
             // Connected but a command failed — a host without `container` — still says who it is.
             // Measured 7 October: a renamed VM kept its old name because only success refreshed it.
             if let info = remote.hostInfo,
