@@ -78,7 +78,7 @@ struct ExportConfigurationView: View {
              detail: { _ in "created empty" }, set: \.volumes)
         kind("Machines", ids: inputs.machines.map(\.id), titles: [:],
              detail: { id in inputs.machines.first { $0.id == id }?.image?.reference }, set: \.machines)
-        kind("Clusters", ids: Array(Set(inputs.clusters.map(\.name))).sorted(), titles: [:],
+        kind("Kubernetes clusters", ids: Array(Set(inputs.clusters.map(\.name))).sorted(), titles: [:],
              detail: { _ in "on the default node image" }, set: \.clusters)
         // Who and where, and the key each must present — never a key and never trust (Q34).
         kind("Hosts", ids: inputs.hosts.map(\.fingerprint.hex),

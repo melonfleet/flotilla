@@ -2171,3 +2171,20 @@ command, and that line stays: `system start`/`stop` remain `.localOnly` in the A
 - **An admin's Stop is a stop made while the Mac was up** (Q49), so the host leaves it stopped.
 - **Where:** a host's Overview, in the State box; its row menu in Hosts; and Start on the
   "container is stopped" notice, including on its macOS notification.
+
+## Q51 — The section is Kubernetes, and the admin manages hosts' clusters (settled 2026-10-10)
+
+The owner's call, amending Q22.
+
+1. **The section is called Kubernetes.** The CLI's command is `container k8s`, and its help reads
+   "Manage local Kubernetes development clusters". "K8s" is shorthand some won't know, and
+   "Clusters" alone didn't say what kind. The section lists clusters, so its empty state, New
+   Cluster and the Suggestions menu still say "cluster".
+2. **An admin may list, create, delete and recreate a host's clusters.** `k8s list`/`ls`,
+   `create` and `delete`/`rm` are exposed. Each host's clusters arrive on its 30-second ask and
+   show beside This Mac's, with a Host column, a host filter and a "Create on" picker. A create on
+   a host is one request, without the CLI's progress lines: a peer may only follow a command that
+   declares a stream. `k8s create` writes the host's own `~/.kube/config`.
+3. **`load-image` and `write-config` stay This Mac's own.** A host's cluster API listens on that
+   Mac's VM network, so `kubectl` here can't reach it until 2.0's tunnels. A kubeconfig for it
+   would be a promise this Mac can't keep.

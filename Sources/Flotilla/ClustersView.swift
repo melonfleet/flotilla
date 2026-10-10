@@ -14,22 +14,22 @@ import FlotillaCore
 /// a command that may change under it should say so where the user is, not only in a commit.
 struct ClustersView: View {
     let model: AppModel
-    let ui: ResourceUIState<K8sNode>
+    let ui: ResourceUIState<HostedCluster>
 
-    @State private var selection = Set<K8sNode.ID>()
+    @State private var selection = Set<HostedCluster.ID>()
     @State private var showingCreate = false
     @State private var showingSuggestions = false
     @State private var createPrefill: ClusterSuggestion?
-    @State private var pendingDelete: K8sNode?
+    @State private var pendingDelete: HostedCluster?
     /// A recreate awaiting confirmation. Recreate deletes the cluster and everything in it, so it
     /// always asks, whatever `confirmDestructiveActions` says — the same rule bulk deletes follow.
-    @State private var pendingRecreate: K8sNode?
+    @State private var pendingRecreate: HostedCluster?
     /// The cluster being loaded into, or nil for the list. An embedded screen like the create
     /// form, not a dialog — see `LoadImageView`.
     @State private var loadImageTarget: K8sNode?
 
     static let columnSpecs: [(id: String, title: String)] = [
-        ("role", "Role"), ("cpus", "CPUs"), ("memory", "Memory"),
+        ("host", "Host"), ("role", "Role"), ("cpus", "CPUs"), ("memory", "Memory"),
         ("address", "Address"), ("ports", "Ports"),
     ]
 
@@ -37,7 +37,7 @@ struct ClustersView: View {
         Group {
             if showingCreate {
                 NewClusterView(model: model, dismiss: { showingCreate = false; createPrefill = nil },
-                               prefill: createPrefill)
+                               prefill: createPrefill, initialHost: ui.hostFilter ?? .local)
             } else if showingSuggestions {
                 ResourceSuggestionsGallery(
                     intro: "Single-node clusters sized for common work, on Kubernetes 1.35 with "
@@ -97,13 +97,13 @@ struct ClustersView: View {
             Text(model.actionError ?? "")
         }
         .confirmationDialog(
-            "Delete the cluster “\(pendingDelete?.node ?? "")”?",
+            "Delete the cluster “\(pendingDelete?.name ?? "")”\(pendingDelete.map(onHost) ?? "")?",
             isPresented: Binding(get: { pendingDelete != nil },
                                  set: { if !$0 { pendingDelete = nil } }),
             titleVisibility: .visible
         ) {
             Button("Delete Cluster", role: .destructive) {
-                if let cluster = pendingDelete { Task { await model.deleteCluster(cluster) } }
+                if let row = pendingDelete { Task { await model.deleteCluster(row.cluster, on: row.host) } }
                 pendingDelete = nil
             }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
@@ -111,19 +111,19 @@ struct ClustersView: View {
             Text("Everything running in it goes with it. This cannot be undone.")
         }
         .confirmationDialog(
-            "Recreate the cluster “\(pendingRecreate?.node ?? "")”?",
+            "Recreate the cluster “\(pendingRecreate?.name ?? "")”\(pendingRecreate.map(onHost) ?? "")?",
             isPresented: Binding(get: { pendingRecreate != nil },
                                  set: { if !$0 { pendingRecreate = nil } }),
             titleVisibility: .visible,
             presenting: pendingRecreate
-        ) { cluster in
+        ) { row in
             Button("Delete and Recreate", role: .destructive) {
-                Task { await model.recreateCluster(cluster) }
+                Task { await model.recreateCluster(row.cluster, on: row.host) }
                 pendingRecreate = nil
             }
             Button("Cancel", role: .cancel) { pendingRecreate = nil }
-        } message: { cluster in
-            Text(Self.recreateMessage(for: cluster))
+        } message: { row in
+            Text(Self.recreateMessage(for: row.cluster))
         }
     }
 
@@ -186,13 +186,15 @@ struct ClustersView: View {
                        searchPrompt: "Search clusters…",
                        updated: model.clustersLastRefresh,
                        leading: {
-            ResourceListControls<K8sNode>(
+            ResourceListControls<HostedCluster>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
                 columnCustomization: Binding(get: { ui.columnCustomization },
                                              set: { ui.columnCustomization = $0 }),
                 columns: Self.columnSpecs,
-                filters: [])
+                filters: [],
+                hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
+                hosts: hostChoices)
         }, trailing: {
             ToolbarIconMenu(systemImage: "plus", label: "Create a cluster") {
                 Button("New Cluster…") { createPrefill = nil; showingCreate = true }
@@ -205,17 +207,47 @@ struct ClustersView: View {
         })
     }
 
-    private var isFiltered: Bool { !ui.search.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var isFiltered: Bool {
+        !ui.search.trimmingCharacters(in: .whitespaces).isEmpty || ui.hostFilter != nil
+    }
 
-    private var displayedClusters: [K8sNode] {
-        var clusters = model.clusters
+    /// This Mac and every paired host, for the filter and New Cluster's picker (Q51).
+    private var hostChoices: [(ref: HostRef, name: String)] {
+        [(HostRef.local, model.hostLabel)]
+            + model.hostMode.trustedHosts.map { (HostRef.peer($0.fingerprint), $0.displayName) }
+    }
+
+    /// " on Tahoe" for a host's cluster, nothing for This Mac's.
+    private func onHost(_ row: HostedCluster) -> String {
+        row.host.isLocal ? "" : " on \(row.hostName)"
+    }
+
+    /// This Mac's clusters and each paired host's last answer, through the host filter.
+    private var allRows: [HostedCluster] {
+        var rows: [HostedCluster] = []
+        if ui.hostFilter == nil || ui.hostFilter == .local {
+            rows += model.clusters.map { HostedCluster(cluster: $0, host: .local, hostName: model.hostLabel) }
+        }
+        let now = Date()
+        for (peer, snapshot) in model.hostMode.fleetClusters {
+            let host = HostRef.peer(peer.fingerprint)
+            if let only = ui.hostFilter, only != host { continue }
+            let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
+            rows += snapshot.items.map { HostedCluster(cluster: $0, host: host, hostName: peer.displayName, staleSince: stale) }
+        }
+        return rows
+    }
+
+    private var displayedClusters: [HostedCluster] {
+        var rows = allRows
         let query = ui.search.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
-            clusters = clusters.filter {
-                $0.node.lowercased().contains(query) || $0.address.lowercased().contains(query)
+            rows = rows.filter {
+                $0.name.lowercased().contains(query) || $0.cluster.address.lowercased().contains(query)
+                    || $0.hostName.lowercased().contains(query)
             }
         }
-        return clusters.sorted(using: ui.sortOrder)
+        return rows.sorted(using: ui.sortOrder)
     }
 
     private var activityEntries: [ActivityStrip.Entry] {
@@ -241,15 +273,15 @@ struct ClustersView: View {
 
         case .loaded where displayedClusters.isEmpty:
             ContentUnavailableView {
-                Label(isFiltered ? "No matches" : "No clusters",
+                Label(isFiltered ? "No matches" : "No Kubernetes clusters",
                       systemImage: isFiltered ? "line.3.horizontal.decrease" : "circle.hexagongrid")
             } description: {
                 Text(isFiltered
-                     ? "No cluster matches the current search."
+                     ? "No cluster matches the current search or host."
                      : "A cluster is a single-node Kubernetes running in its own VM. You reach it with kubectl; Flotilla creates it, loads images into it, and recreates it if it stops.")
             } actions: {
                 if isFiltered {
-                    Button("Clear Search") { ui.search = "" }
+                    Button("Clear Filter") { ui.search = ""; ui.hostFilter = nil }
                 } else {
                     VStack(spacing: 14) {
                         Button("Create Cluster") { createPrefill = nil; showingCreate = true }
@@ -278,7 +310,8 @@ struct ClustersView: View {
               sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
               columnCustomization: Binding(get: { ui.columnCustomization },
                                            set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text(Image(systemName: "circle.fill")).font(.system(size: 6)).accessibilityLabel("State"), value: \.stateSortKey) { cluster in
+            TableColumn(Text(Image(systemName: "circle.fill")).font(.system(size: 6)).accessibilityLabel("State"), value: \.stateSortKey) { row in
+                let cluster = row.cluster
                 Circle()
                     .fill(cluster.isRunning ? Theme.online : Color.secondary)
                     .frame(width: 8, height: 8)
@@ -289,15 +322,23 @@ struct ClustersView: View {
             .width(min: 26, ideal: 28, max: 34)
             .customizationID("state")
 
-            TableColumn("Name", value: \.node) { cluster in
-                Text(cluster.node)
+            TableColumn("Name", value: \.name) { row in
+                Text(row.name)
                     .fontWeight(.medium)
                     .lineLimit(1)
-                    .help("kubectl --context \(cluster.node)")
+                    .help("kubectl --context \(row.name)" + (row.host.isLocal ? "" : " — on \(row.hostName)"))
             }
             .width(min: 120, ideal: 170)
 
-            TableColumn("Role", value: \.roleSortKey) { cluster in
+            // Which Mac the cluster runs on, as in Volumes and Containers (Q51).
+            TableColumn("Host", value: \.hostName) { row in
+                HostCell(name: row.hostName, staleSince: row.staleSince)
+            }
+            .width(min: 80, ideal: 110)
+            .customizationID("host")
+
+            TableColumn("Role", value: \.roleSortKey) { row in
+                let cluster = row.cluster
                 Text(cluster.roles.joined(separator: ", "))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -307,7 +348,8 @@ struct ClustersView: View {
             .width(min: 110, ideal: 150)
             .customizationID("role")
 
-            TableColumn("CPUs", value: \.cpuSortKey) { cluster in
+            TableColumn("CPUs", value: \.cpuSortKey) { row in
+                let cluster = row.cluster
                 Text(cluster.cpus.map(String.init) ?? "—")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -317,7 +359,8 @@ struct ClustersView: View {
 
             // Printed as the CLI prints it, `16384 MB`. Not reformatted: the unit is its choice,
             // and a number without one would lose what it meant.
-            TableColumn("Memory", value: \.memory) { cluster in
+            TableColumn("Memory", value: \.memory) { row in
+                let cluster = row.cluster
                 Text(cluster.memory.isEmpty ? "—" : cluster.memory)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -325,7 +368,8 @@ struct ClustersView: View {
             .width(min: 70, ideal: 90)
             .customizationID("memory")
 
-            TableColumn("Address", value: \.address) { cluster in
+            TableColumn("Address", value: \.address) { row in
+                let cluster = row.cluster
                 Text(cluster.address.isEmpty ? "—" : cluster.address)
                     .monospaced()
                     .foregroundStyle(.secondary)
@@ -335,7 +379,8 @@ struct ClustersView: View {
             .width(min: 100, ideal: 130)
             .customizationID("address")
 
-            TableColumn("Ports", value: \.portSortKey) { cluster in
+            TableColumn("Ports", value: \.portSortKey) { row in
+                let cluster = row.cluster
                 Text(cluster.ports.isEmpty ? "—" : cluster.ports.joined(separator: ", "))
                     .monospaced()
                     .foregroundStyle(.secondary)
@@ -345,8 +390,8 @@ struct ClustersView: View {
             .width(min: 90, ideal: 120)
             .customizationID("ports")
 
-            TableColumn("Actions") { cluster in
-                rowActions(for: cluster)
+            TableColumn("Actions") { row in
+                rowActions(for: row)
             }
             .width(min: 120, ideal: 140)
         }
@@ -357,18 +402,19 @@ struct ClustersView: View {
         // top edge — a blank screen with the content off-screen, which is the same failure
         // `VolumesView.createScreen` records for its `ScrollView`.
         .frame(maxHeight: .infinity)
-        .contextMenu(forSelectionType: K8sNode.ID.self) { ids in
-            if let cluster = model.clusters.first(where: { ids.contains($0.id) }) {
-                menu(for: cluster)
+        .contextMenu(forSelectionType: HostedCluster.ID.self) { ids in
+            if let row = displayedClusters.first(where: { ids.contains($0.id) }) {
+                menu(for: row)
             }
         }
     }
 
     private var cards: some View {
         ResourceCardGrid {
-            ForEach(displayedClusters) { cluster in
+            ForEach(displayedClusters) { row in
+                let cluster = row.cluster
                 ResourceCard(
-                    title: cluster.node,
+                    title: row.name,
                     badge: cluster.isRunning ? "Running" : cluster.state.capitalized,
                     fields: [
                         ("Role", cluster.roles.joined(separator: ", ")),
@@ -376,14 +422,14 @@ struct ClustersView: View {
                         ("Memory", cluster.memory.isEmpty ? nil : cluster.memory),
                         ("Address", cluster.address.isEmpty ? nil : cluster.address),
                         ("Ports", cluster.ports.isEmpty ? nil : cluster.ports.joined(separator: ", ")),
-                    ],
+                    ] + (hostChoices.count > 1 ? [("Host", row.hostName)] : []),
                     // Clusters are not tagged, so no empty pill row.
                     showsTags: false,
                     onOpen: nil
                 ) {
-                    rowActions(for: cluster)
+                    rowActions(for: row)
                 }
-                .contextMenu { menu(for: cluster) }
+                .contextMenu { menu(for: row) }
             }
         }
     }
@@ -395,8 +441,9 @@ struct ClustersView: View {
     /// is Recreate, offered for a cluster that is not running: delete and create again, which is
     /// Apple's documented recovery. It asks first, because it destroys what is inside.
     @ViewBuilder
-    private func rowActions(for cluster: K8sNode) -> some View {
-        let busy = model.isBusy(cluster.node, kind: .cluster)
+    private func rowActions(for row: HostedCluster) -> some View {
+        let cluster = row.cluster
+        let busy = model.isBusy(row.host.rowID(cluster.node), kind: .cluster)
         HStack(spacing: 2) {
             IconActionButton(systemImage: "arrow.triangle.2.circlepath",
                              label: "Recreate \(cluster.node)",
@@ -404,11 +451,11 @@ struct ClustersView: View {
                                  ? "\(cluster.node) is running. Recreate is for a stopped cluster."
                                  : "Delete \(cluster.node) and create it again — container 1.5 cannot restart it",
                              busy: busy, disabled: cluster.isRunning) {
-                pendingRecreate = cluster
+                pendingRecreate = row
             }
 
             Menu {
-                menu(for: cluster)
+                menu(for: row)
             } label: {
                 RowOverflowLabel()
             }
@@ -422,19 +469,23 @@ struct ClustersView: View {
 
             IconActionButton(systemImage: "trash",
                              label: "Delete \(cluster.node)",
-                             help: "Delete \(cluster.node)",
+                             help: "Delete \(cluster.node)" + onHost(row),
                              busy: busy, destructive: true) {
-                pendingDelete = cluster
+                pendingDelete = row
             }
             Spacer(minLength: 0)
         }
     }
 
+    /// Load Image and Write Kubeconfig are This Mac's own (Q51): one reads its image store, the
+    /// other writes a file its kubectl reads.
     @ViewBuilder
-    private func menu(for cluster: K8sNode) -> some View {
+    private func menu(for row: HostedCluster) -> some View {
+        let cluster = row.cluster
         Button("Load Image…") { loadImageTarget = cluster }
-            .disabled(!cluster.isRunning)
-        Button("Recreate…") { pendingRecreate = cluster }
+            .disabled(!cluster.isRunning || !row.host.isLocal)
+            .help(row.host.isLocal ? "" : "Images are loaded into a cluster on its own Mac")
+        Button("Recreate…") { pendingRecreate = row }
             .disabled(cluster.isRunning)
         // No result dialog. What it wrote and how to use it are reported in the progress panel
         // that already appears — one surface for the operation instead of a panel that closes
@@ -442,6 +493,7 @@ struct ClustersView: View {
         Button("Write Kubeconfig…") {
             Task { await model.writeKubeconfig(for: cluster) }
         }
+        .disabled(!row.host.isLocal)
         Divider()
         CopyMenu([
             ("Name", cluster.node),
@@ -449,8 +501,26 @@ struct ClustersView: View {
             ("kubectl context", "kubectl --context \(cluster.node)"),
         ])
         Divider()
-        Button("Delete…", role: .destructive) { pendingDelete = cluster }
+        Button("Delete…", role: .destructive) { pendingDelete = row }
     }
+}
+
+/// A cluster and the Mac it runs on (Q51). Two Macs' `dev` clusters are two rows.
+struct HostedCluster: Identifiable {
+    let cluster: K8sNode
+    let host: HostRef
+    let hostName: String
+    /// A host's row older than a fresh answer: shown, with its age.
+    var staleSince: Date? = nil
+
+    var id: String { host.rowID(cluster.node) }
+    var name: String { cluster.node }
+    var stateSortKey: String { cluster.stateSortKey }
+    var roleSortKey: String { cluster.roleSortKey }
+    var cpuSortKey: Int { cluster.cpuSortKey }
+    var memory: String { cluster.memory }
+    var address: String { cluster.address }
+    var portSortKey: String { cluster.portSortKey }
 }
 
 extension K8sNode {

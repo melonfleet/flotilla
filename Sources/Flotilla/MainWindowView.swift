@@ -26,8 +26,8 @@ struct MainWindowView: View {
     /// Same reasoning as `containersUI`, and owned here for the same reason — `MachinesView`
     /// is rebuilt from scratch on every sidebar change.
     @State private var machinesUI = MachinesUIState()
-    @State private var clustersUI = ResourceUIState<K8sNode>(
-        sortOrder: [KeyPathComparator(\K8sNode.node)])
+    @State private var clustersUI = ResourceUIState<HostedCluster>(
+        sortOrder: [KeyPathComparator(\HostedCluster.name)])
     @State private var activityUI = ActivityUIState()
     @State private var logsUI = LogsUIState()
 

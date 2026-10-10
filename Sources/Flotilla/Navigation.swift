@@ -43,7 +43,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .networks: "Networks"
         case .dns: "DNS"
         case .machines: "Machines"
-        case .clusters: "Clusters"
+        case .clusters: "Kubernetes"
         case .settings: "Settings"
         case .notifications: "Notifications"
         }

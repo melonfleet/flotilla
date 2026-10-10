@@ -84,6 +84,8 @@ final class HostModeController {
     /// The same for images, volumes and networks — fetched on the same ask, so a host costs one
     /// round of reads per interval whichever sections are open.
     private(set) var imageSnapshots: [PeerFingerprint: FleetSnapshot<ContainerImage>] = [:]
+    /// Each host's Kubernetes clusters (Q51), on the same ask.
+    private(set) var clusterSnapshots: [PeerFingerprint: FleetSnapshot<K8sNode>] = [:]
     /// Each host's DNS rows (D3), and the rest of what its `.dnsStatus` said — the domain its
     /// containers are named under and whether its helper is switched on.
     private(set) var dnsSnapshots: [PeerFingerprint: FleetSnapshot<LocalDNSDomain>] = [:]
@@ -608,6 +610,7 @@ final class HostModeController {
         dnsStatus.removeValue(forKey: fingerprint)
         facts.removeValue(forKey: fingerprint)
         volumeSnapshots.removeValue(forKey: fingerprint)
+        clusterSnapshots.removeValue(forKey: fingerprint)
         networkSnapshots.removeValue(forKey: fingerprint)
         backoff.removeValue(forKey: fingerprint)
     }
@@ -636,6 +639,7 @@ final class HostModeController {
     var fleetImages: [(host: Peer, snapshot: FleetSnapshot<ContainerImage>)] { fleet(imageSnapshots) }
     var fleetDNS: [(host: Peer, snapshot: FleetSnapshot<LocalDNSDomain>)] { fleet(dnsSnapshots) }
     var fleetVolumes: [(host: Peer, snapshot: FleetSnapshot<ContainerVolume>)] { fleet(volumeSnapshots) }
+    var fleetClusters: [(host: Peer, snapshot: FleetSnapshot<K8sNode>)] { fleet(clusterSnapshots) }
     var fleetNetworks: [(host: Peer, snapshot: FleetSnapshot<ContainerNetwork>)] { fleet(networkSnapshots) }
 
     private func fleet<T>(_ snapshots: [PeerFingerprint: FleetSnapshot<T>]) -> [(host: Peer, snapshot: FleetSnapshot<T>)] {
@@ -694,10 +698,15 @@ final class HostModeController {
         }.value
         // The other lists, each on its own: one failing does not blank the others.
         if case .success = outcome {
-            let (images, volumes, networks) = await Task.detached {
-                (Result { try cli.listImages() }, Result { try cli.listVolumes() }, Result { try cli.listNetworks() })
+            let (images, volumes, networks, clusters) = await Task.detached {
+                (Result { try cli.listImages() }, Result { try cli.listVolumes() }, Result { try cli.listNetworks() },
+                 Result { try cli.k8sNodes() })
             }.value
             let at = Date()
+            switch clusters {
+            case .success(let list): clusterSnapshots[fingerprint, default: FleetSnapshot()].succeeded(list, at: at)
+            case .failure(let error): clusterSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
+            }
             switch images {
             case .success(let list): imageSnapshots[fingerprint, default: FleetSnapshot()].succeeded(list, at: at)
             case .failure(let error): imageSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
@@ -737,6 +746,7 @@ final class HostModeController {
             containerSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             imageSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             volumeSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
+            clusterSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
             // A stopped service is a host that answers: asked at the usual pace, so starting it again
             // shows within one interval rather than after a backoff of up to five minutes.

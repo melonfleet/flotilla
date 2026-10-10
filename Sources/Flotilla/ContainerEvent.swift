@@ -10,7 +10,7 @@ extension ActivityKind {
         switch self {
         case .container: "Containers"
         case .group: "Groups"
-        case .cluster: "Clusters"
+        case .cluster: "Kubernetes"
         case .machine: "Machines"
         case .image: "Images"
         case .volume: "Volumes"

@@ -1123,13 +1123,12 @@ public enum Allowlist {
 
             // MARK: k8s — local Kubernetes development clusters
             //
-            // **The whole family is `.localOnly`, including the read.** Every other read in this
-            // table is exposed, so the exception needs its own argument rather than inheriting
-            // one: `container k8s --help` describes itself as EXPERIMENTAL, and Apple's
-            // `docs/kubernetes.md` does not use the word at all. A family whose own tool and own
-            // documentation disagree about how settled it is has no business being reachable by a
-            // remote peer, and a read that enumerates the owner's clusters is the reconnaissance
-            // half of the same surface. If it stabilises, `list` is the one row worth revisiting.
+            // **An admin may list, create and delete a host's clusters** (DECISIONS Q51, the owner,
+            // 10 October; Q22 had kept the whole family `.localOnly`). An admin Mac already owns
+            // its hosts' containers and machines' worth of VMs, and a cluster is one more VM.
+            // `load-image` and `write-config` stay `.localOnly`: one reads the Mac's own image
+            // store for a name a peer picks, the other writes a file other tools read, and a
+            // kubeconfig is no use on a Mac whose cluster your `kubectl` can't reach.
             //
             // `DECISIONS.md` rejects Kubernetes "or any CRI-based orchestrator", and this is not
             // that: the rejected thing was Flotilla becoming a CRI runtime for the fleet. These
@@ -1151,27 +1150,22 @@ public enum Allowlist {
                                 FlagSpec(long: "scheme", value: .registryScheme),
                                 FlagSpec(long: "max-concurrent-downloads", value: .count),
                                 // Tagged: 1.5.0 refuses an untagged or digest-only node image.
-                                FlagSpec(long: "node-image", value: .taggedImageReference)],
-                        exposure: .localOnly(reason: "creating a Kubernetes cluster boots virtual machines on this Mac")),
+                                FlagSpec(long: "node-image", value: .taggedImageReference)]),
             // **No `k8s start`.** `container` 1.5.0 removed it (apple/container#2290): restarts were
             // unreliable, especially after the node got a new IP, and Apple's documented recovery for
             // a stopped cluster is to delete it and create it again. Default-deny means the spec goes
             // with the command — a grammar for a subcommand that no longer exists is a promise the
             // allowlist cannot keep.
             CommandSpec(["k8s", "delete"], mutates: true, timeoutHint: 300,
-                        flags: [FlagSpec(long: "name", value: .identifier)],
-                        exposure: .localOnly(reason: "deleting a Kubernetes cluster destroys its virtual machines and everything in them")),
+                        flags: [FlagSpec(long: "name", value: .identifier)]),
             CommandSpec(["k8s", "rm"], mutates: true, timeoutHint: 300,
-                        flags: [FlagSpec(long: "name", value: .identifier)],
-                        exposure: .localOnly(reason: "deleting a Kubernetes cluster destroys its virtual machines and everything in them")),
+                        flags: [FlagSpec(long: "name", value: .identifier)]),
             // **No `--format`.** Not an omission here — the CLI has none. Every other listing in
             // this table offers `json|table|yaml|toml`; `k8s list` prints one fixed-width table
             // and nothing else, which is why `K8sClusterList` has to parse columns and why that
             // parser carries the tests it does.
-            CommandSpec(["k8s", "list"], mutates: false,
-                        exposure: .localOnly(reason: "enumerating this Mac's Kubernetes clusters is the owner's business while the command family is experimental")),
-            CommandSpec(["k8s", "ls"], mutates: false,
-                        exposure: .localOnly(reason: "enumerating this Mac's Kubernetes clusters is the owner's business while the command family is experimental")),
+            CommandSpec(["k8s", "list"], mutates: false),
+            CommandSpec(["k8s", "ls"], mutates: false),
             CommandSpec(["k8s", "load-image"], mutates: true, timeoutHint: 600,
                         flags: [FlagSpec(long: "name", value: .identifier),
                                 FlagSpec(long: "platform", value: .platform)],

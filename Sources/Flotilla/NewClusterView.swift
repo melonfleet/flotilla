@@ -10,6 +10,8 @@ struct NewClusterView: View {
     let dismiss: () -> Void
     /// Set when a suggestion opened the form (Q28): its values fill the fields.
     var prefill: ClusterSuggestion?
+    /// The Mac it opens on — the section's host filter, when one is set (Q51).
+    var initialHost: HostRef = .local
 
     @State private var name = ""
     @State private var limitResources = false
@@ -18,6 +20,7 @@ struct NewClusterView: View {
     @State private var nodeImage = ""
     @State private var autoRemove = false
     @State private var creating = false
+    @State private var host: HostRef = .local
     @State private var edits = FormEditTracker()
 
     private var editSignature: String {
@@ -39,6 +42,7 @@ struct NewClusterView: View {
             footer
         }
         .onAppear {
+            host = initialHost
             if let prefill {
                 name = ResourceSuggestions.uniqueName(prefill.baseName,
                                                       taken: Set(model.clusters.map(\.name)))
@@ -52,8 +56,26 @@ struct NewClusterView: View {
         }
     }
 
+    /// This Mac and every paired host (Q51).
+    private var hostChoices: [(ref: HostRef, name: String)] {
+        [(HostRef.local, model.hostLabel)]
+            + model.hostMode.trustedHosts.map { (HostRef.peer($0.fingerprint), $0.displayName) }
+    }
+
     private var form: some View {
         VStack(alignment: .leading, spacing: 20) {
+            if hostChoices.count > 1 {
+                FormField("Create on",
+                          help: FieldHelp("Which Mac the cluster runs on.",
+                                          detail: "A cluster is a VM on one Mac. Its API server listens on that Mac, so kubectl reaches it from there; a host's cluster isn't reachable from this Mac yet.")) {
+                    Picker("", selection: $host) {
+                        ForEach(hostChoices, id: \.ref) { Text($0.name).tag($0.ref) }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+            }
             FormField("Name",
                       help: FieldHelp(
                           "What the cluster is called, here and in kubectl.",
@@ -242,7 +264,7 @@ struct NewClusterView: View {
         let succeeded = await model.createCluster(name: trimmedName, cpus: chosenCPUs,
                                                   memory: chosenMemory,
                                                   nodeImage: chosenNodeImage,
-                                                  autoRemove: autoRemove)
+                                                  autoRemove: autoRemove, on: host)
         if succeeded { dismiss() }
     }
 }

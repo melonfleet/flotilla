@@ -268,7 +268,7 @@ private struct FlotillaCommands: Commands {
                 Button("Volumes…") { present { model.requestSuggestions(.volumes) } }
                 Button("Networks…") { present { model.requestSuggestions(.networks) } }
                 Button("Machines…") { present { model.requestSuggestions(.machines) } }
-                Button("Clusters…") { present { model.requestSuggestions(.clusters) } }
+                Button("Kubernetes Clusters…") { present { model.requestSuggestions(.clusters) } }
                 Button("DNS Domains…") { present { model.requestSuggestions(.dns) } }
             }
         }

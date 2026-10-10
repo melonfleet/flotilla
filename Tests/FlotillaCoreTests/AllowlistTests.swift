@@ -103,14 +103,13 @@ private func requireRejected(
         "network prune",
         "machine list",
         "system status", "system version", "system df", "system property list",
+        // An admin manages a host's Kubernetes clusters (Q51).
+        "k8s create", "k8s delete", "k8s rm", "k8s list", "k8s ls",
     ]
 
-    // The whole `k8s` family, **including its read**, which is the one exception in this table
-    // to "reads are exposed". `Allowlist`'s own note on the family gives the argument: the
-    // command describes itself as EXPERIMENTAL and Apple's documentation does not, and a read
-    // that enumerates the owner's clusters is the reconnaissance half of the same surface.
+    // What stays This Mac's own in the `k8s` family (Q51): loading from its image store, and
+    // writing a kubeconfig other tools read.
     let k8s: Set<String> = [
-        "k8s create", "k8s delete", "k8s rm", "k8s list", "k8s ls",
         "k8s load-image", "k8s write-config",
     ]
 

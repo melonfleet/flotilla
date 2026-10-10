@@ -61,8 +61,12 @@ extension AppModel {
     /// Slow enough to deserve saying so: the first one pulls a kind node image of about a
     /// gigabyte and boots a VM, and took over ten minutes on the machine this was built on.
     func createCluster(name: String, cpus: Int?, memory: String?, nodeImage: String?,
-                       autoRemove: Bool) async -> Bool {
-        await withProgress(
+                       autoRemove: Bool, on host: HostRef = .local) async -> Bool {
+        if case .peer(let fingerprint) = host {
+            return await createRemoteCluster(name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
+                                             autoRemove: autoRemove, on: fingerprint)
+        }
+        return await withProgress(
             title: "Create the cluster “\(name)”",
             command: Self.createClusterPreview(name: name, cpus: cpus, memory: memory,
                                                nodeImage: nodeImage, autoRemove: autoRemove),
@@ -143,7 +147,8 @@ extension AppModel {
     /// One progress panel for both halves, so a recreate reads as one operation, and so the create
     /// half never starts if the delete failed.
     @discardableResult
-    func recreateCluster(_ cluster: K8sNode) async -> Bool {
+    func recreateCluster(_ cluster: K8sNode, on host: HostRef = .local) async -> Bool {
+        if case .peer(let fingerprint) = host { return await recreateRemoteCluster(cluster, on: fingerprint) }
         let name = cluster.node
         let cpus = cluster.cpus
         let memory = cluster.memoryFlag
@@ -182,10 +187,114 @@ extension AppModel {
         return ok
     }
 
-    func deleteCluster(_ cluster: K8sNode) async {
+    func deleteCluster(_ cluster: K8sNode, on host: HostRef = .local) async {
+        if case .peer(let fingerprint) = host { return await deleteRemoteCluster(cluster, on: fingerprint) }
         await perform(on: cluster, title: "Delete", action: "Deleted") { cli in
             try cli.deleteCluster(cluster.node)
         }
+    }
+
+    // MARK: On a host (Q51)
+    //
+    // Through the host's `ContainerCLI`, held to `.remotePeer`, so the host's allowlist decides as
+    // it does for every other command. A create is one request rather than a stream — a peer may
+    // only follow a command that declares how it streams — so the panel says it takes minutes
+    // instead of showing the CLI's own progress lines.
+
+    private func remoteCLI(_ fingerprint: PeerFingerprint) -> (cli: ContainerCLI, name: String)? {
+        let host = HostRef.peer(fingerprint)
+        guard let cli = hostMode.cli(for: host, local: cli) else { return nil }
+        return (cli, hostMode.hostName(host, local: hostLabel))
+    }
+
+    private func hostHasCluster(_ name: String, on fingerprint: PeerFingerprint, running: Bool = false) -> Bool {
+        hostMode.clusterSnapshots[fingerprint]?.items.contains { $0.node == name && (!running || $0.isRunning) } ?? false
+    }
+
+    private func createRemoteCluster(name: String, cpus: Int?, memory: String?, nodeImage: String?,
+                                     autoRemove: Bool, on fingerprint: PeerFingerprint) async -> Bool {
+        guard let (remote, hostName) = remoteCLI(fingerprint) else {
+            actionError = "That host can't be reached."
+            return false
+        }
+        return await withProgress(
+            title: "Create the cluster “\(name)” on \(hostName)",
+            command: Self.createClusterPreview(name: name, cpus: cpus, memory: memory,
+                                               nodeImage: nodeImage, autoRemove: autoRemove),
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                let step = progress.begin("Creating \(name) on \(hostName) — this takes several minutes")
+                _ = try await Task.detached {
+                    try remote.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
+                                             autoRemove: autoRemove)
+                }.value
+                progress.finish(step, detail: nil)
+                recordActivity(ContainerEvent(date: Date(), from: "absent", to: "running", kind: .cluster,
+                                              subject: "\(name) on \(hostName)", action: "Created"))
+                return "\(name) created on \(hostName)"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await hostMode.refreshHost(fingerprint)
+                return hostHasCluster(name, on: fingerprint)
+            }
+        )
+    }
+
+    private func recreateRemoteCluster(_ cluster: K8sNode, on fingerprint: PeerFingerprint) async -> Bool {
+        let name = cluster.node, cpus = cluster.cpus, memory = cluster.memoryFlag
+        let key = HostRef.peer(fingerprint).rowID(name)
+        guard !isBusy(key, kind: .cluster), let (remote, hostName) = remoteCLI(fingerprint) else { return false }
+        markBusy(key, kind: .cluster)
+        defer { clearBusy(key, kind: .cluster) }
+        let ok = await withProgress(
+            title: "Recreate the cluster “\(name)” on \(hostName)",
+            command: "container k8s delete --name \(name)  then  "
+                + Self.createClusterPreview(name: name, cpus: cpus, memory: memory, nodeImage: nil, autoRemove: false),
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                let deleting = progress.begin("Deleting \(name) on \(hostName)")
+                _ = try await Task.detached { try remote.deleteCluster(name) }.value
+                progress.finish(deleting, detail: nil)
+                let creating = progress.begin("Creating \(name) again — this takes several minutes")
+                _ = try await Task.detached {
+                    try remote.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: nil, autoRemove: false)
+                }.value
+                progress.finish(creating, detail: nil)
+                recordActivity(ContainerEvent(date: Date(), from: cluster.state, to: "running", kind: .cluster,
+                                              subject: "\(name) on \(hostName)", action: "Recreated"))
+                return "\(name) recreated on \(hostName)"
+            },
+            confirm: { [weak self] in
+                guard let self else { return true }
+                await hostMode.refreshHost(fingerprint)
+                return hostHasCluster(name, on: fingerprint, running: true)
+            }
+        )
+        await hostMode.refreshHost(fingerprint)
+        return ok
+    }
+
+    private func deleteRemoteCluster(_ cluster: K8sNode, on fingerprint: PeerFingerprint) async {
+        let name = cluster.node
+        let key = HostRef.peer(fingerprint).rowID(name)
+        guard !isBusy(key, kind: .cluster), let (remote, hostName) = remoteCLI(fingerprint) else { return }
+        markBusy(key, kind: .cluster)
+        defer { clearBusy(key, kind: .cluster) }
+        await withProgress(
+            title: "Delete “\(name)” on \(hostName)",
+            command: "container k8s delete --name \(name)",
+            work: { [weak self] progress in
+                guard let self else { return "" }
+                let step = progress.begin("Deleting \(name) on \(hostName)")
+                _ = try await Task.detached { try remote.deleteCluster(name) }.value
+                progress.finish(step, detail: nil)
+                recordActivity(ContainerEvent(date: Date(), from: cluster.state, to: "deleted", kind: .cluster,
+                                              subject: "\(name) on \(hostName)", action: "Deleted"))
+                return "\(name) deleted on \(hostName)"
+            }
+        )
+        await hostMode.refreshHost(fingerprint)
     }
 
     /// Loads a local image into a cluster's containerd.
