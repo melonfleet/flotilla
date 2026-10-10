@@ -224,7 +224,8 @@ struct ImagesView: View {
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
                 .accessibilityLabel(allVisibleSelected ? "Deselect all images" : "Select all images")
-                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+                .help(ui.presentation != .list ? "Switch to list view to select"
+                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             ResourceListControls<HostedImage>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
@@ -407,6 +408,7 @@ struct ImagesView: View {
 
             TableColumn("Platform", value: \.platformSortKey) { row in
                 Text(Self.platformLabel(row.image)).foregroundStyle(.secondary).lineLimit(1)
+                    .help("OS and CPU the image is built for")
             }
             .width(min: 84, ideal: 100)
             .customizationID("platform")
@@ -494,6 +496,7 @@ struct ImagesView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(name)")
             .accessibilityLabel("More actions for \(name)")
 
             Divider().frame(height: 14)
@@ -753,6 +756,7 @@ struct ImagesView: View {
                     Text(subtitle(for: row))
                         .font(.caption).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.middle)
+                        .help(subtitle(for: row))
                 }
             } else {
                 Text("Image unavailable").font(.headline)

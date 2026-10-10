@@ -132,7 +132,8 @@ struct RegistriesView: View {
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
                 .accessibilityLabel(allVisibleSelected ? "Deselect all registries" : "Select all registries")
-                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+                .help(ui.presentation != .list ? "Switch to list view to select"
+                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             ResourceListControls<RegistryRow>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
@@ -233,7 +234,8 @@ struct RegistriesView: View {
                 IconActionButton(systemImage: "person.crop.circle.badge.xmark",
                                  label: "Sign out of \(signedIn.count) registries",
                                  help: signedIn.isEmpty ? "None of these is signed in"
-                                                        : "Sign out of \(signedIn.count)",
+                                     : !model.runtimeUsable ? "Start the container system to sign out"
+                                     : "Sign out of \(signedIn.count)",
                                  disabled: signedIn.isEmpty || !model.runtimeUsable) {
                     pendingSignOut = signedIn
                 }
@@ -342,6 +344,7 @@ struct RegistriesView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
                     .textSelection(.enabled)
+                    .help(row.id)
             }
             .width(min: 120, ideal: 180)
             .customizationID("server")
@@ -403,6 +406,7 @@ struct RegistriesView: View {
     private func badges(for row: RegistryRow) -> some View {
         if row.id == model.defaultRegistry {
             badge("default")
+                .help("Flotilla's Pull uses this for image names with no registry")
         } else if row.known?.isImplicitDefault == true {
             badge("CLI default")
         }
@@ -452,6 +456,7 @@ struct RegistriesView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(row.name)")
             .accessibilityLabel("More actions for \(row.name)")
 
             Divider().frame(height: 14)
@@ -462,8 +467,9 @@ struct RegistriesView: View {
                 IconActionButton(systemImage: "key",
                                  label: row.isSignedIn ? "Switch account on \(row.name)"
                                                        : "Sign in to \(row.name)",
-                                 help: row.isSignedIn ? "Sign in as a different account"
-                                                      : "Sign in to \(row.name)",
+                                 help: !model.runtimeUsable ? "Start the container system to sign in"
+                                     : row.isSignedIn ? "Sign in as a different account"
+                                     : "Sign in to \(row.name)",
                                  disabled: !model.runtimeUsable) {
                     form = .manage(row.id)
                 }

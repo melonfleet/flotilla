@@ -39,6 +39,9 @@ struct ActivityStrip: View {
     /// design. Both cases now render as plain text and refuse the click, so a live link and a
     /// dead one stop looking alike.
     var canOpen: (String) -> Bool = { _ in true }
+    /// The tooltip on a row `canOpen` refused — why it is not a link. Empty where no row is ever
+    /// a link, so a record is not described as something deleted.
+    var unopenableHelp: (String) -> String = { "\($0) no longer exists" }
 
     private static let visibleRows = 4
 
@@ -141,6 +144,7 @@ struct ActivityStrip: View {
                 Circle()
                     .fill(colour(for: entry.event))
                     .frame(width: 6, height: 6)
+                    .help(entry.event.to.isEmpty ? entry.event.summary : "Ended as \(entry.event.to)")
                 Text(RelativeDate.clockTime(entry.event.date))
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.tertiary)
@@ -150,6 +154,7 @@ struct ActivityStrip: View {
                 Text(entry.event.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .help(entry.event.summary)
                 // The raw transition, because `summary` folds several states into one word and
                 // "exited (137)" is not the same event as a clean stop. Omitted for a performed
                 // action, where it would read "running → running" and mean nothing.
@@ -158,6 +163,7 @@ struct ActivityStrip: View {
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .help("\(entry.event.from) → \(entry.event.to)")
                 }
                 Spacer(minLength: 0)
             }
@@ -167,6 +173,7 @@ struct ActivityStrip: View {
         }
         .buttonStyle(MenuRowStyle())
         .disabled(!openable)
+        .help(openable ? "" : unopenableHelp(entry.subject))
     }
 
     private func colour(for event: ContainerEvent) -> Color {

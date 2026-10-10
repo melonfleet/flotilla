@@ -217,6 +217,7 @@ struct MachineDetailView: View {
                         Circle()
                             .fill(Theme.color(forEventEndingIn: event.to))
                             .frame(width: 6, height: 6)
+                            .help(event.to.isEmpty ? event.summary : "Ended as \(event.to)")
                         Text(event.summary).font(.system(size: 12, weight: .medium))
                         Text(event.detail).font(.system(size: 12)).foregroundStyle(.secondary)
                         Spacer()
@@ -456,6 +457,7 @@ private struct MachineSettingsTab: View {
                     Button("Apply and Restart") { request(restart: true) }
                         .buttonStyle(.borderedProminent)
                         .disabled(!changed || !MachinesView.isRunning(machine))
+                        .help(MachinesView.isRunning(machine) ? "" : "The machine isn't running — use Apply")
                     Spacer()
                     if applied {
                         // Names the state the machine is actually in, not just that a write

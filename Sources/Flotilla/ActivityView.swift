@@ -213,6 +213,7 @@ struct ActivityView: View {
 
                 TableColumn("What happened") { event in
                     Text(event.summary).lineLimit(1)
+                        .help(event.summary)
                 }
                 .width(min: 110, ideal: 150)
 
@@ -223,6 +224,7 @@ struct ActivityView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .help(event.action == nil ? "\(event.from) → \(event.to)" : "")
                 }
                 .width(min: 110, ideal: 160)
             }

@@ -293,7 +293,7 @@ struct StackFormView: View {
 
     private var footer: some View {
         HStack {
-            if !prepared { ProgressView().controlSize(.small) }
+            if !prepared { ProgressView().controlSize(.small).help("Preparing suggestions…") }
             Spacer()
             Button("Cancel", action: back)
                 .keyboardShortcut(.cancelAction)

@@ -142,6 +142,7 @@ struct GroupFormView: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(model.networks.isEmpty)
+                .help(model.networks.isEmpty ? "No networks yet — create one in Networks" : "")
             }
 
             if !draft.notes.isEmpty {
@@ -222,7 +223,7 @@ struct GroupFormView: View {
                     .help(pendingSecrets[secret] != nil ? "New — saved when you press Save" : "")
                 IconActionButton(systemImage: revealed.contains(secret) ? "eye.slash" : "eye",
                                  label: revealed.contains(secret) ? "Hide \(secret)" : "Show \(secret)",
-                                 help: revealed.contains(secret) ? "Hide" : "Show") {
+                                 help: revealed.contains(secret) ? "Hide the password" : "Show the password") {
                     if revealed.contains(secret) { revealed.remove(secret) } else { revealed.insert(secret) }
                 }
                 IconActionButton(systemImage: "doc.on.doc", label: "Copy \(secret)",

@@ -170,7 +170,8 @@ struct DNSView: View {
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
                 .accessibilityLabel(allVisibleSelected ? "Deselect all domains" : "Select all domains")
-                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+                .help(ui.presentation != .list ? "Switch to list view to select"
+                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             ResourceListControls<HostedDNS>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
@@ -182,7 +183,7 @@ struct DNSView: View {
                 hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
                 hosts: hostChoices)
         }, trailing: {
-            if working { ProgressView().controlSize(.small) }
+            if working { ProgressView().controlSize(.small).help("Applying a DNS change…") }
             ToolbarIconMenu(systemImage: "plus", label: "New domain") {
                 Button("New Domain…") { formPrefill = nil; form = .add }
                 Divider()
@@ -489,6 +490,7 @@ struct DNSView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(row.name)")
             .accessibilityLabel("More actions for \(row.name)")
 
             Divider().frame(height: 14)

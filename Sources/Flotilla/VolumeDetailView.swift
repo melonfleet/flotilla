@@ -111,6 +111,7 @@ struct VolumeDetailView: View {
                                 Circle()
                                     .fill(Theme.color(forEventEndingIn: event.to))
                                     .frame(width: 6, height: 6)
+                                    .help(event.to.isEmpty ? event.summary : "Ended as \(event.to)")
                                 Text(event.summary).font(.system(size: 12, weight: .medium))
                                 Spacer()
                                 Text(event.date.formatted(date: .omitted, time: .shortened))
@@ -139,6 +140,7 @@ struct VolumeDetailView: View {
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .help(value)
         }
     }
 }

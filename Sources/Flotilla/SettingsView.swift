@@ -40,6 +40,7 @@ struct SettingRow<V: SettingRepresentable, Control: View>: View {
                         Image(systemName: "lock.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .help("Managed by your organization")
                     }
                     if unbuiltReason != nil {
                         Text("Not yet available")
@@ -122,6 +123,7 @@ private struct LaunchAtLoginRow: View {
                     Text("Launch at login")
                     if locked {
                         Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
+                            .help("Managed by your organization")
                     }
                 }
                 Text(caption)
@@ -172,6 +174,7 @@ private struct AppearanceRow: View {
                         Image(systemName: "lock.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .help("Managed by your organization")
                     }
                 }
                 Text(locked
@@ -414,6 +417,7 @@ struct SettingsView: View {
                                     Image(systemName: "lock.fill")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
+                                        .help("Always on")
                                 }
                                 Text(LocalizedStringKey("Always on — " + category.summary))
                                     .font(.caption)

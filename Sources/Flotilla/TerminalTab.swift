@@ -399,6 +399,7 @@ struct ShellStrip: View {
         let isCurrent = session.id == current.id
         return HStack(spacing: 5) {
             Circle().fill(Theme.online).frame(width: 5, height: 5)
+                .help("Shell is running")
             Text(session.title)
                 .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
             Button {

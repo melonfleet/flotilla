@@ -142,6 +142,7 @@ struct HostSettingsTab: View {
                 TableColumn("Value") { entry in
                     Text(entry.displayValue).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                         .foregroundStyle(entry.value == nil ? .tertiary : .primary)
+                        .help(entry.displayValue)
                 }
             }
         } else if let report {

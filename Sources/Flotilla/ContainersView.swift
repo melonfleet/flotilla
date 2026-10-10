@@ -147,7 +147,8 @@ struct ContainersView: View {
     /// header. The header menu still works — this just makes it findable.
     private var columnsButton: some View {
         IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
-                         help: "Show or hide columns") { showingColumns.toggle() }
+                         help: ui.presentation == .list ? "Show or hide columns"
+                                                        : "Columns apply to the list view only") { showingColumns.toggle() }
         .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
                 // Checkboxes, not switches. `.checkbox` puts the control leading with the
@@ -264,6 +265,7 @@ struct ContainersView: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .help(subtitle(for: container, on: host))
                 }
             } else {
                 Text("Container unavailable").font(.headline)
@@ -637,6 +639,7 @@ struct ContainersView: View {
                     Text(ipNetworkLabel(row))
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
+                        .help(ipNetworkLabel(row))
                 }
                 .width(min: 90, ideal: 116)
                 .customizationID("ip")
@@ -714,6 +717,7 @@ struct ContainersView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(container.id)")
             .accessibilityLabel("More actions for \(container.id)")
 
             Divider().frame(height: 14)
@@ -753,6 +757,7 @@ struct ContainersView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(container.id) on \(hostName(host))")
             .accessibilityLabel("More actions for \(container.id) on \(hostName(host))")
 
             Divider().frame(height: 14)
@@ -976,6 +981,7 @@ struct ContainersView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(group.name)")
             .accessibilityLabel("More actions for \(group.name)")
 
             Divider().frame(height: 14)
@@ -1423,7 +1429,8 @@ struct ContainersView: View {
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
                 .accessibilityLabel(allVisibleSelected ? "Deselect all" : "Select all")
-                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+                .help(ui.presentation != .list ? "Switch to list view to select"
+                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             Picker("View", selection: $ui.presentation) {
                 ForEach(Presentation.allCases) { option in

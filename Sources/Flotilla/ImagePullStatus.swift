@@ -18,6 +18,7 @@ struct ImagePullStatus: View {
                     .font(.system(compact ? .caption : .body, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(pull.reference)
                 Spacer()
                 if let elapsed = pull.progress?.elapsed {
                     Text("\(Int(elapsed))s")

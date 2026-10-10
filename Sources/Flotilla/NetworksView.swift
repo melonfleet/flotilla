@@ -182,7 +182,8 @@ struct NetworksView: View {
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
                 .accessibilityLabel(allVisibleSelected ? "Deselect all networks" : "Select all networks")
-                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+                .help(ui.presentation != .list ? "Switch to list view to select"
+                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             ResourceListControls<HostedNetwork>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
@@ -485,6 +486,7 @@ struct NetworksView: View {
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(.quaternary, in: Capsule())
                             .foregroundStyle(.secondary)
+                            .help("Created by container; can't be deleted")
                     }
                 }
             }
@@ -506,6 +508,7 @@ struct NetworksView: View {
 
             TableColumn("Mode", value: \.modeSortKey) { row in
                 Text(row.network.mode ?? "—").foregroundStyle(.secondary)
+                    .help("How containers reach outside this Mac")
             }
             .width(min: 70, ideal: 88)
             .customizationID("mode")
@@ -580,6 +583,7 @@ struct NetworksView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(name)")
             .accessibilityLabel("More actions for \(name)")
 
             Divider().frame(height: 14)
@@ -652,11 +656,13 @@ struct NetworksView: View {
                         Text(network.name).font(.headline)
                         if network.isBuiltin {
                             Text("built-in").font(.caption2).foregroundStyle(.secondary)
+                                .help("Created by container; can't be deleted")
                         }
                     }
                     Text(subtitle(for: row))
                         .font(.caption).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.middle)
+                        .help(subtitle(for: row))
                 }
             } else {
                 Text("Network unavailable").font(.headline)

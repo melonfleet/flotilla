@@ -282,6 +282,7 @@ struct ContainerDetailView: View {
                             // strip, the Activity table and the dashboard. One rule now.
                             .fill(Theme.color(forEventEndingIn: event.to))
                             .frame(width: 6, height: 6)
+                            .help(event.to.isEmpty ? event.summary : "Ended as \(event.to)")
                         Text(event.summary).font(.system(size: 12, weight: .medium))
                         Text(event.detail).font(.system(size: 12)).foregroundStyle(.secondary)
                         Spacer()
@@ -510,6 +511,7 @@ private struct ProcessesTab: View {
                 Label("Reload", systemImage: "arrow.clockwise")
             }
             .disabled(loading || !container.isRunning)
+            .help(container.isRunning ? "" : "Start the container to list its processes")
         }
         .padding(12)
     }
@@ -546,10 +548,12 @@ private struct ProcessesTab: View {
                     .width(60)
                     TableColumn("Command") { row in
                         Text(row.command).font(.system(.body, design: .monospaced))
+                            .help(row.command)
                     }
                     .width(160)
                     TableColumn("Arguments") { row in
                         Text(row.arguments).font(.system(.body, design: .monospaced))
+                            .help(row.arguments)
                     }
                 }
             }

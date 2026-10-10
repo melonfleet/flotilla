@@ -170,6 +170,7 @@ struct AddHostView: View {
             Label("\(name) is already paired with this Mac.", systemImage: "checkmark.circle").foregroundStyle(.secondary)
         case .failed(let why):
             Label(why, systemImage: "exclamationmark.triangle").foregroundStyle(Theme.danger).lineLimit(4)
+                .help(why)
         }
     }
 }

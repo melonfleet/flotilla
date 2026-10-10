@@ -146,6 +146,7 @@ struct HostModePane: View {
                 .foregroundStyle(Theme.online)
         case .failed(let why):
             Label(why, systemImage: "exclamationmark.triangle").foregroundStyle(Theme.warning).lineLimit(2)
+                .help(why)
         }
     }
 
@@ -164,6 +165,7 @@ struct HostModePane: View {
                 Text("Type it on the admin Mac to pair.").font(.caption).foregroundStyle(.secondary)
                 Button("Show Code") { hostMode.showPairingCode() }
                     .disabled(hostMode.listener == .off)
+                    .help(hostMode.listener == .off ? "Turn on listening first" : "")
             }
         }
     }

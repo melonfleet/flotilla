@@ -271,7 +271,8 @@ struct MachinesView: View {
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
                 .accessibilityLabel(allVisibleSelected ? "Deselect all machines" : "Select all machines")
-                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+                .help(ui.presentation != .list ? "Switch to list view to select"
+                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             Picker("View", selection: Binding(get: { ui.presentation },
                                               set: { ui.presentation = $0 })) {
@@ -305,7 +306,8 @@ struct MachinesView: View {
 
     private var columnsButton: some View {
         IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
-                         help: "Show or hide columns") { showingColumns.toggle() }
+                         help: ui.presentation == .list ? "Show or hide columns"
+                                                        : "Columns apply to the list view only") { showingColumns.toggle() }
         .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Self.columnSpecs, id: \.id) { spec in
@@ -483,7 +485,11 @@ struct MachinesView: View {
     @ViewBuilder
     private var content: some View {
         switch model.machinesState {
-        case .idle, .loading where model.machines.isEmpty:
+        // Two arms on purpose: `case .idle, .loading where …` binds the `where` to `.loading` only
+        // (CLAUDE.md). Not yet loaded always shows the spinner; loading only while nothing is shown.
+        case .idle:
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .loading where model.machines.isEmpty:
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .unavailable(let reason), .failed(let reason):
@@ -573,6 +579,7 @@ struct MachinesView: View {
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(.quaternary, in: Capsule())
                         .foregroundStyle(.secondary)
+                        .help("Used when a command names no machine")
                 }
                 Spacer(minLength: 0)
             }
@@ -664,6 +671,7 @@ struct MachinesView: View {
                                                  : AnyShapeStyle(Theme.accentTint),
                                         in: Capsule())
                             .foregroundStyle(Theme.rowName(selected: selected))
+                            .help("Used when a command names no machine")
                     }
                 }
             }
@@ -773,6 +781,7 @@ struct MachinesView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(machine.id)")
             .accessibilityLabel("More actions for \(machine.id)")
 
             Divider().frame(height: 14)
@@ -882,11 +891,13 @@ struct MachinesView: View {
                         .foregroundStyle(.secondary)
                         if machine.isDefault == true {
                             Text("default").font(.caption2).foregroundStyle(Theme.accent)
+                                .help("Used when a command names no machine")
                         }
                     }
                     Text(subtitle(for: machine))
                         .font(.caption).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.middle)
+                        .help(subtitle(for: machine))
                 }
             } else {
                 Text("Machine unavailable").font(.headline)

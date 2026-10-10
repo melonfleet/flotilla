@@ -99,6 +99,7 @@ struct InspectTableView: View {
                 TableColumn("Value") { row in
                     Text(row.value).font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled)
+                        .help(row.value)
                 }
             }
         }

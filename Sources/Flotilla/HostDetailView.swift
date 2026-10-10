@@ -205,6 +205,7 @@ struct HostDetailView: View {
                                     .controlSize(.small)
                                     .frame(minWidth: 210, alignment: .leading)
                                     .disabled(!reachable)
+                                    .help(reachable ? "" : "No network address for this Mac yet")
                                 guideButton(kind)
                             }
                         }
@@ -353,6 +354,7 @@ struct HostDetailView: View {
                 ForEach(events.prefix(100)) { event in
                     HStack(spacing: 8) {
                         Circle().fill(Theme.color(forEventEndingIn: event.to)).frame(width: 6, height: 6)
+                            .help(event.to.isEmpty ? event.summary : "Ended as \(event.to)")
                         Text(event.summary).font(.system(size: 12, weight: .medium))
                         Text(event.detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
                         Spacer()

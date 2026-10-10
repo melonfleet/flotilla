@@ -67,7 +67,8 @@ struct ClustersView: View {
                                   // Nothing to open: a cluster's detail is kubectl's, not this
                                   // app's, so a feed row here is a record and not a link.
                                   open: { _ in },
-                                  canOpen: { _ in false })
+                                  canOpen: { _ in false },
+                                  unopenableHelp: { _ in "" })
                 }
             }
         }
@@ -300,6 +301,8 @@ struct ClustersView: View {
                 Text(cluster.roles.joined(separator: ", "))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .help(cluster.roles.isEmpty ? "control-plane runs Kubernetes itself"
+                          : "\(cluster.roles.joined(separator: ", "))\ncontrol-plane runs Kubernetes itself")
             }
             .width(min: 110, ideal: 150)
             .customizationID("role")
@@ -327,6 +330,7 @@ struct ClustersView: View {
                     .monospaced()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .help(cluster.address)
             }
             .width(min: 100, ideal: 130)
             .customizationID("address")
@@ -411,6 +415,7 @@ struct ClustersView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(cluster.node)")
             .accessibilityLabel("More actions for \(cluster.node)")
 
             Divider().frame(height: 14)

@@ -391,7 +391,8 @@ struct HostsView: View {
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
                 .accessibilityLabel(allVisibleSelected ? "Deselect all hosts" : "Select all hosts")
-                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+                .help(ui.presentation != .list ? "Switch to list view to select"
+                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             ResourceListControls<HostRow>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
@@ -402,7 +403,7 @@ struct HostsView: View {
                 filters: Self.filters)
             HostGroupByMenu(store: model.hostCategories, grouping: groupingBinding) { showingCategories = true }
         }, trailing: {
-            if model.startingRuntime { ProgressView().controlSize(.small) }
+            if model.startingRuntime { ProgressView().controlSize(.small).help("Starting the container system…") }
             ToolbarIconButton(systemImage: "plus", label: "Add a host",
                               help: hostMode.isAdmin ? "Pair another Mac"
                                                      : "This Mac is a host. Make it an admin in Settings ▸ Host Mode to add Macs.",
@@ -669,6 +670,7 @@ struct HostsView: View {
             TableColumn("Model", value: \.modelSortKey) { row in
                 if row.header == nil {
                     Text(row.modelIdentifier ?? "—").foregroundStyle(.secondary).lineLimit(1)
+                        .help("Apple's model identifier")
                 }
             }
             .width(min: 70, ideal: 84)
@@ -803,6 +805,7 @@ struct HostsView: View {
         if let peer = row.peer, peer.isTrusted {
             HStack(spacing: 6) {
                 Text(row.containerVersion ?? "—").monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+                    .help("Version of Apple's container runtime")
                 switch model.hostRuntimeState(peer.fingerprint) {
                 case .behind, .missing:
                     Button(model.hostRuntimeState(peer.fingerprint) == .missing ? "Install" : "Upgrade") { pendingRuntime = row }
@@ -876,6 +879,7 @@ struct HostsView: View {
                              what: String, host: String) -> some View {
         HStack(spacing: 4) {
             Text(version ?? "—").monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
+                .help(what == "container" ? "Version of Apple's container runtime" : "")
             if let skew, skew.level >= warnAt {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.caption2)
@@ -943,6 +947,7 @@ struct HostsView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(row.name)")
             .accessibilityLabel("More actions for \(row.name)")
 
             Divider().frame(height: 14)

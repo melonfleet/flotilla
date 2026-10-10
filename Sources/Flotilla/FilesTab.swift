@@ -149,6 +149,7 @@ struct FilesTab: View {
                     Text(entry.name)
                     if let link = entry.symlinkTarget {
                         Text("→ \(link)").foregroundStyle(.tertiary).lineLimit(1)
+                            .help(link)
                     }
                 }
                 .contentShape(.rect)

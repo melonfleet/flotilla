@@ -342,6 +342,7 @@ struct NewImageView: View {
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(context == nil ? .tertiary : .primary)
                     .lineLimit(1).truncationMode(.head)
+                    .help(context?.path ?? "")
                 Spacer()
                 Button("Choose…") { chooseContext() }
             }

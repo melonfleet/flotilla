@@ -98,6 +98,7 @@ struct InspectPane: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(command)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

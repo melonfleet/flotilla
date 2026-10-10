@@ -61,6 +61,7 @@ struct ContainerCard<MenuContent: View>: View {
                 .fill(container.stateColor)
                 .frame(width: 8, height: 8)
                 .padding(.top, 4)
+                .help(container.status.state.capitalized)
             VStack(alignment: .leading, spacing: 2) {
                 // The name is the way in, exactly as it is in the table. It was plain text
                 // here, so the only route to detail from a card was a `⋯` menu with a single
@@ -155,6 +156,7 @@ struct ContainerCard<MenuContent: View>: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(container.id)")
             .accessibilityLabel("More actions for \(container.id)")
 
             Divider().frame(height: 14)

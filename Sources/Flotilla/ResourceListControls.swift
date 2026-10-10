@@ -66,7 +66,8 @@ struct ResourceListControls<Row: Identifiable>: View {
             .fixedSize()
 
             IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
-                             help: "Show or hide columns",
+                             help: presentation == .list ? "Show or hide columns"
+                                                         : "Columns apply to the list view only",
                              // Cards have no columns to configure.
                              disabled: presentation != .list) { showingColumns.toggle() }
                 .popover(isPresented: $showingColumns, arrowEdge: .bottom) { columnsPopover }

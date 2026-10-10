@@ -78,7 +78,7 @@ struct RegistryBrowserView: View {
                 Text(query.trimmingCharacters(in: .whitespaces).isEmpty
                      ? "Docker Official Images" : "\(total.formatted()) result\(total == 1 ? "" : "s")")
                     .font(.caption).foregroundStyle(.secondary)
-                if loading { ProgressView().controlSize(.small) }
+                if loading { ProgressView().controlSize(.small).help("Searching Docker Hub…") }
             }
             if let problem {
                 Label(problem, systemImage: "exclamationmark.triangle")
@@ -109,6 +109,7 @@ struct RegistryBrowserView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(repository.reference).font(.body.weight(.medium)).lineLimit(1)
+                    .help(repository.reference)
                 if let badge = repository.badgeLabel {
                     Text(badge)
                         .font(.caption2.weight(.medium))
@@ -197,6 +198,7 @@ struct RegistryBrowserView: View {
     private func tagRow(_ tag: DockerHub.Tag) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(tag.name).font(.body.monospaced()).lineLimit(1)
+                .help(tag.name)
             HStack(spacing: 6) {
                 Text(tag.hasLinuxARM64 ? "Apple silicon" : "Intel only — runs under Rosetta")
                     .foregroundStyle(tag.hasLinuxARM64 ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.warning))

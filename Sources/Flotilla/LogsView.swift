@@ -230,6 +230,7 @@ struct LogsView: View {
                 ui.live.toggle()
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh",
+                              help: ui.live ? "Not needed while Live is on" : "Refresh",
                               disabled: ui.live) {
                 Task { await load() }
             }

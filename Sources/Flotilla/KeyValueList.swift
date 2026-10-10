@@ -50,6 +50,7 @@ struct KeyValueList: View {
                         Image(systemName: "minus.circle")
                     }
                     .buttonStyle(.borderless)
+                    .help("Remove this \(itemLabel)")
                     .accessibilityLabel("Remove \(itemLabel) \(index + 1)")
                 }
             }

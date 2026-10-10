@@ -82,6 +82,7 @@ struct ThemePickerRow: View {
                     Text(title)
                     if locked {
                         Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
+                            .help("Managed by your organization")
                     }
                 }
                 Text(caption).font(.caption).foregroundStyle(.secondary)

@@ -172,6 +172,7 @@ struct OverviewView: View {
             .customizationID("model")
             TableColumn("CPU") { line in
                 Text(Self.chip(line.facts)).lineLimit(1)
+                    .help(Self.chip(line.facts))
             }
             .width(min: 110, ideal: 140)
             .customizationID("cpu")
@@ -198,6 +199,7 @@ struct OverviewView: View {
             .customizationID("flotilla")
             TableColumn("container") { line in
                 Text(line.container ?? "—").foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                    .help("Version of Apple's container runtime")
             }
             .width(min: 60, ideal: 70)
             .customizationID("container")
@@ -430,6 +432,7 @@ struct OverviewView: View {
                                     Task { await model.rollOutUpdates(automatic: false) }
                                 }
                                 .disabled(model.hostMode.rollingOut)
+                                .help(model.hostMode.rollingOut ? "An update is already running" : "")
                             }
                         }
                     }
@@ -446,6 +449,7 @@ struct OverviewView: View {
                                     confirmingContainerUpgrade = true
                                 }
                                 .disabled(containerUnderWay > 0)
+                                .help(containerUnderWay > 0 ? "An upgrade is already running" : "")
                             }
                         }
                     }

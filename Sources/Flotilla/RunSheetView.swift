@@ -373,6 +373,7 @@ struct RunSheetView: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(model.networks.isEmpty)
+                .help(model.networks.isEmpty ? "No networks yet — create one in Networks" : "")
             }
         }
     }
@@ -571,7 +572,7 @@ struct RunSheetView: View {
                     Image(systemName: "minus.circle")
                 }
                 .buttonStyle(.borderless)
-                .help("Remove")
+                .help(row.value.isEmpty ? "Remove this row" : "Remove \(row.value)")
                 .accessibilityLabel(row.value.isEmpty ? "Remove this row" : "Remove \(row.value)")
             }
         }

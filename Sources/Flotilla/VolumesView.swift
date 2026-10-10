@@ -200,7 +200,8 @@ struct VolumesView: View {
                 .labelsHidden()
                 .disabled(ui.presentation != .list || visibleIDs.isEmpty)
                 .accessibilityLabel(allVisibleSelected ? "Deselect all volumes" : "Select all volumes")
-                .help(allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+                .help(ui.presentation != .list ? "Switch to list view to select"
+                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
 
             ResourceListControls<HostedVolume>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
@@ -598,12 +599,14 @@ struct VolumesView: View {
 
             TableColumn("Format", value: \.formatSortKey) { row in
                 Text(row.volume.configuration.format ?? "—").foregroundStyle(.secondary)
+                    .help("Filesystem inside the volume")
             }
             .width(min: 70, ideal: 84)
             .customizationID("format")
 
             TableColumn("Driver", value: \.driverSortKey) { row in
                 Text(row.volume.configuration.driver ?? "—").foregroundStyle(.secondary)
+                    .help("What stores the volume")
             }
             .width(min: 70, ideal: 90)
             .customizationID("driver")
@@ -686,6 +689,7 @@ struct VolumesView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("More actions for \(name)")
             .accessibilityLabel("More actions for \(name)")
 
             Divider().frame(height: 14)
@@ -757,6 +761,7 @@ struct VolumesView: View {
                     Text(subtitle(for: row))
                         .font(.caption).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.middle)
+                        .help(subtitle(for: row))
                 }
             } else {
                 Text("Volume unavailable").font(.headline)
@@ -1065,6 +1070,7 @@ struct VolumesView: View {
                         Image(systemName: "minus.circle")
                     }
                     .buttonStyle(.borderless)
+                    .help("Remove this entry")
                     .accessibilityLabel("Remove")
                 }
             }

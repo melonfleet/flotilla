@@ -311,6 +311,7 @@ struct DNSFormView: View {
                     } else {
                         Button("Use for Containers…") { pendingChange = .use(managed.name) }
                             .disabled(!managed.resolverInstalled)
+                            .help(managed.resolverInstalled ? "" : "Set this domain up first")
                     }
                     if !managed.resolverInstalled {
                         Button("Set Up on \(Place)…") {
