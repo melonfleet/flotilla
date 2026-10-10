@@ -628,7 +628,9 @@ signing work.
   (`is:`, `image:`, `host:`, `tag:`, ⌘F) in Containers; container's own settings (`system
   property list`) beside Flotilla's on a host's Settings tab; Architecture and Rosetta in Run;
   guided `.pkg` installation, which Q39 already does (Apple's signed release, verified, handed
-  to Installer with the owner's password). **In progress:** the accessibility pass.
+  to Installer with the owner's password); the accessibility pass (named controls, status in
+  words, Increase Contrast, Reduce Transparency, Reduce Motion, keyboard reach), checked in code,
+  not yet with VoiceOver on screen.
 
 The package installer must remain visible and user-authorised. Flotilla must
 never silently install or upgrade Apple's privileged package.
