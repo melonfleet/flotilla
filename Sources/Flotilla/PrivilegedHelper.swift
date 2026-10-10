@@ -71,6 +71,14 @@ enum PrivilegedHelper {
     /// running the binary it started with, so after an update it can be older than this app until
     /// it is switched off and on again.
     static func runningVersion() async -> Int? {
+        if let version = await runningVersionOnce() { return version }
+        // A helper whose app was replaced under it quits when it is next asked (`OwnBinary` in the
+        // helper), and launchd starts the new copy on the request after — so ask once more.
+        try? await Task.sleep(for: .seconds(1.5))
+        return await runningVersionOnce()
+    }
+
+    private static func runningVersionOnce() async -> Int? {
         guard let team else { return nil }
         let connection = NSXPCConnection(machServiceName: HelperInterface.label, options: .privileged)
         connection.remoteObjectInterface = NSXPCInterface(with: HelperProtocol.self)
@@ -91,7 +99,19 @@ enum PrivilegedHelper {
     }
 
     /// One request. `nil` means it worked; otherwise the reason, in words fit for an alert.
+    ///
+    /// Tried twice when the helper cannot be reached: after the app is replaced the running helper
+    /// is stale, quits when asked, and the next request starts the new one (10 October).
     static func send(_ request: HelperRequest) async -> String? {
+        let first = await sendOnce(request)
+        guard let first, first.hasPrefix(unreachable) else { return first }
+        try? await Task.sleep(for: .seconds(1.5))
+        return await sendOnce(request)
+    }
+
+    private static let unreachable = "Flotilla couldn't reach its Flotilla Helper"
+
+    private static func sendOnce(_ request: HelperRequest) async -> String? {
         guard let team else {
             return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
         }

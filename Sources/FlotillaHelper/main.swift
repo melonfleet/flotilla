@@ -22,6 +22,14 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol, @unc
     private let lock = NSLock()
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
+        // The app this helper lives in was replaced under it — an update, or a rebuild — so this
+        // process runs code that is no longer on disk, and the app's signature check of it fails
+        // ("the code on disk does not match what is running"; measured 10 October). Quit, unless a
+        // request is under way; launchd starts the new copy on the next request, which the app makes.
+        if OwnBinary.replaced, lock.try() {
+            FileHandle.standardError.write(Data("flotilla-helper: replaced on disk; exiting so the new copy starts.\n".utf8))
+            exit(0)
+        }
         connection.exportedInterface = NSXPCInterface(with: HelperProtocol.self)
         connection.exportedObject = self
         connection.resume()
@@ -293,6 +301,27 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol, @unc
     }
 }
 
+/// The file this process was started from, as it was at launch: replacing the app gives the helper's
+/// executable a new file, so a different device or inode at the same path means this process is stale.
+enum OwnBinary {
+    static let path: String? = {
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        return proc_pidpath(getpid(), &buffer, UInt32(buffer.count)) > 0 ? String(cString: buffer) : nil
+    }()
+    static let atLaunch = path.flatMap(identity)
+
+    static func identity(_ path: String) -> [UInt64]? {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return nil }
+        return [UInt64(info.st_dev), UInt64(info.st_ino)]
+    }
+
+    static var replaced: Bool {
+        guard let path, let atLaunch else { return false }
+        return identity(path) != atLaunch
+    }
+}
+
 // No team, no service: an ad-hoc or unsigned helper has nothing to require of its callers, and a
 // root daemon that accepted anyone would be the general privileged runner decision 19 forbids.
 guard let team = HelperInterface.ownTeamIdentifier() else {
@@ -300,6 +329,7 @@ guard let team = HelperInterface.ownTeamIdentifier() else {
     exit(1)
 }
 
+_ = OwnBinary.atLaunch   // read now, while the file is still the one this process runs
 let listener = NSXPCListener(machServiceName: HelperInterface.label)
 listener.setConnectionCodeSigningRequirement(
     HelperInterface.requirement(identifier: HelperInterface.appIdentifier, team: team))
