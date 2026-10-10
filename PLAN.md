@@ -737,8 +737,10 @@ Mac (Apple's Installer, the owner's password). A host installs it through the DN
 version and no-downgrade on a root-owned copy. Upgrades are automatic only with nothing running;
 Hosts offers Install/Upgrade (wire version 7). Live, 8 October: with container removed from the
 Tahoe VM by Apple's own uninstaller, the admin updated Tahoe's Flotilla, and Tahoe reinstalled
-container 1.5.0 by itself within minutes. Not yet exercised live: the admin Mac's own interactive
-install (this Mac runs containers) and the Hosts Install/Upgrade button. MDM cannot pre-grant Local
+container 1.5.0 by itself within minutes. **Both remaining paths live-tested 10 October on Tahoe:**
+the Hosts Install button (after fixing a helper left running under a replaced app), and an admin
+Mac's own install through Apple's Installer (Tahoe switched to Admin; banner cleared, runtime
+started). A host without container shows amber, "container isn't installed", everywhere. MDM cannot pre-grant Local
 Network access, so a new host still needs one click.
 
 ### Sparkle auto-updates — built, not yet published (DECISIONS Q40)
