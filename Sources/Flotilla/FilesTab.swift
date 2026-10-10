@@ -166,7 +166,7 @@ struct FilesTab: View {
             TableColumn("Modified") { entry in
                 Text(entry.modified).foregroundStyle(.secondary)
             }
-            TableColumn(Text("").accessibilityLabel("Open")) { entry in
+            TableColumn("") { entry in
                 if entry.isDirectory {
                     Button { descend(into: entry) } label: { Image(systemName: "chevron.right") }
                         .buttonStyle(.plain)

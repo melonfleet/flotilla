@@ -178,7 +178,7 @@ struct ActivityView: View {
             }
         } else {
             SwiftUI.Table(filtered) {
-                TableColumn(Text("").accessibilityLabel("Result")) { event in
+                TableColumn("") { event in
                     Circle().fill(colour(for: event)).frame(width: 8, height: 8)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .help(event.summary)

@@ -1831,7 +1831,7 @@ struct ContainersView: View {
                 // `TableColumnBuilder` accepts at most ten columns. Dot only for state, with the
                 // CLI's own string on hover and for VoiceOver (UI-01, closed as won't-do
                 // 2026-08-23). A group's dot is green, grey or half-filled for partly running.
-                TableColumn(Text("").accessibilityLabel("Selection and state"), value: \.stateRank) { (row: ContainerRow) in
+                TableColumn("", value: \.stateRank) { (row: ContainerRow) in
                     HStack(spacing: 6) {
                         selectionToggle(for: row.id, name: row.name)
                         switch row.kind {

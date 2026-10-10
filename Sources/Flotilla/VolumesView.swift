@@ -567,7 +567,7 @@ struct VolumesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text("").accessibilityLabel("Selection")) { row in
+            TableColumn("") { row in
                 selectionToggle(for: row.id)
             }
             .width(min: 28, ideal: 30, max: 34)

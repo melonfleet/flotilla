@@ -124,7 +124,7 @@ struct HostChecklist: View {
 
     private var table: some View {
         SwiftUI.Table(shown) {
-            TableColumn(Text("").accessibilityLabel("Selection")) { row in
+            TableColumn("") { row in
                 Toggle("", isOn: Binding(get: { selection.contains(row.id) && row.selectable },
                                          set: { on in if on { selection.insert(row.id) } else { selection.remove(row.id) } }))
                     .labelsHidden()
