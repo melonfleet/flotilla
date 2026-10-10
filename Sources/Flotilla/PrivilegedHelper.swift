@@ -100,35 +100,41 @@ enum PrivilegedHelper {
 
     /// One request. `nil` means it worked; otherwise the reason, in words fit for an alert.
     ///
-    /// Tried twice when the helper cannot be reached: after the app is replaced the running helper
-    /// is stale, quits when asked, and the next request starts the new one (10 October).
+    /// **Confirmed before it is sent, never sent twice.** Flotilla checks the helper's signature
+    /// when its reply arrives, so a request to a helper that fails the check may already have been
+    /// carried out — Tahoe's container install, 10 October, reported "couldn't reach" after
+    /// installing. So the helper is asked its version first, which is harmless to repeat: that is
+    /// retried once (a stale helper quits on being asked, and the next request starts the new
+    /// copy), and if it still cannot be confirmed the request is not sent at all.
     static func send(_ request: HelperRequest) async -> String? {
-        let first = await sendOnce(request)
-        guard let first, first.hasPrefix(unreachable) else { return first }
-        try? await Task.sleep(for: .seconds(1.5))
-        return await sendOnce(request)
+        guard team != nil else {
+            return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
+        }
+        guard let version = await runningVersion() else {
+            return "Flotilla couldn't confirm its Flotilla Helper, so nothing was changed. Switch the helper "
+                + "off and on in Settings ▸ Advanced, or restart this Mac, and try again."
+        }
+        return await sendOnce(request, helperVersion: version)
     }
 
-    private static let unreachable = "Flotilla couldn't reach its Flotilla Helper"
-
-    private static func sendOnce(_ request: HelperRequest) async -> String? {
+    private static func sendOnce(_ request: HelperRequest, helperVersion version: Int) async -> String? {
         guard let team else {
             return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
         }
         switch request {
         case .installFlotillaUpdate:
-            if let version = await runningVersion(), version < 4 {
+            if version < 4 {
                 return "This Mac's Flotilla Helper is from an older Flotilla and can't install updates. "
                     + "Install this update with the package once; after that the helper installs them."
             }
         case .installContainer:
-            if let version = await runningVersion(), version < 3 {
+            if version < 3 {
                 return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
                     + "Settings ▸ Advanced to update it."
             }
         case .syncFleetResolvers, .removeFleetResolvers:
             // Added in version 2: an older helper would not know the request at all.
-            if let version = await runningVersion(), version < 2 {
+            if version < 2 {
                 return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
                     + "Settings ▸ Advanced to update it."
             }
