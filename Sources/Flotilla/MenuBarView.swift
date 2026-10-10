@@ -27,6 +27,16 @@ struct MenuBarView: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
 
+    /// "Golden-Gate isn't answering: Couldn't reach…" → "Golden-Gate isn't answering" over
+    /// "Couldn't reach…", each kept to a menu's width.
+    static func menuLines(_ text: String, limit: Int = 60) -> (String, String?) {
+        func fit(_ s: String) -> String { s.count > limit ? String(s.prefix(limit - 1)) + "…" : s }
+        guard let colon = text.range(of: ": ") else { return (fit(text), nil) }
+        let title = String(text[..<colon.lowerBound])
+        let detail = String(text[colon.upperBound...])
+        return (fit(title), detail.isEmpty ? nil : fit(detail.prefix(1).uppercased() + detail.dropFirst()))
+    }
+
     var body: some View {
         statusLine
         Button("Open Flotilla") { present { model.requestSection(.overview) } }
@@ -37,7 +47,14 @@ struct MenuBarView: View {
             Divider()
             Menu("Needs Attention (\(attention.count))") {
                 ForEach(attention) { item in
-                    Button(item.text) { present { model.requestSection(item.section) } }
+                    // A title and a smaller line under it, as Quit's "Containers keep running": a menu
+                    // cannot wrap, and the whole message on one line ran nearly across the screen
+                    // (the owner, 10 October). Overview shows it in full.
+                    let (title, detail) = Self.menuLines(item.text)
+                    Button { present { model.requestSection(item.section) } } label: {
+                        Text(title)
+                        if let detail { Text(detail) }
+                    }
                 }
             }
         }
