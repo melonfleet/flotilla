@@ -96,12 +96,14 @@ struct HostDetailView: View {
 
     private var overviewCards: some View {
         VStack(alignment: .leading, spacing: 12) {
+            attentionCard
             grid {
                 card("State") {
                     HStack(spacing: 6) {
                         Circle().fill(stateColor).frame(width: 7, height: 7)
                         Text(stateText).font(.system(size: 13, weight: .medium))
                     }
+                    .help(stateReason ?? stateText)
                     row("Last check-in", lastCheckIn)
                     row("Up since", facts?.bootTime.map { RelativeDate.relativeToNow($0) } ?? "—")
                     row("container", containerState)
@@ -135,17 +137,31 @@ struct HostDetailView: View {
                     }
                 }
             }
-            let attention = model.attentionItems.filter { $0.host == host }
-            if !attention.isEmpty {
-                DetailCard(title: "Needs attention", minHeight: nil) {
-                    ForEach(attention) { item in
-                        HStack(spacing: 8) {
-                            Label(item.text, systemImage: "exclamationmark.triangle")
-                                .font(.system(size: 12)).foregroundStyle(Theme.warning)
-                            Spacer()
-                            if let fix = item.fix {
-                                Button(fix.title) { fix.run() }.controlSize(.small)
+        }
+    }
+
+    /// First on the page (the owner, 10 October): this Mac's notices that need attention — the same
+    /// list as the bell, so a dismissed one is gone here too — each with its level and its fix.
+    @ViewBuilder
+    private var attentionCard: some View {
+        let id = fingerprint?.hex ?? HostRow.thisMacID
+        let notices = model.notices.attention.filter { $0.host == id }
+        if !notices.isEmpty {
+            DetailCard(title: "Needs attention", minHeight: nil) {
+                ForEach(notices) { notice in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: notice.level.symbol).foregroundStyle(notice.level.colour)
+                            .accessibilityLabel(notice.level.title)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(notice.title).font(.system(size: 12, weight: .medium))
+                            if let detail = notice.detail {
+                                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                    .help(detail)
                             }
+                        }
+                        Spacer(minLength: 8)
+                        if let fix = model.fix(for: notice) {
+                            Button(fix.title) { fix.run() }.controlSize(.small)
                         }
                     }
                 }
@@ -556,12 +572,18 @@ struct HostDetailView: View {
         if host.isLocal { return RuntimeStatus.describe(model.preflight).title }
         switch live?.state {
         case .connected?: return "Connected"
-        case .failed(let why)?:
+        case .failed?:
             if let fingerprint, model.hostMissingContainer(fingerprint) { return "container isn't installed" }
             if let fingerprint, model.hostRuntimeStopped(fingerprint) { return "container is stopped" }
-            return "Not answering — \(why)"
+            return "Not answering"
         case .checking?, nil: return "Checking…"
         }
+    }
+
+    /// Why it isn't answering, for the State box's tooltip: the reason itself is in Needs attention.
+    private var stateReason: String? {
+        if case .failed(let why)? = live?.state { return why }
+        return nil
     }
 
     private var stateColor: Color {
