@@ -13,12 +13,18 @@ public enum JSONPrettyPrinter {
               let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
               let pretty = try? JSONSerialization.data(
                 withJSONObject: object,
-                options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed]
+                // Slashes as written: `ghcr.io/apple/…`, not `ghcr.io\/apple\/…` (10 October).
+                options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed, .withoutEscapingSlashes]
               ),
               let prettyText = String(data: pretty, encoding: .utf8)
         else {
             return text
         }
+        // An empty object or array on one line, as `{}` and `[]`, rather than split across three
+        // with a blank one between. Only across a newline: a string cannot hold a raw newline, so
+        // this never touches a value.
         return prettyText
+            .replacingOccurrences(of: #"\{\n\s*\}"#, with: "{}", options: .regularExpression)
+            .replacingOccurrences(of: #"\[\n\s*\]"#, with: "[]", options: .regularExpression)
     }
 }

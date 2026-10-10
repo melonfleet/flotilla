@@ -55,3 +55,10 @@ private func fixture(_ name: String) throws -> Data {
 @Test func prettyPrintReturnsEmptyStringUnchanged() {
     #expect(JSONPrettyPrinter.prettyPrint("") == "")
 }
+
+@Test func slashesStayAsWrittenAndEmptyContainersStayOnOneLine() {
+    let pretty = JSONPrettyPrinter.prettyPrint(#"{"image":"ghcr.io/apple/x:1","dns":{},"list":[],"note":"{ }"}"#)
+    #expect(pretty.contains(#""ghcr.io/apple/x:1""#))
+    #expect(pretty.contains(#""dns" : {}"#) && pretty.contains(#""list" : []"#))
+    #expect(pretty.contains(#""note" : "{ }""#))
+}

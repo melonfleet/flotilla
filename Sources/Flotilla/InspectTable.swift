@@ -59,6 +59,9 @@ func flattenInspect(_ json: String?) -> [InspectRow] {
         case is [String: Any]: leaves.append((path, "{}"))
         case is [Any]: leaves.append((path, "[]"))
         case is NSNull: leaves.append((path, "null"))
+        // A JSON boolean decodes as an NSNumber and printed as `1` (`build.rosetta`, 10 October).
+        case let number as NSNumber where CFGetTypeID(number) == CFBooleanGetTypeID():
+            leaves.append((path, number.boolValue ? "true" : "false"))
         default: leaves.append((path, String(describing: node)))
         }
     }
