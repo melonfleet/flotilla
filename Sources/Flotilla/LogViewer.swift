@@ -411,9 +411,7 @@ struct LogViewer: View {
     // MARK: Export
 
     private func copyAll() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(displayLines.map(\.text).joined(separator: "\n"),
-                                       forType: .string)
+        Clipboard.copy(displayLines.map(\.text).joined(separator: "\n"))
     }
 
     private func save() {

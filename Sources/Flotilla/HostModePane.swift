@@ -85,8 +85,7 @@ struct HostModePane: View {
                             .textSelection(.enabled)
                         IconActionButton(systemImage: "doc.on.doc", label: "Copy fingerprint",
                                          help: "Copy this Mac's full fingerprint") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(identity.fingerprint.hex, forType: .string)
+                            Clipboard.copy(identity.fingerprint.hex)
                         }
                     }
                 } else if let problem = hostMode.identityProblem {
@@ -249,8 +248,7 @@ struct HostModePane: View {
                                          label: revealKey ? "Hide key" : "Show key",
                                          help: revealKey ? "Hide the key" : "Show the whole key") { revealKey.toggle() }
                         IconActionButton(systemImage: "doc.on.doc", label: "Copy key", help: "Copy the key") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(key.text, forType: .string)
+                            Clipboard.copy(key.text)
                         }
                         Button("Replace…") { confirmingRotate = true }
                     }

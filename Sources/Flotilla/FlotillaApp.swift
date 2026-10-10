@@ -329,6 +329,8 @@ struct FlotillaApp: App {
 
         Window("Flotilla", id: "main") {
             MainWindowView(model: model)
+                // "Copied", after any copy anywhere in the window.
+                .modifier(CopyFeedbackOverlay())
                 // The delegate owns activation policy; the model owns the preference. Wire
                 // them here rather than giving the delegate its own SettingsStore, which
                 // would be a second source of truth for the same setting.

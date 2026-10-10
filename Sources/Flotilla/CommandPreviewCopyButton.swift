@@ -11,8 +11,7 @@ struct CommandPreviewCopyButton: View {
 
     var body: some View {
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(command, forType: .string)
+            Clipboard.copy(command)
             copied = true
         } label: {
             Label(copied ? "Copied" : "Copy",

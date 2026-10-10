@@ -227,8 +227,7 @@ struct GroupFormView: View {
                 }
                 IconActionButton(systemImage: "doc.on.doc", label: "Copy \(secret)",
                                  help: "Copy the password") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(value, forType: .string)
+                    Clipboard.copy(value)
                 }
                 IconActionButton(systemImage: "arrow.triangle.2.circlepath",
                                  label: "Generate a new \(secret)", help: "Generate a new password…") {

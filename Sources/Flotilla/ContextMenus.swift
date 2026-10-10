@@ -18,10 +18,57 @@ import FlotillaCore
 ///    holds true on every screen.
 /// 4. **Disabled, not absent, while busy.** A menu whose items vanish mid-action makes the
 ///    app look broken; a greyed item explains itself.
+@MainActor
 enum Clipboard {
+    /// Copies, and says so (the owner, 10 October): every Copy in the app ends here, so every one
+    /// shows the same brief "Copied" and VoiceOver hears it.
     static func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        CopyFeedback.shared.show()
+    }
+}
+
+/// The "Copied" confirmation: shown over the window for a moment after any copy.
+@MainActor
+@Observable
+final class CopyFeedback {
+    static let shared = CopyFeedback()
+    private(set) var visible = false
+    @ObservationIgnored private var generation = 0
+
+    func show() {
+        generation += 1
+        let mine = generation
+        visible = true
+        AccessibilityNotification.Announcement("Copied").post()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.4))
+            if generation == mine { visible = false }
+        }
+    }
+}
+
+/// Draws `CopyFeedback` at the bottom of the window — a fade only, so Reduce Motion has nothing to
+/// reduce.
+struct CopyFeedbackOverlay: ViewModifier {
+    private var feedback: CopyFeedback { .shared }
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .bottom) {
+            if feedback.visible {
+                Label("Copied", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.hairline))
+                    .padding(.bottom, 24)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)   // announced instead
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: feedback.visible)
     }
 }
 

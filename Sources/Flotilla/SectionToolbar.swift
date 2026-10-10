@@ -52,6 +52,8 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
                 .frame(maxWidth: 280)
                 .focused($searchFocused)
                 .help(searchHelp ?? "Search (⌘F)")
+                // A placeholder is not a name; VoiceOver read the field as unnamed (10 October).
+                .accessibilityLabel(searchPrompt.trimmingCharacters(in: CharacterSet(charactersIn: "…. ")))
                 .onKeyPress(.escape) { searchFocused = false; return .handled }
                 .background(GeometryReader { proxy in
                     Color.clear
