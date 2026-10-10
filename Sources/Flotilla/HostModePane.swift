@@ -113,6 +113,14 @@ struct HostModePane: View {
             SettingRow(store: store, key: SettingsKeys.keepAwakeAsHost, title: "Keep this Mac awake for its admin") { binding in
                 Toggle("", isOn: binding).labelsHidden()
             }
+            // Both read by the host already and only settable by profile until now (the owner, 10
+            // October, looking for the first one to test the Hosts Install button).
+            SettingRow(store: store, key: SettingsKeys.autoInstallRuntime, title: "Install and upgrade container by itself") { binding in
+                Toggle("", isOn: binding).labelsHidden()
+            }
+            SettingRow(store: store, key: SettingsKeys.acceptAdminUpdates, title: "Install Flotilla updates from its admin") { binding in
+                Toggle("", isOn: binding).labelsHidden()
+            }
 
             // The owner's decision (7 October): an admin Mac is the owner of the hosts it manages, so
             // nothing on a host is held back from it. Said here, where a host is about to pair.
