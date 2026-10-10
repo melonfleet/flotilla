@@ -594,14 +594,11 @@ Research a true cross-host overlay in
 Do not promise or ship an overlay unless the experiment establishes a secure,
 supportable design.
 
-**D4 — experiment approved (the owner, 10 October).** Iris's review: `container` 1.5 has no
-third-party network plugin and no LAN bridge (both open upstream); the supported design stays
-fleet DNS plus published ports. The experiment tests a routed overlay — each host advertising its
-own `/20` (already allocated by D1) over Tailscale or headscale subnet routing, or plain WireGuard —
-between two physical hosts: TCP, UDP and ICMP container-to-container, then runtime restart, VPN
-reconnect, sleep and wake, on macOS 26 and 27. To settle with the owner before it starts: which
-overlay (a Tailscale account, a self-hosted headscale, or WireGuard by hand), and which two Macs.
-Nothing ships from it unless every case passes. In `container` 1.5, container networks are private to each
+**D4 — deferred to 2.0 (the owner, 10 October).** Iris's review: `container` 1.5 has no
+third-party network plugin and no LAN bridge (both open upstream), and routing from a tunnel into
+vmnet is undocumented and fragile in reports; the supported design stays fleet DNS plus published
+ports, which already lets containers on different Macs reach each other. Nothing in 1.x needs more.
+The 2.0 path starts with trust, not a tunnel — see **Version 2.0** below. In `container` 1.5, container networks are private to each
 Mac. Without Layer 3, all cross-host container traffic uses host-published ports,
 including traffic reached through fleet DNS.
 
@@ -769,7 +766,11 @@ switched on once. First real release: the end-to-end test.
   mechanism.
 - Jamf, not Sparkle, remains the update authority on managed minis.
 
-### Jamf and configuration profiles
+### Jamf and configuration profiles — 2.0 (the owner, 10 October)
+
+1.x already reads managed preferences (`defaults` and `locked` tiers in `SettingsStore`, and the
+Jamf key reference); full MDM support — per-device identities, trust anchors and peer allowlists
+delivered by profile, and the staged-hardware test matrix below — is 2.0.
 
 - Deliver a unique per-device identity and managed settings without changing the
   transport.
@@ -787,6 +788,24 @@ switched on once. First real release: the end-to-end test.
   staged managed hardware.
 - Treat loss of a managed identity as an error, not permission to generate an
   unmanaged replacement.
+
+## Version 2.0 (the owner, 10 October)
+
+Recorded so it is not lost; not started.
+
+1. **A fleet ledger.** When an admin Mac is set up it starts the fleet's ledger, signed with its
+   own key — the admin is the authority, no consensus between Macs. Each host that joins is an
+   entry (name, key fingerprint, address block) and the admin signs a new version, shared to every
+   host over the links that exist; a host accepts only a ledger signed by its own admin and newer
+   than the one it holds. Removing a host is a revocation entry, so every Mac stops trusting it,
+   not only the admin. Later, more than one admin may sign. Built on what exists: device identity
+   keys, the admin's peer book, enrolment keys, fingerprints.
+2. **Host-to-host trust.** A host opens mTLS to another host after checking its key against the
+   ledger.
+3. **Service tunnels** over those links: a container's port carried to another Mac encrypted, with
+   nothing published on the LAN. TCP first.
+4. **A full overlay** (D4's routed `/20` per Mac), only if a real need appears after 3.
+5. **Jamf and MDM support** (section above).
 
 ## Critical environment constraint — nested virtualisation
 

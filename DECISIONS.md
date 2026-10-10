@@ -2052,3 +2052,18 @@ Flotilla never kept a Mac awake, never noticed sleep or wake, and polled whateve
 2. **Admin + Host is retired** (`RunMode.both`). Every Mac runs its own containers; "Host" only
    means another Mac may manage this one. A stored `both` becomes Admin at load, and a profile's
    `both` is read as Admin.
+
+## Q47 — Cross-Mac networking and MDM are 2.0; a fleet ledger comes first (settled 2026-10-10)
+
+The owner's decision, after D4's review:
+
+1. **D4 is deferred to 2.0.** Fleet DNS plus published ports already connects containers across Macs.
+   An overlay needs routing into vmnet that Apple does not document. Per-app VPN does not fit: it
+   is an MDM feature for sending an app's traffic to a company VPN, and container traffic leaves
+   through the virtualisation stack, not an app.
+2. **2.0 starts with trust, not a tunnel.** First a fleet ledger, signed by the admin's key: an
+   entry per host and a revocation entry per removal, shared to every host. Then host-to-host mTLS
+   checked against the ledger. Then service tunnels over those links. A full overlay comes only
+   if a real need appears. See PLAN.md, Version 2.0.
+3. **Jamf/MDM support is 2.0.** 1.x keeps reading managed preferences (`defaults` and `locked`).
+   2.0 adds per-device identities and trust by profile, plus the staged-hardware test matrix.
