@@ -67,7 +67,7 @@ public struct SearchQuery: Sendable, Equatable {
     }
 
     /// Words split on spaces, with double quotes keeping a value's spaces: `host:"Mac mini"`.
-    static func tokens(_ text: String) -> [String] {
+    public static func tokens(_ text: String) -> [String] {
         var tokens: [String] = []
         var current = ""
         var quoted = false

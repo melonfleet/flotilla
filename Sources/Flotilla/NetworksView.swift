@@ -35,6 +35,12 @@ struct NetworksView: View {
     /// never appears, because the menu is gone by the time the state changes.
     @State private var tagSheet: TagSheetTarget?
 
+    private func consumeDetailRequest() {
+        guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .network else { return }
+        detailTarget = DetailTarget(name: subject)
+        model.clearPendingDetail()
+    }
+
     var body: some View {
         Group {
             if let network = pushing {
@@ -81,6 +87,9 @@ struct NetworksView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
+        // A network asked for by name elsewhere — the ⌘K palette. One-shot, as Containers does it.
+        .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
+        .onAppear { consumeDetailRequest() }
         // Paired hosts' networks kept current while this section is open, as Containers does.
         .task {
             while !Task.isCancelled {

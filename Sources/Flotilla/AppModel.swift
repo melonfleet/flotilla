@@ -1888,6 +1888,9 @@ final class AppModel {
     /// File ▸ Export Configuration… / Import…, shown over the selected section (Q29).
     var configurationScreen: ConfigurationScreen?
 
+    /// The ⌘K palette, over the main window (`CommandPalette`).
+    var showingPalette = false
+
     // MARK: DNS section state
     //
     // Stored here for the same reason as the registries' below. Loading is `AppModelDNS`'s.

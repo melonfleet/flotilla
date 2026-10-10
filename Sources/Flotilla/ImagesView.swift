@@ -51,6 +51,12 @@ struct ImagesView: View {
     @State private var pruneError: String?
     @State private var confirmingBulkDelete = false
 
+    private func consumeDetailRequest() {
+        guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .image else { return }
+        detailTarget = DetailTarget(reference: subject)
+        model.clearPendingDetail()
+    }
+
     var body: some View {
         Group {
             // Embedded form screens, in precedence order — see `FormHeader` for the 9 August
@@ -121,6 +127,9 @@ struct ImagesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshImages() }
+        // A image asked for by name elsewhere — the ⌘K palette. One-shot, as Containers does it.
+        .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
+        .onAppear { consumeDetailRequest() }
         // Paired hosts' images kept current while this section is open, as Containers does.
         .task {
             while !Task.isCancelled {

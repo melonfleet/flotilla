@@ -192,7 +192,11 @@ private struct FlotillaCommands: Commands {
         // The title bar is intentionally replaced by `WindowBar`, so there is no system toolbar
         // to show or customise. The sidebar group stays: its toggle is translated into the app's
         // rail by `MainWindowView`, and that group also owns the working Full Screen command.
-        CommandGroup(replacing: .toolbar) {}
+        // ⌘K, the palette (Phase 1 leftover): in the View menu, where a toolbar's commands would be.
+        CommandGroup(replacing: .toolbar) {
+            Button("Go To…") { present { model.showingPalette = true } }
+                .keyboardShortcut("k", modifiers: .command)
+        }
 
         // There is one main window, and forms and details are embedded in it. Commands for
         // arranging all of an app's windows cannot change this layout. The save group remains

@@ -55,6 +55,12 @@ struct VolumesView: View {
          newDriverOptions.joined(separator: ",")].joined(separator: "\u{1}")
     }
 
+    private func consumeDetailRequest() {
+        guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .volume else { return }
+        detailTarget = DetailTarget(name: subject)
+        model.clearPendingDetail()
+    }
+
     var body: some View {
         Group {
             if let volume = pushing {
@@ -105,6 +111,9 @@ struct VolumesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
+        // A volume asked for by name elsewhere — the ⌘K palette. One-shot, as Containers does it.
+        .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
+        .onAppear { consumeDetailRequest() }
         // Paired hosts' volumes kept current while this section is open, as Containers does.
         .task {
             while !Task.isCancelled {

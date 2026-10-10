@@ -351,6 +351,19 @@ struct MainWindowView: View {
             volumesUI.columnCustomization[visibility: "spread"] = visibility
             networksUI.columnCustomization[visibility: "spread"] = visibility
         }
+        // ⌘K: over everything, near the top as Spotlight sits; a click outside closes it.
+        .overlay(alignment: .top) {
+            if model.showingPalette {
+                ZStack(alignment: .top) {
+                    Color.black.opacity(0.12)
+                        .ignoresSafeArea()
+                        .onTapGesture { model.showingPalette = false }
+                        .accessibilityHidden(true)
+                    CommandPalette(model: model) { model.showingPalette = false }
+                        .padding(.top, 90)
+                }
+            }
+        }
         .onChange(of: model.pendingSection) { _, requested in
             guard let requested else { return }
             // A menu request is for the form it names: an open Export or Import screen, which
