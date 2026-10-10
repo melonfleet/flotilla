@@ -56,10 +56,10 @@ struct HostSettingsTab: View {
                     }
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
-                if presentation == .table {
-                    TextField("Filter settings", text: $search)
-                        .textFieldStyle(.roundedBorder).frame(maxWidth: 200)
-                }
+                // The same filter in both views, as on the Inspect tab: rows in the table, lines in
+                // the property list.
+                TextField("Filter settings", text: $search)
+                    .textFieldStyle(.roundedBorder).frame(maxWidth: 200)
                 Spacer(minLength: 12)
                 Text("dev.melonfleet.Flotilla")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1)
@@ -92,30 +92,54 @@ struct HostSettingsTab: View {
                         .help(entry.summary)
                 }
                 .width(min: 160, ideal: 240)
+                // No Source column (the owner, 10 October): a column reading "Set on this Mac" row
+                // after row said nothing. A setting at its default says nothing either; one that is
+                // not carries a mark — changed here, or set by a profile.
                 TableColumn("Value") { entry in
-                    Text(entry.displayValue).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
-                        .foregroundStyle(entry.value == nil ? .tertiary : .primary)
+                    HStack(spacing: 6) {
+                        Text(entry.displayValue).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                            .foregroundStyle(entry.value == nil ? .tertiary : .primary)
+                        sourceMark(entry.source)
+                    }
                 }
-                .width(min: 120, ideal: 220)
-                TableColumn("Source") { entry in
-                    Text(Self.source(entry.source)).font(.system(size: 11))
-                        .foregroundStyle(entry.source == .builtIn ? .secondary : .primary)
-                }
-                .width(min: 90, ideal: 130)
+                .width(min: 140, ideal: 260)
+                // One line, the whole of it on hover: a two-line summary made rows of two heights.
                 TableColumn("What it does") { entry in
-                    Text(entry.summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                    Text(entry.summary).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                         .help(entry.summary)
                 }
             }
         } else if let report {
-            ScrollView([.vertical, .horizontal]) {
-                Text(report.propertyListXML())
-                    .font(.system(size: 11, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(12)
-            }
+            JSONTextView(json: report.propertyListXML(), language: .propertyList, search: search)
         }
+    }
+
+    /// Nothing for a default; a small mark for a value changed on that Mac or set by a profile,
+    /// with the whole story on hover.
+    @ViewBuilder
+    private func sourceMark(_ source: SettingSource) -> some View {
+        switch source {
+        case .builtIn:
+            EmptyView()
+        case .user:
+            mark("Changed", systemImage: nil, help: "Changed from its default on this Mac.")
+        case .managedDefault:
+            mark("Profile", systemImage: nil, help: "Set by a configuration profile; can be changed on this Mac.")
+        case .locked:
+            mark("Locked", systemImage: "lock.fill", help: "Locked by a configuration profile.")
+        }
+    }
+
+    private func mark(_ title: String, systemImage: String?, help: String) -> some View {
+        HStack(spacing: 3) {
+            if let systemImage { Image(systemName: systemImage).font(.system(size: 8, weight: .semibold)) }
+            Text(title).font(.system(size: 10, weight: .medium))
+        }
+        .padding(.horizontal, 5).padding(.vertical, 1)
+        .background(Color.secondary.opacity(0.12), in: Capsule())
+        .foregroundStyle(.secondary)
+        .help(help)
+        .fixedSize()
     }
 
     /// Where a value comes from, in the words Settings uses.

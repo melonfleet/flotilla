@@ -14,6 +14,12 @@ import SwiftUI
 /// this looks like the rest of the app in both appearances.
 struct JSONTextView: View {
     let json: String
+    /// What the text is, for colouring. A property list (a host's Settings tab) gets the same
+    /// gutter and surface as JSON, so the two document views in the app look like one (the owner,
+    /// 10 October).
+    var language: Language = .json
+
+    enum Language { case json, propertyList }
     /// Lines not matching are dropped, as the plain view did. The filter stays line-based
     /// deliberately: dropping the enclosing braces would produce text that looks like JSON and is
     /// not, which is worse than a list of lines.
@@ -48,7 +54,8 @@ struct JSONTextView: View {
                                     .foregroundStyle(.tertiary)
                                     .frame(width: gutterWidth(for: rows.last?.number ?? 1),
                                            alignment: .trailing)
-                                Text(Self.highlighted(line.text))
+                                Text(language == .json ? Self.highlighted(line.text)
+                                                       : Self.propertyListHighlighted(line.text))
                                     .textSelection(.enabled)
                                     .fixedSize(horizontal: true, vertical: false)
                             }
@@ -130,6 +137,40 @@ struct JSONTextView: View {
                     emit(literal, .secondary)
                     rest = rest.dropFirst(literal.count)
                 }
+            }
+        }
+        return out
+    }
+
+    /// One line of a property list: tags quiet, a key's name in the key colour, and a value
+    /// coloured by its type the way JSON's are — strings, numbers, booleans.
+    static func propertyListHighlighted(_ line: String) -> AttributedString {
+        var out = AttributedString()
+        func emit(_ text: some StringProtocol, _ colour: Color) {
+            var piece = AttributedString(String(text))
+            piece.foregroundColor = colour
+            out.append(piece)
+        }
+        var rest = Substring(line)
+        var open = ""
+        while !rest.isEmpty {
+            if rest.first == "<" {
+                let tag = rest.prefix { $0 != ">" }
+                let whole = tag.count < rest.count ? rest.prefix(tag.count + 1) : rest
+                let name = whole.dropFirst().prefix { $0.isLetter || $0 == "/" || $0 == "?" || $0 == "!" }
+                emit(whole, name == "true/" || name == "false/" ? Theme.melonText : .secondary)
+                if !name.hasPrefix("/") { open = String(name) }
+                rest = rest.dropFirst(whole.count)
+            } else {
+                let text = rest.prefix { $0 != "<" }
+                let colour: Color = switch open {
+                case "key": Theme.rind
+                case "integer", "real": Theme.cantaloupe
+                case "string", "date", "data": Theme.info
+                default: .secondary
+                }
+                emit(text, colour)
+                rest = rest.dropFirst(text.count)
             }
         }
         return out
