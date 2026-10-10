@@ -32,4 +32,11 @@ enum ExternalLinks {
     static let appleRemoteLogin = URL(string: "https://support.apple.com/guide/mac-help/allow-a-remote-computer-to-access-your-mac-mchlp1066/mac")!
     static let appleScreenSharing = URL(string: "https://support.apple.com/guide/mac-help/turn-screen-sharing-on-or-off-mh11848/mac")!
     static let appleFileSharing = URL(string: "https://support.apple.com/guide/mac-help/set-up-file-sharing-on-mac-mh17131/mac")!
+    // Energy recommendations on a host's System tab (10 October), each checked by its page title.
+    static let appleEnergyDesktop = URL(string: "https://support.apple.com/guide/mac-help/change-energy-settings-mchlp1168/mac")!
+    static let appleBatteryLaptop = URL(string: "https://support.apple.com/guide/mac-help/change-battery-settings-mchlfc3b7879/mac")!
+    static let appleWakeForNetwork = URL(string: "https://support.apple.com/guide/mac-help/share-your-mac-resources-when-its-in-sleep-mh27905/mac")!
+    static let appleLoginItems = URL(string: "https://support.apple.com/guide/mac-help/open-items-automatically-when-you-log-in-mh15189/mac")!
+    static let appleAutoLogin = URL(string: "https://support.apple.com/en-us/102316")!
+    static let appleFileVault = URL(string: "https://support.apple.com/guide/mac-help/protect-data-on-your-mac-with-filevault-mh11785/mac")!
 }

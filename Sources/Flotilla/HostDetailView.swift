@@ -226,6 +226,22 @@ struct HostDetailView: View {
                     row("Kept awake by", awake.joined(separator: ", "))
                 }
             }
+            // Recommended, never changed (the owner, 10 October; Q44): what a Mac that hosts
+            // containers is best set to, each with Apple's guide. Quiet — not an attention item.
+            card("Recommended for a host") {
+                let inputs = energyInputs
+                ForEach(EnergyAdvice.items(inputs)) { item in energyRow(item) }
+                if let warning = EnergyAdvice.restartWarning(inputs) {
+                    Divider()
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(Theme.warning)
+                        Text(warning.text).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 4)
+                        energyGuideButton(warning.guide)
+                    }
+                }
+            }
         }
         if facts?.readAt == nil && !host.isLocal {
             Text("This host's Flotilla is older than this page, so it reports only its hardware. Update it to see the rest.")
@@ -377,6 +393,51 @@ struct HostDetailView: View {
     }
 
     /// A question mark that opens Apple's guide; its tooltip names the guide.
+    private var energyInputs: EnergyAdvice.Inputs {
+        EnergyAdvice.Inputs(power: facts?.power, hasBattery: facts?.hasBattery, fileVault: facts?.fileVault,
+                            autoLogin: facts?.autoLogin, launchesAtLogin: facts?.launchesAtLogin)
+    }
+
+    private func energyRow(_ item: EnergyAdvice.Item) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Group {
+                switch item.state {
+                case .good: Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.online)
+                case .recommended: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Theme.warning)
+                case .unknown: Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
+                }
+            }
+            .font(.system(size: 12))
+            .accessibilityLabel(item.state == .good ? "Set" : item.state == .recommended ? "Recommended" : "Not known")
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title).font(.system(size: 12))
+                if let detail = item.detail, item.state != .good {
+                    Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            energyGuideButton(item.guide)
+        }
+        .help(item.state == .unknown ? "This Mac didn't report this setting." : "")
+    }
+
+    private func energyGuideButton(_ guide: EnergyAdvice.Guide) -> some View {
+        let (url, title): (URL, String) = switch guide {
+        case .energyDesktop: (ExternalLinks.appleEnergyDesktop, "Change Energy settings on a Mac desktop computer")
+        case .batteryLaptop: (ExternalLinks.appleBatteryLaptop, "Change Battery settings on a Mac laptop")
+        case .wakeForNetwork: (ExternalLinks.appleWakeForNetwork, "Share your Mac resources when it's in sleep")
+        case .loginItems: (ExternalLinks.appleLoginItems, "Open items automatically when you log in on Mac")
+        case .autoLogin: (ExternalLinks.appleAutoLogin, "How to log in automatically to a Mac user account")
+        case .fileVault: (ExternalLinks.appleFileVault, "Protect data on your Mac with FileVault")
+        }
+        return Button { NSWorkspace.shared.open(url) } label: {
+            Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Apple: \(title)")
+        .accessibilityLabel("Apple: \(title)")
+    }
+
     private func guideButton(_ kind: HostConnect.Kind) -> some View {
         Button { NSWorkspace.shared.open(kind.guide) } label: {
             Image(systemName: "questionmark.circle").foregroundStyle(.secondary)

@@ -140,6 +140,11 @@ public struct HostFacts: Sendable, Equatable, Codable {
     public var fileVault: Bool?
     /// The macOS firewall (System Settings ▸ Network ▸ Firewall).
     public var firewall: Bool?
+    /// Whether the Mac logs a user in automatically at startup — never which user. With FileVault
+    /// on it cannot, and Flotilla then waits for a sign-in after a restart (`EnergyAdvice`).
+    public var autoLogin: Bool?
+    /// Whether Flotilla is a login item there, so it opens when its user is signed in.
+    public var launchesAtLogin: Bool?
     public var remoteLogin: Bool?
     public var screenSharing: Bool?
     public var fileSharing: Bool?

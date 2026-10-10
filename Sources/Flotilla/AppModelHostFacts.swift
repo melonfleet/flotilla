@@ -43,12 +43,14 @@ extension AppModel {
         facts.helper = Self.helperState
         facts.acceptsAdminUpdates = settingsStore[SettingsKeys.acceptAdminUpdates]
         facts.installsContainerItself = settingsStore[SettingsKeys.autoInstallRuntime]
+        facts.launchesAtLogin = loginItemStatus == .registered
         facts.kernelInstalled = preflight.map { if case .needsKernel = $0 { false } else { true } }
         if let slow = systemFacts {
             facts.serialNumber = slow.serialNumber
             facts.power = slow.power
             facts.fileVault = slow.fileVault
             facts.firewall = slow.firewall
+            facts.autoLogin = slow.autoLogin
             facts.remoteLogin = slow.remoteLogin
             facts.screenSharing = slow.screenSharing
             facts.fileSharing = slow.fileSharing
@@ -93,6 +95,9 @@ extension AppModel {
         let vault = run("/usr/bin/fdesetup", ["isactive"]).trimmingCharacters(in: .whitespacesAndNewlines)
         facts.fileVault = vault == "true" ? true : vault == "false" ? false : nil
         facts.firewall = SystemReport.firewallEnabled(run(SystemReport.firewallTool, ["--getglobalstate"]))
+        // Readable by everyone; only whether a user is set, never the name.
+        facts.autoLogin = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.loginwindow.plist")
+            .map { ($0["autoLoginUser"] as? String).map { !$0.isEmpty } ?? false }
         let services = run("/bin/launchctl", ["print-disabled", "system"])
         facts.remoteLogin = SystemReport.serviceEnabled(SystemReport.remoteLoginLabel, in: services) ?? false
         facts.screenSharing = SystemReport.serviceEnabled(SystemReport.screenSharingLabel, in: services) ?? false
