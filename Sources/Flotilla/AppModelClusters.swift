@@ -77,10 +77,14 @@ extension AppModel {
                 // `[2/2] Waiting for cluster to be ready [12m 3s]` — and `execute` would hold
                 // all of it until the process exited, leaving a spinner for twelve minutes with
                 // no way to tell work from a hang.
-                try await runCreate(name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
-                                    autoRemove: autoRemove) { line in
-                    progress.update(step, detail: line.summary)
-                }
+                var sawRosetta = false
+                do {
+                    try await runCreate(name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
+                                        autoRemove: autoRemove) { line in
+                        if ClusterNeedsRosetta.matches(line.summary) { sawRosetta = true }
+                        progress.update(step, detail: line.summary)
+                    }
+                } catch where sawRosetta { throw ClusterNeedsRosetta(on: hostLabel) }
                 progress.finish(step, detail: nil)
                 recordActivity(ContainerEvent(date: Date(), from: "absent", to: "running",
                                               kind: .cluster, subject: name, action: "Created"))
@@ -224,10 +228,12 @@ extension AppModel {
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("Creating \(name) on \(hostName) — this takes several minutes")
-                _ = try await Task.detached {
-                    try remote.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
-                                             autoRemove: autoRemove)
-                }.value
+                do {
+                    _ = try await Task.detached {
+                        try remote.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
+                                                 autoRemove: autoRemove)
+                    }.value
+                } catch { throw ClusterNeedsRosetta(error, on: hostName) ?? error }
                 progress.finish(step, detail: nil)
                 recordActivity(ContainerEvent(date: Date(), from: "absent", to: "running", kind: .cluster,
                                               subject: "\(name) on \(hostName)", action: "Created"))
@@ -257,9 +263,11 @@ extension AppModel {
                 _ = try await Task.detached { try remote.deleteCluster(name) }.value
                 progress.finish(deleting, detail: nil)
                 let creating = progress.begin("Creating \(name) again — this takes several minutes")
-                _ = try await Task.detached {
-                    try remote.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: nil, autoRemove: false)
-                }.value
+                do {
+                    _ = try await Task.detached {
+                        try remote.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: nil, autoRemove: false)
+                    }.value
+                } catch { throw ClusterNeedsRosetta(error, on: hostName) ?? error }
                 progress.finish(creating, detail: nil)
                 recordActivity(ContainerEvent(date: Date(), from: cluster.state, to: "running", kind: .cluster,
                                               subject: "\(name) on \(hostName)", action: "Recreated"))
@@ -421,6 +429,30 @@ private final class StreamHandle: @unchecked Sendable {
     func release() {
         lock.lock(); defer { lock.unlock() }
         stream = nil
+    }
+}
+
+/// A cluster's VM asks for Rosetta and the Mac has none: `container` 1.5's `k8s create` always
+/// enables it and has no flag to turn it off, and Rosetta isn't on an Apple Silicon Mac until
+/// something installs it. Measured on the mini, 10 October: "VZErrorDomain Code=2 … Rosetta is not
+/// installed", raw, in the progress panel.
+struct ClusterNeedsRosetta: Error, CustomStringConvertible {
+    let host: String
+
+    init(on host: String) { self.host = host }
+
+    /// The same failure in plain words, or nil for any other.
+    init?(_ error: Error, on host: String) {
+        guard Self.matches(String(describing: error)) else { return nil }
+        self.host = host
+    }
+
+    static func matches(_ text: String) -> Bool { text.localizedCaseInsensitiveContains("Rosetta is not installed") }
+
+    var description: String {
+        "Rosetta isn't installed on \(host), and a Kubernetes cluster needs it: container's k8s create always "
+            + "turns it on. Install it on \(host) with `softwareupdate --install-rosetta --agree-to-license` "
+            + "(it asks for an administrator), then create the cluster again."
     }
 }
 
