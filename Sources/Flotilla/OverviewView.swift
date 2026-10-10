@@ -131,6 +131,7 @@ struct OverviewView: View {
                 HStack(spacing: 7) {
                     Circle().fill(line.color).frame(width: 8, height: 8)
                         .help(line.state)
+                        .accessibilityLabel(line.state)
                     Button(line.name) { model.requestDetail(kind: .host, subject: line.id) }
                         .buttonStyle(.plain)
                         .foregroundStyle(Theme.link)

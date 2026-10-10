@@ -80,7 +80,7 @@ struct ResourceCard<Actions: View>: View {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
                 ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
                     GridRow {
-                        Text(field.0).font(.caption2).foregroundStyle(.tertiary)
+                        Text(field.0).font(.caption2).foregroundStyle(.secondary)
                         Text(field.1 ?? "—")
                             .font(.caption)
                             .monospacedDigit()

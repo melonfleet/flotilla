@@ -12,6 +12,9 @@ struct MainWindowView: View {
     let model: AppModel
     /// The chosen themes, for the content background. See `ThemeChoice`.
     @Environment(\.themeChoice) private var themes
+    /// Reduce Transparency draws the content ground solid; Reduce Motion stops the sidebar sliding.
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Owned here, not in `ContainersView`. This view is the window's root and is built
     /// once; the detail views are destroyed and recreated on every sidebar change, so any
@@ -198,6 +201,9 @@ struct MainWindowView: View {
                     .font(.system(size: railIconSize))
                     .frame(maxWidth: .infinity, minHeight: 26)
                     .help(count.map { "\(section.title) — \($0)" } ?? section.title)
+                    // The icon alone says nothing to VoiceOver; the tooltip's words are its name.
+                    .accessibilityLabel(section.title)
+                    .accessibilityValue(count.map(String.init) ?? "")
             } else {
                 HStack(spacing: 7) {
                     Label(section.title, systemImage: section.systemImage)
@@ -311,7 +317,7 @@ struct MainWindowView: View {
         // buttons' width at its leading edge, so nothing lands under them.
         .ignoresSafeArea(.container, edges: .top)
         // The wash has to reach the top of the window now that the content does.
-        .background(Theme.contentBackground(themes).ignoresSafeArea())
+        .background(Theme.contentBackground(themes, opaque: reduceTransparency).ignoresSafeArea())
         .allowsHitTesting(model.openFormCount == 0)
         .overlay {
             if model.openFormCount > 0 {
@@ -430,6 +436,6 @@ struct MainWindowView: View {
             railed.toggle()
             columnVisibility = .all
         }
-        .animation(.easeInOut(duration: 0.18), value: railed)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: railed)
     }
 }

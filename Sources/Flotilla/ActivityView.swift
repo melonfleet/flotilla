@@ -221,7 +221,7 @@ struct ActivityView: View {
                     // "running → running", which means nothing.
                     Text(event.action == nil ? "\(event.from) → \(event.to)" : "—")
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 .width(min: 110, ideal: 160)

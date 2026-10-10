@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// The control band every list screen wears, so Containers, Images, Volumes and Networks stop
 /// being four slightly different screens.
@@ -38,6 +39,9 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
 
     /// ⌘F puts the cursor in the search field, in every section (Phase 1 leftover).
     @FocusState private var searchFocused: Bool
+    /// The field's frame in the window, and the click watcher that lets go of it — see `releaseOnClickOutside`.
+    @State private var fieldFrame: CGRect = .zero
+    @State private var clickMonitor: Any?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -48,6 +52,14 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
                 .frame(maxWidth: 280)
                 .focused($searchFocused)
                 .help(searchHelp ?? "Search (⌘F)")
+                .onKeyPress(.escape) { searchFocused = false; return .handled }
+                .background(GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { fieldFrame = proxy.frame(in: .global) }
+                        .onChange(of: proxy.frame(in: .global)) { _, frame in fieldFrame = frame }
+                })
+                .onChange(of: searchFocused) { _, focused in releaseOnClickOutside(focused) }
+                .onDisappear { releaseOnClickOutside(false) }
                 .background {
                     Button("Find") { searchFocused = true }
                         .keyboardShortcut("f", modifiers: .command)
@@ -86,6 +98,25 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
         // is how they drifted apart in the first place.
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    /// A click anywhere outside the search field lets go of it (the owner, 10 October). macOS
+    /// leaves a field focused when you click something that cannot take focus — a table's empty
+    /// space, the page — so the cursor and the focus ring stayed after you had clearly moved on.
+    /// Watched only while the field has focus, and only for this window.
+    private func releaseOnClickOutside(_ focused: Bool) {
+        if let monitor = clickMonitor { NSEvent.removeMonitor(monitor); clickMonitor = nil }
+        guard focused else { return }
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+            guard let window = event.window, let content = window.contentView else { return event }
+            // AppKit counts from the bottom; SwiftUI's global space from the top.
+            let point = CGPoint(x: event.locationInWindow.x, y: content.bounds.height - event.locationInWindow.y)
+            if !fieldFrame.insetBy(dx: -2, dy: -2).contains(point) {
+                searchFocused = false
+                window.makeFirstResponder(nil)
+            }
+            return event
+        }
     }
 }
 

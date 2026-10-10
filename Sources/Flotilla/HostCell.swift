@@ -15,6 +15,7 @@ struct HostCell: View {
                 Image(systemName: "clock.badge.exclamationmark")
                     .foregroundStyle(Theme.warning)
                     .help("As of \(staleSince.formatted(.relative(presentation: .named))) — \(name) isn’t answering")
+                    .accessibilityLabel("\(name) isn’t answering")
             }
         }
     }

@@ -70,9 +70,11 @@ struct AddHostView: View {
                             HStack(spacing: 8) {
                                 TextField("", text: $address, prompt: Text("mini-1.local or 192.168.1.20"))
                                     .labelsHidden().textFieldStyle(.roundedBorder)
+                                    .accessibilityLabel("Address")
                                 Text("Port").foregroundStyle(.secondary)
                                 TextField("", text: $port)
                                     .labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70)
+                                    .accessibilityLabel("Port")
                             }
                         }
                     }

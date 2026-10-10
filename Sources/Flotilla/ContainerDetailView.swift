@@ -344,6 +344,9 @@ struct ContainerDetailView: View {
             }
             .frame(height: 5)
         }
+        // One element, read as "Memory, 900 MB of 1 GB, high" — the amber says "high" to the eye.
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(fraction > 0.85 ? "high" : "")
     }
 
     /// Used over allocated, when both are known. Without an allocation there is no denominator

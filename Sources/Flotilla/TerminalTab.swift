@@ -427,7 +427,14 @@ struct ShellStrip: View {
             Button("Close \(session.title)") { store.close(session, in: subjectID) }
         }
         .onTapGesture(count: 2) { beginRenaming(session) }
-        .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
+        // A tap gesture is not a button to the keyboard or to VoiceOver (the accessibility pass):
+        // the chip says it is one, can take focus, and selects on Space or Return as on a click.
+        .accessibilityAddTraits(isCurrent ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { store.select(session, in: subjectID) }
+        .accessibilityAction(named: "Rename") { beginRenaming(session) }
+        .focusable()
+        .onKeyPress(.space) { store.select(session, in: subjectID); return .handled }
+        .onKeyPress(.return) { store.select(session, in: subjectID); return .handled }
     }
 
     private func beginRenaming(_ session: TerminalSession) {

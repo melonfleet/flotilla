@@ -143,6 +143,7 @@ struct RuntimeStatusBand: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Runtime options")
+        .accessibilityLabel("Runtime options")
         .disabled(model.startingRuntime)
     }
 

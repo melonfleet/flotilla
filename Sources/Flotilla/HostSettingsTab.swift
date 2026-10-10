@@ -101,7 +101,7 @@ struct HostSettingsTab: View {
                      : "Sensitive settings — the trusted fingerprints — are listed without their value, here and in Copy.")
                     .font(.caption2)
             }
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 12).padding(.vertical, 6)
         }
         // Whichever side is shown loads when first shown; Reload refreshes the one on screen.

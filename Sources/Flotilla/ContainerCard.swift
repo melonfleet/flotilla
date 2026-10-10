@@ -120,7 +120,7 @@ struct ContainerCard<MenuContent: View>: View {
         HStack(spacing: 4) {
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
             Text(value)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)

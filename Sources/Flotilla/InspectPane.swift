@@ -137,7 +137,7 @@ struct InspectPane: View {
                  + "present on \(hostName) but hidden here and in Copy JSON."))
                 .font(.caption2)
         }
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)

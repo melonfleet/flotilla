@@ -366,7 +366,7 @@ struct DNSFormView: View {
                     if kind == .containers, useForContainers {
                         Text("Then sets [dns] domain = \"\(trimmedDomain)\" in container’s "
                              + "settings and restarts container.")
-                            .font(.caption).foregroundStyle(.tertiary)
+                            .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -375,7 +375,7 @@ struct DNSFormView: View {
                     .font(.caption).foregroundStyle(Theme.info)
                 Text(managed.name).font(.system(size: 13, weight: .medium))
                 Text(DNSCopy.statusText(managed, place: place))
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }

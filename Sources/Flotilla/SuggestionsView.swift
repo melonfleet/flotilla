@@ -279,11 +279,11 @@ struct StackFormView: View {
                 let missing = stack.images.filter { image in !model.images.contains { $0.reference == image } }
                 if !missing.isEmpty {
                     Text("Pulls first: \(missing.map(SuggestionsView.shortImage).joined(separator: ", ")).")
-                        .font(.caption).foregroundStyle(.tertiary)
+                        .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("Left ready to start, from its row in Containers.")
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text("Give it a name to see what it creates.")
                     .font(.caption).foregroundStyle(.secondary)

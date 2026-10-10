@@ -482,7 +482,7 @@ struct RegistryFormView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                 Text("Sign-in \(managed.signInNeed.title.lowercased()) · \(managed.statusText)")
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Label("Will be added as", systemImage: Section.registries.systemImage)
                     .font(.caption).foregroundStyle(Theme.info)
@@ -506,7 +506,7 @@ struct RegistryFormView: View {
                     }
                     if let need {
                         Text(railSignInLine(need))
-                            .font(.caption).foregroundStyle(.tertiary)
+                            .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -663,7 +663,7 @@ struct RegistryStatusLabel: View {
         } else {
             Text(row.statusText)
                 .font(.caption)
-                .foregroundStyle(row.canSignIn ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
     }

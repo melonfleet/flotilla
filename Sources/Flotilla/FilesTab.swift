@@ -171,6 +171,7 @@ struct FilesTab: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.tertiary)
                         .help("Open \(entry.name)")
+                        .accessibilityLabel("Open \(entry.name)")
                 } else {
                     Button("Download…") { download(entry) }
                         .buttonStyle(.plain)

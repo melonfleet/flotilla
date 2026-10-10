@@ -781,10 +781,12 @@ struct HostsView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundStyle(Theme.warning)
                         .help("The last update failed: \(message)")
+                        .accessibilityLabel("The last update failed: \(message)")
                 case .manualOnly:
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundStyle(Theme.warning)
                         .help("\(row.name)’s Flotilla is too old to be updated from here — update it by hand once.")
+                        .accessibilityLabel("Too old to update from here")
                 case .current, .ahead, .unknown:
                     EmptyView()
                 }
@@ -812,6 +814,7 @@ struct HostsView: View {
                 case .tooOldToAsk:
                     Image(systemName: "exclamationmark.triangle.fill").font(.caption2).foregroundStyle(Theme.warning)
                         .help("\(row.name) needs container \(ContainerRuntime.expectedVersion); update its Flotilla first.")
+                        .accessibilityLabel("Needs container \(ContainerRuntime.expectedVersion); update its Flotilla first")
                 case .current, .newer, .unknown:
                     EmptyView()
                 }

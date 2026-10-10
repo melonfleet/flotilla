@@ -38,6 +38,8 @@ enum Theme {
     /// on their light glass capsules, without the near-black he found too heavy. Fixed across
     /// every theme because the capsule behind it is.
     static let barSoftInk = Color(red: 0x24 / 255, green: 0x1F / 255, blue: 0x1A / 255).opacity(0.72)
+    /// The same seed at full strength, for Increase Contrast.
+    static let barFullInk = Color(red: 0x24 / 255, green: 0x1F / 255, blue: 0x1A / 255)
 
 
     // MARK: Brand — quoted from branding.md
@@ -184,8 +186,17 @@ enum Theme {
         light: Int, dark: Int, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1
     ) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return NSColor(hex: isDark ? dark : light, alpha: isDark ? darkAlpha : lightAlpha)
+            let match = appearance.bestMatch(from: [.aqua, .darkAqua,
+                                                    .accessibilityHighContrastAqua,
+                                                    .accessibilityHighContrastDarkAqua])
+            let isDark = match == .darkAqua || match == .accessibilityHighContrastDarkAqua
+            var alpha = isDark ? darkAlpha : lightAlpha
+            // Increase Contrast (the accessibility pass, 10 October): a faint tint — a hairline,
+            // the only edge a card has — is drawn firm, and anything translucent is drawn solid.
+            if match == .accessibilityHighContrastAqua || match == .accessibilityHighContrastDarkAqua {
+                alpha = alpha < 0.5 ? 0.5 : 1
+            }
+            return NSColor(hex: isDark ? dark : light, alpha: alpha)
         })
     }
 }
@@ -315,6 +326,7 @@ extension Theme {
         }
         // The whole point: a template image is recoloured by the menu, which is the bug.
         image.isTemplate = false
+        image.accessibilityDescription = "not applied"
         return image
     }
 
@@ -359,6 +371,8 @@ extension Theme {
             return true
         }
         image.isTemplate = false
+        // The tick and the dash, in words — a menu reads the item's icon description.
+        image.accessibilityDescription = coverage == .all ? "applied" : "on some"
         return image
     }
 }

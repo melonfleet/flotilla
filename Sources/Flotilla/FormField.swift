@@ -38,12 +38,15 @@ struct FormField<Content: View>: View {
     }
 
     @Environment(\.formRailVisible) private var railVisible
+    /// Pairs the label with the control, so a `TextField("")` or `Picker("")` is read out by name.
+    @Namespace private var pair
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 Text(label)
                     .font(.subheadline.weight(.medium))
+                    .accessibilityLabeledPair(role: .label, id: "field", in: pair)
                 if optional {
                     Text("optional")
                         .font(.caption2)
@@ -54,6 +57,7 @@ struct FormField<Content: View>: View {
                 }
             }
             content
+                .accessibilityLabeledPair(role: .content, id: "field", in: pair)
             // A refusal is shown wherever the rail is, because it is about what you just typed.
             // The summary is not: with a rail it would be the same sentence twice.
             if let problem {

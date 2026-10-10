@@ -591,15 +591,15 @@ struct MachinesView: View {
 
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
                 GridRow {
-                    Text("CPUs").font(.caption2).foregroundStyle(.tertiary)
+                    Text("CPUs").font(.caption2).foregroundStyle(.secondary)
                     Text("\(machine.cpus)").font(.caption).monospacedDigit()
                 }
                 GridRow {
-                    Text("Memory").font(.caption2).foregroundStyle(.tertiary)
+                    Text("Memory").font(.caption2).foregroundStyle(.secondary)
                     Text(Self.bytes(machine.memory)).font(.caption).monospacedDigit()
                 }
                 GridRow {
-                    Text("IP").font(.caption2).foregroundStyle(.tertiary)
+                    Text("IP").font(.caption2).foregroundStyle(.secondary)
                     Text(machine.ipAddress ?? "—").font(.caption).monospacedDigit()
                 }
             }

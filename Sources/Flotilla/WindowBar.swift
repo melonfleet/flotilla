@@ -99,6 +99,8 @@ struct WindowBar: View {
 /// soft ink for everything inside it.
 private struct BarGlass<Content: View>: View {
     @ViewBuilder var content: Content
+    /// Increase Contrast: the ink at full strength rather than its soft 72%.
+    @Environment(\.colorSchemeContrast) private var contrastSetting
 
     var body: some View {
         GlassEffectContainer(spacing: 6) {
@@ -107,7 +109,7 @@ private struct BarGlass<Content: View>: View {
                 .padding(.vertical, 3)
                 .glassEffect(.regular.tint(.white.opacity(0.2)), in: .capsule)
         }
-        .environment(\.barInk, Theme.barSoftInk)
+        .environment(\.barInk, contrastSetting == .increased ? Theme.barFullInk : Theme.barSoftInk)
         .environment(\.colorScheme, .light)
         .fixedSize()
     }

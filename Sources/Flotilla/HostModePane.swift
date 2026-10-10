@@ -178,6 +178,7 @@ struct HostModePane: View {
                 HStack {
                     TextField("", text: $pastedKey, prompt: Text("FLT1-…"))
                         .labelsHidden().textFieldStyle(.roundedBorder).frame(minWidth: 220)
+                        .accessibilityLabel("Fleet enrolment key")
                     Button("Save") {
                         do {
                             try hostMode.setPastedEnrolmentKey(pastedKey)

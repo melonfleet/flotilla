@@ -76,6 +76,8 @@ struct SettingRow<V: SettingRepresentable, Control: View>: View {
             // Disabled when it is managed **or** when nothing reads it. A live control over an
             // unbuilt feature is the exact shape the audit objected to.
             .disabled(locked || unbuiltReason != nil)
+            // The controls are `Toggle("")`, `Picker("")`: the title beside them is their name.
+            .accessibilityLabel(title)
         }
         .padding(.vertical, 4)
     }
@@ -139,6 +141,7 @@ private struct LaunchAtLoginRow: View {
                                          try? store.set(newValue, for: SettingsKeys.launchAtLogin)
                                      }))
                 .labelsHidden()
+                .accessibilityLabel("Launch at login")
                 .disabled(locked || model.loginItemStatus == .unavailable)
         }
         .padding(.vertical, 4)
@@ -418,6 +421,7 @@ struct SettingsView: View {
                             }
                             Spacer()
                             Toggle("", isOn: .constant(true)).labelsHidden().disabled(true)
+                                .accessibilityLabel(category.title)
                         }
                         .padding(.vertical, 4)
                     } else {

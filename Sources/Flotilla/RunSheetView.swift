@@ -571,6 +571,8 @@ struct RunSheetView: View {
                     Image(systemName: "minus.circle")
                 }
                 .buttonStyle(.borderless)
+                .help("Remove")
+                .accessibilityLabel(row.value.isEmpty ? "Remove this row" : "Remove \(row.value)")
             }
         }
         HStack {

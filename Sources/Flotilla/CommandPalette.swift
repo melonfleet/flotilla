@@ -133,6 +133,8 @@ struct CommandPalette: View {
                             row(item, isSelected: index == selected)
                                 .id(index)
                                 .onTapGesture { selected = index; openSelected() }
+                                // The arrows and Return already work; VoiceOver activates a row too.
+                                .accessibilityAction { selected = index; openSelected() }
                         }
                     }
                     .padding(6)
@@ -142,7 +144,7 @@ struct CommandPalette: View {
             .frame(maxHeight: 360)
             Divider()
             Text("↑↓ to move · Return to open · Esc to close")
-                .font(.caption).foregroundStyle(.tertiary)
+                .font(.caption).foregroundStyle(.secondary)
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity)
         }
@@ -172,7 +174,7 @@ struct CommandPalette: View {
             }
             Spacer(minLength: 8)
             Text(item.kind.rawValue).font(.caption2)
-                .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary.opacity(0.8))
+                .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
         }
         .foregroundStyle(isSelected ? Color.white : .primary)
         .padding(.horizontal, 10).padding(.vertical, 6)

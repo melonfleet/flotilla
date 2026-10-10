@@ -175,7 +175,7 @@ struct MachineDetailView: View {
                         // userland on `container`'s kernel, not Ubuntu's kernel.
                         Text("A machine boots a container image's userland on the runtime's own "
                              + "kernel — the image supplies no kernel.")
-                            .font(.caption2).foregroundStyle(.tertiary)
+                            .font(.caption2).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 2)
                     }

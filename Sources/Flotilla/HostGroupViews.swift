@@ -236,6 +236,7 @@ struct HostCategoriesSheet: View {
                 Button(role: .destructive, action: remove) { Image(systemName: "minus.circle") }
                     .buttonStyle(.borderless)
                     .help("Remove \(category.name)")
+                    .accessibilityLabel("Remove \(category.name)")
             }
             .onAppear { name = category.name }
         }
@@ -301,6 +302,7 @@ struct HostCategoryValueField: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Pick a \(category.name) already in use")
+            .accessibilityLabel("Pick a \(category.name)")
         }
         .onAppear { text = store.value(category, for: host) ?? "" }
         .onChange(of: store.value(category, for: host)) { _, now in if !focused { text = now ?? "" } }

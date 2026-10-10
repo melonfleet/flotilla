@@ -102,7 +102,7 @@ struct ActivityStrip: View {
             Text("Nothing has changed since Flotilla started. State changes appear here as they "
                  + "happen; history from before launch is not recorded.")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -156,7 +156,7 @@ struct ActivityStrip: View {
                 if entry.event.action == nil {
                     Text("\(entry.event.from) → \(entry.event.to)")
                         .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)

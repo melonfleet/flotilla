@@ -102,6 +102,8 @@ struct NetworkDetailView: View {
                         ForEach(attached) { container in
                             HStack(spacing: 8) {
                                 Circle().fill(container.stateColor).frame(width: 6, height: 6)
+                                    .help(container.status.state.capitalized)
+                                    .accessibilityLabel(container.status.state.capitalized)
                                 Button(container.id) {
                                     model.requestDetail(kind: .container, subject: host.rowID(container.id))
                                 }
