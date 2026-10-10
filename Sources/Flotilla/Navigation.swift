@@ -20,7 +20,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
     // redesign): Overview is fleet numbers only; each host's page — the old dashboard — is under
     // Hosts.
     case overview, activity, logs, containers, images, registries, volumes, networks, dns,
-         machines, clusters, hosts, settings
+         machines, clusters, hosts, settings, notifications
 
     var id: Self { self }
 
@@ -45,6 +45,7 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .machines: "Machines"
         case .clusters: "Clusters"
         case .settings: "Settings"
+        case .notifications: "Notifications"
         }
     }
 
@@ -68,6 +69,8 @@ enum Section: String, CaseIterable, Identifiable, Hashable {
         case .machines: "server.rack"
         case .clusters: "circle.hexagongrid"
         case .settings: "gearshape"
+        // The bell in the window bar (the owner, 10 October), not a sidebar row.
+        case .notifications: "bell"
         }
     }
 }

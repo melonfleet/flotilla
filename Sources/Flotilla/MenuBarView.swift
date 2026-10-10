@@ -60,29 +60,29 @@ struct MenuBarView: View {
         Button("Open Flotilla") { present { model.requestSection(.overview) } }
             .keyboardShortcut("o")
 
-        let attention = model.attentionItems
+        // The notices that need attention (`NoticeStore`): headings, each opening its full message
+        // with its fix, Dismiss and Show in Flotilla; ten at most, then All Notifications.
+        let attention = model.notices.attention
         if !attention.isEmpty {
             Divider()
-            // Headings only, each opening its full message beside it when pointed at; ten at most,
-            // then the rest in Flotilla (the owner, 10 October). A menu scrolls by itself if it ever
-            // outgrows the screen.
             Menu("Needs Attention (\(attention.count))") {
-                ForEach(attention.prefix(Self.attentionShown)) { item in
-                    Menu(Self.menuLines(item.text).0) {
-                        ForEach(Array(Self.wrapped(item.text).enumerated()), id: \.offset) { _, line in
+                ForEach(attention.prefix(Self.attentionShown)) { notice in
+                    Menu(Self.menuLines(notice.title).0) {
+                        ForEach(Array(Self.wrapped(notice.text).enumerated()), id: \.offset) { _, line in
                             Text(line)
                         }
                         Divider()
-                        if let fix = item.fix {
+                        if let fix = model.fix(for: notice) {
                             Button(fix.title) { fix.run() }
                         }
-                        Button("Show in Flotilla") { present { model.requestSection(item.section) } }
+                        if notice.dismissible {
+                            Button("Dismiss") { model.notices.dismiss([notice.id]) }
+                        }
+                        Button("Show in Flotilla") { present { model.requestSection(.notifications) } }
                     }
                 }
-                if attention.count > Self.attentionShown {
-                    Divider()
-                    Button("Show All \(attention.count) in Flotilla…") { present { model.requestSection(.overview) } }
-                }
+                Divider()
+                Button("All Notifications…") { present { model.requestSection(.notifications) } }
             }
         }
         hostsMenu

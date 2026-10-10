@@ -25,6 +25,35 @@ struct SettingsToolbarButton: View {
     }
 }
 
+/// The bell: Notifications, with a red count of what needs attention, gone at zero.
+struct NotificationsToolbarButton: View {
+    let count: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: count > 0 ? "bell.fill" : "bell")
+                .frame(width: 18, height: 18)
+                .overlay(alignment: .topTrailing) {
+                    if count > 0 {
+                        Text(count > 99 ? "99+" : "\(count)")
+                            .font(.system(size: 9, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4).frame(minWidth: 14, minHeight: 14)
+                            .background(Color(nsColor: .systemRed), in: Capsule())
+                            .fixedSize()            // the icon's 18pt frame squeezed "12" to "…"
+                            .offset(x: 8, y: -6)
+                            .allowsHitTesting(false)
+                    }
+                }
+        }
+        .buttonStyle(IconActionButtonStyle())
+        .help(count == 0 ? "Notifications" : "Notifications — \(count) need\(count == 1 ? "s" : "") attention")
+        .accessibilityLabel("Notifications")
+        .accessibilityValue(count == 0 ? "" : "\(count) need\(count == 1 ? "s" : "") attention")
+    }
+}
+
 /// Cycles Auto → Light → Dark → Auto, beside the gear.
 ///
 /// **Three states, not two, and it drives the same stored setting Settings does.** The preference

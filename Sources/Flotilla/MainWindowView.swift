@@ -271,6 +271,8 @@ struct MainWindowView: View {
             ClustersView(model: model, ui: clustersUI)
         case .settings:
             SettingsView(model: model)
+        case .notifications:
+            NotificationsView(model: model) { selection = $0 }
         }
     }
 

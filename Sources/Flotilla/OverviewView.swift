@@ -24,7 +24,7 @@ struct OverviewView: View {
                 // "Nothing needs attention" under a banner saying container isn't installed contradicts
                 // it (the owner, on Tahoe, 10 October): with the banner up, the box shows only when
                 // something else needs attention too.
-                if !(setupBanner && model.attentionItems.isEmpty) { attention }
+                if !(setupBanner && model.notices.attention.isEmpty) { attention }
                 getStarted
                 updates
                 totals
@@ -316,37 +316,62 @@ struct OverviewView: View {
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
     }
 
+    /// One notice at a time (the owner, 10 October): a long list made Overview unusable. The
+    /// heading and its detail on the left; on the right the fix, Dismiss where allowed, the
+    /// ‹ 2 of 12 › arrows and All Notifications. Errors come first, then the newest. A fixed
+    /// height, so stepping through or a notice resolving never moves the page under it.
+    @State private var noticeIndex = 0
+
     @ViewBuilder
     private var attentionContent: some View {
-        let attentionItems = model.attentionItems
-        if attentionItems.isEmpty {
+        let notices = model.notices.attention
+        if notices.isEmpty {
             let hosts = model.hostMode.trustedHosts.count
-            Label(hosts == 0 ? "Nothing needs attention" : "Nothing needs attention on \(hosts + 1) Macs",
-                  systemImage: "checkmark.circle")
-                .foregroundStyle(Theme.online)
+            HStack {
+                Label(hosts == 0 ? "Nothing needs attention" : "Nothing needs attention on \(hosts + 1) Macs",
+                      systemImage: "checkmark.circle")
+                    .foregroundStyle(Theme.online)
+                Spacer()
+                Button("All Notifications") { go(.notifications) }.buttonStyle(.link).font(.caption)
+            }
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(attentionItems) { item in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Button { go(item.section) } label: {
-                            // Up to three lines, then the rest on hover: one line cut each message off
-                            // at the window's edge (10 October). A line limit, not a fixed size — see
-                            // CLAUDE.md on fixedSize in a screen's top band.
-                            Label(item.text, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(Theme.warning)
-                                .lineLimit(3)
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-                        .help(item.text)
-                        if let fix = item.fix {
-                            Button(fix.title) { fix.run() }
-                                .controlSize(.small)
-                                .disabled(model.startingRuntime)
-                        }
+            let index = min(noticeIndex, notices.count - 1)
+            let notice = notices[index]
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: notice.level.symbol).font(.title3).foregroundStyle(notice.level.colour)
+                    .accessibilityLabel(notice.level.title)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(notice.title).font(.body.weight(.medium)).lineLimit(1)
+                    if let detail = notice.detail {
+                        Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
                 }
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { go(.notifications) }
+                .help(notice.text)
+                if let fix = model.fix(for: notice) {
+                    Button(fix.title) { fix.run() }.controlSize(.small).disabled(model.startingRuntime)
+                }
+                if notice.dismissible {
+                    Button("Dismiss") { model.notices.dismiss([notice.id]) }.controlSize(.small)
+                        .help("Hide until it changes")
+                }
+                if notices.count > 1 {
+                    HStack(spacing: 2) {
+                        Button { noticeIndex = (index - 1 + notices.count) % notices.count } label: {
+                            Image(systemName: "chevron.left").frame(width: 16, height: 16)
+                        }
+                        .buttonStyle(.borderless).help("Previous").accessibilityLabel("Previous notification")
+                        Text("\(index + 1) of \(notices.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Button { noticeIndex = (index + 1) % notices.count } label: {
+                            Image(systemName: "chevron.right").frame(width: 16, height: 16)
+                        }
+                        .buttonStyle(.borderless).help("Next").accessibilityLabel("Next notification")
+                    }
+                }
+                Button("All") { go(.notifications) }.buttonStyle(.link).font(.caption)
+                    .help("All notifications").accessibilityLabel("All notifications")
             }
         }
     }

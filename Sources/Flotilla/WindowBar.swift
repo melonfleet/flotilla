@@ -60,6 +60,10 @@ struct WindowBar: View {
 
                 // The three app-level controls share one capsule, the way a section's actions do.
                 BarGlass {
+                    // Notifications (the owner, 10 October): a bell with how many need attention.
+                    NotificationsToolbarButton(count: model.notices.attention.count) {
+                        model.pendingSection = .notifications
+                    }
                     AppLinksMenu()
                     // Beside the gear, because it is the same kind of thing — an app-level
                     // control. It is also *in* Settings; both write the one stored preference.

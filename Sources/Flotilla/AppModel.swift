@@ -63,6 +63,8 @@ final class AppModel {
     let tags = TagStore()
     /// Site, Rack, VLAN… and each host's value — how Hosts can be grouped (the owner, 9 October).
     let hostCategories = HostCategoryStore()
+    /// Notifications: what needs attention, kept a week (`NoticeStore`, the owner, 10 October).
+    let notices = NoticeStore()
 
     /// Registries the user has added by hand, on top of the built-in catalogue. Held here for
     /// the reason `tags` is: data rather than view state. Carries no credentials — see
@@ -129,6 +131,7 @@ final class AppModel {
         // status line and a badge to show it.
         Task { await reloadUnlessLoading() }
         startFleetWatch()
+        startNoticeWatch()
         startSystemFactsWatch()
         startPowerPolicy()
         hostMode.onRefreshed = { [weak self] in

@@ -2078,3 +2078,26 @@ The host refuses on battery, and the request adds "its admin's request" to its o
 power adapter only. It is kept across a relaunch, because an update relaunches Flotilla, and it ends
 by itself. Both Macs' Power cards show "Kept awake for its admin: until…". It never changes Energy
 settings.
+
+## Q48 — Notifications: one list, levels, and Dismiss hides until it changes (settled 2026-10-10)
+
+The owner's design, after twelve made-up items made Overview unusable:
+
+1. **Everything that needs attention is a notice**, kept by `NoticeBook` (`FlotillaCore`) and
+   persisted by `NoticeStore` in Application Support, not in preferences: it is history, not
+   configuration. The app hands the book what is wrong now every five seconds. A new condition
+   starts a notice, and one that goes resolves it. One that comes back is a new notice.
+2. **Four levels: good, info, warning and error.** Only warnings and errors need attention: they
+   show in Overview's banner, the menu bar's Needs Attention, and the bell's badge.
+3. **Dismiss hides a notice until its situation changes.** It stays in Notifications under
+   Dismissed and can be restored. **Errors cannot be dismissed**, only dealt with.
+4. **History is kept seven days, at most 500.** An active notice that has not been dismissed is
+   never dropped.
+5. **Overview shows one notice at a time**, with its fix, Dismiss, back and forward, and a link to
+   them all. **Notifications is reached from the bell in the window bar, not the sidebar.** It is a
+   searchable list like the Docker Hub browser, with a heading and detail per row, select-all and
+   bulk Dismiss/Restore. Each notice opens a page with how long it has gone on, when it was last
+   seen, and its fix. The menu bar shows ten headings, each with a pop-out.
+6. **A host still being checked keeps its notices**, so a relaunch does not split each one in two.
+   `lastSeen` advances by the minute, and the attention list changes only when its contents do,
+   so an open menu is not rebuilt under the pointer.
