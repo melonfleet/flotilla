@@ -182,6 +182,8 @@ extension AppModel {
         let running = containers.filter { $0.state.isRunning }.count
         switch RuntimeSetup.plan(installed: installed, expected: version, runningContainers: running) {
         case .nothing, .newer:
+            // Installed, so an earlier failure is history.
+            if case .failed? = runtimeSetup?.phase { runtimeSetup = nil }
             // Installed — but a fresh install, or a removed kernel, may still want the kernel.
             if case .needsKernel? = preflight { await installKernel() }
             if case .serviceStopped? = preflight, settingsStore[SettingsKeys.autoStartContainerService] == .always {

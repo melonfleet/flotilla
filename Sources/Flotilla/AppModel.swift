@@ -689,6 +689,10 @@ final class AppModel {
     func runPreflight(autoStartingService: Bool) async {
         let result = await Task.detached { [cli] in Preflight(cli: cli).run() }.value
         preflight = result
+        // A failed setup is over once `container` works, however it came back — reinstalled by hand,
+        // or by a later attempt. It used to stay up: Tahoe kept "container wasn't installed" with
+        // container 1.5.0 installed and answering (the owner, 10 October).
+        if case .failed? = runtimeSetup?.phase, runtimeUsable { runtimeSetup = nil }
 
         // The owner's request, and the right default: a stopped service is the normal state after a
         // reboot, it is one command from working, and making the user find that command is
