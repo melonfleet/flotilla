@@ -44,6 +44,18 @@ struct HostCallTests {
         #expect(throws: WireError.self) { try client.call(.keepAwake(seconds: 60)) }
     }
 
+    @Test func autoStartIsAVersion10CallThatSurvivesTheWire() throws {
+        let call = HostCall.setAutoStartRuntime(.never)
+        #expect(call.problem == nil && call.mutates && call.minimumVersion == 10)
+        let message = WireMessage.hostCall(.init(id: 4, call: call))
+        var decoder = WireFrameDecoder()
+        let frames = try decoder.append(try message.encoded(limits: .default))
+        #expect(try WireMessage(frame: frames[0]) == message)
+        // A version-9 host is never sent it.
+        var (_, client) = try connected(versions: 1...9)
+        #expect(throws: WireError.self) { try client.call(.setAutoStartRuntime(.always)) }
+    }
+
     @Test func aValidCallIsHandedToTheHostAndAnsweredLikeARequest() throws {
         var (hostSession, client) = try connected()
         let outgoing = try client.call(.dnsCreate(domain: "mini.fleet.internal", localhost: nil))

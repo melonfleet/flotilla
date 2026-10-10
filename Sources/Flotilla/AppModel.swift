@@ -692,6 +692,10 @@ final class AppModel {
     func runPreflight(autoStartingService: Bool) async {
         let result = await Task.detached { [cli] in Preflight(cli: cli).run() }.value
         preflight = result
+        switch result {
+        case .ok, .needsRestart, .needsKernel: noteRuntimeRunning()
+        default: break
+        }
         // A failed setup is over once `container` works, however it came back — reinstalled by hand,
         // or by a later attempt. It used to stay up: Tahoe kept "container wasn't installed" with
         // container 1.5.0 installed and answering (the owner, 10 October).
@@ -706,9 +710,8 @@ final class AppModel {
         // picker in Settings governed nothing: someone who set `never` still got an automatic
         // `container system start`. `ask` and `never` both decline here and leave the banner — which
         // already carries a Start button — to be the asking.
-        let policy = settingsStore[SettingsKeys.autoStartContainerService]
         if case .serviceStopped = result, autoStartingService, !autoStartAttempted,
-           policy == .always {
+           shouldAutoStartRuntime {
             autoStartAttempted = true
             await startRuntime()
             return
@@ -718,6 +721,22 @@ final class AppModel {
             state = .unavailable(reason)
         }
     }
+
+    /// Whether Flotilla may start the stopped service now: the setting says after start-up, and it
+    /// hasn't run since this Mac started (`RuntimeAutostart`), so a stop made while it was up stays.
+    var shouldAutoStartRuntime: Bool {
+        RuntimeAutostart.shouldStart(settingsStore[SettingsKeys.autoStartContainerService],
+                                     bootedAt: Self.bootTime,
+                                     lastSeenRunning: UserDefaults.standard.object(forKey: Self.runtimeSeenKey) as? Date)
+    }
+
+    /// When the service was last seen running, kept across launches: an update relaunches Flotilla,
+    /// and a stop made before it must still count.
+    private func noteRuntimeRunning() {
+        UserDefaults.standard.set(Date(), forKey: Self.runtimeSeenKey)
+    }
+
+    private static let runtimeSeenKey = "runtimeLastSeenRunning"
 
     /// Whether an automatic start has already been tried this launch. The **button** is not
     /// gated by this: a manual retry is a new decision by the user.

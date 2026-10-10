@@ -186,7 +186,7 @@ extension AppModel {
             if case .failed? = runtimeSetup?.phase { runtimeSetup = nil }
             // Installed — but a fresh install, or a removed kernel, may still want the kernel.
             if case .needsKernel? = preflight { await installKernel() }
-            if case .serviceStopped? = preflight, settingsStore[SettingsKeys.autoStartContainerService] == .always {
+            if case .serviceStopped? = preflight, shouldAutoStartRuntime {
                 await startRuntime()
             }
             return nil

@@ -43,6 +43,8 @@ extension AppModel {
         facts.helper = Self.helperState
         facts.acceptsAdminUpdates = settingsStore[SettingsKeys.acceptAdminUpdates]
         facts.installsContainerItself = settingsStore[SettingsKeys.autoInstallRuntime]
+        facts.autoStartRuntime = settingsStore[SettingsKeys.autoStartContainerService]
+        facts.autoStartRuntimeLocked = settingsStore.isLocked(SettingsKeys.autoStartContainerService)
         facts.launchesAtLogin = loginItemStatus == .registered
         facts.keepAwakeUntil = power.leaseUntil
         facts.kernelInstalled = preflight.map { if case .needsKernel = $0 { false } else { true } }
@@ -130,7 +132,7 @@ extension AppModel {
             .takeRetainedValue() as? String
     }
 
-    nonisolated private static var bootTime: Date? {
+    nonisolated static var bootTime: Date? {
         var time = timeval()
         var size = MemoryLayout<timeval>.size
         guard sysctlbyname("kern.boottime", &time, &size, nil, 0) == 0, time.tv_sec > 0 else { return nil }

@@ -2137,3 +2137,20 @@ The owner's list, with three answers: combine above three a minute; "answering a
 - Each category is a toggle under Settings → Notifications; Errors are always on. This also wired
   the three toggles that had never sent anything: "Host went offline", "Image pull finished" and
   "Build finished".
+
+## Q49 — Flotilla starts `container` after a start-up, never to undo a stop; the admin can set it (settled 2026-10-10)
+
+Found on Tahoe and Golden-Gate-VM2. `container` was stopped on purpose, then came back by itself.
+`autoStartContainerService = always` ran `container system start` at every launch of Flotilla, and
+an admin's update relaunches Flotilla. A host also ran it on its half-hourly look. The owner's call:
+
+1. **`always` now means after the Mac starts up** (`RuntimeAutostart`). Flotilla remembers when it
+   last saw the service running. If that was since the Mac started up, a stopped service was
+   stopped while the Mac was up, by its owner, the CLI, Flotilla's Stop or a crash. It stays
+   stopped until someone starts it or the Mac restarts. If the start-up time can't be read, a
+   person decides. The options read "After this Mac starts up", "Ask" and "Never". Never is the
+   maintenance switch.
+2. **The admin can change it for a host:** a host's page → Flotilla → As a host → "Starts container
+   by itself". `.setAutoStartRuntime` is wire version 10; the host refuses it where a profile
+   locks the setting, and records the change in its activity. Starting or stopping a host's
+   service itself stays `.localOnly` (Q14).

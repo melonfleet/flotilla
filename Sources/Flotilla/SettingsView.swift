@@ -465,10 +465,10 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                 }
-                SettingRow(store: store, key: SettingsKeys.autoStartContainerService, title: "If the API service isn't running") { binding in
+                SettingRow(store: store, key: SettingsKeys.autoStartContainerService, title: "Start container by itself") { binding in
                     Picker("", selection: binding) {
                         ForEach(Array(ServiceAutostartPolicy.allCases), id: \.rawValue) { policy in
-                            Text(Self.title(for: policy)).tag(policy)
+                            Text(policy.title).tag(policy)
                         }
                     }
                     .pickerStyle(.menu)
@@ -752,14 +752,6 @@ struct SettingsView: View {
         }
     }
 
-
-    private static func title(for policy: ServiceAutostartPolicy) -> String {
-        switch policy {
-        case .ask: "Ask"
-        case .always: "Always"
-        case .never: "Never"
-        }
-    }
 
     private static func title(for channel: UpdateChannel) -> String {
         switch channel {

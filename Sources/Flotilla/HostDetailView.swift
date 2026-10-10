@@ -275,6 +275,7 @@ struct HostDetailView: View {
             card("As a host") {
                 row("Accepts updates from its admin", onOff(facts?.acceptsAdminUpdates))
                 row("Installs container by itself", onOff(facts?.installsContainerItself))
+                autoStartRow
                 row("Kernel installed", facts?.kernelInstalled.map { $0 ? "Yes" : "No" } ?? "—")
             }
             card(host.isLocal ? "This Mac's identity" : "Pairing") {
@@ -288,6 +289,36 @@ struct HostDetailView: View {
                 row("Last inventory update", facts?.readAt.map(OverviewView.checkIn) ?? "—")
                 row("Address block", model.addressBlock(for: host)?.description ?? "—", monospaced: true)
                 row("DNS zone", model.fleetZones[host] ?? "—", monospaced: true)
+            }
+        }
+    }
+
+    /// When the Mac starts a stopped `container` service by itself — changed from here for a host
+    /// too (wire version 10; the owner, 10 October). A profile's lock shows as text.
+    @ViewBuilder
+    private var autoStartRow: some View {
+        let key = SettingsKeys.autoStartContainerService
+        let current = host.isLocal ? model.settingsStore[key] : facts?.autoStartRuntime
+        let locked = host.isLocal ? model.settingsStore.isLocked(key) : (facts?.autoStartRuntimeLocked ?? false)
+        HStack(alignment: .firstTextBaseline) {
+            Text("Starts container by itself").font(.system(size: 12)).foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            if let current, !locked {
+                Picker("Starts container by itself", selection: Binding(get: { current }, set: { policy in
+                    Task { if let failure = await model.setAutoStartRuntime(policy, on: host) { actionMessage = failure } }
+                })) {
+                    ForEach(ServiceAutostartPolicy.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .labelsHidden().pickerStyle(.menu).fixedSize().controlSize(.small)
+                .help("When \(name) runs `container system start` by itself. After start-up only: a stop made while the Mac is up stays until someone starts it.")
+            } else {
+                HStack(spacing: 4) {
+                    Text(current?.title ?? "—").font(.system(size: 12))
+                    if locked {
+                        Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
+                            .help("Set by a profile").accessibilityLabel("Set by a profile")
+                    }
+                }
             }
         }
     }

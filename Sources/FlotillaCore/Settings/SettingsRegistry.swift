@@ -123,7 +123,7 @@ public enum SettingsKeys {
     /// Auto-starts are attempted **once per launch** and recorded in the activity feed.
     public static let autoStartContainerService = SettingsKey<ServiceAutostartPolicy>(
         "autoStartContainerService", default: .always,
-        summary: "Whether to run `container system start` when the API service is down."
+        summary: "Whether to run `container system start` when the API service is down: after this Mac starts up, never to undo a stop."
     )
 
     // MARK: Defaults for new containers

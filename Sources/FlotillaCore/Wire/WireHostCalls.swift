@@ -23,6 +23,9 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// Keep the host awake for `seconds`, its admin's request (version 9; Q44's time-bounded lease).
     /// 0 stops an earlier request. Refused on battery, and never longer than a day.
     case keepAwake(seconds: Int)
+    /// When the host's Flotilla starts a stopped `container` service by itself (version 10; the
+    /// owner, 10 October). Refused where a profile locks it.
+    case setAutoStartRuntime(ServiceAutostartPolicy)
     /// Install or upgrade `container` to the version the host's Flotilla expects, then the kernel —
     /// even if that stops running containers: the admin confirmed, with the count (version 7, Q39).
     case setUpRuntime
@@ -49,7 +52,7 @@ public enum HostCall: Sendable, Equatable, Codable {
             return nil
         }
         switch self {
-        case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime: return nil
+        case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime, .setAutoStartRuntime: return nil
         case .keepAwake(let seconds):
             return (0...Self.maxKeepAwakeSeconds).contains(seconds) ? nil : "A keep-awake request runs for up to a day."
         case .setFleetNames(let table): return table.problem
@@ -80,6 +83,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .setUpRuntime: WireProtocol.runtimeSetupVersion
         case .settingsReport: WireProtocol.settingsReportVersion
         case .keepAwake: WireProtocol.keepAwakeVersion
+        case .setAutoStartRuntime: WireProtocol.autoStartVersion
         default: WireProtocol.hostCallsVersion
         }
     }
@@ -87,7 +91,7 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// How long the host may take. A runtime restart waits for every container to stop.
     public var timeout: TimeInterval {
         switch self {
-        case .dnsStatus, .hostFacts, .settingsReport, .keepAwake: 30
+        case .dnsStatus, .hostFacts, .settingsReport, .keepAwake, .setAutoStartRuntime: 30
         case .dnsCreate, .dnsDelete, .setFleetNames: 60
         case .setUpRuntime: 1800
         case .setContainerDNSDomain: 300
@@ -103,6 +107,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .keepAwake(let seconds): seconds == 0 ? "stopped keeping awake for its admin"
                                                    : "kept awake for its admin for \(seconds / 60) min"
         case .setUpRuntime: "installed or upgraded container"
+        case .setAutoStartRuntime(let policy): "set starting container by itself to \(policy.title.lowercased())"
         case .setFleetNames(let table): table.zones.isEmpty ? "turned off names across Macs"
                                                             : "updated names across Macs (\(table.zones.count) zones)"
         case .dnsCreate(let domain, let localhost): localhost == nil ? "created DNS domain \(domain)" : "created host alias \(domain)"
@@ -174,6 +179,9 @@ public struct HostFacts: Sendable, Equatable, Codable {
     public var acceptsAdminUpdates: Bool?
     public var installsContainerItself: Bool?
     public var kernelInstalled: Bool?
+    /// When it starts a stopped `container` service by itself, and whether a profile fixes that.
+    public var autoStartRuntime: ServiceAutostartPolicy?
+    public var autoStartRuntimeLocked: Bool?
 
     public init(chip: String? = nil, cores: Int? = nil, model: String? = nil, macOSVersion: String? = nil,
                 memoryTotalBytes: Int64? = nil, memoryUsedBytes: Int64? = nil, cpuPercent: Double? = nil,

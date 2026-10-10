@@ -39,6 +39,18 @@ extension AppModel {
             power.setLease(until: seconds > 0 ? Date().addingTimeInterval(TimeInterval(seconds)) : nil)
             return .success(power.leaseUntil.map { ISO8601DateFormatter().string(from: $0) } ?? "")
 
+        case .setAutoStartRuntime(let policy):
+            let key = SettingsKeys.autoStartContainerService
+            if settingsStore.isLocked(key) {
+                return .failure(HostCallFailure(.refused, "A profile sets when \(hostLabel) starts container, so it can't be changed here."))
+            }
+            do { try settingsStore.set(policy, for: key) } catch {
+                return .failure(HostCallFailure(.internalError, "\(hostLabel) couldn't save the setting: \(error)"))
+            }
+            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .runtime, subject: hostLabel,
+                                          action: "Its admin set starting container by itself to \(policy.title.lowercased())"))
+            return .success(policy.rawValue)
+
         case .settingsReport:
             guard let json = try? JSONEncoder().encode(SettingsReport.make(settingsStore)) else {
                 return .failure(HostCallFailure(.internalError, "This host couldn't list its settings."))
@@ -319,6 +331,26 @@ extension AppModel {
 }
 
 extension AppModel {
+    /// Sets when a Mac starts a stopped `container` service by itself: This Mac's own setting, or a
+    /// host's over the wire (version 10). Returns why not, or nil.
+    func setAutoStartRuntime(_ policy: ServiceAutostartPolicy, on host: HostRef) async -> String? {
+        guard case .peer(let fingerprint) = host else {
+            do { try settingsStore.set(policy, for: SettingsKeys.autoStartContainerService) } catch { return "\(error)" }
+            return nil
+        }
+        guard let remote = hostMode.remoteHost(for: fingerprint) else { return "That host isn't connected." }
+        guard (remote.protocolVersion ?? 0) >= WireProtocol.autoStartVersion else {
+            return "\(hostMode.hostName(host, local: hostLabel)) needs a newer Flotilla to change this from here."
+        }
+        do {
+            _ = try await remote.call(.setAutoStartRuntime(policy))
+            await hostMode.refreshHost(fingerprint)
+            return nil
+        } catch {
+            return (error as? HostCallFailure)?.message ?? String(describing: error)
+        }
+    }
+
     /// Asks a host to stay awake for `seconds` — 0 to stop — and reads its facts again so both pages
     /// show the new time. Returns why not, or nil.
     func keepAwake(_ fingerprint: PeerFingerprint, seconds: Int) async -> String? {
