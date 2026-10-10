@@ -2154,3 +2154,20 @@ an admin's update relaunches Flotilla. A host also ran it on its half-hourly loo
    by itself". `.setAutoStartRuntime` is wire version 10; the host refuses it where a profile
    locks the setting, and records the change in its activity. Starting or stopping a host's
    service itself stays `.localOnly` (Q14).
+
+## Q50 — The admin may start, stop and restart a host's `container` (settled 2026-10-10)
+
+The owner's call, defaulting on. The admin could already stop a host's runtime: an upgrade does,
+and so does a new DNS domain. The line Q14 draws is that a peer never sends a raw `container system`
+command, and that line stays: `system start`/`stop` remain `.localOnly` in the Allowlist.
+
+- **`.controlRuntime(start|stop|restart)` is a typed host call** (wire version 11). The host runs
+  its own Start, Stop or Restart, which is what its banner's buttons run, and records "Runtime
+  stopped by its admin".
+- **The host's `adminControlsRuntime` switch**, "Let its admin start and stop container", is on by
+  default. Its owner or a profile can turn it off. **The admin sees it and cannot change it:** an
+  admin able to switch on its own permission would make the switch pointless.
+- **Stop and Restart are confirmed with the count of running containers that stop.** Start is not.
+- **An admin's Stop is a stop made while the Mac was up** (Q49), so the host leaves it stopped.
+- **Where:** a host's Overview, in the State box; its row menu in Hosts; and Start on the
+  "container is stopped" notice, including on its macOS notification.

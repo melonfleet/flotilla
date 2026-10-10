@@ -45,6 +45,7 @@ extension AppModel {
         facts.installsContainerItself = settingsStore[SettingsKeys.autoInstallRuntime]
         facts.autoStartRuntime = settingsStore[SettingsKeys.autoStartContainerService]
         facts.autoStartRuntimeLocked = settingsStore.isLocked(SettingsKeys.autoStartContainerService)
+        facts.adminControlsRuntime = settingsStore[SettingsKeys.adminControlsRuntime]
         facts.launchesAtLogin = loginItemStatus == .registered
         facts.keepAwakeUntil = power.leaseUntil
         facts.kernelInstalled = preflight.map { if case .needsKernel = $0 { false } else { true } }

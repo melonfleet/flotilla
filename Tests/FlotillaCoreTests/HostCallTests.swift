@@ -56,6 +56,20 @@ struct HostCallTests {
         #expect(throws: WireError.self) { try client.call(.setAutoStartRuntime(.always)) }
     }
 
+    @Test func runtimeControlIsAVersion11CallThatSurvivesTheWire() throws {
+        for action in RuntimeControl.allCases {
+            let call = HostCall.controlRuntime(action)
+            #expect(call.problem == nil && call.mutates && call.minimumVersion == 11)
+            let message = WireMessage.hostCall(.init(id: 5, call: call))
+            var decoder = WireFrameDecoder()
+            let frames = try decoder.append(try message.encoded(limits: .default))
+            #expect(try WireMessage(frame: frames[0]) == message)
+        }
+        // A version-10 host is never sent it, and the raw commands stay closed to a peer.
+        var (_, client) = try connected(versions: 1...10)
+        #expect(throws: WireError.self) { try client.call(.controlRuntime(.stop)) }
+    }
+
     @Test func aValidCallIsHandedToTheHostAndAnsweredLikeARequest() throws {
         var (hostSession, client) = try connected()
         let outgoing = try client.call(.dnsCreate(domain: "mini.fleet.internal", localhost: nil))

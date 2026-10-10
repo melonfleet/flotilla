@@ -224,6 +224,13 @@ public enum SettingsKeys {
         summary: "Install Flotilla updates the admin Mac sends. Only genuine, newer Flotilla is ever installed."
     )
 
+    /// Whether this host's admin may start, stop and restart its `container` service (DECISIONS Q50).
+    /// On by default; its owner or a profile can turn it off. The admin sees it and cannot change it.
+    public static let adminControlsRuntime = SettingsKey<Bool>(
+        "adminControlsRuntime", default: true, scope: .host,
+        summary: "Let its admin start, stop and restart container on this Mac."
+    )
+
     /// Whether a host installs `container` and its kernel by itself, and upgrades `container` when
     /// nothing is running (DECISIONS Q39). Needs the Flotilla Helper. A profile can set it for zero-touch.
     public static let autoInstallRuntime = SettingsKey<Bool>(
@@ -370,6 +377,7 @@ public enum SettingsRegistry {
         SettingsKeys.fleetDNSDomain.descriptor,
         SettingsKeys.fleetNamesEnabled.descriptor,
         SettingsKeys.acceptAdminUpdates.descriptor,
+        SettingsKeys.adminControlsRuntime.descriptor,
         SettingsKeys.autoInstallRuntime.descriptor,
         SettingsKeys.keepAwakeAsHost.descriptor,
         SettingsKeys.keepAwakeWhileContainersRun.descriptor,

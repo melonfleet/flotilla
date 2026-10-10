@@ -61,11 +61,15 @@ extension AppModel {
                     items.append(AttentionItem("container isn\u{2019}t installed on \(peer.displayName).", .hosts,
                                                key: "host-no-container:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
                 } else if hostRuntimeStopped(peer.fingerprint) {
-                    // Answering, service stopped: no Start here — `system start` is the host
-                    // owner's decision and is not open to an admin (Allowlist, `.localOnly`).
-                    items.append(AttentionItem("container is stopped on \(peer.displayName): its containers can\u{2019}t run "
-                                               + "until it\u{2019}s started on that Mac.", .hosts,
-                                               key: "host-runtime-stopped:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
+                    // Start, where the host lets its admin (Q50); otherwise it is started on that Mac.
+                    let fingerprint = peer.fingerprint
+                    let canStart = canControlRuntime(fingerprint)
+                    var start: (title: String, run: @MainActor () -> Void)? = nil
+                    if canStart { start = ("Start", { [weak self] in self?.startHostRuntime(fingerprint) }) }
+                    let until = canStart ? "until it\u{2019}s started." : "until it\u{2019}s started on that Mac."
+                    items.append(AttentionItem("container is stopped on \(peer.displayName): its containers can\u{2019}t run " + until,
+                                               .hosts, key: "host-runtime-stopped:\(fingerprint.hex)", host: .peer(fingerprint),
+                                               fix: start))
                 } else {
                     items.append(AttentionItem("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts,
                                                key: "host-unreachable:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
@@ -122,6 +126,13 @@ extension AppModel {
             }
         }
         return items
+    }
+
+    /// A notice's Start, for a host's stopped `container`.
+    func startHostRuntime(_ fingerprint: PeerFingerprint) {
+        Task {
+            if let failure = await controlRuntime(.start, on: fingerprint) { actionError = failure }
+        }
     }
 
     /// The menu-bar badge: off when This Mac's `container` is stopped or missing, attention when

@@ -39,6 +39,18 @@ extension AppModel {
             power.setLease(until: seconds > 0 ? Date().addingTimeInterval(TimeInterval(seconds)) : nil)
             return .success(power.leaseUntil.map { ISO8601DateFormatter().string(from: $0) } ?? "")
 
+        case .controlRuntime(let action):
+            guard settingsStore[SettingsKeys.adminControlsRuntime] else {
+                return .failure(HostCallFailure(.refused, "\(hostLabel)'s owner hasn't let its admin start and stop container."))
+            }
+            let failure: String? = switch action {
+            case .start: await startRuntime(byAdmin: true)
+            case .stop: await stopRuntime(byAdmin: true)
+            case .restart: await restartRuntime(byAdmin: true)
+            }
+            if let failure { return .failure(HostCallFailure(.internalError, failure)) }
+            return .success(action.rawValue)
+
         case .setAutoStartRuntime(let policy):
             let key = SettingsKeys.autoStartContainerService
             if settingsStore.isLocked(key) {
@@ -331,6 +343,35 @@ extension AppModel {
 }
 
 extension AppModel {
+    /// Whether this admin may start and stop a host's `container`: the host speaks version 11 and
+    /// its owner hasn't turned it off (Q50).
+    func canControlRuntime(_ fingerprint: PeerFingerprint) -> Bool {
+        (hostMode.remoteHost(for: fingerprint)?.protocolVersion ?? 0) >= WireProtocol.runtimeControlVersion
+            && hostMode.facts[fingerprint]?.adminControlsRuntime != false
+    }
+
+    /// Starts, stops or restarts a host's `container` service. The caller confirms a stop or a
+    /// restart, with the count of what stops. Returns why not, or nil.
+    func controlRuntime(_ action: RuntimeControl, on fingerprint: PeerFingerprint) async -> String? {
+        let name = hostMode.hostName(.peer(fingerprint), local: hostLabel)
+        guard let remote = hostMode.remoteHost(for: fingerprint) else { return "That host isn't connected." }
+        guard (remote.protocolVersion ?? 0) >= WireProtocol.runtimeControlVersion else {
+            return "\(name) needs a newer Flotilla to start and stop container from here."
+        }
+        let keepAwake = power.begin("\(action.title.lowercased())ing container on a host")
+        defer { power.end(keepAwake) }
+        do {
+            _ = try await remote.call(.controlRuntime(action))
+            recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .runtime, subject: name,
+                                          action: "container \(action.done) from here"))
+            await hostMode.refreshHost(fingerprint)
+            return nil
+        } catch {
+            await hostMode.refreshHost(fingerprint)
+            return (error as? HostCallFailure)?.message ?? String(describing: error)
+        }
+    }
+
     /// Sets when a Mac starts a stopped `container` service by itself: This Mac's own setting, or a
     /// host's over the wire (version 10). Returns why not, or nil.
     func setAutoStartRuntime(_ policy: ServiceAutostartPolicy, on host: HostRef) async -> String? {

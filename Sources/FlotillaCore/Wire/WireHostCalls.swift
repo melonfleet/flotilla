@@ -8,6 +8,28 @@ import Foundation
 // (a file and a runtime restart). Each is a **typed** call, validated by the host exactly as its
 // helper validates it, answered with an ordinary `result` (JSON in stdout) or `failure`.
 
+/// Start, stop or restart a host's `container` service — a typed call, so `system start`/`stop`
+/// stay `.localOnly` in the Allowlist and a peer still cannot send them as commands (Q50).
+public enum RuntimeControl: String, Sendable, Codable, CaseIterable {
+    case start, stop, restart
+
+    public var title: String {
+        switch self {
+        case .start: "Start"
+        case .stop: "Stop"
+        case .restart: "Restart"
+        }
+    }
+
+    public var done: String {
+        switch self {
+        case .start: "started"
+        case .stop: "stopped"
+        case .restart: "restarted"
+        }
+    }
+}
+
 /// What an admin may ask of a host beyond `container` commands — the whole of it.
 public enum HostCall: Sendable, Equatable, Codable {
     /// The host's DNS rows, the domain its containers are named under, and its helper's state.
@@ -26,6 +48,9 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// When the host's Flotilla starts a stopped `container` service by itself (version 10; the
     /// owner, 10 October). Refused where a profile locks it.
     case setAutoStartRuntime(ServiceAutostartPolicy)
+    /// Start, stop or restart the host's `container` service (version 11, Q50). Refused unless the
+    /// host lets its admin (`adminControlsRuntime`). Stopping stops every container there.
+    case controlRuntime(RuntimeControl)
     /// Install or upgrade `container` to the version the host's Flotilla expects, then the kernel —
     /// even if that stops running containers: the admin confirmed, with the count (version 7, Q39).
     case setUpRuntime
@@ -52,7 +77,7 @@ public enum HostCall: Sendable, Equatable, Codable {
             return nil
         }
         switch self {
-        case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime, .setAutoStartRuntime: return nil
+        case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime, .setAutoStartRuntime, .controlRuntime: return nil
         case .keepAwake(let seconds):
             return (0...Self.maxKeepAwakeSeconds).contains(seconds) ? nil : "A keep-awake request runs for up to a day."
         case .setFleetNames(let table): return table.problem
@@ -84,6 +109,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .settingsReport: WireProtocol.settingsReportVersion
         case .keepAwake: WireProtocol.keepAwakeVersion
         case .setAutoStartRuntime: WireProtocol.autoStartVersion
+        case .controlRuntime: WireProtocol.runtimeControlVersion
         default: WireProtocol.hostCallsVersion
         }
     }
@@ -95,6 +121,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .dnsCreate, .dnsDelete, .setFleetNames: 60
         case .setUpRuntime: 1800
         case .setContainerDNSDomain: 300
+        case .controlRuntime: 180
         }
     }
 
@@ -107,6 +134,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .keepAwake(let seconds): seconds == 0 ? "stopped keeping awake for its admin"
                                                    : "kept awake for its admin for \(seconds / 60) min"
         case .setUpRuntime: "installed or upgraded container"
+        case .controlRuntime(let action): "\(action.done) container"
         case .setAutoStartRuntime(let policy): "set starting container by itself to \(policy.title.lowercased())"
         case .setFleetNames(let table): table.zones.isEmpty ? "turned off names across Macs"
                                                             : "updated names across Macs (\(table.zones.count) zones)"
@@ -182,6 +210,8 @@ public struct HostFacts: Sendable, Equatable, Codable {
     /// When it starts a stopped `container` service by itself, and whether a profile fixes that.
     public var autoStartRuntime: ServiceAutostartPolicy?
     public var autoStartRuntimeLocked: Bool?
+    /// Whether it lets its admin start, stop and restart `container`.
+    public var adminControlsRuntime: Bool?
 
     public init(chip: String? = nil, cores: Int? = nil, model: String? = nil, macOSVersion: String? = nil,
                 memoryTotalBytes: Int64? = nil, memoryUsedBytes: Int64? = nil, cpuPercent: Double? = nil,

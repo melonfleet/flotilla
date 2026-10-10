@@ -755,22 +755,28 @@ final class AppModel {
     ///
     /// Recorded in the activity feed on success. An automatic side effect with no trace is
     /// indistinguishable from a mystery later.
-    func startRuntime() async {
-        guard !startingRuntime else { return }
+    /// - Parameter byAdmin: asked by this host's admin (Q50), which the activity record says.
+    /// - Returns: why it failed, or nil.
+    @discardableResult
+    func startRuntime(byAdmin: Bool = false) async -> String? {
+        guard !startingRuntime else { return "container is already being started or stopped." }
         startingRuntime = true
         state = .loading
         do {
             try await Task.detached { [cli] in try cli.startSystem() }.value
             recordActivity(ContainerEvent(date: Date(), from: "stopped", to: "running",
                                           kind: .runtime, subject: hostLabel,
-                                          action: "Runtime started"))
+                                          action: byAdmin ? "Runtime started by its admin" : "Runtime started"))
             startingRuntime = false
             await reload()
+            return nil
         } catch {
             startingRuntime = false
             // The CLI's own words. The likeliest real failure is a missing kernel, which we
             // deliberately do not install, and its message says exactly that.
-            state = .unavailable("Couldn't start the container service — \(error)")
+            let message = "Couldn't start the container service — \(error)"
+            state = .unavailable(message)
+            return message
         }
     }
 
@@ -836,15 +842,16 @@ final class AppModel {
     /// Every running container goes down with them and does not come back, which is why the only
     /// caller confirms first; this method does not ask, so do not call it from anywhere that
     /// does not.
-    func stopRuntime() async {
-        guard !startingRuntime else { return }
+    @discardableResult
+    func stopRuntime(byAdmin: Bool = false) async -> String? {
+        guard !startingRuntime else { return "container is already being started or stopped." }
         startingRuntime = true
         state = .loading
         do {
             try await Task.detached { [cli] in try cli.stopSystem() }.value
             recordActivity(ContainerEvent(date: Date(), from: "running", to: "stopped",
                                           kind: .runtime, subject: hostLabel,
-                                          action: "Runtime stopped"))
+                                          action: byAdmin ? "Runtime stopped by its admin" : "Runtime stopped"))
             // A deliberate stop must survive the reload. `reload()` re-runs preflight, which
             // starts a stopped service by itself when the auto-start policy is `always` — so
             // without this the runtime would come straight back up and the menu item would look
@@ -853,9 +860,12 @@ final class AppModel {
             autoStartAttempted = true
             startingRuntime = false
             await reload()
+            return nil
         } catch {
             startingRuntime = false
-            state = .unavailable("Couldn't stop the container services — \(error)")
+            let message = "Couldn't stop the container services — \(error)"
+            state = .unavailable(message)
+            return message
         }
     }
 
@@ -864,8 +874,9 @@ final class AppModel {
     /// Synthesised, because the CLI has no `system restart` — only `start` and `stop`. Every
     /// running container goes down with the services, which is why the only caller confirms
     /// first; this method does not ask, so do not call it from anywhere that does not.
-    func restartRuntime() async {
-        guard !startingRuntime else { return }
+    @discardableResult
+    func restartRuntime(byAdmin: Bool = false) async -> String? {
+        guard !startingRuntime else { return "container is already being started or stopped." }
         startingRuntime = true
         state = .loading
         do {
@@ -875,12 +886,15 @@ final class AppModel {
             }.value
             recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
                                           kind: .runtime, subject: hostLabel,
-                                          action: "Runtime restarted"))
+                                          action: byAdmin ? "Runtime restarted by its admin" : "Runtime restarted"))
             startingRuntime = false
             await reload()
+            return nil
         } catch {
             startingRuntime = false
-            state = .unavailable("Couldn't restart the container services — \(error)")
+            let message = "Couldn't restart the container services — \(error)"
+            state = .unavailable(message)
+            return message
         }
     }
 

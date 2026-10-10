@@ -39,6 +39,9 @@ struct HostDetailView: View {
     @State private var tab: HostDetailTab = .overview
     @State private var confirmingRuntime = false
     @State private var actionMessage: String?
+    /// A stop or restart of `container` waiting for its confirmation (Q50).
+    @State private var confirmingControl: RuntimeControl?
+    @State private var controlling = false
 
     private var hostMode: HostModeController { model.hostMode }
     private var peer: Peer? {
@@ -71,6 +74,73 @@ struct HostDetailView: View {
             Button("OK") { actionMessage = nil }
         } message: {
             Text(actionMessage ?? "")
+        }
+        .confirmationDialog(confirmingControl.map { "\($0.title) container on \(name)?" } ?? "",
+                            isPresented: Binding(get: { confirmingControl != nil }, set: { if !$0 { confirmingControl = nil } }),
+                            titleVisibility: .visible, presenting: confirmingControl) { action in
+            Button(action.title, role: .destructive) { control(action) }
+            Button("Cancel", role: .cancel) {}
+        } message: { action in
+            Text(Self.controlConsequence(action, running: runningHere))
+        }
+    }
+
+    // MARK: Starting and stopping container (Q50)
+
+    /// Start when it is stopped; Stop and Restart, confirmed, when it runs. On This Mac the same
+    /// actions as its own banner; on a host, a host call — where its owner lets its admin.
+    @ViewBuilder
+    private var runtimeControls: some View {
+        let stopped: Bool = if let fingerprint { model.hostRuntimeStopped(fingerprint) }
+                            else if case .serviceStopped? = model.preflight { true } else { false }
+        let running: Bool = if fingerprint != nil { live?.state == .connected } else { model.runtimeUsable }
+        let allowed = fingerprint.map(model.canControlRuntime) ?? true
+        if allowed && (stopped || running) {
+            HStack(spacing: 6) {
+                Spacer()
+                if controlling { ProgressView().controlSize(.mini) }
+                if stopped {
+                    Button("Start") { control(.start) }.controlSize(.small).disabled(controlling)
+                } else {
+                    Button("Stop…") { confirmingControl = .stop }.controlSize(.small).disabled(controlling)
+                    Button("Restart…") { confirmingControl = .restart }.controlSize(.small).disabled(controlling)
+                }
+            }
+        } else if fingerprint != nil, facts?.adminControlsRuntime == false, stopped || running {
+            Text("Its owner hasn\u{2019}t let its admin start and stop container.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var runningHere: Int {
+        host.isLocal ? model.containers.filter { $0.state.isRunning }.count : (live?.containersRunning ?? 0)
+    }
+
+    private func control(_ action: RuntimeControl) {
+        controlling = true
+        Task {
+            let failure: String?
+            if let fingerprint {
+                failure = await model.controlRuntime(action, on: fingerprint)
+            } else {
+                failure = switch action {
+                case .start: await model.startRuntime()
+                case .stop: await model.stopRuntime()
+                case .restart: await model.restartRuntime()
+                }
+            }
+            controlling = false
+            if let failure { actionMessage = failure }
+        }
+    }
+
+    static func controlConsequence(_ action: RuntimeControl, running: Int) -> String {
+        let count = running == 0 ? "No containers are running there."
+            : "\(running) running container\(running == 1 ? "" : "s") will stop."
+        return switch action {
+        case .start: ""
+        case .stop: count + " Nothing new can start until it\u{2019}s started again, and Flotilla there won\u{2019}t start it by itself."
+        case .restart: count + " They don\u{2019}t come back on their own."
         }
     }
 
@@ -107,6 +177,7 @@ struct HostDetailView: View {
                     row("Last check-in", lastCheckIn)
                     row("Up since", facts?.bootTime.map { RelativeDate.relativeToNow($0) } ?? "—")
                     row("container", containerState)
+                    runtimeControls
                 }
                 card("Hardware") {
                     row("Model", facts?.model ?? peer?.details.model ?? "—")
@@ -292,6 +363,8 @@ struct HostDetailView: View {
                 row("Accepts updates from its admin", onOff(facts?.acceptsAdminUpdates))
                 row("Installs container by itself", onOff(facts?.installsContainerItself))
                 autoStartRow
+                row("Lets its admin start and stop container",
+                    onOff(host.isLocal ? model.settingsStore[SettingsKeys.adminControlsRuntime] : facts?.adminControlsRuntime))
                 row("Kernel installed", facts?.kernelInstalled.map { $0 ? "Yes" : "No" } ?? "—")
             }
             card(host.isLocal ? "This Mac's identity" : "Pairing") {

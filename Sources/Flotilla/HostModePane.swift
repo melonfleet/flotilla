@@ -120,6 +120,9 @@ struct HostModePane: View {
             SettingRow(store: store, key: SettingsKeys.acceptAdminUpdates, title: "Install Flotilla updates from its admin") { binding in
                 Toggle("", isOn: binding).labelsHidden()
             }
+            SettingRow(store: store, key: SettingsKeys.adminControlsRuntime, title: "Let its admin start and stop container") { binding in
+                Toggle("", isOn: binding).labelsHidden()
+            }
 
             // The owner's decision (7 October): an admin Mac is the owner of the hosts it manages, so
             // nothing on a host is held back from it. Said here, where a host is about to pair.

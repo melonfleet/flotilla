@@ -174,6 +174,17 @@ struct HostsView: View {
     /// A host whose `container` the owner asked to install or upgrade (Q39) — confirmed first.
     @State private var pendingRuntime: HostRow?
     @State private var runtimeError: String?
+    /// A host's `container` stop or restart waiting for its confirmation (Q50).
+    @State private var pendingControl: PendingControl?
+    @State private var controlError: String?
+
+    struct PendingControl: Identifiable {
+        let fingerprint: PeerFingerprint
+        let name: String
+        let action: RuntimeControl
+        let running: Int
+        var id: String { fingerprint.hex + action.rawValue }
+    }
     /// An imported host being paired: Add Host, holding the key it must present.
     @State private var pairing: HostModeController.ImportedHost?
     /// The host being given the owner's own name, and the text so far.
@@ -295,6 +306,21 @@ struct HostsView: View {
             Button("Cancel", role: .cancel) {}
         } message: { row in
             Text(runtimeMessage(row))
+        }
+        .confirmationDialog(pendingControl.map { "\($0.action.title) container on \($0.name)?" } ?? "",
+                            isPresented: Binding(get: { pendingControl != nil }, set: { if !$0 { pendingControl = nil } }),
+                            titleVisibility: .visible, presenting: pendingControl) { pending in
+            Button(pending.action.title, role: .destructive) {
+                Task { if let failure = await model.controlRuntime(pending.action, on: pending.fingerprint) { controlError = failure } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { pending in
+            Text(HostDetailView.controlConsequence(pending.action, running: pending.running))
+        }
+        .alert("Couldn't do that", isPresented: Binding(get: { controlError != nil }, set: { if !$0 { controlError = nil } })) {
+            Button("OK") { controlError = nil }
+        } message: {
+            Text(controlError ?? "")
         }
         .alert("container wasn't set up", isPresented: Binding(get: { runtimeError != nil }, set: { if !$0 { runtimeError = nil } })) {
             Button("OK") { runtimeError = nil }
@@ -1009,6 +1035,22 @@ struct HostsView: View {
                         .disabled(HostConnect.address(model, peer.fingerprint) == nil)
                 }
                 KeepAwakeMenu(model: model, fingerprint: peer.fingerprint)
+                Divider()
+                // The host's own container service, where its owner lets its admin (Q50).
+                let canControl = model.canControlRuntime(peer.fingerprint)
+                let stopped = model.hostRuntimeStopped(peer.fingerprint)
+                let connected = hostMode.live[peer.fingerprint]?.state == .connected
+                Button("Start Container System") {
+                    Task { if let failure = await model.controlRuntime(.start, on: peer.fingerprint) { controlError = failure } }
+                }
+                .disabled(!canControl || !stopped)
+                ForEach([RuntimeControl.stop, .restart], id: \.self) { action in
+                    Button("\(action.title) Container System…") {
+                        pendingControl = PendingControl(fingerprint: peer.fingerprint, name: peer.displayName, action: action,
+                                                        running: hostMode.live[peer.fingerprint]?.containersRunning ?? 0)
+                    }
+                    .disabled(!canControl || !connected)
+                }
                 Divider()
                 Button("Remove Access") { hostMode.revoke(peer.fingerprint) }
             case .rejected, .revoked:
