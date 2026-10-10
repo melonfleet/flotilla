@@ -691,17 +691,11 @@ struct HostsView: View {
             // Column one carries the selection checkbox and the status dot together, as in
             // Containers: the dot's colour says how the Mac is, its tooltip says it in full, and the
             // host's page carries it as a line (the owner, 9 October).
-            TableColumn("", value: \.statusSortKey) { row in
-                HStack(spacing: 6) {
-                    if let header = row.header {
-                        groupToggle(header, name: row.name)
-                        HostGroupDot(header: header)
-                    } else {
-                        selectionToggle(for: row)
-                        HostStatusDot(model: model, row: row)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // A dot as the header, so it has something VoiceOver can name — an untitled header read
+            // as a nameless button (10 October).
+            TableColumn(Text(Image(systemName: "circle.fill")).font(.system(size: 6)).accessibilityLabel("Status"),
+                        value: \.statusSortKey) { row in
+                statusCell(row)
             }
             .width(min: 52, ideal: 56, max: 64)
 
@@ -759,6 +753,19 @@ struct HostsView: View {
             guard let row = model.hostRows.first(where: { $0.id == id }) else { return }
             open(row)
         }
+    }
+
+    private func statusCell(_ row: HostRow) -> some View {
+        HStack(spacing: 6) {
+            if let header = row.header {
+                groupToggle(header, name: row.name)
+                HostGroupDot(header: header)
+            } else {
+                selectionToggle(for: row)
+                HostStatusDot(model: model, row: row)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// A host's Flotilla: its version, and where it stands against This Mac's (DECISIONS Q38) — an
