@@ -20,6 +20,9 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// The names of every other Mac's containers, for the host to answer (version 5, Q37). An
     /// empty table turns names across Macs off there.
     case setFleetNames(FleetNameTable)
+    /// Keep the host awake for `seconds`, its admin's request (version 9; Q44's time-bounded lease).
+    /// 0 stops an earlier request. Refused on battery, and never longer than a day.
+    case keepAwake(seconds: Int)
     /// Install or upgrade `container` to the version the host's Flotilla expects, then the kernel —
     /// even if that stops running containers: the admin confirmed, with the count (version 7, Q39).
     case setUpRuntime
@@ -30,6 +33,9 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// Name the host's containers under `domain` (or under none): edits its `config.toml` and
     /// restarts its runtime, which stops every container there.
     case setContainerDNSDomain(domain: String?)
+
+    /// The longest a keep-awake request may run: a day, so a forgotten one ends by itself.
+    public static let maxKeepAwakeSeconds = 24 * 60 * 60
 
     /// The most domains one delete may name.
     public static let maxDomainsPerDelete = 32
@@ -44,6 +50,8 @@ public enum HostCall: Sendable, Equatable, Codable {
         }
         switch self {
         case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime: return nil
+        case .keepAwake(let seconds):
+            return (0...Self.maxKeepAwakeSeconds).contains(seconds) ? nil : "A keep-awake request runs for up to a day."
         case .setFleetNames(let table): return table.problem
         case .dnsCreate(let domain, let localhost):
             if let reserved = LocalDNS.reservedProblem(domain) { return reserved }
@@ -71,6 +79,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .setFleetNames: WireProtocol.fleetNamesVersion
         case .setUpRuntime: WireProtocol.runtimeSetupVersion
         case .settingsReport: WireProtocol.settingsReportVersion
+        case .keepAwake: WireProtocol.keepAwakeVersion
         default: WireProtocol.hostCallsVersion
         }
     }
@@ -78,7 +87,7 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// How long the host may take. A runtime restart waits for every container to stop.
     public var timeout: TimeInterval {
         switch self {
-        case .dnsStatus, .hostFacts, .settingsReport: 30
+        case .dnsStatus, .hostFacts, .settingsReport, .keepAwake: 30
         case .dnsCreate, .dnsDelete, .setFleetNames: 60
         case .setUpRuntime: 1800
         case .setContainerDNSDomain: 300
@@ -91,6 +100,8 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .dnsStatus: "read DNS settings"
         case .hostFacts: "read its chip, memory and disk"
         case .settingsReport: "read its Flotilla settings"
+        case .keepAwake(let seconds): seconds == 0 ? "stopped keeping awake for its admin"
+                                                   : "kept awake for its admin for \(seconds / 60) min"
         case .setUpRuntime: "installed or upgraded container"
         case .setFleetNames(let table): table.zones.isEmpty ? "turned off names across Macs"
                                                             : "updated names across Macs (\(table.zones.count) zones)"
@@ -143,6 +154,8 @@ public struct HostFacts: Sendable, Equatable, Codable {
     /// Whether the Mac logs a user in automatically at startup — never which user. With FileVault
     /// on it cannot, and Flotilla then waits for a sign-in after a restart (`EnergyAdvice`).
     public var autoLogin: Bool?
+    /// Until when it stays awake at its admin's request (`.keepAwake`), if it is.
+    public var keepAwakeUntil: Date?
     /// Whether Flotilla is a login item there, so it opens when its user is signed in.
     public var launchesAtLogin: Bool?
     public var remoteLogin: Bool?

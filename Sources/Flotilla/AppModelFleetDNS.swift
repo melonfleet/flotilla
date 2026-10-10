@@ -32,6 +32,13 @@ extension AppModel {
             }
             return .success(String(decoding: json, as: UTF8.self))
 
+        case .keepAwake(let seconds):
+            if seconds > 0 && power.onBattery {
+                return .failure(HostCallFailure(.refused, "\(hostLabel) is on battery, and a Mac on battery isn't kept awake."))
+            }
+            power.setLease(until: seconds > 0 ? Date().addingTimeInterval(TimeInterval(seconds)) : nil)
+            return .success(power.leaseUntil.map { ISO8601DateFormatter().string(from: $0) } ?? "")
+
         case .settingsReport:
             guard let json = try? JSONEncoder().encode(SettingsReport.make(settingsStore)) else {
                 return .failure(HostCallFailure(.internalError, "This host couldn't list its settings."))
@@ -308,5 +315,23 @@ extension AppModel {
         }
         let result = try await remote.call(.settingsReport)
         return try JSONDecoder().decode(SettingsReport.self, from: Data(result.stdout.utf8))
+    }
+}
+
+extension AppModel {
+    /// Asks a host to stay awake for `seconds` — 0 to stop — and reads its facts again so both pages
+    /// show the new time. Returns why not, or nil.
+    func keepAwake(_ fingerprint: PeerFingerprint, seconds: Int) async -> String? {
+        guard let remote = hostMode.remoteHost(for: fingerprint) else { return "That host isn't connected." }
+        guard (remote.protocolVersion ?? 0) >= WireProtocol.keepAwakeVersion else {
+            return "\(hostMode.hostName(.peer(fingerprint), local: hostLabel)) needs a newer Flotilla to be kept awake from here."
+        }
+        do {
+            _ = try await remote.call(.keepAwake(seconds: seconds))
+            await hostMode.refreshHost(fingerprint)
+            return nil
+        } catch {
+            return (error as? HostCallFailure)?.message ?? String(describing: error)
+        }
     }
 }

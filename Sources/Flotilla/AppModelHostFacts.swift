@@ -44,6 +44,7 @@ extension AppModel {
         facts.acceptsAdminUpdates = settingsStore[SettingsKeys.acceptAdminUpdates]
         facts.installsContainerItself = settingsStore[SettingsKeys.autoInstallRuntime]
         facts.launchesAtLogin = loginItemStatus == .registered
+        facts.keepAwakeUntil = power.leaseUntil
         facts.kernelInstalled = preflight.map { if case .needsKernel = $0 { false } else { true } }
         if let slow = systemFacts {
             facts.serialNumber = slow.serialNumber

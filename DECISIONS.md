@@ -2069,3 +2069,12 @@ The owner's decision, after D4's review:
    2.0 adds per-device identities and trust by profile, plus the staged-hardware test matrix.
 4. **Flotilla Web and the iPad app are 2.0** (amended the same day). Iris's plan
    (`experiments/flotilla-web-ipad-2026-10-08/iris-report.md`, 18 open questions) waits for it.
+
+### Q44 amended — the admin's keep-awake request is built; Runtime Saver is 2.0 (2026-10-10)
+
+The owner kept the time-bounded keep-awake request in 1.5, and moved Runtime Saver to 2.0.
+`.keepAwake(seconds:)` (wire version 9) asks a host to stay awake for up to a day, and 0 ends it.
+The host refuses on battery, and the request adds "its admin's request" to its one assertion, on the
+power adapter only. It is kept across a relaunch, because an update relaunches Flotilla, and it ends
+by itself. Both Macs' Power cards show "Kept awake for its admin: until…". It never changes Energy
+settings.

@@ -225,6 +225,11 @@ struct HostDetailView: View {
                 if let awake = facts?.power?.sleepPreventedBy, !awake.isEmpty {
                     row("Kept awake by", awake.joined(separator: ", "))
                 }
+                // The admin's request, shown on both Macs: here on the admin, and on the host's own page.
+                row("Kept awake for its admin", keepAwakeText)
+                if let fingerprint {
+                    HStack { Spacer(); KeepAwakeMenu(model: model, fingerprint: fingerprint).fixedSize() }
+                }
             }
             // Recommended, never changed (the owner, 10 October; Q44): what a Mac that hosts
             // containers is best set to, each with Apple's guide. Quiet — not an attention item.
@@ -393,6 +398,11 @@ struct HostDetailView: View {
     }
 
     /// A question mark that opens Apple's guide; its tooltip names the guide.
+    private var keepAwakeText: String {
+        guard let until = facts?.keepAwakeUntil, until > Date() else { return "No" }
+        return "Until \(until.formatted(date: Calendar.current.isDateInToday(until) ? .omitted : .abbreviated, time: .shortened))"
+    }
+
     private var energyInputs: EnergyAdvice.Inputs {
         EnergyAdvice.Inputs(power: facts?.power, hasBattery: facts?.hasBattery, fileVault: facts?.fileVault,
                             autoLogin: facts?.autoLogin, launchesAtLogin: facts?.launchesAtLogin)

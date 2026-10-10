@@ -697,9 +697,12 @@ To settle before building:
   host" on every Mac's System tab (no sleep with the display off, Wake for network access, restart
   after a power failure on desktops, Flotilla at login), Apple's guides behind a ?, never changed,
   quiet; plus the FileVault / automatic-login warning (`EnergyAdvice`).
-- An admin's time-bounded keep-awake request to a host, refused on battery and shown on both Macs.
-- Runtime Saver, experimental: stop `container` after a while with nothing running; a moon in the
-  menu bar; wake on demand. Only after measuring savings and wake latency.
+- ~~An admin's time-bounded keep-awake request~~ — **built 10 October** (wire version 9): Keep Awake
+  on a host's page and row menu — an hour, four, or until nine tomorrow, never more than a day, or
+  stop; refused on battery; kept across a relaunch; shown on both Macs' Power cards.
+- Runtime Saver — **moved to 2.0** (the owner, 10 October): stop `container` after a while with
+  nothing running; a moon in the menu bar; wake on demand. Only after measuring savings and wake
+  latency.
 - The sleep/wake matrix from Iris's report, on a mini and a laptop, before claiming behaviour.
 
 ### Host-run policies and streaming
@@ -808,7 +811,8 @@ Recorded so it is not lost; not started.
    nothing published on the LAN. TCP first.
 4. **A full overlay** (D4's routed `/20` per Mac), only if a real need appears after 3.
 5. **Jamf and MDM support** (section above).
-6. **Flotilla Web and an iPad app** (deferred 10 October). A headless admin server with a web UI
+6. **Runtime Saver** (moved from the power next steps, 10 October), experimental until measured.
+7. **Flotilla Web and an iPad app** (deferred 10 October). A headless admin server with a web UI
    (its own sign-in, no identity provider required, certificates, Let's Encrypt), and an iPad app
    that pairs by QR code. Iris's plan and its 18 open questions are in
    `experiments/flotilla-web-ipad-2026-10-08/iris-report.md`; answer them before building.

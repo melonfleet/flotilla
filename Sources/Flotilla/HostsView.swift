@@ -1008,6 +1008,7 @@ struct HostsView: View {
                     Button(kind.title) { HostConnect.open(kind, model, peer.fingerprint) }
                         .disabled(HostConnect.address(model, peer.fingerprint) == nil)
                 }
+                KeepAwakeMenu(model: model, fingerprint: peer.fingerprint)
                 Divider()
                 Button("Remove Access") { hostMode.revoke(peer.fingerprint) }
             case .rejected, .revoked:

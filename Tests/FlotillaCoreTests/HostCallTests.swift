@@ -29,6 +29,21 @@ struct HostCallTests {
         }
     }
 
+    @Test func keepAwakeIsBoundedAVersion9CallThatSurvivesTheWire() throws {
+        #expect(HostCall.keepAwake(seconds: 3600).problem == nil)
+        #expect(HostCall.keepAwake(seconds: 0).problem == nil)            // stop
+        #expect(HostCall.keepAwake(seconds: HostCall.maxKeepAwakeSeconds + 1).problem != nil)
+        #expect(HostCall.keepAwake(seconds: -1).problem != nil)
+        #expect(HostCall.keepAwake(seconds: 60).minimumVersion == 9 && HostCall.keepAwake(seconds: 60).mutates)
+        let message = WireMessage.hostCall(.init(id: 3, call: .keepAwake(seconds: 4 * 3600)))
+        var decoder = WireFrameDecoder()
+        let frames = try decoder.append(try message.encoded(limits: .default))
+        #expect(try WireMessage(frame: frames[0]) == message)
+        // A version-8 host is never sent it.
+        var (_, client) = try connected(versions: 1...8)
+        #expect(throws: WireError.self) { try client.call(.keepAwake(seconds: 60)) }
+    }
+
     @Test func aValidCallIsHandedToTheHostAndAnsweredLikeARequest() throws {
         var (hostSession, client) = try connected()
         let outgoing = try client.call(.dnsCreate(domain: "mini.fleet.internal", localhost: nil))

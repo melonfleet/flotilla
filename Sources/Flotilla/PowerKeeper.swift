@@ -37,6 +37,35 @@ final class PowerKeeper {
     /// Called when the power source changes, so standing reasons can be recomputed.
     @ObservationIgnored var onPowerSourceChange: (() -> Void)?
 
+    /// Until when its admin asked this host to stay awake (`.keepAwake`, Q44's time-bounded lease).
+    /// Kept across relaunches — an update relaunches Flotilla — and ended by itself at that time.
+    private(set) var leaseUntil: Date?
+    @ObservationIgnored private var leaseEnd: Task<Void, Never>?
+    @ObservationIgnored var onLeaseChange: (() -> Void)?
+    private static let leaseKey = "keepAwakeForAdminUntil"
+
+    /// Starts, moves or (with nil) ends the admin's request.
+    func setLease(until: Date?) {
+        leaseEnd?.cancel()
+        let live = until.flatMap { $0 > Date() ? $0 : nil }
+        leaseUntil = live
+        UserDefaults.standard.set(live?.timeIntervalSince1970, forKey: Self.leaseKey)
+        if let live {
+            leaseEnd = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(max(0, live.timeIntervalSinceNow)))
+                guard !Task.isCancelled, let self else { return }
+                self.setLease(until: nil)
+            }
+        }
+        onLeaseChange?()
+    }
+
+    /// The request a relaunch interrupted, if it has not run out.
+    func restoreLease() {
+        let stored = UserDefaults.standard.double(forKey: Self.leaseKey)
+        setLease(until: stored > 0 ? Date(timeIntervalSince1970: stored) : nil)
+    }
+
     init() {
         onBattery = Self.readOnBattery()
         // Battery ↔ adapter: a laptop host stops keeping awake the moment it is unplugged.
@@ -129,12 +158,16 @@ extension AppModel {
         let running = containers.contains(where: AppModel.isRunning)
         power.setStanding("running containers",
                           running && settingsStore[SettingsKeys.keepAwakeWhileContainersRun] && !power.onBattery)
+        // The admin's request: on the adapter only, like every standing reason.
+        power.setStanding("its admin's request", power.leaseUntil != nil && hostMode.isHost && !power.onBattery)
     }
 
     /// Battery changes, and waking up: after sleep every connection may be dead, so one deliberate
     /// refresh and a reconnect to every host rather than waiting for timers to notice.
     func startPowerPolicy() {
         power.onPowerSourceChange = { [weak self] in self?.updateStandingPower() }
+        power.onLeaseChange = { [weak self] in self?.updateStandingPower() }
+        power.restoreLease()
         updateStandingPower()
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {

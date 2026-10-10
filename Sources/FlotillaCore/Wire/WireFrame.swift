@@ -20,7 +20,8 @@ public enum WireProtocol {
     /// (DECISIONS Q38).
     /// Version 7 adds `.setUpRuntime` — install or upgrade `container` on a host (DECISIONS Q39).
     /// Version 8 adds `.settingsReport` — a host's Flotilla settings, for its page (9 October).
-    public static let supportedVersions: ClosedRange<UInt16> = 1...8
+    /// Version 9 adds `.keepAwake` — the admin's time-bounded request that a host stay awake (10 October).
+    public static let supportedVersions: ClosedRange<UInt16> = 1...9
     /// The first version that carries streams.
     public static let streamsVersion: UInt16 = 2
     /// The first version that carries host calls.
@@ -35,6 +36,8 @@ public enum WireProtocol {
     public static let runtimeSetupVersion: UInt16 = 7
     /// The first version that answers `.settingsReport`.
     public static let settingsReportVersion: UInt16 = 8
+    /// The first version that takes `.keepAwake`.
+    public static let keepAwakeVersion: UInt16 = 9
     /// The owner's choice, 7 October. Changeable in Settings.
     public static let defaultPort: UInt16 = 7868
 
