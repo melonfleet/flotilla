@@ -87,7 +87,11 @@ fi
 
 CHANNEL=""
 [ "$PRERELEASE" -eq 1 ] && CHANNEL="beta"
-python3 - "$PAGES/appcast.xml" "$VERSION" "$BUILD" "$SHORT" "$MINIMUM" "$URL" "$SIGNATURE" "$CHANNEL" <<'PY'
+# The notes themselves go in the entry, as HTML Sparkle shows in its update window; linking the
+# GitHub page showed GitHub's whole page there (10 October). No notes: the link, as before.
+NOTES_HTML=""
+[ -n "$NOTES" ] && NOTES_HTML="$(python3 -I "$ROOT/Scripts/release-notes-html.py" "$NOTES" "$VERSION")"
+NOTES_HTML="$NOTES_HTML" python3 - "$PAGES/appcast.xml" "$VERSION" "$BUILD" "$SHORT" "$MINIMUM" "$URL" "$SIGNATURE" "$CHANNEL" <<'PY'
 import sys, os, datetime, html
 path, version, build, short, minimum, url, signature, channel = sys.argv[1:]
 item = (
@@ -98,8 +102,9 @@ item = (
     f"      <sparkle:shortVersionString>{html.escape(version)}</sparkle:shortVersionString>\n"
     f"      <sparkle:minimumSystemVersion>{html.escape(minimum)}</sparkle:minimumSystemVersion>\n"
     + (f"      <sparkle:channel>{channel}</sparkle:channel>\n" if channel else "")
-    + f"      <sparkle:releaseNotesLink>https://github.com/melonfleet/flotilla/releases/tag/v{html.escape(version)}</sparkle:releaseNotesLink>\n"
-    f"      <enclosure url=\"{html.escape(url)}\" type=\"application/octet-stream\" {signature}/>\n"
+    + (f"      <description><![CDATA[{os.environ['NOTES_HTML']}]]></description>\n" if os.environ.get("NOTES_HTML")
+       else f"      <sparkle:releaseNotesLink>https://github.com/melonfleet/flotilla/releases/tag/v{html.escape(version)}</sparkle:releaseNotesLink>\n")
+    + f"      <enclosure url=\"{html.escape(url)}\" type=\"application/octet-stream\" {signature}/>\n"
     "    </item>\n"
 )
 if os.path.exists(path):
