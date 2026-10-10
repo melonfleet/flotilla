@@ -592,7 +592,16 @@ Research a true cross-host overlay in
 `experiments/cross-host-network-2026-10-06`.
 
 Do not promise or ship an overlay unless the experiment establishes a secure,
-supportable design. In `container` 1.5, container networks are private to each
+supportable design.
+
+**D4 — experiment approved (the owner, 10 October).** Iris's review: `container` 1.5 has no
+third-party network plugin and no LAN bridge (both open upstream); the supported design stays
+fleet DNS plus published ports. The experiment tests a routed overlay — each host advertising its
+own `/20` (already allocated by D1) over Tailscale or headscale subnet routing, or plain WireGuard —
+between two physical hosts: TCP, UDP and ICMP container-to-container, then runtime restart, VPN
+reconnect, sleep and wake, on macOS 26 and 27. To settle with the owner before it starts: which
+overlay (a Tailscale account, a self-hosted headscale, or WireGuard by hand), and which two Macs.
+Nothing ships from it unless every case passes. In `container` 1.5, container networks are private to each
 Mac. Without Layer 3, all cross-host container traffic uses host-published ports,
 including traffic reached through fleet DNS.
 
@@ -615,9 +624,11 @@ signing work.
 - Add wiki links to form rails only for the release candidate. They are
   deliberately held until then so unfinished documentation does not become UI.
 - Capture current demo screenshots after the Phase A shell is settled.
-- Complete the Phase 1 leftovers: ⌘K, `is:`/`image:` search, the accessibility
-  passes, guided `.pkg` installation, a general `config.toml` view and
-  `--rosetta`/`--arch` in Run.
+- Complete the Phase 1 leftovers (10 October): **done** — ⌘K Go To…; the search grammar
+  (`is:`, `image:`, `host:`, `tag:`, ⌘F) in Containers; container's own settings (`system
+  property list`) beside Flotilla's on a host's Settings tab; Architecture and Rosetta in Run;
+  guided `.pkg` installation, which Q39 already does (Apple's signed release, verified, handed
+  to Installer with the owner's password). **In progress:** the accessibility pass.
 
 The package installer must remain visible and user-authorised. Flotilla must
 never silently install or upgrade Apple's privileged package.
