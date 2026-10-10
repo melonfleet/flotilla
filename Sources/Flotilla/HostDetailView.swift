@@ -209,6 +209,9 @@ struct HostDetailView: View {
                             }
                         }
                     }
+                    // What the ? icons are, for anyone who has not hovered one (the owner, 10 October).
+                    Label("Click a ? to read Apple's guide to turning that on.", systemImage: "questionmark.circle")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             card("Power") {
