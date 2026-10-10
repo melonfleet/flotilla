@@ -261,6 +261,15 @@ extension AppModel {
         case working
     }
 
+    /// A host that answers but has no `container` — waiting for it, not unreachable: amber and
+    /// "container isn't installed", never "not answering" in red (the owner, 10 October).
+    func hostMissingContainer(_ fingerprint: PeerFingerprint) -> Bool {
+        switch hostRuntimeState(fingerprint) {
+        case .missing, .tooOldToAsk: hostMode.live[fingerprint]?.containerVersion == nil
+        default: false
+        }
+    }
+
     func hostRuntimeState(_ fingerprint: PeerFingerprint) -> HostRuntimeState {
         if hostMode.settingUpRuntime.contains(fingerprint) { return .working }
         guard let live = hostMode.live[fingerprint] else { return .unknown }

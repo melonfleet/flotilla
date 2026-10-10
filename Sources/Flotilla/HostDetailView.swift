@@ -449,7 +449,9 @@ struct HostDetailView: View {
         if host.isLocal { return RuntimeStatus.describe(model.preflight).title }
         switch live?.state {
         case .connected?: return "Connected"
-        case .failed(let why)?: return "Not answering — \(why)"
+        case .failed(let why)?:
+            if let fingerprint, model.hostMissingContainer(fingerprint) { return "container isn't installed" }
+            return "Not answering — \(why)"
         case .checking?, nil: return "Checking…"
         }
     }
@@ -458,7 +460,9 @@ struct HostDetailView: View {
         if host.isLocal { return model.runtimeUsable ? Theme.online : Theme.warning }
         switch live?.state {
         case .connected?: return Theme.online
-        case .failed?: return Theme.danger
+        case .failed?:
+            if let fingerprint, model.hostMissingContainer(fingerprint) { return Theme.warning }
+            return Theme.danger
         default: return .secondary
         }
     }

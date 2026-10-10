@@ -40,7 +40,10 @@ extension AppModel {
         // A paired host that has stopped answering, or is waiting to be let in.
         for peer in fleet.trustedHosts {
             if case .failed(let reason)? = fleet.live[peer.fingerprint]?.state {
-                items.append(AttentionItem("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts, host: .peer(peer.fingerprint)))
+                // Answering but without `container`: it is waiting for it, not unreachable.
+                items.append(hostMissingContainer(peer.fingerprint)
+                    ? AttentionItem("container isn\u{2019}t installed on \(peer.displayName).", .hosts, host: .peer(peer.fingerprint))
+                    : AttentionItem("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts, host: .peer(peer.fingerprint)))
             }
         }
         // Versions that differ from This Mac's: `container` by a minor release or more, which can

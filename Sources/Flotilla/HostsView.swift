@@ -128,7 +128,7 @@ extension AppModel {
                 switch live?.state {
                 case .connected: "Connected"
                 case .checking: "Checking…"
-                case .failed(let why): why
+                case .failed(let why): hostMissingContainer(peer.fingerprint) ? "container isn't installed" : why
                 case nil: HostRow.statusText(peer.status)
                 }
             }
@@ -1091,7 +1091,7 @@ struct HostStatusDot: View {
             switch live.state {
             case .connected: return Theme.online
             case .checking: return .secondary
-            case .failed: return Theme.danger
+            case .failed: return model.hostMissingContainer(peer.fingerprint) ? Theme.warning : Theme.danger
             }
         }
         switch row.peer?.status {
