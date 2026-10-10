@@ -90,7 +90,7 @@ final class PowerKeeper {
         var now = Array(Set(work.values)).sorted()
         now += standing.filter(\.value).map(\.key).sorted()
         reasons = now
-        let name = "flotilla: " + now.joined(separator: ", ")
+        let name = "Flotilla: " + now.joined(separator: ", ")
         if now.isEmpty {
             release()
         } else if assertion == 0 || name != assertionName {

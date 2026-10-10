@@ -524,12 +524,12 @@ struct SettingsView: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
-        panel.message = "Choose a settings file exported from flotilla"
+        panel.message = "Choose a settings file exported from Flotilla"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             importReport = Self.describe(try store.importJSON(Data(contentsOf: url)))
         } catch {
-            importReport = "That file isn\u{2019}t a flotilla settings export: \(error.localizedDescription)"
+            importReport = "That file isn\u{2019}t a Flotilla settings export: \(error.localizedDescription)"
         }
     }
 
@@ -542,7 +542,7 @@ struct SettingsView: View {
             lines.append("Kept because your organisation sets them: " + report.skippedLocked.joined(separator: ", ") + ".")
         }
         if !report.unknown.isEmpty {
-            lines.append("Not known to this version of flotilla: " + report.unknown.joined(separator: ", ") + ".")
+            lines.append("Not known to this version of Flotilla: " + report.unknown.joined(separator: ", ") + ".")
         }
         if !(report.typeMismatched + report.rejectedValues).isEmpty {
             lines.append("Values this version can\u{2019}t use: "
@@ -553,7 +553,7 @@ struct SettingsView: View {
                          + report.skippedSensitive.joined(separator: ", ") + ".")
         }
         if let version = report.schemaVersionMismatch {
-            lines.append("The file is from settings version \(version); this flotilla uses \(SettingsSchema.version).")
+            lines.append("The file is from settings version \(version); this Flotilla uses \(SettingsSchema.version).")
         }
         return lines.joined(separator: "\n\n")
     }
@@ -647,7 +647,7 @@ struct SettingsView: View {
                 .padding(.vertical, 2)
 
                 HStack {
-                    Text("About flotilla")
+                    Text("About Flotilla")
                     Spacer()
                     Button("Show") { model.showingAbout = true }
                 }
@@ -684,7 +684,7 @@ struct SettingsView: View {
 
             Label(
                 LocalizedStringKey("None of these touch your containers, images or volumes — "
-                    + "those belong to the `container` runtime, not to flotilla."),
+                    + "those belong to the `container` runtime, not to Flotilla."),
                 systemImage: "info.circle"
             )
             .font(.caption)
@@ -726,7 +726,7 @@ struct SettingsView: View {
             switch self {
             case .preferences:
                 "Every setting returns to its default, including your appearance choice, so "
-                    + "flotilla will ask about it again next launch.\n\nYour window layout, "
+                    + "Flotilla will ask about it again next launch.\n\nYour window layout, "
                     + "your containers, images and volumes are all untouched."
             case .windowLayout:
                 "Forgets the window's size and position and the sidebar width. Useful if the "

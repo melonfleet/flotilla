@@ -258,11 +258,11 @@ public enum WireError: Error, Equatable, Sendable, CustomStringConvertible {
         case .tooManyRequests(let n): "more than \(n) requests in flight"
         case .notConnected: "the handshake has not finished"
         case .closed: "the connection is closed"
-        case .streamsUnsupported: "this host's flotilla is too old to stream — update it"
+        case .streamsUnsupported: "this host's Flotilla is too old to stream — update it"
         case .streamViolation(let why): "stream error: \(why)"
-        case .hostCallsUnsupported: "this host's flotilla is too old for that — update it"
+        case .hostCallsUnsupported: "this host's Flotilla is too old for that — update it"
         case .hostCallRefused(let why): why
-        case .appUpdatesUnsupported: "this host's flotilla is too old to be updated from here — update it by hand once"
+        case .appUpdatesUnsupported: "this host's Flotilla is too old to be updated from here — update it by hand once"
         }
     }
 }

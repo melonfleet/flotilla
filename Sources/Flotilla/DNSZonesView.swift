@@ -127,7 +127,7 @@ struct DNSZonesView: View {
         VStack(alignment: .leading, spacing: 8) {
             FormSectionHeader(title: "Names across Macs",
                               note: "Every Mac looks up the other Macs' containers by name — web.mini.fleet.internal "
-                                  + "reaches the mini — through each Mac's flotilla Helper. Only a container that "
+                                  + "reaches the mini — through each Mac's Flotilla Helper. Only a container that "
                                   + "publishes a port can be reached from another Mac.")
             Toggle("Look up containers on other Macs by name", isOn: $namesAcross)
                 .toggleStyle(.checkbox)
@@ -220,7 +220,7 @@ struct DNSZonesView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Run by each Mac's own flotilla Helper. This Mac uses its helper, or asks for your password.")
+                Text("Run by each Mac's own Flotilla Helper. This Mac uses its helper, or asks for your password.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

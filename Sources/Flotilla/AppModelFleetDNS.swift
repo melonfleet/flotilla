@@ -74,11 +74,11 @@ extension AppModel {
         switch PrivilegedHelper.status {
         case .enabled: nil
         case .awaitingApproval:
-            HostCallFailure(.refused, "\(hostLabel)'s flotilla Helper is waiting to be switched on in System Settings ▸ Login Items.")
+            HostCallFailure(.refused, "\(hostLabel)'s Flotilla Helper is waiting to be switched on in System Settings ▸ Login Items.")
         case .notInstalled:
-            HostCallFailure(.refused, "\(hostLabel) hasn't installed its flotilla Helper. Its owner turns it on in flotilla ▸ Settings ▸ Advanced.")
+            HostCallFailure(.refused, "\(hostLabel) hasn't installed its Flotilla Helper. Its owner turns it on in Flotilla ▸ Settings ▸ Advanced.")
         case .unavailable:
-            HostCallFailure(.refused, "\(hostLabel)'s copy of flotilla isn't signed, so it can't use the flotilla Helper.")
+            HostCallFailure(.refused, "\(hostLabel)'s copy of Flotilla isn't signed, so it can't use the Flotilla Helper.")
         }
     }
 
@@ -138,9 +138,9 @@ extension AppModel {
         if let error = hostMode.dnsSnapshots[fingerprint]?.lastError { return error }
         switch hostMode.dnsStatus[fingerprint]?.helper {
         case .enabled?: return nil
-        case .awaitingApproval?: return "Its flotilla Helper is waiting to be switched on in Login Items there."
-        case .notInstalled?: return "Its flotilla Helper isn't installed. Turn it on in flotilla ▸ Settings ▸ Advanced on that Mac."
-        case .unavailable?: return "Its copy of flotilla isn't signed, so it can't use the flotilla Helper."
+        case .awaitingApproval?: return "Its Flotilla Helper is waiting to be switched on in Login Items there."
+        case .notInstalled?: return "Its Flotilla Helper isn't installed. Turn it on in Flotilla ▸ Settings ▸ Advanced on that Mac."
+        case .unavailable?: return "Its copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
         case nil: return "Its DNS hasn't been read yet."
         }
     }

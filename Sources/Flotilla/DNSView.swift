@@ -309,7 +309,7 @@ struct DNSView: View {
                      ? "No domain matches the current filter."
                      : "A local domain gives your containers names — web.test, db.test — that "
                        + "this Mac and other containers can reach. "
-                       + (model.helperEnabled ? "flotilla asks you to confirm before it creates one."
+                       + (model.helperEnabled ? "Flotilla asks you to confirm before it creates one."
                                                  : "Creating one asks for an administrator password."))
             } actions: {
                 if isFiltered {
@@ -691,7 +691,7 @@ enum DNSCopy {
 
     static func deleteMessage(_ rows: [LocalDNSDomain], helper: Bool, place: String = "this Mac") -> String {
         let local = place == "this Mac"
-        var text = (helper ? (local ? "The flotilla Helper removes " : "\(place)’s flotilla Helper removes ")
+        var text = (helper ? (local ? "The Flotilla Helper removes " : "\(place)’s Flotilla Helper removes ")
                            : "macOS asks for an administrator password, then removes ")
             + (rows.count == 1 ? "it" : "them") + " from \(local ? "this Mac’s" : "\(place)’s") DNS settings."
         if let used = rows.first(where: \.registersContainers) {
@@ -745,8 +745,8 @@ extension View {
             Button("Cancel", role: .cancel) { name.wrappedValue = nil }
         } message: { _ in
             Text(place == "this Mac"
-                 ? "The flotilla Helper adds it to this Mac’s DNS settings, so this Mac can look up names under it."
-                 : "\(place)’s flotilla Helper adds it to its DNS settings, so \(place) can look up names under it.")
+                 ? "The Flotilla Helper adds it to this Mac’s DNS settings, so this Mac can look up names under it."
+                 : "\(place)’s Flotilla Helper adds it to its DNS settings, so \(place) can look up names under it.")
         }
     }
 

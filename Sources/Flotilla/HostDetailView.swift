@@ -7,7 +7,7 @@ import FlotillaNet
 enum HostDetailTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case system = "System"
-    case flotilla = "flotilla"
+    case flotilla = "Flotilla"
     case settings = "Settings"
     case updates = "Updates"
     case activity = "Activity"
@@ -121,7 +121,7 @@ struct HostDetailView: View {
                     link("Machines", counts.machines, .machines)
                 }
                 card("Versions") {
-                    row("flotilla", host.isLocal ? HostModeController.appVersion : (live?.appVersion ?? "—"))
+                    row("Flotilla", host.isLocal ? HostModeController.appVersion : (live?.appVersion ?? "—"))
                     row("container", host.isLocal ? (model.localContainerVersion ?? "—") : (live?.containerVersion ?? "—"))
                     row("Role", roleText)
                 }
@@ -224,7 +224,7 @@ struct HostDetailView: View {
             }
         }
         if facts?.readAt == nil && !host.isLocal {
-            Text("This host's flotilla is older than this page, so it reports only its hardware. Update it to see the rest.")
+            Text("This host's Flotilla is older than this page, so it reports only its hardware. Update it to see the rest.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -234,13 +234,13 @@ struct HostDetailView: View {
     @ViewBuilder
     private var flotillaTab: some View {
         grid {
-            card("flotilla") {
+            card("Flotilla") {
                 row("Version", host.isLocal ? HostModeController.appVersion : (live?.appVersion ?? "—"))
                 row("Installed at", facts?.appPath ?? "—", monospaced: true)
                 row("Installed by", facts?.appOwnedByRoot.map { $0 ? "Installer package (owned by the system)" : "Copied by a person" } ?? "—")
                 row("Role", roleText)
             }
-            card("flotilla Helper") {
+            card("Flotilla Helper") {
                 row("State", helperText)
                 row("Version", facts?.helperVersion.map(String.init) ?? "—")
                 if host.isLocal {
@@ -272,7 +272,7 @@ struct HostDetailView: View {
     @ViewBuilder
     private var updatesTab: some View {
         grid {
-            card("flotilla") {
+            card("Flotilla") {
                 row("Installed", host.isLocal ? HostModeController.appVersion : (live?.appVersion ?? "—"))
                 if let fingerprint {
                     row("This Mac (admin) has", HostModeController.appVersion)
@@ -293,7 +293,7 @@ struct HostDetailView: View {
             }
             card("container") {
                 row("Installed", host.isLocal ? (model.localContainerVersion ?? "Not installed") : (live?.containerVersion ?? "—"))
-                row("This flotilla expects", ContainerRuntime.expectedVersion)
+                row("This Flotilla expects", ContainerRuntime.expectedVersion)
                 row("Kernel", facts?.kernelInstalled.map { $0 ? "Installed" : "Not installed" } ?? "—")
                 runtimeAction
             }
@@ -307,7 +307,7 @@ struct HostDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             let running = live?.containersRunning ?? 0
-            Text("\(name) downloads Apple's container installer, and its flotilla Helper installs it after checking it is Apple's. "
+            Text("\(name) downloads Apple's container installer, and its Flotilla Helper installs it after checking it is Apple's. "
                  + (running > 0 ? "container restarts there, which stops the \(running) running container\(running == 1 ? "" : "s")." : "Nothing is running there."))
         }
     }
@@ -339,11 +339,11 @@ struct HostDetailView: View {
     @ViewBuilder
     private var activityTab: some View {
         let events = model.activity.filter { event in
-            event.subject == name || (host.isLocal && (event.kind == .runtime || event.subject == "flotilla"))
+            event.subject == name || (host.isLocal && (event.kind == .runtime || event.subject == "Flotilla"))
         }
         DetailCard(title: "What happened on \(name)", minHeight: nil) {
             if events.isEmpty {
-                Text("Nothing has happened to this Mac since flotilla started. Updates, pairing, container installs and "
+                Text("Nothing has happened to this Mac since Flotilla started. Updates, pairing, container installs and "
                      + "runtime starts and stops appear here as they happen.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {

@@ -91,7 +91,7 @@ struct ExportConfigurationView: View {
             Toggle("Host categories — Site, Rack… and the values of the hosts above",
                    isOn: $selection.hostCategories).toggleStyle(.checkbox)
             Toggle("Registry list — never sign-ins", isOn: $selection.registries).toggleStyle(.checkbox)
-            Toggle("DNS domains — recreating them needs an administrator, or the flotilla Helper",
+            Toggle("DNS domains — recreating them needs an administrator, or the Flotilla Helper",
                    isOn: $selection.dns).toggleStyle(.checkbox)
         }
     }

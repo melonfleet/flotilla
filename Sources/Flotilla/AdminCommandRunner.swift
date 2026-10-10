@@ -33,7 +33,7 @@ enum AdminCommandRunner {
         guard !commands.isEmpty else { return .succeeded }
         if let problem = AdminExecutable.installedProblem() { return .failed(problem) }
         guard let script = NSAppleScript(source: AdminScript.source(commands, prompt: prompt)) else {
-            return .failed("flotilla couldn't prepare the administrator prompt.")
+            return .failed("Flotilla couldn't prepare the administrator prompt.")
         }
         var error: NSDictionary?
         script.executeAndReturnError(&error)

@@ -30,7 +30,7 @@ extension AppModel {
             if helperEnabled {
                 problem = await PrivilegedHelper.send(request)
             } else if !zones.isEmpty {
-                problem = "\(hostLabel)'s flotilla Helper isn't switched on, so it can't look up other Macs' names."
+                problem = "\(hostLabel)'s Flotilla Helper isn't switched on, so it can't look up other Macs' names."
             }
             if problem == nil || zones.isEmpty { hostMode.syncedFleetZones = zones }
         }

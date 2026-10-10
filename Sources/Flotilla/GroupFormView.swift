@@ -168,7 +168,7 @@ struct GroupFormView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     FormSectionHeader(
                         title: "Passwords",
-                        note: "Kept in this Mac’s Keychain, not in flotilla’s settings or in an export.")
+                        note: "Kept in this Mac’s Keychain, not in Flotilla’s settings or in an export.")
                     ForEach(secretNames, id: \.self) { secret in
                         secretRow(secret)
                     }
@@ -418,7 +418,7 @@ struct GroupFormView: View {
             try model.groups.commit(committed)
             for (secret, value) in pendingSecrets
             where !KeychainSecrets.set(value, group: committed.id, secret: secret,
-                                       label: "flotilla: \(committed.name) — \(secret)") {
+                                       label: "Flotilla: \(committed.name) — \(secret)") {
                 saveError = "The group was saved, but the Keychain refused the password “\(secret)”."
                 return
             }

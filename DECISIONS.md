@@ -2042,15 +2042,13 @@ Flotilla never kept a Mac awake, never noticed sleep or wake, and polled whateve
    set is overwritten. A host the import skips takes its values with it. The file version stays 2;
    an older Flotilla refuses the new keys by name, as it did for `hosts`.
 
-## Q46 — "flotilla", lowercase, everywhere; Admin or Host (settled 2026-10-09)
+## Q46 — Only the wordmark is lowercase; Admin or Host (settled 2026-10-09, amended 2026-10-10)
 
-1. **The name is always written `flotilla`**, like the logo, mid-sentence and at the start of one.
-   That covers the menu bar, the Dock and About (`CFBundleName`), every message and setting, the
-   helper ("flotilla Helper"), the README, the wiki, the website, release titles, the appcast and
-   the disk image. **Not changed:** anything that is looked up rather than read. That means bundle
-   IDs and the preferences domain (`dev.melonfleet.Flotilla…`), `Flotilla.app` and the other file
-   names, Swift module names, and the certificate's common name. Development documents (this
-   file, PLAN, CLAUDE.md) keep their history as written.
+1. **"Flotilla" is written with a capital F, and only the wordmark is lowercase.** The
+   wordmark is the drawn `melonfleet | flotilla` lockup in the window bar and the About and
+   onboarding lockups. Everything else keeps "Flotilla": the app name, tabs, columns, messages,
+   README, wiki, website and release titles. **Amended 10 October:** the owner reversed the first
+   version of this decision, which had lowercased the name everywhere, the same day it shipped.
 2. **Admin + Host is retired** (`RunMode.both`). Every Mac runs its own containers; "Host" only
    means another Mac may manage this one. A stored `both` becomes Admin at load, and a profile's
    `both` is read as Admin.

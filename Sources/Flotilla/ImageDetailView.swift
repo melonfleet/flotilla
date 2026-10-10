@@ -126,7 +126,7 @@ struct ImageDetailView: View {
                     // `ContainerImage.id` is the digest, and matching on it would find nothing.
                     let events = model.events(for: image.reference, kind: .image, host: host)
                     if events.isEmpty {
-                        Text("Nothing has changed since flotilla started. Changes appear here as "
+                        Text("Nothing has changed since Flotilla started. Changes appear here as "
                              + "they happen; history from before launch is not recorded.")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

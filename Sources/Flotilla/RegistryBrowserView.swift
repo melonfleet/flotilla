@@ -180,7 +180,7 @@ struct RegistryBrowserView: View {
                     }
                     .listStyle(.inset)
                 } else {
-                    Label("\(Self.kindLabel(repository.type)), so flotilla can't pull it from docker.io by name.",
+                    Label("\(Self.kindLabel(repository.type)), so Flotilla can't pull it from docker.io by name.",
                           systemImage: "info.circle")
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -294,7 +294,7 @@ extension AppModel {
         configuration.httpShouldSetCookies = false
         configuration.urlCache = nil
         configuration.timeoutIntervalForRequest = 15
-        configuration.httpAdditionalHeaders = ["User-Agent": "flotilla", "Accept": "application/json"]
+        configuration.httpAdditionalHeaders = ["User-Agent": "Flotilla", "Accept": "application/json"]
         return URLSession(configuration: configuration)
     }()
 
@@ -331,7 +331,7 @@ extension AppModel {
         case DockerHubFailure.status(let code):
             return "Docker Hub answered with an error (\(code)). Try again in a moment."
         case DockerHubFailure.unreadable:
-            return "Docker Hub's answer wasn't in a shape flotilla knows — its search may have changed."
+            return "Docker Hub's answer wasn't in a shape Flotilla knows — its search may have changed."
         case let error as URLError where error.code == .notConnectedToInternet:
             return "This Mac isn't connected to the internet."
         default:

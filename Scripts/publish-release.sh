@@ -66,7 +66,7 @@ for extra in "$DIST/Flotilla-$VERSION.tar.gz" "$DIST/Flotilla-$VERSION.dmg" "$DI
 done
 
 echo "▸ creating the GitHub release v${VERSION}…"
-RELEASE_FLAGS=(--title "flotilla $VERSION")
+RELEASE_FLAGS=(--title "Flotilla $VERSION")
 [ "$PRERELEASE" -eq 1 ] && RELEASE_FLAGS+=(--prerelease)
 if [ -n "$NOTES" ]; then RELEASE_FLAGS+=(--notes-file "$NOTES"); else RELEASE_FLAGS+=(--generate-notes); fi
 gh release create "v$VERSION" -R "$REPO" "${RELEASE_FLAGS[@]}" "${ASSETS[@]}"
@@ -92,7 +92,7 @@ import sys, os, datetime, html
 path, version, build, short, minimum, url, signature, channel = sys.argv[1:]
 item = (
     "    <item>\n"
-    f"      <title>flotilla {html.escape(version)}</title>\n"
+    f"      <title>Flotilla {html.escape(version)}</title>\n"
     f"      <pubDate>{datetime.datetime.now(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S +0000')}</pubDate>\n"
     f"      <sparkle:version>{html.escape(build)}</sparkle:version>\n"
     f"      <sparkle:shortVersionString>{html.escape(version)}</sparkle:shortVersionString>\n"
@@ -115,7 +115,7 @@ else:
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">\n'
         "  <channel>\n"
-        "    <title>flotilla</title>\n"
+        "    <title>Flotilla</title>\n"
         "    <link>https://melonfleet.github.io/flotilla/appcast.xml</link>\n"
         "    <language>en</language>\n"
         + item +
@@ -126,11 +126,11 @@ open(path, "w").write(text)
 PY
 touch "$PAGES/.nojekyll"
 git -C "$PAGES" add appcast.xml .nojekyll
-git -C "$PAGES" commit -q -m "Appcast: flotilla $VERSION (build $BUILD)"
+git -C "$PAGES" commit -q -m "Appcast: Flotilla $VERSION (build $BUILD)"
 git -C "$PAGES" push -q origin gh-pages
 
 echo
-echo "✓ flotilla $VERSION published"
+echo "✓ Flotilla $VERSION published"
 echo "   release:  https://github.com/$REPO/releases/tag/v$VERSION"
 echo "   appcast:  $FEED_URL"
 if ! gh api "repos/$REPO/pages" >/dev/null 2>&1; then

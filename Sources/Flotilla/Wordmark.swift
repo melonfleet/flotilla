@@ -96,8 +96,10 @@ struct Wordmark: View {
         switch lockup {
         case .full: fullLockup
         case .appName:
+            // The wordmark is lowercase, like the logo; the name everywhere else is "Flotilla"
+            // (the owner, 10 October). VoiceOver reads the name.
             Text("flotilla").font(brandFont).foregroundStyle(appInk)
-                .accessibilityLabel("flotilla")
+                .accessibilityLabel("Flotilla")
         case .bar: barLockup
         }
     }
@@ -159,7 +161,7 @@ struct Wordmark: View {
         }
         // One label for the lockup: a name, not five fragments read out in turn.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("melonfleet flotilla")
+        .accessibilityLabel("melonfleet Flotilla")
     }
 
     /// The `o` of melonfleet, as a watermelon slice seen end-on.

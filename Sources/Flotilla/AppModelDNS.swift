@@ -58,8 +58,8 @@ extension AppModel {
     /// the administrator prompt (`runPrivileged`).
     func createDNSDomain(_ domain: String, localhost: String?) async -> DNSActionResult? {
         let prompt = localhost == nil
-            ? "flotilla wants to add the local domain “\(domain)” to this Mac’s DNS settings."
-            : "flotilla wants to point the local name “\(domain)” at this Mac."
+            ? "Flotilla wants to add the local domain “\(domain)” to this Mac’s DNS settings."
+            : "Flotilla wants to point the local name “\(domain)” at this Mac."
         let outcome = await runPrivileged(.create(domain: domain, localhost: localhost), prompt: prompt)
         await refreshDNS()
         switch outcome {
@@ -75,8 +75,8 @@ extension AppModel {
     /// Deletes domains — one helper request or **one** administrator prompt however many there are.
     func deleteDNSDomains(_ domains: [String]) async -> DNSActionResult? {
         let prompt = domains.count == 1
-            ? "flotilla wants to remove the local domain “\(domains[0])” from this Mac’s DNS settings."
-            : "flotilla wants to remove \(domains.count) local domains from this Mac’s DNS settings."
+            ? "Flotilla wants to remove the local domain “\(domains[0])” from this Mac’s DNS settings."
+            : "Flotilla wants to remove \(domains.count) local domains from this Mac’s DNS settings."
         let outcome = await runPrivileged(.delete(domains), prompt: prompt)
         await refreshDNS()
         switch outcome {

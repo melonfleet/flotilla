@@ -305,9 +305,9 @@ public enum ConfigurationFileError: Error, Equatable, Sendable, CustomStringConv
         case .malformedJSON(let reason):
             "The file isn't valid JSON: \(reason)"
         case .missingVersion:
-            "The file has no 'version' — it isn't a flotilla file."
+            "The file has no 'version' — it isn't a Flotilla file."
         case .unsupportedVersion(let found, let supported):
-            "The file is version \(found); this flotilla reads up to version \(supported). Update flotilla to open it."
+            "The file is version \(found); this Flotilla reads up to version \(supported). Update Flotilla to open it."
         case .unknownField(let context, let field):
             "\(context) has an unknown field '\(field)'."
         case .wrongType(let context, let detail):

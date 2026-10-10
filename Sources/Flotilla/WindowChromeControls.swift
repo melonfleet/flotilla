@@ -118,7 +118,7 @@ struct AppLinksMenu: View {
     /// Verified to exist: `chevron.left.slash.chevron.right` and `globe`, alongside the
     /// button's own `square.grid.2x2`, via a scratch `NSImage(systemSymbolName:)` check.
     static let links: [AppLink] = [
-        AppLink(name: "flotilla on GitHub",
+        AppLink(name: "Flotilla on GitHub",
                 url: ExternalLinks.flotilla,
                 systemImage: "chevron.left.slash.chevron.right"),
         AppLink(name: "melonfleet.dev",
@@ -148,8 +148,8 @@ struct AppLinksMenu: View {
         .tint(barInk ?? .primary)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("flotilla links")
-        .accessibilityLabel("flotilla links")
+        .help("Flotilla links")
+        .accessibilityLabel("Flotilla links")
     }
 }
 

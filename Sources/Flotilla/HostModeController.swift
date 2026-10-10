@@ -945,7 +945,7 @@ final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
 
     func acceptsAppUpdates() -> String? {
         lock.lock(); defer { lock.unlock() }
-        return acceptsUpdates ? nil : "This host doesn't take flotilla updates from its admin — its owner turned that off."
+        return acceptsUpdates ? nil : "This host doesn't take Flotilla updates from its admin — its owner turned that off."
     }
 
     func installUpdate(archive: URL, isIdle: @escaping @Sendable () -> Bool,

@@ -223,7 +223,7 @@ struct NewImageView: View {
                           "Which Macs pull the image.",
                           detail: "Each Mac pulls from the registry itself, all at the same time, "
                               + "and the progress panel reports each one. A Mac signed in to a "
-                              + "private registry pulls with its own sign-in; flotilla sends none.",
+                              + "private registry pulls with its own sign-in; Flotilla sends none.",
                           warning: scheme == .http
                               ? "Over HTTP only This Mac pulls. Another Mac is never asked to pull over plaintext."
                               : nil),
@@ -279,7 +279,7 @@ struct NewImageView: View {
         }
 
         FormSectionHeader(title: "Registry",
-                          note: "Where it comes from, and how flotilla reaches it.")
+                          note: "Where it comes from, and how Flotilla reaches it.")
 
         FormField("Pull from",
                   help: FieldHelp(
@@ -336,7 +336,7 @@ struct NewImageView: View {
                   help: FieldHelp(
                       "The build context available to Dockerfile instructions.",
                       detail: "Everything in this directory is sent to the builder, and the build may read all of it.",
-                      warning: "Choosing the folder grants access to that host path for this build; flotilla otherwise denies host paths.")) {
+                      warning: "Choosing the folder grants access to that host path for this build; Flotilla otherwise denies host paths.")) {
             HStack(spacing: 8) {
                 Text(context?.path ?? "No folder chosen")
                     .font(.system(size: 12, design: .monospaced))

@@ -221,7 +221,7 @@ struct StackFormView: View {
                       "Decided by this Mac's DNS setting, not per stack.",
                       detail: "container names every container under one domain for the whole Mac. "
                           + "With one in use, services reach each other by name; without one, "
-                          + "flotilla publishes each database on the network's gateway — reachable "
+                          + "Flotilla publishes each database on the network's gateway — reachable "
                           + "from this Mac and its containers, never from your network.")) {
             VStack(alignment: .leading, spacing: 6) {
                 if let domain = model.stackWiringDomain {
@@ -245,7 +245,7 @@ struct StackFormView: View {
             FormField("Passwords",
                       help: FieldHelp("Generated now and kept in this Mac's Keychain.",
                                       detail: "Shown on the group's screen with Copy. Never written "
-                                          + "to flotilla's settings, and never in an export.")) {
+                                          + "to Flotilla's settings, and never in an export.")) {
                 Text(secrets.joined(separator: ", "))
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(.secondary)

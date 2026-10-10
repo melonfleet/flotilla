@@ -256,7 +256,7 @@ public struct KnownRegistry: Sendable, Equatable, Identifiable, Codable {
                       summary: "Images published from GitHub repositories. Apple's own builder image lives here.",
                       // The `scopes` and `description` parameters pre-fill GitHub's own form, so
                       // the page opens with the right scope already ticked.
-                      tokenURL: "https://github.com/settings/tokens/new?scopes=read:packages&description=flotilla",
+                      tokenURL: "https://github.com/settings/tokens/new?scopes=read:packages&description=Flotilla",
                       browseURL: "https://github.com/search?type=registrypackages"),
         KnownRegistry(id: "quay.io", name: "Quay",
                       summary: "Red Hat's public registry.",

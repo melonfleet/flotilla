@@ -30,9 +30,9 @@ struct OnboardingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Welcome to flotilla")
+                Text("Welcome to Flotilla")
                     .font(.title2.weight(.semibold))
-                Text("How should flotilla look? You can change this later in Settings.")
+                Text("How should Flotilla look? You can change this later in Settings.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -80,8 +80,8 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("container").font(.headline)
                     if effectiveMode == .host {
-                        Text("Apple's container isn't installed on this Mac. As a host, flotilla installs container "
-                             + "\(ContainerRuntime.expectedVersion) and its kernel by itself once its flotilla Helper is switched "
+                        Text("Apple's container isn't installed on this Mac. As a host, Flotilla installs container "
+                             + "\(ContainerRuntime.expectedVersion) and its kernel by itself once its Flotilla Helper is switched "
                              + "on — in Settings ▸ Advanced, or by your organisation's profile.")
                             .font(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -89,7 +89,7 @@ struct OnboardingView: View {
                         Toggle("Download and install container \(ContainerRuntime.expectedVersion) when I continue",
                                isOn: $installContainer)
                             .toggleStyle(.checkbox)
-                        Text("Apple's installer, about 118 MB from Apple's GitHub releases. flotilla checks it is Apple's, "
+                        Text("Apple's installer, about 118 MB from Apple's GitHub releases. Flotilla checks it is Apple's, "
                              + "then Apple's Installer asks for your password. Then the kernel containers run on.")
                             .font(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

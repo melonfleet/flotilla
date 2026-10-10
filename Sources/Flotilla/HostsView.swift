@@ -101,7 +101,7 @@ extension AppModel {
               let theirs = hostMode.live[fingerprint]?.containerVersion, let ours = localContainerVersion
         else { return nil }
         return "\(hostMode.hostName(host, local: hostLabel)) runs container \(theirs) and This Mac \(ours). "
-            + "flotilla checks commands against \(ours), so it may refuse an option allowed here."
+            + "Flotilla checks commands against \(ours), so it may refuse an option allowed here."
     }
 
     /// This Mac, then every host in the book.
@@ -123,7 +123,7 @@ extension AppModel {
             // While Flotilla updates there, the connection drops on purpose for the relaunch: said
             // so, rather than shown as a fault (measured 8 October, Tahoe read "The connection closed").
             let status: String = if hostMode.updating.contains(peer.fingerprint) && live?.state != .connected {
-                "Updating flotilla…"
+                "Updating Flotilla…"
             } else {
                 switch live?.state {
                 case .connected: "Connected"
@@ -422,7 +422,7 @@ struct HostsView: View {
 
     private static let columnSpecs: [(id: String, title: String)] = [
         ("tags", "Tags"), ("containers", "Containers"),
-        ("machines", "Machines"), ("macos", "macOS"), ("container", "container"), ("flotilla", "flotilla"),
+        ("machines", "Machines"), ("macos", "macOS"), ("container", "container"), ("flotilla", "Flotilla"),
         ("model", "Model"),
     ]
 
@@ -660,7 +660,7 @@ struct HostsView: View {
             // Shown since Phase C, so a host still on an older Flotilla is visible before it
             // matters. A different build is worth a mark; the wire version, which actually decides
             // whether the two can talk, is checked when they connect.
-            TableColumn("flotilla", value: \.appSortKey) { row in
+            TableColumn("Flotilla", value: \.appSortKey) { row in
                 if row.header == nil { flotillaCell(row) }
             }
             .width(min: 100, ideal: 200)
@@ -772,11 +772,11 @@ struct HostsView: View {
                         .buttonStyle(.link)
                         .font(.caption)
                         .disabled(hostMode.rollingOut)
-                        .help("Update \(row.name) to This Mac’s flotilla, build \(model.ownBuild.map(String.init) ?? "?"). "
+                        .help("Update \(row.name) to This Mac’s Flotilla, build \(model.ownBuild.map(String.init) ?? "?"). "
                               + "Running containers are not touched.")
                 case .updating:
                     ProgressView().controlSize(.mini)
-                        .help("Updating — \(row.name) relaunches flotilla when it is idle; containers keep running.")
+                        .help("Updating — \(row.name) relaunches Flotilla when it is idle; containers keep running.")
                 case .failed(let message):
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundStyle(Theme.warning)
@@ -784,13 +784,13 @@ struct HostsView: View {
                 case .manualOnly:
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundStyle(Theme.warning)
-                        .help("\(row.name)’s flotilla is too old to be updated from here — update it by hand once.")
+                        .help("\(row.name)’s Flotilla is too old to be updated from here — update it by hand once.")
                 case .current, .ahead, .unknown:
                     EmptyView()
                 }
             }
         } else {
-            versionCell(row.appVersion, skew: row.appSkew, warnAt: .build, what: "flotilla", host: row.name)
+            versionCell(row.appVersion, skew: row.appSkew, warnAt: .build, what: "Flotilla", host: row.name)
         }
     }
 
@@ -806,12 +806,12 @@ struct HostsView: View {
                     Button(model.hostRuntimeState(peer.fingerprint) == .missing ? "Install" : "Upgrade") { pendingRuntime = row }
                         .buttonStyle(.link)
                         .font(.caption)
-                        .help("Set up container \(ContainerRuntime.expectedVersion) on \(row.name) — the version this flotilla expects.")
+                        .help("Set up container \(ContainerRuntime.expectedVersion) on \(row.name) — the version this Flotilla expects.")
                 case .working:
                     ProgressView().controlSize(.mini).help("Setting up container on \(row.name)…")
                 case .tooOldToAsk:
                     Image(systemName: "exclamationmark.triangle.fill").font(.caption2).foregroundStyle(Theme.warning)
-                        .help("\(row.name) needs container \(ContainerRuntime.expectedVersion); update its flotilla first.")
+                        .help("\(row.name) needs container \(ContainerRuntime.expectedVersion); update its Flotilla first.")
                 case .current, .newer, .unknown:
                     EmptyView()
                 }
@@ -833,7 +833,7 @@ struct HostsView: View {
     }
 
     private func runtimeMessage(_ row: HostRow) -> String {
-        var text = "\(row.name) downloads Apple's container installer, and its flotilla Helper installs it after checking it is Apple's. "
+        var text = "\(row.name) downloads Apple's container installer, and its Flotilla Helper installs it after checking it is Apple's. "
         if row.containerVersion != nil {
             let running = row.containersRunning ?? 0
             text += running > 0
@@ -879,8 +879,8 @@ struct HostsView: View {
                     .foregroundStyle(Theme.warning)
                     .help("\(host)’s \(what) is \(skew.otherIsOlder ? "older" : "newer") than This Mac’s"
                           + (what == "container"
-                             ? " — flotilla checks commands against This Mac’s, so it may refuse an option allowed here."
-                             : " — update flotilla on both Macs to the same build."))
+                             ? " — Flotilla checks commands against This Mac’s, so it may refuse an option allowed here."
+                             : " — update Flotilla on both Macs to the same build."))
                     .accessibilityLabel("\(what) version differs from This Mac’s")
             }
         }
@@ -918,7 +918,7 @@ struct HostsView: View {
                      ("Machines", row.machinesText),
                      ("macOS", row.macOS),
                      ("container", row.containerVersion),
-                     ("flotilla", row.appVersion)],
+                     ("Flotilla", row.appVersion)],
             tags: model.tags.tags(on: .host, row.id),
             onOpen: { open(row) }
         ) {
@@ -981,7 +981,7 @@ struct HostsView: View {
             case .approved:
                 switch model.updateState(peer.fingerprint) {
                 case .available, .failed:
-                    Button("Update flotilla") { Task { await model.updateHost(peer.fingerprint) } }
+                    Button("Update Flotilla") { Task { await model.updateHost(peer.fingerprint) } }
                         .disabled(hostMode.rollingOut)
                     Divider()
                 default:
@@ -1022,7 +1022,7 @@ struct HostsView: View {
         CopyMenu([("Name", row.name),
                   ("macOS version", row.macOS),
                   ("container version", row.containerVersion),
-                  ("flotilla version", row.appVersion),
+                  ("Flotilla version", row.appVersion),
                   ("Model", row.modelIdentifier),
                   ("Serial number", row.peer?.details.serialNumber),
                   ("Fingerprint", row.peer?.fingerprint.hex ?? row.imported?.fingerprint.hex),

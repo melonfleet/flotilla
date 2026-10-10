@@ -267,7 +267,7 @@ struct ContainerDetailView: View {
         card("Recent events") {
             let events = model.events(for: container.id, kind: .container, host: host)
             if events.isEmpty {
-                Text("Nothing has changed since flotilla started. State changes appear here as "
+                Text("Nothing has changed since Flotilla started. State changes appear here as "
                      + "they happen; history from before launch is not recorded.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

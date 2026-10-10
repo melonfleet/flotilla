@@ -54,7 +54,7 @@ public struct EnrolmentKeyStore: @unchecked Sendable {
     @discardableResult
     public func rotate(for admin: PeerFingerprint) throws -> EnrolmentKey {
         let key = EnrolmentKey.generate(for: admin)
-        try write(key.text, account: "admin", label: "flotilla fleet enrolment key")
+        try write(key.text, account: "admin", label: "Flotilla fleet enrolment key")
         return key
     }
 
@@ -84,7 +84,7 @@ public struct EnrolmentKeyStore: @unchecked Sendable {
     /// The owner pasted a key on this host. Validated before it is kept.
     public func setPastedHostKey(_ text: String) throws {
         let key = try EnrolmentKey(text: text)
-        try write(key.text, account: "host", label: "flotilla fleet enrolment key")
+        try write(key.text, account: "host", label: "Flotilla fleet enrolment key")
     }
 
     public func removePastedHostKey() { delete(account: "host") }

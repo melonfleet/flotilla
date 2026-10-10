@@ -59,7 +59,7 @@ struct NewClusterView: View {
                           "What the cluster is called, here and in kubectl.",
                           detail: "It becomes the kubectl context name, so `kubectl --context <name>` is how you reach it.",
                           example: "dev",
-                          warning: "The CLI defaults this to `k8s-dev` when it is omitted. flotilla always sends a name, because a default-named cluster is one you create twice by accident."),
+                          warning: "The CLI defaults this to `k8s-dev` when it is omitted. Flotilla always sends a name, because a default-named cluster is one you create twice by accident."),
                       problem: nameProblem) {
                 TextField("dev", text: $name)
                     .textFieldStyle(.roundedBorder)

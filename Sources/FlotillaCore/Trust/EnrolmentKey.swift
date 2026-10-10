@@ -66,8 +66,8 @@ public struct EnrolmentKey: Sendable, Equatable {
 
         public var description: String {
             switch self {
-            case .notAnEnrolmentKey: "That isn't a flotilla enrolment key — they start with FLT1-."
-            case .unsupportedVersion(let v): "This enrolment key is version \(v), which this flotilla doesn't read. Update flotilla."
+            case .notAnEnrolmentKey: "That isn't a Flotilla enrolment key — they start with FLT1-."
+            case .unsupportedVersion(let v): "This enrolment key is version \(v), which this Flotilla doesn't read. Update Flotilla."
             case .wrongLength: "The enrolment key is the wrong length — part of it may be missing."
             case .checksumMismatch: "The enrolment key has a typo in it. Copy it again from the admin Mac."
             }

@@ -57,9 +57,9 @@ extension AppModel {
                     // menu-bar badge red.
                     break
                 case .failed(let message):
-                    items.append(AttentionItem("\(peer.displayName) couldn\u{2019}t update flotilla: \(message)", .hosts, host: host))
+                    items.append(AttentionItem("\(peer.displayName) couldn\u{2019}t update Flotilla: \(message)", .hosts, host: host))
                 default:
-                    items.append(AttentionItem("\(peer.displayName) runs \(skew.otherIsOlder ? "an older" : "a newer") flotilla "
+                    items.append(AttentionItem("\(peer.displayName) runs \(skew.otherIsOlder ? "an older" : "a newer") Flotilla "
                                   + "(\(theirs); This Mac \(HostModeController.appVersion)).", .hosts, host: host))
                 }
             }

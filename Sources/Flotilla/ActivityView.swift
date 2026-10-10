@@ -164,7 +164,7 @@ struct ActivityView: View {
             } description: {
                 Text("Changes appear here as they happen — containers starting and stopping, "
                      + "machines restarting, images pulled or built, volumes and networks "
-                     + "created or deleted.\n\nHistory from before flotilla launched is not "
+                     + "created or deleted.\n\nHistory from before Flotilla launched is not "
                      + "recorded, so this stays empty until something changes.")
             }
         } else if filtered.isEmpty {

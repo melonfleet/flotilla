@@ -141,7 +141,7 @@ extension AppModel {
                         let value = GroupSecrets.generatePassword()
                         let saved = await Task.detached {
                             KeychainSecrets.set(value, group: groupID, secret: secret,
-                                                label: "flotilla: \(name) — \(secret)")
+                                                label: "Flotilla: \(name) — \(secret)")
                         }.value
                         guard saved else {
                             progress.finish(step, detail: "refused", failed: true)

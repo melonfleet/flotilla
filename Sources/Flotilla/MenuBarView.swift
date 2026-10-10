@@ -29,7 +29,7 @@ struct MenuBarView: View {
 
     var body: some View {
         statusLine
-        Button("Open flotilla") { present { model.requestSection(.overview) } }
+        Button("Open Flotilla") { present { model.requestSection(.overview) } }
             .keyboardShortcut("o")
 
         let attention = model.attentionItems
@@ -53,7 +53,7 @@ struct MenuBarView: View {
         Button("Settings…") { present { model.requestSection(.settings) } }
             .keyboardShortcut(",")
         troubleshootMenu
-        Button("About flotilla") { present(model.requestAbout) }
+        Button("About Flotilla") { present(model.requestAbout) }
 
         Divider()
         Button(model.hostMode.isAdmin || !AppUpdater.isConfigured ? "Check for Updates…"
@@ -64,7 +64,7 @@ struct MenuBarView: View {
         Button {
             NSApplication.shared.terminate(nil)
         } label: {
-            Text("Quit flotilla")
+            Text("Quit Flotilla")
             Text("Containers keep running")
         }
         .keyboardShortcut("q")

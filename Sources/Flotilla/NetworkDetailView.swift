@@ -120,7 +120,7 @@ struct NetworkDetailView: View {
                 DetailCard(title: "Recent events", minHeight: nil) {
                     let events = model.events(for: network.id, kind: .network, host: host)
                     if events.isEmpty {
-                        Text("Nothing has changed since flotilla started. Changes appear here as "
+                        Text("Nothing has changed since Flotilla started. Changes appear here as "
                              + "they happen; history from before launch is not recorded.")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

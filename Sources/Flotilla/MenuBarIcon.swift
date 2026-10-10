@@ -47,10 +47,10 @@ enum MenuBarIcon {
 
     static func accessibilityLabel(_ status: MenuBarStatus) -> String {
         switch status {
-        case .checking: "flotilla"
-        case .running: "flotilla, container running"
-        case .attention: "flotilla, something needs attention"
-        case .off: "flotilla, container is off"
+        case .checking: "Flotilla"
+        case .running: "Flotilla, container running"
+        case .attention: "Flotilla, something needs attention"
+        case .off: "Flotilla, container is off"
         }
     }
 

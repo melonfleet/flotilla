@@ -170,7 +170,7 @@ extension AppModel {
                     }
                     for (secret, value) in choices.secrets["group/\(spec.name)"] ?? [:]
                     where !KeychainSecrets.set(value, group: group.id, secret: secret,
-                                               label: "flotilla: \(group.name) — \(secret)") {
+                                               label: "Flotilla: \(group.name) — \(secret)") {
                         notes.append("The Keychain refused “\(secret)” for \(group.name); set it on the group's screen.")
                     }
                     progress.finish(stepID)
@@ -238,7 +238,7 @@ extension AppModel {
                         outcome = failure.map { .failed($0) } ?? .succeeded
                     } else {
                         outcome = AdminCommandRunner.run(
-                            commands, prompt: "flotilla wants to add the local domains \(names.joined(separator: ", ")) to this Mac’s DNS settings.")
+                            commands, prompt: "Flotilla wants to add the local domains \(names.joined(separator: ", ")) to this Mac’s DNS settings.")
                     }
                     switch outcome {
                     case .succeeded: progress.finish(stepID)

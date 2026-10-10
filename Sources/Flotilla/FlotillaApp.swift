@@ -323,7 +323,7 @@ struct FlotillaApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        Window("flotilla", id: "main") {
+        Window("Flotilla", id: "main") {
             MainWindowView(model: model)
                 // The delegate owns activation policy; the model owns the preference. Wire
                 // them here rather than giving the delegate its own SettingsStore, which

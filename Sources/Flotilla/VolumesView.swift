@@ -962,7 +962,7 @@ struct VolumesView: View {
                 FormField("Driver options",
                           help: FieldHelp(
                               "Options passed straight through to the storage driver.",
-                              detail: "Up to eight, again as key=value. What they mean is the driver's business, not flotilla's.",
+                              detail: "Up to eight, again as key=value. What they mean is the driver's business, not Flotilla's.",
                               example: "type=fast"),
                           optional: true) {
                     keyValueList($newDriverOptions, title: nil, placeholder: "type=fast")

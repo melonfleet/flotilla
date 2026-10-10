@@ -206,7 +206,7 @@ struct RegistryFormView: View {
         FormField("Registry",
                   help: FieldHelp(
                       "Which registry to add.",
-                      detail: "Pick one flotilla knows and its server name, sign-in guidance and "
+                      detail: "Pick one Flotilla knows and its server name, sign-in guidance and "
                           + "links come with it — there is nothing to type. Choose Custom to "
                           + "describe a private, self-hosted or per-account registry yourself.",
                       example: "Amazon ECR, Azure and Google Artifact\nRegistry are per-account, "
@@ -228,7 +228,7 @@ struct RegistryFormView: View {
         if choice != nil {
             if let chosen {
                 FormField("Server", help: FieldHelp(chosen.summary,
-                                                    detail: "Fixed for a registry flotilla knows.")) {
+                                                    detail: "Fixed for a registry Flotilla knows.")) {
                     Text(chosen.id)
                         .font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled)
@@ -304,7 +304,7 @@ struct RegistryFormView: View {
         FormField("Signing in",
                   help: FieldHelp(
                       "Whether anything can be pulled from it without an account.",
-                      detail: "flotilla can't tell for a registry it doesn't know, and doesn't ask "
+                      detail: "Flotilla can't tell for a registry it doesn't know, and doesn't ask "
                           + "the registry. If signing in is required, the registry is added once "
                           + "you have signed in; if it's optional, you can add it now and sign in "
                           + "later.",
@@ -389,7 +389,7 @@ struct RegistryFormView: View {
 
             FormField("Password or token",
                       help: FieldHelp("Usually a token rather than an account password.",
-                                      detail: "flotilla does not store it. It goes to `container "
+                                      detail: "Flotilla does not store it. It goes to `container "
                                           + "registry login`, which saves it in this Mac's Keychain.",
                                       warning: "Several registries issue short-lived tokens — "
                                           + "Amazon's lasts about 12 hours, Google's about one — "

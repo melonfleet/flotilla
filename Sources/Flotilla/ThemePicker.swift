@@ -33,8 +33,8 @@ struct ThemePickerRow: View {
     private var caption: String {
         if locked { return "Managed by your organization." }
         return appearance == .light
-            ? "The window bar and background whenever flotilla draws light."
-            : "The window bar and background whenever flotilla draws dark."
+            ? "The window bar and background whenever Flotilla draws light."
+            : "The window bar and background whenever Flotilla draws dark."
     }
 
     /// One entry per theme in this row, in the order the enum declares them.

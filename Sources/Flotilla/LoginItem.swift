@@ -39,10 +39,10 @@ enum LoginItem {
 
         var summary: String {
             switch self {
-            case .registered:       "flotilla will open when you log in."
-            case .notRegistered:    "flotilla will not open at login."
+            case .registered:       "Flotilla will open when you log in."
+            case .notRegistered:    "Flotilla will not open at login."
             case .awaitingApproval: "Waiting for approval in System Settings ▸ General ▸ Login Items."
-            case .unavailable:      "Launch at login requires flotilla to run from an app bundle."
+            case .unavailable:      "Launch at login requires Flotilla to run from an app bundle."
             }
         }
 

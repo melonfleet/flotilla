@@ -270,7 +270,7 @@ struct RegistriesView: View {
                 // The sentence the whole section exists to prevent someone getting wrong.
                 Text(isFiltered
                      ? "No registry matches the current filter."
-                     : "flotilla can pull from any OCI registry — this list isn't a restriction. "
+                     : "Flotilla can pull from any OCI registry — this list isn't a restriction. "
                        + "Add the ones you use to sign in and set a default.")
             } actions: {
                 if isFiltered {

@@ -99,7 +99,7 @@ struct ActivityStrip: View {
     @ViewBuilder
     private var content: some View {
         if entries.isEmpty {
-            Text("Nothing has changed since flotilla started. State changes appear here as they "
+            Text("Nothing has changed since Flotilla started. State changes appear here as they "
                  + "happen; history from before launch is not recorded.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)

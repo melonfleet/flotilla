@@ -139,7 +139,7 @@ struct SupportBundleView: View {
             // Name what was found and where, without reproducing it — an error message that
             // quotes the secret defeats the point.
             bundle = nil
-            failure = "\(leak.description)\n\nThis is a bug in flotilla's redaction, not "
+            failure = "\(leak.description)\n\nThis is a bug in Flotilla's redaction, not "
                 + "something you did. Nothing has been written."
         } catch {
             bundle = nil

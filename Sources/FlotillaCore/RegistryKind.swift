@@ -95,7 +95,7 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
             "Your GitHub username, and a classic personal access token with only the "
             + "read:packages scope — GHCR does not accept fine-grained tokens, and a GitHub "
             + "password will not work. Public images pull without signing in. Do not tick "
-            + "write:packages: flotilla never pushes, and GitHub adds the repo scope — full "
+            + "write:packages: Flotilla never pushes, and GitHub adds the repo scope — full "
             + "control of private repositories — along with it."
         case .gitlab:
             "Your GitLab username, and a personal access token with the read_registry scope. "
@@ -154,7 +154,7 @@ public enum RegistryKind: String, CaseIterable, Identifiable, Sendable, Codable 
     public var tokenURL: String? {
         switch self {
         case .dockerHub: "https://app.docker.com/settings/personal-access-tokens/create"
-        case .github: "https://github.com/settings/tokens/new?scopes=read:packages&description=flotilla"
+        case .github: "https://github.com/settings/tokens/new?scopes=read:packages&description=Flotilla"
         case .gitlab: "https://gitlab.com/-/user_settings/personal_access_tokens/legacy/new?scopes=read_registry"
         case .quay: "https://docs.quay.io/glossary/robot-accounts.html"
         case .redHat: "https://access.redhat.com/terms-based-registry/"

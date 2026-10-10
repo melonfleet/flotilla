@@ -33,7 +33,7 @@ public struct DiagnosticsSnapshot: Codable, Sendable, Equatable {
         public var isManaged: Bool
 
         public init(
-            name: String = "flotilla", version: String, build: String? = nil,
+            name: String = "Flotilla", version: String, build: String? = nil,
             bundleIdentifier: String = SettingsSchema.domain,
             mode: RunMode, isManaged: Bool
         ) {

@@ -149,7 +149,7 @@ DISTXML="$DIST/distribution-$VERSION.xml"
 cat > "$DISTXML" <<XML
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>flotilla $VERSION</title>
+    <title>Flotilla $VERSION</title>
     <organization>dev.melonfleet</organization>
     <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
     <allowed-os-versions><os-version min="26.0"/></allowed-os-versions>
