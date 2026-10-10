@@ -693,8 +693,10 @@ To settle before building:
 
 - ~~Live charts on a host's page~~ — dropped (the owner, 9 October): This Mac's charts went too,
   so every Mac's page is the same cards and "Usage now".
-- Recommend Energy settings on a host's System tab (restart after a power failure, sleep when the
-  display is off) with Apple's instructions; never change them.
+- ~~Recommend Energy settings on a host's System tab~~ — **built 10 October**: "Recommended for a
+  host" on every Mac's System tab (no sleep with the display off, Wake for network access, restart
+  after a power failure on desktops, Flotilla at login), Apple's guides behind a ?, never changed,
+  quiet; plus the FileVault / automatic-login warning (`EnergyAdvice`).
 - An admin's time-bounded keep-awake request to a host, refused on battery and shown on both Macs.
 - Runtime Saver, experimental: stop `container` after a while with nothing running; a moon in the
   menu bar; wake on demand. Only after measuring savings and wake latency.
