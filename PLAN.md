@@ -806,6 +806,10 @@ Recorded so it is not lost; not started.
    nothing published on the LAN. TCP first.
 4. **A full overlay** (D4's routed `/20` per Mac), only if a real need appears after 3.
 5. **Jamf and MDM support** (section above).
+6. **Flotilla Web and an iPad app** (deferred 10 October). A headless admin server with a web UI
+   (its own sign-in, no identity provider required, certificates, Let's Encrypt), and an iPad app
+   that pairs by QR code. Iris's plan and its 18 open questions are in
+   `experiments/flotilla-web-ipad-2026-10-08/iris-report.md`; answer them before building.
 
 ## Critical environment constraint — nested virtualisation
 

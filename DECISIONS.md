@@ -2067,3 +2067,5 @@ The owner's decision, after D4's review:
    if a real need appears. See PLAN.md, Version 2.0.
 3. **Jamf/MDM support is 2.0.** 1.x keeps reading managed preferences (`defaults` and `locked`).
    2.0 adds per-device identities and trust by profile, plus the staged-hardware test matrix.
+4. **Flotilla Web and the iPad app are 2.0** (amended the same day). Iris's plan
+   (`experiments/flotilla-web-ipad-2026-10-08/iris-report.md`, 18 open questions) waits for it.
