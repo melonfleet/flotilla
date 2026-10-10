@@ -689,7 +689,7 @@ struct HostsView: View {
             // Column one carries the selection checkbox and the status dot together, as in
             // Containers: the dot's colour says how the Mac is, its tooltip says it in full, and the
             // host's page carries it as a line (the owner, 9 October).
-            TableColumn("", value: \.statusSortKey) { row in
+            TableColumn(Text("").accessibilityLabel("Selection and status"), value: \.statusSortKey) { row in
                 HStack(spacing: 6) {
                     if let header = row.header {
                         groupToggle(header, name: row.name)

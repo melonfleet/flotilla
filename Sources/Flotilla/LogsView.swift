@@ -429,7 +429,7 @@ struct LogsView: View {
                                   columnCustomization: Binding(
                                       get: { ui.columnCustomization },
                                       set: { ui.columnCustomization = $0 })) {
-                        TableColumn("") { line in
+                        TableColumn(Text("").accessibilityLabel("Selection")) { line in
                             selectionToggle(for: line.id)
                         }
                         .width(min: 28, ideal: 30, max: 34)

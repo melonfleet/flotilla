@@ -383,7 +383,7 @@ struct ImagesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
-            TableColumn("") { row in
+            TableColumn(Text("").accessibilityLabel("Selection")) { row in
                 selectionToggle(for: row.id)
             }
             .width(min: 28, ideal: 30, max: 34)

@@ -277,7 +277,7 @@ struct ClustersView: View {
               sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
               columnCustomization: Binding(get: { ui.columnCustomization },
                                            set: { ui.columnCustomization = $0 })) {
-            TableColumn("", value: \.stateSortKey) { cluster in
+            TableColumn(Text("").accessibilityLabel("State"), value: \.stateSortKey) { cluster in
                 Circle()
                     .fill(cluster.isRunning ? Theme.online : Color.secondary)
                     .frame(width: 8, height: 8)

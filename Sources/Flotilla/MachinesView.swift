@@ -616,7 +616,7 @@ struct MachinesView: View {
                       sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
                       columnCustomization: Binding(get: { ui.columnCustomization },
                                                    set: { ui.columnCustomization = $0 })) {
-            TableColumn("") { machine in
+            TableColumn(Text("").accessibilityLabel("Selection")) { machine in
                 selectionToggle(for: machine.id)
             }
             .width(min: 28, ideal: 30, max: 34)
@@ -629,7 +629,7 @@ struct MachinesView: View {
             // The blank header is the one real cost: the sort control has no name. The
             // columns popover still lists it as "State" (from `columnSpecs`), which is where
             // anyone hunting for it will look.
-            TableColumn("", value: \.sortRank) { machine in
+            TableColumn(Text("").accessibilityLabel("State"), value: \.sortRank) { machine in
                 Circle()
                     .fill(Self.stateColor(machine))
                     .frame(width: 8, height: 8)
