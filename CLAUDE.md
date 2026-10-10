@@ -384,6 +384,14 @@ that we *built* the right command; almost nothing checked the command was
   launch on build 352, and Tahoe as its helper exited after installing an update (9 October). Any
   closure handed to an Objective-C callback that may run off the main thread is `@Sendable`, and the
   error path gets exercised on purpose — a stand-alone repro reproduced exit 133 before the fix.
+- **A daemon outlives the binary it was started from.** The Flotilla Helper is launched on demand and
+  then stays up, so every app update or rebuild replaced its executable underneath a running process.
+  macOS then reports "the code on disk does not match what is running", the app's signature check of
+  the helper fails, and every request comes back "Couldn't communicate with a helper application" —
+  on this Mac for a day unnoticed, on Tahoe as a failed container install (10 October). Worse, that
+  check runs on the **reply**, so the request may already have run. The helper now exits when its own
+  file was replaced; the app retries only the harmless version probe and never resends a change.
+  Check a running daemon with `codesign --verify <pid>`, not just `launchctl print`.
 - **`case A, B where cond:` binds `where` to `B` only.** Written as
   `case .loaded, .loading where displayed.isEmpty:` the `.loaded` arm matched
   unconditionally, so the Machines list rendered "No matching machines" with two
