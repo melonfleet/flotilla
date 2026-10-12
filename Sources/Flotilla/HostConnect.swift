@@ -58,6 +58,9 @@ enum HostConnect {
     /// Where to reach a host: the address the admin connects to, else its own first address.
     static func address(_ model: AppModel, _ fingerprint: PeerFingerprint) -> String? {
         let peer = model.hostMode.hosts.first { $0.fingerprint == fingerprint }
+        // The address its owner typed first — a `.lan` name over a Tailscale subnet route, say — as
+        // the wire does when Bonjour can't see the host (12 October).
+        if case .address(let address, _)? = peer?.address { return address }
         if case .address(let address, _)? = peer?.endpoint { return address }
         return model.hostMode.facts[fingerprint]?.ipv4Addresses?.first
     }
