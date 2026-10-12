@@ -1,16 +1,37 @@
 import SwiftUI
 import FlotillaCore
 
-/// Suggestions for Containers: ready-made stacks, each created as a group (DECISIONS Q28).
+/// Suggestions for Containers: the suggestions library (DECISIONS Q28, Q54) — ready-made stacks and
+/// single containers, browsed like Images ▸ Browse Docker Hub (the owner, 12 October): search and a
+/// category on the left, the chosen entry on the right, Use… in the footer.
 ///
-/// Reached from the "+" menu and from the empty Containers list, as decided on 6 October. Embedded
-/// like every other form, with Back. The cards are `ResourceCard`s, so they look like every other
-/// card in the app (the owner's rule, 5 October).
+/// Reached from the "+" menu and from the empty Containers list. A stack opens its form and is
+/// created as a group; a container opens the Run form filled in. Either way the form validates it
+/// like anything typed — a library entry is a suggestion, not a command.
 struct SuggestionsView: View {
     let model: AppModel
     let dismiss: () -> Void
     /// Opened straight into one stack's form — from the empty state's quick picks.
     @State var chosen: StackSuggestion?
+
+    @State private var query = ""
+    @State private var category: String?
+    @State private var selectedID: LibraryEntry.ID?
+
+    private var library: SuggestionLibrary { model.suggestionLibrary }
+
+    private var shown: [LibraryEntry] {
+        let words = query.lowercased().split(separator: " ").map(String.init)
+        return library.entries.filter { entry in
+            (category == nil || entry.categories.contains(category!))
+                && words.allSatisfy { word in
+                    ([entry.title, entry.summary] + entry.categories + entry.images)
+                        .contains { $0.lowercased().contains(word) }
+                }
+        }
+    }
+
+    private var selected: LibraryEntry? { library.entries.first { $0.id == selectedID } }
 
     var body: some View {
         if let chosen {
@@ -21,33 +42,180 @@ struct SuggestionsView: View {
                 FormHeader(title: "Suggestions", systemImage: "sparkles",
                            hasUnsavedChanges: false, onBack: dismiss)
                 Divider()
-                Text("Ready-made stacks. Each is created as a group — its images pulled, its "
-                     + "network and volumes made, its passwords generated into the Keychain — "
-                     + "and left ready to start.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    // Not `fixedSize(vertical:)`: with it, opening this screen blanked the whole
-                    // window — bar, sidebar and all — the "one unbounded child" family in
-                    // CLAUDE.md. Found by bisecting, 6 October.
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16).padding(.top, 12)
-                ResourceCardGrid {
-                    ForEach(StackSuggestion.catalogue) { stack in
-                        ResourceCard(
-                            title: stack.title,
-                            badge: stack.licenceNote == nil ? nil : "licence",
-                            fields: [("About", stack.summary),
-                                     ("Services", stack.services.map(\.title).joined(separator: " · ")),
-                                     ("Images", stack.images.map(Self.shortImage).joined(separator: ", "))],
-                            showsTags: false,
-                            onOpen: { chosen = stack }
-                        ) {
-                            Button("Use…") { chosen = stack }
-                                .controlSize(.small)
-                        }
-                    }
+                HStack(spacing: 0) {
+                    listPane.frame(minWidth: 380, maxWidth: .infinity)
+                    Divider()
+                    detailPane.frame(width: 400)
                 }
+                Divider()
+                footer
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    // MARK: List
+
+    private var listPane: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                TextField("Search suggestions", text: $query)
+                    .textFieldStyle(.roundedBorder)
+                Picker("", selection: $category) {
+                    Text("All categories").tag(String?.none)
+                    Divider()
+                    ForEach(SuggestionLibrary.categories.filter { name in library.entries.contains { $0.categories.contains(name) } },
+                            id: \.self) { name in
+                        Text("\(name) (\(library.entries.count { $0.categories.contains(name) }))").tag(String?.some(name))
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            Text("\(shown.count) of \(library.entries.count) · library \(library.version)")
+                .font(.caption).foregroundStyle(.secondary)
+            List(selection: $selectedID) {
+                ForEach(shown) { entry in row(entry).tag(entry.id) }
+            }
+            .listStyle(.inset)
+            .overlay {
+                if shown.isEmpty { ContentUnavailableView.search(text: query) }
+            }
+        }
+        .padding(16)
+    }
+
+    private func row(_ entry: LibraryEntry) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(entry.title).font(.body.weight(.medium)).lineLimit(1)
+                badge(entry.kind == .stack ? "Stack" : "Container")
+                if entry.licenceNote != nil { badge("Licence") }
+            }
+            Text(entry.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text(Self.stats(entry)).font(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func badge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(Theme.info.opacity(0.14), in: Capsule())
+            .foregroundStyle(Theme.info)
+    }
+
+    static func stats(_ entry: LibraryEntry) -> String {
+        var parts = [entry.categories.joined(separator: ", ")]
+        if let stack = entry.stack { parts.append(stack.services.map(\.title).joined(separator: " · ")) }
+        if let container = entry.container { parts.append(shortImage(container.image)) }
+        parts.append(entry.tested.map { "Tested \($0.date)" } ?? "Not tested yet")
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: Detail
+
+    @ViewBuilder
+    private var detailPane: some View {
+        if let entry = selected {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(entry.title).font(.title3.weight(.semibold)).textSelection(.enabled)
+                    Text(entry.summary).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(entry.categories.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                    if let stack = entry.stack {
+                        section("Services") {
+                            ForEach(stack.services, id: \.role) { service in
+                                detailLine(service.title, Self.shortImage(service.image))
+                            }
+                        }
+                        if !stack.notes.isEmpty {
+                            section("Once it's running") {
+                                ForEach(stack.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                    if let container = entry.container {
+                        section("Container") {
+                            detailLine("Image", Self.shortImage(container.image))
+                            if !container.ports.isEmpty { detailLine("Ports", container.ports.joined(separator: ", ")) }
+                            ForEach(container.volumes, id: \.path) { detailLine("Data", $0.path) }
+                            if !container.secretEnv.isEmpty {
+                                detailLine("Passwords", container.secretEnv.joined(separator: ", ") + " — generated")
+                            }
+                        }
+                        if let note = container.note {
+                            Label(note, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if let licence = entry.licenceNote {
+                        Label(licence, systemImage: "doc.text").font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(entry.tested.map { "Run and checked by Flotilla on \($0.date), on \($0.macs) Mac\($0.macs == 1 ? "" : "s")." }
+                         ?? "Not live-tested yet.")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            }
+        } else {
+            ContentUnavailableView("Choose a suggestion", systemImage: "sparkles",
+                                   description: Text("What it runs and what it needs show here."))
+        }
+    }
+
+    private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.headline).padding(.top, 6)
+            content()
+        }
+    }
+
+    private func detailLine(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).font(.caption).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+            Text(value).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+        }
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack {
+            Text("A stack is created as a group, left ready to start. A container opens in the Run form.")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("Cancel", action: dismiss).keyboardShortcut(.cancelAction)
+            Button("Use…") { use() }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(selected == nil)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func use() {
+        guard let entry = selected else { return }
+        if let stack = entry.stackSuggestion {
+            chosen = stack
+        } else if let container = entry.container {
+            // Into the Run form, published on 127.0.0.1, with a name nothing here has and a
+            // generated password for each password variable — all of it editable there.
+            let taken = model.existingContainerNames(on: .local).union(model.groups.claimedNames(on: .local))
+            var name = container.name
+            var counter = 2
+            while taken.contains(name) { name = "\(container.name)-\(counter)"; counter += 1 }
+            let env = container.env + container.secretEnv.map { "\($0)=\(GroupSecrets.generatePassword())" }
+            model.pendingRunPrefill = RunPrefill(
+                draftImage: container.image, name: name,
+                ports: container.ports.map { "127.0.0.1:\($0)" }, env: env,
+                volumes: container.volumes.map { "\(name)-\($0.suffix):\($0.path)" })
+            dismiss()
         }
     }
 

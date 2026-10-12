@@ -1825,6 +1825,10 @@ final class AppModel {
     @ObservationIgnored var currentSection: Section?
     /// A container Greta drafted, for the Run form. Cleared by `ContainersView`.
     var pendingRunPrefill: RunPrefill?
+
+    /// The suggestions library (DECISIONS Q54): the built-in copy, checked, until a newer signed one
+    /// has been fetched (to come).
+    var suggestionLibrary: SuggestionLibrary = SuggestionLibrary.builtIn.checked().library
     /// Greta's state, kept while the window's sections come and go (DECISIONS Q52).
     let greta = Greta()
     /// Opens the main window from outside SwiftUI; handed over by `MainWindowView`.
