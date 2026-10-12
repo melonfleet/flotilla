@@ -167,7 +167,12 @@ struct AddHostView: View {
                 Button("Done", action: dismiss)
             }
         case .alreadyPaired(let name):
-            Label("\(name) is already paired with this Mac.", systemImage: "checkmark.circle").foregroundStyle(.secondary)
+            HStack {
+                Label("\(name) is already paired. Flotilla will reach it at this address whenever it can\u{2019}t find it nearby.",
+                      systemImage: "checkmark.circle").foregroundStyle(.secondary)
+                Spacer()
+                Button("Done", action: dismiss)
+            }
         case .failed(let why):
             Label(why, systemImage: "exclamationmark.triangle").foregroundStyle(Theme.danger).lineLimit(4)
                 .help(why)

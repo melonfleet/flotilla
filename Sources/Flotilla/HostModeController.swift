@@ -513,7 +513,18 @@ final class HostModeController {
                 return .failed("The Mac at that address presented a different key from the one in the imported file. "
                                + "It may be another Mac, or this one was reinstalled. Not paired — check with its owner.")
             }
-            if welcome.trusted, book.isTrusted(hostPrint) { return .alreadyPaired(welcome.peer.name) }
+            if welcome.trusted, book.isTrusted(hostPrint) {
+                // Already paired: keep this address for it, so a host Bonjour can't see — at home,
+                // from the office over Tailscale — is reached here from now on.
+                if let hint = PeerEndpoint(endpoint) {
+                    book.setAddress(hostPrint, hint)
+                    book.setEndpoint(hostPrint, hint)
+                    save()
+                    remotes.removeValue(forKey: hostPrint)?.close()
+                    backoff[hostPrint, default: HostBackoff()].forceDue()
+                }
+                return .alreadyPaired(welcome.peer.name)
+            }
             let method: PairingAdminSession.Method
             if let code, !code.trimmingCharacters(in: .whitespaces).isEmpty {
                 method = .pairingCode(code)
@@ -533,13 +544,17 @@ final class HostModeController {
             switch outcome {
             case .paired(let fingerprint, let details):
                 book.pairConfirmed(fingerprint, role: .host, details: details, at: Date())
-                if let hint = PeerEndpoint(endpoint) { book.setEndpoint(fingerprint, hint) }
+                if let hint = PeerEndpoint(endpoint) {
+                    book.setEndpoint(fingerprint, hint)
+                    book.setAddress(fingerprint, hint)
+                }
                 save()
                 record(details.computerName, "Paired")
                 return .paired(details.computerName)
             case .enrolment(let fingerprint, let details, let result):
                 if let hint = PeerEndpoint(endpoint) {
                     book.setEndpoint(fingerprint, hint)
+                    book.setAddress(fingerprint, hint)
                     save()
                 }
                 switch result {
@@ -588,7 +603,8 @@ final class HostModeController {
               let identity = ensureIdentity() else { return nil }
         // Found on the network by its key, whatever it is called now; else where it was last.
         let advertised = discovered.first { $0.fingerprintHint == WireTLS.fingerprintHint(fingerprint) }
-        let hint = advertised.flatMap { PeerEndpoint($0.endpoint) } ?? peer.endpoint
+        let hint = PeerBook.reach(advertised: advertised.flatMap { PeerEndpoint($0.endpoint) },
+                                  typed: peer.address, last: peer.endpoint)
         if let cached = remotes[fingerprint], hint == nil || PeerEndpoint(cached.endpoint) == hint { return cached }
         remotes.removeValue(forKey: fingerprint)?.close()
         guard let hint, let endpoint = hint.nwEndpoint else { return nil }

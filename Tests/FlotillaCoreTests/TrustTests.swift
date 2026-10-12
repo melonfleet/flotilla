@@ -138,6 +138,33 @@ struct PeerBookTests {
     let mini = fingerprint(5)
     let details = PeerDetails(computerName: "mini-1", model: "Mac14,3", serialNumber: "SERIAL", macOSVersion: "27.0")
 
+    @Test func aTypedAddressOutlastsBonjour() {
+        var book = PeerBook()
+        book.pairConfirmed(mini, role: .host, details: details, at: now)
+        let home = PeerEndpoint.bonjour(name: "mini-1")
+        let tailnet = PeerEndpoint.address(host: "mini-1.tailnet.ts.net", port: 7868)
+        book.setAddress(mini, home)                              // a Bonjour name is not an address
+        #expect(book[mini]?.address == nil)
+        book.setAddress(mini, tailnet)
+        book.setEndpoint(mini, home)                             // found at home: last-reached follows Bonjour
+        #expect(book[mini]?.address == tailnet)
+        // At home Bonjour wins; away, the typed address; with neither, where it was last reached.
+        #expect(PeerBook.reach(advertised: home, typed: tailnet, last: home) == home)
+        #expect(PeerBook.reach(advertised: nil, typed: tailnet, last: home) == tailnet)
+        #expect(PeerBook.reach(advertised: nil, typed: nil, last: home) == home)
+    }
+
+    @Test func aBookFromBeforeTypedAddressesStillLoads() throws {
+        var book = PeerBook()
+        book.pairConfirmed(mini, role: .host, details: details, at: now)
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(book)) as! [String: Any]
+        var peers = json["peers"] as! [[String: Any]]
+        peers[0].removeValue(forKey: "address")
+        json["peers"] = peers
+        let old = try JSONDecoder().decode(PeerBook.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(old[mini]?.address == nil && old.isTrusted(mini))
+    }
+
     @Test func anEnrolmentWaitsForTheOwner() {
         var book = PeerBook()
         let first = book.requestEnrolment(mini, role: .host, details: details, at: now)

@@ -55,6 +55,11 @@ public struct Peer: Sendable, Hashable, Codable, Identifiable {
     public var lastSeen: Date?
     /// Admin side: where the host was last reached. Optional so older books still decode.
     public var endpoint: PeerEndpoint?
+    /// Admin side: the address its owner typed in Add Host — a Tailscale name, say. Used whenever
+    /// Bonjour can't see the host, and never overwritten by discovery: `endpoint` follows Bonjour,
+    /// so an office admin used to lose a home host's Tailscale address the first evening it was
+    /// found at home (the owner, 12 October). Optional so older books still decode.
+    public var address: PeerEndpoint?
 
     public var id: PeerFingerprint { fingerprint }
     public var displayName: String { nickname ?? details.computerName }
@@ -193,6 +198,18 @@ public struct PeerBook: Sendable, Equatable, Codable {
     public mutating func setEndpoint(_ fingerprint: PeerFingerprint, _ endpoint: PeerEndpoint) {
         guard let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) else { return }
         peers[index].endpoint = endpoint
+    }
+
+    /// Keeps an address its owner typed. A Bonjour name is not an address, and is not kept here.
+    public mutating func setAddress(_ fingerprint: PeerFingerprint, _ endpoint: PeerEndpoint) {
+        guard case .address = endpoint, let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) else { return }
+        peers[index].address = endpoint
+    }
+
+    /// Where to reach a host: where Bonjour sees it now, else the address its owner typed, else
+    /// where it was last reached.
+    public static func reach(advertised: PeerEndpoint?, typed: PeerEndpoint?, last: PeerEndpoint?) -> PeerEndpoint? {
+        advertised ?? typed ?? last
     }
 
     public mutating func markSeen(_ fingerprint: PeerFingerprint, at now: Date) {
