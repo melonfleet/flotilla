@@ -71,9 +71,15 @@ public enum GretaRouter {
             return .askWhich
         }
 
-        // Not a request to run anything, however it is worded: a negation, a change to something
-        // that exists, a question about state, or asking to learn (Kyle's examples, 12 October).
-        if notARequest.contains(where: { contains(text, $0) }) { return .answer }
+        // A message that opens by asking to run something is a request, whatever follows ("draft
+        // postgres, don't use a volume"); unless it asks for something to learn from. Otherwise a
+        // negation, a change to something that exists, a question about state or asking to learn
+        // means it isn't (Kyle's examples, 12 October, both rounds).
+        if opensWithRun(text) {
+            if learning.contains(where: { contains(text, $0) }) || text.hasPrefix("run down") { return .answer }
+        } else if notARequest.contains(where: { contains(text, $0) }) {
+            return .answer
+        }
 
         let asksYou = ["can", "could", "would", "will"].contains(words[0]) && words.dropFirst().first == "you"
         let wantsToRun = runPhrases.contains { contains(text, $0) }
@@ -154,7 +160,8 @@ public enum GretaRouter {
             }
         }
         let text = normalised(message)
-        if ["no volume", "without a volume", "without volume", "without its data", "no data"].contains(where: { contains(text, $0) }),
+        if ["no volume", "no volumes", "without a volume", "without volume", "without its data", "no data",
+            "don t use a volume", "dont use a volume", "do not use a volume"].contains(where: { contains(text, $0) }),
            !draft.volumes.isEmpty {
             draft.volumes = []
             draft.changes.append("no volume")
@@ -234,6 +241,21 @@ public enum GretaRouter {
         "help", "tutorial", "learn", "know", "explain", "understand", "teach", "docs",
         "documentation", "run down", "what", "how", "why", "difference",
     ]
+
+    /// Asking for something to read, not something to run.
+    static let learning = ["tutorial", "docs", "documentation", "guide", "explanation", "course", "lesson"]
+
+    /// Opens with a verb that asks for a container, after any "please" or "can you".
+    static func opensWithRun(_ text: String) -> Bool {
+        var rest = text
+        for opener in ["please ", "can you ", "could you ", "would you ", "will you ", "can u ", "pls "] where rest.hasPrefix(opener) {
+            rest = String(rest.dropFirst(opener.count))
+        }
+        if rest.hasPrefix("please ") { rest = String(rest.dropFirst(7)) }
+        return ["run", "draft", "set up", "setup", "create", "spin up", "launch", "deploy", "install",
+                "start a", "start an", "start up", "make me", "make a", "give me", "host a", "host my"]
+            .contains { rest == $0 || rest.hasPrefix($0 + " ") }
+    }
 
     static let questionWords: Set<String> = [
         "how", "what", "whats", "why", "where", "when", "which", "who", "does", "do", "is", "are",

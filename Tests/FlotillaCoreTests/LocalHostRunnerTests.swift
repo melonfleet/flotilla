@@ -433,6 +433,16 @@ private final class StreamRecorder: @unchecked Sendable {
     #expect(result.stdout == "stopped-cleanly")
 }
 
+@Test func aCommandThatExitsWithItsOwnCodeWhenCancelledReportsIt() throws {
+    // Kyle's second look: an exit code of its own is a result too, not "cancelled".
+    let cancellation = Cancellation()
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { cancellation.cancel() }
+    let result = try runner().run(["-c", "trap 'printf partial; exit 3' TERM; while :; do sleep 0.05; done"],
+                                  timeout: 20, cancellation: cancellation)
+    #expect(result.exitCode == 3)
+    #expect(result.stdout == "partial")
+}
+
 @Test func aCancellationAfterTheEndChangesNothing() throws {
     let cancellation = Cancellation()
     let result = try runner().run(["-c", "printf done"], timeout: 10, cancellation: cancellation)

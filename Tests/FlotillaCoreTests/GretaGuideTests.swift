@@ -51,7 +51,10 @@ import Testing
 
     @Test func aSecretIsSpottedHoweverItIsWritten() {
         for message in ["password hunter2", "PASSWORD=x", "my passwd is x", "pwd: x", "the api token is x",
-                        "use this secret", "passwords", "credentials for the db", "pass x"] {
+                        "use this secret", "passwords", "credentials for the db", "pass x",
+                        // Kyle's second look
+                        "with API key hunter2", "access key x", "login key x", "pass word x", "p@ssword x",
+                        "P4ssw0rd: x", "api-key=x"] {
             #expect(GretaText.mentionsSecret(message), "\(message)")
         }
         for message in ["run postgres on port 6543", "passing tests", "compass", "pin it to 17", "keep the data"] {
@@ -77,5 +80,15 @@ import Testing
         #expect(cut.utf8.count <= 2400 + "\n(truncated)".utf8.count)
         #expect(cut.hasSuffix("(truncated)"))
         #expect(GretaText.capped("short", bytes: 2400) == "short")
+    }
+
+    @Test func aListIsCutBetweenLinesNeverInsideOne() {
+        let lines = ["header"] + (0..<500).map { "- container \"name-\($0)\", state running" }
+        let kept = GretaText.wholeLines(lines, bytes: 2400)
+        #expect(kept.first == "header")
+        #expect(kept.last == "(truncated)")
+        #expect(kept.dropLast().allSatisfy { $0 == "header" || $0.filter { $0 == "\"" }.count == 2 })
+        #expect(kept.joined(separator: "\n").utf8.count <= 2400 + 12)
+        #expect(GretaText.wholeLines(["a", "b"], bytes: 2400) == ["a", "b"])
     }
 }

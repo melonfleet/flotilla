@@ -30,6 +30,16 @@ import Testing
         }
     }
 
+    @Test func aRequestThatOpensByAskingIsARequest() {
+        // Kyle's second look: the exclusions blocked these.
+        #expect(recipeID(route("draft postgres, don't use a volume")) == "postgres")
+        #expect(recipeID(route("run Redis; I already know how")) == "redis")
+        #expect(recipeID(route("run postgres and show me what you'll draft")) == "postgres")
+        #expect(recipeID(route("create a Postgres status page")) == "postgres")
+        #expect(recipeID(route("please can you run nginx")) == "nginx")
+        #expect(draft("draft postgres, don't use a volume").volumes.isEmpty)
+    }
+
     @Test func aNamedContainerIsDraftedFromItsRecipe() {
         #expect(recipeID(route("Draft Postgres with its data kept")) == "postgres")
         #expect(recipeID(route("Can you set up a web server for me?")) == "nginx")
@@ -90,6 +100,8 @@ import Testing
             "run postgres called hunter2 because hunter2 is the password",
             "run postgres on port 6543, pwd=hunter2",
             "run mariadb with the secret hunter2 as the name",
+            "run postgres called hunter2 with API key hunter2",
+            "run postgres called hunter2, p@ssword hunter2",
         ]
         for attack in attacks {
             let made = draft(attack)

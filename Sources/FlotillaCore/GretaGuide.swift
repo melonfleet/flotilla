@@ -128,6 +128,20 @@ public enum GretaText {
         return String(view) + "…"
     }
 
+    /// As many whole lines as fit in `limit` UTF-8 bytes (newlines counted), then "(truncated)" if
+    /// any were left out. The first line is always kept.
+    public static func wholeLines(_ lines: [String], bytes limit: Int) -> [String] {
+        var kept: [String] = []
+        var used = 0
+        for line in lines {
+            let size = line.utf8.count + 1
+            if !kept.isEmpty, used + size > limit { return kept + ["(truncated)"] }
+            kept.append(line)
+            used += size
+        }
+        return kept
+    }
+
     /// At most `limit` UTF-8 bytes, cut on a scalar boundary — for a whole block bound for the
     /// model, whose context is measured in tokens, not characters.
     public static func capped(_ text: String, bytes limit: Int, marker: String = "\n(truncated)") -> String {
@@ -162,14 +176,20 @@ public enum GretaText {
     /// but choosing a recipe and is never kept: no parse can tell the secret from the rest
     /// ("postgres password called hunter2" put it in the container's name; Kyle, 12 October).
     public static func mentionsSecret(_ text: String) -> Bool {
-        let words = text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
-        return words.contains { word in
-            secretWords.contains(word) || secretStems.contains { word.hasPrefix($0) }
-        }
+        // Look-alikes read as letters ("p@ssw0rd"), then two views: the words, and every letter run
+        // together ("pass word", "api-key"). It errs towards yes — a false alarm only means the
+        // draft stays the plain recipe — because each miss Kyle found put a password in a draft.
+        let plain = String(text.lowercased().map { lookAlikes[$0] ?? $0 })
+        let words = plain.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        let squashed = String(plain.filter(\.isLetter))
+        return words.contains(where: secretWords.contains) || secretStems.contains(where: squashed.contains)
     }
 
-    private static let secretWords: Set<String> = ["pass", "pwd", "pw", "secret", "secrets", "token", "tokens", "apikey", "passcode"]
-    private static let secretStems = ["password", "passwd", "passphrase", "credential"]
+    private static let lookAlikes: [Character: Character] = ["@": "a", "4": "a", "$": "s", "0": "o", "1": "i", "3": "e", "5": "s", "!": "i"]
+    private static let secretWords: Set<String> = ["pass", "pwd", "pw", "secret", "secrets", "token", "tokens",
+                                                    "key", "keys", "apikey", "passcode", "creds", "auth"]
+    private static let secretStems = ["password", "passwd", "passphrase", "credential", "apikey", "accesskey",
+                                      "secretkey", "privatekey", "loginkey", "authtoken"]
 
     /// What a chat keeps in place of a message that mentioned a secret.
     public static let hiddenMessage = "🔒 Hidden: this message mentioned a password, so Flotilla didn't keep it."

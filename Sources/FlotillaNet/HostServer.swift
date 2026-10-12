@@ -437,6 +437,9 @@ final class HostConnectionHandler: @unchecked Sendable {
                                              message: "Stopped waiting. This host carries on and finishes it.") {
                     connection.send(reply)
                 }
+                // Its answer, when it comes, goes nowhere: the id is free on the wire now and may
+                // already belong to an upload or a follow (Kyle, 12 October).
+                stoppedWaiting.insert(id)
             } else if let reply = session?.fail(id, code: .cancelled, message: "Cancelled.") {
                 connection.send(reply)
             }
@@ -726,6 +729,7 @@ final class HostConnectionHandler: @unchecked Sendable {
             guard let self else { return }
             self.connection.queue.async {
                 self.performing.remove(id)
+                if self.stoppedWaiting.remove(id) != nil { return }
                 let reply: WireMessage? = switch outcome {
                 case .success(let json): self.session?.complete(id, with: CommandResult(stdout: json, stderr: "", exitCode: 0))
                 case .failure(let failure): self.session?.fail(id, code: failure.code, message: failure.message)
@@ -749,6 +753,8 @@ final class HostConnectionHandler: @unchecked Sendable {
     private var running: [UInt32: Cancellation] = [:]
     /// Host calls not yet answered. Touched only on the connection's queue.
     private var performing: Set<UInt32> = []
+    /// Host calls whose admin stopped waiting: their answer is dropped. Connection queue only.
+    private var stoppedWaiting: Set<UInt32> = []
 
     /// Runs off the connection's queue — a long pull must not stall pings — and reports back on it.
     /// A cancelled command is answered at once **and stopped**: its process is terminated, then

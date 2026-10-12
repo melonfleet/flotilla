@@ -480,10 +480,11 @@ public struct LocalHost: ContainerHost {
             err.abandon()
         }
 
-        // Cancelled only if the cancel is what ended it: a command that had already finished, or
-        // finished cleanly despite the signal, reports its real result — a caller told "cancelled"
-        // about a change that happened would be misled (Kyle, 12 October).
-        if stopped.isCancelled, !(process.terminationReason == .exit && process.terminationStatus == 0) {
+        // Cancelled only if the cancel is what ended it — the signal killed it. A command that had
+        // already finished, or caught the signal and exited with a code of its own, reports its
+        // real result: a caller told "cancelled" about a change that happened would be misled
+        // (Kyle, 12 October, twice).
+        if stopped.isCancelled, process.terminationReason == .uncaughtSignal {
             throw ContainerCLIError.cancelled(command: Self.summarise(args))
         }
         if timedOut {
