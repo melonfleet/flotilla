@@ -60,15 +60,6 @@ struct WindowBar: View {
 
                 // The three app-level controls share one capsule, the way a section's actions do.
                 BarGlass {
-                    // Greta (Q52), when she's on: her face opens her page.
-                    if model.gretaEnabled {
-                        Button { model.pendingSection = .greta } label: {
-                            GretaAvatarView(style: model.gretaAvatar, size: 20)
-                        }
-                        .buttonStyle(IconActionButtonStyle())
-                        .help("Ask Greta")
-                        .accessibilityLabel("Ask Greta")
-                    }
                     // Notifications (the owner, 10 October): a bell with how many need attention.
                     NotificationsToolbarButton(count: model.notices.attention.count) {
                         model.pendingSection = .notifications

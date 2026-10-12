@@ -131,6 +131,11 @@ struct MainWindowView: View {
                 row(.activity, count: model.activity.isEmpty ? nil : model.activity.count)
                 row(.logs, count: nil)
             }
+            // Greta (Q52), when she's on: her face, and "Ask Greta" beside it when expanded. The
+            // window bar's glass made her too faint there (the owner, 12 October).
+            if model.gretaEnabled {
+                SwiftUI.Section { gretaRow }
+            }
 
             // **No System group.** Settings moved to the gear at the window's trailing edge
             // (`WindowBar`), on the owner's reasoning that the left nav should list the things you
@@ -221,6 +226,25 @@ struct MainWindowView: View {
         .tag(section)
     }
 
+    private var gretaRow: some View {
+        Group {
+            if railed {
+                GretaAvatarView(style: model.gretaAvatar, size: railIconSize + 8)
+                    .frame(maxWidth: .infinity, minHeight: 26)
+                    .help("Ask Greta (⌘G opens her over any page)")
+            } else {
+                HStack(spacing: 7) {
+                    GretaAvatarView(style: model.gretaAvatar, size: 20)
+                    Text("Ask Greta")
+                    Spacer(minLength: 6)
+                    Text("⌘G").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .accessibilityLabel("Ask Greta")
+        .tag(Section.greta)
+    }
+
     /// The section itself, shared by both shells so there is one switch on the selection rather
     /// than one per navigation mode — two copies would be free to disagree about which view a
     /// section maps to.
@@ -307,6 +331,14 @@ struct MainWindowView: View {
                 // matters, because the window's height is set by that band's divider lining up
                 // with the Utilisation table.
                 .padding(.top, -sidebarCardLift)
+                // ⌘G: Greta floating over whichever page is showing (Q52). Escape or ⌘G closes it.
+                .overlay(alignment: .bottomTrailing) {
+                    if model.gretaEnabled, model.greta.overlayShown {
+                        GretaOverlay(model: model) { selection = $0 }
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                }
+                .animation(.easeOut(duration: 0.18), value: model.greta.overlayShown)
                 // Pairing by code: the four words, on whichever screen is open. On the split view
                 // rather than beside the operation sheet below, so two sheets never share a view.
                 // Dismissed any other way, the answer is no — pairing must never hang waiting.

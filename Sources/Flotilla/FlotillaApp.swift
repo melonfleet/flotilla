@@ -275,6 +275,16 @@ private struct FlotillaCommands: Commands {
 
         // Diagnostics belongs in Help because it is needed when the runtime is unavailable;
         // unlike the File actions, this remains useful and enabled in that state.
+        // Greta over whichever page is showing (Q52). ⌘G is "Find Next" in many Mac apps; Flotilla has
+        // no Find Next, so it is free here (the owner, 12 October).
+        CommandGroup(after: .sidebar) {
+            Button(model.greta.overlayShown ? "Hide Greta" : "Ask Greta") {
+                present { model.greta.overlayShown.toggle() }
+            }
+            .keyboardShortcut("g", modifiers: .command)
+            .disabled(!model.gretaEnabled)
+        }
+
         CommandGroup(before: .help) {
             Button("Create Support Bundle…") { present(model.requestSupportBundle) }
         }

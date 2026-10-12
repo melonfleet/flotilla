@@ -11,21 +11,74 @@ import FlotillaCore
 /// - **A draft is a form, not a command.** A container draft opens in the Run form, where the user
 ///   reviews it and the allowlist checks it like anything typed. She has no tool that changes
 ///   anything, so nothing a container's name or label says can make her do something.
+/// One message in a chat with Greta.
+struct GretaMessage: Codable, Identifiable, Equatable {
+    enum Role: String, Codable { case user, greta }
+    var id = UUID()
+    var date = Date()
+    var role: Role
+    var text: String
+    /// A container she drafted, for the Run form.
+    var draft: GretaDraftRecord?
+    /// She couldn't answer; the text says why.
+    var isProblem = false
+}
+
+/// A draft as saved with its chat — `RunPrefill` itself isn't stored.
+struct GretaDraftRecord: Codable, Equatable {
+    var image: String
+    var name: String
+    var ports: [String]
+    var env: [String]
+    var volumes: [String]
+
+    var prefill: RunPrefill { RunPrefill(draftImage: image, name: name, ports: ports, env: env, volumes: volumes) }
+}
+
+/// One conversation, titled by its first question.
+struct GretaConversation: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var started = Date()
+    var title: String
+    var messages: [GretaMessage] = []
+}
+
 @MainActor
 @Observable
 final class Greta {
     enum Mode: String, CaseIterable, Identifiable {
-        case ask = "Ask a question", draft = "Draft a container"
+        case ask = "Ask", draft = "Draft a container"
         var id: Self { self }
     }
 
-    var question = ""
+    /// Newest first. Kept on this Mac only, the last 50.
+    private(set) var conversations: [GretaConversation] = []
+    var currentID: UUID?
     var mode: Mode = .ask
     private(set) var working = false
-    private(set) var answer: String?
-    private(set) var draft: RunPrefill?
-    private(set) var draftNote: String?
-    private(set) var problem: String?
+    /// The ⌘G floating chat, over whatever page is showing.
+    var overlayShown = false
+
+    static let keptConversations = 50
+    static let keptMessages = 80
+
+    @ObservationIgnored private let file: URL?
+
+    init(file: URL? = Greta.defaultFile) {
+        self.file = file
+        if let file, let data = try? Data(contentsOf: file),
+           let saved = try? JSONDecoder().decode([GretaConversation].self, from: data) {
+            conversations = saved
+            currentID = saved.first?.id
+        }
+    }
+
+    static var defaultFile: URL? {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        return support.appendingPathComponent(SettingsPersistence.domain).appendingPathComponent("greta-chats.json")
+    }
+
+    var current: GretaConversation? { conversations.first { $0.id == currentID } }
 
     /// Why she can't help on this Mac, or nil.
     var unavailableReason: String? {
@@ -42,34 +95,81 @@ final class Greta {
         }
     }
 
-    func clear() { answer = nil; draft = nil; draftNote = nil; problem = nil }
+    func newConversation() {
+        // An empty chat is reused rather than piled up.
+        if let current, current.messages.isEmpty { return }
+        let chat = GretaConversation(title: "New chat")
+        conversations.insert(chat, at: 0)
+        currentID = chat.id
+        save()
+    }
 
-    func send(model: AppModel) async {
+    func delete(_ id: UUID) {
+        conversations.removeAll { $0.id == id }
+        if currentID == id { currentID = conversations.first?.id }
+        save()
+    }
+
+    func send(_ question: String, model: AppModel) async {
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !working else { return }
-        clear()
-        if let unavailableReason { problem = unavailableReason; return }
+        if current == nil { newConversation() }
+        guard let id = currentID else { return }
+        let earlier = recap(id)
+        append(GretaMessage(role: .user, text: text), to: id)
+        if let unavailableReason { append(GretaMessage(role: .greta, text: unavailableReason, isProblem: true), to: id); return }
         working = true
         defer { working = false }
         let fleet = Self.inventory(model)
+        let prompt = earlier.isEmpty ? text : "Earlier in this chat:\n\(earlier)\n\nNow: \(text)"
         do {
             switch mode {
             case .ask:
                 let session = LanguageModelSession(tools: [GuideTool(), FleetTool(inventory: fleet)],
                                                    instructions: Self.askInstructions)
-                answer = try await session.respond(to: text).content
+                append(GretaMessage(role: .greta, text: try await session.respond(to: prompt).content), to: id)
             case .draft:
                 let guide = GretaGuide.search(text, limit: 2, budget: 900).map(\.text).joined(separator: "\n")
                 let session = LanguageModelSession(instructions: Self.draftInstructions + "\n\nFrom Flotilla's guide:\n" + guide)
-                let made = try await session.respond(to: text, generating: ContainerDraft.self).content
-                draft = made.prefill
-                draftNote = made.explanation
+                let made = try await session.respond(to: prompt, generating: ContainerDraft.self).content
+                append(GretaMessage(role: .greta, text: made.explanation, draft: made.record), to: id)
             }
         } catch let error as LanguageModelSession.GenerationError {
-            problem = Self.describe(error)
+            append(GretaMessage(role: .greta, text: Self.describe(error), isProblem: true), to: id)
         } catch {
-            problem = "Greta couldn't answer: \(error.localizedDescription)"
+            append(GretaMessage(role: .greta, text: "Greta couldn't answer: \(error.localizedDescription)", isProblem: true), to: id)
         }
+    }
+
+    /// The last two exchanges, short, so a follow-up makes sense without filling her small context.
+    private func recap(_ id: UUID) -> String {
+        guard let chat = conversations.first(where: { $0.id == id }) else { return "" }
+        return chat.messages.suffix(4).map { message in
+            let said = message.draft.map { "drafted \($0.image) as \($0.name)" } ?? message.text
+            return "\(message.role == .user ? "User" : "Greta"): \(String(said.prefix(300)))"
+        }.joined(separator: "\n")
+    }
+
+    private func append(_ message: GretaMessage, to id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        if conversations[index].messages.isEmpty, message.role == .user {
+            conversations[index].title = String(message.text.prefix(60))
+        }
+        conversations[index].messages.append(message)
+        if conversations[index].messages.count > Self.keptMessages {
+            conversations[index].messages.removeFirst(conversations[index].messages.count - Self.keptMessages)
+        }
+        // The chat just used moves to the top of the history.
+        let chat = conversations.remove(at: index)
+        conversations.insert(chat, at: 0)
+        if conversations.count > Self.keptConversations { conversations.removeLast(conversations.count - Self.keptConversations) }
+        save()
+    }
+
+    private func save() {
+        guard let file else { return }
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONEncoder().encode(conversations).write(to: file, options: .atomic)
     }
 
     // MARK: Instructions — trusted text, never mixed with anything from a container
@@ -177,7 +277,7 @@ struct ContainerDraft {
 
     /// For the Run form, tidied: a bare port becomes port:port, and a volume that names a folder
     /// is dropped (a draft never mounts folders; Q52).
-    var prefill: RunPrefill {
+    var record: GretaDraftRecord {
         let cleanPorts = ports.compactMap { port -> String? in
             let p = port.trimmingCharacters(in: .whitespaces)
             if p.isEmpty { return nil }
@@ -185,7 +285,7 @@ struct ContainerDraft {
         }
         let cleanVolumes = volumes.filter { !$0.hasPrefix("/") && !$0.hasPrefix("~") && $0.contains(":") }
         let cleanName = String(name.lowercased().map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "-" }).prefix(40)
-        return RunPrefill(draftImage: image.trimmingCharacters(in: .whitespaces), name: String(cleanName),
-                          ports: cleanPorts, env: environment, volumes: cleanVolumes)
+        return GretaDraftRecord(image: image.trimmingCharacters(in: .whitespaces), name: String(cleanName),
+                                ports: cleanPorts, env: environment, volumes: cleanVolumes)
     }
 }
