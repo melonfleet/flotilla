@@ -302,6 +302,22 @@ final class HostModeController {
         return identity
     }
 
+    /// Whether this Mac has an identity, **without** creating one.
+    ///
+    /// `identity` is only populated once something has needed it, so a screen outside Host Mode
+    /// cannot read that and be right. The Keychain is asked at most once and the answer kept:
+    /// `ensureIdentity()` and `forgetAllHostsAndTrust()` are the only things that change it, and a
+    /// reset button that is merely drawn must not mint this Mac's key.
+    var hasIdentity: Bool {
+        if identity != nil { return true }
+        if let identityOnDisk { return identityOnDisk }
+        let found = (try? identityStore.load()) != nil
+        identityOnDisk = found
+        return found
+    }
+
+    @ObservationIgnored private var identityOnDisk: Bool?
+
     /// What this Mac says about itself when pairing. The serial number goes only to the Mac it is
     /// pairing with, over TLS, so the owner can check it against the inventory — never into a
     /// support bundle or an export.
@@ -484,6 +500,61 @@ final class HostModeController {
             saveImported()
         }
         refreshBridge()
+    }
+
+    // MARK: Forgetting all of it (Settings ▸ Advanced)
+
+    /// Whether `forgetAllHostsAndTrust()` has anything to do — what disables the Settings button.
+    ///
+    /// A key from a configuration profile does not count: it is the organisation's, and deleting
+    /// this Mac's copy of it would neither remove it nor stop it being used.
+    var hasHostsOrTrustToForget: Bool {
+        !book.peers.isEmpty || hasIdentity || adminKey != nil || hostEnrolmentKey?.source == .pasted
+    }
+
+    /// Forgets every paired Mac, this Mac's identity and the fleet enrolment key, so this Mac and
+    /// every other must pair again from scratch (`research/FEATURES.md`: the second of the three
+    /// resets). The owner's way back from a suspected key, a fleet they are leaving, or a Mac they
+    /// are passing on.
+    ///
+    /// Nothing the `container` runtime owns is touched — no container, image, volume or network —
+    /// and nothing here is privileged, so the Flotilla Helper is not involved. The resolver files
+    /// for other Macs' zones are the helper's and are deliberately left alone.
+    ///
+    /// Returns the forgotten Macs' keys, for the per-host bookkeeping the app holds outside this
+    /// controller (`AppModel.forgetAllHostsAndTrust`).
+    @discardableResult
+    func forgetAllHostsAndTrust() -> [String] {
+        let forgotten = book.peers.map(\.fingerprint)
+        // The listener presents the identity about to be deleted, and `startListening` reuses a
+        // running server, so it is stopped here rather than left for `apply()` to notice.
+        stopListening()
+        // What a host leaves behind is `dropRemote`'s list, asked for every key we hold a
+        // connection or an answer for — so a snapshot added to that list later is cleared here too.
+        for fingerprint in Set(forgotten).union(remotes.keys).union(live.keys) { dropRemote(fingerprint) }
+        sentFleetTables.removeAll()
+        fleetNamesResults.removeAll()
+        updateFailures.removeAll()
+        autoEnrolAttempts.removeAll()
+        book.removeAll()
+        // A forgotten host's /20 goes back to the pool; This Mac keeps its own.
+        addressBlocks = addressBlocks.filter { $0.key == Self.blockKey(.local) }
+        localStore.set(try? PropertyListEncoder().encode(addressBlocks), forKey: Self.addressBlocksKey)
+        identityStore.reset()
+        identity = nil
+        identityProblem = nil
+        identityOnDisk = false
+        keyStore.removeAll()
+        adminKey = nil
+        // Both belong to the identity that has just gone: a code shown now proves nothing.
+        pairingCode = nil
+        enrolmentStatus = nil
+        record(Self.computerName, "Forgot all hosts and trust")
+        save()
+        // A new identity is created the moment one is needed — by the listener `apply()` starts on
+        // a host, or by `ensureIdentity()` at the next pairing.
+        apply()
+        return forgotten.map(\.hex)
     }
 
     // MARK: Adding a host (admin)

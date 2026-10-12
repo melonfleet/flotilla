@@ -282,11 +282,13 @@ public enum SettingsKeys {
     /// (The private key is never here at all — it lives in the Keychain.)
     public static let peerAllowlist = SettingsKey<[String]>(
         "peerAllowlist", default: [], scope: .host, isSensitive: true,
+        availability: SettingAvailability.notBuilt(reason: "Not used: paired Macs are kept in Flotilla's own records, and this Mac's identity in the Keychain."),
         summary: "SHA-256 fingerprints of peers allowed to connect. Never exported."
     )
 
     public static let trustAnchorFingerprints = SettingsKey<[String]>(
         "trustAnchorFingerprints", default: [], scope: .host, isSensitive: true,
+        availability: SettingAvailability.notBuilt(reason: "Not used: Macs trust each other by their own keys, with no certificate authority."),
         summary: "SHA-256 fingerprints of trusted CA anchors. Never exported."
     )
 

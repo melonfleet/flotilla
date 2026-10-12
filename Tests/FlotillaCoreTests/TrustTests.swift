@@ -236,6 +236,20 @@ struct PeerBookTests {
         #expect(book[mini]?.displayName == "Build box")
     }
 
+    /// Settings ▸ Advanced ▸ *Forget all hosts and trust*: the book keeps nothing, not even who
+    /// was turned away. It is a reset, not a list of Macs to keep out.
+    @Test func forgettingEveryMacEmptiesTheBook() {
+        var book = PeerBook()
+        book.pairConfirmed(mini, role: .host, details: details, at: now)
+        _ = book.requestEnrolment(fingerprint(6), role: .host, details: details, at: now)
+        book.reject(fingerprint(6), at: now)
+        book.removeAll()
+        #expect(book == PeerBook())
+        #expect(!book.isTrusted(mini) && !book.isBlocked(fingerprint(6)))
+        // So a Mac that was turned away could ask again from scratch.
+        #expect(book.requestEnrolment(fingerprint(6), role: .host, details: details, at: now) == .addedPending)
+    }
+
     @Test func theBookIsPlistNative() throws {
         var book = PeerBook()
         _ = book.requestEnrolment(mini, role: .host, details: details, at: now)

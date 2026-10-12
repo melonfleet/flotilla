@@ -176,6 +176,13 @@ public struct PeerBook: Sendable, Equatable, Codable {
         peers.removeAll { $0.fingerprint == fingerprint }
     }
 
+    /// Forgets every Mac: an admin's hosts, or a host's admin. Settings ▸ Advanced ▸ *Forget all
+    /// hosts and trust*. Nothing is kept, so a Mac turned away before may ask again — this empties
+    /// the book, it does not become a list of Macs to keep out.
+    public mutating func removeAll() {
+        peers.removeAll()
+    }
+
     /// What a peer says about itself now — its computer name after a rename, its macOS after an
     /// update. The owner's nickname, if any, is left alone. Returns whether anything changed.
     @discardableResult

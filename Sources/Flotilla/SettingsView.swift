@@ -663,11 +663,12 @@ struct SettingsView: View {
 
     }
 
-    /// Preferences and window layout reset independently.
+    /// Preferences, host trust and window layout reset independently.
     ///
     /// Someone whose window is stranded on a display they no longer have should be able to
-    /// recover it without losing every preference, and vice versa. One "Reset everything"
-    /// button is the version of this that nobody dares press.
+    /// recover it without losing every preference, and vice versa — and neither of those should
+    /// cost a day of re-pairing a fleet. One "Reset everything" button is the version of this that
+    /// nobody dares press.
     ///
     /// Each confirmation names what it will do **and what it will not touch**, because the
     /// fear that stops people using a reset is not knowing where it stops. The scope note
@@ -686,6 +687,7 @@ struct SettingsView: View {
                     }
                     Spacer()
                     Button("Reset") { pendingReset = action }
+                        .disabled(!action.isAvailable(model))
                 }
                 .padding(.vertical, 2)
             }
@@ -702,12 +704,13 @@ struct SettingsView: View {
     }
 
     enum ResetAction: String, CaseIterable, Identifiable {
-        case preferences, windowLayout
+        case preferences, hostsAndTrust, windowLayout
         var id: Self { self }
 
         var title: String {
             switch self {
             case .preferences: "Reset preferences"
+            case .hostsAndTrust: "Forget all hosts and trust"
             case .windowLayout: "Reset window layout"
             }
         }
@@ -716,6 +719,8 @@ struct SettingsView: View {
             switch self {
             case .preferences:
                 "Every setting back to its default. Your window position is left alone."
+            case .hostsAndTrust:
+                "Every Mac you have paired with is forgotten, and this Mac is given a new identity."
             case .windowLayout:
                 "Forgets window size, position and the sidebar width. Takes effect at next launch."
             }
@@ -724,6 +729,7 @@ struct SettingsView: View {
         var confirmLabel: String {
             switch self {
             case .preferences: "Reset Preferences"
+            case .hostsAndTrust: "Forget Hosts and Trust"
             case .windowLayout: "Reset Layout"
             }
         }
@@ -736,6 +742,11 @@ struct SettingsView: View {
                 "Every setting returns to its default, including your appearance choice, so "
                     + "Flotilla will ask about it again next launch.\n\nYour window layout, "
                     + "your containers, images and volumes are all untouched."
+            case .hostsAndTrust:
+                "Every Mac you have paired with is forgotten, along with this Mac's own identity "
+                    + "and your fleet enrolment key. Every Mac has to pair again from scratch, "
+                    + "and each one's owner has to let this Mac back in.\n\nYour containers, "
+                    + "images, volumes, settings and window layout are all untouched."
             case .windowLayout:
                 "Forgets the window's size and position and the sidebar width. Useful if the "
                     + "window has ended up off-screen.\n\nTakes effect at next launch, because "
@@ -747,7 +758,18 @@ struct SettingsView: View {
         @MainActor func perform(_ model: AppModel) {
             switch self {
             case .preferences: model.resetPreferences()
+            case .hostsAndTrust: model.forgetAllHostsAndTrust()
             case .windowLayout: model.resetWindowLayout()
+            }
+        }
+
+        /// Whether there is anything to do. Preferences and a window layout always have defaults to
+        /// return to; trust is the one that can be empty already, and its button is then disabled
+        /// rather than missing, so it is somewhere you have seen before you need it.
+        @MainActor func isAvailable(_ model: AppModel) -> Bool {
+            switch self {
+            case .preferences, .windowLayout: true
+            case .hostsAndTrust: model.hasHostTrustToForget
             }
         }
     }

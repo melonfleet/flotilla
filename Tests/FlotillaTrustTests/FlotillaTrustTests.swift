@@ -101,6 +101,32 @@ struct TrustStoreTests {
         #expect(PeerBookStore(defaults: defaults).load() == book)
     }
 
+    /// What *Forget all hosts and trust* leans on: an emptied book is written rather than merely
+    /// dropped in memory, so the hosts are not back at the next launch, and the fleet enrolment key
+    /// goes on both sides — an admin's generated key and a host's pasted one.
+    @Test func forgettingEverythingLeavesNothingToLoad() throws {
+        let suite = "dev.melonfleet.Flotilla.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let keys = EnrolmentKeyStore(service: "dev.melonfleet.Flotilla.test-enrolment.\(UUID().uuidString)",
+                                    defaults: defaults)
+        defer { keys.removeAll(); defaults.removePersistentDomain(forName: suite) }
+
+        var book = PeerBook()
+        let mini = PeerFingerprint(bytes: Array(repeating: 7, count: 32))!
+        book.pairConfirmed(mini, role: .host, details: PeerDetails(computerName: "mini"), at: Date())
+        let store = PeerBookStore(defaults: defaults)
+        try store.save(book)
+        let key = try keys.rotate(for: PeerFingerprint(bytes: Array(repeating: 4, count: 32))!)
+        try keys.setPastedHostKey(key.text)
+
+        book.removeAll()
+        try store.save(book)
+        keys.removeAll()
+
+        #expect(store.load().peers.isEmpty)
+        #expect(keys.adminKey() == nil && keys.hostKey() == nil)
+    }
+
     @Test func anAdminKeyRotatesAndAHostKeyIsValidatedBeforeItIsKept() throws {
         let suite = "dev.melonfleet.Flotilla.tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

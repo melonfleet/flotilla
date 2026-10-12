@@ -429,9 +429,9 @@ final class AppModel {
     // image data from a settings reset**. Someone whose window is stranded on a disconnected
     // display should not have to lose their preferences to recover it.
     //
-    // Nothing here can reach the container runtime. These clear our own `UserDefaults` keys
-    // and in-memory state; containers, images and volumes are owned by `container` and are not
-    // ours to delete from a settings screen.
+    // Nothing here can reach the container runtime. These clear our own `UserDefaults` keys, our
+    // own Keychain items and in-memory state; containers, images and volumes are owned by
+    // `container` and are not ours to delete from a settings screen.
 
     /// Return every user-set preference to its built-in or managed default.
     func resetPreferences() {
@@ -446,15 +446,24 @@ final class AppModel {
         SettingsPersistence.clearWindowState()
     }
 
-    /// Whether there is any paired host or trust material to forget.
+    /// Forget every paired Mac, this Mac's identity and the fleet enrolment key.
     ///
-    /// False throughout Phase 1: there are no hosts and no Keychain identity yet. The control
-    /// is shown anyway, disabled, rather than hidden — a reset that appears only once you have
-    /// something to lose is one nobody discovers in time.
-    var hasHostTrustToForget: Bool {
-        !settingsStore[SettingsKeys.peerAllowlist].isEmpty
-            || !settingsStore[SettingsKeys.trustAnchorFingerprints].isEmpty
+    /// `HostModeController` owns all of that. What it hands back is the keys of the Macs it
+    /// forgot, because the values they had in the owner's host categories are kept here and are
+    /// now about Macs this one no longer knows. The category *definitions* — Site, Rack, VLAN —
+    /// are the owner's own and stay.
+    func forgetAllHostsAndTrust() {
+        for host in hostMode.forgetAllHostsAndTrust() { hostCategories.forgetHost(host) }
     }
+
+    /// Whether there is any paired host or trust material to forget. The control is shown anyway,
+    /// disabled, rather than hidden — a reset that appears only once you have something to lose is
+    /// one nobody discovers in time.
+    ///
+    /// Asked of `HostModeController`, which holds the real trust. This used to read the registry's
+    /// `peerAllowlist` and `trustAnchorFingerprints`, which nothing has ever written: it was false
+    /// on a Mac with a dozen paired hosts and a key in the Keychain.
+    var hasHostTrustToForget: Bool { hostMode.hasHostsOrTrustToForget }
 
     // MARK: Polling
     //
