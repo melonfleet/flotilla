@@ -419,6 +419,9 @@ struct OverviewView: View {
             .padding(.vertical, 28)
             .padding(.horizontal, 20)
             .frame(maxWidth: .infinity)
+            // A flotilla in faint line work behind it (the owner, 12 October); the card's colour
+            // is unchanged.
+            .background { FlotillaSeascape().clipShape(RoundedRectangle(cornerRadius: 12)) }
             .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.hairline))
             // Closed for good, like after the first container (the owner, 9 October).
