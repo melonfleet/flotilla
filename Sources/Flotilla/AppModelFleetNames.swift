@@ -27,11 +27,15 @@ extension AppModel {
             let request: HelperRequest = zones.isEmpty
                 ? .removeFleetResolvers
                 : .syncFleetResolvers(fleetDomain: mine?.fleetDomain ?? "", zones: zones)
+            // A reset during the helper's await means this table belongs to a fleet this Mac has
+            // left: nothing it learned may be written afterwards (Kyle's second review).
+            let generation = hostMode.trustGeneration
             if helperEnabled {
                 problem = await PrivilegedHelper.send(request)
             } else if !zones.isEmpty {
                 problem = "\(hostLabel)'s Flotilla Helper isn't switched on, so it can't look up other Macs' names."
             }
+            guard hostMode.trustGeneration == generation else { return problem }
             if problem == nil || zones.isEmpty { hostMode.syncedFleetZones = zones }
         }
         if problem == nil { problem = hostMode.fleetResponder.lastError }

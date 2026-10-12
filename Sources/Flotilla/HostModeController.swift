@@ -406,18 +406,34 @@ final class HostModeController {
     private func stopListening() {
         renameTimer?.invalidate()
         renameTimer = nil
-        server?.stop()
+        if let server {
+            // Kept until it has really gone, so `stopListeningAndWait` can wait for a server that
+            // `apply()` or a rename stopped earlier, not only the current one (Kyle's second review).
+            // One that never finishes stays here, and the reset then refuses: fail closed.
+            let id = ObjectIdentifier(server)
+            stoppingServers[id] = server
+            server.stop { [weak self] done in
+                guard done else { return }
+                Task { @MainActor in self?.stoppingServers[id] = nil }
+            }
+        }
         server = nil
         listener = .off
     }
 
-    /// `stopListening`, and then waits until the listener and every session have really ended.
-    /// `false` if one was still up when the server stopped waiting.
+    /// Every server told to stop that has not yet said it has.
+    @ObservationIgnored private var stoppingServers: [ObjectIdentifier: HostServer] = [:]
+
+    /// `stopListening`, and then waits until every listener this controller ever stopped, and
+    /// every session on them, has really ended. `false` if one was still up when its wait ran out.
     private func stopListeningAndWait() async -> Bool {
-        let stopping = server
-        server = nil
         stopListening()
-        return await stopping?.stopAndWait() ?? true
+        var allGone = true
+        // `stop` is safe to ask again of a server already stopping: it answers once it is done.
+        for stopping in Array(stoppingServers.values) where !(await stopping.stopAndWait()) {
+            allGone = false
+        }
+        return allGone
     }
 
     private func listenerChanged(_ state: HostServer.State) {
@@ -606,6 +622,11 @@ final class HostModeController {
         } catch {
             // Whatever is left in the Keychain is asked about again.
             identityOnDisk = nil
+            // The key may have gone before the certificate's delete was refused. Then the identity
+            // still held in memory belongs to a key this reset deleted, and `apply()` must not put
+            // it back on the wire (Kyle's second review): drop it, so the next `ensureIdentity`
+            // makes or loads a whole one. If the Keychain can't say, it is dropped too.
+            if (try? identityStore.keyExists()) != true { identity = nil }
             return .failure(.keychain(error))
         }
         trustGeneration += 1

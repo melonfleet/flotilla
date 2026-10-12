@@ -117,6 +117,16 @@ public struct DeviceIdentityStore: Sendable {
 
     // MARK: Keychain
 
+    /// Whether this identity's private key is still in the Keychain. After a reset that failed
+    /// part-way, it is what says whether the identity in memory may still be presented: a key the
+    /// reset deleted must never be (Kyle's second review, 12 October). Throws when the Keychain
+    /// can't say.
+    public func keyExists() throws -> Bool {
+        Self.keychainLock.lock()
+        defer { Self.keychainLock.unlock() }
+        return try isPresent(keyQuery, "read this Mac's key")
+    }
+
     private var keyQuery: [String: Any] { [kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: tag] }
     private var certificateQuery: [String: Any] { [kSecClass as String: kSecClassCertificate, kSecAttrLabel as String: label] }
 
