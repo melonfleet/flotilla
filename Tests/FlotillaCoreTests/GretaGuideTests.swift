@@ -31,4 +31,21 @@ import Testing
         #expect(GretaText.untrusted("postgres:17") == "postgres:17")
         #expect(GretaText.untrusted("a\u{202E}b") == "a b")                 // a right-to-left override is a format character
     }
+
+    @Test func aBareYesIsSpottedAndARealRequestIsNot() {
+        #expect(GretaText.isBareAgreement("yes"))
+        #expect(GretaText.isBareAgreement("Yes, please!"))
+        #expect(GretaText.isBareAgreement("  go ahead. "))
+        #expect(!GretaText.isBareAgreement("yes, a postgres database"))
+        #expect(!GretaText.isBareAgreement("What can Flotilla do?"))
+    }
+
+    @Test func aRepeatedAnswerOverlapsAndANewOneDoesNot() {
+        let first = "Flotilla manages containers on your Mac. It lets you view, list and control them in the app."
+        let again = "Flotilla enables management of containers on your Mac, letting you list, view and control them in the app."
+        let ask = "What would you like to run? For example Postgres with its data kept, or a Redis cache."
+        #expect(GretaText.overlap(again, with: first) > 0.6)
+        #expect(GretaText.overlap(ask, with: first) < 0.3)
+        #expect(GretaText.overlap("", with: first) == 0)
+    }
 }

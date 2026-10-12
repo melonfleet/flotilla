@@ -117,26 +117,37 @@ struct GretaChatView: View {
         .onAppear { focused = true }
     }
 
+    /// Tips by example (the owner, 12 October): one box, and these show what to put in it.
+    static let examples = [
+        "What can Flotilla do?",
+        "How do I keep a container running if it crashes?",
+        "Draft Postgres with its data kept",
+        "Why does a host say it isn't answering?",
+    ]
+
     private var welcome: some View {
         HStack(alignment: .top, spacing: 10) {
             GretaAvatarView(style: avatar, size: compact ? 30 : 40)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Hi, I'm Greta.").font(.headline)
-                Text("Ask me how something in Flotilla works, or switch to Draft a container and describe what you need. I run on this Mac, and I never run or change anything myself.")
+                Text("Ask me how something in Flotilla works, or tell me what you want to run and I'll draft it for the Run form. I work on this Mac, and I never run or change anything myself.")
                     .foregroundStyle(.secondary)
+                Text("Try:").font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Self.examples, id: \.self) { example in
+                        Button(example) { text = example; send() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
             }
         }
     }
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Mode", selection: Binding(get: { greta.mode }, set: { greta.mode = $0 })) {
-                ForEach(Greta.Mode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden().fixedSize()
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(greta.mode == .ask ? "Ask about Flotilla…" : "Describe a container, e.g. Postgres 17 with its data kept",
-                          text: $text, axis: .vertical)
+                TextField("Ask Greta, or describe a container to run…", text: $text, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
                     .focused($focused)
@@ -144,8 +155,8 @@ struct GretaChatView: View {
                 Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
                     .buttonStyle(.borderless)
                     .disabled(greta.working || text.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .help(greta.mode == .ask ? "Ask" : "Draft")
-                    .accessibilityLabel(greta.mode == .ask ? "Ask" : "Draft")
+                    .help("Send")
+                    .accessibilityLabel("Send")
             }
         }
     }
@@ -177,6 +188,13 @@ struct GretaChatView: View {
                         Text(message.text).textSelection(.enabled)
                     }
                     if let draft = message.draft { draftCard(draft) }
+                    if message.opensStacks == true {
+                        Button("Open Suggestions") {
+                            onOpenDraft?()
+                            model.requestSuggestions(.containers)
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                    }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 12))
@@ -236,6 +254,11 @@ struct GretaOverlay: View {
                 Spacer()
                 Button { model.greta.newConversation() } label: { Image(systemName: "square.and.pencil") }
                     .buttonStyle(.borderless).help("New chat").accessibilityLabel("New chat")
+                // Plainly, as well as through her face: the full page, with the history.
+                Button { model.greta.overlayShown = false; go(.greta) } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                }
+                .buttonStyle(.borderless).help("Open full chat").accessibilityLabel("Open full chat")
                 Button { model.greta.overlayShown = false } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless).help("Close (⌘G)").accessibilityLabel("Close Greta")
                     .keyboardShortcut(.cancelAction)

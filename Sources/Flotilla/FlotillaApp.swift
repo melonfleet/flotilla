@@ -279,7 +279,11 @@ private struct FlotillaCommands: Commands {
         // no Find Next, so it is free here (the owner, 12 October).
         CommandGroup(after: .sidebar) {
             Button(model.greta.overlayShown ? "Hide Greta" : "Ask Greta") {
-                present { model.greta.overlayShown.toggle() }
+                // On her own page there is nothing to float: ⌘G goes to the chat that's already there.
+                present {
+                    if model.currentSection == .greta { return }
+                    model.greta.overlayShown.toggle()
+                }
             }
             .keyboardShortcut("g", modifiers: .command)
             .disabled(!model.gretaEnabled)

@@ -229,12 +229,12 @@ struct MainWindowView: View {
     private var gretaRow: some View {
         Group {
             if railed {
-                GretaAvatarView(style: model.gretaAvatar, size: railIconSize + 8)
+                GretaAvatarView(style: model.gretaAvatar, size: railIconSize + 10, tiled: true)
                     .frame(maxWidth: .infinity, minHeight: 26)
                     .help("Ask Greta (⌘G opens her over any page)")
             } else {
                 HStack(spacing: 7) {
-                    GretaAvatarView(style: model.gretaAvatar, size: 20)
+                    GretaAvatarView(style: model.gretaAvatar, size: 22, tiled: true)
                     Text("Ask Greta")
                     Spacer(minLength: 6)
                     Text("⌘G").font(.caption).foregroundStyle(.tertiary)
@@ -333,12 +333,17 @@ struct MainWindowView: View {
                 .padding(.top, -sidebarCardLift)
                 // ⌘G: Greta floating over whichever page is showing (Q52). Escape or ⌘G closes it.
                 .overlay(alignment: .bottomTrailing) {
-                    if model.gretaEnabled, model.greta.overlayShown {
+                    // Never over her own page, which is the same chat at full size (the owner).
+                    if model.gretaEnabled, model.greta.overlayShown, selection != .greta {
                         GretaOverlay(model: model) { selection = $0 }
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
                 .animation(.easeOut(duration: 0.18), value: model.greta.overlayShown)
+                .onChange(of: selection, initial: true) { _, section in
+                    model.currentSection = section
+                    if section == .greta { model.greta.overlayShown = false }
+                }
                 // Pairing by code: the four words, on whichever screen is open. On the split view
                 // rather than beside the operation sheet below, so two sheets never share a view.
                 // Dismissed any other way, the answer is no — pairing must never hang waiting.

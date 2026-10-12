@@ -105,4 +105,31 @@ public enum GretaText {
         let collapsed = String(cleaned).split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return collapsed.count > limit ? String(collapsed.prefix(limit)) + "…" : collapsed
     }
+
+    /// A bare "yes" (or "sure", "go ahead"…) with nothing else in it. The model can't tell what it
+    /// agreed to from a small recap, so the app restates her last message with it (the owner,
+    /// 12 October: "yes" twice got the same explanation twice).
+    public static func isBareAgreement(_ text: String) -> Bool {
+        let words = text.lowercased()
+            .unicodeScalars.map { CharacterSet.letters.contains($0) ? Character($0) : " " }
+        let phrase = String(words).split(separator: " ").joined(separator: " ")
+        return agreements.contains(phrase)
+    }
+
+    private static let agreements: Set<String> = [
+        "yes", "yes please", "yeah", "yep", "yup", "sure", "sure thing", "ok", "okay", "ok please",
+        "please", "please do", "do it", "go ahead", "go for it", "sounds good", "yes do it",
+        "yes go ahead", "yes sure", "ok sure", "sure go ahead", "y", "absolutely", "definitely",
+    ]
+
+    /// How much of `reply` is the words of `earlier` (0…1, over distinct words of three letters or
+    /// more). A small model asked twice tends to say the same thing again in other order.
+    public static func overlap(_ reply: String, with earlier: String) -> Double {
+        func words(_ text: String) -> Set<String> {
+            Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count >= 3 })
+        }
+        let new = words(reply), old = words(earlier)
+        guard !new.isEmpty, !old.isEmpty else { return 0 }
+        return Double(new.intersection(old).count) / Double(min(new.count, old.count))
+    }
 }

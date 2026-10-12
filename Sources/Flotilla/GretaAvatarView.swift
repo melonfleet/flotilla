@@ -7,15 +7,31 @@ import FlotillaCore
 struct GretaAvatarView: View {
     let style: GretaAvatar
     var size: CGFloat = 32
+    /// On a soft pink tile: for the sidebar, where a pale face on a pale ground was too faint to
+    /// find (the owner, 12 October).
+    var tiled = false
 
     /// The drawings are made on a 140pt canvas and scaled.
     private static let canvas: CGFloat = 140
 
+    /// How much thicker lines are drawn at small sizes. Drawn for the canvas and scaled down, a
+    /// 3pt outline became half a pixel in the sidebar; this keeps it over a point at any size.
+    private var weight: CGFloat { max(1, 56 / size) }
+
     var body: some View {
         drawing
+            .environment(\.gretaLineWeight, weight)
             .frame(width: Self.canvas, height: Self.canvas)
-            .scaleEffect(size / Self.canvas)
+            .scaleEffect((tiled ? size * 0.78 : size) / Self.canvas)
             .frame(width: size, height: size)
+            .background {
+                if tiled {
+                    RoundedRectangle(cornerRadius: size * 0.28)
+                        .fill(LinearGradient(colors: [Palette.blush, Palette.fleshLight.opacity(0.75)],
+                                             startPoint: .top, endPoint: .bottom))
+                        .overlay(RoundedRectangle(cornerRadius: size * 0.28).strokeBorder(Palette.fleshDeep.opacity(0.35)))
+                }
+            }
             .accessibilityElement()
             .accessibilityLabel("Greta")
     }
@@ -40,7 +56,7 @@ struct GretaAvatarView: View {
         case .sailor:
             VStack(spacing: -10) {
                 ZStack {
-                    Capsule().fill(.white).frame(width: 96, height: 30).overlay(Capsule().stroke(Palette.seed, lineWidth: 3))
+                    Capsule().fill(.white).frame(width: 96, height: 30).overlay(Capsule().stroke(Palette.seed, lineWidth: 3 * weight))
                     Rectangle().fill(Palette.rind).frame(width: 92, height: 7).offset(y: 8)
                     Circle().fill(Palette.fleshDeep).frame(width: 12).offset(y: -15)
                 }
@@ -70,6 +86,14 @@ struct GretaAvatarView: View {
     }
 }
 
+private struct GretaLineWeight: EnvironmentKey { static let defaultValue: CGFloat = 1 }
+extension EnvironmentValues {
+    var gretaLineWeight: CGFloat {
+        get { self[GretaLineWeight.self] }
+        set { self[GretaLineWeight.self] = newValue }
+    }
+}
+
 /// The watermelon palette (design/branding.md), plus the face's own blush and the daisy's centre.
 private enum Palette {
     static let flesh = Color(red: 0xFC / 255, green: 0x4A / 255, blue: 0x6B / 255)
@@ -84,6 +108,7 @@ private enum Palette {
 }
 
 private struct GretaFace: View {
+    @Environment(\.gretaLineWeight) private var w
     var fill: Color
     var lashes = false
     var happy = false
@@ -92,7 +117,7 @@ private struct GretaFace: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 34).fill(fill).frame(width: 110, height: 92)
-                .overlay(RoundedRectangle(cornerRadius: 34).stroke(stroke, lineWidth: 3))
+                .overlay(RoundedRectangle(cornerRadius: 34).stroke(stroke, lineWidth: 3 * w))
             VStack(spacing: 6) { Eyes(lashes: lashes, happy: happy); Smile(colour: Palette.seed) }.offset(y: 4)
             HStack(spacing: 56) {
                 Ellipse().fill(Palette.blush).frame(width: 16, height: 10)
@@ -104,6 +129,7 @@ private struct GretaFace: View {
 }
 
 private struct Eyes: View {
+    @Environment(\.gretaLineWeight) private var w
     var lashes: Bool
     var happy: Bool
 
@@ -113,7 +139,7 @@ private struct Eyes: View {
                 ZStack {
                     if happy {
                         Path { $0.addArc(center: CGPoint(x: 9, y: 12), radius: 8, startAngle: .degrees(200), endAngle: .degrees(340), clockwise: false) }
-                            .stroke(Palette.seed, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                            .stroke(Palette.seed, style: StrokeStyle(lineWidth: 3.5 * w, lineCap: .round))
                             .frame(width: 18, height: 14)
                     } else {
                         Capsule().fill(Palette.seed).frame(width: 12, height: 18)
@@ -125,7 +151,7 @@ private struct Eyes: View {
                             path.move(to: CGPoint(x: 9 + dx * 6, y: 2)); path.addLine(to: CGPoint(x: 9 + dx * 11, y: -4))
                             path.move(to: CGPoint(x: 9 + dx * 2, y: 0)); path.addLine(to: CGPoint(x: 9 + dx * 4, y: -7))
                         }
-                        .stroke(Palette.seed, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .stroke(Palette.seed, style: StrokeStyle(lineWidth: 2.5 * w, lineCap: .round))
                         .frame(width: 18, height: 18)
                     }
                 }
@@ -136,26 +162,29 @@ private struct Eyes: View {
 }
 
 private struct Smile: View {
+    @Environment(\.gretaLineWeight) private var w
     var colour: Color
     var body: some View {
         Path { $0.addArc(center: CGPoint(x: 12, y: 2), radius: 9, startAngle: .degrees(20), endAngle: .degrees(160), clockwise: false) }
-            .stroke(colour, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            .stroke(colour, style: StrokeStyle(lineWidth: 3 * w, lineCap: .round))
             .frame(width: 24, height: 12)
     }
 }
 
 private struct Antenna<Top: View>: View {
+    @Environment(\.gretaLineWeight) private var w
     @ViewBuilder var top: Top
     var body: some View {
-        VStack(spacing: 0) { top; Rectangle().fill(Palette.seed).frame(width: 3, height: 16) }
+        VStack(spacing: 0) { top; Rectangle().fill(Palette.seed).frame(width: 3 * w, height: 16) }
     }
 }
 
 private struct Daisy: View {
+    @Environment(\.gretaLineWeight) private var w
     var body: some View {
         ZStack {
             ForEach(0..<6, id: \.self) { petal in
-                Ellipse().fill(.white).overlay(Ellipse().stroke(Palette.seed, lineWidth: 1.5))
+                Ellipse().fill(.white).overlay(Ellipse().stroke(Palette.seed, lineWidth: 1.5 * w))
                     .frame(width: 9, height: 16).offset(y: -8)
                     .rotationEffect(.degrees(Double(petal) * 60))
             }

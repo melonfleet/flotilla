@@ -1820,6 +1820,9 @@ final class AppModel {
     var pendingRunSheet = false
     /// A notice to open in Notifications, from a click on its macOS notification. Cleared there.
     var pendingNotice: String?
+    /// The section the main window shows, mirrored by `MainWindowView` for the menu commands that
+    /// need to know it — ⌘G does nothing on Greta's own page.
+    @ObservationIgnored var currentSection: Section?
     /// A container Greta drafted, for the Run form. Cleared by `ContainersView`.
     var pendingRunPrefill: RunPrefill?
     /// Greta's state, kept while the window's sections come and go (DECISIONS Q52).

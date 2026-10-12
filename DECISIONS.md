@@ -2234,6 +2234,29 @@ scope audit that found "local AI" one of three unfilled competitor gaps.
 Order: after restart policies and health checks, and the cancellable host commands. MCP follows
 Greta; localisation is last before RC.
 
+**Amended 2026-10-12 (the owner's feedback on the first build, and measurements on this Mac).**
+
+- **One box, no modes.** The Ask/Draft switch is gone: the user just writes, and Greta decides. It
+  was the cause of a loop the owner hit — she offered to draft, "yes" in Ask could only explain,
+  and the same explanation came back twice. The welcome shows example prompts as the tips.
+- **She decides by rules, not by the model.** Asked to sort messages, the on-device model sent
+  "What can Flotilla do?" to "ask what to run" and "Draft Postgres 17" to "explain"; offered an
+  optional draft beside every answer, it filled one in nearly every time, often while its reply
+  asked what to run. `GretaRouter` (`FlotillaCore`, tested on Linux) decides: a question is
+  answered by the model with its tools; "run/set up X" is drafted; a request with nothing named,
+  or a bare "yes" to a message that named nothing, is answered with "what would you like to run?"
+  and examples; a service that needs company (WordPress, phpMyAdmin, RedisInsight) points to
+  Suggestions.
+- **Drafts come from tested recipes, not guided generation.** Given a tested starting draft, the
+  model still wrote a literal `name:` volume, invented environment variables for nginx, made up
+  `docker.io/library/gitea:1.0`, and drafted nginx for "uptime kuma". A draft is now a recipe from
+  the Suggestions catalogue — whose images and paths were run before they shipped — with a
+  version, port, name, user, database or "no volume" applied by tested parsing. For anything
+  without a recipe she says so and points to Run, rather than guess. A password she is told is
+  never put in the draft or kept in the chat; it stays change-me for the Run form. Her words about
+  a draft are written from the draft, so the two can't disagree. Point 4 otherwise stands: the
+  draft opens in the Run form and goes through the same checks as anything typed.
+
 ## Q53 — Restart policies and health checks, run by the Mac that runs the container (settled 2026-10-12)
 
 Settled decision 12 had them self-implemented and run on the host. `container` 1.5 has neither,
