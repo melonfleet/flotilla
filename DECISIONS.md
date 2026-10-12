@@ -2231,3 +2231,32 @@ scope audit that found "local AI" one of three unfilled competitor gaps.
 
 Order: after restart policies and health checks, and the cancellable host commands. MCP follows
 Greta; localisation is last before RC.
+
+## Q53 — Restart policies and health checks, run by the Mac that runs the container (settled 2026-10-12)
+
+Settled decision 12 had them self-implemented and run on the host. `container` 1.5 has neither,
+and — measured on 12 October — **it does not report a container's exit code**. A container
+exiting with code 3 shows only `"state": "stopped"` in `ls` and `inspect`, and there is no `wait`.
+So Flotilla can't tell a crash from a clean exit. The owner's answers:
+
+1. **Restart: Never (the default) or "Restart if it stops unexpectedly".** The second is Docker's
+   *unless-stopped*: a stop made in Flotilla, by the owner or by the admin, is deliberate and
+   respected. A container that stops any other way is restarted, after the Mac or `container`
+   comes back too. *On failure* isn't offered: there's no exit code to judge failure by. A stop
+   typed in Terminal looks the same as a crash, and the app says so next to the setting.
+2. **Backoff, and giving up.** Restarts wait 0, 10, 30, 60, 120, then 300 seconds. After five in
+   ten minutes Flotilla stops trying and raises an error notice with Restart as the fix. Ten
+   minutes running resets the count.
+3. **Health checks, three kinds.**
+   - A **port** answers a connection.
+   - **HTTP** returns 2xx or 3xx, but only on that container's own published port and a path. It
+     never fetches an arbitrary URL.
+   - A **command in the container**: argv through the allowlisted, non-interactive `exec`, never a
+     shell string, with a timeout and capped output.
+   Each has an interval, a timeout, a number of retries and a start period.
+4. **Unhealthy means a notice** (warning, with Restart as the fix). An automatic restart when
+   unhealthy is an opt-in per container.
+5. **History.** Every action Flotilla takes, and why, is kept per container (the last 50) and shown
+   on its page.
+6. **Order: This Mac first** (the engine, This Mac, the UI), then hosts over the wire, where the
+   host keeps running the policy while the admin is away, then the notification polish.
