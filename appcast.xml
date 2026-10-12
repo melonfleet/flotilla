@@ -5,6 +5,86 @@
     <link>https://melonfleet.github.io/flotilla/appcast.xml</link>
     <language>en</language>
     <item>
+      <title>Flotilla 1.5.0.0-beta.4</title>
+      <pubDate>Mon, 12 Oct 2026 09:54:12 +0000</pubDate>
+      <sparkle:version>422</sparkle:version>
+      <sparkle:shortVersionString>1.5.0.0-beta.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:channel>beta</sparkle:channel>
+      <description><![CDATA[<style>
+:root { color-scheme: light dark; }
+body { font: 13px -apple-system, system-ui, sans-serif; line-height: 1.45; margin: 12px 16px; }
+h3 { font-size: 13px; margin: 14px 0 4px; }
+p { margin: 6px 0; }
+ul { margin: 4px 0 8px; padding-left: 18px; }
+li { margin: 2px 0; }
+code { font: 12px ui-monospace, Menlo, monospace; }
+a { color: #2C7A7B; }
+@media (prefers-color-scheme: dark) { a { color: #59B3B0; } }
+.more { margin-top: 14px; font-size: 12px; opacity: 0.8; }
+</style>
+<p>Flotilla is a native Mac app for Apple's <code>container</code>: run and manage Linux containers on this Mac, and on a fleet of Macs from one admin Mac.</p>
+<p><strong>This is a beta</strong>, built and tested against <code>container</code> 1.5.0. Expect rough edges, and please report what you find.</p>
+<h3>Requirements</h3>
+<ul>
+<li>A Mac with Apple silicon, macOS 26 or later.</li>
+<li>Apple's <code>container</code> 1.5.0. Flotilla offers to download and install it on first run, through Apple's own Installer.</li>
+</ul>
+<h3>What's new since beta 3</h3>
+<p><strong>Notifications.</strong></p>
+<ul>
+<li>The bell in the window bar shows how many things need attention. It opens Notifications: a searchable list with Needs Attention, Dismissed and Resolved, and a page for each notice that says how long it has gone on and offers its fix.</li>
+<li>Overview shows one notice at a time, with its fix, Dismiss, and arrows to step through the rest.</li>
+<li>Dismiss hides a notice until its situation changes. Errors can't be dismissed, only dealt with. Select several to dismiss them together.</li>
+<li>Flotilla also uses macOS notifications for what needs you. Each comes with its fix (Start, Retry), Dismiss, and a click that opens the notice:</li>
+<li>a host that hasn't answered for two minutes;</li>
+<li><code>container</code> stopped, on this Mac or a host;</li>
+<li>a failed host update;</li>
+<li>a Mac waiting for approval. More than three a minute arrive as one, such as "6 Macs stopped answering". A notification leaves Notification Center when its notice is resolved or dismissed. New installs keep them on screen until clicked. Each kind has a switch in Settings.</li>
+</ul>
+<p><strong>Hosts.</strong></p>
+<ul>
+<li>The admin can start, stop and restart a host's <code>container</code>: from the host's page, its row menu in Hosts, or the "container is stopped" notice. Each host has a switch to refuse this, on by default.</li>
+<li>A host whose <code>container</code> is stopped says so, in amber, instead of "isn't answering".</li>
+<li>Flotilla starts <code>container</code> by itself only after the Mac starts up. It no longer undoes a stop you made on purpose. The admin can change this setting for each host.</li>
+<li>Needs Attention is first on a host's page.</li>
+<li>Keep Awake: ask a host to stay awake for an hour, four hours, or until 9 tomorrow.</li>
+<li>The System tab recommends Energy settings for a host, each with Apple's guide.</li>
+<li>A host added by address keeps that address. Bonjour is still used where it can see the host, and the typed address everywhere else, such as from the office over Tailscale. SSH, Screen Sharing and File Sharing use it too.</li>
+</ul>
+<p><strong>Kubernetes.</strong></p>
+<ul>
+<li>Clusters is now called Kubernetes, after <code>container k8s</code>.</li>
+<li>The admin lists, creates, deletes and recreates clusters on its hosts. The list has a Host column, a host filter and a "Create on" picker.</li>
+<li>A Mac without Rosetta is told so plainly: <code>container</code>'s Kubernetes clusters need it.</li>
+</ul>
+<p><strong>Polish.</strong></p>
+<ul>
+<li>"Copied" appears after every copy.</li>
+<li>About a hundred controls gained a tooltip, and untitled columns have spoken names.</li>
+<li>The menu bar's Needs Attention is a short list of headings, each opening to its detail.</li>
+<li>Release notes show properly in the update window.</li>
+</ul>
+<h3>Downloads</h3>
+<ul>
+<li><code>Flotilla-1.5.0.0-beta.4.dmg</code>: drag Flotilla to Applications.</li>
+<li><code>Flotilla-1.5.0.0-beta.4.pkg</code>: for MDM and scripted installs.</li>
+<li><code>Flotilla-1.5.0.0-beta.4.zip</code> and <code>.tar.gz</code>: the same signed, notarised app.</li>
+</ul>
+<h3>Updating from beta 3</h3>
+<p>Update the admin Mac first. It then updates its hosts by itself, one at a time, when each is idle. Starting and stopping a host's <code>container</code>, and setting its auto-start, need the host on beta 4.</p>
+<h3>Known limits</h3>
+<ul>
+<li>A new host needs one click on macOS's local network prompt; a configuration profile cannot grant it.</li>
+<li>Containers on different Macs reach each other through published ports only.</li>
+<li>A cluster on a host is reached with <code>kubectl</code> on that host. Your admin Mac can't reach it yet.</li>
+<li>Creating a cluster on a host shows no progress until it finishes, which can take several minutes.</li>
+<li>The Docker Hub browser searches Docker Hub only.</li>
+</ul>
+<p class="more"><a href="https://github.com/melonfleet/flotilla/releases/tag/v1.5.0.0-beta.4">Full release on GitHub</a></p>]]></description>
+      <enclosure url="https://github.com/melonfleet/flotilla/releases/download/v1.5.0.0-beta.4/Flotilla-1.5.0.0-beta.4.zip" type="application/octet-stream" sparkle:edSignature="QcSG6E+Nl0hQuizt9O16d4lucQYjS4VbCgNRs+tGmKGvw0u3/lXcYn6ZCI+XV2Bldk1qBP+MvBjIiz6owl+sAg==" length="13370486"/>
+    </item>
+    <item>
       <title>Flotilla 1.5.0.0-beta.3</title>
       <pubDate>Sat, 10 Oct 2026 15:02:16 +0000</pubDate>
       <sparkle:version>392</sparkle:version>
