@@ -76,7 +76,15 @@ final class Greta {
            let saved = try? JSONDecoder().decode([GretaConversation].self, from: data) {
             conversations = saved
             currentID = saved.first?.id
+            Self.makePrivate(file)          // an install from before the modes were set
         }
+    }
+
+    /// The folder 0700 and the file 0600.
+    private static func makePrivate(_ file: URL) {
+        let manager = FileManager.default
+        try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.deletingLastPathComponent().path)
+        try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
 
     static var defaultFile: URL? {
@@ -202,7 +210,7 @@ final class Greta {
                                      attributes: [.posixPermissions: 0o700])
         try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
         try? JSONEncoder().encode(conversations).write(to: file, options: .atomic)
-        try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        Self.makePrivate(file)
     }
 
     // MARK: Instructions — trusted text, never mixed with anything from a container
