@@ -235,8 +235,12 @@ extension AppModel {
                 } catch {
                     // Named plainly: which member, and what was already up when it stopped.
                     progress.finish(step, detail: "failed", failed: true)
-                    throw GroupRunFailure(member: member.name, started: started,
-                                          underlying: String(describing: error))
+                    // Anything the CLI echoed back is shown without the group's secret values.
+                    var underlying = String(describing: error)
+                    for value in values.values where value.count >= 4 {
+                        underlying = underlying.replacingOccurrences(of: value, with: "••••")
+                    }
+                    throw GroupRunFailure(member: member.name, started: started, underlying: underlying)
                 }
                 started.append(member.name)
                 progress.finish(step, detail: nil)
@@ -275,64 +279,72 @@ extension AppModel {
     /// Holds the group until `member` accepts connections on `port`, or says why it gave up.
     ///
     /// On This Mac the probe goes to the container's own address. A host's containers sit on that
-    /// Mac's private network, out of reach from here, so there the probe goes to the host's
-    /// address and the port `readyPort` is published on (the owner, 12 October). A ready port a
-    /// host doesn't publish can't be checked from here: the group then waits only until the
-    /// member is running, and the panel says so.
+    /// Mac's private network, out of reach from here, so a host is asked to probe its own container
+    /// (`.probePort`, wire version 13; Kyle, 12 October: a stack's database is published only on
+    /// the host's gateway). A host too old to be asked is probed at its address where the port is
+    /// published on every interface; otherwise the group waits only until the member is running,
+    /// and the panel says so.
     private func waitUntilReady(_ member: GroupMember, of group: ContainerGroup, port: Int,
                                 started: [String], progress: OperationProgress) async throws {
         let host = group.place
         let step = progress.begin("Waiting for \(member.name) on port \(port)")
         await refreshContainers(on: host)
-        let target: (address: String, port: Int)?
+
+        let probe: (@Sendable () async -> Bool)?
         switch host {
         case .local:
-            target = Readiness.address(fromIPv4: containers.first { $0.name == member.name }?.ipv4).map { ($0, port) }
-            guard target != nil else {
+            guard let address = Readiness.address(fromIPv4: containers.first { $0.name == member.name }?.ipv4) else {
                 progress.finish(step, detail: "no address", failed: true)
-                throw GroupReadyFailure(member: member.name, port: port, outcome: .stopped,
-                                        started: started)
+                throw GroupReadyFailure(member: member.name, port: port, outcome: .stopped, started: started)
             }
+            probe = { await Task.detached { TCPProbe.accepts(host: address, port: port) }.value }
         case .peer(let fingerprint):
-            // Only a port published on every interface can be reached from here: one bound to the
-            // host's gateway or to 127.0.0.1 is closed to other Macs, and probing it would only
-            // time out.
-            let published = member.ports.lazy.compactMap { spec -> Int? in
-                guard StackPlanner.containerPort(fromPublishSpec: spec) == port else { return nil }
-                let parts = (spec.split(separator: "/").first.map(String.init) ?? spec).split(separator: ":")
-                guard parts.count == 2 || parts.first == "0.0.0.0" else { return nil }
-                return StackPlanner.hostPort(fromPublishSpec: spec)
-            }.first
-            let name = hostMode.probeAddress(for: fingerprint)
-            let address = await Task.detached { name.flatMap(TCPProbe.ipv4(for:)) }.value
-            target = zip2(address, published)
+            if let remote = hostMode.remoteHost(for: fingerprint),
+               (remote.protocolVersion ?? 0) >= WireProtocol.probePortVersion {
+                let name = member.name
+                probe = { (try? await remote.call(.probePort(container: name, port: port)))?.stdout == "open" }
+            } else {
+                // Only a port published on every interface can be reached from here: one bound to
+                // the host's gateway or to 127.0.0.1 is closed to other Macs.
+                let published = member.ports.lazy.compactMap { spec -> Int? in
+                    guard StackPlanner.containerPort(fromPublishSpec: spec) == port else { return nil }
+                    let parts = (spec.split(separator: "/").first.map(String.init) ?? spec).split(separator: ":")
+                    guard parts.count == 2 || parts.first == "0.0.0.0" else { return nil }
+                    return StackPlanner.hostPort(fromPublishSpec: spec)
+                }.first
+                let name = hostMode.probeAddress(for: fingerprint)
+                let address = await Self.resolve(name, within: 5)
+                if let address, let published {
+                    probe = { await Task.detached { TCPProbe.accepts(host: address, port: published) }.value }
+                } else {
+                    probe = nil
+                }
+            }
         }
-        var polls = 0
-        let isRunning: @MainActor () async -> Bool = { [weak self] in
-            // The list is re-read every fifth poll: often enough to notice a database that
-            // exited on bad settings, rarely enough not to spawn a process every second.
-            guard let self else { return false }
-            polls += 1
-            guard polls % 5 == 0 else { return true }
-            await self.refreshContainers(on: host)
-            return self.runningContainerNames(on: host).contains(member.name)
-        }
-        guard let target else {
+
+        guard let probe else {
             // Can't be probed from here: wait for it to be running, and say that is all it was.
-            await refreshContainers(on: host)
             if runningContainerNames(on: host).contains(member.name) {
-                progress.finish(step, detail: "running; port \(port) isn't published, so it couldn't be checked from here")
+                progress.finish(step, detail: "running; port \(port) couldn't be checked from here — update Flotilla on \(groupHostName(group)) so it can")
                 return
             }
             progress.finish(step, detail: "stopped", failed: true)
             throw GroupReadyFailure(member: member.name, port: port, outcome: .stopped, started: started)
         }
+
+        var polls = 0
         let outcome = await Readiness.wait(
             sleep: { try? await Task.sleep(for: .seconds($0)) },
-            isRunning: isRunning,
-            probe: {
-                await Task.detached { TCPProbe.accepts(host: target.address, port: target.port) }.value
-            })
+            isRunning: { [weak self] in
+                // The list is re-read every fifth poll: often enough to notice a database that
+                // exited on bad settings, rarely enough not to spawn a process every second.
+                guard let self else { return false }
+                polls += 1
+                guard polls % 5 == 0 else { return true }
+                await self.refreshContainers(on: host)
+                return self.runningContainerNames(on: host).contains(member.name)
+            },
+            probe: probe)
         switch outcome {
         case .ready:
             progress.finish(step, detail: "ready")
@@ -341,6 +353,19 @@ extension AppModel {
                             failed: true)
             throw GroupReadyFailure(member: member.name, port: port, outcome: outcome,
                                     started: started)
+        }
+    }
+
+    /// A host name's IPv4 address, giving up after `seconds`: `getaddrinfo` can't be cancelled,
+    /// and a lookup that hangs must not hold a group start past its own deadline (Kyle).
+    static func resolve(_ name: String?, within seconds: Double) async -> String? {
+        guard let name else { return nil }
+        // A continuation resumed by whichever finishes first. (A task group would wait for the
+        // lookup anyway: it doesn't return until every child has.)
+        let once = FirstAnswer()
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { once.answer(TCPProbe.ipv4(for: name), to: continuation) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { once.answer(nil, to: continuation) }
         }
     }
 
@@ -471,8 +496,16 @@ extension AppModel {
     }
 }
 
-/// Both, or nothing.
-private func zip2<A, B>(_ a: A?, _ b: B?) -> (A, B)? {
-    guard let a, let b else { return nil }
-    return (a, b)
+/// Resumes a continuation once, with the first answer to arrive.
+private final class FirstAnswer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var answered = false
+
+    func answer(_ value: String?, to continuation: CheckedContinuation<String?, Never>) {
+        lock.lock()
+        let first = !answered
+        answered = true
+        lock.unlock()
+        if first { continuation.resume(returning: value) }
+    }
 }

@@ -24,7 +24,8 @@ public enum WireProtocol {
     /// Version 10 adds `.setAutoStartRuntime` — the admin sets when a host starts `container` (10 October).
     /// Version 11 adds `.controlRuntime` — the admin starts, stops or restarts a host's `container` (Q50).
     /// Version 12 adds `.policies` and `.setPolicy` — restart and health policies on hosts (Q53).
-    public static let supportedVersions: ClosedRange<UInt16> = 1...12
+    /// Version 13 adds `.probePort` — a group on a host waits for its members' ready ports (12 October).
+    public static let supportedVersions: ClosedRange<UInt16> = 1...13
     /// The first version that carries streams.
     public static let streamsVersion: UInt16 = 2
     /// The first version that carries host calls.
@@ -47,6 +48,8 @@ public enum WireProtocol {
     public static let runtimeControlVersion: UInt16 = 11
     /// The first version that takes `.policies` and `.setPolicy`.
     public static let policiesVersion: UInt16 = 12
+    /// The first version that answers `.probePort`.
+    public static let probePortVersion: UInt16 = 13
     /// The owner's choice, 7 October. Changeable in Settings.
     public static let defaultPort: UInt16 = 7868
 

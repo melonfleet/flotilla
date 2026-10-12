@@ -57,6 +57,14 @@ extension AppModel {
             }
             return .success(String(decoding: json, as: UTF8.self))
 
+        case .probePort(let container, let port):
+            // The container's own address on this Mac, which its admin can't reach from there.
+            guard let address = Readiness.address(fromIPv4: containers.first { $0.id == container }?.ipv4) else {
+                return .failure(HostCallFailure(.refused, "\(hostLabel) has no running container called \(container)."))
+            }
+            let open = await Task.detached { TCPProbe.accepts(host: address, port: port) }.value
+            return .success(open ? "open" : "closed")
+
         case .setPolicy(let container, let policy):
             // Only for a container that is here: a policy for nothing would watch nothing.
             guard policy.isEmpty || containers.contains(where: { $0.id == container }) else {

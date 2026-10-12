@@ -395,7 +395,10 @@ public struct ContainerCLI: Sendable {
         let result = try host.run(args, timeout: timeout, onLine: onLine)
         guard result.ok else {
             throw ContainerCLIError.commandFailed(
-                command: args.joined(separator: " "),
+                // The subcommand only, never the argv: `run --env NAME=…` carries a group's
+                // Keychain-held values, and this text reaches alerts and progress panels (Kyle,
+                // 12 October; the same rule `timedOut` follows, SEC-03).
+                command: LocalHost.summarise(args),
                 exitCode: result.exitCode,
                 message: Self.failureMessage(result)
             )

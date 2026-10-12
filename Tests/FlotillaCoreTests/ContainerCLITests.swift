@@ -892,3 +892,18 @@ func startMachineRetriesTheFirstBootQuirk() throws {
     #expect(throws: (any Error).self) { try ContainerCLI(host: real, wirePolicy: .localOwner).startMachine("alma") }
     #expect(real.runs == 1)
 }
+
+@Test func aFailedRunNeverRepeatsItsEnvironment() throws {
+    // Kyle, 12 October: with empty stderr the error printed the whole argv, and a group's run
+    // carries its Keychain-held values as `--env NAME=value`.
+    let host = FailingHost(stderr: "")
+    let cli = ContainerCLI(host: host, wirePolicy: .localOwner)
+    let options = ContainerCLI.RunOptions(name: "db", env: ["POSTGRES_PASSWORD=hunter2-secret"], detach: true)
+    do {
+        _ = try cli.run(image: "docker.io/library/postgres:18.6", options: options)
+        Issue.record("expected a failure")
+    } catch {
+        #expect(!String(describing: error).contains("hunter2"))
+        #expect(String(describing: error).contains("container run failed"))
+    }
+}

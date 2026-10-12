@@ -576,8 +576,15 @@ struct ContainersView: View {
     private var selectionBusy: Bool { model.isAnyBusy(actionableContainerIDs, kind: .container) }
 
     /// Other Macs' containers in the actionable selection. Acted on host by host, after this Mac's.
-    private var actionableRemote: [ContainerRow] {
-        actionable.compactMap { rowsByID[$0] }.filter { !$0.host.isLocal && $0.container != nil }
+    private var actionableRemote: [ContainerRow] { remoteRows(in: actionable, besides: actionableGroups) }
+
+    /// Other Macs' container rows among `ids`, leaving out members of `groups` — a selected
+    /// group acts on its own members, so they must not be acted on twice (Kyle, 12 October).
+    private func remoteRows(in ids: Set<ContainerRow.ID>, besides groups: [ContainerGroup]) -> [ContainerRow] {
+        let groupIDs = Set(groups.map(\.id))
+        return ids.compactMap { rowsByID[$0] }.filter { row in
+            !row.host.isLocal && row.container != nil && !(row.group.map { groupIDs.contains($0.id) } ?? false)
+        }
     }
 
     /// Runs one action on each remote row, in order — a host does one thing at a time per row.
@@ -880,16 +887,37 @@ struct ContainersView: View {
                 }
             }
         } else {
+            let groups = model.groups.groups.filter { ids.contains(ContainerRow.groupRowID($0.id)) }
+            // This Mac's containers by name, less the members of selected local groups; other
+            // Macs' rows by host, as the bulk bar does it (Kyle, 12 October: a mixed selection
+            // used to act on This Mac's alone).
+            let ownedLocally = Set(groups.filter { $0.place.isLocal }.flatMap(\.memberNames))
             let containers = Set(ids.filter { !ContainerRow.isGroupRowID($0) })
                 .intersection(Set(model.containers.map(\.id)))
-            let groups = model.groups.groups.filter { ids.contains(ContainerRow.groupRowID($0.id)) }
+                .subtracting(ownedLocally)
+            let remote = remoteRows(in: ids, besides: groups)
             let busy = model.isAnyBusy(containers, kind: .container)
-            Button("Start \(ids.count)") { Task { await startSelected(containers, groups) } }
-                .disabled(busy)
-            Button("Stop \(ids.count)") { Task { await stopSelected(containers, groups) } }
-                .disabled(busy)
-            Button("Restart \(ids.count)") { Task { await restartSelected(containers, groups) } }
-                .disabled(busy)
+            Button("Start \(ids.count)") {
+                Task {
+                    await startSelected(containers, groups)
+                    await performRemote(.start, on: remote) { !$0.isRunning }
+                }
+            }
+            .disabled(busy)
+            Button("Stop \(ids.count)") {
+                Task {
+                    await stopSelected(containers, groups)
+                    await performRemote(.stop, on: remote) { $0.isRunning }
+                }
+            }
+            .disabled(busy)
+            Button("Restart \(ids.count)") {
+                Task {
+                    await restartSelected(containers, groups)
+                    await performRemote(.restart, on: remote) { $0.isRunning }
+                }
+            }
+            .disabled(busy)
             Divider()
             Button("Delete \(ids.count)…", role: .destructive) {
                 selection = ids            // so the confirmation counts what was right-clicked
@@ -1296,11 +1324,18 @@ struct ContainersView: View {
             // above deliberately does not do.
             if !actionableGroups.isEmpty, !actionableGroups.flatMap(existingMembers).isEmpty {
                 Button("Delete Including the Groups' Containers", role: .destructive) {
-                    let groups = actionableGroups
-                    let containers = actionableContainerIDs.union(groups.flatMap(existingMembers))
+                    // Each group's containers on its own Mac; a host group's names never reach
+                    // This Mac's delete (Kyle, 12 October: they could delete an unrelated `db`).
+                    let groups = actionableGroups, remote = actionableRemote
+                    let containers = actionableContainerIDs
+                        .union(groups.filter { $0.place.isLocal }.flatMap(existingMembers))
                     Task {
                         await model.performBulk(.delete, on: containers)
+                        for group in groups where !group.place.isLocal {
+                            await model.deleteContainers(Set(existingMembers(of: group)), of: group)
+                        }
                         for group in groups { model.deleteGroup(group) }
+                        await performRemote(.delete, on: remote)
                     }
                 }
             }
@@ -1792,6 +1827,12 @@ struct ContainersView: View {
             if let only = ui.hostFilter, only != host { continue }
             places.append((host, peer.displayName,
                            snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil))
+        }
+        // A group whose host is no longer trusted — forgotten, blocked — still has a row, so it
+        // can be seen, saved and deleted; its Start and Stop are off (Kyle, 12 October).
+        for host in Set(model.groups.groups.map(\.place)) where !host.isLocal
+            && !places.contains(where: { $0.host == host }) && (ui.hostFilter == nil || ui.hostFilter == host) {
+            places.append((host, model.hostMode.hostName(host, local: model.hostLabel) + " (not connected)", nil))
         }
         for place in places {
             func row(_ container: Container, kind: ContainerRow.Kind = .container,

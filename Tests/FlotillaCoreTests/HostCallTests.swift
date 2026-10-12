@@ -88,6 +88,21 @@ struct HostCallTests {
         #expect(throws: WireError.self) { try client.call(.policies) }
     }
 
+    @Test func probePortIsAReadOnlyVersion13Call() throws {
+        // A group on a host waits for its database through the host (Kyle, 12 October).
+        let probe = HostCall.probePort(container: "shop-db", port: 5432)
+        #expect(probe.problem == nil && !probe.mutates && probe.minimumVersion == 13)
+        #expect(HostCall.probePort(container: "../etc", port: 5432).problem != nil)
+        #expect(HostCall.probePort(container: "shop-db", port: 0).problem != nil)
+        #expect(HostCall.probePort(container: "shop-db", port: 70000).problem != nil)
+        let message = WireMessage.hostCall(.init(id: 7, call: probe))
+        var decoder = WireFrameDecoder()
+        let frames = try decoder.append(try message.encoded(limits: .default))
+        #expect(try WireMessage(frame: frames[0]) == message)
+        var (_, old) = try connected(versions: 1...12)
+        #expect(throws: WireError.self) { try old.call(probe) }
+    }
+
     @Test func aValidCallIsHandedToTheHostAndAnsweredLikeARequest() throws {
         var (hostSession, client) = try connected()
         let outgoing = try client.call(.dnsCreate(domain: "mini.fleet.internal", localhost: nil))

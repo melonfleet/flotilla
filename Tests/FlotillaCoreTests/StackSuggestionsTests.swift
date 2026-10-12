@@ -47,6 +47,12 @@ struct StackSuggestionsTests {
         #expect(site.ports == ["8082:80"])                       // every interface of the host
         #expect(db.ports.allSatisfy { $0.hasPrefix("10.240.16.1:") })   // never the network
         #expect(plan.openURL == "http://mini.lan:8082")
+        // A host whose address isn't known gets no link at all — never this Mac's loopback.
+        let unknown = try StackPlanner.plan(wordpress,
+                                            choices: StackChoices(name: "blog", webPorts: ["site": 8082],
+                                                                  webFromOtherMacs: true, openAddress: nil),
+                                            wiring: .gateway("10.240.16.1"), usedHostPorts: [])
+        #expect(unknown.openURL == nil)
         // The default is unchanged: This Mac's pages stay on 127.0.0.1.
         let local = try StackPlanner.plan(wordpress, choices: StackChoices(name: "blog", webPorts: ["site": 8082]),
                                           wiring: .gateway("10.240.0.1"), usedHostPorts: [])

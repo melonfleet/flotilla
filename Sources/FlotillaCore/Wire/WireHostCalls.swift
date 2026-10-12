@@ -56,6 +56,10 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// Set one container's policy on the host, which then runs it itself (version 12, Q53). An
     /// empty policy removes it.
     case setPolicy(container: String, policy: ContainerPolicy)
+    /// Whether one of the host's containers accepts connections on `port` at its own address —
+    /// the ready wait of a group on a host (version 13; the owner, 12 October). Read-only: one
+    /// connection attempt from the host to its own container, answered `open` or `closed`.
+    case probePort(container: String, port: Int)
     /// Install or upgrade `container` to the version the host's Flotilla expects, then the kernel —
     /// even if that stops running containers: the admin confirmed, with the count (version 7, Q39).
     case setUpRuntime
@@ -83,6 +87,9 @@ public enum HostCall: Sendable, Equatable, Codable {
         }
         switch self {
         case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime, .setAutoStartRuntime, .controlRuntime, .policies: return nil
+        case .probePort(let container, let port):
+            if case .failure(let error) = Allowlist.validate(["start", container]) { return String(describing: error) }
+            return (1...65535).contains(port) ? nil : "\(port) isn't a port."
         case .setPolicy(let container, let policy):
             if case .failure(let error) = Allowlist.validate(["start", container]) { return String(describing: error) }
             return policy.problem
@@ -106,7 +113,10 @@ public enum HostCall: Sendable, Equatable, Codable {
     }
 
     /// Whether it changes the host.
-    public var mutates: Bool { self != .dnsStatus && self != .hostFacts && self != .settingsReport && self != .policies }
+    public var mutates: Bool {
+        if case .probePort = self { return false }
+        return self != .dnsStatus && self != .hostFacts && self != .settingsReport && self != .policies
+    }
 
     /// The protocol version a host must speak to be asked this.
     public var minimumVersion: UInt16 {
@@ -119,6 +129,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .setAutoStartRuntime: WireProtocol.autoStartVersion
         case .controlRuntime: WireProtocol.runtimeControlVersion
         case .policies, .setPolicy: WireProtocol.policiesVersion
+        case .probePort: WireProtocol.probePortVersion
         default: WireProtocol.hostCallsVersion
         }
     }
@@ -126,6 +137,7 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// How long the host may take. A runtime restart waits for every container to stop.
     public var timeout: TimeInterval {
         switch self {
+        case .probePort: 10
         case .dnsStatus, .hostFacts, .settingsReport, .keepAwake, .setAutoStartRuntime, .policies, .setPolicy: 30
         case .dnsCreate, .dnsDelete, .setFleetNames: 60
         case .setUpRuntime: 1800
@@ -145,6 +157,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .setUpRuntime: "installed or upgraded container"
         case .controlRuntime(let action): "\(action.done) container"
         case .policies: "read its restart and health policies"
+        case .probePort(let container, let port): "checked whether \(container) answers on port \(port)"
         case .setPolicy(let container, let policy):
             policy.isEmpty ? "removed the restart and health policy of \(container)"
                            : "set the restart and health policy of \(container)"

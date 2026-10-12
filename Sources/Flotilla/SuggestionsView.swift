@@ -83,10 +83,12 @@ struct StackFormView: View {
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     private var hostName: String { model.hostMode.hostName(host, local: model.hostLabel) }
     private var networks: [ContainerNetwork] { model.networks(on: host) ?? [] }
-    /// The address "Open" uses for a host's stack: the one its owner typed, when known.
-    private var openAddress: String {
-        guard case .peer(let fingerprint) = host, webFromOtherMacs else { return "127.0.0.1" }
-        return model.hostMode.probeAddress(for: fingerprint) ?? "127.0.0.1"
+    /// The address "Open" uses for a host's stack: the one its owner typed, when known; never this
+    /// Mac's loopback for a page on another Mac. Kept on the host's own 127.0.0.1, it opens only there.
+    private var openAddress: String? {
+        guard case .peer(let fingerprint) = host else { return "127.0.0.1" }
+        guard webFromOtherMacs else { return nil }
+        return model.hostMode.probeAddress(for: fingerprint)
     }
 
     private var nameProblem: String? {
@@ -236,7 +238,7 @@ struct StackFormView: View {
                                                             : "The port its page opens on, at \(hostName)'s address.",
                           detail: host.isLocal ? "This Mac only — not your network. Suggested as one nothing here uses yet."
                                                : "Suggested as one nothing on \(hostName) uses yet.",
-                          example: "http://\(openAddress):\(webPorts[service.role] ?? "8080")"),
+                          example: "http://\(openAddress ?? "\(hostName)'s address"):\(webPorts[service.role] ?? "8080")"),
                       problem: prepared ? portProblem(service.role) : nil) {
                 TextField("8080", text: Binding(get: { webPorts[service.role] ?? "" },
                                                 set: { webPorts[service.role] = $0 }))

@@ -186,8 +186,11 @@ final class GroupStore {
             // A host key that doesn't parse is a damaged entry: skipped, not moved to This Mac,
             // where it would start containers the owner meant for another Mac.
             var host = HostRef.local
-            if let hex = row["host"] as? String {
-                guard let fingerprint = PeerFingerprint(hex: hex) else { continue }
+            if let raw = row["host"] {
+                // Present but not a key — the wrong type, or text that doesn't parse — skips the
+                // group: falling back to This Mac would run it against this Mac's containers
+                // (Kyle, 12 October).
+                guard let hex = raw as? String, let fingerprint = PeerFingerprint(hex: hex) else { continue }
                 host = .peer(fingerprint)
             }
             guard let group = try? book.restoreGroup(id: id, name: name, network: network, host: host)

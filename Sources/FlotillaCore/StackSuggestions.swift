@@ -311,12 +311,13 @@ public struct StackChoices: Sendable, Equatable {
     /// host (the owner, 12 October). Off: `127.0.0.1` only, the rule for This Mac. Databases stay
     /// on the gateway either way.
     public var webFromOtherMacs: Bool
-    /// The address "Open" uses: `127.0.0.1` here, the host's address for a stack on a host.
-    public var openAddress: String
+    /// The address "Open" uses: `127.0.0.1` here, the host's address for a stack on a host, `nil`
+    /// when that address isn't known — never this Mac's loopback for a page on another Mac (Kyle).
+    public var openAddress: String?
 
     public init(name: String, network: Network = .new, webPorts: [String: Int] = [:],
                 options: [String: String] = [:], webFromOtherMacs: Bool = false,
-                openAddress: String = "127.0.0.1") {
+                openAddress: String? = "127.0.0.1") {
         self.name = name
         self.network = network
         self.webPorts = webPorts
@@ -550,7 +551,7 @@ public enum StackPlanner {
         let group = ContainerGroup(name: name, network: network, members: members,
                                    notes: stack.notes.map(fill))
         let openURL = stack.opens.flatMap { role in choices.webPorts[role] }
-            .map { "http://\(choices.openAddress):\($0)" }
+            .flatMap { port in choices.openAddress.map { "http://\($0):\(port)" } }
         return StackPlan(group: group, network: network, createsNetwork: createsNetwork,
                          volumes: volumes, images: stack.images,
                          secrets: GroupSecrets.secretNames(in: group), wiring: wiring,
