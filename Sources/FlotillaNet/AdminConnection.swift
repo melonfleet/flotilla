@@ -143,6 +143,15 @@ public final class AdminConnection: @unchecked Sendable {
         }
     }
 
+    /// Asks the host to stop every request still waiting here; each is settled by the host's
+    /// answer — "cancelled", or its result if it finished first. Internal: the app has no stop
+    /// button for a single command yet, and the tests use it to send a real cancel.
+    func cancelPending() {
+        connection.queue.async { [self] in
+            for id in pending.keys { if let cancel = session.cancel(id) { connection.send(cancel) } }
+        }
+    }
+
     /// The same, calling back on this connection's queue.
     public func run(_ arguments: [String], timeout: TimeInterval?,
                     completion: @escaping @Sendable (Result<CommandResult, Error>) -> Void) {

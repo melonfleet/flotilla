@@ -97,13 +97,49 @@ public enum GretaGuide {
 /// instruction. Control characters and anything that could pass as markup go; length is capped.
 public enum GretaText {
     public static func untrusted(_ text: String, limit: Int = 80) -> String {
-        let cleaned = text.unicodeScalars.map { scalar -> Character in
-            if scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format { return " " }
-            if "<>{}[]`".unicodeScalars.contains(scalar) { return " " }
-            return Character(scalar)
+        // Counted in Unicode scalars, not characters: "a" and ten thousand combining marks is one
+        // character and 20 KB (Kyle, 12 October). A mark may follow a letter once; a run of them
+        // is dropped. Quotes go too, so a value can always be shown quoted as data.
+        var scalars: [Unicode.Scalar] = []
+        var marks = 0
+        for scalar in text.unicodeScalars {
+            switch scalar.properties.generalCategory {
+            case .control, .format:
+                scalars.append(" "); marks = 0
+            case .nonspacingMark, .spacingMark, .enclosingMark:
+                marks += 1
+                if marks == 1 { scalars.append(scalar) }
+            default:
+                marks = 0
+                scalars.append("<>{}[]`\"".unicodeScalars.contains(scalar) ? " " : scalar)
+            }
         }
-        let collapsed = String(cleaned).split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        return collapsed.count > limit ? String(collapsed.prefix(limit)) + "…" : collapsed
+        var view = String.UnicodeScalarView()
+        view.append(contentsOf: scalars)
+        let collapsed = String(view).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return capped(collapsed, scalars: limit)
+    }
+
+    /// At most `limit` Unicode scalars, with "…" when cut.
+    public static func capped(_ text: String, scalars limit: Int) -> String {
+        guard text.unicodeScalars.count > limit else { return text }
+        var view = String.UnicodeScalarView()
+        view.append(contentsOf: text.unicodeScalars.prefix(limit))
+        return String(view) + "…"
+    }
+
+    /// At most `limit` UTF-8 bytes, cut on a scalar boundary — for a whole block bound for the
+    /// model, whose context is measured in tokens, not characters.
+    public static func capped(_ text: String, bytes limit: Int, marker: String = "\n(truncated)") -> String {
+        guard text.utf8.count > limit else { return text }
+        var view = String.UnicodeScalarView()
+        var used = 0
+        for scalar in text.unicodeScalars {
+            used += String(scalar).utf8.count
+            if used > limit { break }
+            view.append(scalar)
+        }
+        return String(view) + marker
     }
 
     /// A bare "yes" (or "sure", "go ahead"…) with nothing else in it. The model can't tell what it
@@ -121,6 +157,22 @@ public enum GretaText {
         "please", "please do", "do it", "go ahead", "go for it", "sounds good", "yes do it",
         "yes go ahead", "yes sure", "ok sure", "sure go ahead", "y", "absolutely", "definitely",
     ]
+
+    /// Whether a message mentions a password or another secret. Such a message is used for nothing
+    /// but choosing a recipe and is never kept: no parse can tell the secret from the rest
+    /// ("postgres password called hunter2" put it in the container's name; Kyle, 12 October).
+    public static func mentionsSecret(_ text: String) -> Bool {
+        let words = text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        return words.contains { word in
+            secretWords.contains(word) || secretStems.contains { word.hasPrefix($0) }
+        }
+    }
+
+    private static let secretWords: Set<String> = ["pass", "pwd", "pw", "secret", "secrets", "token", "tokens", "apikey", "passcode"]
+    private static let secretStems = ["password", "passwd", "passphrase", "credential"]
+
+    /// What a chat keeps in place of a message that mentioned a secret.
+    public static let hiddenMessage = "🔒 Hidden: this message mentioned a password, so Flotilla didn't keep it."
 
     /// How much of `reply` is the words of `earlier` (0…1, over distinct words of three letters or
     /// more). A small model asked twice tends to say the same thing again in other order.

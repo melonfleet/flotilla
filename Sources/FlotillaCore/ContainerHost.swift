@@ -221,12 +221,11 @@ public extension ContainerHost {
         try run(args)
     }
 
-    /// Default: run to the end and then honour the cancellation. A double that returns at once
-    /// has nothing to stop; only `LocalHost` holds a process that can be ended early.
+    /// Default: a host with no process to end runs to the end, and reports what happened. It used
+    /// to report "cancelled" after the command had finished — telling an admin a change hadn't
+    /// happened when it had (Kyle, 12 October). Only `LocalHost` can end a command early.
     func run(_ args: [String], timeout: TimeInterval, cancellation: Cancellation) throws -> CommandResult {
-        let result = try run(args, timeout: timeout)
-        if cancellation.isCancelled { throw ContainerCLIError.cancelled(command: args.first ?? "command") }
-        return result
+        try run(args, timeout: timeout)
     }
 
     /// Default: drop the observer. A double that implements only `run(_:)` keeps working and
@@ -448,8 +447,10 @@ public struct LocalHost: ContainerHost {
         // Cancelled from outside: the same terminate-then-kill the deadline uses, brought forward.
         // `exited` is then signalled by the process ending, and the run reports the cancellation.
         let grace = limits.terminationGrace
+        let stopped = Cancellation()            // set only when the cancel actually signalled the child
         cancellation?.whenCancelled {
             guard process.isRunning else { return }
+            stopped.cancel()
             process.terminate()
             DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
                 if process.isRunning { kill(process.processIdentifier, SIGKILL) }
@@ -479,7 +480,10 @@ public struct LocalHost: ContainerHost {
             err.abandon()
         }
 
-        if cancellation?.isCancelled == true {
+        // Cancelled only if the cancel is what ended it: a command that had already finished, or
+        // finished cleanly despite the signal, reports its real result — a caller told "cancelled"
+        // about a change that happened would be misled (Kyle, 12 October).
+        if stopped.isCancelled, !(process.terminationReason == .exit && process.terminationStatus == 0) {
             throw ContainerCLIError.cancelled(command: Self.summarise(args))
         }
         if timedOut {

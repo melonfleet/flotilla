@@ -423,6 +423,16 @@ private final class StreamRecorder: @unchecked Sendable {
 }
 #endif
 
+@Test func aCommandThatFinishesCleanlyWhenCancelledReportsItsResult() throws {
+    // Kyle, 12 October: "cancelled" only when the cancel is what ended it. This one catches TERM,
+    // says so and exits 0 — it finished, so its output is the answer.
+    let cancellation = Cancellation()
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { cancellation.cancel() }
+    let result = try runner().run(["-c", "trap 'printf stopped-cleanly; exit 0' TERM; while :; do sleep 0.05; done"],
+                                  timeout: 20, cancellation: cancellation)
+    #expect(result.stdout == "stopped-cleanly")
+}
+
 @Test func aCancellationAfterTheEndChangesNothing() throws {
     let cancellation = Cancellation()
     let result = try runner().run(["-c", "printf done"], timeout: 10, cancellation: cancellation)

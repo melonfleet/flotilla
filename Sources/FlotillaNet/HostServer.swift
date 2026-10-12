@@ -419,17 +419,36 @@ final class HostConnectionHandler: @unchecked Sendable {
         switch event {
         case .send(let message): connection.send(message)
         case .close(let reason): connection.close(reason)
-        case .execute(let id, let command, let deadline): execute(id, command, deadline)
+        case .execute(let id, let command, let deadline):
+            if refuseReuse(id) { return }
+            execute(id, command, deadline)
         case .cancel(let id):
-            running[id]?.cancel()
-            if let reply = session?.fail(id, code: .cancelled, message: "Cancelled.") { connection.send(reply) }
+            if let cancellation = running[id] {
+                // Stopped, and answered by its own worker once the process has gone: "cancelled"
+                // if the cancel ended it, its result if it had already finished. The id stays in
+                // flight until then, so it can't be reused while the old run could still answer
+                // (Kyle, 12 October).
+                cancellation.cancel()
+            } else if performing.contains(id) {
+                // A host call can't be stopped part way (an install, a restart), and the admin
+                // shouldn't wait minutes for one; so it stops waiting now, told plainly that the
+                // host carries on. The id stays reserved until the call really ends.
+                if let reply = session?.fail(id, code: .cancelled,
+                                             message: "Stopped waiting. This host carries on and finishes it.") {
+                    connection.send(reply)
+                }
+            } else if let reply = session?.fail(id, code: .cancelled, message: "Cancelled.") {
+                connection.send(reply)
+            }
         case .pairing(let message): pair(message)
         case .startFollow(let id, let command): startFollow(id, command)
         case .stopFollow(let id): followStreams[id]?.cancel()
         case .startUpload(let id, let upload): startUpload(id, upload)
         case .uploadChunk(let id, let data): write(id, data)
         case .uploadFinished(let id, let sha256): finishUpload(id, sha256)
-        case .hostCall(let id, let call): perform(id, call)
+        case .hostCall(let id, let call):
+            if refuseReuse(id) { return }
+            perform(id, call)
         case .abortUpload(let id): discardUpload(id)
         }
     }
@@ -685,8 +704,8 @@ final class HostConnectionHandler: @unchecked Sendable {
     }
 
     /// A host call (D3): counted against the host's command slots — it may start the Flotilla Helper or
-    /// restart the runtime — and answered on this connection's queue. Like a request, a cancel only
-    /// means the admin stops waiting.
+    /// restart the runtime — and answered on this connection's queue. Unlike a command, it can't be
+    /// stopped: a cancel means only that the admin stops waiting.
     private func perform(_ id: UInt32, _ call: HostCall) {
         guard let admin = connection.peerFingerprint, let delegate = server.delegate else {
             if let reply = session?.fail(id, code: .internalError, message: "This host isn't ready.") { connection.send(reply) }
@@ -700,11 +719,13 @@ final class HostConnectionHandler: @unchecked Sendable {
         }
         let server = self.server
         let once = HostCallOnce()
+        performing.insert(id)
         delegate.perform(call, for: admin) { [weak self] outcome in
             guard once.claim() else { return }
             server.releaseRun()
             guard let self else { return }
             self.connection.queue.async {
+                self.performing.remove(id)
                 let reply: WireMessage? = switch outcome {
                 case .success(let json): self.session?.complete(id, with: CommandResult(stdout: json, stderr: "", exitCode: 0))
                 case .failure(let failure): self.session?.fail(id, code: failure.code, message: failure.message)
@@ -714,8 +735,20 @@ final class HostConnectionHandler: @unchecked Sendable {
         }
     }
 
+    /// An id whose earlier request is still running here — a host call the admin stopped waiting
+    /// for — is refused, so the old run can never answer the new request (Kyle, 12 October).
+    private func refuseReuse(_ id: UInt32) -> Bool {
+        guard running[id] != nil || performing.contains(id) else { return false }
+        if let reply = session?.fail(id, code: .invalidRequest, message: "That request id is still in use on this host.") {
+            connection.send(reply)
+        }
+        return true
+    }
+
     /// Each running request's way to be stopped, by id. Touched only on the connection's queue.
     private var running: [UInt32: Cancellation] = [:]
+    /// Host calls not yet answered. Touched only on the connection's queue.
+    private var performing: Set<UInt32> = []
 
     /// Runs off the connection's queue — a long pull must not stall pings — and reports back on it.
     /// A cancelled command is answered at once **and stopped**: its process is terminated, then
@@ -745,7 +778,11 @@ final class HostConnectionHandler: @unchecked Sendable {
                 switch outcome {
                 case .success(let result): reply = self.session?.complete(id, with: result)
                 case .failure(let error):
-                    let code: WireFailureCode = if case ContainerCLIError.timedOut = error { .timedOut } else { .internalError }
+                    let code: WireFailureCode = switch error {
+                    case ContainerCLIError.timedOut: .timedOut
+                    case ContainerCLIError.cancelled: .cancelled
+                    default: .internalError
+                    }
                     reply = self.session?.fail(id, code: code, message: String(describing: error))
                 }
                 if let reply { self.connection.send(reply) }

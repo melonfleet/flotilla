@@ -71,6 +71,10 @@ public enum GretaRouter {
             return .askWhich
         }
 
+        // Not a request to run anything, however it is worded: a negation, a change to something
+        // that exists, a question about state, or asking to learn (Kyle's examples, 12 October).
+        if notARequest.contains(where: { contains(text, $0) }) { return .answer }
+
         let asksYou = ["can", "could", "would", "will"].contains(words[0]) && words.dropFirst().first == "you"
         let wantsToRun = runPhrases.contains { contains(text, $0) }
         if questionWords.contains(words[0]), !(asksYou && wantsToRun) { return .answer }
@@ -94,6 +98,12 @@ public enum GretaRouter {
     public static func draft(_ recipe: GretaRecipe, for message: String) -> GretaDraft {
         var draft = GretaDraft(image: recipe.image, name: recipe.name, ports: recipe.ports,
                                env: recipe.env, volumes: recipe.volumes)
+        // A message that mentions a password changes nothing: the recipe stands, and the password
+        // and any other change are typed in the Run form.
+        if GretaText.mentionsSecret(message) {
+            draft.passwordLeftForTheForm = true
+            return draft
+        }
         let tokens = message.lowercased()
             .split { $0.isWhitespace || ",;:!?()\"'".contains($0) }
             .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
@@ -139,8 +149,6 @@ public enum GretaRouter {
             case "database", "db":
                 guard let database = identifier(next(i)) else { continue }
                 if replaceEnv(&draft, endingIn: ["_DB", "_DATABASE"], with: database) { draft.changes.append("database \(database)") }
-            case "password", "passwd":
-                draft.passwordLeftForTheForm = true
             default:
                 continue
             }
@@ -215,6 +223,18 @@ public enum GretaRouter {
         (["redisinsight", "redis insight"], "Redis + RedisInsight"),
     ]
 
+    static let notARequest = [
+        // negation
+        "don t", "dont", "do not", "never", "not", "no need", "without running",
+        // something that exists
+        "delete", "remove", "stop", "kill", "restart", "uninstall", "upgrade", "update", "rename",
+        "already", "is running", "isn t running", "isnt running", "crashed", "crashing", "crash",
+        "broken", "error", "failed", "failing", "logs", "status",
+        // learning
+        "help", "tutorial", "learn", "know", "explain", "understand", "teach", "docs",
+        "documentation", "run down", "what", "how", "why", "difference",
+    ]
+
     static let questionWords: Set<String> = [
         "how", "what", "whats", "why", "where", "when", "which", "who", "does", "do", "is", "are",
         "should", "can", "could", "would", "will", "did", "explain", "tell", "whats",
@@ -238,7 +258,7 @@ public enum GretaRouter {
     /// Never a value: "a database called shop" names the database shop, not "called".
     static let connectives: Set<String> = [
         "called", "named", "name", "port", "on", "user", "username", "database", "db", "version",
-        "password", "with", "and", "for", "in", "at", "as", "it", "its", "of", "using", "kept",
+        "with", "and", "for", "in", "at", "as", "it", "its", "of", "using", "kept",
     ]
 
     static func mentioned(in text: String) -> [GretaRecipe] {

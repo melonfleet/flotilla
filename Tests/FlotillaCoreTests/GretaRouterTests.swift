@@ -20,6 +20,16 @@ import Testing
         #expect(route("is redis running?") == .answer)
     }
 
+    @Test func mentioningAServiceIsNotAskingToRunIt() {
+        // Kyle's examples, 12 October.
+        for message in ["please don't run redis", "delete redis", "redis is already running",
+                        "create a Redis tutorial", "I need help with redis",
+                        "I want to know how to run postgres", "run down what Redis does",
+                        "redis crashed", "stop postgres"] {
+            #expect(route(message) == .answer, "\(message)")
+        }
+    }
+
     @Test func aNamedContainerIsDraftedFromItsRecipe() {
         #expect(recipeID(route("Draft Postgres with its data kept")) == "postgres")
         #expect(recipeID(route("Can you set up a web server for me?")) == "nginx")
@@ -70,10 +80,25 @@ import Testing
         #expect(maria.env.first == "MARIADB_DATABASE=app")
     }
 
-    @Test func aPasswordIsLeftForTheRunForm() {
-        let postgres = draft("postgres with password hunter2")
-        #expect(postgres.passwordLeftForTheForm)
-        #expect(!postgres.env.contains { $0.contains("hunter2") })
+    @Test func aPasswordIsNeverTakenIntoTheDraft() {
+        // Kyle, 12 October: parsing went on past the password, so each of these put it somewhere.
+        let attacks = [
+            "postgres with password hunter2",
+            "postgres password called hunter2",
+            "postgres password user hunter2",
+            "postgres password version 1234",
+            "run postgres called hunter2 because hunter2 is the password",
+            "run postgres on port 6543, pwd=hunter2",
+            "run mariadb with the secret hunter2 as the name",
+        ]
+        for attack in attacks {
+            let made = draft(attack)
+            let everything = [made.image, made.name] + made.ports + made.env + made.volumes + made.changes
+            #expect(!everything.joined(separator: " ").contains("hunter2"), "\(attack)")
+            #expect(!everything.joined(separator: " ").contains("1234"), "\(attack)")
+            #expect(made.passwordLeftForTheForm, "\(attack)")
+            #expect(made.changes.isEmpty, "\(attack)")
+        }
     }
 
     @Test func noVolumeDropsIt() {

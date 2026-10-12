@@ -348,6 +348,25 @@ struct LoopbackTests {
         _ = try await host.run(["ls"], timeout: nil)
     }
 
+    /// Kyle, 12 October: the host answered "Cancelled" the moment a cancel arrived, even for a
+    /// command that went on to finish — the admin was told a change hadn't happened when it had.
+    /// The scripted host can't be stopped, so its real result must come back.
+    @Test func aCommandThatFinishesDespiteACancelReportsItsResult() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.host.delay = 1.0
+        rig.host.answers["ls"] = CommandResult(stdout: "finished\n", stderr: "", exitCode: 0)
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let admin = rig.admin()
+        _ = try await admin.connect()
+        defer { admin.close() }
+        let run = Task { try await admin.run(["ls"], timeout: nil) }
+        try await Task.sleep(for: .milliseconds(300))
+        admin.cancelPending()
+        let result = try await run.value
+        #expect(result.stdout == "finished\n")
+    }
+
     @Test func aRemovedAdminsKeyIsRefusedOverTLS() async throws {
         let rig = try await rig()
         defer { rig.tearDown() }
