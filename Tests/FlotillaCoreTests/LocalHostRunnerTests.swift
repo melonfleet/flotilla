@@ -395,3 +395,37 @@ private final class StreamRecorder: @unchecked Sendable {
     #expect(recorder.texts.first == "line 0")
     #expect(recorder.texts.last == "line 1999")
 }
+
+@Test func aCancelledCommandStopsInsteadOfRunningToItsDeadline() throws {
+    // Q33's leftover: an admin's cancel used to be answered while the process ran on.
+    let cancellation = Cancellation()
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { cancellation.cancel() }
+    let start = Date()
+    #expect(throws: ContainerCLIError.self) {
+        // `exec`, so the process cancelled is `sleep` itself: on Linux, `sh` forks it, and the
+        // child's end isn't reported until its last writer closes the pipe (see below).
+        try runner().run(["-c", "exec sleep 30"], timeout: 60, cancellation: cancellation)
+    }
+    #expect(Date().timeIntervalSince(start) < 5)
+}
+
+/// macOS only, for the reason given above `aChildIgnoringSIGTERM…`'s neighbour: with `trap` installed
+/// `sh` forks `sleep`, and Linux reports nothing until the grandchild lets go of the pipe.
+#if os(macOS)
+@Test func aCancelledCommandThatIgnoresTERMIsKilled() throws {
+    let cancellation = Cancellation()
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { cancellation.cancel() }
+    let start = Date()
+    #expect(throws: ContainerCLIError.self) {
+        try runner(grace: 0.5, drainGrace: 0.5).run(["-c", "trap '' TERM; sleep 30"], timeout: 60, cancellation: cancellation)
+    }
+    #expect(Date().timeIntervalSince(start) < 8)
+}
+#endif
+
+@Test func aCancellationAfterTheEndChangesNothing() throws {
+    let cancellation = Cancellation()
+    let result = try runner().run(["-c", "printf done"], timeout: 10, cancellation: cancellation)
+    cancellation.cancel()
+    #expect(result.stdout == "done")
+}

@@ -1779,7 +1779,9 @@ deadlines; automatic enrolment is bounded; a peer's limits are sanitised and tim
 nothing identifying is sent before a proof; one words prompt at a time; the decoder adopts agreed
 limits; the enrolment key rejects non-canonical last characters. Not done, and named: a cancelled
 command still runs to its deadline (it now keeps its slot, so this costs time, not capacity) —
-real termination needs a cancellable `ContainerHost.run`.
+real termination needs a cancellable `ContainerHost.run`. *(Done 2026-10-12: `ContainerHost.run(…, cancellation:)`. A host keeps
+each running request's `Cancellation`, and an admin's cancel now terminates the process, then kills
+it if it ignores that, instead of letting it run to its deadline.)*
 
 
 ## Q34 — Exporting hosts and settings (settled 2026-10-07)

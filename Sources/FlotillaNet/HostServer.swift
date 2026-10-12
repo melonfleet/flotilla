@@ -421,6 +421,7 @@ final class HostConnectionHandler: @unchecked Sendable {
         case .close(let reason): connection.close(reason)
         case .execute(let id, let command, let deadline): execute(id, command, deadline)
         case .cancel(let id):
+            running[id]?.cancel()
             if let reply = session?.fail(id, code: .cancelled, message: "Cancelled.") { connection.send(reply) }
         case .pairing(let message): pair(message)
         case .startFollow(let id, let command): startFollow(id, command)
@@ -713,9 +714,12 @@ final class HostConnectionHandler: @unchecked Sendable {
         }
     }
 
+    /// Each running request's way to be stopped, by id. Touched only on the connection's queue.
+    private var running: [UInt32: Cancellation] = [:]
+
     /// Runs off the connection's queue — a long pull must not stall pings — and reports back on it.
-    /// A cancelled command is answered at once and its eventual result discarded: `ContainerHost`
-    /// cannot stop a child mid-run (Q15), so the honest answer is that the caller stopped waiting.
+    /// A cancelled command is answered at once **and stopped**: its process is terminated, then
+    /// killed if it ignores that (Q33's leftover, 12 October). It used to run on to its deadline.
     private func execute(_ id: UInt32, _ command: ValidatedCommand, _ deadline: TimeInterval) {
         guard server.reserveRun() else {
             if let reply = session?.fail(id, code: .busy, message: "This host is already running as many commands as it allows. Try again shortly.") {
@@ -726,12 +730,17 @@ final class HostConnectionHandler: @unchecked Sendable {
         let server = self.server
         let host = server.host
         if let admin = connection.peerFingerprint { server.delegate?.ran(command, for: admin) }
+        let cancellation = Cancellation()
+        running[id] = cancellation
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let outcome: Result<CommandResult, Error> = Result { try host.run(command.arguments, timeout: deadline) }
+            let outcome: Result<CommandResult, Error> = Result {
+                try host.run(command.arguments, timeout: deadline, cancellation: cancellation)
+            }
             // Released when the process is done, whether or not anyone still waits for it.
             server.releaseRun()
             guard let self else { return }
             self.connection.queue.async {
+                self.running[id] = nil
                 let reply: WireMessage?
                 switch outcome {
                 case .success(let result): reply = self.session?.complete(id, with: result)

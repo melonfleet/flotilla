@@ -25,6 +25,9 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
     /// non-zero exit it never actually saw.
     case timedOut(command: String, seconds: TimeInterval)
 
+    /// Stopped because whoever asked for it cancelled it (a host's admin, Q33).
+    case cancelled(command: String)
+
     /// The host cannot do what was asked — not a failure of the command, an absence of the
     /// capability. Today's only case is a `ContainerHost` that cannot write to a child's stdin,
     /// which is what a registry sign-in needs.
@@ -43,6 +46,8 @@ public enum ContainerCLIError: Error, Equatable, Sendable, CustomStringConvertib
                 : message
         case .timedOut(let command, let seconds):
             "container \(command) was still running after \(Int(seconds))s and was stopped."
+        case .cancelled(let command):
+            "container \(command) was cancelled and stopped."
         case .runtimeNotFound(let searched):
             "Apple's container CLI was not found in: \(searched.joined(separator: ", "))"
         case .unsupported(let reason):

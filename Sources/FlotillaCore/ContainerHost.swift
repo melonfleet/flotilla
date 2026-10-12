@@ -30,6 +30,37 @@ public struct CommandResult: Sendable, Equatable {
 ///
 /// NOTE: `run` is synchronous for the Phase 1 scaffold. Phase 2 adds an async
 /// variant plus a streaming API (`stream`) for `logs -f` / `stats`.
+/// Stops a running command from outside it: a host's admin cancelling a request (Q33's leftover,
+/// 12 October). It used to be answered "cancelled" while the process ran on to its deadline.
+public final class Cancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var handlers: [() -> Void] = []
+
+    public init() {}
+
+    public var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+
+    /// Cancels, once; every handler runs on the caller's thread.
+    public func cancel() {
+        lock.lock()
+        guard !cancelled else { lock.unlock(); return }
+        cancelled = true
+        let run = handlers
+        handlers.removeAll()
+        lock.unlock()
+        run.forEach { $0() }
+    }
+
+    /// Runs `handler` on cancellation — at once, if it already happened.
+    public func whenCancelled(_ handler: @escaping () -> Void) {
+        lock.lock()
+        if cancelled { lock.unlock(); handler(); return }
+        handlers.append(handler)
+        lock.unlock()
+    }
+}
+
 public protocol ContainerHost: Sendable {
     func run(_ args: [String]) throws -> CommandResult
     /// Run with a hard deadline. `timeout <= 0` means no deadline.
@@ -51,6 +82,10 @@ public protocol ContainerHost: Sendable {
     /// returns one `CommandResult` when the child exits.
     func run(_ args: [String], timeout: TimeInterval,
              onLine: (@Sendable (String) -> Void)?) throws -> CommandResult
+
+    /// Run with a deadline that `cancellation` can bring forward: the child is terminated, then
+    /// killed if it ignores that, and the run throws `ContainerCLIError.cancelled`.
+    func run(_ args: [String], timeout: TimeInterval, cancellation: Cancellation) throws -> CommandResult
 
     /// Run with a deadline, writing `input` to the child's **stdin** and closing it.
     ///
@@ -184,6 +219,14 @@ public extension ContainerHost {
 
     func run(_ args: [String], timeout: TimeInterval) throws -> CommandResult {
         try run(args)
+    }
+
+    /// Default: run to the end and then honour the cancellation. A double that returns at once
+    /// has nothing to stop; only `LocalHost` holds a process that can be ended early.
+    func run(_ args: [String], timeout: TimeInterval, cancellation: Cancellation) throws -> CommandResult {
+        let result = try run(args, timeout: timeout)
+        if cancellation.isCancelled { throw ContainerCLIError.cancelled(command: args.first ?? "command") }
+        return result
     }
 
     /// Default: drop the observer. A double that implements only `run(_:)` keeps working and
@@ -323,9 +366,14 @@ public struct LocalHost: ContainerHost {
         try run(args, timeout: timeout, onLine: nil, input: input)
     }
 
+    public func run(_ args: [String], timeout: TimeInterval, cancellation: Cancellation) throws -> CommandResult {
+        try run(args, timeout: timeout, onLine: nil, input: nil, cancellation: cancellation)
+    }
+
     private func run(_ args: [String], timeout: TimeInterval,
                      onLine: (@Sendable (String) -> Void)?,
-                     input: String?) throws -> CommandResult {
+                     input: String?,
+                     cancellation: Cancellation? = nil) throws -> CommandResult {
         guard let executable = resolve() else {
             throw ContainerCLIError.runtimeNotFound(searched: Preflight.searchedDirectories())
         }
@@ -397,6 +445,17 @@ public struct LocalHost: ContainerHost {
             thread.start()
         }
 
+        // Cancelled from outside: the same terminate-then-kill the deadline uses, brought forward.
+        // `exited` is then signalled by the process ending, and the run reports the cancellation.
+        let grace = limits.terminationGrace
+        cancellation?.whenCancelled {
+            guard process.isRunning else { return }
+            process.terminate()
+            DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            }
+        }
+
         var timedOut = false
         let deadline: DispatchTime = timeout > 0 ? .now() + timeout : .distantFuture
         if exited.wait(timeout: deadline) == .timedOut {
@@ -420,6 +479,9 @@ public struct LocalHost: ContainerHost {
             err.abandon()
         }
 
+        if cancellation?.isCancelled == true {
+            throw ContainerCLIError.cancelled(command: Self.summarise(args))
+        }
         if timedOut {
             throw ContainerCLIError.timedOut(command: Self.summarise(args), seconds: timeout)
         }
