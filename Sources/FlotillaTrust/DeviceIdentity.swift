@@ -47,12 +47,16 @@ public struct DeviceIdentityStore: Sendable {
 
     public enum IdentityError: Error, Equatable, CustomStringConvertible {
         case keychain(OSStatus, String)
+        /// The Keychain kept saying it had deleted something that was still there.
+        case stillThere(String)
 
         public var description: String {
             switch self {
             case .keychain(let status, let step):
                 let message = SecCopyErrorMessageString(status, nil) as String? ?? "error \(status)"
                 return "Couldn't \(step) in the Keychain: \(message)"
+            case .stillThere(let step):
+                return "Couldn't \(step) in the Keychain: it was still there after \(DeviceIdentityStore.deleteAttempts) tries."
             }
         }
     }
@@ -73,7 +77,7 @@ public struct DeviceIdentityStore: Sendable {
             return identity
         }
         // No certificate, or one for a different key: issue one for the key we have.
-        deleteCertificates()
+        try deleteCertificates()
         let certificate = try issueCertificate(for: key, now: now)
         return DeviceIdentity(fingerprint: try DeviceIdentity.fingerprint(of: certificate),
                               certificate: certificate, privateKey: key)
@@ -89,14 +93,60 @@ public struct DeviceIdentityStore: Sendable {
     }
 
     /// Deletes key and certificate. Every peer must pair with this Mac again afterwards.
-    public func reset() {
+    ///
+    /// Throws unless both are gone. The Keychain's answer used to be discarded (Kyle's review,
+    /// 12 October), so a delete it refused looked like one that worked — and the next
+    /// `loadOrCreate` handed the old identity straight back, under a reset that said it was done.
+    /// The key goes first: a certificate left without it can never be presented again.
+    public func reset() throws {
         Self.keychainLock.lock()
         defer { Self.keychainLock.unlock() }
-        SecItemDelete([kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: tag] as CFDictionary)
-        deleteCertificates()
+        try Self.deleteAll(keyQuery, "delete this Mac's key")
+        try deleteCertificates()
+    }
+
+    /// Whether anything of this identity is in the Keychain — the key, or a certificate under the
+    /// label — without creating either. Unlike `load`, a key whose certificate is missing counts:
+    /// `loadOrCreate` would issue it a new certificate and the old fingerprint would be back.
+    /// Throws when the Keychain can't say, because an error is not an answer.
+    public func exists() throws -> Bool {
+        Self.keychainLock.lock()
+        defer { Self.keychainLock.unlock() }
+        return try isPresent(keyQuery, "read this Mac's key") || isPresent(certificateQuery, "read this Mac's certificate")
     }
 
     // MARK: Keychain
+
+    private var keyQuery: [String: Any] { [kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: tag] }
+    private var certificateQuery: [String: Any] { [kSecClass as String: kSecClassCertificate, kSecAttrLabel as String: label] }
+
+    /// The most deletes one item may take — see `deleteAll`.
+    static let deleteAttempts = 16
+
+    /// Deletes everything `query` matches — the identity's key and certificate, and the enrolment
+    /// keys, all go through here. The login Keychain may delete one match per call, so this repeats
+    /// until it says nothing matches, which is the only answer that proves the item gone. Any other
+    /// answer throws, and so does running out of tries. `delete` is `SecItemDelete` except in
+    /// tests, which script it. Callers hold `keychainLock`.
+    static func deleteAll(_ query: [String: Any], _ step: String,
+                          delete: ([String: Any]) -> OSStatus = { SecItemDelete($0 as CFDictionary) }) throws {
+        for _ in 0..<deleteAttempts {
+            let status = delete(query)
+            if status == errSecItemNotFound { return }
+            guard status == errSecSuccess else { throw IdentityError.keychain(status, step) }
+        }
+        throw IdentityError.stillThere(step)
+    }
+
+    private func isPresent(_ query: [String: Any], _ step: String) throws -> Bool {
+        var match = query
+        match[kSecReturnRef as String] = true
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(match as CFDictionary, &result)
+        if status == errSecItemNotFound { return false }
+        guard status == errSecSuccess else { throw IdentityError.keychain(status, step) }
+        return true
+    }
 
     private func existingKey() throws -> SecKey? {
         var result: CFTypeRef?
@@ -138,11 +188,9 @@ public struct DeviceIdentityStore: Sendable {
         return (result as! SecCertificate)
     }
 
-    /// Every certificate under the label. The login Keychain may delete one match per call, so
-    /// this repeats until nothing is left (bounded, in case it never says so).
-    private func deleteCertificates() {
-        let query = [kSecClass as String: kSecClassCertificate, kSecAttrLabel as String: label] as CFDictionary
-        for _ in 0..<16 where SecItemDelete(query) == errSecSuccess {}
+    /// Every certificate under the label.
+    private func deleteCertificates() throws {
+        try Self.deleteAll(certificateQuery, "delete this Mac's certificate")
     }
 
     /// Self-signed, P-256/SHA-256, valid for twenty years: trust is the pinned fingerprint, not the

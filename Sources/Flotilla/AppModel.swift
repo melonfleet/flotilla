@@ -452,8 +452,10 @@ final class AppModel {
     /// forgot, because the values they had in the owner's host categories are kept here and are
     /// now about Macs this one no longer knows. The category *definitions* — Site, Rack, VLAN —
     /// are the owner's own and stay.
-    func forgetAllHostsAndTrust() {
-        for host in hostMode.forgetAllHostsAndTrust() { hostCategories.forgetHost(host) }
+    ///
+    /// Throws, having forgotten nothing, when the controller stopped short — for Settings to say so.
+    func forgetAllHostsAndTrust() async throws {
+        for host in try await hostMode.forgetAllHostsAndTrust() { hostCategories.forgetHost(host) }
     }
 
     /// Whether there is any paired host or trust material to forget. The control is shown anyway,

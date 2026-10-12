@@ -110,27 +110,35 @@ extension AppModel {
     }
 
     /// Updates one host and waits for it to come back on this Mac's build. `nil` means it did.
+    ///
+    /// A reset (*Forget all hosts and trust*) while it waits ends it, recording nothing: the host
+    /// it was updating is no longer one this Mac knows.
     @discardableResult
     func updateHost(_ fingerprint: PeerFingerprint) async -> String? {
         guard let target = ownBuild, let remote = hostMode.remoteHost(for: fingerprint) else {
             return "That host can't be reached."
         }
+        let generation = hostMode.trustGeneration
         let name = hostMode.hostName(.peer(fingerprint), local: hostLabel)
         hostMode.updating.insert(fingerprint)
-        defer { hostMode.updating.remove(fingerprint) }
+        // The reset empties `updating` itself, and the same host paired again may be updating anew.
+        defer { if hostMode.trustGeneration == generation { hostMode.updating.remove(fingerprint) } }
         do {
             let package = try await updatePackage()
             let result = try await remote.upload(file: package.url, bytes: package.bytes, sha256: package.sha256,
                                                  label: "Flotilla build \(target)", purpose: .appUpdate) { _ in }
             _ = result
         } catch {
+            guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
             return failUpdate(fingerprint, name: name, target: target, HostModeController.describe(error))
         }
         // It relaunches: wait for it to answer again, on the new build.
         let deadline = Date().addingTimeInterval(240)
         while Date() < deadline {
             try? await Task.sleep(for: .seconds(4))
+            guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
             await hostMode.refreshHost(fingerprint)
+            guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
             if hostBuild(fingerprint) == target {
                 hostMode.updateFailures.removeValue(forKey: fingerprint)
                 recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: name,

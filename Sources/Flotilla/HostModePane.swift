@@ -179,11 +179,25 @@ struct HostModePane: View {
             Text("From your organisation, but unusable: \(problem)")
                 .font(.caption).foregroundStyle(Theme.warning).lineLimit(3)
         } else if let (key, source) = hostMode.hostEnrolmentKey {
-            HStack(spacing: 8) {
-                Text(Self.masked(key.text)).font(.system(size: 11, design: .monospaced))
-                Text(source == .profile ? "set by your organisation" : "pasted")
-                    .font(.caption).foregroundStyle(.secondary)
-                if source == .pasted { Button("Remove") { hostMode.removePastedEnrolmentKey() } }
+            VStack(alignment: .trailing, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(Self.masked(key.text)).font(.system(size: 11, design: .monospaced))
+                    Text(source == .profile ? "set by your organisation" : "pasted")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if source == .pasted {
+                        Button("Remove") {
+                            do {
+                                try hostMode.removePastedEnrolmentKey()
+                                pasteProblem = nil
+                            } catch {
+                                pasteProblem = "\(error)"
+                            }
+                        }
+                    }
+                }
+                if let pasteProblem {
+                    Text(pasteProblem).font(.caption).foregroundStyle(Theme.danger).lineLimit(2)
+                }
             }
         } else {
             VStack(alignment: .trailing, spacing: 4) {

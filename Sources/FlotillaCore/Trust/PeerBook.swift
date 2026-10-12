@@ -176,11 +176,20 @@ public struct PeerBook: Sendable, Equatable, Codable {
         peers.removeAll { $0.fingerprint == fingerprint }
     }
 
-    /// Forgets every Mac: an admin's hosts, or a host's admin. Settings ▸ Advanced ▸ *Forget all
-    /// hosts and trust*. Nothing is kept, so a Mac turned away before may ask again — this empties
-    /// the book, it does not become a list of Macs to keep out.
-    public mutating func removeAll() {
-        peers.removeAll()
+    /// Forgets every Mac this one trusts or is waiting on — an admin's hosts, or a host's admin —
+    /// for Settings ▸ Advanced ▸ *Forget all hosts and trust*. Returns what it forgot.
+    ///
+    /// **Rejected and revoked Macs stay.** Removal is a lasting block that only the owner may lift
+    /// (DECISIONS Q33), and a reset is not the owner lifting it: an earlier version emptied the
+    /// whole book, so one click let every Mac ever turned away enrol again with its key (Kyle's
+    /// review, 12 October). A blocked entry is about the other Mac's key, which the reset does not
+    /// change, so it is as true afterwards as before.
+    @discardableResult
+    public mutating func forgetTrusted() -> [Peer] {
+        let blocks: Set<Peer.Status> = [.rejected, .revoked]
+        let forgotten = peers.filter { !blocks.contains($0.status) }
+        peers.removeAll { !blocks.contains($0.status) }
+        return forgotten
     }
 
     /// What a peer says about itself now — its computer name after a rename, its macOS after an

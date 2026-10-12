@@ -211,6 +211,8 @@ struct SettingsView: View {
 
     private var store: SettingsStore { model.settingsStore }
     @State private var pendingReset: ResetAction?
+    /// Why the last reset stopped short — `nil` when none is showing.
+    @State private var resetFailure: (title: String, message: String)?
     /// What the last settings import did, for its report — `nil` when none is showing.
     @State private var importReport: String?
 
@@ -280,13 +282,23 @@ struct SettingsView: View {
         ) {
             if let reset = pendingReset {
                 Button(reset.confirmLabel, role: .destructive) {
-                    reset.perform(model)
                     pendingReset = nil
+                    Task {
+                        // Said, not swallowed: a reset that stopped short must not look like one that worked.
+                        do { try await reset.perform(model) }
+                        catch { resetFailure = ("Couldn\u{2019}t \(reset.title.lowercased())", "\(error)") }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { pendingReset = nil }
         } message: {
             Text(pendingReset?.message ?? "")
+        }
+        .alert(resetFailure?.title ?? "", isPresented: Binding(get: { resetFailure != nil },
+                                                               set: { if !$0 { resetFailure = nil } })) {
+            Button("OK") { resetFailure = nil }
+        } message: {
+            Text(resetFailure?.message ?? "")
         }
     }
 
@@ -739,9 +751,10 @@ struct SettingsView: View {
                     + "your containers, images and volumes are all untouched."
             case .hostsAndTrust:
                 "Every Mac you have paired with is forgotten, along with this Mac's own identity "
-                    + "and your fleet enrolment key. Every Mac has to pair again from scratch, "
-                    + "and each one's owner has to let this Mac back in.\n\nYour containers, "
-                    + "images, volumes, settings and window layout are all untouched."
+                    + "and your fleet enrolment key. Each has to pair again from scratch, and its "
+                    + "owner has to let this Mac back in. Macs you turned away or removed stay "
+                    + "blocked.\n\nYour containers, images, volumes, settings and window layout "
+                    + "are all untouched."
             case .windowLayout:
                 "Forgets the window's size and position and the sidebar width. Useful if the "
                     + "window has ended up off-screen.\n\nTakes effect at next launch, because "
@@ -750,10 +763,11 @@ struct SettingsView: View {
             }
         }
 
-        @MainActor func perform(_ model: AppModel) {
+        /// Only trust can fail: it deletes from the Keychain, which may refuse.
+        @MainActor func perform(_ model: AppModel) async throws {
             switch self {
             case .preferences: model.resetPreferences()
-            case .hostsAndTrust: model.forgetAllHostsAndTrust()
+            case .hostsAndTrust: try await model.forgetAllHostsAndTrust()
             case .windowLayout: model.resetWindowLayout()
             }
         }

@@ -94,7 +94,7 @@ struct LoopbackTests {
 
         func tearDown() {
             server.stop()
-            stores.forEach { $0.reset() }
+            stores.forEach { try? $0.reset() }
         }
     }
 
@@ -393,6 +393,29 @@ struct LoopbackTests {
         _ = try? await host.run(["ls"], timeout: nil)
         let result = try await host.run(["ls"], timeout: nil)
         #expect(result.exitCode == 0)
+    }
+
+    /// Kyle's review, 12 October: `stop` only queued the cancellation, so *Forget all hosts and
+    /// trust* deleted the identity under a session that was still up. `stopAndWait` returns once
+    /// the listener and every session have gone — not while they are going.
+    @Test func stoppingAndWaitingReturnsOnlyOnceEverySessionHasGone() async throws {
+        let rig = try await rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let admin = rig.admin()
+        defer { admin.close() }
+        #expect(try await admin.connect().trusted)
+        #expect(rig.server.connectionCount == 1)
+
+        #expect(await rig.server.stopAndWait())
+        #expect(rig.server.connectionCount == 0)
+        #expect(rig.server.state == .stopped)
+        // Nothing new is taken in, and the admin's session is over.
+        await #expect(throws: RemoteHostError.self) { try await rig.admin().connect() }
+        try await Task.sleep(for: .milliseconds(300))
+        await #expect(throws: RemoteHostError.self) { try await admin.run(["ls"]) }
+        // Asking again once it has stopped answers at once.
+        #expect(await rig.server.stopAndWait(timeout: 1))
     }
 
     @Test func anAttemptThatNeverReachesTheHostIsRetriedThenReported() async throws {

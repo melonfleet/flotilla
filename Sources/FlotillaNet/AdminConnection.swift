@@ -107,6 +107,12 @@ public final class AdminConnection: @unchecked Sendable {
     /// The same, calling back on this connection's queue.
     public func connect(completion: @escaping @Sendable (Result<WireMessage.Welcome, Error>) -> Void) {
         connection.queue.async { [self] in
+            // Closed before it started — `RemoteHost.close` ending an attempt the moment it was
+            // made. Nothing would ever call back, so say so now.
+            if connection.isFinished {
+                closedReason = .some(nil)
+                return completion(.failure(RemoteHostError.closed(nil)))
+            }
             connectCompletion = completion
             // TCP, TLS and the welcome all inside one deadline: a host that completes TLS and then
             // says nothing must not hold a caller for ever (Iris's review, 7 October).

@@ -87,12 +87,13 @@ public struct EnrolmentKeyStore: @unchecked Sendable {
         try write(key.text, account: "host", label: "Flotilla fleet enrolment key")
     }
 
-    public func removePastedHostKey() { delete(account: "host") }
+    public func removePastedHostKey() throws { try delete(account: "host") }
 
-    /// Removes both stored keys — for tests, and for leaving a fleet.
-    public func removeAll() {
-        delete(account: "admin")
-        delete(account: "host")
+    /// Removes both stored keys — for tests, and for leaving a fleet. Throws if either is still
+    /// there: a key reported gone that is not is a fleet this Mac can still enrol into.
+    public func removeAll() throws {
+        try delete(account: "admin")
+        try delete(account: "host")
     }
 
     // MARK: Keychain
@@ -136,13 +137,15 @@ public struct EnrolmentKeyStore: @unchecked Sendable {
         }
     }
 
-    private func delete(account: String) {
+    /// Through `DeviceIdentityStore.deleteAll`, so the Keychain's answer is read: "not found" is
+    /// success — there was nothing to remove — and every other answer but "deleted" is an error.
+    private func delete(account: String) throws {
         DeviceIdentityStore.keychainLock.lock()
         defer { DeviceIdentityStore.keychainLock.unlock() }
-        SecItemDelete([
+        try DeviceIdentityStore.deleteAll([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-        ] as CFDictionary)
+        ], "delete the enrolment key")
     }
 }

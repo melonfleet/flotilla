@@ -86,6 +86,9 @@ public final class WireConnection: @unchecked Sendable {
 
     public var remoteEndpoint: NWEndpoint { connection.endpoint }
 
+    /// Whether it has closed. Read on `queue`.
+    var isFinished: Bool { finished }
+
     /// The IPv4 addresses this connection actually runs between — this Mac's end, then the
     /// peer's — or `nil` for either that is not IPv4 or not known yet. Fleet names (Q37) point a
     /// Mac's zone at the address another Mac really reaches it on.

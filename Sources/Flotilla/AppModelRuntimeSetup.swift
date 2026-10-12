@@ -297,18 +297,23 @@ extension AppModel {
     @discardableResult
     func setUpRuntime(on fingerprint: PeerFingerprint) async -> String? {
         guard let remote = hostMode.remoteHost(for: fingerprint) else { return "That host can't be reached." }
+        let generation = hostMode.trustGeneration
         let name = hostMode.hostName(.peer(fingerprint), local: hostLabel)
         hostMode.settingUpRuntime.insert(fingerprint)
-        defer { hostMode.settingUpRuntime.remove(fingerprint) }
+        // The reset empties `settingUpRuntime` itself, and the same host paired again may be at it anew.
+        defer { if hostMode.trustGeneration == generation { hostMode.settingUpRuntime.remove(fingerprint) } }
         let keepAwake = power.begin("setting up container on a host")
         defer { power.end(keepAwake) }
         do {
             _ = try await remote.call(.setUpRuntime)
+            // Forgotten while it ran: nothing recorded or refreshed for a host this Mac no longer knows.
+            guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
             recordActivity(ContainerEvent(date: Date(), from: "", to: ContainerRuntime.expectedVersion, kind: .host,
                                           subject: name, action: "container set up at \(ContainerRuntime.expectedVersion)"))
             await hostMode.refreshHost(fingerprint)
             return nil
         } catch {
+            guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
             let message = HostModeController.describe(error)
             recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: name,
                                           action: "container setup failed: \(message)"))

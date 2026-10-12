@@ -47,14 +47,27 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
         return open?.isClosed == false ? open!.ipv4Addresses : (nil, nil)
     }
 
+    /// Closed for good: every later call fails at once, and nothing is opened again.
+    ///
+    /// It used to close only the stored connection, so one still being opened survived — it
+    /// finished, was stored, and served the next call with the identity the owner had just reset
+    /// (Kyle's review, 12 October). Now the attempt under way is ended too, a connection that
+    /// finishes anyway is closed rather than kept (`openConnection`), and callers waiting for it
+    /// are told now rather than when it gives up.
     public func close() {
-        lock.lock()
-        let open = connection
-        connection = nil
-        welcome = nil
-        lock.unlock()
+        let (open, attempt, waiting) = lock.withLock {
+            closed = true
+            defer { connection = nil; welcome = nil; opening = nil; waiters.removeAll() }
+            return (connection, opening, waiters)
+        }
         open?.close()
+        attempt?.close()
+        for waiter in waiting { waiter(.failure(Self.closedError)) }
     }
+
+    public var isClosed: Bool { lock.withLock { closed } }
+
+    static let closedError = RemoteHostError.closed("Flotilla closed its connection to this host")
 
     // MARK: Running
 
@@ -88,6 +101,9 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     /// Callers waiting for a connection that is already being made.
     private var waiters: [@Sendable (Result<AdminConnection, Error>) -> Void] = []
     private var connecting = false
+    /// The attempt under way, so `close` can end it.
+    private var opening: AdminConnection?
+    private var closed = false
 
     /// The open connection, or a new one — pinned and trusted, or an error. **One attempt at a
     /// time**: callers arriving while it is under way wait for it, rather than each opening their
@@ -95,6 +111,7 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     /// host's per-address limit reset all but four).
     private func connection(_ completion: @escaping @Sendable (Result<AdminConnection, Error>) -> Void) {
         let action: () -> Void = lock.withLock {
+            if closed { return { completion(.failure(Self.closedError)) } }
             // A connection that has closed underneath us is dropped here, whatever any caller saw.
             if let open = connection, !open.isClosed { return { completion(.success(open)) } }
             connection = nil
@@ -114,6 +131,11 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
 
     private func openConnection(attempt: Int = 1) {
         let fresh = AdminConnection(endpoint: endpoint, identity: identity, info: info, reachTimeout: reachTimeout)
+        // A retry scheduled before `close` lands here after it, and opens nothing.
+        guard lock.withLock({ () -> Bool in
+            if !closed { opening = fresh }
+            return !closed
+        }) else { return }
         let expected = fingerprint
         fresh.connect { [weak self] result in
             guard let self else { return }
@@ -141,15 +163,21 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
                     outcome = .success(fresh)
                 }
             }
-            let waiting: [@Sendable (Result<AdminConnection, Error>) -> Void] = self.lock.withLock {
+            // Checked under the same lock that stores it, so a `close` cannot fall between the two:
+            // closed meanwhile, the new connection is ended rather than kept, and its waiters have
+            // already been told by `close`.
+            let waiting: [@Sendable (Result<AdminConnection, Error>) -> Void]? = self.lock.withLock {
+                if self.opening === fresh { self.opening = nil }
+                self.connecting = false
+                if self.closed { return nil }
                 if case .success = outcome, case .success(let welcome) = result {
                     self.connection = fresh
                     self.welcome = welcome
                 }
-                self.connecting = false
                 defer { self.waiters.removeAll() }
                 return self.waiters
             }
+            guard let waiting else { return fresh.close() }
             for waiter in waiting { waiter(outcome) }
         }
     }

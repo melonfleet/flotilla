@@ -96,10 +96,13 @@ extension AppModel {
     /// Mac that was sent a table is sent an empty one, which turns names across Macs off there.
     func updateFleetNames() async {
         guard !hostMode.trustedHosts.isEmpty else { return }
+        let generation = hostMode.trustGeneration
         let enabled = fleetNamesEnabled && FleetResolvers.fleetDomainProblem(fleetDNSDomain) == nil
         let empty = FleetNameTable(fleetDomain: fleetDNSDomain, zones: [])
         await applyFleetNames(enabled ? fleetNameTable(for: .local) : nil)
         for peer in hostMode.trustedHosts {
+            // A reset since this began has forgotten every host it is about to write down.
+            guard hostMode.trustGeneration == generation else { return }
             let fingerprint = peer.fingerprint
             guard hostMode.live[fingerprint]?.state == .connected,
                   let remote = hostMode.remoteHost(for: fingerprint) else { continue }
@@ -108,9 +111,11 @@ extension AppModel {
             if !enabled, hostMode.sentFleetTables[fingerprint] == nil { continue }
             do {
                 _ = try await remote.call(.setFleetNames(table))
+                guard hostMode.trustGeneration == generation else { return }
                 hostMode.sentFleetTables[fingerprint] = table
                 hostMode.noteFleetNamesResult(fingerprint, nil)
             } catch {
+                guard hostMode.trustGeneration == generation else { return }
                 hostMode.noteFleetNamesResult(fingerprint, HostModeController.describe(error))
                 // A host that refused because of its helper still answers; send again on a change.
                 if case .failed? = error as? RemoteHostError { hostMode.sentFleetTables[fingerprint] = table }

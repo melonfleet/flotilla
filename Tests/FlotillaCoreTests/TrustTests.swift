@@ -236,18 +236,45 @@ struct PeerBookTests {
         #expect(book[mini]?.displayName == "Build box")
     }
 
-    /// Settings ▸ Advanced ▸ *Forget all hosts and trust*: the book keeps nothing, not even who
-    /// was turned away. It is a reset, not a list of Macs to keep out.
-    @Test func forgettingEveryMacEmptiesTheBook() {
+    /// Settings ▸ Advanced ▸ *Forget all hosts and trust*: every Mac trusted or waiting goes, and
+    /// every Mac the owner turned away or removed stays — a reset is not the owner relenting (Q33).
+    @Test func forgettingTrustKeepsEveryBlock() {
         var book = PeerBook()
         book.pairConfirmed(mini, role: .host, details: details, at: now)
+        _ = book.requestEnrolment(fingerprint(5), role: .host, details: details, at: now)
         _ = book.requestEnrolment(fingerprint(6), role: .host, details: details, at: now)
         book.reject(fingerprint(6), at: now)
-        book.removeAll()
-        #expect(book == PeerBook())
-        #expect(!book.isTrusted(mini) && !book.isBlocked(fingerprint(6)))
-        // So a Mac that was turned away could ask again from scratch.
-        #expect(book.requestEnrolment(fingerprint(6), role: .host, details: details, at: now) == .addedPending)
+        book.pairConfirmed(fingerprint(7), role: .admin, details: details, at: now)
+        book.revoke(fingerprint(7), at: now)
+
+        let forgotten = book.forgetTrusted()
+        #expect(Set(forgotten.map(\.fingerprint)) == [mini, fingerprint(5)])
+        #expect(Set(book.peers.map(\.fingerprint)) == [fingerprint(6), fingerprint(7)])
+        #expect(!book.isTrusted(mini) && book[fingerprint(5)] == nil)
+        #expect(book.isBlocked(fingerprint(6)) && book.isBlocked(fingerprint(7)))
+        // A Mac that was trusted may pair again from scratch; one turned away may not.
+        let again = book.requestEnrolment(mini, role: .host, details: details, at: now)
+        let refused = book.requestEnrolment(fingerprint(6), role: .host, details: details, at: now)
+        #expect(again == .addedPending && refused == .blocked)
+    }
+
+    /// The finding behind `forgetTrusted` (Kyle's review, 12 October): a revoked admin's enrolment
+    /// key named it before the reset and still does after, and must still be refused.
+    @Test func aRevokedMacIsStillBlockedAfterTheReset() {
+        var book = PeerBook()
+        let admin = fingerprint(9)
+        let admitted = book.admitByEnrolmentKey(admin, details: details, at: now)
+        let revoked = book.revoke(admin, at: now)
+        #expect(admitted && revoked)
+        book.forgetTrusted()
+        #expect(book.isBlocked(admin) && !book.isTrusted(admin))
+        let readmitted = book.admitByEnrolmentKey(admin, details: details, at: now)
+        #expect(!readmitted)
+        let asked = book.requestEnrolment(admin, role: .admin, details: details, at: now)
+        #expect(asked == .blocked)
+        // Only the owner lifts it, exactly as before the reset.
+        let approved = book.approve(admin, at: now)
+        #expect(approved && book.isTrusted(admin))
     }
 
     @Test func theBookIsPlistNative() throws {

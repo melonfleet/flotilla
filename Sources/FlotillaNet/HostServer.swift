@@ -240,19 +240,62 @@ public final class HostServer: @unchecked Sendable {
         listener.stateUpdateHandler = { [weak self] state in self?.listenerChanged(state) }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         self.listener = listener
+        listenerEnded = false
         set(.starting)
         listener.start(queue: queue)
     }
 
-    /// Stops listening and closes every connection.
-    public func stop() {
+    /// Stops listening and closes every connection. Returns at once; `completion`, if given, is
+    /// called on the server's queue with `true` once the listener has said it is cancelled and
+    /// every connection has finished closing, or with `false` if that has not happened within
+    /// `timeout`.
+    ///
+    /// It used to only queue the cancellation, so nobody could know when the old listener and its
+    /// sessions were really gone — and *Forget all hosts and trust* deleted the identity they were
+    /// presenting and started a new listener while they were still up (Kyle's review, 12 October).
+    /// A command an admin already started still runs to its end (`ContainerHost` cannot stop a
+    /// child, Q15), but its session has gone, so its answer goes nowhere.
+    public func stop(timeout: TimeInterval = 5, completion: (@Sendable (Bool) -> Void)? = nil) {
         queue.async { [self] in
+            stopping = true
+            if let completion {
+                let id = UUID()
+                stopWaiters[id] = completion
+                queue.asyncAfter(deadline: .now() + timeout) { [self] in stopWaiters.removeValue(forKey: id)?(false) }
+            }
             listener?.cancel()
             listener = nil
+            // Each handler leaves `handlers` when its connection has closed (`accept`), which is
+            // what `finishStopping` waits for. A connection that is already closing ignores this.
             for handler in handlers.values { handler.connection.close("host mode stopped") }
-            handlers.removeAll()
             set(.stopped)
+            finishStopping()
         }
+    }
+
+    /// `stop`, waiting for it. `false` means the listener or a connection was still up at `timeout`.
+    @discardableResult
+    public func stopAndWait(timeout: TimeInterval = 5) async -> Bool {
+        await withCheckedContinuation { continuation in
+            stop(timeout: timeout) { continuation.resume(returning: $0) }
+        }
+    }
+
+    /// Connections that still have a handler. Waits on `queue`, so never call it from there.
+    var connectionCount: Int { queue.sync { handlers.count } }
+
+    /// Set for good by `stop`: a stopped server takes in nothing more, even if started again.
+    /// `HostModeController` makes a new one each time it listens.
+    private var stopping = false
+    /// True until `start` makes a listener, and again once it reports itself cancelled.
+    private var listenerEnded = true
+    private var stopWaiters: [UUID: @Sendable (Bool) -> Void] = [:]
+
+    private func finishStopping() {
+        guard stopping, listenerEnded, handlers.isEmpty, !stopWaiters.isEmpty else { return }
+        let waiting = stopWaiters.values
+        stopWaiters.removeAll()
+        waiting.forEach { $0(true) }
     }
 
     /// Closes every live connection from this key — on revocation, at once (PLAN.md Phase B).
@@ -268,7 +311,10 @@ public final class HostServer: @unchecked Sendable {
         switch state {
         case .ready: set(.listening(port: listener?.port?.rawValue ?? configuration.port))
         case .failed(let error): set(.failed(error.localizedDescription))
-        case .cancelled: set(.stopped)
+        case .cancelled:
+            set(.stopped)
+            listenerEnded = true
+            finishStopping()
         default: break
         }
     }
@@ -282,7 +328,8 @@ public final class HostServer: @unchecked Sendable {
     /// at its limit — a flood of connections then costs a refused socket each, not a session.
     private func accept(_ nw: NWConnection) {
         let address: String = if case .hostPort(let host, _) = nw.endpoint { "\(host)" } else { "\(nw.endpoint)" }
-        guard handlers.count < configuration.maxConnections,
+        // A connection the cancelled listener had already taken in is turned away like any other.
+        guard !stopping, handlers.count < configuration.maxConnections,
               addresses.values.filter({ $0 == address }).count < configuration.maxConnectionsPerAddress else {
             nw.cancel()
             return
@@ -293,7 +340,12 @@ public final class HostServer: @unchecked Sendable {
         handlers[key] = handler
         addresses[key] = address
         connection.onClose = { [weak self] _ in
-            self?.queue.async { self?.handlers[key] = nil; self?.addresses[key] = nil }
+            guard let server = self else { return }
+            server.queue.async {
+                server.handlers[key] = nil
+                server.addresses[key] = nil
+                server.finishStopping()
+            }
         }
         handler.start()
     }

@@ -100,6 +100,16 @@ final class HostModeController {
     static let freshFor: TimeInterval = 75
     @ObservationIgnored private var remotes: [PeerFingerprint: RemoteHost] = [:]
 
+    /// Moved on by every *Forget all hosts and trust*. Work that began before one — a refresh, an
+    /// update, a runtime setup, a DNS read, a pairing — notes the generation it began in and writes
+    /// nothing once it has changed: each was a minute's await away from putting a forgotten host's
+    /// status, snapshots or facts straight back (Kyle's review, 12 October).
+    @ObservationIgnored private(set) var trustGeneration = 0
+    /// What work that began before a reset says when it notices one.
+    static let forgottenMidway = "Flotilla forgot all hosts and trust while this was under way."
+    /// A reset is under way, so nothing may start a listener on the identity it is deleting.
+    private(set) var forgetting = false
+
     @ObservationIgnored private let containerHost: ContainerHost
     @ObservationIgnored private let bookStore: PeerBookStore
     @ObservationIgnored private let keyStore: EnrolmentKeyStore
@@ -305,13 +315,18 @@ final class HostModeController {
     /// Whether this Mac has an identity, **without** creating one.
     ///
     /// `identity` is only populated once something has needed it, so a screen outside Host Mode
-    /// cannot read that and be right. The Keychain is asked at most once and the answer kept:
-    /// `ensureIdentity()` and `forgetAllHostsAndTrust()` are the only things that change it, and a
-    /// reset button that is merely drawn must not mint this Mac's key.
+    /// cannot read that and be right. The Keychain's answer is kept: `ensureIdentity()` and
+    /// `forgetAllHostsAndTrust()` are the only things that change it, and a reset button that is
+    /// merely drawn must not mint this Mac's key.
+    ///
+    /// **An error is not an answer, so it is neither kept nor taken as "none".** It used to be
+    /// both, and one locked-Keychain moment disabled the reset for the rest of the run (Kyle's
+    /// review, 12 October). Not knowing counts as present: the reset stays offered, and if the
+    /// Keychain is still refusing when it runs, the reset says so itself.
     var hasIdentity: Bool {
         if identity != nil { return true }
         if let identityOnDisk { return identityOnDisk }
-        let found = (try? identityStore.load()) != nil
+        guard let found = try? identityStore.exists() else { return true }
         identityOnDisk = found
         return found
     }
@@ -345,6 +360,9 @@ final class HostModeController {
     // MARK: Listening (host)
 
     private func startListening() {
+        // Not mid-reset, by any route — `apply()`, the rename timer — or the listener would come
+        // back up presenting the identity the reset is about to delete.
+        guard !forgetting else { return }
         let port = UInt16(clamping: settings[SettingsKeys.hostListenPort])
         if let server, server.configuration.port == port, listener != .off { return }
         stopListening()
@@ -369,8 +387,12 @@ final class HostModeController {
             }
         }
         let server = HostServer(configuration: configuration, host: containerHost, delegate: bridge)
-        server.onStateChange = { [weak self] state in
-            Task { @MainActor in self?.listenerChanged(state) }
+        server.onStateChange = { [weak self, weak server] state in
+            Task { @MainActor in
+                // A stopped server's last word arrives late, and must not mark its successor off.
+                guard let self, let server, self.server === server else { return }
+                self.listenerChanged(state)
+            }
         }
         do {
             try server.start()
@@ -387,6 +409,15 @@ final class HostModeController {
         server?.stop()
         server = nil
         listener = .off
+    }
+
+    /// `stopListening`, and then waits until the listener and every session have really ended.
+    /// `false` if one was still up when the server stopped waiting.
+    private func stopListeningAndWait() async -> Bool {
+        let stopping = server
+        server = nil
+        stopListening()
+        return await stopping?.stopAndWait() ?? true
     }
 
     private func listenerChanged(_ state: HostServer.State) {
@@ -428,8 +459,8 @@ final class HostModeController {
         refreshBridge()
     }
 
-    func removePastedEnrolmentKey() {
-        keyStore.removePastedHostKey()
+    func removePastedEnrolmentKey() throws {
+        try keyStore.removePastedHostKey()
         refreshBridge()
     }
 
@@ -507,54 +538,111 @@ final class HostModeController {
     /// Whether `forgetAllHostsAndTrust()` has anything to do — what disables the Settings button.
     ///
     /// A key from a configuration profile does not count: it is the organisation's, and deleting
-    /// this Mac's copy of it would neither remove it nor stop it being used.
+    /// this Mac's copy of it would neither remove it nor stop it being used. Nor does a Mac turned
+    /// away or removed: the reset keeps those (`PeerBook.forgetTrusted`).
     var hasHostsOrTrustToForget: Bool {
-        !book.peers.isEmpty || hasIdentity || adminKey != nil || hostEnrolmentKey?.source == .pasted
+        guard !forgetting else { return false }
+        return book.peers.contains { !book.isBlocked($0.fingerprint) } || hasIdentity || adminKey != nil
+            || hostEnrolmentKey?.source == .pasted
+    }
+
+    /// Why *Forget all hosts and trust* stopped short.
+    enum ForgetFailure: Error, CustomStringConvertible {
+        /// The old listener or one of its sessions was still up. Nothing was deleted.
+        case listenerStillRunning
+        /// The Keychain refused a delete. The book and everything else are untouched; part of the
+        /// identity may be gone already, because the Keychain has no transactions.
+        case keychain(Error)
+
+        var description: String {
+            switch self {
+            case .listenerStillRunning:
+                "This Mac's listener didn't stop in time, so nothing was forgotten. Try again."
+            case .keychain(let error):
+                "\(error)\n\nNo Mac you have paired with was forgotten. Part of this Mac's identity "
+                    + "may already be gone from the Keychain, so try again: the reset always starts there."
+            }
+        }
     }
 
     /// Forgets every paired Mac, this Mac's identity and the fleet enrolment key, so this Mac and
     /// every other must pair again from scratch (`research/FEATURES.md`: the second of the three
     /// resets). The owner's way back from a suspected key, a fleet they are leaving, or a Mac they
-    /// are passing on.
+    /// are passing on. Macs the owner turned away or removed stay blocked (`PeerBook.forgetTrusted`).
     ///
     /// Nothing the `container` runtime owns is touched — no container, image, volume or network —
-    /// and nothing here is privileged, so the Flotilla Helper is not involved. The resolver files
-    /// for other Macs' zones are the helper's and are deliberately left alone.
+    /// and nothing here is privileged, so the Flotilla Helper is not involved.
     ///
     /// Returns the forgotten Macs' keys, for the per-host bookkeeping the app holds outside this
-    /// controller (`AppModel.forgetAllHostsAndTrust`).
+    /// controller (`AppModel.forgetAllHostsAndTrust`). Throws `ForgetFailure` having forgotten
+    /// nothing; the listener is then back as it was.
     @discardableResult
-    func forgetAllHostsAndTrust() -> [String] {
-        let forgotten = book.peers.map(\.fingerprint)
-        // The listener presents the identity about to be deleted, and `startListening` reuses a
-        // running server, so it is stopped here rather than left for `apply()` to notice.
-        stopListening()
+    func forgetAllHostsAndTrust() async throws -> [String] {
+        guard !forgetting else { return [] }
+        forgetting = true
+        let outcome = await forgetEverything()
+        forgetting = false
+        // Both ways. Done, a host's listener starts on a new identity — created the moment one is
+        // needed, here or by `ensureIdentity()` at the next pairing. Stopped short, it comes back on
+        // the identity still held in memory, which is the one this Mac had: nothing was forgotten.
+        apply()
+        return try outcome.get()
+    }
+
+    private func forgetEverything() async -> Result<[String], ForgetFailure> {
+        // The listener presents the identity about to be deleted. `stop` only queues its
+        // cancellation, so the reset waits until it and every session have really gone: a session
+        // still up would go on serving an admin with the old key while the book was emptied under it.
+        guard await stopListeningAndWait() else { return .failure(.listenerStillRunning) }
+        // The Keychain first, before the book or anything in memory. If a delete is refused the
+        // reset stops here, so a failure can never look like a success — and the old identity can
+        // never be what `apply()` loads under a reset that said it was done (Kyle's review).
+        // The enrolment key before the identity: if the second delete is refused, the worst left
+        // behind is an admin needing a new enrolment key, never a Mac without its identity whose
+        // book still trusts everyone.
+        do {
+            try keyStore.removeAll()
+            try identityStore.reset()
+        } catch {
+            // Whatever is left in the Keychain is asked about again.
+            identityOnDisk = nil
+            return .failure(.keychain(error))
+        }
+        trustGeneration += 1
+        bridge.forget()
+        // A pairing waiting on the owner belongs to the identity that has just gone.
+        wordsPrompt?.reply(false)
         // What a host leaves behind is `dropRemote`'s list, asked for every key we hold a
         // connection or an answer for — so a snapshot added to that list later is cleared here too.
-        for fingerprint in Set(forgotten).union(remotes.keys).union(live.keys) { dropRemote(fingerprint) }
+        // Every connection goes, a blocked Mac's included: each was opened with the old identity.
+        let known = Set(book.peers.map(\.fingerprint)).union(remotes.keys).union(live.keys)
+        for fingerprint in known { dropRemote(fingerprint) }
+        let forgotten = book.forgetTrusted()
         sentFleetTables.removeAll()
         fleetNamesResults.removeAll()
         updateFailures.removeAll()
+        updating.removeAll()
+        settingUpRuntime.removeAll()
         autoEnrolAttempts.removeAll()
-        book.removeAll()
+        // This Mac stops answering names for the fleet it has left. The /etc/resolver files stay:
+        // they are the helper's, and point at the responder on 127.0.0.1:7869, which no longer
+        // answers — so lookups for those zones fail fast rather than resolve to a forgotten Mac.
+        setFleetTable(nil)
+        fleetResponder.update(nil)
+        fleetNamesProblem = nil
         // A forgotten host's /20 goes back to the pool; This Mac keeps its own.
         addressBlocks = addressBlocks.filter { $0.key == Self.blockKey(.local) }
         localStore.set(try? PropertyListEncoder().encode(addressBlocks), forKey: Self.addressBlocksKey)
-        identityStore.reset()
         identity = nil
         identityProblem = nil
         identityOnDisk = false
-        keyStore.removeAll()
         adminKey = nil
         // Both belong to the identity that has just gone: a code shown now proves nothing.
         pairingCode = nil
         enrolmentStatus = nil
         record(Self.computerName, "Forgot all hosts and trust")
         save()
-        // A new identity is created the moment one is needed — by the listener `apply()` starts on
-        // a host, or by `ensureIdentity()` at the next pairing.
-        apply()
-        return forgotten.map(\.hex)
+        return .success(forgotten.map(\.fingerprint.hex))
     }
 
     // MARK: Adding a host (admin)
@@ -571,12 +659,17 @@ final class HostModeController {
     /// `expecting` is an imported host's fingerprint (Q34): the key it must present. Checked as soon
     /// as the encrypted connection is up and **before** any pairing message, so a different Mac at
     /// that address learns nothing and is asked nothing.
+    ///
+    /// A reset during any of its awaits ends it without a word in the book: the connection was
+    /// opened with the identity the reset deleted, so a pairing finished on it is worthless.
     func addHost(at endpoint: NWEndpoint, code: String?, expecting: PeerFingerprint? = nil) async -> AddHostOutcome {
         guard let identity = ensureIdentity() else { return .failed(identityProblem ?? "No identity.") }
+        let generation = trustGeneration
         let connection = AdminConnection(endpoint: endpoint, identity: identity, info: ownInfo)
         defer { connection.close() }
         do {
             let welcome = try await connection.connect()
+            guard generation == trustGeneration else { return .failed(Self.forgottenMidway) }
             guard let hostPrint = connection.hostFingerprint else { return .failed("The host presented no identity.") }
             // Pairing a Mac with itself would put both halves of the words prompt on one screen.
             guard hostPrint != identity.fingerprint else { return .failed("That address is this Mac.") }
@@ -607,11 +700,17 @@ final class HostModeController {
             let outcome = try await connection.pair(
                 details: ownDetails, method: method,
                 confirmWords: { [weak self] words, details in
-                    await self?.askWords(words, peer: details, role: .host) ?? false
+                    await self?.askWords(words, peer: details, role: .host, generation: generation) ?? false
                 },
                 recordEnrolment: { [weak self] fingerprint, details in
-                    await self?.recordEnrolment(fingerprint, details) ?? .blocked
+                    // After a reset the host is told nothing: closed first, the answer is never sent.
+                    guard let outcome = await self?.recordEnrolment(fingerprint, details, generation: generation) else {
+                        connection.close()
+                        return .blocked
+                    }
+                    return outcome
                 })
+            guard generation == trustGeneration else { return .failed(Self.forgottenMidway) }
             switch outcome {
             case .paired(let fingerprint, let details):
                 book.pairConfirmed(fingerprint, role: .host, details: details, at: Date())
@@ -639,11 +738,21 @@ final class HostModeController {
         }
     }
 
-    private func recordEnrolment(_ fingerprint: PeerFingerprint, _ details: PeerDetails) -> PeerBook.Outcome {
+    /// `nil`, writing nothing, if a reset has come since the pairing began.
+    private func recordEnrolment(_ fingerprint: PeerFingerprint, _ details: PeerDetails, generation: Int) -> PeerBook.Outcome? {
+        guard generation == trustGeneration else { return nil }
         let outcome = book.requestEnrolment(fingerprint, role: .host, details: details, at: Date())
         save()
         if outcome == .addedPending { record(details.computerName, "Asked to join") }
         return outcome
+    }
+
+    /// `askWords` for a pairing begun in `generation`: refused if a reset has come since. Checked
+    /// and shown in one turn of the main actor, so a reset cannot fall between the two — and one
+    /// that comes while the words are showing answers them itself (`forgetEverything`).
+    private func askWords(_ words: [String], peer: PeerDetails, role: Peer.Role, generation: Int) async -> Bool {
+        guard generation == trustGeneration else { return false }
+        return await askWords(words, peer: peer, role: role)
     }
 
     /// Shows the words and waits for the owner.
@@ -707,6 +816,7 @@ final class HostModeController {
     /// everything else. A host that keeps failing is asked less often (`HostBackoff`); `force`
     /// asks every one now, as Refresh does.
     func refreshLiveStatus(force: Bool = false) async {
+        let generation = trustGeneration
         let now = Date()
         let due = hosts.filter { peer in
             guard peer.isTrusted else { return false }
@@ -718,7 +828,15 @@ final class HostModeController {
                 group.addTask { await self.refreshLiveStatus(peer.fingerprint) }
             }
         }
-        if !due.isEmpty { onRefreshed?() }
+        if !due.isEmpty, generation == trustGeneration { onRefreshed?() }
+    }
+
+    /// A host this Mac trusts now. A refresh asks before it writes anything for a key, so one that
+    /// starts after a reset — an action's follow-up refresh, a task group's late child — cannot put
+    /// a forgotten host back, even as "can't find it".
+    private func isTrustedHost(_ fingerprint: PeerFingerprint) -> Bool {
+        guard let peer = book[fingerprint] else { return false }
+        return peer.isTrusted && peer.role == .host
     }
 
     /// The paired, trusted hosts and what each last said about its containers.
@@ -757,11 +875,16 @@ final class HostModeController {
 
     /// After an action on a host: ask it again now, not at the next tick.
     func refreshHost(_ fingerprint: PeerFingerprint) async {
+        guard isTrustedHost(fingerprint) else { return }
         backoff[fingerprint, default: HostBackoff()].forceDue()
         await refreshLiveStatus(fingerprint)
     }
 
+    /// Every write after an `await` here is behind a check of `generation`: a reset may have come
+    /// in between, and what this ask learns is about a host this Mac no longer knows.
     private func refreshLiveStatus(_ fingerprint: PeerFingerprint) async {
+        guard isTrustedHost(fingerprint) else { return }
+        let generation = trustGeneration
         guard let remote = remoteHost(for: fingerprint) else {
             live[fingerprint] = LiveStatus(state: .failed("Can't find it on the network. Add it again by address."),
                                            checkedAt: Date())
@@ -783,12 +906,14 @@ final class HostModeController {
             guard case .failure = outcome, let status = try? cli.systemStatus() else { return (outcome, false) }
             return (outcome, !status.isRunning)
         }.value
+        guard generation == trustGeneration else { return }
         // The other lists, each on its own: one failing does not blank the others.
         if case .success = outcome {
             let (images, volumes, networks, clusters) = await Task.detached {
                 (Result { try cli.listImages() }, Result { try cli.listVolumes() }, Result { try cli.listNetworks() },
                  Result { try cli.k8sNodes() })
             }.value
+            guard generation == trustGeneration else { return }
             let at = Date()
             switch clusters {
             case .success(let list): clusterSnapshots[fingerprint, default: FleetSnapshot()].succeeded(list, at: at)
@@ -807,8 +932,9 @@ final class HostModeController {
             case .failure(let error): networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
             }
             await refreshDNS(fingerprint, remote: remote)
-            if let result = try? await remote.call(.hostFacts),
-               let answer = try? JSONDecoder().decode(HostFacts.self, from: Data(result.stdout.utf8)) {
+            let hostFacts = try? await remote.call(.hostFacts)
+            guard generation == trustGeneration else { return }
+            if let hostFacts, let answer = try? JSONDecoder().decode(HostFacts.self, from: Data(hostFacts.stdout.utf8)) {
                 facts[fingerprint] = answer
             }
         }
@@ -858,15 +984,26 @@ final class HostModeController {
     }
 
     /// A host's DNS (D3). A host whose Flotilla predates host calls says so in its rows' place.
+    /// Behind the same two checks as `refreshLiveStatus`, which matters most here: `dnsCall` hands
+    /// over its remote for a refresh that may start after a reset has closed it.
     func refreshDNS(_ fingerprint: PeerFingerprint, remote: RemoteHost? = nil) async {
+        guard isTrustedHost(fingerprint) else { return }
+        let generation = trustGeneration
         guard let remote = remote ?? remoteHost(for: fingerprint) else { return }
         let at = Date()
+        let outcome: Result<HostDNSStatus, Error>
         do {
             let result = try await remote.call(.dnsStatus)
-            let status = try JSONDecoder().decode(HostDNSStatus.self, from: Data(result.stdout.utf8))
+            outcome = .success(try JSONDecoder().decode(HostDNSStatus.self, from: Data(result.stdout.utf8)))
+        } catch {
+            outcome = .failure(error)
+        }
+        guard generation == trustGeneration else { return }
+        switch outcome {
+        case .success(let status):
             dnsStatus[fingerprint] = status
             dnsSnapshots[fingerprint, default: FleetSnapshot()].succeeded(status.domains, at: at)
-        } catch {
+        case .failure(let error):
             dnsSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: at)
         }
     }
@@ -1056,6 +1193,16 @@ final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
     private var acceptsUpdates = true
     func setAcceptsUpdates(_ on: Bool) { lock.lock(); acceptsUpdates = on; lock.unlock() }
 
+    /// Moved on by `forget()`. An event below is stamped on the session's queue as it is posted and
+    /// dropped if it reaches the main actor in a later epoch: a session of the listener a reset
+    /// stopped may have posted it a moment before, and it must not put a forgotten admin back in
+    /// the book, show a forgotten pairing's words, or run a forgotten admin's call or update.
+    /// `ran` is not dropped — the command did run, and the record of it is the owner's.
+    private var epoch = 0
+    func forget() { lock.withLock { epoch += 1 } }
+    private var stamp: Int { lock.withLock { epoch } }
+    private func isCurrent(_ stamp: Int) -> Bool { lock.withLock { epoch == stamp } }
+
     func acceptsAppUpdates() -> String? {
         lock.lock(); defer { lock.unlock() }
         return acceptsUpdates ? nil : "This host doesn't take Flotilla updates from its admin — its owner turned that off."
@@ -1063,8 +1210,9 @@ final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
 
     func installUpdate(archive: URL, isIdle: @escaping @Sendable () -> Bool,
                        reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
+        let stamp = self.stamp
         Task { @MainActor in
-            guard let install = self.controller?.installUpdate else {
+            guard self.isCurrent(stamp), let install = self.controller?.installUpdate else {
                 return reply(.failure(HostCallFailure(.internalError, "This host isn't ready.")))
             }
             reply(await install(archive, isIdle))
@@ -1093,8 +1241,9 @@ final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
         if var current = code {
             code = current.recordFailure(at: Date()) ? current : nil
         }
+        let stamp = epoch
         lock.unlock()
-        Task { @MainActor in self.controller?.codeFailed() }
+        Task { @MainActor in if self.isCurrent(stamp) { self.controller?.codeFailed() } }
     }
 
     func trust(admin: PeerFingerprint, details: PeerDetails, method: Peer.Method) {
@@ -1104,19 +1253,26 @@ final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
         if method == .enrolmentKey, blockedAdmins.contains(admin) { lock.unlock(); return }
         trustedAdmins.insert(admin)
         blockedAdmins.remove(admin)
+        let stamp = epoch
         lock.unlock()
-        Task { @MainActor in self.controller?.adminTrusted(admin, details: details, method: method) }
+        Task { @MainActor in
+            if self.isCurrent(stamp) { self.controller?.adminTrusted(admin, details: details, method: method) }
+        }
     }
 
     func confirmWords(_ words: [String], admin: PeerDetails, reply: @escaping @Sendable (Bool) -> Void) {
+        let stamp = self.stamp
         Task { @MainActor in
-            guard let controller = self.controller else { return reply(false) }
+            guard self.isCurrent(stamp), let controller = self.controller else { return reply(false) }
             reply(await controller.askWords(words, peer: admin, role: .admin))
         }
     }
 
     func enrolmentAnswered(_ outcome: WireMessage.PairOutcome, message: String) {
-        Task { @MainActor in self.controller?.enrolmentAnswered(outcome, message: message) }
+        let stamp = self.stamp
+        Task { @MainActor in
+            if self.isCurrent(stamp) { self.controller?.enrolmentAnswered(outcome, message: message) }
+        }
     }
 
     func ran(_ command: ValidatedCommand, for admin: PeerFingerprint) {
@@ -1125,8 +1281,9 @@ final class HostDelegateBridge: HostServerDelegate, @unchecked Sendable {
 
     func perform(_ call: HostCall, for admin: PeerFingerprint,
                  reply: @escaping @Sendable (Result<String, HostCallFailure>) -> Void) {
+        let stamp = self.stamp
         Task { @MainActor in
-            guard let controller = self.controller else {
+            guard self.isCurrent(stamp), let controller = self.controller else {
                 return reply(.failure(HostCallFailure(.internalError, "This host isn't ready.")))
             }
             reply(await controller.perform(call, admin: admin))

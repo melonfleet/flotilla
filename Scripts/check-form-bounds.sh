@@ -34,7 +34,9 @@ for file in $(git ls-files 'Sources/Flotilla/*.swift'); do
     # image suggestion chips, and that satisfied the old pattern while bounding no height at all —
     # so this check was passing that file for a reason unrelated to the thing it tests.
     # `FormScaffold` bounds height the same way, and additionally owns the explainer rail.
-    if grep -qE '^\s*(Form \{|ScrollView \{|FormScaffold \{)' "$file"; then continue; fi
+    # A `List` scrolls and keeps its own height too — the Docker Hub browser's two panes are
+    # Lists (10 October), and was flagged though it has never grown the window.
+    if grep -qE '^\s*(Form \{|ScrollView \{|FormScaffold \{|List(\(| \{))' "$file"; then continue; fi
     offenders+=("$file")
     fail=1
 done
