@@ -206,6 +206,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          narrows to .accessory for menu-bar-only users before any scene exists. -->
     <key>LSUIElement</key>                  <$LSUIELEMENT/>
     <key>NSHighResolutionCapable</key>      <true/>
+    <!-- Notifications stay on screen until clicked ("Persistent") unless the owner chooses
+         otherwise — Flotilla only sends what needs attention (Q48; the owner, 12 October). macOS
+         reads this once, when the app first asks to notify; it never changes an existing choice. -->
+    <key>NSUserNotificationAlertStyle</key> <string>alert</string>
     <!-- Sparkle (Q40): the appcast on GitHub Pages, and the public half of the EdDSA key every
          update is signed with. The private half is in the owner's Keychain, never here. -->
     <key>SUFeedURL</key>                    <string>https://melonfleet.github.io/flotilla/appcast.xml</string>
