@@ -396,13 +396,20 @@ extension ConfigurationFile {
             throw ConfigurationFileError.missingVersion
         }
         if version == 1 {
+            let file: ConfigurationFile
             do {
                 let v1 = try Flotillafile.parse(data)
-                return ConfigurationFile(machines: v1.machines,
+                file = ConfigurationFile(machines: v1.machines,
                                          containers: v1.containers.map(ServiceSpec.init))
             } catch let error as FlotillafileError {
                 throw ConfigurationFileError.version1(error)
             }
+            // The same rules as version 2, not only version 1's own. Version 1 checks a mount's
+            // shape, not its source, so a version-1 file could bind-mount a folder on this Mac —
+            // the one thing a shared file must never do — straight past "named volumes only" by
+            // declaring an older version (found by Sonny, 12 October).
+            try file.validate(limits: limits)
+            return file
         }
         guard version == currentVersion else {
             throw ConfigurationFileError.unsupportedVersion(found: version, supported: currentVersion)

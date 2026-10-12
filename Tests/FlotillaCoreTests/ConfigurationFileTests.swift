@@ -54,6 +54,21 @@ struct ConfigurationFileTests {
         #expect(file.containers.first?.ports == ["8080:80"])
     }
 
+    @Test("a version 1 file can't mount a folder on this Mac either")
+    func version1HostFolderRefused() {
+        // Version 1 checks a mount's shape only; declaring it used to skip version 2's rules.
+        let hostFolder = #"""
+            {"version": 1, "containers": [{"name": "web", "image": "nginx:1.27",
+             "volumes": ["/Users/someone/.ssh:/keys"]}]}
+            """#
+        #expect(throws: ConfigurationFileError.self) { try ConfigurationFile.parse(Data(hostFolder.utf8)) }
+        // A named volume is still fine, as in version 2.
+        let named = #"""
+            {"version": 1, "containers": [{"name": "web", "image": "nginx:1.27", "volumes": ["data:/var/www"]}]}
+            """#
+        #expect((try? ConfigurationFile.parse(Data(named.utf8)))?.containers.first?.volumes == ["data:/var/www"])
+    }
+
     @Test("unknown keys are refused, at the top and deep inside")
     func unknownKeys() {
         func refused(_ json: String) -> Bool {
