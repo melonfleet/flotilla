@@ -488,6 +488,16 @@ public struct ContainerCLI: Sendable {
     /// Phase 4 and remains deliberately unallowlisted.
     ///
     /// Returns raw `ps` output; parsing belongs to the caller that renders it.
+    /// A health check's command in a container (DECISIONS Q53). The interactive-exec grammar —
+    /// which only a CLI for this Mac's own owner holds, and a remote peer can never reach — but run
+    /// without a terminal and bounded by the check's own timeout, not the shell's none. A non-zero
+    /// exit is the answer, not an error, so it comes back rather than throwing.
+    public func healthCommand(_ id: String, _ argv: [String], timeout: Int) throws -> CommandResult {
+        let validated = try Allowlist.validated(["exec", id, "--"] + argv, mountPolicy: mountPolicy,
+                                                execPolicy: execPolicy, wirePolicy: wirePolicy)
+        return try host.run(validated.arguments, timeout: TimeInterval(max(1, timeout)))
+    }
+
     public func processes(_ id: String) throws -> String {
         try execute(["exec", id, "--", "ps", "-o", "pid,comm,args"]).stdout
     }

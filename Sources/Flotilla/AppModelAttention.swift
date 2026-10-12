@@ -113,6 +113,7 @@ extension AppModel {
             items.append(AttentionItem("\(flagged.count) container\(flagged.count == 1 ? " is" : "s are") in an unknown state.", .containers,
                                        key: "containers-unknown"))
         }
+        items += policyAttentionItems
         // For looking at a long list without breaking anything: launched with
         // FLOTILLA_FAKE_ATTENTION=12, Flotilla adds that many made-up items. Nothing sets it.
         if let fake = ProcessInfo.processInfo.environment["FLOTILLA_FAKE_ATTENTION"].flatMap(Int.init), fake > 0 {

@@ -170,6 +170,8 @@ struct RunSheetView: View {
     @State private var env: [Row] = []
     @State private var volumes: [Row] = []
     @State private var commandText = ""
+    /// Restart and health (DECISIONS Q53), kept for the container once it runs. This Mac only, for now.
+    @State private var policy = ContainerPolicy()
 
     /// Gives each list row a stable identity across add/remove — `Allowlist`'s own
     /// per-flag maxima (`maxPorts`/`maxEnv`/`maxVolumes` below) are just this view's
@@ -487,6 +489,15 @@ struct RunSheetView: View {
                     .fixedSize()
                 }
             }
+
+            if host.isLocal {
+                FormField("Restart and health",
+                          help: FieldHelp(
+                              "Whether Flotilla starts it again if it stops, and how it checks it is working.",
+                              detail: "Apple's container has neither, so Flotilla runs them on this Mac. A policy needs the container to have a name.")) {
+                    ContainerPolicyEditor(policy: $policy, publishedPorts: publishedHostPorts)
+                }
+            }
         }
     }
 
@@ -514,17 +525,44 @@ struct RunSheetView: View {
                 let ranOptions = options
                 let ranCommand = command
                 let ranHost = host
+                let ranPolicy = policy
                 dismiss()
-                Task { await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost) }
+                Task {
+                    await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost)
+                    // Kept once it exists, so a policy never watches a container that failed to start.
+                    if ranHost.isLocal, !ranPolicy.isEmpty, let name = ranOptions.name,
+                       model.containers.contains(where: { $0.id == name }) {
+                        model.policies.set(ranPolicy, for: name)
+                        model.observePolicies(model.containers)
+                    }
+                }
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
-            .disabled(previewError != nil || commandSplitError != nil)
+            .disabled(previewError != nil || commandSplitError != nil || policyProblem != nil)
+            .help(policyProblem ?? "")
         }
         .padding(12)
     }
 
     // MARK: Fields
+
+    /// Why the restart and health settings can't be kept, or nil.
+    private var policyProblem: String? {
+        guard host.isLocal, !policy.isEmpty else { return nil }
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Give the container a name to keep a restart or health policy for it."
+        }
+        return policy.problem
+    }
+
+    /// The host side of each port mapping typed so far — what a port or HTTP check can reach.
+    private var publishedHostPorts: [Int] {
+        ports.compactMap { row in
+            let parts = row.value.split(separator: ":")
+            return parts.count >= 2 ? Int(parts[parts.count - 2]) : nil
+        }
+    }
 
     /// The chosen Mac's pulled images — a convenience list, not a restriction; the field still
     /// accepts any reference the user types, pulled or not. A paired host's are what it last

@@ -88,7 +88,8 @@ public struct HealthCheck: Codable, Sendable, Equatable {
     public static let timeouts = 1...60
     public static let retryCounts = 1...10
     public static let startPeriods = 0...600
-    public static let maxCommandTokens = 32
+    /// The interactive-exec grammar's own limit (`Allowlist.interactiveExec`).
+    public static let maxCommandTokens = 8
     public static let maxPathLength = 256
 
     /// Why this check can't be run, or nil. The bounds keep a check from becoming load: a probe

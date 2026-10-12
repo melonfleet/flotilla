@@ -65,6 +65,8 @@ final class AppModel {
     let hostCategories = HostCategoryStore()
     /// Notifications: what needs attention, kept a week (`NoticeStore`, the owner, 10 October).
     let notices = NoticeStore()
+    /// This Mac's restart policies and health checks (DECISIONS Q53).
+    let policies = PolicyStore()
 
     /// Registries the user has added by hand, on top of the built-in catalogue. Held here for
     /// the reason `tags` is: data rather than view state. Carries no credentials — see
@@ -132,6 +134,7 @@ final class AppModel {
         Task { await reloadUnlessLoading() }
         startFleetWatch()
         startNoticeWatch()
+        startPolicyWatch()
         startSystemFactsWatch()
         startPowerPolicy()
         hostMode.onRefreshed = { [weak self] in
@@ -1021,6 +1024,7 @@ final class AppModel {
                 containers = fetched
                 updateStandingPower()
             }
+            observePolicies(fetched)
 
             lastRefresh = Date()
             if state != .loaded { state = .loaded }
@@ -2083,6 +2087,7 @@ final class AppModel {
         // report an intentional stop as an unexpected exit.
         recentlyActed.insert(id)
         defer { busy.clear(id, kind: .container) }
+        notePolicyIntent(action, id)
 
         do {
             // Off the main actor: each of these spawns `container` and waits on it.
@@ -2178,6 +2183,7 @@ final class AppModel {
 
         for id in ids.sorted() where !busy.contains(id, kind: .container) {
             busy.mark(id, kind: .container)
+            notePolicyIntent(action, id)
             do {
                 try await Task.detached { [cli] () -> Void in
                     switch action {

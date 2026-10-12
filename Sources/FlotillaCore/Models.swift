@@ -822,6 +822,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
     case runtimeStopped
     case networkDisconnected
     case approvalWaiting
+    case containerUnhealthy
     case containerExited
     case imagePullFinished
     case buildFinished
@@ -834,7 +835,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
 
     public var defaultEnabled: Bool {
         switch self {
-        case .error, .hostOffline, .runtimeStopped, .networkDisconnected, .approvalWaiting: true
+        case .error, .hostOffline, .runtimeStopped, .networkDisconnected, .approvalWaiting, .containerUnhealthy: true
         case .hostOnline, .containerExited, .imagePullFinished, .buildFinished: false
         }
     }
@@ -847,6 +848,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         case .runtimeStopped: "container stopped"
         case .networkDisconnected: "A network lost its connection"
         case .approvalWaiting: "A Mac is waiting for approval"
+        case .containerUnhealthy: "A container is unhealthy"
         case .containerExited: "Container exited unexpectedly"
         case .imagePullFinished: "Image pull finished"
         case .buildFinished: "Build finished"
@@ -861,6 +863,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         case .runtimeStopped: "Notify when the container service stops, on this Mac or a host."
         case .networkDisconnected: "Notify when a container network loses its connection to this Mac."
         case .approvalWaiting: "Notify when a Mac asks to join the fleet."
+        case .containerUnhealthy: "Notify when a container's health check fails."
         case .containerExited: "Notify when a container on this Mac stops without being asked to."
         case .imagePullFinished: "Notify when an image pull completes, if Flotilla isn't in front."
         case .buildFinished: "Notify when a build completes, if Flotilla isn't in front."
@@ -877,6 +880,8 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         case "runtime-stopped", "host-runtime-stopped": .runtimeStopped
         case "network-disconnected": .networkDisconnected
         case "approval-waiting": .approvalWaiting
+        case "container-unhealthy": .containerUnhealthy
+        case "container-gave-up": .error
         default: nil
         }
     }

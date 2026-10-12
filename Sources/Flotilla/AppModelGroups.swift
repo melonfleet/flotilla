@@ -81,6 +81,7 @@ extension AppModel {
                     guard runningContainerNames.contains(member.name) else { continue }
                     let step = progress.begin("Stopping \(member.name)")
                     do {
+                        noteDeliberateStop(member.name)
                         _ = try await Task.detached { [cli] in try cli.stop(member.name) }.value
                         stopped += 1
                         progress.finish(step, detail: nil)
@@ -127,6 +128,7 @@ extension AppModel {
                     let step = progress.begin("Stopping \(member.name)")
                     // A member that will not stop is reported and skipped rather than aborting:
                     // the restart's whole purpose is to get back to a known state.
+                    noteDeliberateStop(member.name)
                     _ = try? await Task.detached { [cli] in try cli.stop(member.name) }.value
                     progress.finish(step, detail: nil)
                 }
