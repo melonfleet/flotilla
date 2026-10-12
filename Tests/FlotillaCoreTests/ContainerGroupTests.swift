@@ -102,9 +102,9 @@ import Testing
     var book = GroupBook()
     let shop = try book.createGroup(name: "Shop")
     try book.addMember(GroupMember(name: "db", image: "postgres:16"), to: shop.id)
-    #expect(book.claimedNames == ["db"])
+    #expect(book.claimedNames(on: .local) == ["db"])
     book.deleteGroup(shop.id)
-    #expect(book.claimedNames.isEmpty)
+    #expect(book.claimedNames(on: .local).isEmpty)
     let blog = try book.createGroup(name: "Blog")
     #expect(throws: Never.self) {
         try book.addMember(GroupMember(name: "db", image: "mysql:8"), to: blog.id)
@@ -207,4 +207,57 @@ import Testing
     #expect(throws: (any Error).self) { try book.restoreGroup(id: "a", name: "Other", network: nil) }
     #expect(throws: (any Error).self) { try book.restoreGroup(id: "b", name: "shop", network: nil) }
     #expect(book.groups.count == 1)
+}
+
+// MARK: Groups on hosts (the owner, 12 October)
+
+private let mini = HostRef.peer(PeerFingerprint(bytes: Array(repeating: 7, count: 32))!)
+
+@Test func aGroupOnThisMacStoresNoHost() {
+    #expect(ContainerGroup(name: "a", host: .local).host == nil)
+    #expect(ContainerGroup(name: "a").place == .local)
+    #expect(ContainerGroup(name: "a", host: mini).place == mini)
+}
+
+@Test func memberNamesAreSharedAcrossOneMacOnly() throws {
+    var book = GroupBook()
+    let here = try book.createGroup(name: "shop")
+    let there = try book.createGroup(name: "shop on the mini", host: mini)
+    try book.addMember(GroupMember(name: "db", image: "postgres:18"), to: here.id)
+    // The same name on another Mac is another container.
+    try book.addMember(GroupMember(name: "db", image: "postgres:18"), to: there.id)
+    #expect(book.claimedNames(on: .local) == ["db"])
+    #expect(book.claimedNames(on: mini) == ["db"])
+    // On the same Mac it still clashes.
+    let again = try book.createGroup(name: "blog", host: mini)
+    #expect(throws: GroupBook.GroupError.self) {
+        try book.addMember(GroupMember(name: "db", image: "mariadb:11"), to: again.id)
+    }
+    #expect(book.problem(withMemberName: "db", on: mini) != nil)
+    #expect(book.problem(withMemberName: "db", on: .peer(PeerFingerprint(bytes: Array(repeating: 9, count: 32))!)) == nil)
+    #expect(book.draftProblem(withMemberName: "db", excluding: nil, editing: nil, draftMembers: [], on: mini) != nil)
+}
+
+@Test func editingAGroupNeverMovesItToAnotherMac() throws {
+    var book = GroupBook()
+    let group = try book.createGroup(name: "shop", host: mini)
+    var draft = group
+    draft.host = nil                                     // a draft that lost its host
+    draft.name = "shop2"
+    try book.commit(draft)
+    #expect(book.group(group.id)?.place == mini)
+    #expect(book.group(group.id)?.name == "shop2")
+}
+
+@Test func aNewGroupCommittedFromADraftKeepsTheChosenMac() throws {
+    var book = GroupBook()
+    try book.commit(ContainerGroup(name: "fresh", host: mini))
+    #expect(book.groups.first?.place == mini)
+}
+
+@Test func aPublishSpecNamesBothPorts() {
+    #expect(StackPlanner.containerPort(fromPublishSpec: "8080:80") == 80)
+    #expect(StackPlanner.containerPort(fromPublishSpec: "127.0.0.1:5433:5432/tcp") == 5432)
+    #expect(StackPlanner.hostPort(fromPublishSpec: "127.0.0.1:5433:5432/tcp") == 5433)
+    #expect(StackPlanner.containerPort(fromPublishSpec: "80") == nil)
 }

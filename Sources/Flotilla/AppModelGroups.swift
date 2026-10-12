@@ -8,9 +8,56 @@ import FlotillaCore
 /// boundary — see `ContainerGroup` for why that is the point rather than a coincidence.
 extension AppModel {
 
-    /// The group's state, derived from the live container list rather than from anything stored.
+    /// The group's state, derived from the live container list of the Mac it runs on rather than
+    /// from anything stored.
     func state(of group: ContainerGroup) -> GroupState {
-        group.state(runningNames: runningContainerNames, existingNames: existingContainerNames)
+        group.state(runningNames: runningContainerNames(on: group.place),
+                    existingNames: existingContainerNames(on: group.place))
+    }
+
+    // MARK: Per Mac (groups on hosts, the owner, 12 October)
+
+    /// The containers on `host`, as last seen: This Mac's list, or the host's last snapshot.
+    func containers(on host: HostRef) -> [Container] {
+        switch host {
+        case .local: containers
+        case .peer(let fingerprint): hostMode.containerSnapshots[fingerprint]?.items ?? []
+        }
+    }
+
+    func existingContainerNames(on host: HostRef) -> Set<String> { Set(containers(on: host).map(\.id)) }
+
+    func runningContainerNames(on host: HostRef) -> Set<String> {
+        Set(containers(on: host).filter(AppModel.isRunning).map(\.id))
+    }
+
+    /// Asks `host` for its containers again, now.
+    func refreshContainers(on host: HostRef) async {
+        switch host {
+        case .local: await refresh()
+        case .peer(let fingerprint): await hostMode.refreshHost(fingerprint)
+        }
+    }
+
+    /// "This Mac" or the host's name, for titles and Activity.
+    func groupHostName(_ group: ContainerGroup) -> String {
+        hostMode.hostName(group.place, local: hostLabel)
+    }
+
+    /// Whether the group's Mac can be acted on now: This Mac always; a host while it is trusted.
+    func canReach(_ group: ContainerGroup) -> Bool {
+        guard case .peer(let fingerprint) = group.place else { return true }
+        return hostMode.trustedHosts.contains { $0.fingerprint == fingerprint }
+    }
+
+    /// A group's title in a progress panel: "“shop”", or "“shop” on the mini".
+    private func title(_ verb: String, _ group: ContainerGroup) -> String {
+        group.place.isLocal ? "\(verb) “\(group.name)”" : "\(verb) “\(group.name)” on \(groupHostName(group))"
+    }
+
+    /// Activity names a host's group with its Mac, as it does a host's container.
+    private func activitySubject(_ group: ContainerGroup) -> String {
+        group.place.isLocal ? group.name : "\(group.name) on \(groupHostName(group))"
     }
 
     var existingContainerNames: Set<String> { Set(containers.map(\.id)) }
@@ -34,13 +81,13 @@ extension AppModel {
     func startGroup(_ group: ContainerGroup) async {
         guard !group.members.isEmpty else { return }
         await withProgress(
-            title: "Start “\(group.name)”",
+            title: title("Start", group),
             command: groupCommandPreview(group, starting: true),
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let started = try await startMembers(of: group, progress: progress,
                                                      skippingRunning: true)
-                await refresh()
+                await refreshContainers(on: group.place)
                 let summary = started.isEmpty
                     ? "Every service was already running"
                     : "Started \(started.count) of \(group.members.count)"
@@ -49,13 +96,13 @@ extension AppModel {
                 // happened and not why — this says why.
                 if !started.isEmpty {
                     recordActivity(ContainerEvent(date: Date(), from: "stopped", to: "running",
-                                                  kind: .group, subject: group.name,
+                                                  kind: .group, subject: activitySubject(group),
                                                   action: summary))
                 }
                 return summary
             }
         )
-        await refresh()
+        await refreshContainers(on: group.place)
     }
 
     /// Stops every member that is running, in **reverse** listed order.
@@ -71,18 +118,21 @@ extension AppModel {
     func stopGroup(_ group: ContainerGroup) async {
         guard !group.members.isEmpty else { return }
         await withProgress(
-            title: "Stop “\(group.name)”",
+            title: title("Stop", group),
             command: groupCommandPreview(group, starting: false),
             work: { [weak self] progress in
                 guard let self else { return "" }
+                let cli = try self.cli(for: group.place)
+                let running = runningContainerNames(on: group.place)
                 var stopped = 0
                 var failed: [String] = []
                 for member in group.members.reversed() {
-                    guard runningContainerNames.contains(member.name) else { continue }
+                    guard running.contains(member.name) else { continue }
                     let step = progress.begin("Stopping \(member.name)")
                     do {
-                        noteDeliberateStop(member.name)
-                        _ = try await Task.detached { [cli] in try cli.stop(member.name) }.value
+                        // On a host, its own Flotilla records the stop as deliberate (Q53).
+                        if group.place.isLocal { noteDeliberateStop(member.name) }
+                        _ = try await Task.detached { try cli.stop(member.name) }.value
                         stopped += 1
                         progress.finish(step, detail: nil)
                     } catch {
@@ -90,10 +140,10 @@ extension AppModel {
                         progress.finish(step, detail: "failed")
                     }
                 }
-                await refresh()
+                await refreshContainers(on: group.place)
                 if stopped > 0 {
                     recordActivity(ContainerEvent(date: Date(), from: "running", to: "stopped",
-                                                  kind: .group, subject: group.name,
+                                                  kind: .group, subject: activitySubject(group),
                                                   action: "Stopped \(stopped)"))
                 }
                 if !failed.isEmpty {
@@ -102,7 +152,7 @@ extension AppModel {
                 return stopped == 0 ? "Nothing was running" : "Stopped \(stopped)"
             }
         )
-        await refresh()
+        await refreshContainers(on: group.place)
     }
 
     /// Stops everything that is running, then starts everything — one operation, not a stop
@@ -118,32 +168,33 @@ extension AppModel {
     func restartGroup(_ group: ContainerGroup) async {
         guard !group.members.isEmpty else { return }
         await withProgress(
-            title: "Restart “\(group.name)”",
+            title: title("Restart", group),
             command: groupCommandPreview(group, starting: false) + "\n"
                 + groupCommandPreview(group, starting: true),
             work: { [weak self] progress in
                 guard let self else { return "" }
+                let cli = try self.cli(for: group.place)
                 for member in group.members.reversed()
-                where runningContainerNames.contains(member.name) {
+                where runningContainerNames(on: group.place).contains(member.name) {
                     let step = progress.begin("Stopping \(member.name)")
                     // A member that will not stop is reported and skipped rather than aborting:
                     // the restart's whole purpose is to get back to a known state.
-                    noteDeliberateStop(member.name)
-                    _ = try? await Task.detached { [cli] in try cli.stop(member.name) }.value
+                    if group.place.isLocal { noteDeliberateStop(member.name) }
+                    _ = try? await Task.detached { try cli.stop(member.name) }.value
                     progress.finish(step, detail: nil)
                 }
-                await refresh()
+                await refreshContainers(on: group.place)
 
                 let started = try await startMembers(of: group, progress: progress,
                                                      skippingRunning: false)
-                await refresh()
+                await refreshContainers(on: group.place)
                 let summary = "Restarted \(started.count) of \(group.members.count)"
                 recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
-                                              kind: .group, subject: group.name, action: summary))
+                                              kind: .group, subject: activitySubject(group), action: summary))
                 return summary
             }
         )
-        await refresh()
+        await refreshContainers(on: group.place)
     }
 
     /// Starts each member in listed order, waiting where a member names a `readyPort` (Q21
@@ -159,20 +210,24 @@ extension AppModel {
                               skippingRunning: Bool) async throws -> [String] {
         // Every Keychain-held value is read **before** anything starts, so a missing one stops the
         // group cleanly rather than half way through.
+        let host = group.place
+        let cli = try self.cli(for: host)
         let values = try await secretValues(for: group, progress: progress)
         var started: [String] = []
         for (index, member) in group.members.enumerated() {
             let step = progress.begin("Starting \(member.name)")
-            if skippingRunning, runningContainerNames.contains(member.name) {
+            if skippingRunning, runningContainerNames(on: host).contains(member.name) {
                 progress.finish(step, detail: "already running")
             } else {
                 do {
-                    if existingContainerNames.contains(member.name) {
-                        _ = try await Task.detached { [cli] in try cli.start(member.name) }.value
+                    if existingContainerNames(on: host).contains(member.name) {
+                        _ = try await Task.detached { try cli.start(member.name) }.value
                     } else {
+                        // Secrets go to a host inside the validated `run` request, over the
+                        // admin's mTLS connection — the same path a single container's env takes.
                         let env = try GroupSecrets.resolvedEnv(for: member, values: values)
                         let options = member.runOptions(network: group.network, env: env)
-                        _ = try await Task.detached { [cli] in
+                        _ = try await Task.detached {
                             try cli.run(image: member.image, options: options,
                                         command: member.command)
                         }.value
@@ -187,7 +242,7 @@ extension AppModel {
                 progress.finish(step, detail: nil)
             }
             if let port = member.readyPort, index < group.members.count - 1 {
-                try await waitUntilReady(member, port: port, started: started, progress: progress)
+                try await waitUntilReady(member, of: group, port: port, started: started, progress: progress)
             }
         }
         return started
@@ -197,7 +252,8 @@ extension AppModel {
     /// to be *created* — starting an existing container passes no environment at all.
     private func secretValues(for group: ContainerGroup,
                               progress: OperationProgress) async throws -> [String: String] {
-        let needed = group.members.filter { !existingContainerNames.contains($0.name) }
+        let existing = existingContainerNames(on: group.place)
+        let needed = group.members.filter { !existing.contains($0.name) }
             .flatMap(\.secretEnv).map(\.secret)
         guard !needed.isEmpty else { return [:] }
         let step = progress.begin("Reading passwords from the Keychain")
@@ -217,30 +273,65 @@ extension AppModel {
     }
 
     /// Holds the group until `member` accepts connections on `port`, or says why it gave up.
-    private func waitUntilReady(_ member: GroupMember, port: Int, started: [String],
-                                progress: OperationProgress) async throws {
+    ///
+    /// On This Mac the probe goes to the container's own address. A host's containers sit on that
+    /// Mac's private network, out of reach from here, so there the probe goes to the host's
+    /// address and the port `readyPort` is published on (the owner, 12 October). A ready port a
+    /// host doesn't publish can't be checked from here: the group then waits only until the
+    /// member is running, and the panel says so.
+    private func waitUntilReady(_ member: GroupMember, of group: ContainerGroup, port: Int,
+                                started: [String], progress: OperationProgress) async throws {
+        let host = group.place
         let step = progress.begin("Waiting for \(member.name) on port \(port)")
-        await refresh()
-        guard let host = Readiness.address(fromIPv4: containers.first { $0.name == member.name }?.ipv4)
-        else {
-            progress.finish(step, detail: "no address", failed: true)
-            throw GroupReadyFailure(member: member.name, port: port, outcome: .stopped,
-                                    started: started)
+        await refreshContainers(on: host)
+        let target: (address: String, port: Int)?
+        switch host {
+        case .local:
+            target = Readiness.address(fromIPv4: containers.first { $0.name == member.name }?.ipv4).map { ($0, port) }
+            guard target != nil else {
+                progress.finish(step, detail: "no address", failed: true)
+                throw GroupReadyFailure(member: member.name, port: port, outcome: .stopped,
+                                        started: started)
+            }
+        case .peer(let fingerprint):
+            // Only a port published on every interface can be reached from here: one bound to the
+            // host's gateway or to 127.0.0.1 is closed to other Macs, and probing it would only
+            // time out.
+            let published = member.ports.lazy.compactMap { spec -> Int? in
+                guard StackPlanner.containerPort(fromPublishSpec: spec) == port else { return nil }
+                let parts = (spec.split(separator: "/").first.map(String.init) ?? spec).split(separator: ":")
+                guard parts.count == 2 || parts.first == "0.0.0.0" else { return nil }
+                return StackPlanner.hostPort(fromPublishSpec: spec)
+            }.first
+            let name = hostMode.probeAddress(for: fingerprint)
+            let address = await Task.detached { name.flatMap(TCPProbe.ipv4(for:)) }.value
+            target = zip2(address, published)
         }
         var polls = 0
+        let isRunning: @MainActor () async -> Bool = { [weak self] in
+            // The list is re-read every fifth poll: often enough to notice a database that
+            // exited on bad settings, rarely enough not to spawn a process every second.
+            guard let self else { return false }
+            polls += 1
+            guard polls % 5 == 0 else { return true }
+            await self.refreshContainers(on: host)
+            return self.runningContainerNames(on: host).contains(member.name)
+        }
+        guard let target else {
+            // Can't be probed from here: wait for it to be running, and say that is all it was.
+            await refreshContainers(on: host)
+            if runningContainerNames(on: host).contains(member.name) {
+                progress.finish(step, detail: "running; port \(port) isn't published, so it couldn't be checked from here")
+                return
+            }
+            progress.finish(step, detail: "stopped", failed: true)
+            throw GroupReadyFailure(member: member.name, port: port, outcome: .stopped, started: started)
+        }
         let outcome = await Readiness.wait(
             sleep: { try? await Task.sleep(for: .seconds($0)) },
-            isRunning: { [weak self] in
-                // The list is re-read every fifth poll: often enough to notice a database that
-                // exited on bad settings, rarely enough not to spawn a process every second.
-                guard let self else { return false }
-                polls += 1
-                guard polls % 5 == 0 else { return true }
-                await self.refresh()
-                return self.runningContainerNames.contains(member.name)
-            },
+            isRunning: isRunning,
             probe: {
-                await Task.detached { TCPProbe.accepts(host: host, port: port) }.value
+                await Task.detached { TCPProbe.accepts(host: target.address, port: target.port) }.value
             })
         switch outcome {
         case .ready:
@@ -261,9 +352,10 @@ extension AppModel {
     /// actually be issued.
     private func groupCommandPreview(_ group: ContainerGroup, starting: Bool) -> String {
         let members = starting ? group.members : Array(group.members.reversed())
+        let existing = existingContainerNames(on: group.place)
         return members.map { member in
             if !starting { return "container stop \(member.name)" }
-            if existingContainerNames.contains(member.name) { return "container start \(member.name)" }
+            if existing.contains(member.name) { return "container start \(member.name)" }
             // Through the allowlist, so the panel shows the argv that will actually be
             // executed. Building it straight from `runArguments` prints the `--` that only
             // the input grammar carries, and a panel that shows a token the CLI would refuse
@@ -356,7 +448,15 @@ extension AppModel {
         }
         groups.deleteGroup(group.id)
         recordActivity(ContainerEvent(date: Date(), from: "present", to: "absent",
-                                      kind: .group, subject: group.name, action: "Deleted"))
+                                      kind: .group, subject: activitySubject(group), action: "Deleted"))
+    }
+
+    /// Deletes a group's containers on the Mac it runs on — "Delete Group and Containers".
+    func deleteContainers(_ names: Set<String>, of group: ContainerGroup) async {
+        guard !group.place.isLocal else { return await performBulk(.delete, on: names) }
+        for container in containers(on: group.place) where names.contains(container.id) {
+            await perform(.delete, on: container, host: group.place)
+        }
     }
 
     /// Starts several groups, one after another. Sequential rather than concurrent: two groups
@@ -369,4 +469,10 @@ extension AppModel {
     func stopGroups(_ selected: [ContainerGroup]) async {
         for group in selected { await stopGroup(group) }
     }
+}
+
+/// Both, or nothing.
+private func zip2<A, B>(_ a: A?, _ b: B?) -> (A, B)? {
+    guard let a, let b else { return nil }
+    return (a, b)
 }

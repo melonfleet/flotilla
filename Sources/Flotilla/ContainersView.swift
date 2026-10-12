@@ -465,37 +465,47 @@ struct ContainersView: View {
     /// through the kind, state and search filters. The rules — a grouped container appears only
     /// inside its group, a partly running group is under both Running and Stopped — live in
     /// `ContainerListing`, where tests pin them.
-    private var listing: [ContainerListing.Item] {
+    private var listing: [ContainerListing.Item] { listing(on: .local) }
+
+    /// The same for one Mac: its standalone containers and the groups that run on it (groups on
+    /// hosts, the owner, 12 October). A host's container tags are keyed by host and name.
+    private func listing(on host: HostRef) -> [ContainerListing.Item] {
         let query = query
-        guard let state = effectiveState,
-              SearchQuery.all(query.hosts, in: localHostNames) else { return [] }
+        let names: [String] = switch host {
+        case .local: localHostNames
+        case .peer(let fingerprint):
+            model.hostMode.hosts.first { $0.fingerprint == fingerprint }.map { [$0.displayName, $0.details.computerName] } ?? []
+        }
+        guard let state = effectiveState, SearchQuery.all(query.hosts, in: names) else { return [] }
+        let containers = model.containers(on: host)
+        let groups = model.groups.groups.filter { $0.place == host }
         guard !query.isEmpty else {
-            return ContainerListing.items(containers: model.containers, groups: model.groups.groups,
+            return ContainerListing.items(containers: containers, groups: groups,
                                           kind: ui.kindFilter, state: state)
         }
         // **Tag names are searchable too, on every section.** This is how tags filter: one line
         // per section, the same everywhere, and it composes with whatever filter is already on.
-        // `is:` is applied as the state above; `host:` above, since every row here is This Mac's.
+        // `is:` is applied as the state above; `host:` above.
         return ContainerListing.items(
-            containers: model.containers, groups: model.groups.groups,
+            containers: containers, groups: groups,
             kind: ui.kindFilter, state: state,
             containerMatches: { container in
-                let tags = model.tags.tags(on: .container, container.id).map(\.name)
+                let tags = model.tags.tags(on: .container, host.rowID(container.id)).map(\.name)
                 return SearchQuery.all(query.images, in: [container.imageReference])
                     && SearchQuery.all(query.tags, in: tags)
-                    && query.termsMatch([container.id, container.status.state, container.imageReference] + tags)
+                    && query.termsMatch([container.id, container.status.state, container.imageReference] + names + tags)
             },
             groupMatches: { group in
                 let tags = model.tags.tags(on: .group, group.id).map(\.name)
                 return SearchQuery.all(query.images, in: group.members.map(\.image))
                     && SearchQuery.all(query.tags, in: tags)
-                    && query.termsMatch([group.name] + tags)
+                    && query.termsMatch([group.name] + names + tags)
             },
             memberMatches: { member in
-                let tags = model.tags.tags(on: .container, member.name).map(\.name)
+                let tags = model.tags.tags(on: .container, host.rowID(member.name)).map(\.name)
                 return SearchQuery.all(query.images, in: [member.image])
                     && SearchQuery.all(query.tags, in: tags)
-                    && query.termsMatch([member.name, member.image] + tags)
+                    && query.termsMatch([member.name, member.image] + names + tags)
             })
     }
 
@@ -535,7 +545,8 @@ struct ContainersView: View {
     /// member of a selected group is left out, so selecting a group and one of its members does
     /// not start that member twice.
     private var actionableContainerIDs: Set<Container.ID> {
-        let ownedBySelectedGroups = Set(actionableGroups.flatMap(\.memberNames))
+        // This Mac's groups only: a host's group member shares a name, not a container, with this Mac's.
+        let ownedBySelectedGroups = Set(actionableGroups.filter { $0.place.isLocal }.flatMap(\.memberNames))
         let existing = Set(model.containers.map(\.id))
         return Set(actionable.filter { !ContainerRow.isGroupRowID($0) })
             .intersection(existing)
@@ -941,12 +952,12 @@ struct ContainersView: View {
 
     private func canStart(_ group: ContainerGroup) -> Bool {
         let state = model.state(of: group)
-        return state != .empty && state != .running
+        return model.canReach(group) && state != .empty && state != .running
     }
 
     private func canStop(_ group: ContainerGroup) -> Bool {
         let state = model.state(of: group)
-        return state != .empty && state != .stopped && state != .notCreated
+        return model.canReach(group) && state != .empty && state != .stopped && state != .notCreated
     }
 
     /// Start and Stop together, then the overflow, then the bin — the same arrangement and the
@@ -1034,7 +1045,7 @@ struct ContainersView: View {
     /// The members of a group that exist as containers right now — what "Delete Group and
     /// Containers" would remove.
     private func existingMembers(of group: ContainerGroup) -> [String] {
-        let existing = Set(model.containers.map(\.id))
+        let existing = model.existingContainerNames(on: group.place)
         return group.memberNames.filter(existing.contains)
     }
 
@@ -1316,7 +1327,7 @@ struct ContainersView: View {
                        role: .destructive) {
                     let group = request.group
                     Task {
-                        await model.performBulk(.delete, on: Set(members))
+                        await model.deleteContainers(Set(members), of: group)
                         model.deleteGroup(group)
                     }
                     pendingGroupDelete = nil
@@ -1343,7 +1354,7 @@ struct ContainersView: View {
         let keep = "Deleting the group only removes the grouping: its containers stay, as standalone rows, and running ones keep running."
         guard !members.isEmpty else { return keep + " None of its containers exists yet." }
         let named = "This would delete: " + members.joined(separator: ", ") + "."
-        let running = members.filter { name in model.containers.first { $0.id == name }?.isRunning == true }
+        let running = members.filter(model.runningContainerNames(on: request.group.place).contains)
         let stopNote = running.isEmpty ? "" : " Running ones are stopped first."
         switch request.mode {
         case .groupOnly: return keep
@@ -1707,7 +1718,7 @@ struct ContainersView: View {
         }
 
         /// A member the group has not created yet.
-        init(uncreated member: GroupMember, in group: ContainerGroup) {
+        init(uncreated member: GroupMember, in group: ContainerGroup, hostName: String = "This Mac") {
             self.kind = .member
             self.container = nil
             self.group = group
@@ -1715,10 +1726,10 @@ struct ContainersView: View {
             self.groupState = nil
             self.cpu = -1
             self.memory = -1
-            self.host = .local
-            self.hostName = "This Mac"
+            self.host = group.place
+            self.hostName = hostName
             self.staleSince = nil
-            self.id = member.name
+            self.id = group.place.rowID(member.name)
             self.name = member.name
             self.stateRank = GroupState.notCreated.sortRank
             self.kindLabel = "Container"
@@ -1728,7 +1739,8 @@ struct ContainersView: View {
             self.ipSortKey = ""
         }
 
-        init(group: ContainerGroup, state: GroupState, cpu: Double, memory: Int64) {
+        init(group: ContainerGroup, state: GroupState, cpu: Double, memory: Int64,
+             hostName: String = "This Mac", staleSince: Date? = nil) {
             self.kind = .group
             self.container = nil
             self.group = group
@@ -1736,9 +1748,9 @@ struct ContainersView: View {
             self.groupState = state
             self.cpu = cpu
             self.memory = memory
-            self.host = .local
-            self.hostName = "This Mac"
-            self.staleSince = nil
+            self.host = group.place
+            self.hostName = hostName
+            self.staleSince = staleSince
             self.id = Self.groupRowID(group.id)
             self.name = group.name
             self.stateRank = state.sortRank
@@ -1763,65 +1775,53 @@ struct ContainersView: View {
                      hostName: model.hostLabel)
     }
 
-    /// Paired hosts' containers, through the same state, kind, host and search filters as This
-    /// Mac's. Flat: groups are This Mac's until Phase D. No CPU or memory — live stats from other
-    /// Macs are a stream, which the wire does not carry yet.
-    private var remoteRows: [ContainerRow] {
-        guard ui.kindFilter != .groups, ui.hostFilter != .local else { return [] }
-        let query = query
-        guard let state = effectiveState else { return [] }
+    /// The listing, as rows, for every Mac the host filter shows: top-level rows sorted by
+    /// whatever header was clicked, and each open group's members under it, **sorted by the same
+    /// header** (the owner, 5 October). A group never splits apart: its members always sit
+    /// directly under it. A host's rows carry no CPU or memory — live stats from other Macs are a
+    /// stream the wire doesn't carry yet — and a host that stopped answering keeps its rows,
+    /// marked with their age. Since 12 October a host's groups are listed with it.
+    private var sortedRows: [ContainerRow] {
+        var top: [ContainerRow] = []
+        var children: [ContainerRow.ID: [ContainerRow]] = [:]
+        var places: [(host: HostRef, name: String, stale: Date?)] = []
+        if ui.hostFilter == nil || ui.hostFilter == .local { places.append((.local, model.hostLabel, nil)) }
         let now = Date()
-        var rows: [ContainerRow] = []
         for (peer, snapshot) in model.hostMode.fleetContainers {
             let host = HostRef.peer(peer.fingerprint)
             if let only = ui.hostFilter, only != host { continue }
-            let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
-            for container in snapshot.items {
-                switch state {
-                case .running where !container.isRunning: continue
-                case .stopped where container.isRunning: continue
-                default: break
-                }
-                if !query.isEmpty {
-                    let tags = model.tags.tags(on: .container, host.rowID(container.id)).map(\.name)
-                    let hit = SearchQuery.all(query.images, in: [container.imageReference])
-                        && SearchQuery.all(query.hosts, in: [peer.displayName, peer.details.computerName])
-                        && SearchQuery.all(query.tags, in: tags)
-                        && query.termsMatch([container.id, container.status.state, peer.displayName,
-                                             container.imageReference] + tags)
-                    if !hit { continue }
-                }
-                rows.append(ContainerRow(container: container, cpu: -1, memory: -1,
-                                         host: host, hostName: peer.displayName, staleSince: stale))
-            }
+            places.append((host, peer.displayName,
+                           snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil))
         }
-        return rows
-    }
-
-    /// The listing, as rows: top-level rows sorted by whatever header was clicked, and each open
-    /// group's members under it, **sorted by the same header** (the owner, 5 October). A group
-    /// never splits apart: its members always sit directly under it.
-    private var sortedRows: [ContainerRow] {
-        var top: [ContainerRow] = remoteRows
-        var children: [ContainerRow.ID: [ContainerRow]] = [:]
-        let showLocal = ui.hostFilter == nil || ui.hostFilter == .local
-        for item in showLocal ? listing : [] {
-            switch item {
-            case .container(let container):
-                top.append(containerRow(container))
-            case .group(let group, let members, let expandForSearch):
-                let memberRows = members.map { m in
-                    m.container.map { containerRow($0, kind: .member, group: group, member: m.member) }
-                        ?? ContainerRow(uncreated: m.member, in: group)
+        for place in places {
+            func row(_ container: Container, kind: ContainerRow.Kind = .container,
+                     group: ContainerGroup? = nil, member: GroupMember? = nil) -> ContainerRow {
+                guard !place.host.isLocal else {
+                    return containerRow(container, kind: kind, group: group, member: member)
                 }
-                let sampledCPU = memberRows.map(\.cpu).filter { $0 >= 0 }
-                let sampledMemory = memberRows.map(\.memory).filter { $0 >= 0 }
-                let row = ContainerRow(group: group, state: model.state(of: group),
-                                       cpu: sampledCPU.isEmpty ? -1 : sampledCPU.reduce(0, +),
-                                       memory: sampledMemory.isEmpty ? -1 : sampledMemory.reduce(0, +))
-                top.append(row)
-                if ui.expandedGroupIDs.contains(group.id) || expandForSearch {
-                    children[row.id] = memberRows.sorted(using: ui.sortOrder)
+                return ContainerRow(container: container, kind: kind, group: group, member: member,
+                                    cpu: -1, memory: -1, host: place.host, hostName: place.name,
+                                    staleSince: place.stale)
+            }
+            for item in listing(on: place.host) {
+                switch item {
+                case .container(let container):
+                    top.append(row(container))
+                case .group(let group, let members, let expandForSearch):
+                    let memberRows = members.map { m in
+                        m.container.map { row($0, kind: .member, group: group, member: m.member) }
+                            ?? ContainerRow(uncreated: m.member, in: group, hostName: place.name)
+                    }
+                    let sampledCPU = memberRows.map(\.cpu).filter { $0 >= 0 }
+                    let sampledMemory = memberRows.map(\.memory).filter { $0 >= 0 }
+                    let groupRow = ContainerRow(group: group, state: model.state(of: group),
+                                                cpu: sampledCPU.isEmpty ? -1 : sampledCPU.reduce(0, +),
+                                                memory: sampledMemory.isEmpty ? -1 : sampledMemory.reduce(0, +),
+                                                hostName: place.name, staleSince: place.stale)
+                    top.append(groupRow)
+                    if ui.expandedGroupIDs.contains(group.id) || expandForSearch {
+                        children[groupRow.id] = memberRows.sorted(using: ui.sortOrder)
+                    }
                 }
             }
         }

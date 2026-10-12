@@ -32,7 +32,7 @@ extension AppModel {
         await refreshClusters()
         await refreshDNS()
         var existing = ConfigurationImport.Existing()
-        existing.containers = existingContainerNames.union(groups.book.claimedNames)
+        existing.containers = existingContainerNames.union(groups.book.claimedNames(on: .local))
         existing.groups = Set(groups.book.groups.map(\.name))
         existing.networks = Set(networks.map(\.id))
         existing.volumes = Set(volumes.map(\.name))

@@ -9,6 +9,24 @@ import Foundation
 /// continuation to say the same thing. A refused port answers at once (measured 6 October), so the
 /// deadline only matters for an address that drops packets.
 enum TCPProbe {
+    /// A name's first IPv4 address, or the address itself — for a host typed as `mini.lan`.
+    static func ipv4(for name: String) -> String? {
+        var probe = in_addr()
+        if inet_pton(AF_INET, name, &probe) == 1 { return name }
+        var hints = addrinfo(ai_flags: 0, ai_family: AF_INET, ai_socktype: SOCK_STREAM, ai_protocol: 0,
+                             ai_addrlen: 0, ai_canonname: nil, ai_addr: nil, ai_next: nil)
+        var result: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(name, nil, &hints, &result) == 0, let first = result else { return nil }
+        defer { freeaddrinfo(result) }
+        guard let raw = first.pointee.ai_addr else { return nil }
+        var text = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        let ok = raw.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { address -> Bool in
+            var sin = address.pointee.sin_addr
+            return inet_ntop(AF_INET, &sin, &text, socklen_t(INET_ADDRSTRLEN)) != nil
+        }
+        return ok ? String(cString: text) : nil
+    }
+
     static func accepts(host: String, port: Int, timeout: TimeInterval = 1) -> Bool {
         var address = sockaddr_in()
         address.sin_family = sa_family_t(AF_INET)

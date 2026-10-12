@@ -36,6 +36,23 @@ struct StackSuggestionsTests {
         #expect(plan.openURL == "http://127.0.0.1:8082")
     }
 
+    @Test("a stack on a host can open its pages from other Macs; its database stays on the gateway")
+    func hostStackReach() throws {
+        let plan = try StackPlanner.plan(wordpress,
+                                         choices: StackChoices(name: "blog", webPorts: ["site": 8082],
+                                                               webFromOtherMacs: true,
+                                                               openAddress: "mini.lan"),
+                                         wiring: .gateway("10.240.16.1"), usedHostPorts: [])
+        let db = plan.group.members[0], site = plan.group.members[1]
+        #expect(site.ports == ["8082:80"])                       // every interface of the host
+        #expect(db.ports.allSatisfy { $0.hasPrefix("10.240.16.1:") })   // never the network
+        #expect(plan.openURL == "http://mini.lan:8082")
+        // The default is unchanged: This Mac's pages stay on 127.0.0.1.
+        let local = try StackPlanner.plan(wordpress, choices: StackChoices(name: "blog", webPorts: ["site": 8082]),
+                                          wiring: .gateway("10.240.0.1"), usedHostPorts: [])
+        #expect(local.group.members[1].ports == ["127.0.0.1:8082:80"])
+    }
+
     @Test("without a domain, the database is published on the gateway only")
     func gatewayWiring() throws {
         let plan = try StackPlanner.plan(wordpress,

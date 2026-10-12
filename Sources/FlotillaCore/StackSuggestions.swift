@@ -307,13 +307,22 @@ public struct StackChoices: Sendable, Equatable {
     public var webPorts: [String: Int]
     /// Option id → value. Missing ids take the default.
     public var options: [String: String]
+    /// Publish the web pages on every interface, so other Macs can open them — for a stack on a
+    /// host (the owner, 12 October). Off: `127.0.0.1` only, the rule for This Mac. Databases stay
+    /// on the gateway either way.
+    public var webFromOtherMacs: Bool
+    /// The address "Open" uses: `127.0.0.1` here, the host's address for a stack on a host.
+    public var openAddress: String
 
     public init(name: String, network: Network = .new, webPorts: [String: Int] = [:],
-                options: [String: String] = [:]) {
+                options: [String: String] = [:], webFromOtherMacs: Bool = false,
+                openAddress: String = "127.0.0.1") {
         self.name = name
         self.network = network
         self.webPorts = webPorts
         self.options = options
+        self.webFromOtherMacs = webFromOtherMacs
+        self.openAddress = openAddress
     }
 }
 
@@ -414,6 +423,14 @@ public enum StackPlanner {
         return Int(parts[parts.count - 2])
     }
 
+    /// The container's port in a `--publish` spec: the last number, `80` in `127.0.0.1:8080:80/tcp`.
+    public static func containerPort(fromPublishSpec spec: String) -> Int? {
+        let withoutProto = spec.split(separator: "/").first.map(String.init) ?? spec
+        let parts = withoutProto.split(separator: ":").map(String.init)
+        guard parts.count >= 2 else { return nil }
+        return Int(parts[parts.count - 1])
+    }
+
     /// A free port on this Mac: `preferred`, or the next one up that nothing has.
     public static func freePort(preferring preferred: Int, avoiding used: Set<Int>) -> Int {
         var port = max(preferred, 1024)
@@ -509,8 +526,9 @@ public enum StackPlanner {
                 guard let host = choices.webPorts[service.role] else {
                     throw PlanError.missingWebPort(service.title)
                 }
-                // This Mac only: a development stack has no business on the office network.
-                published.append("127.0.0.1:\(host):\(web)")
+                // This Mac only: a development stack has no business on the office network. A stack
+                // put on a host to be used from elsewhere says so (`webFromOtherMacs`).
+                published.append(choices.webFromOtherMacs ? "\(host):\(web)" : "127.0.0.1:\(host):\(web)")
             }
             if case .gateway(let gateway) = wiring, let port = gatewayPorts[service.role],
                let wired = service.wiredPort {
@@ -532,7 +550,7 @@ public enum StackPlanner {
         let group = ContainerGroup(name: name, network: network, members: members,
                                    notes: stack.notes.map(fill))
         let openURL = stack.opens.flatMap { role in choices.webPorts[role] }
-            .map { "http://127.0.0.1:\($0)" }
+            .map { "http://\(choices.openAddress):\($0)" }
         return StackPlan(group: group, network: network, createsNetwork: createsNetwork,
                          volumes: volumes, images: stack.images,
                          secrets: GroupSecrets.secretNames(in: group), wiring: wiring,

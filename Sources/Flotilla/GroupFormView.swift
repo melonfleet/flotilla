@@ -56,7 +56,8 @@ struct GroupFormView: View {
                     problem: { name in
                         model.groups.book.draftProblem(
                             withMemberName: name, excluding: member.id,
-                            editing: isNew ? nil : draft.id, draftMembers: draft.members)
+                            editing: isNew ? nil : draft.id, draftMembers: draft.members,
+                            on: draft.place)
                     },
                     imageProblem: { model.groups.problem(withImage: $0) },
                     onCancel: { editingMember = nil },
@@ -106,13 +107,56 @@ struct GroupFormView: View {
     }
 
     private var editSignature: String {
-        ([draft.name, draft.network ?? "", pendingSecrets.keys.sorted().joined(separator: ",")]
+        ([draft.name, draft.network ?? "", draft.place.token, pendingSecrets.keys.sorted().joined(separator: ",")]
             + draft.members.map { "\($0.id)\u{2}\($0.name)\u{2}\($0.image)\u{2}\($0.ports.joined(separator: ","))" })
             .joined(separator: "\u{1}")
     }
 
+    /// The networks on the Mac the group runs on.
+    private var networks: [ContainerNetwork] {
+        switch draft.place {
+        case .local: model.networks
+        case .peer(let fingerprint): model.hostMode.networkSnapshots[fingerprint]?.items ?? []
+        }
+    }
+
+    /// Which Mac the group runs on (the owner, 12 October): chosen for a new group, shown for one
+    /// that exists — moving a group is a migration, since its containers and data are on that Mac.
+    @ViewBuilder
+    private var hostField: some View {
+        let hosts = model.hostMode.trustedHosts
+        if isNew, !hosts.isEmpty {
+            FormField("Run on",
+                      help: FieldHelp("Which Mac the group's services run on.",
+                                      detail: "On another Mac, host folders can’t be mounted: only named volumes. The group's passwords stay in this Mac's Keychain and are sent with each service when it is created.",
+                                      warning: "Chosen once. Moving a group to another Mac later means moving its containers and data too.")) {
+                Picker("", selection: Binding(get: { draft.place },
+                                              set: { draft.host = $0 == .local ? nil : $0
+                                                     if let network = draft.network,
+                                                        !networks.contains(where: { $0.name == network }) {
+                                                         draft.network = nil
+                                                     } })) {
+                    Text(model.hostLabel).tag(HostRef.local)
+                    ForEach(hosts) { peer in
+                        Text(peer.displayName).tag(HostRef.peer(peer.fingerprint))
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        } else if !draft.place.isLocal {
+            FormField("Runs on",
+                      help: FieldHelp("The Mac this group's services run on.",
+                                      detail: "Fixed once the group exists: its containers and their data are on that Mac.")) {
+                Text(model.hostMode.hostName(draft.place, local: model.hostLabel))
+            }
+        }
+    }
+
     private var form: some View {
         VStack(alignment: .leading, spacing: 20) {
+            hostField
+
             FormField("Name",
                       help: FieldHelp(
                           "What this set of containers is called.",
@@ -123,7 +167,7 @@ struct GroupFormView: View {
             }
 
             FormField("Network",
-                      help: model.networks.isEmpty
+                      help: networks.isEmpty
                           ? FieldHelp(
                               "No networks yet.",
                               detail: "Create one in the Networks section and it will appear here.")
@@ -135,14 +179,14 @@ struct GroupFormView: View {
                 Picker("", selection: Binding(get: { draft.network ?? "" },
                                               set: { draft.network = $0.isEmpty ? nil : $0 })) {
                     Text("Default").tag("")
-                    ForEach(model.networks, id: \.id) { available in
+                    ForEach(networks, id: \.id) { available in
                         Text(available.name).tag(available.name)
                     }
                 }
                 .labelsHidden()
                 .fixedSize()
-                .disabled(model.networks.isEmpty)
-                .help(model.networks.isEmpty ? "No networks yet — create one in Networks" : "")
+                .disabled(networks.isEmpty)
+                .help(networks.isEmpty ? "No networks yet — create one in Networks" : "")
             }
 
             if !draft.notes.isEmpty {

@@ -50,13 +50,14 @@ final class GroupStore {
 
     var groups: [ContainerGroup] { book.groups }
     func group(_ id: String) -> ContainerGroup? { book.group(id) }
-    var claimedNames: Set<String> { book.claimedNames }
+    func claimedNames(on host: HostRef) -> Set<String> { book.claimedNames(on: host) }
 
     func problem(withName name: String, excluding id: String? = nil) -> String? {
         book.problem(withName: name, excluding: id)
     }
-    func problem(withMemberName name: String, excluding memberID: String? = nil) -> String? {
-        book.problem(withMemberName: name, excluding: memberID)
+    func problem(withMemberName name: String, excluding memberID: String? = nil,
+                 on host: HostRef = .local) -> String? {
+        book.problem(withMemberName: name, excluding: memberID, on: host)
     }
     func problem(withImage image: String) -> String? { book.problem(withImage: image) }
 
@@ -66,9 +67,9 @@ final class GroupStore {
     var lastError: String?
 
     @discardableResult
-    func createGroup(name: String, network: String?) -> ContainerGroup? {
+    func createGroup(name: String, network: String?, host: HostRef = .local) -> ContainerGroup? {
         do {
-            let group = try book.createGroup(name: name, network: network)
+            let group = try book.createGroup(name: name, network: network, host: host)
             persist()
             return group
         } catch {
@@ -145,6 +146,8 @@ final class GroupStore {
         ]
         if let network = group.network { row["network"] = network }
         if !group.notes.isEmpty { row["notes"] = group.notes }
+        // The host's key, in full; absent for This Mac, so older groups read back unchanged.
+        if case .peer(let fingerprint) = group.place { row["host"] = fingerprint.hex }
         return row
     }
 
@@ -180,7 +183,14 @@ final class GroupStore {
                   let name = row["name"] as? String, !name.isEmpty
             else { continue }
             let network = (row["network"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            guard let group = try? book.restoreGroup(id: id, name: name, network: network)
+            // A host key that doesn't parse is a damaged entry: skipped, not moved to This Mac,
+            // where it would start containers the owner meant for another Mac.
+            var host = HostRef.local
+            if let hex = row["host"] as? String {
+                guard let fingerprint = PeerFingerprint(hex: hex) else { continue }
+                host = .peer(fingerprint)
+            }
+            guard let group = try? book.restoreGroup(id: id, name: name, network: network, host: host)
             else { continue }
             for raw in row["members"] as? [[String: Any]] ?? [] {
                 guard let memberID = raw["id"] as? String, !memberID.isEmpty,

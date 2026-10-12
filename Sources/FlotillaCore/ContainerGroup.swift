@@ -115,15 +115,24 @@ public struct ContainerGroup: Codable, Sendable, Equatable, Identifiable, Hashab
     /// What to do with it once it is running — set by Suggestions ("Sign in to pgAdmin as…"),
     /// shown on the group's screen. Never a secret: it names passwords, it does not hold them.
     public var notes: [String]
+    /// The Mac the group runs on, chosen when it is created (the owner, 12 October). `nil` is
+    /// This Mac, which is every group made before hosts could be chosen. Moving a group to another
+    /// Mac is a migration (TODO item 7), not an edit: its containers and data are on this one.
+    public var host: HostRef?
 
     public init(id: String = UUID().uuidString, name: String,
-                network: String? = nil, members: [GroupMember] = [], notes: [String] = []) {
+                network: String? = nil, members: [GroupMember] = [], notes: [String] = [],
+                host: HostRef? = nil) {
         self.id = id
         self.name = name
         self.network = network
         self.members = members
         self.notes = notes
+        self.host = host == .local ? nil : host
     }
+
+    /// Where it runs, with This Mac spelled out.
+    public var place: HostRef { host ?? .local }
 
     public var memberNames: [String] { members.map(\.name) }
 }
@@ -196,7 +205,7 @@ public struct GroupBook: Sendable, Equatable {
             case .invalidMemberName(let name):
                 "“\(name)” cannot be a container name. \(ValueShape.identifier.rule)"
             case .duplicateMemberName(let name, let group):
-                "“\(name)” is already used by the group “\(group)”. Container names are shared across this Mac, so two of them cannot run at once."
+                "“\(name)” is already used by the group “\(group)” on the same Mac. Container names are shared across a Mac, so two of them cannot run at once."
             case .emptyImage:
                 "Each service needs an image."
             case .invalidImage(let image):
@@ -215,8 +224,10 @@ public struct GroupBook: Sendable, Equatable {
 
     /// Every container name the book has spoken for, so a caller can tell at a glance whether a
     /// name typed into the Run form is about to collide with a group.
-    public var claimedNames: Set<String> {
-        Set(groups.flatMap(\.memberNames))
+    /// Every member name on `host`. Names are shared across one Mac only: `db` on This Mac and
+    /// `db` on the mini are two different containers.
+    public func claimedNames(on host: HostRef) -> Set<String> {
+        Set(groups.filter { $0.place == host }.flatMap(\.memberNames))
     }
 
     // MARK: Group names
@@ -235,13 +246,14 @@ public struct GroupBook: Sendable, Equatable {
 
     /// Why a member's container name would be refused, or `nil`. `excluding` is the member's own
     /// id, so editing a member does not report it as a clash with itself.
-    public func problem(withMemberName raw: String, excluding memberID: String? = nil) -> String? {
+    public func problem(withMemberName raw: String, excluding memberID: String? = nil,
+                        on host: HostRef = .local) -> String? {
         let name = raw.trimmingCharacters(in: .whitespaces)
         if name.isEmpty { return GroupError.emptyMemberName.description }
         guard Allowlist.accepts(name, as: .identifier) else {
             return GroupError.invalidMemberName(name).description
         }
-        for group in groups {
+        for group in groups where group.place == host {
             for member in group.members
             where member.id != memberID && member.name.caseInsensitiveCompare(name) == .orderedSame {
                 // `member.name`, not what was just typed. Names compare case-insensitively
@@ -270,13 +282,13 @@ public struct GroupBook: Sendable, Equatable {
     ///   - draftMembers: the draft's members, including the one being edited.
     public func draftProblem(withMemberName raw: String, excluding memberID: String?,
                              editing groupID: String?,
-                             draftMembers: [GroupMember]) -> String? {
+                             draftMembers: [GroupMember], on host: HostRef = .local) -> String? {
         let name = raw.trimmingCharacters(in: .whitespaces)
         if name.isEmpty { return GroupError.emptyMemberName.description }
         guard Allowlist.accepts(name, as: .identifier) else {
             return GroupError.invalidMemberName(name).description
         }
-        for group in groups where group.id != groupID {
+        for group in groups where group.id != groupID && group.place == host {
             for member in group.members
             where member.name.caseInsensitiveCompare(name) == .orderedSame {
                 return GroupError.duplicateMemberName(member.name, inGroup: group.name).description
@@ -303,12 +315,13 @@ public struct GroupBook: Sendable, Equatable {
     // MARK: Writing
 
     @discardableResult
-    public mutating func createGroup(name rawName: String, network: String? = nil) throws -> ContainerGroup {
+    public mutating func createGroup(name rawName: String, network: String? = nil,
+                                     host: HostRef = .local) throws -> ContainerGroup {
         let name = rawName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { throw GroupError.emptyName }
         guard !groups.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
         else { throw GroupError.duplicateName(name) }
-        let group = ContainerGroup(name: name, network: network)
+        let group = ContainerGroup(name: name, network: network, host: host)
         groups.append(group)
         return group
     }
@@ -323,7 +336,7 @@ public struct GroupBook: Sendable, Equatable {
     /// other. Members are added afterwards through `addMember`, which keeps *their* ids too.
     @discardableResult
     public mutating func restoreGroup(id: String, name rawName: String,
-                                      network: String?) throws -> ContainerGroup {
+                                      network: String?, host: HostRef = .local) throws -> ContainerGroup {
         let name = rawName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { throw GroupError.emptyName }
         guard !groups.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
@@ -332,7 +345,7 @@ public struct GroupBook: Sendable, Equatable {
         // the first and drop the second, rather than ending up with two rows that cannot be
         // told apart.
         guard !groups.contains(where: { $0.id == id }) else { throw GroupError.duplicateName(name) }
-        let group = ContainerGroup(id: id, name: name, network: network)
+        let group = ContainerGroup(id: id, name: name, network: network, host: host)
         groups.append(group)
         return group
     }
@@ -369,7 +382,9 @@ public struct GroupBook: Sendable, Equatable {
 
         var candidate = self
         candidate.groups.removeAll { $0.id == draft.id }
-        try candidate.restoreGroup(id: draft.id, name: name, network: draft.network)
+        // The host stays as it was for a group that exists: moving one is a migration, not an edit.
+        let host = groups.first { $0.id == draft.id }?.place ?? draft.place
+        try candidate.restoreGroup(id: draft.id, name: name, network: draft.network, host: host)
         for member in draft.members {
             try candidate.addMember(member, to: draft.id)
         }
@@ -395,7 +410,7 @@ public struct GroupBook: Sendable, Equatable {
         var checked = member
         checked.name = member.name.trimmingCharacters(in: .whitespaces)
         checked.image = member.image.trimmingCharacters(in: .whitespaces)
-        try validate(checked, excluding: nil)
+        try validate(checked, excluding: nil, on: groups[index].place)
         groups[index].members.append(checked)
         return checked
     }
@@ -407,7 +422,7 @@ public struct GroupBook: Sendable, Equatable {
         var checked = member
         checked.name = member.name.trimmingCharacters(in: .whitespaces)
         checked.image = member.image.trimmingCharacters(in: .whitespaces)
-        try validate(checked, excluding: member.id)
+        try validate(checked, excluding: member.id, on: groups[index].place)
         groups[index].members[slot] = checked
     }
 
@@ -426,11 +441,11 @@ public struct GroupBook: Sendable, Equatable {
         groups[index].members.insert(member, at: destination)
     }
 
-    private func validate(_ member: GroupMember, excluding memberID: String?) throws {
+    private func validate(_ member: GroupMember, excluding memberID: String?, on host: HostRef) throws {
         guard !member.name.isEmpty else { throw GroupError.emptyMemberName }
         guard Allowlist.accepts(member.name, as: .identifier)
         else { throw GroupError.invalidMemberName(member.name) }
-        for group in groups {
+        for group in groups where group.place == host {
             for existing in group.members
             where existing.id != memberID
                 && existing.name.caseInsensitiveCompare(member.name) == .orderedSame {

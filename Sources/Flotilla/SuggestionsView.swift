@@ -74,13 +74,25 @@ struct StackFormView: View {
     @State private var usedPorts: Set<Int> = []
     @State private var prepared = false
     @State private var edits = FormEditTracker()
+    /// Which Mac the stack is created on (the owner, 12 October).
+    @State private var host: HostRef = .local
+    /// For a stack on a host: its web pages open from other Macs too. On by default there, since
+    /// a stack is put on a host to be used from elsewhere; This Mac's stay on 127.0.0.1.
+    @State private var webFromOtherMacs = true
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
+    private var hostName: String { model.hostMode.hostName(host, local: model.hostLabel) }
+    private var networks: [ContainerNetwork] { model.networks(on: host) ?? [] }
+    /// The address "Open" uses for a host's stack: the one its owner typed, when known.
+    private var openAddress: String {
+        guard case .peer(let fingerprint) = host, webFromOtherMacs else { return "127.0.0.1" }
+        return model.hostMode.probeAddress(for: fingerprint) ?? "127.0.0.1"
+    }
 
     private var nameProblem: String? {
         guard !trimmedName.isEmpty else { return nil }
         return StackPlanner.nameProblem(trimmedName, stack: stack, network: network,
-                                        taken: model.stackTaken,
+                                        taken: model.stackTaken(on: host),
                                         groupNames: Set(model.groups.book.groups.map(\.name)))
     }
 
@@ -89,7 +101,9 @@ struct StackFormView: View {
         guard let port = Int(text), (1024...65535).contains(port) else {
             return "Use a port from 1024 to 65535."
         }
-        if usedPorts.contains(port) { return "Something on this Mac already uses \(port)." }
+        if usedPorts.contains(port) {
+            return host.isLocal ? "Something on this Mac already uses \(port)." : "Something on \(hostName) already uses \(port)."
+        }
         let others = webPorts.filter { $0.key != role }.compactMap { Int($0.value) }
         if others.contains(port) { return "Two pages can't share a port." }
         return nil
@@ -102,7 +116,8 @@ struct StackFormView: View {
     private var choices: StackChoices {
         StackChoices(name: trimmedName, network: network,
                      webPorts: webPorts.compactMapValues { Int($0.trimmingCharacters(in: .whitespaces)) },
-                     options: options)
+                     options: options, webFromOtherMacs: !host.isLocal && webFromOtherMacs,
+                     openAddress: openAddress)
     }
 
     private var webServices: [StackService] { stack.services.filter { $0.webPort != nil } }
@@ -117,19 +132,19 @@ struct StackFormView: View {
     /// so the rail names it rather than guessing an address.
     private var previewPlan: StackPlan? {
         guard !trimmedName.isEmpty else { return nil }
-        let wiring: StackWiring = model.stackWiringDomain.map { .names(domain: $0) }
+        let wiring: StackWiring = model.stackWiringDomain(on: host).map { .names(domain: $0) }
             ?? .gateway(existingGateway ?? "gateway")
         return try? StackPlanner.plan(stack, choices: choices, wiring: wiring,
-                                      usedHostPorts: model.stackTaken.hostPorts)
+                                      usedHostPorts: model.stackTaken(on: host).hostPorts)
     }
 
     private var existingGateway: String? {
         guard case .existing(let id) = network else { return nil }
-        return model.networks.first { $0.id == id }?.gateway.flatMap { Readiness.address(fromIPv4: $0) }
+        return networks.first { $0.id == id }?.gateway.flatMap { Readiness.address(fromIPv4: $0) }
     }
 
     private var editSignature: String {
-        [name, "\(network)", webPorts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(),
+        [name, "\(network)", host.token, "\(webFromOtherMacs)", webPorts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(),
          options.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined()]
             .joined(separator: "\u{1}")
     }
@@ -155,6 +170,26 @@ struct StackFormView: View {
 
     @ViewBuilder
     private var fields: some View {
+        if !model.hostMode.trustedHosts.isEmpty {
+            FormField("Run on",
+                      help: FieldHelp("Which Mac the stack is created on.",
+                                      detail: "Its network, volumes and containers are made there, and its group runs there. Passwords stay in this Mac's Keychain.",
+                                      warning: "Chosen once: moving a stack later means moving its containers and data too.")) {
+                Picker("", selection: Binding(get: { host }, set: { chosen in
+                    host = chosen
+                    network = .new
+                    Task { await prepare() }
+                })) {
+                    Text(model.hostLabel).tag(HostRef.local)
+                    ForEach(model.hostMode.trustedHosts) { peer in
+                        Text(peer.displayName).tag(HostRef.peer(peer.fingerprint))
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+
         FormField("Name",
                   help: FieldHelp(
                       "What the group is called, and the start of every name it creates.",
@@ -177,8 +212,8 @@ struct StackFormView: View {
             Picker("", selection: $network) {
                 Text("New: \(StackPlanner.networkName(trimmedName.isEmpty ? stack.id : trimmedName))")
                     .tag(StackChoices.Network.new)
-                if !model.networks.isEmpty { Divider() }
-                ForEach(model.networks, id: \.id) { existing in
+                if !networks.isEmpty { Divider() }
+                ForEach(networks, id: \.id) { existing in
                     Text(existing.id).tag(StackChoices.Network.existing(existing.id))
                 }
             }
@@ -186,12 +221,22 @@ struct StackFormView: View {
             .fixedSize()
         }
 
+        if !host.isLocal, !webServices.isEmpty {
+            FormField("Open from other Macs",
+                      help: FieldHelp("Whether its pages can be opened from this Mac and others on your network.",
+                                      detail: "On: published on every interface of \(hostName). Off: on its 127.0.0.1 only, so only someone at \(hostName) can open them. Databases are never published to the network either way.")) {
+                Toggle("", isOn: $webFromOtherMacs).labelsHidden()
+            }
+        }
+
         ForEach(webServices) { service in
-            FormField("\(service.title) on this Mac",
+            FormField(host.isLocal ? "\(service.title) on this Mac" : "\(service.title) on \(hostName)",
                       help: FieldHelp(
-                          "The port its page opens on, at 127.0.0.1.",
-                          detail: "This Mac only — not your network. Suggested as one nothing here uses yet.",
-                          example: "http://127.0.0.1:\(webPorts[service.role] ?? "8080")"),
+                          host.isLocal || !webFromOtherMacs ? "The port its page opens on, at 127.0.0.1."
+                                                            : "The port its page opens on, at \(hostName)'s address.",
+                          detail: host.isLocal ? "This Mac only — not your network. Suggested as one nothing here uses yet."
+                                               : "Suggested as one nothing on \(hostName) uses yet.",
+                          example: "http://\(openAddress):\(webPorts[service.role] ?? "8080")"),
                       problem: prepared ? portProblem(service.role) : nil) {
                 TextField("8080", text: Binding(get: { webPorts[service.role] ?? "" },
                                                 set: { webPorts[service.role] = $0 }))
@@ -218,15 +263,18 @@ struct StackFormView: View {
         FormSectionHeader(title: "Wiring")
         FormField("Services find each other",
                   help: FieldHelp(
-                      "Decided by this Mac's DNS setting, not per stack.",
+                      host.isLocal ? "Decided by this Mac's DNS setting, not per stack." : "Through the network's gateway on \(hostName).",
                       detail: "container names every container under one domain for the whole Mac. "
                           + "With one in use, services reach each other by name; without one, "
                           + "Flotilla publishes each database on the network's gateway — reachable "
                           + "from this Mac and its containers, never from your network.")) {
             VStack(alignment: .leading, spacing: 6) {
-                if let domain = model.stackWiringDomain {
+                if let domain = model.stackWiringDomain(on: host) {
                     Text("By name — \(StackPlanner.containerName(trimmedName.isEmpty ? stack.id : trimmedName, stack.services[0].role)), "
                          + "or \(StackPlanner.containerName(trimmedName.isEmpty ? stack.id : trimmedName, stack.services[0].role)).\(domain) from this Mac.")
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if !host.isLocal {
+                    Text("Through the network's gateway on \(hostName). Each database is published there, reachable from \(hostName)'s own containers and never from your network.")
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Through the network's gateway: no DNS domain is in use for containers.")
@@ -276,7 +324,7 @@ struct StackFormView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                let missing = stack.images.filter { image in !model.images.contains { $0.reference == image } }
+                let missing = stack.images.filter { image in !model.images(on: host).contains { $0.reference == image } }
                 if !missing.isEmpty {
                     Text("Pulls first: \(missing.map(SuggestionsView.shortImage).joined(separator: ", ")).")
                         .font(.caption).foregroundStyle(.secondary)
@@ -310,11 +358,12 @@ struct StackFormView: View {
 
     /// Reads what the plan must avoid, then fills in defaults that avoid it.
     private func prepare() async {
-        await model.prepareSuggestions()
-        if model.imagesState != .loaded { await model.refreshImages() }
-        let used = await model.stackUsedPorts(for: stack)
+        prepared = false
+        await model.prepareSuggestions(on: host)
+        if host.isLocal, model.imagesState != .loaded { await model.refreshImages() }
+        let used = await model.stackUsedPorts(for: stack, on: host)
         usedPorts = used
-        name = StackPlanner.suggestedName(for: stack, taken: model.stackTaken,
+        name = StackPlanner.suggestedName(for: stack, taken: model.stackTaken(on: host),
                                           groupNames: Set(model.groups.book.groups.map(\.name)))
         webPorts = StackPlanner.defaultWebPorts(for: stack, avoiding: used).mapValues(String.init)
         prepared = true
@@ -325,7 +374,8 @@ struct StackFormView: View {
         guard canCreate else { return }
         let chosen = choices
         done()
-        Task { await model.createStack(stack, choices: chosen) }
+        let place = host
+        Task { await model.createStack(stack, choices: chosen, on: place) }
     }
 }
 

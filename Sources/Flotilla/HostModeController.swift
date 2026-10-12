@@ -823,6 +823,17 @@ final class HostModeController {
         return remote
     }
 
+    /// A host's address for connecting to one of its published ports from here — the one its
+    /// owner typed, else the last it was reached at. `nil` when it is known only by a Bonjour
+    /// service name, which isn't an address a port can be opened on.
+    func probeAddress(for fingerprint: PeerFingerprint) -> String? {
+        guard let peer = book[fingerprint] else { return nil }
+        for endpoint in [peer.address, peer.endpoint].compactMap({ $0 }) {
+            if case .address(let host, _) = endpoint { return host }
+        }
+        return nil
+    }
+
     private func dropRemote(_ fingerprint: PeerFingerprint) {
         remotes.removeValue(forKey: fingerprint)?.close()
         live.removeValue(forKey: fingerprint)

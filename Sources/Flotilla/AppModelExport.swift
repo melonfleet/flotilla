@@ -39,7 +39,8 @@ extension AppModel {
 
         var inputs = ConfigurationExport.Inputs()
         inputs.containers = containers
-        inputs.groups = groups.book.groups
+        // This Mac's groups only: a host's member names say nothing about the containers here.
+        inputs.groups = groups.book.groups.filter { $0.place == .local }
         inputs.networks = networks
         inputs.volumes = volumes
         inputs.machines = inspectedMachines
