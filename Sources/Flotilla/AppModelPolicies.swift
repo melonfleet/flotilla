@@ -49,6 +49,27 @@ extension AppModel {
         policies.update { $0.noteDeliberateStop(id, at: Date()) }
     }
 
+    /// This Mac's policies and what each last saw: what `.policies` answers an admin, and what its
+    /// own container card shows.
+    func policySummaries() -> [String: PolicySummary] {
+        Dictionary(uniqueKeysWithValues: policies.policies.map { id, policy in
+            (id, PolicySummary(policy: policy, watch: policies.watch(for: id)))
+        })
+    }
+
+    /// Host side: an admin's stop, kill, delete, start or restart, before it runs. The canonical
+    /// argv puts flags first and operands last, so the operands are whatever names a container here.
+    func noteAdminLifecycle(_ verb: String, _ arguments: [String]) {
+        let known = Set(containers.map(\.id))
+        for id in arguments.dropFirst() where known.contains(id) {
+            switch verb {
+            case "start": noteStartedByHand(id)
+            case "restart": noteDeliberateStop(id); noteStartedByHand(id)
+            default: noteDeliberateStop(id)
+            }
+        }
+    }
+
     /// A start by hand clears "gave up".
     func noteStartedByHand(_ id: String) {
         guard policies.policies[id] != nil else { return }
@@ -127,6 +148,38 @@ extension AppModel {
             }
         }
         return items
+    }
+
+    /// The same notices for hosts' containers, from each host's last report — a host Mac has nobody
+    /// at it, so its admin is where they are seen.
+    var hostPolicyAttentionItems: [AttentionItem] {
+        var items: [AttentionItem] = []
+        for peer in hostMode.trustedHosts {
+            guard let reports = hostMode.policySnapshots[peer.fingerprint] else { continue }
+            let host = HostRef.peer(peer.fingerprint)
+            for id in reports.keys.sorted() {
+                guard let report = reports[id] else { continue }
+                let key = "\(peer.fingerprint.hex)/\(id)"
+                if report.gaveUp {
+                    items.append(AttentionItem("\(id) on \(peer.displayName) keeps stopping: it stopped restarting it after "
+                                               + "\(PolicyEngine.maxRestarts) tries in \(Int(PolicyEngine.window / 60)) minutes.",
+                                               .containers, key: "container-gave-up:\(key)", level: .error,
+                                               dismissible: false, host: host,
+                                               fix: ("Start", { [weak self] in self?.hostContainerAction(.start, id, on: host) })))
+                } else if report.running, report.health == .unhealthy {
+                    items.append(AttentionItem("\(id) on \(peer.displayName) is unhealthy: \(report.lastProbeDetail ?? "its health check failed")",
+                                               .containers, key: "container-unhealthy:\(key)", host: host,
+                                               fix: ("Restart", { [weak self] in self?.hostContainerAction(.restart, id, on: host) })))
+                }
+            }
+        }
+        return items
+    }
+
+    private func hostContainerAction(_ action: Action, _ id: String, on host: HostRef) {
+        guard case .peer(let fingerprint) = host,
+              let container = hostMode.containerSnapshots[fingerprint]?.items.first(where: { $0.id == id }) else { return }
+        Task { await perform(action, on: container, host: host) }
     }
 
     private func startByPolicyNotice(_ id: String) {

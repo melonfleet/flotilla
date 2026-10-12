@@ -70,6 +70,24 @@ struct HostCallTests {
         #expect(throws: WireError.self) { try client.call(.controlRuntime(.stop)) }
     }
 
+    @Test func policiesAreVersion12CallsThatSurviveTheWire() throws {
+        let policy = ContainerPolicy(restart: .unlessStopped, health: HealthCheck(probe: .http(port: 8080, path: "/health")))
+        #expect(HostCall.policies.problem == nil && !HostCall.policies.mutates && HostCall.policies.minimumVersion == 12)
+        let set = HostCall.setPolicy(container: "web", policy: policy)
+        #expect(set.problem == nil && set.mutates && set.minimumVersion == 12)
+        // A name the allowlist wouldn't take, or a check it wouldn't run, is refused before it travels.
+        #expect(HostCall.setPolicy(container: "../etc", policy: policy).problem != nil)
+        #expect(HostCall.setPolicy(container: "web", policy: ContainerPolicy(health: HealthCheck(probe: .http(port: 80, path: "http://elsewhere/")))).problem != nil)
+        for call in [HostCall.policies, set] {
+            let message = WireMessage.hostCall(.init(id: 6, call: call))
+            var decoder = WireFrameDecoder()
+            let frames = try decoder.append(try message.encoded(limits: .default))
+            #expect(try WireMessage(frame: frames[0]) == message)
+        }
+        var (_, client) = try connected(versions: 1...11)
+        #expect(throws: WireError.self) { try client.call(.policies) }
+    }
+
     @Test func aValidCallIsHandedToTheHostAndAnsweredLikeARequest() throws {
         var (hostSession, client) = try connected()
         let outgoing = try client.call(.dnsCreate(domain: "mini.fleet.internal", localhost: nil))

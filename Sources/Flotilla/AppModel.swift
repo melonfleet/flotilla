@@ -148,6 +148,7 @@ final class AppModel {
             return await self.performInstallUpdate(archive, isIdle: isIdle)
         }
         restoreFleetNames()
+        hostMode.adminRanLifecycle = { [weak self] verb, arguments in self?.noteAdminLifecycle(verb, arguments) }
         hostMode.performHostCall = { [weak self] call in
             guard let self else { return .failure(HostCallFailure(.internalError, "This host isn't ready.")) }
             return await self.performHostCall(call)

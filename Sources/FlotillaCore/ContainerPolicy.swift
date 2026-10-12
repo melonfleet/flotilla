@@ -330,3 +330,28 @@ public struct PolicyEngine: Sendable {
         if watch.history.count > Self.historyLimit { watch.history.removeLast(watch.history.count - Self.historyLimit) }
     }
 }
+
+/// One container's policy and what its Mac last saw, as a host reports it to its admin (wire
+/// version 12) — and as This Mac's own card reads it, so both show the same thing.
+public struct PolicySummary: Codable, Sendable, Equatable {
+    public var policy: ContainerPolicy
+    public var health: PolicyEngine.Health
+    public var lastProbe: Date?
+    public var lastProbeDetail: String?
+    public var gaveUp: Bool
+    public var running: Bool
+    /// The most recent few, newest first.
+    public var history: [PolicyEvent]
+
+    public init(policy: ContainerPolicy, watch: PolicyEngine.Watch?) {
+        self.policy = policy
+        health = watch?.health ?? .unknown
+        lastProbe = watch?.lastProbe
+        lastProbeDetail = watch?.lastProbeDetail
+        gaveUp = watch?.gaveUp ?? false
+        running = watch?.running ?? false
+        history = Array((watch?.history ?? []).prefix(PolicySummary.historyShown))
+    }
+
+    public static let historyShown = 10
+}

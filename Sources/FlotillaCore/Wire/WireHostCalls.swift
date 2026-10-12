@@ -51,6 +51,11 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// Start, stop or restart the host's `container` service (version 11, Q50). Refused unless the
     /// host lets its admin (`adminControlsRuntime`). Stopping stops every container there.
     case controlRuntime(RuntimeControl)
+    /// The host's restart and health policies, with what it last saw (version 12, DECISIONS Q53).
+    case policies
+    /// Set one container's policy on the host, which then runs it itself (version 12, Q53). An
+    /// empty policy removes it.
+    case setPolicy(container: String, policy: ContainerPolicy)
     /// Install or upgrade `container` to the version the host's Flotilla expects, then the kernel —
     /// even if that stops running containers: the admin confirmed, with the count (version 7, Q39).
     case setUpRuntime
@@ -77,7 +82,10 @@ public enum HostCall: Sendable, Equatable, Codable {
             return nil
         }
         switch self {
-        case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime, .setAutoStartRuntime, .controlRuntime: return nil
+        case .dnsStatus, .hostFacts, .settingsReport, .setUpRuntime, .setAutoStartRuntime, .controlRuntime, .policies: return nil
+        case .setPolicy(let container, let policy):
+            if case .failure(let error) = Allowlist.validate(["start", container]) { return String(describing: error) }
+            return policy.problem
         case .keepAwake(let seconds):
             return (0...Self.maxKeepAwakeSeconds).contains(seconds) ? nil : "A keep-awake request runs for up to a day."
         case .setFleetNames(let table): return table.problem
@@ -98,7 +106,7 @@ public enum HostCall: Sendable, Equatable, Codable {
     }
 
     /// Whether it changes the host.
-    public var mutates: Bool { self != .dnsStatus && self != .hostFacts && self != .settingsReport }
+    public var mutates: Bool { self != .dnsStatus && self != .hostFacts && self != .settingsReport && self != .policies }
 
     /// The protocol version a host must speak to be asked this.
     public var minimumVersion: UInt16 {
@@ -110,6 +118,7 @@ public enum HostCall: Sendable, Equatable, Codable {
         case .keepAwake: WireProtocol.keepAwakeVersion
         case .setAutoStartRuntime: WireProtocol.autoStartVersion
         case .controlRuntime: WireProtocol.runtimeControlVersion
+        case .policies, .setPolicy: WireProtocol.policiesVersion
         default: WireProtocol.hostCallsVersion
         }
     }
@@ -117,7 +126,7 @@ public enum HostCall: Sendable, Equatable, Codable {
     /// How long the host may take. A runtime restart waits for every container to stop.
     public var timeout: TimeInterval {
         switch self {
-        case .dnsStatus, .hostFacts, .settingsReport, .keepAwake, .setAutoStartRuntime: 30
+        case .dnsStatus, .hostFacts, .settingsReport, .keepAwake, .setAutoStartRuntime, .policies, .setPolicy: 30
         case .dnsCreate, .dnsDelete, .setFleetNames: 60
         case .setUpRuntime: 1800
         case .setContainerDNSDomain: 300
@@ -135,6 +144,10 @@ public enum HostCall: Sendable, Equatable, Codable {
                                                    : "kept awake for its admin for \(seconds / 60) min"
         case .setUpRuntime: "installed or upgraded container"
         case .controlRuntime(let action): "\(action.done) container"
+        case .policies: "read its restart and health policies"
+        case .setPolicy(let container, let policy):
+            policy.isEmpty ? "removed the restart and health policy of \(container)"
+                           : "set the restart and health policy of \(container)"
         case .setAutoStartRuntime(let policy): "set starting container by itself to \(policy.title.lowercased())"
         case .setFleetNames(let table): table.zones.isEmpty ? "turned off names across Macs"
                                                             : "updated names across Macs (\(table.zones.count) zones)"

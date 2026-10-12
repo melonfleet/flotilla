@@ -490,11 +490,11 @@ struct RunSheetView: View {
                 }
             }
 
-            if host.isLocal {
+            if model.hostKeepsPolicies(host) {
                 FormField("Restart and health",
                           help: FieldHelp(
                               "Whether Flotilla starts it again if it stops, and how it checks it is working.",
-                              detail: "Apple's container has neither, so Flotilla runs them on this Mac. A policy needs the container to have a name.")) {
+                              detail: "Apple's container has neither, so Flotilla runs them on the Mac the container runs on. A policy needs the container to have a name.")) {
                     ContainerPolicyEditor(policy: $policy, publishedPorts: publishedHostPorts)
                 }
             }
@@ -530,10 +530,12 @@ struct RunSheetView: View {
                 Task {
                     await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost)
                     // Kept once it exists, so a policy never watches a container that failed to start.
-                    if ranHost.isLocal, !ranPolicy.isEmpty, let name = ranOptions.name,
-                       model.containers.contains(where: { $0.id == name }) {
-                        model.policies.set(ranPolicy, for: name)
-                        model.observePolicies(model.containers)
+                    // On a host, the host refuses a policy for a container it doesn't have.
+                    if !ranPolicy.isEmpty, let name = ranOptions.name,
+                       !ranHost.isLocal || model.containers.contains(where: { $0.id == name }) {
+                        if let failure = await model.setPolicy(ranPolicy, for: name, on: ranHost) {
+                            model.actionError = "\(name) is running, but its restart and health policy wasn't kept: \(failure)"
+                        }
                     }
                 }
             }
@@ -549,7 +551,7 @@ struct RunSheetView: View {
 
     /// Why the restart and health settings can't be kept, or nil.
     private var policyProblem: String? {
-        guard host.isLocal, !policy.isEmpty else { return nil }
+        guard model.hostKeepsPolicies(host), !policy.isEmpty else { return nil }
         if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "Give the container a name to keep a restart or health policy for it."
         }

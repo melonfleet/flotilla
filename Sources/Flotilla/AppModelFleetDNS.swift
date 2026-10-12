@@ -51,6 +51,21 @@ extension AppModel {
             if let failure { return .failure(HostCallFailure(.internalError, failure)) }
             return .success(action.rawValue)
 
+        case .policies:
+            guard let json = try? JSONEncoder().encode(policySummaries()) else {
+                return .failure(HostCallFailure(.internalError, "This host couldn't list its policies."))
+            }
+            return .success(String(decoding: json, as: UTF8.self))
+
+        case .setPolicy(let container, let policy):
+            // Only for a container that is here: a policy for nothing would watch nothing.
+            guard policy.isEmpty || containers.contains(where: { $0.id == container }) else {
+                return .failure(HostCallFailure(.refused, "\(hostLabel) has no container called \(container)."))
+            }
+            policies.set(policy, for: container)
+            observePolicies(containers)
+            return .success("")
+
         case .setAutoStartRuntime(let policy):
             let key = SettingsKeys.autoStartContainerService
             if settingsStore.isLocked(key) {
@@ -343,6 +358,33 @@ extension AppModel {
 }
 
 extension AppModel {
+    /// Sets a container's restart and health policy: This Mac's own, or a host's over the wire
+    /// (version 12, Q53), which then runs it itself. Returns why not, or nil.
+    func setPolicy(_ policy: ContainerPolicy, for container: String, on host: HostRef) async -> String? {
+        guard case .peer(let fingerprint) = host else {
+            policies.set(policy, for: container)
+            observePolicies(containers)
+            return nil
+        }
+        guard let remote = hostMode.remoteHost(for: fingerprint) else { return "That host isn't connected." }
+        guard (remote.protocolVersion ?? 0) >= WireProtocol.policiesVersion else {
+            return "\(hostMode.hostName(host, local: hostLabel)) needs a newer Flotilla to keep a restart or health policy."
+        }
+        do {
+            _ = try await remote.call(.setPolicy(container: container, policy: policy))
+            await hostMode.refreshHost(fingerprint)
+            return nil
+        } catch {
+            return (error as? HostCallFailure)?.message ?? String(describing: error)
+        }
+    }
+
+    /// Whether a host can keep restart and health policies (version 12).
+    func hostKeepsPolicies(_ host: HostRef) -> Bool {
+        guard case .peer(let fingerprint) = host else { return true }
+        return (hostMode.remoteHost(for: fingerprint)?.protocolVersion ?? 0) >= WireProtocol.policiesVersion
+    }
+
     /// Whether this admin may start and stop a host's `container`: the host speaks version 11 and
     /// its owner hasn't turned it off (Q50).
     func canControlRuntime(_ fingerprint: PeerFingerprint) -> Bool {

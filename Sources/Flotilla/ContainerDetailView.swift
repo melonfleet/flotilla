@@ -137,7 +137,7 @@ struct ContainerDetailView: View {
                 }
                 // Restart and health (DECISIONS Q53): This Mac's own policies for now; a host's
                 // follow when hosts run them.
-                if host.isLocal { ContainerPolicyCard(model: model, container: container) }
+                ContainerPolicyCard(model: model, container: container, host: host)
                 // Full width beneath the grid, as in the mockup — a timeline reads badly in a
                 // narrow column.
                 eventsCard
@@ -160,8 +160,7 @@ struct ContainerDetailView: View {
             // against the captured CLI help. Flotilla implements restart policy itself in a
             // later phase, and until it does, saying nothing here would imply the container is
             // being watched when it is not.
-            Text(host.isLocal ? "Apple `container` has no restart policy or health check of its own; Flotilla's are below."
-                              : "Apple `container` has no restart policy or health check of its own.")
+            Text("Apple `container` has no restart policy or health check of its own; Flotilla's are below.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

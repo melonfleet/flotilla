@@ -129,6 +129,11 @@ final class HostModeController {
     @ObservationIgnored var recordActivity: ((ContainerEvent) -> Void)?
     /// Host side (D3): performs an admin's host call — set by `AppModel`, which owns the DNS code.
     @ObservationIgnored var performHostCall: ((HostCall) async -> Result<String, HostCallFailure>)?
+    /// Host side: an admin is about to stop, kill, delete, start or restart containers here —
+    /// the verb and the canonical argv — so this Mac's policies know a stop was meant (Q53).
+    @ObservationIgnored var adminRanLifecycle: ((String, [String]) -> Void)?
+    /// Each host's restart and health policies, with what it last saw (wire version 12, Q53).
+    private(set) var policySnapshots: [PeerFingerprint: [String: PolicySummary]] = [:]
     /// The name the listener is advertising, so a rename of this Mac can be noticed.
     @ObservationIgnored private var advertisedName: String?
     @ObservationIgnored private var renameTimer: Timer?
@@ -826,6 +831,7 @@ final class HostModeController {
         dnsSnapshots.removeValue(forKey: fingerprint)
         dnsStatus.removeValue(forKey: fingerprint)
         facts.removeValue(forKey: fingerprint)
+        policySnapshots.removeValue(forKey: fingerprint)
         volumeSnapshots.removeValue(forKey: fingerprint)
         clusterSnapshots.removeValue(forKey: fingerprint)
         networkSnapshots.removeValue(forKey: fingerprint)
@@ -957,6 +963,14 @@ final class HostModeController {
             guard generation == trustGeneration else { return }
             if let hostFacts, let answer = try? JSONDecoder().decode(HostFacts.self, from: Data(hostFacts.stdout.utf8)) {
                 facts[fingerprint] = answer
+            }
+            // Its restart and health policies, from a host that runs them (version 12, Q53).
+            if (remote.protocolVersion ?? 0) >= WireProtocol.policiesVersion {
+                let answer = try? await remote.call(.policies)
+                guard generation == trustGeneration else { return }
+                if let answer, let report = try? JSONDecoder().decode([String: PolicySummary].self, from: Data(answer.stdout.utf8)) {
+                    policySnapshots[fingerprint] = report
+                }
             }
         }
         let now = Date()
@@ -1148,6 +1162,11 @@ final class HostModeController {
     }
 
     fileprivate func ran(_ command: ValidatedCommand, admin: PeerFingerprint) {
+        // Before the record, and before the command finishes: a stop the admin made must not look
+        // like a crash to this Mac's restart policies (DECISIONS Q53).
+        if let verb = command.subcommand.first, ["stop", "kill", "delete", "rm", "start", "restart"].contains(verb) {
+            adminRanLifecycle?(verb, command.arguments)
+        }
         guard command.mutates else { return }
         record(name(admin), "Ran " + command.auditDescription)
     }

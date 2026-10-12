@@ -114,6 +114,7 @@ extension AppModel {
                                        key: "containers-unknown"))
         }
         items += policyAttentionItems
+        items += hostPolicyAttentionItems
         // For looking at a long list without breaking anything: launched with
         // FLOTILLA_FAKE_ATTENTION=12, Flotilla adds that many made-up items. Nothing sets it.
         if let fake = ProcessInfo.processInfo.environment["FLOTILLA_FAKE_ATTENTION"].flatMap(Int.init), fake > 0 {

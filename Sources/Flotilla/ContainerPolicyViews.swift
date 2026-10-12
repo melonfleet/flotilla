@@ -128,38 +128,63 @@ struct ContainerPolicyEditor: View {
     }
 }
 
-/// The container page's "Restart and health" card: the policy, what the engine last saw, and its
-/// history, with the editor behind Edit.
+/// The container page's "Restart and health" card: the policy, what its Mac last saw, and its
+/// history, with the editor behind Edit. On a host, the host keeps and runs the policy, and this
+/// shows its last report (wire version 12).
 struct ContainerPolicyCard: View {
     let model: AppModel
     let container: Container
+    var host: HostRef = .local
 
     @State private var editing = false
+    @State private var saving = false
     @State private var draft = ContainerPolicy()
+    @State private var failure: String?
 
-    private var policy: ContainerPolicy { model.policies.policy(for: container.id) }
-    private var watch: PolicyEngine.Watch? { model.policies.watch(for: container.id) }
+    private var report: PolicySummary {
+        switch host {
+        case .local:
+            PolicySummary(policy: model.policies.policy(for: container.id), watch: model.policies.watch(for: container.id))
+        case .peer(let fingerprint):
+            model.hostMode.policySnapshots[fingerprint]?[container.id] ?? PolicySummary(policy: ContainerPolicy(), watch: nil)
+        }
+    }
+    private var policy: ContainerPolicy { report.policy }
 
     var body: some View {
         DetailCard(title: "Restart and health", minHeight: nil) {
-            if editing {
+            if !model.hostKeepsPolicies(host) {
+                Text("\(model.hostMode.hostName(host, local: model.hostLabel)) needs a newer Flotilla to keep a restart or health policy.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if editing {
                 ContainerPolicyEditor(policy: $draft, publishedPorts: container.publishedPorts.map(\.hostPort))
+                if let failure {
+                    Label(failure, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Theme.warning)
+                }
                 HStack {
                     Spacer()
-                    Button("Cancel") { editing = false }
+                    if saving { ProgressView().controlSize(.small) }
+                    Button("Cancel") { editing = false; failure = nil }
                     Button("Save") {
-                        model.policies.set(draft, for: container.id)
-                        model.observePolicies(model.containers)
-                        editing = false
+                        saving = true
+                        Task {
+                            failure = await model.setPolicy(draft, for: container.id, on: host)
+                            saving = false
+                            if failure == nil { editing = false }
+                        }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(draft.problem != nil)
+                    .disabled(draft.problem != nil || saving)
                 }
             } else {
                 summary
                 HStack {
+                    if !host.isLocal {
+                        Text("Kept and run by \(model.hostMode.hostName(host, local: model.hostLabel)), so it carries on while this Mac is away.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    Button("Edit…") { draft = policy; editing = true }.controlSize(.small)
+                    Button("Edit…") { draft = policy; failure = nil; editing = true }.controlSize(.small)
                 }
             }
         }
@@ -173,21 +198,22 @@ struct ContainerPolicyCard: View {
             HStack(spacing: 6) {
                 Circle().fill(healthColour).frame(width: 7, height: 7)
                 Text(healthText).font(.system(size: 12, weight: .medium))
-                if let last = watch?.lastProbe {
+                if let last = report.lastProbe {
                     Text("· checked \(RelativeDate.relativeToNow(last))").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if let detail = watch?.lastProbeDetail {
+            if let detail = report.lastProbeDetail {
                 Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2).help(detail)
             }
         } else {
             row("Health check", "None")
         }
-        if watch?.gaveUp == true {
+        if report.gaveUp {
             Label("Stopped restarting it after \(PolicyEngine.maxRestarts) tries in \(Int(PolicyEngine.window / 60)) minutes. Start it to try again.",
                   systemImage: "exclamationmark.octagon").font(.caption).foregroundStyle(Theme.danger)
         }
-        if let history = watch?.history, !history.isEmpty {
+        if !report.history.isEmpty {
+            let history = report.history
             Divider()
             ForEach(history.prefix(5)) { event in
                 HStack(alignment: .firstTextBaseline) {
@@ -200,7 +226,7 @@ struct ContainerPolicyCard: View {
     }
 
     private var healthText: String {
-        switch watch?.health ?? .unknown {
+        switch report.health {
         case .unknown: container.isRunning ? "Not checked yet" : "Not running"
         case .starting: "Starting"
         case .healthy: "Healthy"
@@ -209,7 +235,7 @@ struct ContainerPolicyCard: View {
     }
 
     private var healthColour: Color {
-        switch watch?.health ?? .unknown {
+        switch report.health {
         case .healthy: Theme.online
         case .unhealthy: Theme.warning
         case .starting, .unknown: .secondary
