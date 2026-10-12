@@ -354,7 +354,10 @@ detach requirements for long-running commands, redacted/typed projections for th
 that disclose paths and environment, and the host-owned interface/port and driver/plugin policies
 from finding 3. `timeoutHint` enforces nothing today and says so. *(Superseded 2026-08-23: see
 Q15 — concurrent drain, byte ceilings and enforced deadlines are in. Redacted projections and the
-host-owned interface/port policy remain open.)*
+host-owned interface/port policy remain open.)* *(Settled 2026-10-07: see Q33 — the admin owns its
+hosts, so a host restricts published ports, interfaces and driver options no further than the
+Allowlist and its `MountPolicy`, and `inspect` output reaches the admin in full. Still open, and
+named in Q33: a cancelled command runs to its deadline until `ContainerHost.run` can be cancelled.)*
 
 ## Q15 — The process boundary gets ceilings and a deadline (settled 2026-08-23)
 

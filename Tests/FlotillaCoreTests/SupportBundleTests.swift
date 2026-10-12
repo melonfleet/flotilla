@@ -46,10 +46,9 @@ private func poisonedStore() throws -> SettingsStore {
     let store = SettingsStore(managed: managed)
     try store.set("\(Planted.homePath)/bin/container", for: SettingsKeys.containerBinaryPath)
     try store.set("registry.\(Planted.email)", for: SettingsKeys.defaultRegistryDomain)
-    try store.set(Planted.fingerprint, for: SettingsKeys.identityKeychainLabel)
+    try store.set(Planted.fingerprint, for: SettingsKeys.fleetDNSDomain)
     // Sensitive keys: must be absent from the bundle entirely, not redacted.
-    try store.set([Planted.fingerprint], for: SettingsKeys.peerAllowlist)
-    try store.set([Planted.githubToken], for: SettingsKeys.trustAnchorFingerprints)
+    try store.set(Planted.githubToken, for: SettingsKeys.enrolmentKey)
     return store
 }
 
@@ -127,10 +126,9 @@ private func poisonedBundle() throws -> SupportBundle {
     let decoded = try JSONDecoder().decode(SupportBundleSettings.self, from: settings.contents)
     let names = decoded.entries.map(\.name)
 
-    #expect(!names.contains(SettingsKeys.peerAllowlist.name))
-    #expect(!names.contains(SettingsKeys.trustAnchorFingerprints.name))
-    // Not even a redaction placeholder for them: the key list is itself the secret.
-    #expect(!String(decoding: settings.contents, as: UTF8.self).contains("peerAllowlist"))
+    #expect(!names.contains(SettingsKeys.enrolmentKey.name))
+    // Not even a redaction placeholder for it: the key's presence is itself a disclosure.
+    #expect(!String(decoding: settings.contents, as: UTF8.self).contains("enrolmentKey"))
 }
 
 @Test func absoluteUserPathsInSettingsValuesAreReducedToTilde() throws {

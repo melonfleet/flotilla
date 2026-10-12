@@ -81,9 +81,7 @@ public final class SettingsStore: @unchecked Sendable {
                 migrated[SettingsKeys.showDockIcon.name] = .bool(raw != AppPresentation.menuBar.rawValue)
             }
         }
-        // Retired 8 October: the GitHub release check it switched on is gone — Sparkle checks on
-        // the admin Mac, and hosts are updated by their admin (DECISIONS Q40).
-        migrated.removeValue(forKey: "checkForNewReleasesOnLaunch")
+        for name in SettingsRegistry.retiredKeyNames { migrated.removeValue(forKey: name) }
         // Retired 9 October: Admin + Host is now Admin (`RunMode.effective`).
         if case .string(RunMode.both.rawValue)? = migrated[SettingsKeys.mode.name] {
             migrated[SettingsKeys.mode.name] = .string(RunMode.client.rawValue)

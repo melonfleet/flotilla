@@ -347,11 +347,16 @@ button would be a lie):
 - **Extensions / plugin marketplace, Dev Environments, Learning Center, embedded AI assistant,
   in-app notification centre** — product-growth surfaces, not features.
 - **Docker Hub browse/search in-app** — a "pull by ref" field covers the real need.
+  *(Superseded 2026-10-08: built — Images → Browse Docker Hub. See DECISIONS Q42.)*
 - **Kubernetes / any orchestrator view** — already settled in DECISIONS.md; `container` is not a CRI runtime.
+  *(Superseded 2026-09-14: built — a section for `container k8s` clusters, called Kubernetes since
+  2026-10-10. Flotilla is still not a CRI runtime. See DECISIONS Q22 and Q51.)*
 - **Multi-host stack deployment** (Portainer Edge Stacks) — the fan-out primitives (pull image, run
   template on N hosts) give most of the value without an orchestrator.
 - **Customizable/reorderable nav tabs** — a symptom of IA sprawl. Cap nav at 3–4 items instead.
 - **In-app theme/accent picker** — macOS owns this; a custom picker is a permanent maintenance tax.
+  *(Superseded 2026-09-26: a theme picker is built, for the window bar and background only; the
+  accent still follows macOS. See DECISIONS Q23.)*
 - **A web dashboard / `orb.local` equivalent** — would mean an HTTP server on every host,
   contradicting the mTLS-only transport.
 - **"Mini player" compact window** (Tailscale) — our popover already is that.
@@ -363,8 +368,12 @@ button would be a lie):
   internet-wide management.
 - **A custom root daemon or privileged updater** — Developer ID + Sparkle + Apple's authorized
   package installer cover it; a privileged helper would materially enlarge the attack surface.
+  *(Superseded 2026-10-07: built — one optional root helper taking typed requests, now the
+  Flotilla Helper. See DECISIONS Q32, Q41 and Q43.)*
 - **Automatic fleet-wide update, and automatic downgrade** — a bad binary could remove the only
   management path. Named-host canaries, one at a time. Sparkle 2 has no downgrade semantics.
+  *(Superseded 2026-10-08 for updates: built — the admin Mac updates its hosts one at a time and
+  stops at the first that does not come back. Never a downgrade. See DECISIONS Q38–Q40.)*
 - **A general ACL language / fine-grained roles** — start with `client-controller` and `host`;
   defer roles until there's a second real controller.
 - **Shell-completion install / PATH management** — the `container` pkg owns `/usr/local/bin`.

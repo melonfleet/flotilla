@@ -35,6 +35,10 @@ Containerization framework and it does not reimplement the runtime — it builds
 validates it against a default-deny allowlist, runs it, and decodes the JSON. Flotilla shows you
 the exact command it used, so nothing happens that you could not have typed yourself.
 
+One Mac can also manage others. An **admin** Mac pairs with **host** Macs over mutual TLS on your
+own network, with no server in between, and each host checks every command against its own
+allowlist before it runs it.
+
 Free. No account, no sign-in, no telemetry, no subscription, no paid tier.
 
 ## Requirements
@@ -42,13 +46,18 @@ Free. No account, no sign-in, no telemetry, no subscription, no paid tier.
 | | |
 |---|---|
 | **macOS 26 or later** | On Apple silicon. Apple's container runtime needs both, so Flotilla does too. |
-| **Apple's `container` CLI** | Installed separately from [apple/container](https://github.com/apple/container). Flotilla drives that tool; it does not bundle or replace it, and it will offer to start the runtime service if it is not running. |
-| **Nothing else** | No account, no telemetry, no background phone-home. Even the wordmark is drawn in SwiftUI rather than loaded as a webfont. Flotilla reaches exactly one address of its own — GitHub, to ask what the latest release is — and only when you click the version in the Dashboard's corner. Nothing about you or your Mac is sent and nothing is stored. **Settings → Updates** can make that check run once at launch instead; it ships off. |
+| **Apple's `container` CLI** | Version 1.5.0, from [apple/container](https://github.com/apple/container). Flotilla drives that tool; it does not bundle or replace it. If it is missing, Flotilla offers to download Apple's signed package and hand it to Apple's Installer, and it will offer to start the runtime service if it is not running. |
+| **Nothing else** | No account, no telemetry, no background phone-home. Even the wordmark is drawn in SwiftUI rather than loaded as a webfont. On an admin Mac, Sparkle reads Flotilla's appcast on GitHub Pages, and asks you once before it checks by itself; a host is updated by its admin and never checks. Docker Hub is asked only when you open its browser, Apple's package is downloaded only when you install it, and other Macs are reached only once paired. Nothing about you or your Mac is sent. **Settings → About** lists every address and when. |
 
 ## Getting it
 
-**There is no release yet.** Packaged distribution is coming as a signed, notarised
-`.pkg`; this repository will not ship `.zip` builds. Until then, build it yourself:
+**Flotilla 1.5.0.0 is in beta.** Each release on
+[GitHub Releases](https://github.com/melonfleet/flotilla/releases) is signed with Developer ID and
+notarised, in four forms: a DMG to drag to Applications, a `.pkg` for MDM and scripted installs, and
+a zip and a tarball of the same app. From then on an admin Mac updates itself with Sparkle (betas
+only on the pre-release channel, in **Settings → Updates**) and updates its hosts.
+
+To build it yourself:
 
 ```sh
 git clone https://github.com/melonfleet/flotilla.git
@@ -58,8 +67,9 @@ open build/Flotilla.app
 ```
 
 `Scripts/make-app.sh` signs ad-hoc, which is fine locally. Note that macOS may refuse
-login-item registration for an ad-hoc-signed bundle — that is expected, not a bug.
-`RELEASING.md` documents the signed-and-notarised path.
+login-item registration for an ad-hoc-signed bundle — that is expected, not a bug. For the same
+reason an ad-hoc build cannot use the Flotilla Helper, which accepts only a Developer ID-signed app
+of its own team. `RELEASING.md` documents the signed-and-notarised path.
 
 ## What it looks like
 
@@ -80,7 +90,7 @@ SwiftUI app  ──▶  ContainerCLI  ──▶  Allowlist  ──▶  Container
 
 `ContainerHost` is the execution spine. UI code never constructs a raw command and never cares
 whether a host is local or remote. Every execution crosses the **`Allowlist`** — a default-deny
-table of 47 command specs with typed argument shapes — and the capability policies that apply.
+table of 66 command specs with typed argument shapes — and the capability policies that apply.
 
 Three policies are injected per executor rather than hardcoded, so the same core can be built
 strictly or permissively depending on who is asking:
@@ -103,24 +113,45 @@ Two supporting rules the project holds to, both learned the hard way and documen
 
 ## Status
 
-Working Swift code, not a starter kit. **335 tests pass** — run `swift test` for the current
-number rather than trusting this one.
+Working Swift code, not a starter kit. The current build is **1.5.0.0 beta 4**, tested against
+`container` 1.5.0. **828 tests pass** — run `swift test` for the current number rather than
+trusting this one.
 
-**Built:** containers, images, volumes, networks and machines with full lifecycle; an aggregated
-log feed; a live host dashboard; embedded container and machine shells; a validated live command
-preview in the run sheet; a typed settings registry with managed `defaults`/`locked` precedence;
+**Built, on one Mac:** containers, images, volumes, networks, machines and Kubernetes clusters with
+full lifecycle; groups and ready-made Suggestions; registries and a Docker Hub browser; DNS domains;
+an aggregated log feed that follows live; a live host dashboard; embedded container and machine
+shells; a validated live command preview in the Run form; notices in the window and in
+Notification Centre; a typed settings registry with managed `defaults`/`locked` precedence;
 diagnostics snapshots with redaction and a support bundle.
+
+**Built, across Macs:** an admin Mac manages its hosts over mutual TLS — found by Bonjour or added
+by address, each Mac trusted by its own key and approved on the admin, with no certificate
+authority. From the admin you run and manage containers on any host, follow their logs live, pull
+or send images, push networks and volumes, give each Mac a DNS zone whose names resolve across
+Macs, start and stop a host's `container`, and manage its clusters. The admin updates itself with
+Sparkle and pushes its own build to its hosts one at a time; a host installs only a newer Flotilla
+signed by its own team, only when idle, and never touches running containers.
+
+**The Flotilla Helper** is optional, approved once in Login Items, and the only thing that runs as
+root: DNS domains, the resolver files for names across Macs, installing Apple's `container`
+package, and installing an update over a root-owned app. It takes typed requests, never a command
+line.
 
 **Not built** — stated here because a settings screen is a poor place to discover it:
 
-- **Remote access (Phase 2).** No wire transport, no mTLS runtime, no listener, no Bonjour. The
-  related settings are marked not-yet-available, their controls are disabled, and they are
-  withheld from the MDM payload so an administrator cannot push a key the app ignores.
-- **Updates.** There is no updater; the four Sparkle settings are disabled for the same reason.
-- **Streaming.** `logs --follow` and live `stats` need an async streaming API. Today every read
-  is one bounded invocation.
-- **App-layer tests.** The only test target covers `FlotillaCore`, which is why decisions that
-  matter are pushed down into it — `DeletePolicy` lives in the core, not in the views.
+- **Networking between Macs.** Containers on different Macs reach each other through published
+  ports only; an overlay is 2.0 work. A host's Kubernetes cluster is reached with `kubectl` on
+  that host, not from the admin Mac.
+- **Zero-touch hosts.** A new host needs one click on macOS's Local Network prompt, which no
+  configuration profile can grant, and host mode runs in a logged-in user session, so a headless
+  Mac needs automatic login. Per-device identities and trust by profile are 2.0; today a profile
+  sets managed `defaults` and `locked` preferences.
+- **Cancelling a command.** A bounded command that is cancelled, on this Mac or from an admin,
+  runs on to its deadline, because `ContainerHost.run` cannot be cancelled yet. Live logs are
+  streams, and do stop when closed.
+- **App-layer tests.** The test targets cover `FlotillaCore`, the trust layer and the transport,
+  not the SwiftUI app, which is why decisions that matter are pushed down into the core —
+  `DeletePolicy` lives in the core, not in the views.
 
 ## Development
 
@@ -166,7 +197,7 @@ app. In the repository:
 | `RELEASING.md` | signing, notarisation and stapling, end to end |
 | `CLAUDE.md` | project orientation, architecture, and hard-won lessons |
 | `research/` | the background studies the scope was derived from |
-| `reference/cli-help/` | captured `--help` for every `container` subcommand — 51 files, the allowlist's source of truth |
+| `reference/cli-help/` | captured `--help` for every `container` subcommand — 63 files, the allowlist's source of truth |
 
 ## Licence
 

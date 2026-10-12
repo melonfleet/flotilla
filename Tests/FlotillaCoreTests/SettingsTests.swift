@@ -171,12 +171,12 @@ import Testing
     let store = SettingsStore()
     try store.set(42, for: SettingsKeys.pollIntervalSeconds)
     try store.set(777, for: SettingsKeys.logTailLines)
-    try store.set(["deadbeef"], for: SettingsKeys.peerAllowlist) // isSensitive: true
+    try store.set("deadbeef", for: SettingsKeys.enrolmentKey) // isSensitive: true
 
     let exported = store.export(.userValues)
     #expect(exported.values[SettingsKeys.pollIntervalSeconds.name] == .int(42))
     #expect(exported.values[SettingsKeys.logTailLines.name] == .int(777))
-    #expect(exported.values[SettingsKeys.peerAllowlist.name] == nil)
+    #expect(exported.values[SettingsKeys.enrolmentKey.name] == nil)
 
     let data = try store.exportJSON(.userValues)
     let fresh = SettingsStore()
@@ -191,7 +191,7 @@ import Testing
     #expect(fresh[SettingsKeys.pollIntervalSeconds] == 42)
     #expect(fresh[SettingsKeys.logTailLines] == 777)
     // Never round-tripped — the sensitive key simply isn't in the file.
-    #expect(fresh[SettingsKeys.peerAllowlist] == [])
+    #expect(fresh[SettingsKeys.enrolmentKey] == "")
 }
 
 @Test func importSkipsLockedKeysAndReportsThem() throws {
@@ -362,6 +362,25 @@ import Testing
     let restored = SettingsStore(userValues: decoded)
     #expect(restored.needsAppearanceOnboarding == false)
     #expect(restored.chosenAppearance == .auto)
+}
+
+@Test func retiredKeysAreDroppedFromTheUserTierAtLoad() {
+    let stored: [String: SettingValue] = [
+        "checkForNewReleasesOnLaunch": .bool(true),
+        "identityKeychainLabel": .string("Flotilla Identity"),
+        "peerAllowlist": .stringArray(["deadbeef"]),
+        "trustAnchorFingerprints": .stringArray(["cafebabe"]),
+        SettingsKeys.logTailLines.name: .int(777),
+    ]
+    let store = SettingsStore(userValues: stored)
+    #expect(store.userValuesSnapshot() == [SettingsKeys.logTailLines.name: .int(777)])
+}
+
+@Test func noRetiredKeyNameIsStillDeclared() {
+    // A name on both lists would be deleted from disk at every launch while the app offered it.
+    for name in SettingsRegistry.retiredKeyNames {
+        #expect(SettingsRegistry.descriptor(named: name) == nil, "\(name) is retired and still declared")
+    }
 }
 
 /// Admin + Host retired, 9 October.

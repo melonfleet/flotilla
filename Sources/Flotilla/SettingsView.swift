@@ -206,11 +206,6 @@ private struct AppearanceRow: View {
 
 /// The settings section root view. Renders the whole `SettingsRegistry` grouped by topic,
 /// honouring the two-tier managed model end to end via `SettingRow`/`AppearanceRow`.
-///
-/// `peerAllowlist` and `trustAnchorFingerprints` are declared in the registry but not
-/// rendered here: they are SHA-256 fingerprint lists with no meaningful editor until the
-/// Phase 2 pairing flow exists to populate them, and a raw string-array field would be a
-/// control that does nothing useful yet.
 struct SettingsView: View {
     let model: AppModel
 

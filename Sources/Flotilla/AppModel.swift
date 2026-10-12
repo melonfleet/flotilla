@@ -460,9 +460,9 @@ final class AppModel {
     /// disabled, rather than hidden — a reset that appears only once you have something to lose is
     /// one nobody discovers in time.
     ///
-    /// Asked of `HostModeController`, which holds the real trust. This used to read the registry's
-    /// `peerAllowlist` and `trustAnchorFingerprints`, which nothing has ever written: it was false
-    /// on a Mac with a dozen paired hosts and a key in the Keychain.
+    /// Asked of `HostModeController`, which holds the real trust. This used to read two settings
+    /// keys, since removed, which nothing had ever written: it was false on a Mac with a dozen
+    /// paired hosts and a key in the Keychain.
     var hasHostTrustToForget: Bool { hostMode.hasHostsOrTrustToForget }
 
     // MARK: Polling

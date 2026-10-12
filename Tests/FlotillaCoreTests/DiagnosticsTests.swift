@@ -220,14 +220,12 @@ import Testing
 
 @Test func redactSettingsDropsSensitiveKeysEntirelyRatherThanRedactingThem() throws {
     let store = SettingsStore()
-    try store.set(["deadbeef-fingerprint"], for: SettingsKeys.peerAllowlist)
-    try store.set(["another-fingerprint"], for: SettingsKeys.trustAnchorFingerprints)
+    try store.set("deadbeef-enrolment-key", for: SettingsKeys.enrolmentKey)
     try store.set("/Users/someone/bin/container", for: SettingsKeys.containerBinaryPath)
 
     let redacted = Redactor.standard.redactSettings(store.effectiveValues())
 
-    #expect(redacted[SettingsKeys.peerAllowlist.name] == nil)
-    #expect(redacted[SettingsKeys.trustAnchorFingerprints.name] == nil)
+    #expect(redacted[SettingsKeys.enrolmentKey.name] == nil)
     #expect(redacted[SettingsKeys.containerBinaryPath.name] == .string("~/bin/container"))
 }
 
@@ -287,7 +285,7 @@ import Testing
     let managed = StaticManagedPreferences(locked: [SettingsKeys.hostListenPort.name: .int(9443)])
     let store = SettingsStore(managed: managed)
     try store.set("/Users/someone/bin/container", for: SettingsKeys.containerBinaryPath)
-    try store.set(["fingerprint-should-never-appear"], for: SettingsKeys.peerAllowlist)
+    try store.set("enrolment-key-should-never-appear", for: SettingsKeys.enrolmentKey)
 
     let errorLog = ErrorLog(capacity: 10)
     errorLog.record(
@@ -306,7 +304,7 @@ import Testing
     )
 
     // Sensitive keys never make it in, redacted or not.
-    #expect(snapshot.settings[SettingsKeys.peerAllowlist.name] == nil)
+    #expect(snapshot.settings[SettingsKeys.enrolmentKey.name] == nil)
 
     // Locked key is reported as locked.
     #expect(snapshot.lockedSettings.contains(SettingsKeys.hostListenPort.name))

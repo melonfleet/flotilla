@@ -95,6 +95,13 @@ enum SettingsPersistence {
         let store = defaults
         var values = importLegacyBlobIfPresent(into: store)
 
+        // Deleted rather than skipped: the loop below never reads a key the registry no longer
+        // declares, so without this a retired value would stay on disk for good.
+        for name in SettingsRegistry.retiredKeyNames where store.object(forKey: name) != nil {
+            store.removeObject(forKey: name)
+            log.info("Removed retired preference \(name, privacy: .public).")
+        }
+
         for descriptor in SettingsRegistry.all {
             // `object(forKey:)` first: the typed accessors cannot tell "absent" from "false"
             // or from "0", and absent has to stay absent or every default would be overwritten

@@ -66,9 +66,7 @@ import Testing
     // Pinned deliberately. A new setting arriving unwired should force a decision here rather than
     // joining a list nobody reads — and a setting that gets *built* should have to remove itself.
     // The four Sparkle keys left on 8 October, when Sparkle arrived (DECISIONS Q40).
-    // The two trust lists joined on 12 October, when their only reader went: the real trust is in
-    // the PeerBook and the Keychain. All three are to be removed in the docs-and-relics tidy.
-    #expect(Set(SettingsRegistry.notBuilt.map(\.name)) == [
-        "identityKeychainLabel", "peerAllowlist", "trustAnchorFingerprints",
-    ])
+    // The last three — the Keychain label and the two trust lists — were removed on 12 October:
+    // nothing read them, because trust lives in the PeerBook and the Keychain.
+    #expect(SettingsRegistry.notBuilt.isEmpty)
 }

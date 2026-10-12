@@ -36,6 +36,11 @@ config/source change, not a protocol change.
   - update and diagnostics policy, minimum accepted client version, and fleet
     defaults
 
+  *(2026-10-12: `trustAnchorFingerprints`, `peerAllowlist` and `identityKeychainLabel` were
+  declared and never read, and are removed from the registry; a profile that sets them is
+  ignored. Trust lives in Flotilla's peer book and each Mac's identity in its Keychain. Trust by
+  profile is 2.0 work — see DECISIONS Q47.)*
+
 The profile author chooses the tier per key. For example, a suggested listen port
 can be a `defaults` value, while `mode = host`, required mTLS, identity selection,
 and trust policy normally belong in `locked`.

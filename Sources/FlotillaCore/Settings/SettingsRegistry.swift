@@ -268,30 +268,6 @@ public enum SettingsKeys {
         summary: "The fleet enrolment key from the admin Mac. Set by a configuration profile; never exported."
     )
 
-    /// **Not built**, and worth being explicit about why the wording matters: there is no TLS
-    /// identity in the Keychain, so this labels nothing. A summary describing how key material is
-    /// protected, attached to a feature that does not exist, reads as a security guarantee.
-    public static let identityKeychainLabel = SettingsKey<String>(
-        "identityKeychainLabel", default: "Flotilla Identity", scope: .host,
-        availability: SettingAvailability.notBuilt(reason: "Host mode arrives in Phase 2. Nothing listens on a port and no peer can connect today."),
-        summary: "Keychain label of the TLS identity. The key material itself never leaves the Keychain."
-    )
-
-    /// SHA-256 fingerprints of peers this machine will talk to. Marked sensitive:
-    /// it is an identifier list, so it is excluded from exports and diagnostics.
-    /// (The private key is never here at all — it lives in the Keychain.)
-    public static let peerAllowlist = SettingsKey<[String]>(
-        "peerAllowlist", default: [], scope: .host, isSensitive: true,
-        availability: SettingAvailability.notBuilt(reason: "Not used: paired Macs are kept in Flotilla's own records, and this Mac's identity in the Keychain."),
-        summary: "SHA-256 fingerprints of peers allowed to connect. Never exported."
-    )
-
-    public static let trustAnchorFingerprints = SettingsKey<[String]>(
-        "trustAnchorFingerprints", default: [], scope: .host, isSensitive: true,
-        availability: SettingAvailability.notBuilt(reason: "Not used: Macs trust each other by their own keys, with no certificate authority."),
-        summary: "SHA-256 fingerprints of trusted CA anchors. Never exported."
-    )
-
     // MARK: Updates
     //
     // Sparkle's own key names on purpose: they then live in our preference domain
@@ -384,9 +360,6 @@ public enum SettingsRegistry {
         SettingsKeys.keepAwakeAsHost.descriptor,
         SettingsKeys.keepAwakeWhileContainersRun.descriptor,
         SettingsKeys.autoUpdateHosts.descriptor,
-        SettingsKeys.identityKeychainLabel.descriptor,
-        SettingsKeys.peerAllowlist.descriptor,
-        SettingsKeys.trustAnchorFingerprints.descriptor,
         SettingsKeys.enrolmentKey.descriptor,
         SettingsKeys.automaticUpdateChecks.descriptor,
         SettingsKeys.automaticallyDownloadUpdates.descriptor,
@@ -400,6 +373,20 @@ public enum SettingsRegistry {
         Dictionary(uniqueKeysWithValues: all.map { ($0.name, $0) })
 
     public static func descriptor(named name: String) -> SettingDescriptor? { byName[name] }
+
+    /// Names an earlier build declared and this one does not, whose stored values are simply
+    /// dropped. `SettingsStore` drops them from the user tier and the app deletes them from the
+    /// preference domain at load, so a value nothing reads does not sit in
+    /// `defaults read dev.melonfleet.Flotilla` looking like configuration.
+    ///
+    /// A key whose value carries over to a replacement is migrated in `SettingsStore` instead.
+    public static let retiredKeyNames: Set<String> = [
+        // 8 October: Sparkle checks on the admin Mac, and hosts are updated by their admin (Q40).
+        "checkForNewReleasesOnLaunch",
+        // 12 October: never read. Trust lives in the PeerBook and this Mac's identity in the
+        // Keychain, with no certificate authority.
+        "identityKeychainLabel", "peerAllowlist", "trustAnchorFingerprints",
+    ]
 
     /// Descriptors an MDM profile may carry, for generating the Jamf payload docs.
     ///
