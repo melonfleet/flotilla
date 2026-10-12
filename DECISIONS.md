@@ -2191,3 +2191,43 @@ The owner's call, amending Q22.
 3. **`load-image` and `write-config` stay This Mac's own.** A host's cluster API listens on that
    Mac's VM network, so `kubectl` here can't reach it until 2.0's tunnels. A kubeconfig for it
    would be a promise this Mac can't keep.
+
+## Q52 — Greta: an on-device assistant that drafts and never acts (settled 2026-10-12)
+
+The owner's call, after Iris's study of Apple's Foundation Models framework (WWDC25, WWDC26) and a
+scope audit that found "local AI" one of three unfilled competitor gaps.
+
+1. **It is in 1.5, off by default**, and switched on in Settings. Where Apple Intelligence is
+   unavailable (it's off, the Mac isn't eligible, the model is still downloading, or the Mac is a
+   VM, which Apple doesn't support), the switch says why and the rest of Flotilla is unchanged.
+2. **It is called Greta.** Ellen was dropped, as was Laura, and the military, colonial and taken
+   names. It uses the name only: no surname, no likeness, nothing that implies anyone endorses
+   Flotilla. A legal check of naming it after a living person, and an AI-product clash check, come
+   before public release. Whether About explains the name is the owner's choice.
+3. **On-device only in 1.5.** Nothing leaves the Mac, as everywhere else in Flotilla. Apple's
+   Private Cloud Compute model (32K context, stronger reasoning) is **2.0**, and only as an opt-in:
+   - off by default, and labelled on each answer that used it;
+   - upfront about what goes to Apple (fleet names and the question, never logs);
+   - a warning that it needs the internet, so closed labs and locked-down Macs won't have it;
+   - the daily per-user limit and Apple's entitlement said plainly, with a fall-back to the
+     on-device model.
+   It changes the no-phone-home rule that far and no further.
+4. **Greta reads and drafts; she never acts.**
+   - Her tools are read-only and bounded: hosts, containers, images, volumes, networks, machines,
+     clusters and short health summaries, plus short passages from Flotilla's bundled docs, cited
+     by source.
+   - Her output is a typed draft (Run, New Machine, later a stack) through guided generation. It
+     opens in the existing form, labelled as a draft, with its command preview. The user saves it,
+     and Save goes through the same Allowlist, MountPolicy and WirePolicy as any form.
+   - She never produces an argv and has no tool that changes anything.
+5. **What a container says is untrusted.** Names, labels and inspect output are cleaned, capped and
+   marked as data, never placed in her instructions. Logs are left out in the first version.
+6. **The model is small** (about 3B on device; a 4,096-token context on macOS 26). So each task gets
+   a short session; facts come from tools, not the model's memory; arrays are capped; and a full
+   context restarts with less. The app layer owns it (`FlotillaAssistant`); `FlotillaCore` stays
+   Foundation-only and portable.
+7. **It is tested on real Macs**, against captured CLI fixtures and adversarial names, with drafts
+   checked by the Allowlist.
+
+Order: after restart policies and health checks, and the cancellable host commands. MCP follows
+Greta; localisation is last before RC.
