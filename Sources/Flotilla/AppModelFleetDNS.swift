@@ -58,8 +58,15 @@ extension AppModel {
             return .success(String(decoding: json, as: UTF8.self))
 
         case .probePort(let container, let port):
-            // The container's own address on this Mac, which its admin can't reach from there.
-            guard let address = Readiness.address(fromIPv4: containers.first { $0.id == container }?.ipv4) else {
+            // The container's own address on this Mac, which its admin can't reach from there. A
+            // member created moments ago may not be in the last poll — and polling may be off — so
+            // a miss asks `container` itself (Kyle, 12 October).
+            var ipv4 = containers.first { $0.id == container }?.ipv4
+            if ipv4 == nil {
+                let cli = self.cli
+                ipv4 = await Task.detached { try? cli.listContainers().first { $0.id == container }?.ipv4 }.value ?? nil
+            }
+            guard let address = Readiness.address(fromIPv4: ipv4) else {
                 return .failure(HostCallFailure(.refused, "\(hostLabel) has no running container called \(container)."))
             }
             let open = await Task.detached { TCPProbe.accepts(host: address, port: port) }.value
