@@ -1202,8 +1202,13 @@ struct ContainersView: View {
         .onChange(of: model.pendingRunSheet) { _, requested in
             if requested { showingRun = true; model.pendingRunSheet = false }
         }
+        // A container Greta drafted (Q52): the Run form, filled in, for the user to review.
+        .onChange(of: model.pendingRunPrefill) { _, draft in
+            if let draft { runPrefill = draft; showingRun = true; model.pendingRunPrefill = nil }
+        }
         .onAppear {
             if model.pendingRunSheet { showingRun = true; model.pendingRunSheet = false }
+            if let draft = model.pendingRunPrefill { runPrefill = draft; showingRun = true; model.pendingRunPrefill = nil }
         }
         // File ▸ New Group… and File ▸ Suggestions ▸ Stacks…. One-shot, like the run sheet.
         .onChange(of: model.pendingGroupForm) { _, requested in

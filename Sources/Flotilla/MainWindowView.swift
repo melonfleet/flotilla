@@ -274,6 +274,8 @@ struct MainWindowView: View {
             SettingsView(model: model)
         case .notifications:
             NotificationsView(model: model) { selection = $0 }
+        case .greta:
+            GretaView(model: model) { selection = $0 }
         }
     }
 

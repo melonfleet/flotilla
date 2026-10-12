@@ -31,6 +31,18 @@ public enum SettingsKeys {
     )
 
     /// The dark half of the theme pair. Defaults to Flesh, the bar dark mode already had.
+    /// Greta, the on-device assistant (DECISIONS Q52). Off until the owner turns her on.
+    public static let gretaEnabled = SettingsKey<Bool>(
+        "gretaEnabled", default: false,
+        summary: "Greta, an assistant that runs on this Mac with Apple's on-device model: she answers questions about Flotilla and drafts containers for you to review. Nothing leaves the Mac."
+    )
+
+    /// Which of Greta's faces the app draws.
+    public static let gretaAvatar = SettingsKey<GretaAvatar>(
+        "gretaAvatar", default: .flower,
+        summary: "Greta's look: flower, bow, heart, lashes, sailor or watermelon."
+    )
+
     public static let darkTheme = SettingsKey<DarkTheme>(
         "darkTheme", default: .flesh,
         summary: "Window bar and background when the app draws dark: stripe, flesh, cantaloupe or canary."
@@ -335,6 +347,8 @@ public enum SettingsRegistry {
     public static let all: [SettingDescriptor] = [
         SettingsKeys.appearance.descriptor,
         SettingsKeys.lightTheme.descriptor,
+        SettingsKeys.gretaEnabled.descriptor,
+        SettingsKeys.gretaAvatar.descriptor,
         SettingsKeys.darkTheme.descriptor,
         SettingsKeys.launchAtLogin.descriptor,
         SettingsKeys.showDockIcon.descriptor,

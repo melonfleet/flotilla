@@ -40,6 +40,19 @@ struct RunPrefill: Equatable {
     /// Host ports the source published that were left out because something else already holds
     /// them — almost always the original container, which is still running.
     var portsInUse: [Int]
+    /// Environment and named volumes — carried by a Greta draft (Q52), not by a duplicate.
+    var env: [String] = []
+    var volumes: [String] = []
+    /// Drafted by Greta: the form says so, and the user reviews it before Run.
+    var fromGreta = false
+
+    /// A Greta draft (Q52): what she proposed, nothing carried from anywhere else.
+    init(draftImage image: String, name: String, ports: [String], env: [String], volumes: [String]) {
+        self.image = image; self.name = name; self.ports = ports
+        self.cpus = nil; self.memoryMB = nil
+        self.mayHaveUncarriedSettings = false; self.portsInUse = []
+        self.env = env; self.volumes = volumes; self.fromGreta = true
+    }
 
     /// Built from an inspected container. `name` gets a suffix because the original still exists —
     /// `container run --name web` fails while `web` is there, and offering a name that cannot be
@@ -96,6 +109,8 @@ struct RunSheetView: View {
     /// Set when the sheet was opened from an existing container, so it can say which settings it
     /// could not bring across.
     private let prefilled: Bool
+    /// Opened from a Greta draft: said at the top, so nobody runs it unread.
+    private let draftedByGreta: Bool
 
     /// Host ports the source published that were deliberately not carried, because something
     /// already holds them. Named in the notice rather than silently missing.
@@ -121,6 +136,10 @@ struct RunSheetView: View {
                       ?? model.settingsStore[SettingsKeys.defaultContainerCPUs])
         _memoryMB = State(initialValue: prefill?.memoryMB
                           ?? model.settingsStore[SettingsKeys.defaultContainerMemoryMB])
+        // A Greta draft's environment and named volumes (Q52); a duplicate carries neither.
+        _env = State(initialValue: (prefill?.env ?? []).map { Row(value: $0) })
+        _volumes = State(initialValue: (prefill?.volumes ?? []).map { Row(value: $0) })
+        self.draftedByGreta = prefill?.fromGreta ?? false
     }
     @State private var name: String
     /// Empty means "leave it unset and let `container` decide". A network can only be chosen
@@ -238,6 +257,16 @@ struct RunSheetView: View {
     /// the state of every field below it rather than any one of them.
     @ViewBuilder
     private var prefillBanner: some View {
+        if draftedByGreta {
+            HStack(spacing: 10) {
+                GretaAvatarView(style: model.settingsStore[SettingsKeys.gretaAvatar], size: 28)
+                Text("Drafted by Greta. Read each field before you run it: she can be wrong, and passwords are placeholders.")
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .background(Theme.info.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        }
         if prefilled {
             VStack(alignment: .leading, spacing: 8) {
                 // Markdown, so the bold and the code render; joined with `+`, they showed as

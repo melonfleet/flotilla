@@ -111,6 +111,7 @@ final class AppModel {
         self.notifier = Notifier(categories: Self.notificationSettings(from: resolved.store))
         self.errorLog = ErrorLog(settings: resolved.store)
         self.hostMode = HostModeController(settings: resolved.store, containerHost: cli.host)
+        reloadGretaSettings()
         observeSettings()
         // At launch too, not only on change. This was missing: `appearance` was read here but only
         // *applied* by `reloadAppearance()`, after a settings edit, so a saved Light or Dark was
@@ -172,8 +173,17 @@ final class AppModel {
     /// The light and dark themes. Observable for the same reason as `appearance`: the scenes put
     /// it into the environment, and the bar and background repaint from it.
     private(set) var themeChoice: ThemeChoice
+    /// Greta's two settings, observable so the window bar shows or hides her at once (Q52).
+    private(set) var gretaEnabled = false
+    private(set) var gretaAvatar: GretaAvatar = .flower
 
     private var settingsObservation: SettingsObservation?
+
+    private func reloadGretaSettings() {
+        let enabled = settingsStore[SettingsKeys.gretaEnabled], avatar = settingsStore[SettingsKeys.gretaAvatar]
+        if gretaEnabled != enabled { gretaEnabled = enabled }
+        if gretaAvatar != avatar { gretaAvatar = avatar }
+    }
 
     private func observeSettings() {
         settingsObservation = settingsStore.observeChanges { [weak self] _ in
@@ -181,6 +191,7 @@ final class AppModel {
             Task { @MainActor [weak self] in
                 self?.reloadAppearance()
                 self?.updateStandingPower()
+                self?.reloadGretaSettings()
             }
         }
     }
@@ -1809,6 +1820,10 @@ final class AppModel {
     var pendingRunSheet = false
     /// A notice to open in Notifications, from a click on its macOS notification. Cleared there.
     var pendingNotice: String?
+    /// A container Greta drafted, for the Run form. Cleared by `ContainersView`.
+    var pendingRunPrefill: RunPrefill?
+    /// Greta's state, kept while the window's sections come and go (DECISIONS Q52).
+    let greta = Greta()
     /// Opens the main window from outside SwiftUI; handed over by `MainWindowView`.
     @ObservationIgnored var openMainWindow: (() -> Void)?
 

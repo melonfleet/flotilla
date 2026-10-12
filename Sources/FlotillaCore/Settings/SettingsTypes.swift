@@ -164,3 +164,19 @@ public enum RuntimeAutostart {
 public enum UpdateChannel: String, SettingEnum, Codable {
     case stable, prerelease
 }
+
+/// How Greta looks (the owner, 12 October): six drawn faces, the flower by default.
+public enum GretaAvatar: String, SettingEnum, Codable {
+    case flower, bow, heart, lashes, sailor, watermelon
+
+    public var title: String {
+        switch self {
+        case .flower: "Flower"
+        case .bow: "Bow"
+        case .heart: "Heart antenna"
+        case .lashes: "Happy lashes"
+        case .sailor: "Sailor"
+        case .watermelon: "Watermelon"
+        }
+    }
+}

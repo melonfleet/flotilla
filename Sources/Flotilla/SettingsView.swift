@@ -403,6 +403,32 @@ struct SettingsView: View {
                 AppearanceRow(store: store)
                 ThemePickerRow(appearance: .light, model: model)
                 ThemePickerRow(appearance: .dark, model: model)
+                // Greta's face sits with the themes, where the owner looks for how things look.
+                SettingRow(store: store, key: SettingsKeys.gretaAvatar, title: "Greta's look") { binding in
+                    HStack(spacing: 6) {
+                        ForEach(GretaAvatar.allCases, id: \.self) { style in
+                            Button { binding.wrappedValue = style } label: {
+                                GretaAvatarView(style: style, size: 30)
+                                    .padding(3)
+                                    .background(RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(binding.wrappedValue == style ? Color.accentColor : .clear, lineWidth: 2))
+                            }
+                            .buttonStyle(.plain)
+                            .help(style.title)
+                            .accessibilityLabel(style.title)
+                            .accessibilityAddTraits(binding.wrappedValue == style ? .isSelected : [])
+                        }
+                    }
+                }
+            }
+
+            SwiftUI.Section("Greta") {
+                SettingRow(store: store, key: SettingsKeys.gretaEnabled, title: "Turn on Greta") { binding in
+                    Toggle("", isOn: binding).labelsHidden()
+                }
+                Text(model.greta.unavailableReason.map { "Not available here: \($0)" }
+                     ?? "Uses Apple's on-device model. Nothing leaves this Mac. She reads and drafts; she never runs or changes anything.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             SwiftUI.Section("Refreshing") {
