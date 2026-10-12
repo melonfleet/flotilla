@@ -254,6 +254,8 @@ final class Greta {
         }
         if draft.passwordLeftForTheForm {
             parts.append("Your message mentioned a password, so I didn't use anything else from it or keep it in this chat: type the password, and any other change, in the Run form.")
+        } else if draft.changesNotRead {
+            parts.append("I can only read changes written in plain English letters, so this is the recipe as tested: make any change in the Run form.")
         } else if draft.env.contains(where: { $0.hasSuffix("=change-me") }) {
             parts.append("Replace each change-me before you press Run.")
         }

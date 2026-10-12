@@ -181,8 +181,18 @@ public enum GretaText {
         // draft stays the plain recipe — because each miss Kyle found put a password in a draft.
         let plain = String(text.lowercased().map { lookAlikes[$0] ?? $0 })
         let words = plain.split { !$0.isLetter && !$0.isNumber }.map(String.init)
-        let squashed = String(plain.filter(\.isLetter))
-        return words.contains(where: secretWords.contains) || secretStems.contains(where: squashed.contains)
+        // A letter from another script can pass for a Latin one (Cyrillic "а" in "pаssword"), and
+        // no table lists them all; so outside ASCII, any letter may stand for any letter (Kyle,
+        // 12 October). False alarms only hide a message and leave the recipe plain.
+        let squashed = Array(plain.filter(\.isLetter))
+        func matches(_ stem: String) -> Bool {
+            let stem = Array(stem)
+            guard squashed.count >= stem.count else { return false }
+            return (0...(squashed.count - stem.count)).contains { start in
+                zip(squashed[start..<start + stem.count], stem).allSatisfy { $0 == $1 || !$0.isASCII }
+            }
+        }
+        return words.contains(where: secretWords.contains) || secretStems.contains(where: matches)
     }
 
     private static let lookAlikes: [Character: Character] = ["@": "a", "4": "a", "$": "s", "0": "o", "1": "i", "3": "e", "5": "s", "!": "i"]

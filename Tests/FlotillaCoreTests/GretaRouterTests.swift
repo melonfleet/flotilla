@@ -38,6 +38,15 @@ import Testing
         #expect(recipeID(route("create a Postgres status page")) == "postgres")
         #expect(recipeID(route("please can you run nginx")) == "nginx")
         #expect(draft("draft postgres, don't use a volume").volumes.isEmpty)
+        #expect(recipeID(route("run Postgres from the docs")) == "postgres")      // Kyle's third look
+        #expect(route("create a Redis tutorial") == .answer)
+        #expect(route("write me a postgres guide") == .answer)
+    }
+
+    @Test func changesAreReadOnlyFromPlainText() {
+        let made = draft("run postgres called shop\u{2011}db on port 6543")   // a non-breaking hyphen
+        #expect(made.changesNotRead)
+        #expect(made.name == "postgres" && made.ports == ["5432:5432"])
     }
 
     @Test func aNamedContainerIsDraftedFromItsRecipe() {
@@ -102,6 +111,8 @@ import Testing
             "run mariadb with the secret hunter2 as the name",
             "run postgres called hunter2 with API key hunter2",
             "run postgres called hunter2, p@ssword hunter2",
+            "run postgres called hunter2, p\u{0430}ssword hunter2",       // Cyrillic а, Kyle's third look
+            "run postgres called hunter2, \u{0440}assword hunter2",       // Cyrillic р
         ]
         for attack in attacks {
             let made = draft(attack)

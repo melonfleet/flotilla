@@ -38,6 +38,8 @@ public struct GretaDraft: Sendable, Equatable {
     public var changes: [String] = []
     /// They mentioned a password: it stays change-me here, to be typed into the Run form.
     public var passwordLeftForTheForm = false
+    /// The message had characters outside ASCII, so no change was read from it.
+    public var changesNotRead = false
 }
 
 public enum GretaRoute: Equatable, Sendable {
@@ -76,7 +78,7 @@ public enum GretaRouter {
         // negation, a change to something that exists, a question about state or asking to learn
         // means it isn't (Kyle's examples, 12 October, both rounds).
         if opensWithRun(text) {
-            if learning.contains(where: { contains(text, $0) }) || text.hasPrefix("run down") { return .answer }
+            if asksToMakeSomethingToRead(text) || text.hasPrefix("run down") { return .answer }
         } else if notARequest.contains(where: { contains(text, $0) }) {
             return .answer
         }
@@ -108,6 +110,12 @@ public enum GretaRouter {
         // and any other change are typed in the Run form.
         if GretaText.mentionsSecret(message) {
             draft.passwordLeftForTheForm = true
+            return draft
+        }
+        // Changes are read only from plain ASCII, which is all a name, user, database, port or
+        // version can be: text in other scripts can't smuggle anything past the checks above.
+        guard message.unicodeScalars.allSatisfy(\.isASCII) else {
+            draft.changesNotRead = true
             return draft
         }
         let tokens = message.lowercased()
@@ -244,6 +252,16 @@ public enum GretaRouter {
 
     /// Asking for something to read, not something to run.
     static let learning = ["tutorial", "docs", "documentation", "guide", "explanation", "course", "lesson"]
+
+    /// "Create a Redis tutorial" asks for something to read; "run Postgres from the docs" doesn't.
+    /// Only a verb that makes something can make a tutorial, and "from the docs" names a source.
+    static func asksToMakeSomethingToRead(_ text: String) -> Bool {
+        let makes = ["create", "make", "write", "draft", "give me", "prepare"].contains { text.hasPrefix($0 + " ") }
+        let source = ["from the", "in the", "per the", "using the", "following the", "like the", "as in the"]
+        return makes && learning.contains { word in
+            contains(text, word) && !source.contains { contains(text, "\($0) \(word)") }
+        }
+    }
 
     /// Opens with a verb that asks for a container, after any "please" or "can you".
     static func opensWithRun(_ text: String) -> Bool {
