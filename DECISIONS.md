@@ -2285,3 +2285,48 @@ So Flotilla can't tell a crash from a clean exit. The owner's answers:
    on its page.
 6. **Order: This Mac first** (the engine, This Mac, the UI), then hosts over the wire, where the
    host keeps running the policy while the admin is away, then the notification polish.
+
+## Q54 — The suggestions library: many tested recipes, updated from GitHub (settled 2026-10-12)
+
+The owner asked for a large library of ready-made containers and stacks, browsed by category in
+Suggestions, kept up to date without an app release. Gemini researched about 100 candidates; a
+script checks them against their registries, and a live run on three Macs decides what ships.
+
+1. **Only tested entries are offered.** An entry ships only after it has started, answered on
+   its port, written to its data folder and been cleaned up on a real Mac. Each entry says when,
+   and on how many Macs. Entries needing a feature Flotilla doesn't have (config files in
+   recipes; secrets inside a value) wait for it.
+2. **Browsed like Browse Docker Hub:** search and a category filter on the left, the chosen
+   entry on the right, Use… in the footer. A stack opens its form and is created as a group; a
+   container opens the Run form, filled in, publishing on 127.0.0.1.
+3. **Every entry is untrusted input.** `SuggestionLibrary.checked()` (FlotillaCore) drops any
+   entry that fails:
+   - the image must pass the Allowlist and be pinned, never `latest`;
+   - ports on the Mac must be 1024 or above;
+   - volumes must be named, never a folder on the Mac;
+   - no password may be written in the file (password variables are generated when used);
+   - stacks may use only the planner's placeholders, naming things that exist;
+   - no shell syntax in commands;
+   - lengths and counts are capped.
+
+   The form then validates again, like anything typed.
+4. **Built in, then fetched.** Flotilla ships a built-in copy, the tested stacks and Greta's
+   recipes for now. It fetches a newer one:
+   - **from** a new public repo, `melonfleet/flotilla-library`, over raw.githubusercontent.com,
+     which is a new address Flotilla contacts;
+   - **how often:** once a day when online, on by default, with a Settings switch and a managed
+     key that can lock it off;
+   - **when used:** only if its version is newer, its schema is one this build reads, and its
+     signature verifies.
+
+   This amends no-phone-home that far: the request carries no identifier and no data about the
+   Mac.
+5. **Signed with a new key.** A separate Ed25519 key for the library, kept in the owner's
+   Keychain like the Sparkle key but not the same key, so neither's compromise touches the other.
+   The app carries the public key. An unsigned or badly signed file is ignored, and the last good
+   copy stays.
+6. **Built in steps.**
+   - **12 October:** the format, the checks and the browser, using the built-in copy.
+   - **Next:** the key, the repo, the publish script, and the daily fetch with signature
+     checking.
+   - **Then:** the live-tested entries, category by category.
