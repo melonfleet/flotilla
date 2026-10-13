@@ -298,8 +298,26 @@ final class HostModeController {
             for peer in lapsed { record(peer.displayName, "Request expired") }
         }
         if isHost { startListening() } else { stopListening() }
-        if isAdmin { startBrowsing() } else { stopBrowsing() }
+        updateBrowsing()
         refreshBridge()
+    }
+
+    /// Set once the user opens Hosts; see `DiscoveryPolicy` for why a fresh admin waits for it.
+    private var userOpenedHosts = false
+
+    /// Called when Hosts is shown, which includes Add Host: the Local Network prompt is asked for here.
+    func hostsOpened() {
+        userOpenedHosts = true
+        updateBrowsing()
+    }
+
+    private func updateBrowsing() {
+        if DiscoveryPolicy.shouldBrowse(isAdmin: isAdmin, trustedHostCount: trustedHosts.count,
+                                        userOpenedHosts: userOpenedHosts) {
+            startBrowsing()
+        } else {
+            stopBrowsing()
+        }
     }
 
     // MARK: Identity

@@ -355,7 +355,7 @@ struct FlotillaApp: App {
                         appDelegate?.applyPresentation()
                     }
                 }
-                .frame(minWidth: 900, minHeight: 520)
+                .frame(minWidth: 700, minHeight: 520)
                 // Nothing *hardcodes* a scheme — this is the user's own stored choice, and
                 // `.auto` resolves to nil so the system value still wins.
                 // **No `preferredColorScheme`.** It was here, and it was the second writer in a

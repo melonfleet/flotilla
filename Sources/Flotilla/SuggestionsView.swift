@@ -43,9 +43,9 @@ struct SuggestionsView: View {
                            hasUnsavedChanges: false, onBack: dismiss)
                 Divider()
                 HStack(spacing: 0) {
-                    listPane.frame(minWidth: 380, maxWidth: .infinity)
+                    listPane.frame(minWidth: 240, maxWidth: .infinity)
                     Divider()
-                    detailPane.frame(width: 400)
+                    detailPane.frame(minWidth: 260, idealWidth: 400, maxWidth: 400)
                 }
                 Divider()
                 footer

@@ -244,6 +244,7 @@ struct HostsView: View {
             model.clearPendingDetail()
         }
         .onAppear {
+            hostMode.hostsOpened()
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .host {
                 openHost = subject
                 model.clearPendingDetail()

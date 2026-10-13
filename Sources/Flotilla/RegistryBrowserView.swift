@@ -43,10 +43,10 @@ struct RegistryBrowserView: View {
             Divider()
             HStack(spacing: 0) {
                 resultsPane
-                    .frame(minWidth: 380, maxWidth: .infinity)
+                    .frame(minWidth: 240, maxWidth: .infinity)
                 Divider()
                 detailPane
-                    .frame(width: 400)
+                    .frame(minWidth: 260, idealWidth: 400, maxWidth: 400)
             }
             Divider()
             footer

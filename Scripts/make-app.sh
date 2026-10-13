@@ -206,6 +206,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
          narrows to .accessory for menu-bar-only users before any scene exists. -->
     <key>LSUIElement</key>                  <$LSUIELEMENT/>
     <key>NSHighResolutionCapable</key>      <true/>
+    <!-- Local Network (macOS asks the first time Flotilla browses or listens). NSBonjourServices
+         must name every service type browsed or advertised: only _flotilla._tcp is. -->
+    <key>NSLocalNetworkUsageDescription</key> <string>Flotilla finds and talks to the Macs it manages on your network, and your containers' published ports use the local network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_flotilla._tcp</string>
+    </array>
     <!-- Notifications stay on screen until clicked ("Persistent") unless the owner chooses
          otherwise — Flotilla only sends what needs attention (Q48; the owner, 12 October). macOS
          reads this once, when the app first asks to notify; it never changes an existing choice. -->
