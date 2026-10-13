@@ -34,8 +34,13 @@ public struct SuggestionLibrary: Sendable, Codable, Equatable {
         self.entries = entries
     }
 
-    /// Only the entries that pass every check, with why each other one was dropped.
+    /// Only the entries that pass every check, with why each other one was dropped. A library whose
+    /// version isn't valid is refused whole: it comes back empty, with `"library"` in `dropped`.
     public func checked() -> (library: SuggestionLibrary, dropped: [(id: String, problem: String)]) {
+        guard Self.isValidVersion(version) else {
+            return (SuggestionLibrary(schema: schema, version: version, entries: []),
+                    [("library", "Its version isn't four numbers from 0 to 9999, such as 2026.10.12.0.")])
+        }
         var kept: [LibraryEntry] = []
         var dropped: [(String, String)] = []
         var seen = Set<String>()
@@ -48,14 +53,23 @@ public struct SuggestionLibrary: Sendable, Codable, Equatable {
         return (SuggestionLibrary(schema: schema, version: version, entries: kept), dropped)
     }
 
-    /// Whether `other` is a newer version than this one.
-    public func isOlder(than other: SuggestionLibrary) -> Bool {
-        let mine = version.split(separator: ".").map { Int($0) ?? 0 }
-        let theirs = other.version.split(separator: ".").map { Int($0) ?? 0 }
-        for index in 0..<max(mine.count, theirs.count) {
-            let a = index < mine.count ? mine[index] : 0, b = index < theirs.count ? theirs[index] : 0
-            if a != b { return a < b }
+    /// Exactly four unsigned decimal numbers, each 0 to 9999 with no leading zero: `2026.10.12.0`.
+    /// Anything else is refused rather than read as zeros — a malformed version must not count as
+    /// newer, and an enormous one must not freeze every later update.
+    public static func isValidVersion(_ version: String) -> Bool {
+        let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count == 4 && parts.allSatisfy { part in
+            (1...4).contains(part.utf8.count) && part.utf8.allSatisfy { (0x30...0x39).contains($0) }
+                && (part == "0" || part.first != "0")
         }
+    }
+
+    /// Whether `other` is a newer version than this one. `false` unless both versions are valid.
+    public func isOlder(than other: SuggestionLibrary) -> Bool {
+        guard Self.isValidVersion(version), Self.isValidVersion(other.version) else { return false }
+        let mine = version.split(separator: ".").compactMap { Int($0) }
+        let theirs = other.version.split(separator: ".").compactMap { Int($0) }
+        for (a, b) in zip(mine, theirs) where a != b { return a < b }
         return false
     }
 }
@@ -71,7 +85,8 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
     public var kind: Kind
     /// Said plainly where a licence is not a permissive open-source one.
     public var licenceNote: String?
-    /// When and on how many Macs it was last run and passed. `nil`: not live-tested.
+    /// When and on how many Macs it was last run and passed. Required: an entry nobody has run is
+    /// dropped (Q54, "tested entries only"); optional in the type only so the reason can be named.
     public var tested: Tested?
     public var container: LibraryContainer?
     public var stack: LibraryStack?
@@ -80,6 +95,23 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
         public var date: String
         public var macs: Int
         public init(date: String, macs: Int) { self.date = date; self.macs = macs }
+
+        /// A real calendar date written `YYYY-MM-DD`, on one to twenty Macs.
+        func problem() -> String? {
+            guard (1...20).contains(macs) else { return "It says it was tested on \(macs) Macs." }
+            let bytes = Array(date.utf8)
+            let digits = [0, 1, 2, 3, 5, 6, 8, 9]
+            guard bytes.count == 10, bytes[4] == 0x2D, bytes[7] == 0x2D,
+                  digits.allSatisfy({ (0x30...0x39).contains(bytes[$0]) }),
+                  let year = Int(date.prefix(4)), let month = Int(date.dropFirst(5).prefix(2)),
+                  let day = Int(date.suffix(2)), (1...12).contains(month) else {
+                return "Its test date isn't a date written YYYY-MM-DD."
+            }
+            let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+            let days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+            guard (1...days).contains(day) else { return "Its test date isn't a date written YYYY-MM-DD." }
+            return nil
+        }
     }
 
     public init(id: String, title: String, summary: String, categories: [String], kind: Kind,
@@ -100,13 +132,19 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
 
     /// Why it can't be offered, or `nil`.
     public func problem() -> String? {
-        guard Allowlist.accepts(id, as: .identifier), id.count <= 64 else { return "Its id isn't a plain name." }
-        guard (1...80).contains(title.count), summary.count <= 240 else { return "Its title or summary is too long." }
+        guard id.utf8.count <= 64, Allowlist.accepts(id, as: .identifier) else { return "Its id isn't a plain name." }
+        guard Library.isPlainText(title, upTo: 80, required: true), Library.isPlainText(summary, upTo: 240) else {
+            return "Its title or summary is too long, or has characters that aren't plain text."
+        }
         guard (1...3).contains(categories.count),
               categories.allSatisfy(SuggestionLibrary.categories.contains) else {
             return "Its categories aren't from the library's list."
         }
-        if let note = licenceNote, note.count > 400 { return "Its licence note is too long." }
+        if let note = licenceNote, !Library.isPlainText(note, upTo: 400) {
+            return "Its licence note is too long, or has characters that aren't plain text."
+        }
+        guard let tested else { return "It hasn't been tested." }
+        if let problem = tested.problem() { return problem }
         switch kind {
         case .container:
             guard let container, stack == nil else { return "A container entry must describe one container." }
@@ -142,8 +180,10 @@ public struct LibraryVolume: Sendable, Codable, Equatable {
     public init(suffix: String = "data", path: String) { self.suffix = suffix; self.path = path }
 
     func problem() -> String? {
-        guard Allowlist.accepts(suffix, as: .identifier) else { return "A volume's name isn't a plain name." }
-        guard path.hasPrefix("/"), path.count <= 200, !path.split(separator: "/").contains(".."),
+        guard suffix.utf8.count <= 32, Allowlist.accepts(suffix, as: .identifier) else {
+            return "A volume's name isn't a plain name."
+        }
+        guard path.hasPrefix("/"), path.utf8.count <= 200, !path.split(separator: "/").contains(".."),
               path.allSatisfy({ !$0.isWhitespace && $0 != ":" }) else {
             return "A volume path isn't an absolute path inside the container."
         }
@@ -182,15 +222,26 @@ public struct LibraryContainer: Sendable, Codable, Equatable {
 
     func problem() -> String? {
         if let problem = Library.imageProblem(image) { return problem }
-        guard Allowlist.accepts(name, as: .identifier) else { return "Its container name isn't a plain name." }
+        guard name.utf8.count <= 64, Allowlist.accepts(name, as: .identifier) else {
+            return "Its container name isn't a plain name."
+        }
+        guard ports.count <= Library.maxItems, env.count <= Library.maxItems,
+              secretEnv.count <= Library.maxItems, volumes.count <= Library.maxItems else {
+            return "It has more than \(Library.maxItems) ports, variables, passwords or volumes."
+        }
         for port in ports where Library.portProblem(port) != nil { return Library.portProblem(port) }
         for value in env where Library.envProblem(value, templates: false) != nil {
             return Library.envProblem(value, templates: false)
         }
-        guard secretEnv.allSatisfy(Library.isEnvironmentName) else { return "A password variable's name isn't a variable name." }
-        if let problem = volumes.lazy.compactMap({ $0.problem() }).first { return problem }
+        if let problem = Library.secretProblem(secretEnv, env: env) { return problem }
+        if let problem = Library.volumesProblem(volumes) { return problem }
         if let problem = Library.commandProblem(command) { return problem }
-        if let note, note.count > 400 { return "Its note is too long." }
+        if let note {
+            // Not templated: nothing would fill a placeholder, so braces are refused outright.
+            guard Library.isPlainText(note, upTo: 400), !note.contains("{{"), !note.contains("}}") else {
+                return "Its note is too long, or has characters that aren't plain text."
+            }
+        }
         return nil
     }
 }
@@ -238,54 +289,79 @@ public struct LibraryStack: Sendable, Codable, Equatable {
         self.options = options; self.services = services; self.notes = notes; self.opens = opens
     }
 
+    /// Everything `GroupBook` and the planner would refuse later is refused here, because by then
+    /// the network, the volumes and the Keychain entries already exist.
     func problem() -> String? {
         guard (1...6).contains(services.count) else { return "A stack has one to six services." }
         let roles = services.map(\.role)
-        guard Set(roles).count == roles.count, roles.allSatisfy({ Allowlist.accepts($0, as: .identifier) && $0.count <= 24 })
+        // Case-insensitively, as container names are: `db` and `DB` would be the same member.
+        guard Set(roles.map { $0.lowercased() }).count == roles.count,
+              roles.allSatisfy({ $0.utf8.count <= 24 && Allowlist.accepts($0, as: .identifier) })
         else { return "Its service roles aren't distinct plain names." }
+        guard options.count <= Library.maxOptions else { return "It has more than \(Library.maxOptions) settings." }
+        guard Set(options.map(\.id)).count == options.count else { return "Two of its settings share an id." }
         for option in options {
-            guard Allowlist.accepts(option.id, as: .identifier), !option.label.isEmpty, option.label.count <= 60,
-                  option.help.count <= 240 else { return "One of its settings is malformed." }
+            guard option.id.utf8.count <= 32, Allowlist.accepts(option.id, as: .identifier),
+                  Library.isPlainText(option.label, upTo: 60, required: true),
+                  Library.isPlainText(option.help, upTo: 240),
+                  option.defaultValue.utf8.count <= 254 else { return "One of its settings is malformed." }
             let probe = StackOption(id: option.id, label: option.label, defaultValue: option.defaultValue,
                                     help: option.help, kind: option.email ? .email : .identifier)
             if let problem = probe.problem(with: option.defaultValue) { return "\(option.label): \(problem)" }
         }
         let optionIDs = Set(options.map(\.id))
+        let reachable = Set(services.filter { $0.wiredPort != nil }.map(\.role))
         for service in services {
             if let problem = Library.imageProblem(service.image) { return problem }
-            guard !service.title.isEmpty, service.title.count <= 60 else { return "A service's title is missing or too long." }
+            guard Library.isPlainText(service.title, upTo: 60, required: true) else {
+                return "A service's title is missing, too long, or has characters that aren't plain text."
+            }
             for port in [service.webPort, service.wiredPort, service.readyPort].compactMap({ $0 })
             where !(1...65535).contains(port) { return "\(port) isn't a port." }
+            // Without a domain the planner publishes a wired port at 30000 above itself on the gateway.
+            if let wired = service.wiredPort, wired + Library.gatewayOffset > 65535 {
+                return "\(wired) is too high to be reached through the gateway."
+            }
+            guard service.env.count <= Library.maxItems, service.secretEnv.count <= Library.maxItems,
+                  service.volumes.count <= Library.maxItems else {
+                return "A service has more than \(Library.maxItems) variables, passwords or volumes."
+            }
             for value in service.env {
                 if let problem = Library.envProblem(value, templates: true) { return problem }
-                // Only the placeholders the planner fills, naming things that exist.
-                for token in Library.placeholders(in: value) {
-                    let parts = token.split(separator: ":", maxSplits: 1).map(String.init)
-                    guard parts.count == 2 else { return "“{{\(token)}}” isn't a placeholder Flotilla fills." }
-                    switch parts[0] {
-                    case "option" where optionIDs.contains(parts[1]): continue
-                    case "host", "port":
-                        guard let target = services.first(where: { $0.role == parts[1] }), target.wiredPort != nil
-                        else { return "“{{\(token)}}” names a service other services can't reach." }
-                    default: return "“{{\(token)}}” isn't a placeholder Flotilla fills."
-                    }
-                }
+                if let problem = Library.templateProblem(value, options: optionIDs, reachable: reachable) { return problem }
             }
-            guard service.secretEnv.allSatisfy({ Library.isEnvironmentName($0.name) && Allowlist.accepts($0.secret, as: .identifier) })
+            guard service.secretEnv.allSatisfy({ $0.secret.utf8.count <= 64 && Allowlist.accepts($0.secret, as: .identifier) })
             else { return "A password variable is malformed." }
-            if let problem = service.volumes.lazy.compactMap({ $0.problem() }).first { return problem }
+            if let problem = Library.secretProblem(service.secretEnv.map(\.name), env: service.env) { return problem }
+            if let problem = Library.volumesProblem(service.volumes) { return problem }
             if let problem = Library.commandProblem(service.command) { return problem }
         }
-        if let opens, !roles.contains(opens) { return "It opens a service it doesn't have." }
-        guard notes.count <= 8, notes.allSatisfy({ $0.count <= 400 }) else { return "Its notes are too long." }
+        if let opens {
+            guard let target = services.first(where: { $0.role == opens }) else { return "It opens a service it doesn't have." }
+            guard target.webPort != nil else { return "It opens a service that has no web page." }
+        }
+        guard notes.count <= 8, notes.allSatisfy({ Library.isPlainText($0, upTo: 400, required: true) }) else {
+            return "Its notes are too many, too long, or have characters that aren't plain text."
+        }
+        for note in notes {
+            if let problem = Library.templateProblem(note, options: optionIDs, reachable: reachable) { return problem }
+        }
         return nil
     }
 }
 
 /// The rules shared by containers and stacks.
 enum Library {
+    /// Ports, variables, passwords and volumes, each; a command's arguments.
+    static let maxItems = 16
+    static let maxOptions = 8
+    /// How far above its own port the planner publishes a wired service on the gateway.
+    static let gatewayOffset = 30000
+
     static func imageProblem(_ image: String) -> String? {
-        guard Allowlist.accepts(image, as: .imageReference) else { return "“\(image)” isn't an image reference." }
+        guard image.utf8.count <= 255, Allowlist.accepts(image, as: .imageReference) else {
+            return "“\(image.prefix(80))” isn't an image reference."
+        }
         guard let tag = image.split(separator: "/").last?.split(separator: ":").dropFirst().first, !tag.isEmpty,
               tag != "latest" else { return "“\(image)” isn't pinned to a version." }
         return nil
@@ -294,29 +370,61 @@ enum Library {
     /// `HOST:CONTAINER`, the host side 1024 or above.
     static func portProblem(_ spec: String) -> String? {
         let parts = spec.split(separator: ":", omittingEmptySubsequences: false)
-        guard parts.count == 2, let host = Int(parts[0]), let inside = Int(parts[1]),
+        guard spec.utf8.count <= 11, parts.count == 2, let host = Int(parts[0]), let inside = Int(parts[1]),
               (1024...65535).contains(host), (1...65535).contains(inside) else {
-            return "“\(spec)” isn't a port pair with a port from 1024 on this Mac."
+            return "“\(spec.prefix(40))” isn't a port pair with a port from 1024 on this Mac."
         }
         return nil
+    }
+
+    /// A name that reads as a password, key or token. Such a variable is only ever a generated
+    /// `secretEnv` — never a value in the file, and never a placeholder an option fills, because an
+    /// option's default is a value in the file too (Kyle: `hunter2` through `{{option:pw}}`).
+    static func looksSecret(_ name: String) -> Bool {
+        let upper = name.uppercased()
+        return ["PASS", "PWD", "SECRET", "TOKEN", "KEY", "CREDENTIAL"].contains(where: upper.contains)
     }
 
     static func envProblem(_ value: String, templates: Bool) -> String? {
         let parts = value.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
         guard parts.count == 2, isEnvironmentName(String(parts[0])) else { return "“\(value.prefix(40))” isn't NAME=value." }
-        guard value.count <= 512, !value.contains(where: { $0.isNewline }) else { return "A variable's value is too long." }
-        if !templates, value.contains("{{") { return "A container entry can't use placeholders." }
-        // A password belongs in `secretEnv`, generated when used, never in the file.
-        let name = parts[0].uppercased()
-        if ["PASSWORD", "SECRET", "TOKEN", "API_KEY", "PRIVATE_KEY"].contains(where: name.contains),
-           !parts[1].hasPrefix("{{") {
+        guard value.utf8.count <= 512,
+              !value.unicodeScalars.contains(where: { [.control, .format].contains($0.properties.generalCategory) })
+        else { return "A variable's value is too long or has control characters." }
+        if !templates, value.contains("{{") || value.contains("}}") { return "A container entry can't use placeholders." }
+        if looksSecret(String(parts[0])) {
             return "\(parts[0]) looks like a password: it must be generated, not written in the library."
         }
         return nil
     }
 
+    /// Generated variables: real names, each once, and none also given a plain value — the rule
+    /// `GroupSecrets.problem(with:)` applies when the group is saved.
+    static func secretProblem(_ names: [String], env: [String]) -> String? {
+        guard names.allSatisfy({ isEnvironmentName($0) && Allowlist.accepts($0 + "=x", as: .envAssignment) }) else {
+            return "A password variable's name isn't a variable name."
+        }
+        guard Set(names).count == names.count else { return "A password variable is named twice." }
+        let plain = Set(env.compactMap { $0.split(separator: "=", maxSplits: 1).first.map(String.init) })
+        if let both = names.first(where: plain.contains) {
+            return "\(both) is both a password and a plain variable."
+        }
+        return nil
+    }
+
+    /// Each volume valid, and no two with the same name, which would mount one volume twice.
+    static func volumesProblem(_ volumes: [LibraryVolume]) -> String? {
+        if let problem = volumes.lazy.compactMap({ $0.problem() }).first { return problem }
+        guard Set(volumes.map { $0.suffix.lowercased() }).count == volumes.count else {
+            return "Two of its volumes have the same name."
+        }
+        return nil
+    }
+
     static func commandProblem(_ command: [String]) -> String? {
-        guard command.count <= 16, command.allSatisfy({ $0.count <= 256 && !$0.contains(where: \.isNewline) }) else {
+        guard command.count <= maxItems,
+              command.allSatisfy({ $0.utf8.count <= 256 && !$0.unicodeScalars.contains(where: {
+                  [.control, .format].contains($0.properties.generalCategory) }) }) else {
             return "Its command is too long."
         }
         guard !command.contains(where: { $0.contains("$(") || $0.contains("${") || $0.contains("`") }) else {
@@ -327,18 +435,62 @@ enum Library {
 
     static func isEnvironmentName(_ name: String) -> Bool {
         guard let first = name.unicodeScalars.first, first == "_" || (first.isASCII && CharacterSet.letters.contains(first)),
-              name.count <= 64 else { return false }
+              name.utf8.count <= 64 else { return false }
         return name.unicodeScalars.allSatisfy { $0 == "_" || ($0.isASCII && CharacterSet.alphanumerics.contains($0)) }
     }
 
-    static func placeholders(in value: String) -> [String] {
+    /// Text shown as part of the app: a title, summary, label, help or note. NFC, on one line,
+    /// at most `limit` characters and four bytes a character, with no control, format (bidi,
+    /// zero-width), private-use, unassigned or surrogate scalars — so a title can't hide text or
+    /// reorder itself to read as something else.
+    static func isPlainText(_ text: String, upTo limit: Int, required: Bool = false) -> Bool {
+        // By scalar: `==` on `String` is canonical equivalence, so `"Cafe\u{301}" == "Café"` and an
+        // NFC check written with it can never fail.
+        guard !required || !text.isEmpty, text.count <= limit, text.utf8.count <= limit * 4,
+              text.unicodeScalars.elementsEqual(text.precomposedStringWithCanonicalMapping.unicodeScalars)
+        else { return false }
+        return !text.unicodeScalars.contains {
+            switch $0.properties.generalCategory {
+            case .control, .format, .privateUse, .unassigned, .surrogate, .lineSeparator, .paragraphSeparator: true
+            default: false
+            }
+        }
+    }
+
+    /// Why a templated string is refused, or `nil`. Every `{{` and `}}` must belong to one of the
+    /// placeholders the planner fills, naming something that exists; a stray one is refused rather
+    /// than left in the text.
+    static func templateProblem(_ text: String, options: Set<String>, reachable: Set<String>) -> String? {
+        guard let tokens = placeholders(in: text) else { return "“\(text.prefix(40))” has a stray {{ or }}." }
+        for token in tokens {
+            let parts = token.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 2 else { return "“{{\(token.prefix(40))}}” isn't a placeholder Flotilla fills." }
+            switch parts[0] {
+            case "option" where options.contains(parts[1]): continue
+            case "host", "port":
+                guard reachable.contains(parts[1]) else {
+                    return "“{{\(token.prefix(40))}}” names a service other services can't reach."
+                }
+            default: return "“{{\(token.prefix(40))}}” isn't a placeholder Flotilla fills."
+            }
+        }
+        return nil
+    }
+
+    /// The inside of every `{{…}}`, or `nil` if any `{{` or `}}` isn't part of one. The inside may
+    /// hold no brace at all, so `{{{x}}}` is malformed rather than read generously.
+    static func placeholders(in value: String) -> [String]? {
         var found: [String] = []
         var rest = Substring(value)
-        while let open = rest.range(of: "{{"), let close = rest.range(of: "}}", range: open.upperBound..<rest.endIndex) {
-            found.append(String(rest[open.upperBound..<close.lowerBound]))
+        while let open = rest.range(of: "{{") {
+            guard !rest[..<open.lowerBound].contains("}}"),
+                  let close = rest.range(of: "}}", range: open.upperBound..<rest.endIndex) else { return nil }
+            let inside = rest[open.upperBound..<close.lowerBound]
+            guard !inside.contains("{"), !inside.contains("}") else { return nil }
+            found.append(String(inside))
             rest = rest[close.upperBound...]
         }
-        return found
+        return rest.contains("}}") ? nil : found
     }
 }
 

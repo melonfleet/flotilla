@@ -51,6 +51,8 @@ struct SuggestionsView: View {
                 footer
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // Use… checks a container's new volumes against what is here, so the list must be.
+            .task { if model.volumesState != .loaded { await model.refreshVolumes() } }
         }
     }
 
@@ -206,15 +208,22 @@ struct SuggestionsView: View {
         } else if let container = entry.container {
             // Into the Run form, published on 127.0.0.1, with a name nothing here has and a
             // generated password for each password variable — all of it editable there.
+            // The name moves on until neither it nor any volume it would create is already here:
+            // a volume named after an existing one would hand that data to the image (Kyle,
+            // 13 October). The volumes it mounts are therefore always new.
             let taken = model.existingContainerNames(on: .local).union(model.groups.claimedNames(on: .local))
+            let volumes = Set(model.volumes.map(\.name))
             var name = container.name
             var counter = 2
-            while taken.contains(name) { name = "\(container.name)-\(counter)"; counter += 1 }
+            while taken.contains(name) || container.volumes.contains(where: { volumes.contains("\(name)-\($0.suffix)") }) {
+                name = "\(container.name)-\(counter)"; counter += 1
+            }
             let env = container.env + container.secretEnv.map { "\($0)=\(GroupSecrets.generatePassword())" }
             model.pendingRunPrefill = RunPrefill(
                 draftImage: container.image, name: name,
                 ports: container.ports.map { "127.0.0.1:\($0)" }, env: env,
-                volumes: container.volumes.map { "\(name)-\($0.suffix):\($0.path)" })
+                volumes: container.volumes.map { "\(name)-\($0.suffix):\($0.path)" },
+                command: container.command, source: .library)
             dismiss()
         }
     }

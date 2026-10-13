@@ -131,6 +131,36 @@ struct StackSuggestionsTests {
         }
     }
 
+    @Test("gateway and web ports stay on this Mac's port range")
+    func boundedPorts() {
+        #expect(StackPlanner.freePort(preferring: 65534, avoiding: [65534]) == 65535)
+        #expect(StackPlanner.freePort(preferring: 65535, avoiding: [65535]) == nil)
+        #expect(StackPlanner.freePort(preferring: 70000, avoiding: []) == nil)
+        #expect(StackPlanner.freePort(preferring: 80, avoiding: []) == 1024)
+        // Kyle: a wired port of 40000 planned host port 70000 on the gateway.
+        let far = StackSuggestion(id: "far", title: "Far", summary: "", services: [
+            StackService(role: "db", title: "DB", image: "docker.io/library/postgres:18.6", wiredPort: 40000),
+        ])
+        #expect(throws: StackPlanner.PlanError.noGatewayPort("DB")) {
+            try StackPlanner.plan(far, choices: StackChoices(name: "far"), wiring: .gateway("192.168.71.1"),
+                                  usedHostPorts: [])
+        }
+        // By name it needs no port on this Mac at all.
+        #expect(throws: Never.self) {
+            try StackPlanner.plan(far, choices: StackChoices(name: "far"), wiring: .names(domain: "flotilla"),
+                                  usedHostPorts: [])
+        }
+        // Every port up to the top taken: refused, never wrapped round or overflowed.
+        #expect(throws: StackPlanner.PlanError.self) {
+            try StackPlanner.plan(wordpress, choices: StackChoices(name: "blog", webPorts: ["site": 8082]),
+                                  wiring: .gateway("192.168.71.1"), usedHostPorts: Set(33306...65535))
+        }
+        let web = StackSuggestion(id: "w", title: "W", summary: "", services: [
+            StackService(role: "site", title: "Site", image: "docker.io/library/nginx:1.27", webPort: 80),
+        ])
+        #expect(StackPlanner.defaultWebPorts(for: web, avoiding: Set(8080...65535)).isEmpty)
+    }
+
     @Test("publish specs give up their host port")
     func publishSpecs() {
         #expect(StackPlanner.hostPort(fromPublishSpec: "8080:80") == 8080)

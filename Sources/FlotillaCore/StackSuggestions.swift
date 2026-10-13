@@ -432,11 +432,15 @@ public enum StackPlanner {
         return Int(parts[parts.count - 1])
     }
 
-    /// A free port on this Mac: `preferred`, or the next one up that nothing has.
-    public static func freePort(preferring preferred: Int, avoiding used: Set<Int>) -> Int {
-        var port = max(preferred, 1024)
-        while used.contains(port) { port += 1 }
-        return port
+    /// The ports a stack may claim on this Mac.
+    public static let hostPortRange = 1024...65535
+
+    /// A free port on this Mac: `preferred`, or the next one up that nothing has — `nil` when that
+    /// would leave `hostPortRange`, rather than a port no `--publish` accepts.
+    public static func freePort(preferring preferred: Int, avoiding used: Set<Int>) -> Int? {
+        var port = max(preferred, hostPortRange.lowerBound)
+        while hostPortRange.contains(port), used.contains(port) { port += 1 }
+        return hostPortRange.contains(port) ? port : nil
     }
 
     /// Default web ports for a stack: each service's own web port mapped near 8080-style
@@ -446,7 +450,8 @@ public enum StackPlanner {
         var ports: [String: Int] = [:]
         for service in stack.services {
             guard let web = service.webPort else { continue }
-            let port = freePort(preferring: web < 1024 ? 8000 + web : web, avoiding: used)
+            // None free: left out, so the form asks and the planner refuses rather than guesses.
+            guard let port = freePort(preferring: web < 1024 ? 8000 + web : web, avoiding: used) else { continue }
             ports[service.role] = port
             used.insert(port)
         }
@@ -456,11 +461,14 @@ public enum StackPlanner {
     public enum PlanError: Error, Equatable, CustomStringConvertible {
         case missingWebPort(String)
         case badOption(String, String)
+        /// No port from 30000 above the service's own up to 65535 is free for the gateway.
+        case noGatewayPort(String)
 
         public var description: String {
             switch self {
             case .missingWebPort(let role): "Choose a port on this Mac for \(role)."
             case .badOption(let label, let why): "\(label): \(why)"
+            case .noGatewayPort(let title): "There's no free port on this Mac to reach \(title) through."
             }
         }
     }
@@ -496,7 +504,9 @@ public enum StackPlanner {
             case .gateway(let gateway):
                 // Far from the conventional ports so it never takes one a person would expect:
                 // 3306 → 33306, 5432 → 35432, as the September WordPress group did.
-                let port = freePort(preferring: 30000 + wired, avoiding: used)
+                guard let port = freePort(preferring: 30000 + wired, avoiding: used) else {
+                    throw PlanError.noGatewayPort(service.title)
+                }
                 used.insert(port)
                 hosts[service.role] = gateway
                 ports[service.role] = port
