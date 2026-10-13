@@ -295,6 +295,13 @@ public enum SettingsKeys {
         summary: "Let Sparkle check GitHub for Flotilla updates automatically. Asked once if not set."
     )
 
+    /// The suggestions library's daily check (DECISIONS Q54): a signed `library.json` from the public
+    /// melonfleet/flotilla-library repo, used only if it verifies. Lockable off by a profile.
+    public static let suggestionLibraryUpdates = SettingsKey<Bool>(
+        "suggestionLibraryUpdates", default: true,
+        summary: "Check GitHub once a day for a newer suggestions library. The request carries nothing about this Mac, and a library is used only if its signature verifies."
+    )
+
     public static let automaticallyDownloadUpdates = SettingsKey<Bool>(
         "SUAutomaticallyUpdate", default: false,
         summary: "Download and install updates in the background without asking."
@@ -377,6 +384,7 @@ public enum SettingsRegistry {
         SettingsKeys.enrolmentKey.descriptor,
         SettingsKeys.automaticUpdateChecks.descriptor,
         SettingsKeys.automaticallyDownloadUpdates.descriptor,
+        SettingsKeys.suggestionLibraryUpdates.descriptor,
         SettingsKeys.updateCheckIntervalSeconds.descriptor,
         SettingsKeys.updateChannel.descriptor,
         SettingsKeys.diagnosticsEnabled.descriptor,

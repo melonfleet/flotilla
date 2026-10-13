@@ -644,6 +644,16 @@ struct SettingsView: View {
                 SettingRow(store: store, key: SettingsKeys.automaticallyDownloadUpdates, title: "Automatically download updates") { binding in
                     Toggle("", isOn: binding).labelsHidden()
                 }
+                SettingRow(store: store, key: SettingsKeys.suggestionLibraryUpdates, title: "Check for new suggestions daily") { binding in
+                    Toggle("", isOn: binding).labelsHidden()
+                }
+                HStack {
+                    Text("Library \(model.suggestionLibrary.version), \(model.suggestionLibrary.entries.count) suggestions. \(model.libraryUpdater.status)")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Check Now") { Task { await model.checkSuggestionLibrary() } }
+                        .disabled(model.libraryUpdater.checking)
+                }
                 SettingRow(store: store, key: SettingsKeys.updateCheckIntervalSeconds, title: "Check every") { binding in
                     Stepper(value: binding, in: 3_600...604_800, step: 3_600) { Text("\(binding.wrappedValue / 3_600) h") }
                 }

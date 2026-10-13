@@ -113,6 +113,7 @@ final class AppModel {
         self.hostMode = HostModeController(settings: resolved.store, containerHost: cli.host)
         reloadGretaSettings()
         observeSettings()
+        startLibraryUpdates()
         // At launch too, not only on change. This was missing: `appearance` was read here but only
         // *applied* by `reloadAppearance()`, after a settings edit, so a saved Light or Dark was
         // ignored on every launch and the window followed the system until something in Settings
@@ -1828,7 +1829,30 @@ final class AppModel {
 
     /// The suggestions library (DECISIONS Q54): the built-in copy, checked, until a newer signed one
     /// has been fetched (to come).
-    var suggestionLibrary: SuggestionLibrary = SuggestionLibrary.builtIn.checked().library
+    var suggestionLibrary: SuggestionLibrary = {
+        // The last good download, checked again now, if it is newer than the built-in copy.
+        let builtIn = SuggestionLibrary.builtIn.checked().library
+        guard let cached = LibraryUpdater.cached(), builtIn.isOlder(than: cached) else { return builtIn }
+        return cached
+    }()
+    let libraryUpdater = LibraryUpdater()
+
+    /// Checks GitHub for a newer library now — from Settings, or the daily loop.
+    func checkSuggestionLibrary() async {
+        if let newer = await libraryUpdater.check(current: suggestionLibrary) { suggestionLibrary = newer }
+    }
+
+    /// Once a day while the setting is on (DECISIONS Q54): checked hourly, fetched when due.
+    func startLibraryUpdates() {
+        Task { [weak self] in
+            while let self {
+                if self.settingsStore[SettingsKeys.suggestionLibraryUpdates], self.libraryUpdater.isDue {
+                    await self.checkSuggestionLibrary()
+                }
+                try? await Task.sleep(for: .seconds(3600))
+            }
+        }
+    }
     /// Greta's state, kept while the window's sections come and go (DECISIONS Q52).
     let greta = Greta()
     /// Opens the main window from outside SwiftUI; handed over by `MainWindowView`.
