@@ -27,9 +27,18 @@ final class LibraryUpdater {
 
     private let defaults = UserDefaults.standard
     private static let lastCheckedKey = "suggestionLibraryLastChecked"
+    /// The newest version ever accepted. A library older than this is never used again, even if
+    /// signed — so an old file can't be replayed in (Kyle, 13 October).
+    nonisolated static let highestVersionKey = "suggestionLibraryHighestVersion"
 
     init() {
         lastChecked = defaults.object(forKey: Self.lastCheckedKey) as? Date
+    }
+
+    /// Records the version in use as the newest seen, so nothing older replaces it later.
+    func noteInUse(_ library: SuggestionLibrary) {
+        let highest = defaults.string(forKey: Self.highestVersionKey).map { SuggestionLibrary(version: $0, entries: []) }
+        if highest.map({ $0.isOlder(than: library) }) ?? true { defaults.set(library.version, forKey: Self.highestVersionKey) }
     }
 
     /// Where the last good download is kept.
@@ -43,9 +52,12 @@ final class LibraryUpdater {
     nonisolated static func cached() -> SuggestionLibrary? {
         guard let folder = cacheFolder,
               let data = try? Data(contentsOf: folder.appendingPathComponent("library.json")),
-              let signature = try? Data(contentsOf: folder.appendingPathComponent("library.json.sig"))
+              let signature = try? Data(contentsOf: folder.appendingPathComponent("library.json.sig")),
+              let library = try? verified(data, signature: signature)
         else { return nil }
-        return try? verified(data, signature: signature)
+        if let highest = UserDefaults.standard.string(forKey: highestVersionKey),
+           library.isOlder(than: SuggestionLibrary(version: highest, entries: [])) { return nil }
+        return library
     }
 
     /// The library in `data`, if `signature` verifies and it is a schema this build reads.
@@ -80,9 +92,15 @@ final class LibraryUpdater {
         do {
             let data = try await fetch("library.json", session)
             let signature = try await fetch("library.json.sig", session)
-            let library = try Self.verified(data, signature: signature)
+            // An answer arrived, good or bad: the next try is tomorrow, not in an hour.
             lastChecked = Date()
             defaults.set(lastChecked, forKey: Self.lastCheckedKey)
+            let library = try Self.verified(data, signature: signature)
+            if let highest = defaults.string(forKey: Self.highestVersionKey),
+               library.isOlder(than: SuggestionLibrary(version: highest, entries: [])) {
+                status = "GitHub offered an older library (\(library.version)) than one already used, so it was ignored."
+                return nil
+            }
             guard current.isOlder(than: library) else {
                 status = "Up to date (library \(current.version))."
                 return nil
@@ -92,6 +110,7 @@ final class LibraryUpdater {
                 try data.write(to: folder.appendingPathComponent("library.json"), options: .atomic)
                 try signature.write(to: folder.appendingPathComponent("library.json.sig"), options: .atomic)
             }
+            defaults.set(library.version, forKey: Self.highestVersionKey)
             status = "Updated to library \(library.version): \(library.entries.count) suggestions."
             return library
         } catch {
@@ -100,12 +119,25 @@ final class LibraryUpdater {
         }
     }
 
+    /// Read as it arrives and abandoned past the cap, so an oversized answer is never held whole.
     private func fetch(_ name: String, _ session: URLSession) async throws -> Data {
-        let (data, response) = try await session.data(from: Self.source.appendingPathComponent(name))
+        let (bytes, response) = try await session.bytes(from: Self.source.appendingPathComponent(name))
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            bytes.task.cancel()
             throw Failure("GitHub didn't have \(name) (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)).")
         }
-        guard data.count <= Self.maxBytes else { throw Failure("The library is larger than Flotilla accepts.") }
+        if response.expectedContentLength > Int64(Self.maxBytes) {
+            bytes.task.cancel()
+            throw Failure("The library is larger than Flotilla accepts.")
+        }
+        var data = Data()
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > Self.maxBytes {
+                bytes.task.cancel()
+                throw Failure("The library is larger than Flotilla accepts.")
+            }
+        }
         return data
     }
 

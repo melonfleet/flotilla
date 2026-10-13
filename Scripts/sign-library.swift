@@ -4,9 +4,11 @@
 //
 // Checks the file decodes as a library this build understands, then signs its exact bytes with the
 // library key in the login Keychain ("Flotilla suggestions library signing key") and writes
-// `library.json.sig` beside it: the Ed25519 signature, base64. The private key never leaves the
-// Keychain; macOS may ask once to allow this script to read it. Flotilla verifies with the public
-// key it carries (`LibraryUpdater.publicKey`).
+// `library.json.sig` beside it: the Ed25519 signature, base64. The private key is stored only in the
+// owner's login Keychain; signing reads it into this process's memory for the moment it signs, and
+// it is never printed or written anywhere. macOS asks to allow the read: choose **Allow**, not
+// Always Allow, which would let any Swift script read it (Kyle, 13 October). Flotilla verifies with
+// the public key it carries (`LibraryUpdater.publicKey`).
 import CryptoKit
 import Foundation
 import Security

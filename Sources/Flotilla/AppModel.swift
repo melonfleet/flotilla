@@ -1844,6 +1844,7 @@ final class AppModel {
 
     /// Once a day while the setting is on (DECISIONS Q54): checked hourly, fetched when due.
     func startLibraryUpdates() {
+        libraryUpdater.noteInUse(suggestionLibrary)
         Task { [weak self] in
             while let self {
                 if self.settingsStore[SettingsKeys.suggestionLibraryUpdates], self.libraryUpdater.isDue {

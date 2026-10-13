@@ -69,6 +69,21 @@ extension AppModel {
                 // The host's own CLI, held to `.remotePeer` like every other host action.
                 let cli = try self.cli(for: host)
 
+                // 0. A dry run before anything is pulled or made: plan it with a stand-in gateway
+                // and check the group would be accepted, so a stack that can't be finished fails
+                // here with nothing to clean up (Kyle, 13 October).
+                do {
+                    let wiring: StackWiring = stackWiringDomain(on: host).map { .names(domain: $0) } ?? .gateway("10.255.255.1")
+                    var draft = try StackPlanner.plan(stack, choices: choices, wiring: wiring,
+                                                      usedHostPorts: stackTaken(on: host).hostPorts).group
+                    draft.host = host.isLocal ? nil : host
+                    var probe = groups.book
+                    try probe.commit(draft)
+                } catch {
+                    throw StackCreateFailure(step: "Checking the stack", made: [],
+                                             underlying: (error as? GroupBook.GroupError)?.description ?? String(describing: error))
+                }
+
                 // 1. Images, which change nothing else.
                 for image in stack.images where !images(on: host).contains(where: { $0.reference == image }) {
                     let step = progress.begin("Pulling \(image)")
