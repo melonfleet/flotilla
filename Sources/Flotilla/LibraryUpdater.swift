@@ -17,7 +17,7 @@ import FlotillaCore
 final class LibraryUpdater {
     /// The library key's public half. Its private half is in the owner's login Keychain only.
     nonisolated static let publicKey = "3o1gkvc5eCaxX/RY71GkJ2v2tBgPUg9xMH9XPDaRDyM="
-    nonisolated static let source = URL(string: "https://raw.githubusercontent.com/melonfleet/flotilla-library/main/")!
+    nonisolated static let source = URL(string: "https://raw.githubusercontent.com/melonfleet/flotilla-library/published/")!
     /// A library is a few hundred kilobytes; anything far larger is refused unread.
     nonisolated static let maxBytes = 4 * 1024 * 1024
 
