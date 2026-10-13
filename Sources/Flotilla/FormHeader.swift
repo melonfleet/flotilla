@@ -23,6 +23,9 @@ struct FormHeader<Trailing: View>: View {
     /// silently, and "a setting that drives nothing is worse than a missing one" is a lesson this
     /// project has already paid for. Every screen with a `FormHeader` is a form, so every one of
     /// them has an answer.
+    ///
+    /// It also answers for every *other* way out — the sidebar, menu commands, ⌘K and Quit — by
+    /// registering with the window's `FormGuard`, so no form has to wire those up itself.
     let hasUnsavedChanges: Bool
     let onBack: () -> Void
     /// A small pill after the title — "This Mac" on this Mac's own page.
@@ -62,6 +65,7 @@ struct FormHeader<Trailing: View>: View {
         } message: {
             Text("This form has changes that have not been saved. Leaving now loses them.")
         }
+        .guardsUnsavedChanges(title: title, isDirty: hasUnsavedChanges)
     }
 }
 

@@ -195,6 +195,7 @@ struct CommandPalette: View {
         guard shown.indices.contains(selected) else { return }
         let item = shown[selected]
         dismiss()
-        item.run()
+        // Every item opens a section, a form or a detail, so each would replace a form on screen.
+        model.formGuard.confirmLeaving(item.run)
     }
 }

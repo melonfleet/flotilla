@@ -74,6 +74,10 @@ struct GroupFormView: View {
             }
         }
         .onAppear { edits.open(editSignature) }
+        // Here as well as in the group's `FormHeader`: while a service is being edited that header
+        // is off screen and has removed itself, but the draft it guarded is still here to lose.
+        .guardsUnsavedChanges(title: isNew ? "New Group" : "Edit Group",
+                              isDirty: edits.isDirty(editSignature))
         .task { await loadSecrets() }
         // The picker reads `model.networks`, which the poll loop fills only every sixth tick and
         // the Networks section on visit — so a form opened soon after launch said "No networks

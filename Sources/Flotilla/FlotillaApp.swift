@@ -51,9 +51,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first(where: { $0.pathExtension == ConfigurationFile.fileExtension }),
               let model = model ?? Self.pendingModel else { return }
-        model.openConfigurationFile(url)
+        // The review screen replaces whatever the window shows, a half-filled form included.
+        model.formGuard.confirmLeaving { model.openConfigurationFile(url) }
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }?.makeKeyAndOrderFront(nil)
+        Self.mainWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private static var mainWindow: NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }
+    }
+
+    /// ⌘Q, the menu-bar menu's Quit, and any other `terminate`: the same question as the sidebar,
+    /// when a form has unsaved edits, before anything is torn down.
+    ///
+    /// `.terminateLater` is AppKit's documented shape for asking in a sheet; the answer comes back
+    /// through `reply(toApplicationShouldTerminate:)`, exactly once, from whichever button is
+    /// pressed. A clean window quits as it always did.
+    ///
+    /// The window is brought forward first because the question is asked *in* it, and a form can
+    /// only be registered while its window exists — a closed window's forms removed themselves as
+    /// they went. Minimised is the case that would otherwise hang: a dialog on a window in the
+    /// Dock, and a quit that never finishes.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let formGuard = model?.formGuard, formGuard.forms.isDirty else { return .terminateNow }
+        // A question is already up — from an earlier ⌘Q or from the sidebar. Answer that one first.
+        guard formGuard.asking == nil else { return .terminateCancel }
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = Self.mainWindow {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        }
+        formGuard.confirmLeaving(onKeepEditing: { sender.reply(toApplicationShouldTerminate: false) }) {
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// Removes the Format menu, which the command audit emptied but could not delete.
@@ -280,10 +311,10 @@ private struct FlotillaCommands: Commands {
         CommandGroup(after: .sidebar) {
             Button(model.greta.overlayShown ? "Hide Greta" : "Ask Greta") {
                 // On her own page there is nothing to float: ⌘G goes to the chat that's already there.
-                present {
-                    if model.currentSection == .greta { return }
-                    model.greta.overlayShown.toggle()
-                }
+                // Not `present`: Greta floats over a form, she does not leave it.
+                if model.currentSection != .greta { model.greta.overlayShown.toggle() }
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "main")
             }
             .keyboardShortcut("g", modifiers: .command)
             .disabled(!model.gretaEnabled)
@@ -297,8 +328,12 @@ private struct FlotillaCommands: Commands {
     /// A command can be invoked after the last window was closed. Set the one-shot request
     /// before opening so `MainWindowView.onAppear` can consume it on its first pass; activation
     /// then makes that reopened window visible rather than leaving it behind another app.
-    private func present(_ request: () -> Void) {
-        request()
+    ///
+    /// Every one of these replaces what the window shows, so each asks `FormGuard` first. With no
+    /// unsaved form the request still runs before the window opens; with one, the window is
+    /// brought forward and asks, and the request runs only on Discard.
+    private func present(_ request: @escaping () -> Void) {
+        model.formGuard.confirmLeaving(request)
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "main")
     }
@@ -377,6 +412,8 @@ struct FlotillaApp: App {
                 // The chosen light and dark themes, for the bar and the background. Set once here,
                 // at the root, for the reason the tint was: set per view, it would be missed.
                 .environment(\.themeChoice, model.themeChoice)
+                // For `FormHeader`, which registers unsaved edits with it wherever it is drawn.
+                .environment(model.formGuard)
                 .task { await model.reloadUnlessLoading() }
                 // First run: ask, with Auto pre-selected. `needsAppearanceOnboarding` is
                 // false once answered, including when the answer was Auto — which is

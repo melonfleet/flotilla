@@ -190,8 +190,11 @@ struct GretaChatView: View {
                     if let draft = message.draft { draftCard(draft) }
                     if message.opensStacks == true {
                         Button("Open Suggestions") {
-                            onOpenDraft?()
-                            model.requestSuggestions(.containers)
+                            // Asked before the request: Containers consumes it the moment it is set.
+                            model.formGuard.confirmLeaving {
+                                onOpenDraft?()
+                                model.requestSuggestions(.containers)
+                            }
                         }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                     }
@@ -217,9 +220,12 @@ struct GretaChatView: View {
                 Text("Nothing runs until you press Run.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Open in Run Form") {
-                    model.pendingRunPrefill = draft.prefill
-                    onOpenDraft?()
-                    go(.containers)
+                    // Asked before the prefill, which a Run form already on screen would take.
+                    model.formGuard.confirmLeaving {
+                        model.pendingRunPrefill = draft.prefill
+                        onOpenDraft?()
+                        go(.containers)
+                    }
                 }
                 .buttonStyle(.borderedProminent).controlSize(.small)
             }

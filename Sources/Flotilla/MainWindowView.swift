@@ -46,6 +46,11 @@ struct MainWindowView: View {
         sortOrder: [KeyPathComparator(\HostRow.nameSortKey)])
 
     @State private var selection: Section? = .overview
+    /// What the sidebar's `List` highlights, kept apart from `selection` so a click can be *asked
+    /// about* before it takes effect: a click moves this, `navigate` decides whether `selection`
+    /// follows, and Keep Editing puts this back. Bound straight to `selection`, the section would
+    /// already have changed — and the form gone — by the time anything could ask.
+    @State private var sidebarSelection: Section? = .overview
 
     /// Icons-only mode — what collapsing the sidebar means here.
     ///
@@ -101,7 +106,7 @@ struct MainWindowView: View {
     ///   want visible continuously rather than buried in Settings.
     @ViewBuilder
     private var sidebar: some View {
-        List(selection: $selection) {
+        List(selection: $sidebarSelection) {
             // The ungrouped top block is what spans **everything** below it.
             //
             // Dashboard obviously does. Images does too, and that is not obvious: a machine is
@@ -268,16 +273,16 @@ struct MainWindowView: View {
     private var sectionContent: some View {
         switch selection ?? .overview {
         case .activity:
-            ActivityView(model: model, ui: activityUI) { selection = $0 }
+            ActivityView(model: model, ui: activityUI) { navigate(to: $0) }
         case .logs:
             LogsView(model: model, ui: logsUI)
         case .overview:
             // The tiles drill down, so Overview drives the sidebar selection — a panel that
             // shows you a problem but cannot take you to it is a poster.
-            OverviewView(model: model) { selection = $0 }
+            OverviewView(model: model) { navigate(to: $0) }
         case .hosts:
             // Each host's landing page is the per-Mac dashboard (6 October).
-            HostsView(model: model, ui: hostsUI) { selection = $0 }
+            HostsView(model: model, ui: hostsUI) { navigate(to: $0) }
         case .containers:
             ContainersView(model: model, ui: containersUI)
         case .images:
@@ -297,9 +302,9 @@ struct MainWindowView: View {
         case .settings:
             SettingsView(model: model)
         case .notifications:
-            NotificationsView(model: model) { selection = $0 }
+            NotificationsView(model: model) { navigate(to: $0) }
         case .greta:
-            GretaView(model: model) { selection = $0 }
+            GretaView(model: model) { navigate(to: $0) }
         }
     }
 
@@ -335,13 +340,15 @@ struct MainWindowView: View {
                 .overlay(alignment: .bottomTrailing) {
                     // Never over her own page, which is the same chat at full size (the owner).
                     if model.gretaEnabled, model.greta.overlayShown, selection != .greta {
-                        GretaOverlay(model: model) { selection = $0 }
+                        GretaOverlay(model: model) { navigate(to: $0) }
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
                 .animation(.easeOut(duration: 0.18), value: model.greta.overlayShown)
                 .onChange(of: selection, initial: true) { _, section in
                     model.currentSection = section
+                    // Requests and in-page links move `selection` directly; the sidebar follows.
+                    sidebarSelection = section
                     if section == .greta { model.greta.overlayShown = false }
                 }
                 // Pairing by code: the four words, on whichever screen is open. On the split view
@@ -412,6 +419,20 @@ struct MainWindowView: View {
                 }
             }
         }
+        .onChange(of: sidebarSelection) { _, clicked in
+            navigate(to: clicked)
+        }
+        // The one question for every way of leaving a form except its own Back — see `FormGuard`.
+        // Discard is destructive and Keep Editing is the cancel, so Escape and Return both keep.
+        .confirmationDialog(model.formGuard.asking?.text ?? "",
+                            isPresented: Binding(get: { model.formGuard.asking != nil },
+                                                 set: { if !$0 { model.formGuard.dialogDismissed() } }),
+                            titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { model.formGuard.discard() }
+            Button("Keep Editing", role: .cancel) { model.formGuard.keepEditing() }
+        } message: {
+            Text("Your changes have not been saved. Leaving now loses them.")
+        }
         .onChange(of: model.pendingSection) { _, requested in
             guard let requested else { return }
             // A menu request is for the form it names: an open Export or Import screen, which
@@ -427,6 +448,18 @@ struct MainWindowView: View {
             }
             // For a click on a macOS notification, which arrives outside SwiftUI (Q48).
             model.openMainWindow = { [openWindow] in openWindow(id: "main") }
+        }
+    }
+
+    /// Changes section the way a sidebar click does: at once, unless a form would lose unsaved edits,
+    /// in which case only after Discard. Keep Editing snaps the sidebar's highlight back.
+    ///
+    /// The in-page links (Overview's tiles, Greta's "go to") come through here too, so there is one
+    /// guarded way to change section from inside the window rather than one per caller.
+    private func navigate(to section: Section?) {
+        guard section != selection else { return }
+        model.formGuard.confirmLeaving(onKeepEditing: { sidebarSelection = selection }) {
+            selection = section
         }
     }
 

@@ -224,8 +224,10 @@ struct MenuBarView: View {
 
     /// As the app menu's commands do: set the one-shot request, bring Flotilla forward, open the
     /// window — which consumes the request on appearing, even if it had been closed.
-    private func present(_ request: () -> Void) {
-        request()
+    /// Asks first when a form has unsaved edits, like the app menus' `present`: every request here
+    /// replaces what the main window shows.
+    private func present(_ request: @escaping () -> Void) {
+        model.formGuard.confirmLeaving(request)
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "main")
     }

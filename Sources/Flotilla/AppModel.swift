@@ -1815,6 +1815,12 @@ final class AppModel {
     // keeps the window's selection owned by the window while still letting commands land
     // somewhere real. Without them those commands would open a blank window and look broken.
 
+    /// The forms with unsaved edits, and the one question every way of leaving them asks. Requests
+    /// that change what the window shows go through `formGuard.confirmLeaving` *before* setting any
+    /// of the flags below: a section view consumes its own flag the moment it is set, so asking
+    /// afterwards would be too late.
+    let formGuard = FormGuard()
+
     /// A section the popover asked the window to show. Cleared by `MainWindowView`.
     var pendingSection: Section?
     /// Whether the popover asked for the Run sheet. Cleared by `ContainersView`.
