@@ -232,8 +232,9 @@ private struct FlotillaCommands: Commands {
         CommandGroup(replacing: .toolbar) {
             Button("Go To…") {
                 // Not `present`: focusing the box replaces nothing, so it asks nothing. A pick asks
-                // (`ToolbarSearch.pick`) — asking here as well made ⌘K ask twice.
-                model.toolbarSearch.focus()
+                // (`ToolbarSearch.pick`) — asking here as well made ⌘K ask twice. It opens on the
+                // commands and sections before a key is pressed; ⌘F below only places the cursor.
+                model.toolbarSearch.focus(browsing: true)
                 showWindow()
             }
                 .keyboardShortcut("k", modifiers: .command)

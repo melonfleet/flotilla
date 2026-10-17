@@ -7,8 +7,8 @@ import Testing
         .init(title: "Run Container…", isCommand: true),
         .init(title: "New Group…", isCommand: true),
         .init(title: "Pull Image…", isCommand: true),
-        .init(title: "Containers", isCommand: false),
-        .init(title: "Images", isCommand: false),
+        .init(title: "Containers", isCommand: false, isSection: true),
+        .init(title: "Images", isCommand: false, isSection: true),
         .init(title: "web", subtitle: "Container · running · nginx:latest", isCommand: false),
         .init(title: "redis:8", subtitle: "Image", isCommand: false),
     ]
@@ -214,5 +214,25 @@ import Testing
         #expect(released == nil)
         list.refresh { [{}] }
         #expect(list.items.isEmpty)
+    }
+
+    /// ⌘K lists every command and every section before a key is pressed (Kamal, 17 October); with no
+    /// ⌘K, an empty box lists nothing, so a click or ⌘F to filter a page doesn't open a list.
+    @Test func browsingListsCommandsAndSectionsBeforeTyping() {
+        let browsing = SearchBox.results(for: "", among: candidates, browsing: true)
+        #expect(browsing.commands == [0, 1, 2])
+        #expect(browsing.places == [3, 4])
+        #expect(SearchBox.results(for: "", among: candidates).isEmpty)
+    }
+
+    @Test func browseShowsTheDropdownWhileFocusedAndEndsOnBlur() {
+        var state = SearchBox.State()
+        state.browse()
+        #expect(!state.dropdownShown)          // not until the box has focus
+        _ = state.focusChanged(true)
+        #expect(state.dropdownShown)
+        _ = state.focusChanged(false)
+        _ = state.focusChanged(true)
+        #expect(!state.dropdownShown)          // a later click or ⌘F is not ⌘K
     }
 }

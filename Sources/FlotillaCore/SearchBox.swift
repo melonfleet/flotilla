@@ -38,9 +38,11 @@ public enum SearchBox {
         public var subtitle: String?
         /// A command (Run Container…) rather than a place (a section, or a container by name).
         public var isCommand: Bool
+        /// A section of the window (Containers, Volumes…): what ⌘K lists before anything is typed.
+        public var isSection: Bool
 
-        public init(title: String, subtitle: String? = nil, isCommand: Bool) {
-            self.title = title; self.subtitle = subtitle; self.isCommand = isCommand
+        public init(title: String, subtitle: String? = nil, isCommand: Bool, isSection: Bool = false) {
+            self.title = title; self.subtitle = subtitle; self.isCommand = isCommand; self.isSection = isSection
         }
     }
 
@@ -62,12 +64,18 @@ public enum SearchBox {
     ///
     /// The palette's matching, unchanged: every word must appear in the title or the subtitle, and a
     /// title that starts with what was typed comes first, the rest staying in the order given. With
-    /// nothing typed, nothing is listed, except after a `>`, which lists every command.
-    public static func results(for text: String, among candidates: [Candidate],
+    /// nothing typed, nothing is listed, except after a `>`, which lists every command, and when
+    /// `browsing` — ⌘K — which lists every command and every section, as the old palette did before a
+    /// key was pressed (Kamal, 17 October: ⌘K showing only a cursor read as broken).
+    public static func results(for text: String, among candidates: [Candidate], browsing: Bool = false,
                                commandLimit: Int = 8, placeLimit: Int = 40) -> Results {
         let input = read(text)
         let words = input.words
-        if words.isEmpty && !input.commandsOnly { return Results() }
+        if words.isEmpty && !input.commandsOnly {
+            guard browsing else { return Results() }
+            return Results(commands: candidates.indices.filter { candidates[$0].isCommand },
+                           places: candidates.indices.filter { candidates[$0].isSection })
+        }
 
         let matching = candidates.indices.filter { index in
             let candidate = candidates[index]
@@ -118,12 +126,22 @@ public enum SearchBox {
         public var dropdownClosed = false
         /// The highlighted entry, as an index into `Results.all`; nil until an arrow is pressed.
         public var highlighted: Int?
+        /// ⌘K opened the box: the dropdown shows commands and sections before anything is typed.
+        /// ⌘F and a click only put the cursor in the box, as find does everywhere on the Mac.
+        public private(set) var browsing = false
         public init() {}
 
         public var input: Input { SearchBox.read(text) }
         /// What the page should be filtering: the text, or nothing after a `>`.
         public var pageFilter: String { input.pageFilter ?? "" }
-        public var dropdownShown: Bool { isFocused && !text.isEmpty && !dropdownClosed }
+        public var dropdownShown: Bool { isFocused && (browsing || !text.isEmpty) && !dropdownClosed }
+
+        /// ⌘K: show the commands and sections as soon as the box has focus.
+        public mutating func browse() {
+            browsing = true
+            dropdownClosed = false
+            highlighted = nil
+        }
 
         /// The user typed. Returns the page's new filter when it changed, for the caller to write
         /// through, and nil when the page should be left alone.
@@ -162,6 +180,7 @@ public enum SearchBox {
         /// The app gives the page initial focus once, when its window first becomes key.
         public mutating func focusChanged(_ focused: Bool) -> Bool {
             isFocused = focused
+            if !focused { browsing = false }
             dropdownClosed = false
             highlighted = nil
             return true

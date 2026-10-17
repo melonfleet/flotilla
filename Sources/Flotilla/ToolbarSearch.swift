@@ -76,8 +76,9 @@ final class ToolbarSearch {
 
     var results: SearchBox.Results {
         SearchBox.results(for: text, among: entries.map {
-            SearchBox.Candidate(title: $0.title, subtitle: $0.subtitle, isCommand: $0.kind == .action)
-        })
+            SearchBox.Candidate(title: $0.title, subtitle: $0.subtitle, isCommand: $0.kind == .action,
+                                isSection: $0.kind == .section)
+        }, browsing: state.browsing)
     }
 
     /// The highlight Return would open. With no arrow pressed, the first entry — except where Return
@@ -119,8 +120,10 @@ final class ToolbarSearch {
 
     // MARK: Focus
 
-    /// ⌘K, ⌘F and View ▸ Go To…: focus the box and select its text.
-    func focus() {
+    /// ⌘K, ⌘F and View ▸ Go To…: focus the box and select its text. `browsing` (⌘K, Go To…) also
+    /// opens the dropdown on its commands and sections straight away; ⌘F only places the cursor.
+    func focus(browsing: Bool = false) {
+        if browsing { state.browse() }
         focusRequested = true
     }
     /// Give focus back to the page.
@@ -175,7 +178,8 @@ final class ToolbarSearch {
             return true
         case 36, 76:  // Return, Enter
             let results = results
-            if dropdownShown, let index = activeIndex(in: results) {
+            if dropdownShown, let index = activeIndex(in: results),
+               results.all.indices.contains(index), entries.indices.contains(results.all[index]) {
                 open?(entries[results.all[index]])
             } else if let submit = scope?.submit, !input.commandsOnly {
                 state.dropdownClosed = true
@@ -398,7 +402,8 @@ struct ToolbarSearchField: View {
     /// VoiceOver reads the highlighted entry as the arrows move, since focus stays in the field.
     private func announce(_ index: Int?) {
         let results = box.results
-        guard let index, results.all.indices.contains(index) else { return }
+        guard let index, results.all.indices.contains(index),
+              box.entries.indices.contains(results.all[index]) else { return }
         let item = box.entries[results.all[index]]
         let words = [item.title, item.subtitle].compactMap { $0 }.joined(separator: ", ")
         AccessibilityNotification.Announcement("\(words), \(index + 1) of \(results.all.count)").post()
@@ -448,8 +453,8 @@ struct ToolbarSearchDropdown: View {
                                 .foregroundStyle(.secondary)
                                 .padding(10)
                         }
-                        group("Commands", indexes: results.commands, offset: 0, active: active)
-                        group("Go to", indexes: results.places, offset: results.commands.count, active: active)
+                        group("Commands", items: shown(results.commands), offset: 0, active: active)
+                        group("Go to", items: shown(results.places), offset: results.commands.count, active: active)
                     }
                     .padding(6)
                     .background(GeometryReader { proxy in
@@ -491,17 +496,25 @@ struct ToolbarSearchDropdown: View {
         return "Filtering \(model.currentSection?.title ?? "this page")"
     }
 
+    /// The entries behind `indexes`, resolved once while drawing. The entries are emptied when the box
+    /// loses focus, and SwiftUI can draw this dropdown once more with indexes from before — quitting
+    /// with it open did, every time — so an index that no longer resolves is skipped, never subscripted.
+    private func shown(_ indexes: [Int]) -> [(index: Int, item: PaletteItem)] {
+        let entries = box.entries
+        return indexes.compactMap { entries.indices.contains($0) ? ($0, entries[$0]) : nil }
+    }
+
     @ViewBuilder
-    private func group(_ title: String, indexes: [Int], offset: Int, active: Int?) -> some View {
-        if !indexes.isEmpty {
+    private func group(_ title: String, items: [(index: Int, item: PaletteItem)], offset: Int, active: Int?) -> some View {
+        if !items.isEmpty {
             Text(title)
                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 2)
                 .accessibilityAddTraits(.isHeader)
-            ForEach(Array(indexes.enumerated()), id: \.element) { position, index in
-                let item = box.entries[index]
+            ForEach(Array(items.enumerated()), id: \.element.index) { position, entry in
+                let item = entry.item
                 row(item, isSelected: active == offset + position)
-                    .id(index)
+                    .id(entry.index)
                     .onTapGesture { box.open?(item) }
                     .accessibilityAction { box.open?(item) }
             }
