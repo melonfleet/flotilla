@@ -355,7 +355,6 @@ struct DNSView: View {
         List(displayedRows, selection: $selection) { row in
             listRow(row)
                 .listRowInsets(EdgeInsets())
-                .accessibilityActions { rowAccessibilityActions(row) }
         }
         .listStyle(.inset)
         .contextMenu(forSelectionType: HostedDNS.ID.self) { ids in
@@ -443,29 +442,6 @@ struct DNSView: View {
         }
     }
 
-    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it
-    /// are not reachable any other way. An action the button would refuse is not offered.
-    @ViewBuilder
-    private func rowAccessibilityActions(_ row: HostedDNS) -> some View {
-        let domain = row.domain
-        let blocked = model.dnsChangeProblem(on: row.host) != nil || working
-        Button("Open \(row.name)") { form = .manage(row.id) }
-        if !domain.isHostAlias, !blocked {
-            if domain.registersContainers {
-                Button("Stop using \(row.name) for containers") { changeHost = row.host; pendingChange = .stop(domain.name) }
-            } else if domain.resolverInstalled {
-                Button("Use \(row.name) for containers") { changeHost = row.host; pendingChange = .use(domain.name) }
-            }
-        }
-        if !domain.resolverInstalled, !blocked {
-            Button("Set up \(row.name) on \(row.host.isLocal ? "this Mac" : row.hostName)") {
-                setUp(domain.name, on: row.host)
-            }
-        }
-        if canDelete(row), !working {
-            Button("Delete \(row.name)") { requestDelete([row]) }
-        }
-    }
 
     private var cards: some View {
         ResourceCardGrid {

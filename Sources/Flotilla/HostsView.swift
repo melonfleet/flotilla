@@ -644,7 +644,6 @@ struct HostsView: View {
                 if row.header != nil { headerRow(row) } else { hostRow(row) }
             }
             .listRowInsets(EdgeInsets())
-            .accessibilityActions { rowAccessibilityActions(row) }
         }
         .listStyle(.inset)
         .contextMenu(forSelectionType: HostRow.ID.self) { ids in
@@ -878,39 +877,6 @@ struct HostsView: View {
         }
     }
 
-    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it,
-    /// and the Update and Install links on its first line, are not reachable any other way.
-    @ViewBuilder
-    private func rowAccessibilityActions(_ row: HostRow) -> some View {
-        if let header = row.header {
-            let open = !ui.collapsedIDs.contains(row.id)
-            Button(open ? "Hide the hosts in \(row.name)" : "Show the \(header.hostIDs.count) hosts in \(row.name)") {
-                toggleGroup(row.id)
-            }
-        } else {
-            Button(row.imported != nil ? "Pair \(row.name)" : "Open \(row.name)") { open(row) }
-            if let peer = row.peer {
-                if peer.status == .pending {
-                    Button("Approve \(row.name)") { hostMode.approve(peer.fingerprint) }
-                    Button("Turn away \(row.name)") { hostMode.reject(peer.fingerprint) }
-                }
-                if peer.isTrusted {
-                    if model.updateState(peer.fingerprint) == .available, !hostMode.rollingOut {
-                        Button("Update Flotilla on \(row.name)") { Task { await model.updateHost(peer.fingerprint) } }
-                    }
-                    let runtime = model.hostRuntimeState(peer.fingerprint)
-                    if runtime.needsSetup {
-                        Button("\(runtime == .missing ? "Install" : "Upgrade") container on \(row.name)") {
-                            pendingRuntime = row
-                        }
-                    }
-                }
-            }
-            if !row.isThisMac {
-                Button("Remove \(row.name)") { pendingForget = row }
-            }
-        }
-    }
 
     private var runtimeQuestion: String {
         guard let row = pendingRuntime else { return "" }

@@ -314,7 +314,6 @@ struct ClustersView: View {
         List(displayedClusters, selection: $selection) { row in
             listRow(row)
                 .listRowInsets(EdgeInsets())
-                .accessibilityActions { rowAccessibilityActions(row) }
         }
         .listStyle(.inset)
         .contextMenu(forSelectionType: HostedCluster.ID.self) { ids in
@@ -388,24 +387,6 @@ struct ClustersView: View {
         return parts.joined(separator: ", ")
     }
 
-    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it
-    /// are not reachable any other way. An action the button would refuse is not offered.
-    @ViewBuilder
-    private func rowAccessibilityActions(_ row: HostedCluster) -> some View {
-        let cluster = row.cluster
-        if !model.isBusy(row.host.rowID(cluster.node), kind: .cluster) {
-            if !cluster.isRunning {
-                Button("Recreate \(cluster.node)") { pendingRecreate = row }
-            }
-            if cluster.isRunning, row.host.isLocal {
-                Button("Load an image into \(cluster.node)") { loadImageTarget = cluster }
-            }
-            if row.host.isLocal {
-                Button("Write kubeconfig for \(cluster.node)") { Task { await model.writeKubeconfig(for: cluster) } }
-            }
-            Button("Delete \(cluster.node)") { pendingDelete = row }
-        }
-    }
 
     private var cards: some View {
         ResourceCardGrid {

@@ -294,7 +294,6 @@ struct RegistriesView: View {
         List(displayedRows, selection: $selection) { row in
             listRow(row)
                 .listRowInsets(EdgeInsets())
-                .accessibilityActions { rowAccessibilityActions(row) }
         }
         .listStyle(.inset)
         .contextMenu(forSelectionType: RegistryRow.ID.self) { ids in
@@ -405,28 +404,6 @@ struct RegistriesView: View {
         }
     }
 
-    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it
-    /// are not reachable any other way.
-    @ViewBuilder
-    private func rowAccessibilityActions(_ row: RegistryRow) -> some View {
-        Button("Open \(row.name)") { form = .manage(row.id) }
-        if row.canSignIn, model.runtimeUsable {
-            Button(row.isSignedIn ? "Switch account on \(row.name)" : "Sign in to \(row.name)") {
-                form = .manage(row.id)
-            }
-        }
-        if row.isSignedIn, model.runtimeUsable {
-            Button("Sign out of \(row.name)") { pendingSignOut = [row] }
-        }
-        if row.id != model.defaultRegistry {
-            Button("Set \(row.name) as default") { model.setDefaultRegistry(row.id) }
-        }
-        if row.isListed {
-            Button("Remove \(row.name) from the list") { requestRemove([row]) }
-        } else {
-            Button("Add \(row.name) to the list") { addToList(row) }
-        }
-    }
 
     private func signInHelp(_ need: SignInNeed) -> String {
         switch need {

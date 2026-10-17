@@ -1688,7 +1688,6 @@ struct ContainersView: View {
                 // The row paints its own padding, so its hover wash and the list's selection fill
                 // reach the same edges.
                 .listRowInsets(EdgeInsets())
-                .accessibilityActions { rowAccessibilityActions(row) }
         }
         .listStyle(.inset)
         // On the List, not on a row: a row's `.contextMenu` covers that row for one click and
@@ -1878,43 +1877,6 @@ struct ContainersView: View {
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
-    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it
-    /// are not reachable any other way. The same calls the buttons make, with the same busy and
-    /// disabled rules — an action the button would refuse is not offered.
-    @ViewBuilder
-    private func rowAccessibilityActions(_ row: ContainerRow) -> some View {
-        switch row.kind {
-        case .group:
-            if let group = row.group {
-                Button("Edit \(group.name)") { editingGroup = .existing(group.id) }
-                if canStart(group) { Button("Start \(group.name)") { Task { await model.startGroup(group) } } }
-                if canStop(group) { Button("Stop \(group.name)") { Task { await model.stopGroup(group) } } }
-                Button("Delete \(group.name)") { pendingGroupDelete = GroupDeleteRequest(group: group, mode: .ask) }
-            }
-        case .container, .member:
-            if let container = row.container {
-                let host = row.host
-                let busy = model.isBusy(host.rowID(container.id), kind: .container)
-                let running = AppModel.isRunning(container)
-                Button("Open \(container.id)") { openDetail(row.id) }
-                if !busy {
-                    if running {
-                        Button("Stop \(container.id)") { Task { await model.perform(.stop, on: container, host: host) } }
-                        Button("Restart \(container.id)") { Task { await model.perform(.restart, on: container, host: host) } }
-                    } else {
-                        Button("Start \(container.id)") { Task { await model.perform(.start, on: container, host: host) } }
-                    }
-                    if host.isLocal {
-                        Button("Logs for \(container.id)") { openDetail(container.id, tab: .logs) }
-                        if running { Button("Terminal in \(container.id)") { openDetail(container.id, tab: .terminal) } }
-                        Button("Delete \(container.id)") { requestDelete(container) }
-                    } else {
-                        Button("Delete \(container.id)") { confirmingRemoteDelete = RemoteTarget(container: container, host: host) }
-                    }
-                }
-            }
-        }
-    }
 
     /// The disclosure caret. A group with no services has none — an empty disclosure is the
     /// control-that-does-nothing failure in miniature — but keeps the space, so names line up.

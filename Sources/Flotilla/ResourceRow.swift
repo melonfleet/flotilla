@@ -24,9 +24,15 @@ import SwiftUI
 /// has to know whether it is selected, to swap the link-blue name for `.primary` and to not paint
 /// its hover wash over the fill.
 ///
-/// **One element for VoiceOver.** The row reads as `summary` and the actions it carries are
-/// exposed as custom actions by whoever places it (`.accessibilityActions`) — the buttons inside
-/// are hidden from the accessibility tree, so every one of them must have an action there.
+/// **A labelled container for VoiceOver, never a flattened element.** The row is announced as
+/// `summary`, and the controls inside it — the title, the chips' links, the icon buttons and the
+/// `⋮` menu — stay in the accessibility tree. That is deliberate: the `⋮` menu is the same
+/// builder the right-click menu uses, so VoiceOver is offered exactly what the pointer is, in the
+/// same order, with the same disabled items and the same confirmations. This used to be
+/// `.accessibilityElement(children: .ignore)` with a hand-written `.accessibilityActions` list in
+/// each section, and the five lists drifted from their menus (Hosts lost This Mac's runtime
+/// controls, Rename, Connect and Remove Access; Registries lost Browse, Copy and Tags).
+/// `Scripts/check-row-accessibility.sh` holds the line.
 struct ResourceRow<Leading: View, Chips: View, Metrics: View, Actions: View>: View {
     let title: String
     /// Opens the row's page. `nil` makes the title plain text, for a row that has no page.
@@ -79,15 +85,21 @@ struct ResourceRow<Leading: View, Chips: View, Metrics: View, Actions: View>: Vi
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help(detailHelp ?? detail)
+                    // `summary` already says it.
+                    .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if reservesMetrics {
-                metrics
-                    .frame(width: Self.metricsWidth, alignment: .trailing)
-            } else {
-                metrics
+            Group {
+                if reservesMetrics {
+                    metrics
+                        .frame(width: Self.metricsWidth, alignment: .trailing)
+                } else {
+                    metrics
+                }
             }
+            // The figures are in `summary` too.
+            .accessibilityHidden(true)
 
             actions
                 .fixedSize()
@@ -102,7 +114,7 @@ struct ResourceRow<Leading: View, Chips: View, Metrics: View, Actions: View>: Vi
         .contentShape(.rect)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.08), value: hovering)
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(summary)
     }
 
