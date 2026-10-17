@@ -18,7 +18,7 @@ enum ImageDetailTab: String, CaseIterable, Identifiable {
 
 /// Detail for one image, embedded like every other detail screen.
 ///
-/// Images were the last section with no detail at all — the strip's `open` could only select the
+/// Images were the last section with no detail at all — the Activity feed's open could only select the
 /// row, because there was nowhere to go. There was a place all along: `image inspect` is
 /// allowlisted, implemented in `ContainerCLI` twice over, has a captured fixture, and was never
 /// called from the app.

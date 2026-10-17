@@ -65,7 +65,7 @@ extension ActivityKind {
 /// or an action it performed.
 ///
 /// It used to be observations only, and that had a hole: **a restart never appeared in the
-/// activity strip.** The poll loop compares one refresh with the next, and a restart of a
+/// Activity feed.** The poll loop compares one refresh with the next, and a restart of a
 /// running thing ends where it began, so there is no change to see. Start and stop each leave a
 /// lasting state, which is why those two did show up. Waiting for a faster poll would not fix
 /// it either — the stop and the start can both land between two polls.
@@ -75,7 +75,7 @@ extension ActivityKind {
 /// distinguishable rather than dressing one up as the other.
 ///
 /// Observations still matter and are still recorded: they are the only way a change made outside
-/// Flotilla — someone running `container stop` in a terminal — reaches the strip at all.
+/// Flotilla — someone running `container stop` in a terminal — reaches the feed at all.
 struct ContainerEvent: Identifiable, Hashable {
     let id = UUID()
     let date: Date

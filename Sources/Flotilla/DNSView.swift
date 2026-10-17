@@ -82,14 +82,6 @@ struct DNSView: View {
                     content
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  open: { form = .manage($0) },
-                                  canOpen: { name in rows.contains { $0.id == name } })
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -284,12 +276,6 @@ struct DNSView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(.quaternary.opacity(0.3))
-        }
-    }
-
-    private var activityEntries: [ActivityStrip.Entry] {
-        model.events(ofKind: .dns).map {
-            ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0)
         }
     }
 

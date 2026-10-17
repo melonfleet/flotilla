@@ -47,7 +47,10 @@ struct ResourceRow<Leading: View, Chips: View, Metrics: View, Actions: View>: Vi
 
     /// Reserved even when a row has no figures, so the actions line up down the list instead of
     /// stepping sideways between running and stopped rows.
-    static var metricsWidth: CGFloat { 64 }
+    ///
+    /// Wide enough for "Mem 1.33 GB" — the figures are labelled, so they are longer than the
+    /// bare numbers they replaced.
+    static var metricsWidth: CGFloat { 88 }
 
     @State private var hovering = false
 
@@ -140,21 +143,44 @@ extension View {
     }
 }
 
-/// Two small figures stacked in a row's metrics slot — CPU over memory for a container. Monospaced
-/// digits so the column does not shimmer as the numbers change.
+/// Two small labelled figures stacked in a row's metrics slot — "CPU 11%" over "Mem 1.33 GB" for
+/// a container. Monospaced digits so the column does not shimmer as the numbers change, and
+/// right-aligned so the figures' right edges line up down the list.
+///
+/// VoiceOver reads one phrase, "CPU 11 percent, memory 1.33 gigabytes", rather than four
+/// fragments.
 struct ResourceFigures: View {
     let top: String
     let bottom: String
+    var topLabel = "CPU"
+    var bottomLabel = "Mem"
     var help: String
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Text(top)
-            Text(bottom)
+            figure(topLabel, top)
+            figure(bottomLabel, bottom)
         }
         .font(.caption.monospacedDigit())
-        .foregroundStyle(.secondary)
         .lineLimit(1)
         .help(help)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(topLabel) \(Self.spoken(top)), \(bottomLabel == "Mem" ? "memory" : bottomLabel) \(Self.spoken(bottom))")
+    }
+
+    private func figure(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 4) {
+            Text(label).foregroundStyle(.tertiary)
+            Text(value).foregroundStyle(.secondary)
+        }
+    }
+
+    /// "11%" → "11 percent", "1.33 GB" → "1.33 gigabytes".
+    static func spoken(_ figure: String) -> String {
+        figure
+            .replacingOccurrences(of: "%", with: " percent")
+            .replacingOccurrences(of: " GB", with: " gigabytes")
+            .replacingOccurrences(of: " MB", with: " megabytes")
+            .replacingOccurrences(of: " KB", with: " kilobytes")
     }
 }

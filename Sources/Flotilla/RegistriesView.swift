@@ -41,14 +41,6 @@ struct RegistriesView: View {
                     content
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  open: { form = .manage($0) },
-                                  canOpen: { host in rows.contains { $0.id == host } })
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -251,12 +243,6 @@ struct RegistriesView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(.quaternary.opacity(0.3))
-        }
-    }
-
-    private var activityEntries: [ActivityStrip.Entry] {
-        model.events(ofKind: .registry).map {
-            ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0)
         }
     }
 

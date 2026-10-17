@@ -224,16 +224,6 @@ struct HostsView: View {
                     content
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  open: { subject in
-                                      openHost = model.hostRows.first { $0.name == subject }?.id ?? HostRow.thisMacID
-                                  },
-                                  canOpen: { _ in true })
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -639,13 +629,6 @@ struct HostsView: View {
             .padding(.vertical, 8)
             .background(.quaternary.opacity(0.3))
         }
-    }
-
-    /// The runtime's starts and stops, and hosts paired, approved and removed.
-    private var activityEntries: [ActivityStrip.Entry] {
-        (model.events(ofKind: .runtime) + model.events(ofKind: .host))
-            .sorted { $0.date > $1.date }
-            .map { ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0) }
     }
 
     // MARK: Content

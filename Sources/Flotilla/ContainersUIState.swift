@@ -34,11 +34,6 @@ final class ContainersUIState {
     /// view is rebuilt on every sidebar change, and an open group would silently close.
     var expandedGroupIDs: Set<String> = []
 
-    /// Whether the recent-activity band at the bottom of the list is open. Here rather than in
-    /// the view for the same reason everything else is: the section view is rebuilt on every
-    /// sidebar change, so a collapse would silently undo itself.
-    var activityExpanded = true
-
     /// **By name**, not running-first.
     ///
     /// This reverses the running-first default from `DECISIONS.md` Q2, at the owner's direction on

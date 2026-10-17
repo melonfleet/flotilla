@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// ‹ › through the list a detail page was opened from, in a glass capsule at the header's
+/// ‹ › through the list a detail page was opened from, in the same glass cluster as the action buttons, at the header's
 /// trailing edge — like Back and Forward in Finder.
 ///
 /// One view for all five detail pages; each used to carry its own copy with its own strings.
@@ -28,20 +28,17 @@ struct DetailStepper: View {
     let next: () -> Void
 
     var body: some View {
-        GlassEffectContainer(spacing: 6) {
-            HStack(spacing: 6) {
-                IconActionButton(systemImage: "chevron.left", label: "Previous \(singular)",
-                                 help: tip("Previous \(singular)"), disabled: index == nil || index == 0,
-                                 action: previous)
-                    .keyboardShortcut("[", modifiers: .command)
-                IconActionButton(systemImage: "chevron.right", label: "Next \(singular)",
-                                 help: tip("Next \(singular)"), disabled: index == nil || index == count - 1,
-                                 action: next)
-                    .keyboardShortcut("]", modifiers: .command)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .glassEffect(in: .capsule)
+        // The same `ActionCluster` as the action buttons beside it — one glass shape, height and
+        // padding in the header, not a rounded rectangle next to a capsule.
+        ActionCluster {
+            IconActionButton(systemImage: "chevron.left", label: "Previous \(singular)",
+                             help: tip("Previous \(singular)"), disabled: index == nil || index == 0,
+                             action: previous)
+                .keyboardShortcut("[", modifiers: .command)
+            IconActionButton(systemImage: "chevron.right", label: "Next \(singular)",
+                             help: tip("Next \(singular)"), disabled: index == nil || index == count - 1,
+                             action: next)
+                .keyboardShortcut("]", modifiers: .command)
         }
         .fixedSize()
         .help(position)

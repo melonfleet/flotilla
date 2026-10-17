@@ -18,11 +18,6 @@ final class MachinesUIState {
     var filter: MachinesView.Filter = .all
     var search = ""
 
-    /// Whether the recent-activity band at the bottom of the list is open. Here rather than in
-    /// the view for the same reason everything else is: the section view is rebuilt on every
-    /// sidebar change, so a collapse would silently undo itself.
-    var activityExpanded = true
-
     /// **By name**, not by state.
     ///
     /// This was running-first, and running-first has a flaw that only shows up in use: stopping

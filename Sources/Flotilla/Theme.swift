@@ -230,7 +230,7 @@ extension Theme {
     ///
     /// This is the **third** copy of the rule, found while checking the Activity section after
     /// the other two were consolidated. All three had drifted: `ActivityView` painted `present`
-    /// green while `ActivityStrip` painted it grey, and both fell through to amber for anything
+    /// green while the (since removed) activity strip painted it grey, and both fell through to amber for anything
     /// unrecognised — the "every unknown state is a warning" default that made a dead failure
     /// rule invisible in the first place. Unrecognised is now neutral, and `unknown` — the one
     /// state that means the runtime cannot say — is the only thing that reads as a problem.

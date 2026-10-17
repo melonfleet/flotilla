@@ -87,28 +87,9 @@ struct VolumesView: View {
                 }
                 // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
                 // unreachable section is a `ContentUnavailableView`, which takes only its own
-                // height, and the strip below then rode up under it, halfway up the window (the
+                // height, and the toolbar then rode down to the middle of the window (the
                 // owner, on an empty Volumes, 5 October). Machines already did this.
                 .frame(maxHeight: .infinity, alignment: .top)
-                // Same band as Containers and Machines. See `ResourceUIState.activityExpanded`
-                // for why it is collapsible: on this section it is usually empty.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  // The detail screen, as in every other section. This was
-                                  // `{ _ in }` — a row that looked like a link and did nothing —
-                                  // then briefly the Inspect sheet, and now the same destination
-                                  // clicking the name gives.
-                                  open: { detailTarget = DetailTarget(name: $0) },
-                                  // Matched on `name`, the key the feed records volumes by.
-                                  // It equals `id` on every volume the CLI returns, but matching
-                                  // the feed's own key is what keeps that from mattering — the
-                                  // images strip below is keyed on `reference` for the same
-                                  // reason, and there the two genuinely differ.
-                                  canOpen: { name in model.volumes.contains { $0.name == name } })
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -385,14 +366,6 @@ struct VolumesView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(.quaternary.opacity(0.3))
-        }
-    }
-
-    /// This section's slice of the one activity feed. Rows do not navigate — you are already
-    /// on the section they belong to.
-    private var activityEntries: [ActivityStrip.Entry] {
-        model.events(ofKind: .volume).map {
-            ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0)
         }
     }
 

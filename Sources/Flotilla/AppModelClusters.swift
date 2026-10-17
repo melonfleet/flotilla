@@ -35,7 +35,7 @@ extension AppModel {
     }
 
     /// A first sighting is not a transition — the rule the container and machine feeds follow,
-    /// for the same reason: announcing every cluster present at launch would fill the strip with
+    /// for the same reason: announcing every cluster present at launch would fill the feed with
     /// news of nothing having happened.
     func recordClusterTransitions(previous: [K8sNode], current: [K8sNode]) {
         let before = Dictionary(uniqueKeysWithValues: previous.map { ($0.node, $0.state) })

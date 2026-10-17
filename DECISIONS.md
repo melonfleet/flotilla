@@ -2411,3 +2411,19 @@ the thing is and what it is doing in the same space.
    every action it carries is a custom action.
 9. **The other sections follow** in the same pattern: Machines, Images, Volumes, Networks.
    Until each does, its table stands. Containers only in this change.
+
+## Q57 — The Recent activity strip is removed (settled 2026-10-17)
+
+Removed 17 October at Kamal's request; the Activity section has it all. The "Recent activity"
+band at the bottom of Containers, Images, Machines, Volumes, Networks, Registries, Hosts, DNS and
+Clusters duplicated the sidebar's Activity section and made the pages look busy. `ActivityStrip`
+and the per-page `activityExpanded` state are deleted.
+
+- **Kept:** the sidebar's Activity section, each detail page's own "Recent events" card, and all
+  recording (`recordExistence`, performed actions, transitions). Notifications and Activity read it.
+- Every page keeps its own `.frame(maxHeight: .infinity, alignment: .top)`; the strip was never
+  what bounded them.
+- Same round: figures on a running row are labelled ("CPU 11%", "Mem 1.33 GB"); the detail header's
+  ‹ › stepper uses `ActionCluster`, the same glass as the action buttons; a stopped container's or
+  machine's detail header packs its buttons (`reserveSlots: false`) while list rows keep the
+  fixed slots that line the columns up.

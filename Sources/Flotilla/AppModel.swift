@@ -1650,7 +1650,7 @@ final class AppModel {
     /// filter over it. One store, several views.
     ///
     /// Observable, not `@ObservationIgnored`. The dashboard card got away with being ignored
-    /// because it rebuilds whenever `containers` changes anyway; the activity strips must update
+    /// because it rebuilds whenever `containers` changes anyway; the Activity section must update
     /// on their own. It is only written when something actually happened, so it does not churn.
     ///
     /// In memory and bounded. Persisting it needs a real store, which is a Phase 4 decision

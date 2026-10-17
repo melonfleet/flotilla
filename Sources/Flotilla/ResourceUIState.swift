@@ -31,13 +31,6 @@ final class ResourceUIState<Row: Identifiable> {
     /// Group rows the user has closed — Hosts' groups start open, so it keeps the closed ones.
     var collapsedIDs: Set<String> = []
 
-    /// Whether the recent-activity band is open.
-    ///
-    /// The owner chose to put the band on these three sections too, for uniformity, having been told
-    /// it will usually be empty: images, volumes and networks change rarely, and the feed only
-    /// covers what has happened since launch. Collapsible for exactly that reason.
-    var activityExpanded = true
-
     /// The selected filter, stored as its **id string** rather than a typed enum.
     ///
     /// Each section's filter means something different — built-in versus user-defined for

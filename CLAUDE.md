@@ -224,6 +224,8 @@ that we *built* the right command; almost nothing checked the command was
   refreshes. Verified: a CLI stop-then-start of `cache` produced **no event at all**. Such
   actions are now recorded by whoever performs them, with `ContainerEvent.action` set so a
   performed action stays distinguishable from an observed transition.
+- **(The activity strip described in the next two lessons was removed 17 October at Kamal's
+  request; the Activity section has it all. The lessons stand.)**
 - **One unbounded child can scroll the whole window.** The activity strip broke Machines
   outright — sidebar scrolled up behind the title bar, table showing only filler rows —
   and then broke Containers too once I "simplified" it. Cause: the strip's **empty-state**

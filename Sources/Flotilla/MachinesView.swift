@@ -124,20 +124,6 @@ struct MachinesView: View {
                 // `ContentUnavailableView` rather than a table, which floats the control band
                 // into the middle of the window. The toolbar is chrome; it stays at the top.
                 .frame(maxHeight: .infinity, alignment: .top)
-                // The strip needed `ActivityStrip`'s **empty** branch bounding before it could
-                // live here. This section had no events at all — `refreshMachines` recorded
-                // none until today — so it always took that branch, which had no height, grew
-                // the stack past the window, and scrolled the sidebar out of sight. Containers
-                // happened to have one event and took the bounded `ScrollView` branch, which is
-                // why only this section broke, and why removing the `ScrollView` then broke
-                // Containers too. One unbounded child explains all three observations.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  open: { detailTarget = DetailTarget(id: $0) })
-                }
             }
         }
         .task { await model.refreshMachines() }
@@ -471,18 +457,6 @@ struct MachinesView: View {
         }
     }
 
-    /// Machine transitions, newest first. `AppModelMachines.recordMachineTransitions` fills
-    /// this; before it existed a machine restart left no trace anywhere in the app.
-    private var activityEntries: [ActivityStrip.Entry] {
-        model.machines
-            .flatMap { machine in
-                model.events(for: machine.id, kind: .machine).map {
-                    ActivityStrip.Entry(id: $0.id, subject: machine.id, event: $0)
-                }
-            }
-            .sorted { $0.event.date > $1.event.date }
-    }
-
     @ViewBuilder
     private var content: some View {
         switch model.machinesState {
@@ -735,7 +709,7 @@ struct MachinesView: View {
             .width(min: 108, ideal: 120)
         }
         // Bounds the table so it *fills* the space left over rather than dictating the stack's
-        // height. Without it, adding the activity strip below broke the whole window: a macOS
+        // height. Without it, the Activity strip (since removed, 17 October) broke the whole window: a macOS
         // `Table` reports a very large ideal height, so the VStack grew past the window and
         // both columns scrolled — the sidebar ended up above the title bar and the table showed
         // only its empty filler rows. The containers table already had this; the machines one
@@ -753,7 +727,7 @@ struct MachinesView: View {
     /// Same shape as the containers row: start/stop swap, overflow menu, then delete behind a
     /// divider — icon-only with the word kept as tooltip and accessibility label.
     @ViewBuilder
-    private func rowActions(for machine: ContainerMachine) -> some View {
+    private func rowActions(for machine: ContainerMachine, reserveSlots: Bool = true) -> some View {
         let busy = model.isBusy(machine.id, kind: .machine)
         HStack(spacing: 2) {
             if Self.isRunning(machine) {
@@ -770,8 +744,10 @@ struct MachinesView: View {
                 // Placeholder so the Actions column keeps one width whichever state the row is
                 // in — the same trick the containers rows use, and for the same reason: buttons
                 // that shift sideways as machines start and stop are hard to hit.
-                iconButton("arrow.clockwise", "Restart \(machine.id)", busy: true) {}
-                    .hidden()
+                if reserveSlots {
+                    iconButton("arrow.clockwise", "Restart \(machine.id)", busy: true) {}
+                        .hidden()
+                }
             }
 
             Menu {
@@ -906,7 +882,7 @@ struct MachinesView: View {
 
             Spacer()
             if let machine {
-                ActionCluster { rowActions(for: machine) }
+                ActionCluster { rowActions(for: machine, reserveSlots: false) }
             }
             machineStepper
         }

@@ -102,29 +102,9 @@ struct ImagesView: View {
                 }
                 // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
                 // unreachable section is a `ContentUnavailableView`, which takes only its own
-                // height, and the strip below then rode up under it, halfway up the window (the
+                // height, and the toolbar then rode down to the middle of the window (the
                 // owner, on an empty Volumes, 5 October). Machines already did this.
                 .frame(maxHeight: .infinity, alignment: .top)
-                // Same band as Containers and Machines. See `ResourceUIState.activityExpanded`
-                // for why it is collapsible: on this section it is usually empty.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  // The detail screen, as in every other section. It used to
-                                  // select the row, because images had nowhere to go — they do
-                                  // now.
-                                  //
-                                  // Keyed on `reference`, **not** `id`: the feed records images
-                                  // by `configuration.name` while `ContainerImage.id` is the
-                                  // digest, so matching on `id` would never hit and every row
-                                  // would read as dead.
-                                  open: { detailTarget = DetailTarget(reference: $0) },
-                                  canOpen: { reference in
-                                      model.images.contains { $0.reference == reference }
-                                  })
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -294,14 +274,6 @@ struct ImagesView: View {
             + architectures.sorted().map {
                 ResourceFilterOption(id: $0, title: $0, systemImage: "cpu")
             }
-    }
-
-    /// This section's slice of the one activity feed. Rows do not navigate — you are already
-    /// on the section they belong to.
-    private var activityEntries: [ActivityStrip.Entry] {
-        model.events(ofKind: .image).map {
-            ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0)
-        }
     }
 
     @ViewBuilder

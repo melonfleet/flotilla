@@ -260,9 +260,9 @@ struct ContainersView: View {
 
             if let container {
                 if host.isLocal {
-                    ActionCluster { rowActions(for: container) }
+                    ActionCluster { rowActions(for: container, reserveSlots: false) }
                 } else {
-                    ActionCluster { remoteRowActions(for: container, on: host) }
+                    ActionCluster { remoteRowActions(for: container, on: host, reserveSlots: false) }
                 }
             }
 
@@ -559,7 +559,7 @@ struct ContainersView: View {
     ///   would be a control that does nothing, which is the failure mode this whole pass is
     ///   about.
     @ViewBuilder
-    private func rowActions(for container: Container) -> some View {
+    private func rowActions(for container: Container, reserveSlots: Bool = true) -> some View {
         let busy = model.isBusy(container.id, kind: .container)
         let running = AppModel.isRunning(container)
 
@@ -576,9 +576,12 @@ struct ContainersView: View {
                     Task { await model.perform(.start, on: container) }
                 }
                 // Keeps the column a stable width whichever state the row is in, so the
-                // buttons don't jump sideways as containers start and stop.
-                iconButton("arrow.clockwise", "Restart \(container.id)", busy: true) {}
-                    .hidden()
+                // buttons don't jump sideways as containers start and stop. The detail header
+                // passes `reserveSlots: false`: it has no column to line up with.
+                if reserveSlots {
+                    iconButton("arrow.clockwise", "Restart \(container.id)", busy: true) {}
+                        .hidden()
+                }
             }
 
             // The **same** builder the right-click menu uses. It used to be its own two-item
@@ -608,7 +611,7 @@ struct ContainersView: View {
     /// A paired host's container: the same controls in the same places as This Mac's — start or
     /// stop, restart, the menu, delete — acting on that host.
     @ViewBuilder
-    private func remoteRowActions(for container: Container, on host: HostRef) -> some View {
+    private func remoteRowActions(for container: Container, on host: HostRef, reserveSlots: Bool = true) -> some View {
         let busy = model.isBusy(host.rowID(container.id), kind: .container)
         let running = AppModel.isRunning(container)
         HStack(spacing: 2) {
@@ -623,8 +626,10 @@ struct ContainersView: View {
                 iconButton("play.fill", "Start \(container.id) on \(hostName(host))", busy: busy) {
                     Task { await model.perform(.start, on: container, host: host) }
                 }
-                iconButton("arrow.clockwise", "Restart \(container.id)", busy: true) {}
-                    .hidden()
+                if reserveSlots {
+                    iconButton("arrow.clockwise", "Restart \(container.id)", busy: true) {}
+                        .hidden()
+                }
             }
             Menu {
                 remoteActions(for: container, on: host)
@@ -1057,12 +1062,6 @@ struct ContainersView: View {
                     // apple/container#2051: a network that has lost its bridge (Q30).
                     DisconnectedNetworksBanner(model: model)
                     content
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  open: { openActivitySubject($0) },
-                                  canOpen: { canOpenActivitySubject($0) })
                 }
             }
         }
@@ -1294,20 +1293,6 @@ struct ContainersView: View {
         }
     }
 
-    /// A feed row names a container or a group. A container opens its detail; a group opens its
-    /// form, which is the only detail a group has.
-    private func openActivitySubject(_ subject: String) {
-        if model.containers.contains(where: { $0.id == subject }) {
-            openDetail(subject)
-        } else if let group = model.groups.groups.first(where: { $0.name == subject }) {
-            editingGroup = .existing(group.id)
-        }
-    }
-
-    private func canOpenActivitySubject(_ subject: String) -> Bool {
-        model.containers.contains { $0.id == subject } || model.groups.groups.contains { $0.name == subject }
-    }
-
     /// How many of the containers about to be deleted are running.
     private var runningInSelection: Int {
         actionableContainerIDs.compactMap { id in model.containers.first { $0.id == id } }.count { $0.isRunning }
@@ -1425,25 +1410,6 @@ struct ContainersView: View {
         }
     }
 
-    /// Every container's events, newest first, flattened into one list.
-    ///
-    /// Across all containers rather than the visible ones: a filter is about what you are
-    /// looking at, and a container that just died is exactly the thing you want to be told
-    /// about even if the current filter hides it.
-    /// Groups' events too, since groups live here now: starting a stack is activity on this
-    /// screen.
-    private var activityEntries: [ActivityStrip.Entry] {
-        let containerEntries = model.containers.flatMap { container in
-            model.events(for: container.id, kind: .container).map {
-                ActivityStrip.Entry(id: $0.id, subject: container.id, event: $0)
-            }
-        }
-        let groupEntries = model.events(ofKind: .group).map {
-            ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0)
-        }
-        return (containerEntries + groupEntries).sorted { $0.event.date > $1.event.date }
-    }
-
     @ViewBuilder
     private var content: some View {
         switch model.state {
@@ -1460,8 +1426,8 @@ struct ContainersView: View {
                 systemImage: "exclamationmark.triangle",
                 description: Text(reason)
             )
-            // Fills the pane like the empty state below, so the activity strip stays at the
-            // bottom when the runtime is unreachable too.
+            // Fills the pane like the empty state below, so the page stays bounded
+            // when the runtime is unreachable too.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded where rows.isEmpty:
@@ -1502,7 +1468,7 @@ struct ContainersView: View {
             // Fills the pane, the same way the loading branch above and the table below do.
             // Without it `content` sizes to this view's intrinsic height, the enclosing VStack
             // shrinks to less than the pane, and SwiftUI centres it — which put a large blank
-            // band *above the toolbar* and another below the activity strip. A tester reported
+            // band *above the toolbar* and another below the list. A tester reported
             // it as "a huge gap on the top of the screen between the controls and the toolbar",
             // and noticed it only here because the other sections were not empty at the time.
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -56,20 +56,9 @@ struct ClustersView: View {
                 }
                 // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
                 // unreachable section is a `ContentUnavailableView`, which takes only its own
-                // height, and the strip below then rode up under it, halfway up the window (the
+                // height, and the toolbar then rode down to the middle of the window (the
                 // owner, on an empty Volumes, 5 October). Machines already did this.
                 .frame(maxHeight: .infinity, alignment: .top)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ActivityStrip(title: "Recent activity",
-                                  entries: activityEntries,
-                                  isExpanded: Binding(get: { ui.activityExpanded },
-                                                      set: { ui.activityExpanded = $0 }),
-                                  // Nothing to open: a cluster's detail is kubectl's, not this
-                                  // app's, so a feed row here is a record and not a link.
-                                  open: { _ in },
-                                  canOpen: { _ in false },
-                                  unopenableHelp: { _ in "" })
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -249,12 +238,6 @@ struct ClustersView: View {
             }
         }
         return rows.sorted(using: ui.sortOrder)
-    }
-
-    private var activityEntries: [ActivityStrip.Entry] {
-        model.events(ofKind: .cluster).map {
-            ActivityStrip.Entry(id: $0.id, subject: $0.subject, event: $0)
-        }
     }
 
     @ViewBuilder

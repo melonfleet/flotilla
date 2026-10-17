@@ -38,11 +38,11 @@ extension AppModel {
         }
     }
 
-    /// Notes state changes so the activity strip has something to show.
+    /// Notes state changes so the Activity section has something to show.
     ///
     /// Mirrors `recordTransitions` for containers, including its rule that a **first sighting is
     /// not a transition** — recording "appeared" for every machine present at launch would fill
-    /// the strip with noise about nothing having happened.
+    /// the feed with noise about nothing having happened.
     func recordMachineTransitions(previous: [ContainerMachine], current: [ContainerMachine]) {
         let before = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0.status) })
         for machine in current {
