@@ -64,6 +64,8 @@ struct NewImageView: View {
     @State private var building = false
 
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     /// A reference to pull, from Browse Docker Hub — seeded with Docker Hub as its registry.
     let initialReference: String?
@@ -106,7 +108,7 @@ struct NewImageView: View {
         VStack(spacing: 0) {
             FormHeader(title: "New Image", systemImage: "plus",
                        hasUnsavedChanges: edits.isDirty(editSignature) && model.activePull == nil,
-                       onBack: dismiss)
+                       onBack: dismiss, token: formToken)
             Divider()
             if let pull = model.activePull {
                 // The form *is* the progress screen while its pull runs. Dismissing on submit —
@@ -451,7 +453,7 @@ struct NewImageView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Cancel", action: dismiss)
+            FormCancelButton(token: formToken, action: dismiss)
             // Named for what it does rather than a generic Create: the two halves of this form
             // do genuinely different things and the button is the last chance to say which.
             Button(mode.rawValue, action: submit)

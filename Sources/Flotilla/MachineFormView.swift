@@ -35,6 +35,8 @@ struct MachineFormView: View {
     @State private var homeMount = "rw"
     @State private var creating = false
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     /// Everything a Back would throw away. Captured on appear rather than compared to defaults,
     /// because the resource defaults come from Settings ▸ Resources and are not constants here.
@@ -283,7 +285,7 @@ struct MachineFormView: View {
     /// more.
     private var header: some View {
         FormHeader(title: "New Machine", systemImage: "plus.rectangle.on.folder",
-                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
+                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken)
     }
 
     /// Save lives bottom-right, where a form's commit belongs on macOS.
@@ -295,7 +297,7 @@ struct MachineFormView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Cancel", action: dismiss)
+            FormCancelButton(token: formToken, action: dismiss)
             Button("Save") { Task { await create() } }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)

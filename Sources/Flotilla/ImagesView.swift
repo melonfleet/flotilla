@@ -43,6 +43,8 @@ struct ImagesView: View {
     @State private var detailTarget: DetailTarget?
 
     @State private var taggingImage: HostedImage?
+    /// Shared by the Tag form's header and its Cancel, so both ask about this form alone.
+    @State private var formToken = UUID()
     @State private var tagTarget = ""
     @State private var tagError: String?
 
@@ -825,7 +827,7 @@ struct ImagesView: View {
         VStack(spacing: 0) {
             FormHeader(title: "Tag Image", systemImage: "tag",
                        hasUnsavedChanges: !trimmedTag.isEmpty,
-                       onBack: { taggingImage = nil })
+                       onBack: { taggingImage = nil }, token: formToken)
             Divider()
             FormScaffold {
                 tagForm(for: image)
@@ -879,7 +881,7 @@ struct ImagesView: View {
     private func tagFooter(for row: HostedImage) -> some View {
         HStack(spacing: 8) {
             Spacer()
-            Button("Cancel") { taggingImage = nil }
+            FormCancelButton(token: formToken) { taggingImage = nil }
             Button("Tag") {
                 let target = trimmedTag
                 let source = row.reference

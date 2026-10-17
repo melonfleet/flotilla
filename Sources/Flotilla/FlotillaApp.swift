@@ -228,7 +228,12 @@ private struct FlotillaCommands: Commands {
         // rail by `MainWindowView`, and that group also owns the working Full Screen command.
         // ⌘K, the palette (Phase 1 leftover): in the View menu, where a toolbar's commands would be.
         CommandGroup(replacing: .toolbar) {
-            Button("Go To…") { present { model.showingPalette = true } }
+            Button("Go To…") {
+                // Not `present`: opening the palette replaces nothing, so it asks nothing. The pick
+                // asks (`CommandPalette.openSelected`) — asking here as well made ⌘K ask twice.
+                model.showingPalette = true
+                showWindow()
+            }
                 .keyboardShortcut("k", modifiers: .command)
         }
 
@@ -334,9 +339,15 @@ private struct FlotillaCommands: Commands {
     /// unsaved form the request still runs before the window opens; with one, the window is
     /// brought forward and asks, and the request runs only on Discard. The `request…` calls also
     /// ask for themselves (`AppModel.present`); nested inside this one they do not ask twice. This
-    /// one stays for "Go To…", which is not a request.
+    /// one stays for the inline `{ … }` requests, which are not `request…` calls.
+    ///
+    /// Overlays that leave the form where it is — the palette, Greta — do not come through here.
     private func present(_ request: @escaping () -> Void) {
         model.formGuard.confirmLeaving(request)
+        showWindow()
+    }
+
+    private func showWindow() {
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "main")
     }

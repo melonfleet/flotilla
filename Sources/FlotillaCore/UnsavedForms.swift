@@ -57,7 +57,22 @@ public struct UnsavedForms: Sendable, Equatable {
     /// the caller navigates without asking. One sentence for every route, so the sidebar, the menus
     /// and Quit cannot drift into three wordings of the same choice.
     public var discardQuestion: String? {
-        let names = titles
+        Self.question(about: titles)
+    }
+
+    /// The question for leaving **one** form, or nil when that form has nothing to lose.
+    ///
+    /// Back and Cancel on a nested form lose only that form's edits: Add Service inside New Group
+    /// takes the service's changes and leaves the group's draft where it is. Asking
+    /// `discardQuestion` there would name a form the user is not leaving. The sidebar and Quit
+    /// leave everything and keep using `discardQuestion`; the wording is shared so the two cannot
+    /// drift apart.
+    public func discardQuestion(for token: UUID) -> String? {
+        guard let entry = entries.first(where: { $0.token == token }) else { return nil }
+        return Self.question(about: [entry.title])
+    }
+
+    private static func question(about names: [String]) -> String? {
         guard let last = names.last else { return nil }
         let list = names.count == 1 ? last
             : names.dropLast().joined(separator: ", ") + " and " + last

@@ -24,6 +24,8 @@ struct GroupFormView: View {
     /// behind and Save knows to append rather than replace.
     @State private var memberIsNew = false
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
     @State private var saveError: String?
     /// The group's Keychain-held values as read on open, by secret name.
     @State private var storedSecrets: [String: String] = [:]
@@ -76,6 +78,8 @@ struct GroupFormView: View {
         .onAppear { edits.open(editSignature) }
         // Here as well as in the group's `FormHeader`: while a service is being edited that header
         // is off screen and has removed itself, but the draft it guarded is still here to lose.
+        // Its own token, not `formToken`: the header removes its registration when it goes, and a
+        // shared one would take the group's with it.
         .guardsUnsavedChanges(title: isNew ? "New Group" : "Edit Group",
                               isDirty: edits.isDirty(editSignature))
         .task { await loadSecrets() }
@@ -92,7 +96,7 @@ struct GroupFormView: View {
             FormHeader(title: isNew ? "New Group" : "Edit Group",
                        systemImage: "rectangle.3.group",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: dismiss) {
+                       onBack: dismiss, token: formToken) {
                 // The saved group, not the draft: a file should describe what exists.
                 if !isNew, let saved = model.groups.group(draft.id) {
                     Button("Save to File…") { Task { await model.saveGroupToFile(saved) } }
@@ -452,7 +456,7 @@ struct GroupFormView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Button("Cancel", action: dismiss)
+            FormCancelButton(token: formToken, action: dismiss)
             Button("Save") { save() }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
@@ -505,6 +509,8 @@ struct GroupMemberFormView: View {
     /// the window's guard like any form; Save and Back both take the screen away, and its
     /// registration with it, leaving the group's own to say whether the group has changed.
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     init(model: AppModel, member: GroupMember, isNew: Bool,
          problem: @escaping (String) -> String?,
@@ -535,7 +541,7 @@ struct GroupMemberFormView: View {
             FormHeader(title: isNew ? "Add Service" : "Edit Service",
                        systemImage: "shippingbox",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: onCancel)
+                       onBack: onCancel, token: formToken)
             Divider()
             FormScaffold {
                 form
@@ -745,7 +751,7 @@ struct GroupMemberFormView: View {
     private var footer: some View {
         HStack(spacing: 8) {
             Spacer()
-            Button("Cancel", action: onCancel)
+            FormCancelButton(token: formToken, action: onCancel)
             Button(isNew ? "Add" : "Save") { onSave(built) }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)

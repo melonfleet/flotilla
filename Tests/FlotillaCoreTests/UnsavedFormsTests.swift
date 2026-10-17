@@ -168,3 +168,31 @@ func everyServiceFieldMakesItDirty(_ field: String) {
     changed.env.append("C=3")
     #expect(changed.editSignature != stored.editSignature)
 }
+
+/// Back on Add Service names the service alone, though the group under it is dirty too.
+@Test func aNestedFormsQuestionNamesOnlyThatForm() {
+    var forms = UnsavedForms()
+    let group = UUID(), service = UUID()
+    forms.mark(group, title: "New Group", isDirty: true)
+    forms.mark(service, title: "Add Service", isDirty: true)
+    #expect(forms.discardQuestion(for: service) == "Discard your changes to Add Service?")
+    #expect(forms.discardQuestion(for: group) == "Discard your changes to New Group?")
+    #expect(forms.discardQuestion == "Discard your changes to New Group and Add Service?")
+}
+
+/// A clean or unknown form has nothing to lose, so Back and Cancel leave at once.
+@Test func aCleanOrUnknownFormAsksNothing() {
+    var forms = UnsavedForms()
+    let token = UUID()
+    #expect(forms.discardQuestion(for: token) == nil)
+    forms.mark(token, title: "New Volume", isDirty: true)
+    forms.mark(token, title: "New Volume", isDirty: false)
+    #expect(forms.discardQuestion(for: token) == nil)
+}
+
+/// A dirty sibling does not make a clean form ask.
+@Test func anotherFormsEditsDoNotMakeThisOneAsk() {
+    var forms = UnsavedForms()
+    forms.mark(UUID(), title: "New Group", isDirty: true)
+    #expect(forms.discardQuestion(for: UUID()) == nil)
+}

@@ -828,6 +828,8 @@ struct NewNetworkView: View {
     @State private var newOptions: [String] = []
     @State private var newPlugin = ""
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var editSignature: String {
         [newNetworkName, addressFamily.rawValue, newSubnet, newSubnetV6, newPlugin,
@@ -851,7 +853,7 @@ struct NewNetworkView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Network", systemImage: "network.badge.shield.half.filled",
-                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken)
             Divider()
             FormScaffold {
                 form
@@ -1040,7 +1042,7 @@ struct NewNetworkView: View {
                     .lineLimit(2)
             }
             Spacer()
-            Button("Cancel", action: dismiss)
+            FormCancelButton(token: formToken, action: dismiss)
             Button("Create") {
                 let name = trimmedName
                 let opts = options

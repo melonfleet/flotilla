@@ -47,6 +47,8 @@ struct DNSFormView: View {
     @State private var host: HostRef = .local
 
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     /// Apple's own example in the `container` documentation, offered when the field is empty: an
     /// address from the range reserved for documentation (RFC 5737), so it is never a real host.
@@ -125,7 +127,7 @@ struct DNSFormView: View {
             FormHeader(title: managed?.name ?? (isAdd ? "New Domain" : "Domain"),
                        systemImage: Section.dns.systemImage,
                        hasUnsavedChanges: isAdd && edits.isDirty(editSignature),
-                       onBack: dismiss)
+                       onBack: dismiss, token: formToken)
             Divider()
             FormScaffold {
                 VStack(alignment: .leading, spacing: 20) {
@@ -386,7 +388,7 @@ struct DNSFormView: View {
             if working { ProgressView().controlSize(.small) }
             Spacer()
             if isAdd {
-                Button("Cancel", action: dismiss)
+                FormCancelButton(token: formToken, action: dismiss)
                     .keyboardShortcut(.cancelAction)
                 // "…" when something follows — the password prompt, or the restart warning.
                 Button(noPrompt && !(kind == .containers && useForContainers)

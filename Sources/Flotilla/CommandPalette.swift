@@ -154,7 +154,10 @@ struct CommandPalette: View {
         .shadow(color: .black.opacity(0.25), radius: 24, y: 8)
         .onAppear {
             items = model.paletteItems()
-            focused = true
+            // On the next turn: set during onAppear, focus loses to a form's text field that
+            // already holds it, and typing goes into the form behind the palette. It used to work
+            // only because ⌘K asked about unsaved changes first, and the dialog cleared focus.
+            DispatchQueue.main.async { focused = true }
         }
         .onChange(of: query) { _, _ in selected = 0 }
         .accessibilityAddTraits(.isModal)

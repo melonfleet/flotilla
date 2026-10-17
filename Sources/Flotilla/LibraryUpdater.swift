@@ -33,6 +33,17 @@ final class LibraryUpdater {
 
     init() {
         lastChecked = defaults.object(forKey: Self.lastCheckedKey) as? Date
+        // Saying "Not checked yet." after a relaunch, hours after the daily check ran, was untrue.
+        if let lastChecked { status = Self.lastCheckedText(lastChecked) }
+    }
+
+    /// "Last checked: Today at 18:27." — relative day and time, in the user's locale.
+    static func lastCheckedText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        return "Last checked: \(formatter.string(from: date))."
     }
 
     /// Records the version in use as the newest seen, so nothing older replaces it later.

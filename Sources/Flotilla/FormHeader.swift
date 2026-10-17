@@ -12,6 +12,8 @@ import SwiftUI
 /// 440 wide) that content had to be trimmed to fit, and the dim-plus-`allowsHitTesting` dance in
 /// `MainWindowView` existed only to serve them.
 ///
+/// Back asks about unsaved changes through `FormGuard`, the same dialog every other route uses.
+///
 /// Deliberately the same shape as the detail headers in `ContainersView` and `MachinesView`, so
 /// leaving a form and leaving a detail are the same gesture in the same place.
 struct FormHeader<Trailing: View>: View {
@@ -30,6 +32,9 @@ struct FormHeader<Trailing: View>: View {
     let onBack: () -> Void
     /// A small pill after the title — "This Mac" on this Mac's own page.
     var titleBadge: String? = nil
+    /// Pass the form's own token when its Cancel button must ask about the same registration
+    /// (`FormCancelButton`); a form with no Cancel leaves it nil.
+    var token: UUID? = nil
     /// Controls that belong to the whole form rather than to a field — the machine form's
     /// "Import Flotillafile…" is the only one so far.
     ///
@@ -39,12 +44,14 @@ struct FormHeader<Trailing: View>: View {
     /// and nobody kept them. One header, one number.
     @ViewBuilder var trailing: Trailing
 
-    @State private var confirmingDiscard = false
+    @State private var ownToken = UUID()
+    @Environment(FormGuard.self) private var formGuard: FormGuard?
 
     var body: some View {
         HStack(spacing: 10) {
             IconActionButton(systemImage: "chevron.left", label: "Back", help: "Back") {
-                if hasUnsavedChanges { confirmingDiscard = true } else { onBack() }
+                // Through the guard, which asks the one discard question for this form alone.
+                if let formGuard { formGuard.confirmLeaving(form: token ?? ownToken, onBack) } else { onBack() }
             }
             Image(systemName: systemImage)
                 .font(.system(size: 17))
@@ -56,16 +63,7 @@ struct FormHeader<Trailing: View>: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        // Only on the way out, and only when there is something to lose. A form you opened and
-        // did not touch closes on one click, as it always did.
-        .confirmationDialog("Discard your changes?", isPresented: $confirmingDiscard,
-                            titleVisibility: .visible) {
-            Button("Discard Changes", role: .destructive, action: onBack)
-            Button("Keep Editing", role: .cancel) {}
-        } message: {
-            Text("This form has changes that have not been saved. Leaving now loses them.")
-        }
-        .guardsUnsavedChanges(title: title, isDirty: hasUnsavedChanges)
+        .guardsUnsavedChanges(title: title, isDirty: hasUnsavedChanges, token: token ?? ownToken)
     }
 }
 
@@ -92,8 +90,8 @@ struct FormEditTracker {
 
 extension FormHeader where Trailing == EmptyView {
     init(title: String, systemImage: String, hasUnsavedChanges: Bool,
-         onBack: @escaping () -> Void) {
+         onBack: @escaping () -> Void, token: UUID? = nil) {
         self.init(title: title, systemImage: systemImage, hasUnsavedChanges: hasUnsavedChanges,
-                  onBack: onBack, trailing: { EmptyView() })
+                  onBack: onBack, token: token, trailing: { EmptyView() })
     }
 }

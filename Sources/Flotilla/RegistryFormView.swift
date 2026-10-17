@@ -68,6 +68,8 @@ struct RegistryFormView: View {
     @State private var confirmingSignOut = false
 
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var store: RegistryStore { model.registries }
 
@@ -176,7 +178,7 @@ struct RegistryFormView: View {
             FormHeader(title: managed?.name ?? (isAdd ? "Add Registry" : "Registry"),
                        systemImage: Section.registries.systemImage,
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: dismiss)
+                       onBack: dismiss, token: formToken)
             Divider()
             FormScaffold {
                 VStack(alignment: .leading, spacing: 20) {
@@ -544,7 +546,7 @@ struct RegistryFormView: View {
             } else {
                 Spacer()
             }
-            Button(isAdd ? "Cancel" : "Done", action: dismiss)
+            FormCancelButton(token: formToken, title: isAdd ? "Cancel" : "Done", action: dismiss)
                 .keyboardShortcut(.cancelAction)
             if canSignIn || isAdd {
                 Button(buttonTitle, action: submit)

@@ -22,6 +22,8 @@ struct NewClusterView: View {
     @State private var creating = false
     @State private var host: HostRef = .local
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var editSignature: String {
         [name, "\(limitResources)", cpus, memory, nodeImage, "\(autoRemove)"]
@@ -31,7 +33,7 @@ struct NewClusterView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Cluster", systemImage: "circle.hexagongrid",
-                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken)
             Divider()
             FormScaffold {
                 form
@@ -249,7 +251,7 @@ struct NewClusterView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Cancel", action: dismiss)
+            FormCancelButton(token: formToken, action: dismiss)
             Button("Save") { Task { await create() } }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
@@ -294,11 +296,13 @@ struct LoadImageView: View {
     @State private var reference = ""
     @State private var loading = false
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Load an Image", systemImage: "square.and.arrow.down.on.square",
-                       hasUnsavedChanges: edits.isDirty(reference), onBack: dismiss)
+                       hasUnsavedChanges: edits.isDirty(reference), onBack: dismiss, token: formToken)
             Divider()
             FormScaffold {
                 form
@@ -417,7 +421,7 @@ struct LoadImageView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Cancel", action: dismiss)
+            FormCancelButton(token: formToken, action: dismiss)
             // "Load", not "Save", following `NewImageView`'s "Build"/"Pull": the convention is
             // that the commit sits bottom-right, not that it is always called Save, and a form
             // whose button names what it does is easier to be sure about before pressing it.

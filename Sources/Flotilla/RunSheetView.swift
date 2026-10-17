@@ -155,6 +155,8 @@ struct RunSheetView: View {
     @State private var network = ""
 
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     /// Everything a Back would throw away, in one string. Compared against the value captured when
     /// the screen appeared — not against defaults, because a prefilled run sheet opens full and
@@ -238,7 +240,7 @@ struct RunSheetView: View {
     /// content had to fit the window rather than the other way round.
     private var header: some View {
         FormHeader(title: "Run Container", systemImage: "shippingbox",
-                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss)
+                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken)
     }
 
     private var content: some View {
@@ -564,7 +566,7 @@ struct RunSheetView: View {
     private var footer: some View {
         HStack {
             Spacer()
-            Button("Cancel", action: dismiss)
+            FormCancelButton(token: formToken, action: dismiss)
             Button("Run") {
                 let ranImage = trimmedImage
                 let ranOptions = options

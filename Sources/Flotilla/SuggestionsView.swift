@@ -251,6 +251,8 @@ struct StackFormView: View {
     @State private var usedPorts: Set<Int> = []
     @State private var prepared = false
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
     /// Which Mac the stack is created on (the owner, 12 October).
     @State private var host: HostRef = .local
     /// For a stack on a host: its web pages open from other Macs too. On by default there, since
@@ -332,7 +334,7 @@ struct StackFormView: View {
         VStack(spacing: 0) {
             FormHeader(title: stack.title, systemImage: Section.groupSymbol,
                        hasUnsavedChanges: prepared && edits.isDirty(editSignature),
-                       onBack: back)
+                       onBack: back, token: formToken)
             Divider()
             FormScaffold {
                 VStack(alignment: .leading, spacing: 20) { fields }
@@ -522,7 +524,7 @@ struct StackFormView: View {
         HStack {
             if !prepared { ProgressView().controlSize(.small).help("Preparing suggestions…") }
             Spacer()
-            Button("Cancel", action: back)
+            FormCancelButton(token: formToken, action: back)
                 .keyboardShortcut(.cancelAction)
             Button("Create") { create() }
                 .buttonStyle(.borderedProminent)

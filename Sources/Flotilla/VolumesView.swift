@@ -48,6 +48,8 @@ struct VolumesView: View {
     /// never appears, because the menu is gone by the time the state changes.
     @State private var tagSheet: TagSheetTarget?
     @State private var edits = FormEditTracker()
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var editSignature: String {
         [newVolumeName, newSize,
@@ -874,7 +876,7 @@ struct VolumesView: View {
         VStack(spacing: 0) {
             FormHeader(title: "New Volume", systemImage: "externaldrive.badge.plus",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: { showingCreate = false })
+                       onBack: { showingCreate = false }, token: formToken)
             Divider()
             FormScaffold {
                 createForm
@@ -1028,7 +1030,7 @@ struct VolumesView: View {
                     .lineLimit(2)
             }
             Spacer()
-            Button("Cancel") { showingCreate = false }
+            FormCancelButton(token: formToken) { showingCreate = false }
             Button("Create") {
                 let name = trimmedName
                 let opts = options

@@ -424,9 +424,13 @@ struct MainWindowView: View {
         }
         // The one question for every way of leaving a form except its own Back — see `FormGuard`.
         // Discard is destructive and Keep Editing is the cancel, so Escape and Return both keep.
+        // The binding carries the question it was drawn for: a dismissal that arrives late, after
+        // the next question is already up, must not be taken as an answer to that one.
         .confirmationDialog(model.formGuard.asking?.text ?? "",
-                            isPresented: Binding(get: { model.formGuard.asking != nil },
-                                                 set: { if !$0 { model.formGuard.dialogDismissed() } }),
+                            isPresented: { [shown = model.formGuard.asking?.id] in
+                                Binding(get: { shown != nil && model.formGuard.asking?.id == shown },
+                                        set: { if !$0, let shown { model.formGuard.dialogDismissed(shown) } })
+                            }(),
                             titleVisibility: .visible) {
             Button("Discard", role: .destructive) { model.formGuard.discard() }
             Button("Keep Editing", role: .cancel) { model.formGuard.keepEditing() }
