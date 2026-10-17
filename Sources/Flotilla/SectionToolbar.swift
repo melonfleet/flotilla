@@ -15,14 +15,22 @@ import AppKit
 /// vertical space on every screen but the main one); none of them had a search field; and their
 /// action buttons sat as bare glyphs rather than in the glass cluster Containers uses.
 ///
+/// **No search field of its own since Q55.** The window bar's box filters the page instead: this
+/// band lends it `search`, the same binding the field here used to edit, so every section's filter
+/// state and matching are unchanged. The band registers it only while it is on screen, which is
+/// exactly while the list is, so a detail or a form in the same section has nothing to filter.
+///
 /// Shared rather than copied, for the reason the Copy menu had to be shared: parity that lives
 /// in four files is parity someone has to remember, and this project has already lost that bet
 /// once — switching to Cards silently cost you the Copy menu because its definition was private
 /// to one view.
 struct SectionToolbar<Leading: View, Trailing: View>: View {
-    @Binding var search: String
-    /// Shown in the empty search field. Names the noun, so the field says what it filters.
+    /// This section's filter text, lent to the window bar's search box.
+    var search: Binding<String>
+    /// The box's placeholder while this section is showing. Names the noun, so the box says what it filters.
     let searchPrompt: String
+    /// How many rows the filter leaves, for the box's "12 on this page".
+    var matches: Int?
     /// When this screen last refreshed, or nil to omit. Rendered exactly as the Containers
     /// screen renders it.
     var updated: Date?
@@ -31,44 +39,15 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
     /// its own, which is how the search field there ended up 20pt narrower than everywhere else.
     var status: String?
 
-    /// What the field understands beyond plain words, on hover — Containers' `SearchQuery` grammar.
+    /// What the box understands beyond plain words, on hover — Containers' `SearchQuery` grammar.
     var searchHelp: String?
 
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
-    /// ⌘F puts the cursor in the search field, in every section (Phase 1 leftover).
-    @FocusState private var searchFocused: Bool
-    /// The field's frame in the window, and the click watcher that lets go of it — see `releaseOnClickOutside`.
-    @State private var fieldFrame: CGRect = .zero
-    @State private var clickMonitor: Any?
-
     var body: some View {
         HStack(spacing: 12) {
             leading
-
-            TextField(searchPrompt, text: $search)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 280)
-                .focused($searchFocused)
-                .help(searchHelp ?? "Search (⌘F)")
-                // A placeholder is not a name; VoiceOver read the field as unnamed (10 October).
-                .accessibilityLabel(searchPrompt.trimmingCharacters(in: CharacterSet(charactersIn: "…. ")))
-                .onKeyPress(.escape) { searchFocused = false; return .handled }
-                .background(GeometryReader { proxy in
-                    Color.clear
-                        .onAppear { fieldFrame = proxy.frame(in: .global) }
-                        .onChange(of: proxy.frame(in: .global)) { _, frame in fieldFrame = frame }
-                })
-                .onChange(of: searchFocused) { _, focused in releaseOnClickOutside(focused) }
-                .onDisappear { releaseOnClickOutside(false) }
-                .background {
-                    Button("Find") { searchFocused = true }
-                        .keyboardShortcut("f", modifiers: .command)
-                        .opacity(0)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
 
             Spacer()
 
@@ -100,25 +79,8 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
         // is how they drifted apart in the first place.
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-
-    /// A click anywhere outside the search field lets go of it (the owner, 10 October). macOS
-    /// leaves a field focused when you click something that cannot take focus — a table's empty
-    /// space, the page — so the cursor and the focus ring stayed after you had clearly moved on.
-    /// Watched only while the field has focus, and only for this window.
-    private func releaseOnClickOutside(_ focused: Bool) {
-        if let monitor = clickMonitor { NSEvent.removeMonitor(monitor); clickMonitor = nil }
-        guard focused else { return }
-        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
-            guard let window = event.window, let content = window.contentView else { return event }
-            // AppKit counts from the bottom; SwiftUI's global space from the top.
-            let point = CGPoint(x: event.locationInWindow.x, y: content.bounds.height - event.locationInWindow.y)
-            if !fieldFrame.insetBy(dx: -2, dy: -2).contains(point) {
-                searchFocused = false
-                window.makeFirstResponder(nil)
-            }
-            return event
-        }
+        .searchesFromToolbar(prompt: searchPrompt.trimmingCharacters(in: CharacterSet(charactersIn: "…. ")),
+                             help: searchHelp, text: search, matches: matches)
     }
 }
 
@@ -126,11 +88,12 @@ extension SectionToolbar where Leading == EmptyView {
     init(
         search: Binding<String>,
         searchPrompt: String,
+        matches: Int? = nil,
         updated: Date? = nil,
         status: String? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
-        self.init(search: search, searchPrompt: searchPrompt, updated: updated, status: status,
+        self.init(search: search, searchPrompt: searchPrompt, matches: matches, updated: updated, status: status,
                   leading: { EmptyView() }, trailing: trailing)
     }
 }

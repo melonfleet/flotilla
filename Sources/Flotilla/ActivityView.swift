@@ -42,6 +42,7 @@ struct ActivityView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search activity…",
+                       matches: filtered.count,
                        // No refresh time to show — this feed is appended to as things happen — so
                        // the row count takes that slot. It used to be printed in a hand-rolled
                        // band, which is how this screen's search field ended up 20pt narrower

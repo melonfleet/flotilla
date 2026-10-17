@@ -10,7 +10,16 @@ import FlotillaCore
 /// somewhere, and the list never leaves.
 struct NotificationsView: View {
     let model: AppModel
+    /// The filter text, typed in the window bar's search box (Q55) and owned by `MainWindowView` so it
+    /// survives a trip to another section.
+    let searchText: PageSearchText
     let go: (Section) -> Void
+
+    init(model: AppModel, search: PageSearchText, go: @escaping (Section) -> Void) {
+        self.model = model
+        self.searchText = search
+        self.go = go
+    }
 
     enum Filter: String, CaseIterable, Identifiable {
         case attention = "Needs Attention", dismissed = "Dismissed", resolved = "Resolved", all = "All"
@@ -18,7 +27,10 @@ struct NotificationsView: View {
     }
 
     @State private var filter: Filter = .attention
-    @State private var search = ""
+    private var search: String {
+        get { searchText.value }
+        nonmutating set { searchText.value = newValue }
+    }
     @State private var selection = Set<String>()
     /// The filter, search and order the list had last time it changed, so a notice leaving it can be
     /// told apart: dismissed or resolved (move on to the next) from filtered out by the user (do not).
@@ -51,6 +63,9 @@ struct NotificationsView: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .searchesFromToolbar(prompt: "Search notifications",
+                             text: Binding(get: { searchText.value }, set: { searchText.value = $0 }),
+                             matches: shown.count)
         .onAppear {
             lastShown = (shown.map(\.id), filter, search)
             openPending()
@@ -88,16 +103,12 @@ struct NotificationsView: View {
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                TextField("Search notifications", text: $search)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Search notifications")
-                Picker("Show", selection: $filter) {
-                    ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .labelsHidden()
-                .fixedSize()
+            // The search is the window bar's box now (Q55); the filter stays with the list it narrows.
+            Picker("Show", selection: $filter) {
+                ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
             }
+            .labelsHidden()
+            .fixedSize()
             Text("\(shown.count) \(shown.count == 1 ? "notice" : "notices")")
                 .font(.caption).foregroundStyle(.secondary)
             List(selection: $selection) {

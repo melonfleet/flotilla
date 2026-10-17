@@ -113,7 +113,7 @@ struct VolumesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
-        // A volume asked for by name elsewhere — the ⌘K palette. One-shot, as Containers does it.
+        // A volume asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
         // Paired hosts' volumes kept current while this section is open, as Containers does.
@@ -192,6 +192,7 @@ struct VolumesView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search volumes…",
+                       matches: displayedVolumes.count,
                        updated: model.volumesLastRefresh,
                        leading: {
             Toggle("", isOn: Binding(get: { allVisibleSelected },

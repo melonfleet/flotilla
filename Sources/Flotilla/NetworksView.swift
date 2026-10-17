@@ -87,7 +87,7 @@ struct NetworksView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
-        // A network asked for by name elsewhere — the ⌘K palette. One-shot, as Containers does it.
+        // A network asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
         // Paired hosts' networks kept current while this section is open, as Containers does.
@@ -172,6 +172,7 @@ struct NetworksView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search networks…",
+                       matches: displayedNetworks.count,
                        updated: model.networksLastRefresh,
                        leading: {
             Toggle("", isOn: Binding(get: { allVisibleSelected },

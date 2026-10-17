@@ -1,0 +1,239 @@
+import Foundation
+import Testing
+@testable import FlotillaCore
+
+@Suite struct SearchBoxTests {
+    private let candidates: [SearchBox.Candidate] = [
+        .init(title: "Run Container…", isCommand: true),
+        .init(title: "New Group…", isCommand: true),
+        .init(title: "Pull Image…", isCommand: true),
+        .init(title: "Containers", isCommand: false),
+        .init(title: "Images", isCommand: false),
+        .init(title: "web", subtitle: "Container · running · nginx:latest", isCommand: false),
+        .init(title: "redis:8", subtitle: "Image", isCommand: false),
+    ]
+
+    @Test func plainTextFiltersThePage() {
+        let input = SearchBox.read("web ")
+        #expect(!input.commandsOnly)
+        #expect(input.pageFilter == "web ")
+        #expect(input.query == "web")
+    }
+
+    /// `>` is commands only, and the page is left alone. `>run` must not empty the Containers list.
+    @Test func aLeadingChevronIsCommandsOnlyAndDoesNotFilterThePage() {
+        let input = SearchBox.read(">  run")
+        #expect(input.commandsOnly)
+        #expect(input.pageFilter == nil)
+        #expect(input.query == "run")
+
+        let results = SearchBox.results(for: ">", among: candidates)
+        #expect(results.commands == [0, 1, 2])
+        #expect(results.places.isEmpty)
+        #expect(SearchBox.results(for: ">image", among: candidates) == .init(commands: [2]))
+    }
+
+    @Test func nothingTypedListsNothing() {
+        #expect(SearchBox.results(for: "", among: candidates).isEmpty)
+        #expect(SearchBox.results(for: "   ", among: candidates).isEmpty)
+    }
+
+    @Test func commandsAndPlacesAreGroupedInThatOrder() {
+        let results = SearchBox.results(for: "con", among: candidates)
+        #expect(results.commands == [0])
+        // "Containers" starts with it, so it comes before "web", whose subtitle only contains it.
+        #expect(results.places == [3, 5])
+        #expect(results.all == [0, 3, 5])
+    }
+
+    @Test func everyWordMustMatchTitleOrSubtitle() {
+        #expect(SearchBox.results(for: "web nginx", among: candidates).places == [5])
+        #expect(SearchBox.results(for: "web postgres", among: candidates).isEmpty)
+    }
+
+    /// The palette's ranking: a title that starts with the text first, otherwise the order given.
+    @Test func aTitlePrefixRanksFirstAndTheRestKeepTheirOrder() {
+        let list: [SearchBox.Candidate] = [
+            .init(title: "the image", isCommand: false),
+            .init(title: "an image", isCommand: false),
+            .init(title: "Images", isCommand: false),
+        ]
+        #expect(SearchBox.results(for: "image", among: list).places == [2, 0, 1])
+    }
+
+    @Test func limitsApplyPerGroup() {
+        let many = (0..<50).map { SearchBox.Candidate(title: "web-\($0)", isCommand: false) }
+            + [.init(title: "Web Command", isCommand: true)]
+        let results = SearchBox.results(for: "web", among: many, commandLimit: 8, placeLimit: 40)
+        #expect(results.commands == [50])
+        #expect(results.places.count == 40)
+    }
+
+    @Test func arrowsWrapAndStartFromNothing() {
+        #expect(SearchBox.move(nil, by: 1, count: 3) == 0)
+        #expect(SearchBox.move(nil, by: -1, count: 3) == 2)
+        #expect(SearchBox.move(2, by: 1, count: 3) == 0)
+        #expect(SearchBox.move(0, by: -1, count: 3) == 2)
+        #expect(SearchBox.move(5, by: 1, count: 3) == 0)
+        #expect(SearchBox.move(0, by: 1, count: 0) == nil)
+    }
+
+    /// Escape closes the dropdown, then clears the text, then gives focus back.
+    @Test func escapeClosesThenClearsThenLeaves() {
+        #expect(SearchBox.escape(dropdownOpen: true, text: "web") == .closeDropdown)
+        #expect(SearchBox.escape(dropdownOpen: false, text: "web") == .clearText)
+        #expect(SearchBox.escape(dropdownOpen: false, text: "") == .leaveBox)
+    }
+
+    // MARK: State
+
+    /// The box focused by ⌘F, after a click in the window, as Andy did it.
+    private func focusedBox(pageText: String? = "") -> SearchBox.State {
+        var state = SearchBox.State()
+        if let pageText { state.attach(pageText: pageText) }
+        state.windowTouched()
+        state.requestFocus()
+        let r1 = state.focusChanged(true)
+        #expect(r1)
+        return state
+    }
+
+    /// The stage 1 bug: on Containers, typing filtered the page and the dropdown never opened.
+    /// The box must see its own keystrokes on a page that lends it a filter, not only on one that doesn't.
+    @Test func typingOnAPageWithAListOpensTheDropdownAndWritesThePageFilter() {
+        var state = focusedBox()
+        #expect(!state.dropdownShown)
+        let r2 = state.type("shop")
+        #expect(r2 == "shop")
+        #expect(state.text == "shop")
+        #expect(state.dropdownShown)
+        let r3 = state.type("shop-")
+        #expect(r3 == "shop-")
+        #expect(state.dropdownShown)
+    }
+
+    @Test func typingOnAPageWithNothingToFilterOpensTheDropdownAndWritesNothing() {
+        var state = focusedBox(pageText: nil)
+        let r4 = state.type("con")
+        #expect(r4 == nil)
+        #expect(state.dropdownShown)
+    }
+
+    /// The box writes the page's filter, and the page's echo of that write changes nothing.
+    @Test func thePagesEchoOfTheBoxsOwnWriteIsANoOp() {
+        var state = focusedBox()
+        state.type("shop")
+        state.highlighted = 1
+        state.pageChanged("shop")
+        #expect(state.text == "shop")
+        #expect(state.highlighted == 1)
+    }
+
+    /// A page clearing its own filter (Clear Filters) clears the box too.
+    @Test func thePageChangingItsFilterChangesTheBox() {
+        var state = focusedBox()
+        state.type("shop")
+        state.pageChanged("")
+        #expect(state.text.isEmpty)
+        #expect(!state.dropdownShown)
+    }
+
+    /// Coming back to a section shows the filter it kept, and leaving it empties the box.
+    @Test func attachShowsThePagesFilterAndDetachEmptiesTheBox() {
+        var state = SearchBox.State()
+        state.attach(pageText: "web")
+        #expect(state.text == "web")
+        state.detach()
+        #expect(state.text.isEmpty)
+        #expect(!state.hasPage)
+        let r5 = state.type("x")
+        #expect(r5 == nil)
+    }
+
+    /// `>` leaves the page unfiltered, and the page's resulting empty filter does not wipe the `>`.
+    @Test func commandsModeClearsThePageFilterAndKeepsTheBoxText() {
+        var state = focusedBox()
+        state.type("web")
+        let r6 = state.type(">run")
+        #expect(r6 == "")
+        state.pageChanged("")
+        #expect(state.text == ">run")
+        #expect(state.dropdownShown)
+        // Unchanged page filter, nothing to write.
+        let r7 = state.type(">ru")
+        #expect(r7 == nil)
+    }
+
+    @Test func escapeClosesTheDropdownAndTypingOpensItAgain() {
+        var state = focusedBox()
+        state.type("shop")
+        state.dropdownClosed = true
+        #expect(!state.dropdownShown)
+        state.type("shop-")
+        #expect(state.dropdownShown)
+    }
+
+    @Test func losingFocusHidesTheDropdownAndKeepsTheText() {
+        var state = focusedBox()
+        state.type("shop")
+        let r8 = state.focusChanged(false)
+        #expect(r8)
+        #expect(!state.dropdownShown)
+        #expect(state.text == "shop")
+    }
+
+    /// Focus belongs to the page at launch. Focus nobody asked for, before any click or key press,
+    /// is refused; ⌘K is honoured at any time, and once the window has been touched Tab works too.
+    @Test func unaskedFocusAtLaunchIsRefused() {
+        var state = SearchBox.State()
+        let r9 = state.focusChanged(true)
+        #expect(!r9)
+        #expect(!state.isFocused)
+
+        var asked = SearchBox.State()
+        asked.requestFocus()
+        let r10 = asked.focusChanged(true)
+        #expect(r10)
+        #expect(asked.isFocused)
+        #expect(!asked.focusWanted)
+
+        var touched = SearchBox.State()
+        touched.windowTouched()
+        let r11 = touched.focusChanged(true)
+        #expect(r11)
+    }
+
+    /// A request is used up by the focus it asked for, so it cannot excuse a later, unasked one.
+    @Test func aFocusRequestIsConsumedOnce() {
+        var state = SearchBox.State()
+        state.requestFocus()
+        let r12 = state.focusChanged(true)
+        #expect(r12)
+        let r13 = state.focusChanged(false)
+        #expect(r13)
+        let r14 = state.focusChanged(true)
+        #expect(!r14)
+    }
+
+    /// The entries hold closures that reach the model which owns the box, so they must not outlive
+    /// focus: kept, they are a retain cycle (Kyle, stage 1 round 3).
+    @Test func blurEmptiesTheEntriesAndNothingRefillsThem() {
+        final class Owner {}
+        weak var released: Owner?
+        var list = SearchBox.Entries<() -> Void>()
+        do {
+            let owner = Owner()
+            released = owner
+            list.focusChanged(true) { [{ _ = owner }] }
+            #expect(list.items.count == 1)
+            list.refresh { [{ _ = owner }, { _ = owner }] }
+            #expect(list.items.count == 2)
+        }
+        #expect(released != nil)
+        list.focusChanged(false) { [{}] }
+        #expect(list.items.isEmpty)
+        #expect(released == nil)
+        list.refresh { [{}] }
+        #expect(list.items.isEmpty)
+    }
+}

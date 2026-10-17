@@ -129,7 +129,7 @@ struct ImagesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshImages() }
-        // A image asked for by name elsewhere — the ⌘K palette. One-shot, as Containers does it.
+        // A image asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
         // Paired hosts' images kept current while this section is open, as Containers does.
@@ -216,6 +216,7 @@ struct ImagesView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search images…",
+                       matches: displayedImages.count,
                        updated: model.imagesLastRefresh,
                        leading: {
             Toggle("", isOn: Binding(get: { allVisibleSelected },

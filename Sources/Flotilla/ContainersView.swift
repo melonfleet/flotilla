@@ -400,7 +400,7 @@ struct ContainersView: View {
         }
     }
 
-    /// The search field, read as `SearchQuery`'s grammar: `is:`, `image:`, `host:`, `tag:` and words.
+    /// The search text (typed in the window bar's box), read as `SearchQuery`'s grammar: `is:`, `image:`, `host:`, `tag:` and words.
     private var query: SearchQuery { SearchQuery.parse(ui.search) }
 
     /// The state to list: the filter menu's, narrowed by `is:`. The two together must agree — Running
@@ -1326,8 +1326,9 @@ struct ContainersView: View {
     private var toolbar: some View {
         SectionToolbar(search: $ui.search,
                        searchPrompt: "Search containers and groups…",
+                       matches: rows.count,
                        updated: model.lastRefresh,
-                       searchHelp: SearchQuery.help + " ⌘F to search.",
+                       searchHelp: SearchQuery.help,
                        leading: {
             Picker("View", selection: $ui.presentation) {
                 ForEach(Presentation.allCases) { option in

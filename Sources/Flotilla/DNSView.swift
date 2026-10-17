@@ -160,6 +160,7 @@ struct DNSView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search domains…",
+                       matches: displayedRows.count,
                        updated: model.dnsLastRefresh,
                        leading: {
             Toggle("", isOn: Binding(get: { allVisibleSelected },

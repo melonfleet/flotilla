@@ -14,7 +14,9 @@ struct SuggestionsView: View {
     /// Opened straight into one stack's form — from the empty state's quick picks.
     @State var chosen: StackSuggestion?
 
-    @State private var query = ""
+    /// Typed in the window bar's search box (Q55), which this page lends it while the list is showing.
+    @State private var queryText = PageSearchText()
+    private var query: String { queryText.value }
     @State private var category: String?
     @State private var selectedID: LibraryEntry.ID?
 
@@ -47,6 +49,9 @@ struct SuggestionsView: View {
                 footer
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .searchesFromToolbar(prompt: "Search suggestions",
+                                 text: Binding(get: { queryText.value }, set: { queryText.value = $0 }),
+                                 matches: shown.count)
             // Use… checks a container's new volumes against what is here, so the list must be.
             .task { if model.volumesState != .loaded { await model.refreshVolumes() } }
         }
@@ -56,20 +61,17 @@ struct SuggestionsView: View {
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                TextField("Search suggestions", text: $query)
-                    .textFieldStyle(.roundedBorder)
-                Picker("", selection: $category) {
-                    Text("All categories").tag(String?.none)
-                    Divider()
-                    ForEach(SuggestionLibrary.categories.filter { name in library.entries.contains { $0.categories.contains(name) } },
-                            id: \.self) { name in
-                        Text("\(name) (\(library.entries.count { $0.categories.contains(name) }))").tag(String?.some(name))
-                    }
+            // The search is the window bar's box now (Q55).
+            Picker("", selection: $category) {
+                Text("All categories").tag(String?.none)
+                Divider()
+                ForEach(SuggestionLibrary.categories.filter { name in library.entries.contains { $0.categories.contains(name) } },
+                        id: \.self) { name in
+                    Text("\(name) (\(library.entries.count { $0.categories.contains(name) }))").tag(String?.some(name))
                 }
-                .labelsHidden()
-                .fixedSize()
             }
+            .labelsHidden()
+            .fixedSize()
             Text("\(shown.count) of \(library.entries.count) · library \(library.version)")
                 .font(.caption).foregroundStyle(.secondary)
             List(selection: $selectedID) {

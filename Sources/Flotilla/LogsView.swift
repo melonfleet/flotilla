@@ -135,6 +135,7 @@ struct LogsView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search log lines…",
+                       matches: feed.count,
                        updated: updated,
                        leading: {
             // **Select all, in the same place every other section puts it** — first in the

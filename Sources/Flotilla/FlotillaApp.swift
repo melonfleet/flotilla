@@ -226,15 +226,22 @@ private struct FlotillaCommands: Commands {
         // The title bar is intentionally replaced by `WindowBar`, so there is no system toolbar
         // to show or customise. The sidebar group stays: its toggle is translated into the app's
         // rail by `MainWindowView`, and that group also owns the working Full Screen command.
-        // ⌘K, the palette (Phase 1 leftover): in the View menu, where a toolbar's commands would be.
+        // ⌘K and ⌘F, the window bar's search box (Q55): in the View menu, where a toolbar's commands
+        // would be. Both focus the box and select its text; ⌘F used to be a hidden button in each
+        // section's own band, and those fields are gone.
         CommandGroup(replacing: .toolbar) {
             Button("Go To…") {
-                // Not `present`: opening the palette replaces nothing, so it asks nothing. The pick
-                // asks (`CommandPalette.openSelected`) — asking here as well made ⌘K ask twice.
-                model.showingPalette = true
+                // Not `present`: focusing the box replaces nothing, so it asks nothing. A pick asks
+                // (`ToolbarSearch.pick`) — asking here as well made ⌘K ask twice.
+                model.toolbarSearch.focus()
                 showWindow()
             }
                 .keyboardShortcut("k", modifiers: .command)
+            Button("Search") {
+                model.toolbarSearch.focus()
+                showWindow()
+            }
+                .keyboardShortcut("f", modifiers: .command)
         }
 
         // There is one main window, and forms and details are embedded in it. Commands for
@@ -428,6 +435,8 @@ struct FlotillaApp: App {
                 .environment(\.themeChoice, model.themeChoice)
                 // For `FormHeader`, which registers unsaved edits with it wherever it is drawn.
                 .environment(model.formGuard)
+                // For the list pages, which lend their filter to the window bar's search box.
+                .environment(model.toolbarSearch)
                 .task { await model.reloadUnlessLoading() }
                 // First run: ask, with Auto pre-selected. `needsAppearanceOnboarding` is
                 // false once answered, including when the answer was Auto — which is

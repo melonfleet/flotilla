@@ -55,6 +55,13 @@ questions.
   `research/review/mockups/container-detail.html` has the app sidebar in it. Detail went
   window → sheet → embedded over 1–2 August; the sheet cost resizability, height for the
   Terminal tab, and left the sidebar inert. Do not turn any of it back into a sheet.
+- **⌘K is the window bar's search box now** (17 October, `DECISIONS.md` Q55). One centred field
+  (`ToolbarSearch`) filters the current page's list, goes to sections and things by name, and runs
+  commands. `>` is commands only. It replaced the floating palette and every per-page search field.
+  A list page lends the box its existing filter text through `searchesFromToolbar`
+  (`SectionToolbar` does this for you), and only while the list is on screen. While the box has
+  focus it takes Escape, Return and the arrows before the window does, so they cannot reach a
+  form's Cancel or Save.
 - **216 tests pass on macOS.** `FlotillaCore` also builds and tests on Linux with
   Swift 6.1 via `Package@swift-6.1.swift`. Keep the portable core Foundation-only
   so backend and data work stays independently verifiable.
@@ -408,6 +415,15 @@ that we *built* the right command; almost nothing checked the command was
   unqualified question — the guarantee is in the type rather than in every call site. Two
   mechanisms where only one is safe is worse than either: the four bulk paths added later inherited
   the unsafe one because it was the one that looked general.
+- **A stored `Binding` is a snapshot inside a view body.** The ⌘K box kept each page's filter
+  `Binding` and read it back for its own text. Read during a view update, a `Binding` returns the
+  value it was created with and registers no dependency, so on every page with a list the field
+  never saw a keystroke: no dropdown, and the ⌘K hint stayed beside "shop", while typing still
+  filtered the page, because writes through it work. The dashboard, with no binding, worked, which
+  is why reading the code didn't find it. Measured with an in-process probe, then confirmed by
+  rendering the real window: `cacheDisplay(in:to:)` from an injected dylib needs no Screen
+  Recording permission. Hold a binding to write through, and keep the value you display in
+  something observed.
 
 ### Branding
 

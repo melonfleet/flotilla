@@ -30,6 +30,8 @@ struct MainWindowView: View {
         sortOrder: [KeyPathComparator(\HostedCluster.name)])
     @State private var activityUI = ActivityUIState()
     @State private var logsUI = LogsUIState()
+    /// Notifications' filter, here for the reason the others are: the box shows it on the way back.
+    @State private var notificationsSearch = PageSearchText()
 
     /// Volumes, Networks and Images share one generic state type — see `ResourceUIState`.
     @State private var volumesUI = ResourceUIState<HostedVolume>(
@@ -302,13 +304,16 @@ struct MainWindowView: View {
         case .settings:
             SettingsView(model: model)
         case .notifications:
-            NotificationsView(model: model) { navigate(to: $0) }
+            NotificationsView(model: model, search: notificationsSearch) { navigate(to: $0) }
         case .greta:
             GretaView(model: model) { navigate(to: $0) }
         }
     }
 
     var body: some View {
+        // Read here, in the body, so a change to it re-renders the overlay below. The overlay's
+        // closure is not relied on to register the read itself.
+        let searchDropdownShown = model.toolbarSearch.dropdownShown
         VStack(spacing: 0) {
             // Full width, above everything — so the sidebar starts below it.
             WindowBar(model: model, railed: $railed)
@@ -405,19 +410,19 @@ struct MainWindowView: View {
             volumesUI.columnCustomization[visibility: "spread"] = visibility
             networksUI.columnCustomization[visibility: "spread"] = visibility
         }
-        // The palette is modal: what is under it takes no clicks or shortcuts while it is open, so
-        // Escape can only ever close the palette — never a form's Cancel beneath it.
-        .disabled(model.showingPalette)
-        // ⌘K: over everything, near the top as Spotlight sits; a click outside closes it.
-        .overlay(alignment: .top) {
-            if model.showingPalette {
-                ZStack(alignment: .top) {
-                    Color.black.opacity(0.12)
-                        .ignoresSafeArea()
-                        .onTapGesture { model.showingPalette = false }
-                        .accessibilityHidden(true)
-                    CommandPalette(model: model) { model.showingPalette = false }
-                        .padding(.top, 90)
+        // The search box's dropdown (Q55), hung under the field in the window bar and over the page.
+        // Here rather than in `WindowBar`, whose 52pt would clip it. The page stays live under it —
+        // the box filters that page as you type — so nothing is disabled; the keys that would
+        // reach a form's Cancel or Save are taken by `ToolbarSearch` before the window sees them.
+        .overlayPreferenceValue(ToolbarSearchAnchor.self) { anchor in
+            if searchDropdownShown, let anchor {
+                GeometryReader { proxy in
+                    let field = proxy[anchor]
+                    let width = min(max(field.width, 440), proxy.size.width - 24)
+                    ToolbarSearchDropdown(model: model)
+                        .frame(width: width)
+                        .offset(x: min(max(field.midX - width / 2, 12), proxy.size.width - width - 12),
+                                y: field.maxY + 6)
                 }
             }
         }

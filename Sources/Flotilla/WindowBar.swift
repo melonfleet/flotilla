@@ -47,16 +47,20 @@ struct WindowBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                // The sidebar toggle moved to the middle of the sidebar's edge (6 October); this
-                // keeps the wordmark the same distance from the traffic lights it had beside it.
-                Color.clear.frame(width: 18, height: 1)
+            CentredBarLayout {
+                HStack(spacing: 10) {
+                    // The sidebar toggle moved to the middle of the sidebar's edge (6 October); this
+                    // keeps the wordmark the same distance from the traffic lights it had beside it.
+                    Color.clear.frame(width: 18, height: 1)
 
-                // The owner's bar (6 October): the full lockup in white, straight on the bar.
-                Wordmark(size: 16, lockup: .bar)
-                    .fixedSize()          // a lockup, never wrapped
+                    // The owner's bar (6 October): the full lockup in white, straight on the bar.
+                    Wordmark(size: 16, lockup: .bar)
+                        .fixedSize()          // a lockup, never wrapped
+                }
+                .padding(.leading, trafficLightInset)
 
-                Spacer(minLength: 12)
+                // One search box for the whole window (Q55), centred as Docker Desktop's is.
+                ToolbarSearchField(model: model)
 
                 // The three app-level controls share one capsule, the way a section's actions do.
                 BarGlass {
@@ -73,9 +77,8 @@ struct WindowBar: View {
                         model.requestSection(.settings)
                     }
                 }
+                .padding(.trailing, 12)
             }
-            .padding(.leading, trafficLightInset)
-            .padding(.trailing, 12)
             .frame(height: Self.barHeight)
             // The bar's own ground — see `Theme.titleBar`. It had none, so it showed the content
             // wash and read as the top of the content rather than as chrome.
@@ -95,6 +98,50 @@ struct WindowBar: View {
         // *looks* like the place you would grab to move the window — and controls inside it keep
         // their own clicks, since a gesture on the container does not swallow a button's hit.
         .background(WindowDragArea())
+    }
+}
+
+/// Wordmark at the leading edge, controls at the trailing edge, and the search box between them:
+/// centred on the **window** while there is room, which is where the eye looks for it and where
+/// Docker Desktop puts its own, and otherwise filling the gap between the two, never overlapping
+/// them. Exactly three subviews.
+///
+/// A `Layout` because an `HStack` cannot say "centred on the whole, but clear of both sides": with
+/// two flexible flanks it centres only while the flanks fit their equal shares, and at the window's
+/// 700pt minimum the wordmark does not.
+private struct CentredBarLayout: Layout {
+    /// The box's widest, and the narrowest it is centred at before it gives up centring for room.
+    private let widest: CGFloat = 400
+    private let narrowestCentred: CGFloat = 220
+    private let gap: CGFloat = 16
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        return CGSize(width: proposal.width ?? sizes.reduce(0) { $0 + $1.width } + 2 * gap,
+                      height: proposal.height ?? sizes.map(\.height).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 3 else { return }
+        let leading = subviews[0].sizeThatFits(.unspecified)
+        let trailing = subviews[2].sizeThatFits(.unspecified)
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(leading))
+        subviews[2].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: ProposedViewSize(trailing))
+
+        let left = bounds.minX + leading.width + gap
+        let right = bounds.maxX - trailing.width - gap
+        let centred = min(widest, 2 * min(bounds.midX - left, right - bounds.midX))
+        let width: CGFloat
+        let x: CGFloat
+        if centred >= narrowestCentred {
+            width = centred
+            x = bounds.midX - width / 2
+        } else {
+            width = max(0, min(widest, right - left))
+            x = left + (right - left - width) / 2
+        }
+        subviews[1].place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: width, height: nil))
     }
 }
 

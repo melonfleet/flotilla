@@ -122,6 +122,7 @@ struct RegistriesView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search registries…",
+                       matches: displayedRows.count,
                        updated: model.registriesLastRefresh,
                        leading: {
             Toggle("", isOn: Binding(get: { allVisibleSelected },

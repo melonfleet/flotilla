@@ -2331,6 +2331,48 @@ script checks them against their registries, and a live run on three Macs decide
      checking.
    - **Then:** the live-tested entries, category by category.
 
+## Q55 — One search box in the window bar (settled 2026-10-17)
+
+Kamal's words: *"I like the way Docker does it, that there's one search box in the toolbar ...
+like VS Code, where I can either search for stuff, filter for stuff that's on the page that I'm
+on, or bring up commands like Run Container. All from that one search box."* It replaces two
+things: the floating ⌘K palette, and the search field each list page carried in its own band. It
+is stage 1 of a three-stage restyle; two-line rows (stage 2) and Liquid Glass ‹ › buttons on
+detail pages (stage 3) come later.
+
+1. **Where.** One field, centred in the window bar (`WindowBar`), in the same light glass as the
+   capsule of buttons at the top right. It shows a magnifying glass, a placeholder naming the page
+   ("Search containers"; "Search or run a command" on a page with no list) and a ⌘K hint while
+   empty. It is centred on the window while there is room and narrows rather than overlapping the
+   wordmark or the buttons at the 700pt minimum.
+2. **Typing filters the page you are on, immediately,** through that page's existing filter
+   state and matching. Nothing new matches anything. Each page lends the box its own text
+   (`searchesFromToolbar`) only while its list is on screen, so each section keeps its own
+   filter, and a detail or a form has nothing to filter. That state lives in the `*UIState` objects
+   or with `MainWindowView`, because section views are rebuilt on every sidebar change.
+3. **The dropdown.** While the box has focus and text, a dropdown under it lists **Commands**
+   (the palette's actions) and **Go to** (sections, and things by name across hosts). These are
+   the palette's items (`paletteItems()`) and its ranking, now in `SearchBox` (`FlotillaCore`,
+   tested). Its top line says what the page is doing: "12 on this page". ↑↓ move, Return opens
+   the highlighted entry, and Escape closes the dropdown; a second Escape clears the text.
+4. **`>` first means commands only,** as in VS Code, and the page is not filtered while it is there.
+5. **A pick goes through `FormGuard.confirmLeaving`,** exactly as the palette's did; the guard's
+   rules are unchanged. On a form screen the box still offers commands and places, and a pick asks
+   about unsaved changes as before.
+6. **Escape and Return in the box never reach the page.** A form's Cancel is `.cancelAction` and
+   AppKit gives key equivalents to the window before the focused field. The palette prevented that
+   by disabling everything under it, which the box cannot do to a page it is filtering. While the
+   box has focus, `ToolbarSearch` takes Escape, Return and the arrows before the window sees them,
+   and only in the box's own window, so a sheet's own keys still work.
+7. **Keys and focus.** ⌘K (View ▸ Go To…) and ⌘F both focus the box and select its text. A click
+   outside the box or its dropdown, or a pick, gives focus back to the page.
+8. **The Docker Hub browser** searches a remote catalogue rather than filtering a list. The box is
+   its query field too, and Return runs the search, so there is still only one box.
+
+Left with their own fields, because they search inside one panel of a page rather than filtering
+the page: a container's Logs tab, the Inspect tabs' key filters, a host's settings filter, and
+the host checklist inside forms.
+
 ## Q56 — Two-line rows replace the table (settled 2026-10-17)
 
 **Amends Q2** ("a table is the primary view"). The primary view of a list is now a list of

@@ -184,6 +184,7 @@ struct ClustersView: View {
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
                        searchPrompt: "Search clusters…",
+                       matches: displayedClusters.count,
                        updated: model.clustersLastRefresh,
                        leading: {
             ResourceListControls<HostedCluster>(

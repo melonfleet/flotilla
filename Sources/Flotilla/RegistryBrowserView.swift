@@ -16,7 +16,10 @@ struct RegistryBrowserView: View {
     let onPull: (String) -> Void
     let dismiss: () -> Void
 
-    @State private var query = ""
+    /// Typed in the window bar's search box (Q55), whose Return runs the search as this page's own
+    /// field did. Debounced below either way.
+    @State private var queryText = PageSearchText()
+    private var query: String { queryText.value }
     @State private var results: [DockerHub.Repository] = []
     @State private var total = 0
     @State private var loading = false
@@ -46,6 +49,11 @@ struct RegistryBrowserView: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .searchesFromToolbar(prompt: "Search Docker Hub",
+                             text: Binding(get: { queryText.value }, set: { queryText.value = $0 }),
+                             matches: nil,
+                             submit: { Task { await search(from: 0) } },
+                             submitNote: "Return searches Docker Hub")
         // A short pause after typing, so a search is one request per word rather than per key.
         .task(id: query) {
             if !query.isEmpty { try? await Task.sleep(for: .milliseconds(450)) }
@@ -59,9 +67,6 @@ struct RegistryBrowserView: View {
 
     private var resultsPane: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField("Search Docker Hub", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { Task { await search(from: 0) } }
             if !defaultIsDockerHub {
                 Label("Your default registry is \(defaultRegistry), which has no public search, so this "
                       + "searches Docker Hub. Pulls from here come from Docker Hub.", systemImage: "info.circle")
