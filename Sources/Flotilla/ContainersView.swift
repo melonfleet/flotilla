@@ -1309,7 +1309,8 @@ struct ContainersView: View {
     /// One definition owns the padding, the search width, the status slot and the glass cluster
     /// now; each section supplies only what is genuinely its own.
     private var toolbar: some View {
-        SectionToolbar(search: $ui.search,
+        SectionToolbar(search: Binding(get: { [weak ui] in ui?.search ?? "" },
+                                       set: { [weak ui] in ui?.search = $0 }),
                        searchPrompt: "Search containers and groups…",
                        matches: rows.count,
                        updated: model.lastRefresh,

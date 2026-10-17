@@ -50,7 +50,8 @@ struct SuggestionsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .searchesFromToolbar(prompt: "Search suggestions",
-                                 text: Binding(get: { queryText.value }, set: { queryText.value = $0 }),
+                                 text: Binding(get: { [weak queryText] in queryText?.value ?? "" },
+                                               set: { [weak queryText] in queryText?.value = $0 }),
                                  matches: shown.count)
             // Use… checks a container's new volumes against what is here, so the list must be.
             .task { if model.volumesState != .loaded { await model.refreshVolumes() } }

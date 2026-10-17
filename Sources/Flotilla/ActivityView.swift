@@ -40,7 +40,8 @@ struct ActivityView: View {
     /// entries", so they are one control, and the words move into the popover where they are read
     /// once rather than worn permanently.
     private var toolbar: some View {
-        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
+        SectionToolbar(search: Binding(get: { [weak ui] in ui?.search ?? "" },
+                                       set: { [weak ui] in ui?.search = $0 }),
                        searchPrompt: "Search activity…",
                        matches: filtered.count,
                        // No refresh time to show — this feed is appended to as things happen — so

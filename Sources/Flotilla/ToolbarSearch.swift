@@ -59,7 +59,6 @@ final class ToolbarSearch {
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var keyMonitor: Any?
     @ObservationIgnored private var clickMonitor: Any?
-    @ObservationIgnored private var touchMonitor: Any?
 
     /// What the box shows. Typing writes it through to the page's filter, except after a `>`.
     var text: String {
@@ -122,14 +121,12 @@ final class ToolbarSearch {
 
     /// ⌘K, ⌘F and View ▸ Go To…: focus the box and select its text.
     func focus() {
-        state.requestFocus()
         focusRequested = true
     }
     /// Give focus back to the page.
     func release() { releaseRequested = true }
 
-    /// Returns false when the box turns the focus down, which it does at launch (`SearchBox.State`);
-    /// the field then gives it back.
+    /// Accept focus from any source and keep the dropdown and event monitors in sync.
     @discardableResult
     func focusChanged(_ focused: Bool, entries: @autoclosure () -> [PaletteItem]) -> Bool {
         guard state.focusChanged(focused) else { return false }
@@ -138,18 +135,6 @@ final class ToolbarSearch {
         watchKeys(focused)
         watchClicks(focused)
         return true
-    }
-
-    /// Notes the window's first click or key press, which is when the box starts accepting focus it
-    /// did not ask for. One-shot: removed as soon as it has seen one.
-    func watchFirstTouch() {
-        guard !state.touched, touchMonitor == nil else { return }
-        touchMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]) { [weak self] event in
-            guard let self else { return event }
-            self.state.windowTouched()
-            if let monitor = self.touchMonitor { NSEvent.removeMonitor(monitor); self.touchMonitor = nil }
-            return event
-        }
     }
 
     func refresh(_ entries: @autoclosure () -> [PaletteItem]) { list.refresh(entries) }
@@ -243,6 +228,8 @@ final class ToolbarSearch {
 extension View {
     /// Lends this page's filter to the window bar's search box while the view is on screen.
     ///
+    /// Build `text` from the page's state object, captured weakly in both closures. Capturing a
+    /// view here also captures its model, which owns this box and keeps the binding even on blur.
     /// Apply it to the branch that shows the list, not to the section as a whole: a detail or a form
     /// in the same section has nothing to filter, and the box should say so.
     func searchesFromToolbar(prompt: String, help: String? = nil, text: Binding<String>, matches: Int?,
@@ -283,6 +270,40 @@ private struct ToolbarSearchScope: ViewModifier {
 @Observable
 final class PageSearchText {
     var value = ""
+}
+
+/// Gives the page the initial text cursor without restricting later accessibility or Tab focus.
+/// Lives in the main window's background so it observes that window, never a sheet or another app.
+struct InitialPageFocus: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ResetView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class ResetView: NSView {
+        private var scheduled = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(self)
+            guard let window, !scheduled else { return }
+            if window.isKeyWindow {
+                resetOnce()
+            } else {
+                NotificationCenter.default.addObserver(self, selector: #selector(resetOnce),
+                                                      name: NSWindow.didBecomeKeyNotification, object: window)
+            }
+        }
+
+        @objc private func resetOnce() {
+            guard let window, !scheduled else { return }
+            scheduled = true
+            NotificationCenter.default.removeObserver(self)
+            // AppKit can restore the search field as first responder while opening the window.
+            // Clear it on the next turn once, then leave all subsequent focus alone.
+            DispatchQueue.main.async { [weak window] in
+                window?.makeFirstResponder(nil)
+            }
+        }
+    }
 }
 
 // MARK: - The field
@@ -364,7 +385,6 @@ struct ToolbarSearchField: View {
         }
         .onChange(of: box.highlighted) { _, index in announce(index) }
         .onAppear {
-            box.watchFirstTouch()
             box.open = { [weak search = model.toolbarSearch, formGuard = model.formGuard] item in
                 search?.pick(item, formGuard: formGuard)
             }

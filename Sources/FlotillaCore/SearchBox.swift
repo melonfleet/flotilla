@@ -118,11 +118,6 @@ public enum SearchBox {
         public var dropdownClosed = false
         /// The highlighted entry, as an index into `Results.all`; nil until an arrow is pressed.
         public var highlighted: Int?
-        /// ⌘K, ⌘F or Go To… asked for focus, and it has not arrived yet.
-        public private(set) var focusWanted = false
-        /// The window has had a click or a key press.
-        public private(set) var touched = false
-
         public init() {}
 
         public var input: Input { SearchBox.read(text) }
@@ -163,19 +158,9 @@ public enum SearchBox {
             highlighted = nil
         }
 
-        public mutating func requestFocus() { focusWanted = true }
-        public mutating func windowTouched() { touched = true }
-
-        /// Focus arrived at or left the field. Returns false when the box refuses it.
-        ///
-        /// Focus belongs to the page at launch. Nothing in the app asks for the box then, but AppKit
-        /// can still hand the field focus as the window opens, for instance by restoring the first
-        /// responder of the last session. So focus nobody asked for, before the window has had any
-        /// click or key press, is turned down. Once the user has touched the window, Tab and VoiceOver
-        /// may focus the box like any other field.
+        /// Accept focus from any source, including accessibility, without requiring a click or key.
+        /// The app gives the page initial focus once, when its window first becomes key.
         public mutating func focusChanged(_ focused: Bool) -> Bool {
-            if focused, !focusWanted, !touched { return false }
-            if focused { focusWanted = false }
             isFocused = focused
             dropdownClosed = false
             highlighted = nil

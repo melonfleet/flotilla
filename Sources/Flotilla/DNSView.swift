@@ -150,7 +150,8 @@ struct DNSView: View {
     // MARK: Toolbar
 
     private var toolbar: some View {
-        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
+        SectionToolbar(search: Binding(get: { [weak ui] in ui?.search ?? "" },
+                                       set: { [weak ui] in ui?.search = $0 }),
                        searchPrompt: "Search domains…",
                        matches: displayedRows.count,
                        updated: model.dnsLastRefresh,

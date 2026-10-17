@@ -372,6 +372,7 @@ struct MainWindowView: View {
         .ignoresSafeArea(.container, edges: .top)
         // The wash has to reach the top of the window now that the content does.
         .background(Theme.contentBackground(themes, opaque: reduceTransparency).ignoresSafeArea())
+        .background(InitialPageFocus())
         .allowsHitTesting(model.openFormCount == 0)
         .overlay {
             if model.openFormCount > 0 {

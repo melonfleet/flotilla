@@ -87,12 +87,10 @@ import Testing
 
     // MARK: State
 
-    /// The box focused by ⌘F, after a click in the window, as Andy did it.
+    /// Focus can arrive from a shortcut, Tab, VoiceOver, or another accessibility client.
     private func focusedBox(pageText: String? = "") -> SearchBox.State {
         var state = SearchBox.State()
         if let pageText { state.attach(pageText: pageText) }
-        state.windowTouched()
-        state.requestFocus()
         let r1 = state.focusChanged(true)
         #expect(r1)
         return state
@@ -182,37 +180,18 @@ import Testing
         #expect(state.text == "shop")
     }
 
-    /// Focus belongs to the page at launch. Focus nobody asked for, before any click or key press,
-    /// is refused; ⌘K is honoured at any time, and once the window has been touched Tab works too.
-    @Test func unaskedFocusAtLaunchIsRefused() {
+    /// VoiceOver may focus the box without an app-local click, key, or explicit search request.
+    @Test func accessibilityFocusNeedsNoPriorInteraction() {
         var state = SearchBox.State()
-        let r9 = state.focusChanged(true)
-        #expect(!r9)
+        let firstFocus = state.focusChanged(true)
+        #expect(firstFocus)
+        #expect(state.isFocused)
+        let blur = state.focusChanged(false)
+        #expect(blur)
         #expect(!state.isFocused)
-
-        var asked = SearchBox.State()
-        asked.requestFocus()
-        let r10 = asked.focusChanged(true)
-        #expect(r10)
-        #expect(asked.isFocused)
-        #expect(!asked.focusWanted)
-
-        var touched = SearchBox.State()
-        touched.windowTouched()
-        let r11 = touched.focusChanged(true)
-        #expect(r11)
-    }
-
-    /// A request is used up by the focus it asked for, so it cannot excuse a later, unasked one.
-    @Test func aFocusRequestIsConsumedOnce() {
-        var state = SearchBox.State()
-        state.requestFocus()
-        let r12 = state.focusChanged(true)
-        #expect(r12)
-        let r13 = state.focusChanged(false)
-        #expect(r13)
-        let r14 = state.focusChanged(true)
-        #expect(!r14)
+        let laterFocus = state.focusChanged(true)
+        #expect(laterFocus)
+        #expect(state.isFocused)
     }
 
     /// The entries hold closures that reach the model which owns the box, so they must not outlive

@@ -133,7 +133,8 @@ struct LogsView: View {
     /// sections have: kind and name are both "which sources", and splitting them across two
     /// controls made the reader hold a two-part rule in their head.
     private var toolbar: some View {
-        SectionToolbar(search: Binding(get: { ui.search }, set: { ui.search = $0 }),
+        SectionToolbar(search: Binding(get: { [weak ui] in ui?.search ?? "" },
+                                       set: { [weak ui] in ui?.search = $0 }),
                        searchPrompt: "Search log lines…",
                        matches: feed.count,
                        updated: updated,

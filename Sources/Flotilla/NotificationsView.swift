@@ -64,7 +64,8 @@ struct NotificationsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .searchesFromToolbar(prompt: "Search notifications",
-                             text: Binding(get: { searchText.value }, set: { searchText.value = $0 }),
+                             text: Binding(get: { [weak searchText] in searchText?.value ?? "" },
+                                           set: { [weak searchText] in searchText?.value = $0 }),
                              matches: shown.count)
         .onAppear {
             lastShown = (shown.map(\.id), filter, search)

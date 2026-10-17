@@ -50,7 +50,8 @@ struct RegistryBrowserView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .searchesFromToolbar(prompt: "Search Docker Hub",
-                             text: Binding(get: { queryText.value }, set: { queryText.value = $0 }),
+                             text: Binding(get: { [weak queryText] in queryText?.value ?? "" },
+                                           set: { [weak queryText] in queryText?.value = $0 }),
                              matches: nil,
                              submit: { Task { await search(from: 0) } },
                              submitNote: "Return searches Docker Hub")
