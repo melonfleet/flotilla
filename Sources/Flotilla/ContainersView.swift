@@ -163,14 +163,14 @@ struct ContainersView: View {
     /// tab you are on stays the tab you are on.
     @ViewBuilder
     private var page: some View {
-        if let row = shownRow {
-            rowPage(row)
-                .paneStep("item", "items", order: showableIDs, current: row.id) { select($0) }
+        if let id = shownID {
+            rowPage(id)
+                .paneStep("item", "items", order: showableIDs, current: id) { select($0) }
                 // A new menu request rebuilds the page, so it opens on the tab it asked for.
                 .id(request?.nonce)
         } else if shown.count > 1, actionableCount > 0 {
             SelectionSummaryPane(title: "\(selectionNoun) selected", systemImage: "shippingbox",
-                                 names: rows.filter { actionable.contains($0.id) }.map(\.name)) {
+                                 names: actionableNames) {
                 bulkActions
             }
         } else {
@@ -179,20 +179,48 @@ struct ContainersView: View {
         }
     }
 
-    /// The one row the page shows, when there is one and it has a page.
+    /// The one row the page shows, when there is one and it has a page — resolved against every
+    /// row, not the rows on screen (Kyle, 17 October): a filter hides rows in the list, never the
+    /// page that's open.
     private var shownRow: ContainerRow? {
-        guard shown.count == 1, let id = shown.first, showableIDs.contains(id) else { return nil }
-        return rowsByID[id]
+        guard shown.count == 1, let id = shown.first,
+              let row = rowsByID[id] ?? everyRow.first(where: { $0.id == id }),
+              checkUnavailable(row) == nil
+        else { return nil }
+        return row
+    }
+
+    /// The id the page is drawn from. A group's page is its form, drawn from the id rather than
+    /// the row, so a group deleted (or its host forgotten) while its draft has unsaved changes
+    /// keeps the form on screen while the guard asks, and after Keep Editing.
+    private var shownID: ContainerRow.ID? {
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return ContainerRow.isGroupRowID(id) || shownRow != nil ? id : nil
+    }
+
+    /// Every row with a page, whatever the filters show: what one selected row may be.
+    private var existingIDs: Set<ContainerRow.ID> {
+        Set(everyRow.filter { checkUnavailable($0) == nil }.map(\.id))
+    }
+
+    /// The group form's own Cancel or Save: it has already asked whatever it needed to, so the page
+    /// closes with the selection rather than asking again behind it.
+    private func closePage() {
+        selection = []
+        shown = []
     }
 
     @ViewBuilder
-    private func rowPage(_ row: ContainerRow) -> some View {
-        if row.kind == .group, let group = row.group {
+    private func rowPage(_ id: ContainerRow.ID) -> some View {
+        if ContainerRow.isGroupRowID(id) {
+            let groupID = ContainerRow.groupID(fromRowID: id)
             // A group's page is its form, as it always was; Cancel or Save leaves it.
-            GroupFormView(model: model, target: .existing(group.id)) { selection = [] }
-                .paneHeaderActions { groupRowActions(for: group, place: .header) }
-                .id(group.id)
-        } else if let container = row.container {
+            GroupFormView(model: model, target: .existing(groupID)) { closePage() }
+                .paneHeaderActions {
+                    if let group = model.groups.group(groupID) { groupRowActions(for: group, place: .header) }
+                }
+                .id(groupID)
+        } else if let row = shownRow, let container = row.container {
             let tab = request?.id == row.id ? request?.tab : nil
             VStack(spacing: 0) {
                 detailHeader(for: container, on: row.host)
@@ -389,7 +417,12 @@ struct ContainersView: View {
 
     /// The same for one Mac: its standalone containers and the groups that run on it (groups on
     /// hosts, the owner, 12 October). A host's container tags are keyed by host and name.
-    private func listing(on host: HostRef) -> [ContainerListing.Item] {
+    private func listing(on host: HostRef, filtered: Bool = true) -> [ContainerListing.Item] {
+        guard filtered else {
+            return ContainerListing.items(containers: model.containers(on: host),
+                                          groups: model.groups.groups.filter { $0.place == host },
+                                          kind: .all, state: .all)
+        }
         let query = query
         let names: [String] = switch host {
         case .local: localHostNames
@@ -495,6 +528,21 @@ struct ContainersView: View {
             guard let container = row.container, applies(container) else { continue }
             await model.perform(action, on: container, host: row.host)
         }
+    }
+
+    /// The names the page's summary lists: the same de-duplicated set the count and the actions
+    /// take, in list order. A member of a selected group is acted on through its group, so it is
+    /// named once, as the group — listing it as well said "1 group" over two names (Kyle, 17 October).
+    private var actionableNames: [String] {
+        let groups = Set(actionableGroups.map { ContainerRow.groupRowID($0.id) })
+        let remote = Set(actionableRemote.map(\.id))
+        let local = actionableContainerIDs
+        return rows.filter { row in
+            guard actionable.contains(row.id) else { return false }
+            if row.kind == .group { return groups.contains(row.id) }
+            guard let container = row.container else { return false }
+            return row.host.isLocal ? local.contains(container.id) : remote.contains(row.id)
+        }.map(\.name)
     }
 
     /// What the bulk bar would count. It shows only above zero: a selection with nothing a bulk
@@ -1018,7 +1066,7 @@ struct ContainersView: View {
                                 chosen: suggestionPick)
             } else {
                 // Q58: the list, and the selected row's page beside it.
-                SplitPanes(list: "containers", pane: ui.pane, showing: shownRow?.id) {
+                SplitPanes(list: "containers", pane: ui.pane, showing: shownID) {
                     VStack(spacing: 0) {
                         toolbar
                         bulkActionBar
@@ -1091,8 +1139,9 @@ struct ContainersView: View {
         // the selection — filter, search, a closed group, the data itself changing (a bulk
         // delete leaves the dead ids behind otherwise) — and every way a row the bar cannot
         // take gets in: a click, ⇧-click or ⌘A on a member not created yet.
-        .selection($selection, confinedTo: Set(selectableIDs), showing: Set(showableIDs))
-        .paneFollows($selection, into: $shown, guard: model.formGuard)
+        // `existingIDs`, not the rows on screen: a filter hides rows, never the page that's open.
+        .selection($selection, confinedTo: Set(selectableIDs), showing: existingIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
         // Single-row delete, from the trash button. Names the container — a dialog that just
         // says "are you sure" makes you go back and check which row you clicked.
         .confirmationDialog(
@@ -1468,6 +1517,7 @@ struct ContainersView: View {
         /// grouped container never also appears as a standalone row.
         static func groupRowID(_ groupID: String) -> String { "group:" + groupID }
         static func isGroupRowID(_ id: String) -> Bool { id.hasPrefix("group:") }
+        static func groupID(fromRowID id: String) -> String { String(id.dropFirst("group:".count)) }
 
         init(container: Container, kind: Kind = .container, group: ContainerGroup? = nil,
              member: GroupMember? = nil,
@@ -1546,22 +1596,31 @@ struct ContainersView: View {
     /// whatever header was clicked, and each open group's members under it, **sorted by the same
     /// header** (the owner, 5 October). A group never splits apart: its members always sit
     /// directly under it. A host that stopped answering keeps its rows, marked with their age. Since 12 October a host's groups are listed with it.
-    private var sortedRows: [ContainerRow] {
+    private var sortedRows: [ContainerRow] { listRows(filtered: true) }
+
+    /// Every row there is, on every Mac, through no filter and with every group open: what the
+    /// page resolves against, so a filter hides rows in the list and never the page that's open
+    /// (Kyle, 17 October). Only a row that has really gone — deleted, or its host forgotten — is
+    /// missing from it.
+    private var everyRow: [ContainerRow] { listRows(filtered: false) }
+
+    private func listRows(filtered: Bool) -> [ContainerRow] {
+        let hostFilter = filtered ? ui.hostFilter : nil
         var top: [ContainerRow] = []
         var children: [ContainerRow.ID: [ContainerRow]] = [:]
         var places: [(host: HostRef, name: String, stale: Date?)] = []
-        if ui.hostFilter == nil || ui.hostFilter == .local { places.append((.local, model.hostLabel, nil)) }
+        if hostFilter == nil || hostFilter == .local { places.append((.local, model.hostLabel, nil)) }
         let now = Date()
         for (peer, snapshot) in model.hostMode.fleetContainers {
             let host = HostRef.peer(peer.fingerprint)
-            if let only = ui.hostFilter, only != host { continue }
+            if let only = hostFilter, only != host { continue }
             places.append((host, peer.displayName,
                            snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil))
         }
         // A group whose host is no longer trusted — forgotten, blocked — still has a row, so it
         // can be seen, saved and deleted; its Start and Stop are off (Kyle, 12 October).
         for host in Set(model.groups.groups.map(\.place)) where !host.isLocal
-            && !places.contains(where: { $0.host == host }) && (ui.hostFilter == nil || ui.hostFilter == host) {
+            && !places.contains(where: { $0.host == host }) && (hostFilter == nil || hostFilter == host) {
             places.append((host, model.hostMode.hostName(host, local: model.hostLabel) + " (not connected)", nil))
         }
         for place in places {
@@ -1573,7 +1632,7 @@ struct ContainersView: View {
                 return ContainerRow(container: container, kind: kind, group: group, member: member,
                                     host: place.host, hostName: place.name, staleSince: place.stale)
             }
-            for item in listing(on: place.host) {
+            for item in listing(on: place.host, filtered: filtered) {
                 switch item {
                 case .container(let container):
                     top.append(row(container))
@@ -1585,7 +1644,7 @@ struct ContainersView: View {
                     let groupRow = ContainerRow(group: group, state: model.state(of: group),
                                                 hostName: place.name, staleSince: place.stale)
                     top.append(groupRow)
-                    if ui.expandedGroupIDs.contains(group.id) || expandForSearch {
+                    if !filtered || ui.expandedGroupIDs.contains(group.id) || expandForSearch {
                         children[groupRow.id] = memberRows.sorted(using: ui.sortOrder)
                     }
                 }

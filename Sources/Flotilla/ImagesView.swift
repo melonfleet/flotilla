@@ -118,8 +118,8 @@ struct ImagesView: View {
         .task { await model.refreshImages() }
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set.
-        .selection($selection, confinedTo: visibleIDs)
-        .paneFollows($selection, into: $shown, guard: model.formGuard)
+        .selection($selection, confinedTo: visibleIDs, showing: existingIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
         // A image asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -546,15 +546,24 @@ struct ImagesView: View {
 
     /// This Mac's images and every paired host's last answer, through the host filter (PLAN.md
     /// Phase C). One image on two Macs is two rows: each is its own thing to run, tag or delete.
-    private var allRows: [HostedImage] {
+    private var allRows: [HostedImage] { rows(through: ui.hostFilter) }
+
+    /// Every Mac's, through no filter: what the page resolves against, so a filter hides rows in
+    /// the list and never the page that's open (Kyle, 17 October).
+    private var everyRow: [HostedImage] { rows(through: nil) }
+
+    /// Every row with a page, whatever the filters show: what one selected row may be.
+    private var existingIDs: Set<HostedImage.ID> { Set(everyRow.map(\.id)) }
+
+    private func rows(through hostFilter: HostRef?) -> [HostedImage] {
         var rows: [HostedImage] = []
-        if ui.hostFilter == nil || ui.hostFilter == .local {
+        if hostFilter == nil || hostFilter == .local {
             rows += model.images.map { HostedImage(image: $0, host: .local, hostName: model.hostLabel) }
         }
         let now = Date()
         for (peer, snapshot) in model.hostMode.fleetImages {
             let host = HostRef.peer(peer.fingerprint)
-            if let only = ui.hostFilter, only != host { continue }
+            if let only = hostFilter, only != host { continue }
             let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
             rows += snapshot.items.map {
                 HostedImage(image: $0, host: host, hostName: peer.displayName, staleSince: stale)
@@ -715,7 +724,7 @@ struct ImagesView: View {
     /// The one image the page shows, when one is selected.
     private var shownRow: HostedImage? {
         guard shown.count == 1, let id = shown.first else { return nil }
-        return displayedImages.first { $0.id == id }
+        return everyRow.first { $0.id == id }
     }
 
     /// Identity, the row's actions, the stepper and the expand button — no Back: the list is beside it.

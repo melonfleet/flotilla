@@ -26,6 +26,16 @@ import SwiftUI
 /// the same button that widens the page in a wide window, so it means one thing everywhere: "the
 /// list, or not".
 ///
+/// **Hiding the page asks, like leaving it** (Kyle, 17 October). In the folded split the list
+/// replaces the page rather than sitting beside it, so the page — a registry's, a domain's or a
+/// group's form among them — leaves the hierarchy and its state with it. "Show the list" therefore
+/// goes through `FormGuard.confirmLeaving` and Keep Editing stays on the page. Keeping the page
+/// alive behind the list was the alternative, and is worse: a hidden form still owns Return and
+/// Escape (`.defaultAction`, `.cancelAction`) and can still hold keyboard focus, so typing or
+/// pressing Return in the list would act on a form nobody can see. For the same reason a window
+/// widened out of the fold forgets that the list was showing, so narrowing it again shows the page —
+/// the rule for a narrow window — rather than hiding a page that may have been edited meanwhile.
+///
 /// **Every pane is bounded.** Both are given the whole height and an exact width; neither sizes the
 /// window (`CLAUDE.md`, "one unbounded child can scroll the whole window").
 struct SplitPanes<Primary: View, Detail: View>: View {
@@ -50,6 +60,8 @@ struct SplitPanes<Primary: View, Detail: View>: View {
     /// A form inside the page asked for the whole width — Add Service, inside a group's page.
     @State private var formWantsFullWidth = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Optional, like everywhere else: a split drawn outside the main window has no guard to ask.
+    @Environment(FormGuard.self) private var formGuard: FormGuard?
 
     /// A row section's split: the list on the left at its remembered width, the selected item's
     /// page on the right.
@@ -99,13 +111,18 @@ struct SplitPanes<Primary: View, Detail: View>: View {
                         .frame(maxHeight: .infinity)
                         .environment(\.paneLayout, pane.map { pane in
                             PaneLayout(isFull: layout.full, isCompact: layout.compact) {
-                                if layout.compact { pane.compactShowsList = true } else { pane.expanded.toggle() }
+                                guard layout.compact else { return pane.expanded.toggle() }
+                                // Hides the page, and any form on it with its draft: ask first.
+                                let showList = { pane.compactShowsList = true }
+                                if let formGuard { formGuard.confirmLeaving(showList) } else { showList() }
                             }
                         })
                 }
             }
             .coordinateSpace(.named(Self.space))
             .onPreferenceChange(PaneWantsFullWidth.self) { formWantsFullWidth = $0 }
+            // Out of the fold, the list is beside the page again; back into it, the page wins.
+            .onChange(of: layout.compact) { _, compact in if !compact { pane?.compactShowsList = false } }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: layout.full)
         }
         // A newly chosen item is shown, in a narrow window, rather than left behind the list.

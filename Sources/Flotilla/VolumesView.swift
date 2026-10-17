@@ -99,8 +99,8 @@ struct VolumesView: View {
         .task { await model.refreshVolumes() }
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set.
-        .selection($selection, confinedTo: visibleIDs)
-        .paneFollows($selection, into: $shown, guard: model.formGuard)
+        .selection($selection, confinedTo: visibleIDs, showing: existingIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
         // A volume asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -223,15 +223,24 @@ struct VolumesView: View {
 
     /// This Mac's volumes and every paired host's last answer, through the host filter (PLAN.md
     /// Phase C). Two Macs' `data` volumes are two rows: neither is the other's.
-    private var allRows: [HostedVolume] {
+    private var allRows: [HostedVolume] { rows(through: ui.hostFilter) }
+
+    /// Every Mac's, through no filter: what the page resolves against, so a filter hides rows in
+    /// the list and never the page that's open (Kyle, 17 October).
+    private var everyRow: [HostedVolume] { rows(through: nil) }
+
+    /// Every row with a page, whatever the filters show: what one selected row may be.
+    private var existingIDs: Set<HostedVolume.ID> { Set(everyRow.map(\.id)) }
+
+    private func rows(through hostFilter: HostRef?) -> [HostedVolume] {
         var rows: [HostedVolume] = []
-        if ui.hostFilter == nil || ui.hostFilter == .local {
+        if hostFilter == nil || hostFilter == .local {
             rows += model.volumes.map { HostedVolume(volume: $0, host: .local, hostName: model.hostLabel) }
         }
         let now = Date()
         for (peer, snapshot) in model.hostMode.fleetVolumes {
             let host = HostRef.peer(peer.fingerprint)
-            if let only = ui.hostFilter, only != host { continue }
+            if let only = hostFilter, only != host { continue }
             let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
             rows += snapshot.items.map {
                 HostedVolume(volume: $0, host: host, hostName: peer.displayName, staleSince: stale)
@@ -683,7 +692,7 @@ struct VolumesView: View {
     /// The one volume the page shows, when one is selected.
     private var shownRow: HostedVolume? {
         guard shown.count == 1, let id = shown.first else { return nil }
-        return displayedVolumes.first { $0.id == id }
+        return everyRow.first { $0.id == id }
     }
 
     /// Identity, the row's actions, the stepper and the expand button — no Back: the list is beside it.

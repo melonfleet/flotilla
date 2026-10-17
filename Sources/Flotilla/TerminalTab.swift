@@ -19,7 +19,8 @@ struct TerminalSession: Identifiable, Hashable {
     var title: String { name ?? "Shell \(ordinal)" }
 }
 
-/// Live shell sessions, owned **outside** the view hierarchy and keyed by container.
+/// Live shell sessions, owned **outside** the view hierarchy and keyed by container — by its
+/// host-qualified row id (`HostRef.rowID`), so two Macs' containers of one name never share a key.
 ///
 /// This exists because of a real bug the owner found: switching to another tab and back gave you a
 /// fresh shell. It looked like the screen had been cleared; it was worse than that. Leaving the
@@ -202,16 +203,32 @@ final class ContainerTerminalView: LocalProcessTerminalView {
 struct TerminalTab: View {
     let model: AppModel
     let container: Container
+    /// Which Mac the container is on. Only this Mac's: the shell runs through this Mac's CLI.
+    let host: HostRef
 
     /// Only the *error* is view state. Which shells exist and which one is showing belong to
     /// the store, so both survive this view being destroyed and rebuilt.
     @State private var failure: String?
 
-    private var open: [TerminalSession] { model.terminals.sessions(for: container.id) }
+    /// The store's key: host-qualified, so another Mac's `web` can never find this Mac's `web`'s
+    /// shells — the same collision `machineTerminals` exists to stop between a machine and a
+    /// container (Kyle, 17 October). This Mac's row id is the bare name, so its sessions keep
+    /// their keys.
+    private var key: String { host.rowID(container.id) }
+
+    private var open: [TerminalSession] { model.terminals.sessions(for: key) }
 
     var body: some View {
         Group {
-            if !AppModel.isRunning(container) {
+            if !host.isLocal {
+                // `ContainerDetailView` does not offer this tab for another Mac's container. Said
+                // here too, because a shell opened from this view would run on this Mac.
+                ContentUnavailableView {
+                    Label("Terminal is for this Mac's containers", systemImage: "terminal")
+                } description: {
+                    Text("A shell runs through this Mac's container CLI, so it can't reach a container on another Mac.")
+                }
+            } else if !AppModel.isRunning(container) {
                 // A stopped container has no namespace to exec into. Say so, rather than
                 // offering a button that will fail — the CLI's own error here is "container is
                 // not running", which is true but arrives too late to help.
@@ -220,7 +237,7 @@ struct TerminalTab: View {
                 } description: {
                     Text("Start “\(container.id)” to open a shell inside it.")
                 }
-            } else if let current = model.terminals.current(for: container.id) {
+            } else if let current = model.terminals.current(for: key) {
                 VStack(spacing: 0) {
                     shellStrip(current: current)
                     Divider()
@@ -250,14 +267,14 @@ struct TerminalTab: View {
         // A shell cannot outlive the thing it is inside. Ending them here also stops a stopped
         // container keeping dead `container exec` processes attached to it.
         .onChange(of: AppModel.isRunning(container)) { _, running in
-            if !running { model.terminals.closeAll(for: container.id) }
+            if !running { model.terminals.closeAll(for: key) }
         }
     }
 
     /// `ShellStrip`, shared with the machine Terminal tab — which carried a copy that had
     /// quietly lost rename.
     private func shellStrip(current: TerminalSession) -> some View {
-        ShellStrip(store: model.terminals, subjectID: container.id, current: current,
+        ShellStrip(store: model.terminals, subjectID: key, current: current,
                    newShellHelp: "Open another shell in \(container.id)", onOpen: openShell)
     }
 
@@ -270,6 +287,7 @@ struct TerminalTab: View {
     /// handling for `exec` is a real trap, and this is the code that knows about it.
     private func openShell() {
         failure = nil
+        guard host.isLocal else { return }
         do {
             // The policy comes from the CLI this model was built with, never a constant here.
             // A `ContainerCLI` pointed at a remote peer carries the strict default, and this
@@ -282,7 +300,7 @@ struct TerminalTab: View {
                 failure = model.containerExecutableMissingReason
                 return
             }
-            model.terminals.open(containerID: container.id,
+            model.terminals.open(containerID: key,
                                  executable: executable,
                                  argv: validated.arguments) { reason in
                 if let reason { failure = reason }

@@ -241,8 +241,8 @@ struct HostsView: View {
         }
         // Filtering, searching, removal and a closed group hide rows without clearing their ids,
         // and a click or ⌘A selects This Mac and the headings: none of them stays selected.
-        .selection($selection, confinedTo: Set(selectableIDs), showing: Set(showableIDs))
-        .paneFollows($selection, into: $shown, guard: model.formGuard)
+        .selection($selection, confinedTo: Set(selectableIDs), showing: existingIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
         .onAppear {
             hostMode.hostsOpened()
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .host {
@@ -377,11 +377,15 @@ struct HostsView: View {
     /// The rows with a page, in list order — every host, This Mac included, and no group heading.
     private var showableIDs: [HostRow.ID] { tableRows.filter { $0.header == nil }.map(\.id) }
 
-    /// The one host the page shows, when one is selected.
+    /// The one host the page shows, when one is selected — from every host, not the rows on screen
+    /// (Kyle, 17 October): neither a filter nor a closed group closes the page that's open.
     private var shownRow: HostRow? {
-        guard shown.count == 1, let id = shown.first, showableIDs.contains(id) else { return nil }
-        return model.hostRows.first { $0.id == id }
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return model.hostRows.first { $0.id == id && $0.header == nil }
     }
+
+    /// Every host, This Mac included, whatever the list shows: what one selected row may be.
+    private var existingIDs: Set<HostRow.ID> { Set(model.hostRows.filter { $0.header == nil }.map(\.id)) }
 
     /// Shows a host's page by selecting it, and only it (Q58) — clearing the filter and opening its
     /// group first if either is hiding the row.

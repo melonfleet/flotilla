@@ -39,7 +39,7 @@ struct RegistriesView: View {
                     .id(form)
             } else {
                 // Q58: the list, and the selected registry's page beside it.
-                SplitPanes(list: "registries", pane: ui.pane, showing: shownRow?.id) {
+                SplitPanes(list: "registries", pane: ui.pane, showing: shownID) {
                     VStack(spacing: 0) {
                         toolbar
                         bulkActionBar
@@ -66,8 +66,10 @@ struct RegistriesView: View {
         }
         // Filtering, searching and removal hide rows without clearing their ids; the bulk bar and
         // menu must not count rows nobody can see.
-        .selection($selection, confinedTo: visibleIDs)
-        .paneFollows($selection, into: $shown, guard: model.formGuard)
+        // A filter hides rows, never the page that's open: one row on its own stays selected while
+        // it exists at all.
+        .selection($selection, confinedTo: visibleIDs, showing: existingIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
         .alert("Action failed",
                isPresented: Binding(get: { actionError != nil },
                                     set: { if !$0 { actionError = nil } })) {
@@ -257,13 +259,16 @@ struct RegistriesView: View {
 
     /// The page beside the list (Q58): the selected registry's manage form, read and signed in to
     /// as before, a summary of several, or an empty state. Done, Cancel and a sign-in close it.
+    ///
+    /// Drawn from the shown **id**, not the row: a registry removed while its form has unsaved
+    /// changes keeps the form on screen while the guard asks, and after Keep Editing.
     @ViewBuilder
     private var page: some View {
-        if let row = shownRow {
-            RegistryFormView(model: model, target: .manage(row.id)) { selection = [] }
-                .paneHeaderActions { rowActions(for: row, place: .header) }
-                .id(row.id)
-                .paneStep("registry", "registries", order: displayedRows.map(\.id), current: row.id) { open($0) }
+        if let id = shownID {
+            RegistryFormView(model: model, target: .manage(id)) { closePage() }
+                .paneHeaderActions { if let row = shownRow { rowActions(for: row, place: .header) } }
+                .id(id)
+                .paneStep("registry", "registries", order: displayedRows.map(\.id), current: id) { open($0) }
         } else if shown.count > 1, !selectedRows.isEmpty {
             SelectionSummaryPane(title: "\(selectedRows.count) registries selected",
                                  systemImage: Section.registries.systemImage,
@@ -275,9 +280,20 @@ struct RegistriesView: View {
     }
 
     /// The one registry the page shows, when one is selected.
-    private var shownRow: RegistryRow? {
-        guard shown.count == 1, let id = shown.first else { return nil }
-        return displayedRows.first { $0.id == id }
+    private var shownID: RegistryRow.ID? { shown.count == 1 ? shown.first : nil }
+
+    /// Its row, from the whole list rather than the filtered one (Kyle, 17 October): a filter hides
+    /// rows in the list, never the page that's open.
+    private var shownRow: RegistryRow? { shownID.flatMap { id in rows.first { $0.id == id } } }
+
+    /// Every registry with a page, whatever the filter shows.
+    private var existingIDs: Set<RegistryRow.ID> { Set(rows.map(\.id)) }
+
+    /// The form's own Done, Cancel or sign-in: it has already asked whatever it needed to, so the
+    /// page closes with the selection rather than asking again behind it.
+    private func closePage() {
+        selection = []
+        shown = []
     }
 
     /// Shows a registry's page by selecting it, and only it (Q58) — clearing the filter first if

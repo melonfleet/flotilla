@@ -45,6 +45,15 @@ struct ContainerDetailView: View {
         host.isLocal ? Tab.allCases : [.overview, .logs, .inspect, .processes]
     }
 
+    /// The tab drawn: `tab` if this container can have it, otherwise Overview.
+    ///
+    /// The page keeps this view as the selection moves (`ContainersView.page`), so `tab` is carried
+    /// from one container to the next and `init` does not run to check it. Selecting another Mac's
+    /// `web` from This Mac's `web` on Terminal kept Terminal, and the tab then opened a shell in
+    /// **this Mac's** `web` under the other's name (Kyle, 17 October). Checked here as well as in
+    /// `onChange`, so not even the frame before the correction can draw a tab the host cannot back.
+    private var shownTab: Tab { Self.tabs(for: host).contains(tab) ? tab : .overview }
+
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,12 +64,12 @@ struct ContainerDetailView: View {
             // short tab — Logs with no output, most obviously — left a large empty band above
             // the title and below the content.
             Group {
-                switch tab {
+                switch shownTab {
                 case .overview: overview
                 case .processes: ProcessesTab(model: model, container: container, host: host)
                 case .logs: LogViewer(model: model, source: host.isLocal ? .container(container.id)
                                                                           : .remoteContainer(container.id, host))
-                case .terminal: TerminalTab(model: model, container: container)
+                case .terminal: TerminalTab(model: model, container: container, host: host)
                 case .files: FilesTab(model: model, container: container)
                 case .inspect: InspectTab(model: model, container: container, host: host)
                 }
@@ -74,8 +83,10 @@ struct ContainerDetailView: View {
         // Remembered for this run only — see `AppModel.lastDetailTab` for why it is not
         // persisted to disk.
         .onChange(of: tab) { _, newTab in model.lastDetailTab[host.rowID(container.id)] = newTab }
-        .onChange(of: [container.id, requestedTab?.rawValue ?? ""]) { _, _ in
+        // Keyed on the host-qualified id: a bare name does not change between two Macs' `web`.
+        .onChange(of: [host.rowID(container.id), requestedTab?.rawValue ?? ""]) { _, _ in
             if let requestedTab { tab = requestedTab }
+            if !Self.tabs(for: host).contains(tab) { tab = .overview }
         }
         // No frame and no header of its own. `ContainersView.detailHeader` supplies the name,
         // state, image, host and uptime above this, so a second header here would repeat them;
@@ -102,7 +113,7 @@ struct ContainerDetailView: View {
                   systemImage: candidate.systemImage,
                   separatedFromPrevious: index > 0
                       && tabs[index - 1].isShared && !candidate.isShared)
-        }, selection: $tab)
+        }, selection: Binding(get: { shownTab }, set: { tab = $0 }))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Detail sections")
     }

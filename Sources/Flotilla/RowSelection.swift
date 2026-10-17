@@ -47,6 +47,13 @@ extension View {
     /// disabled, and the bulk bar, which counts only what a bulk action can take, does not appear.
     /// The moment a second row joins it, it drops out as before. `showing` defaults to `selectable`,
     /// which is the old rule exactly.
+    ///
+    /// **Pass every row in the model with a page as `showing`, not the rows on screen.** A filter
+    /// hides rows in the list, never the page that is open (Kyle, 17 October): confined to the
+    /// visible rows, typing a search that hid the shown row emptied the selection and took the page
+    /// with it — a registry, domain or group form and its unsaved draft included. Only a row that
+    /// has really gone — deleted, or its host forgotten — leaves the selection now, and that goes
+    /// through `paneFollows` and the form guard like any other change of page.
     func selection<ID: Hashable>(_ selection: Binding<Set<ID>>, confinedTo selectable: Set<ID>,
                                  showing showable: Set<ID>? = nil) -> some View {
         modifier(SelectionConfinement(selection: selection, selectable: selectable,
@@ -59,9 +66,15 @@ extension View {
     /// it, so a choice that would lose unsaved edits asks first, the same question the sidebar asks.
     /// Keep Editing puts the list's selection back. A page that is not a dirty form changes at once,
     /// in the same frame: the guard is synchronous when nothing would be lost.
+    ///
+    /// `existing` is every id that still has a page — the same set given to `selection(_:confinedTo:showing:)`.
+    /// Keep Editing restores only those: when the shown row has been deleted, putting its id back
+    /// would be confined straight out again and ask the same question for ever. The page keeps its
+    /// form on screen instead (a form page draws from its id, not from the row), so the draft is
+    /// still there to copy or save, and the next choice of row asks again.
     func paneFollows<ID: Hashable>(_ selection: Binding<Set<ID>>, into shown: Binding<Set<ID>>,
-                                   guard formGuard: FormGuard) -> some View {
-        modifier(PaneFollowing(selection: selection, shown: shown, formGuard: formGuard))
+                                   guard formGuard: FormGuard, existing: Set<ID>? = nil) -> some View {
+        modifier(PaneFollowing(selection: selection, shown: shown, formGuard: formGuard, existing: existing))
     }
 }
 
@@ -88,12 +101,15 @@ private struct PaneFollowing<ID: Hashable>: ViewModifier {
     @Binding var selection: Set<ID>
     @Binding var shown: Set<ID>
     let formGuard: FormGuard
+    let existing: Set<ID>?
 
     func body(content: Content) -> some View {
         content
             .onChange(of: selection, initial: true) { _, chosen in
                 guard chosen != shown else { return }
-                formGuard.confirmLeaving(onKeepEditing: { selection = shown }) { shown = chosen }
+                formGuard.confirmLeaving(onKeepEditing: {
+                    selection = existing.map { shown.intersection($0) } ?? shown
+                }) { shown = chosen }
             }
     }
 }

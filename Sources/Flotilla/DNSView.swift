@@ -80,7 +80,7 @@ struct DNSView: View {
                     dismiss: { showingSuggestions = false })
             } else {
                 // Q58: the list, and the selected domain's page beside it.
-                SplitPanes(list: "dns", pane: ui.pane, showing: shownRow?.id) {
+                SplitPanes(list: "dns", pane: ui.pane, showing: shownID) {
                     VStack(spacing: 0) {
                         toolbar
                         bulkActionBar
@@ -111,8 +111,10 @@ struct DNSView: View {
         }
         // Filtering, searching and deletion hide rows without clearing their ids; the bulk bar and
         // menu must not count rows nobody can see.
-        .selection($selection, confinedTo: visibleIDs)
-        .paneFollows($selection, into: $shown, guard: model.formGuard)
+        // A filter hides rows, never the page that's open: one row on its own stays selected while
+        // it exists at all.
+        .selection($selection, confinedTo: visibleIDs, showing: existingIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
         // File ▸ Suggestions ▸ DNS Domains…. One-shot.
         .onChange(of: model.pendingSuggestions) { _, section in
             if section == .dns { model.pendingSuggestions = nil; form = nil; showingSuggestions = true }
@@ -290,15 +292,19 @@ struct DNSView: View {
 
     /// The page beside the list (Q58): the selected domain's form, read and edited as before, a
     /// summary of several, or an empty state. Its Cancel or Save closes it.
+    ///
+    /// Drawn from the shown **id**, not the row: a domain deleted, or a host forgotten, while its
+    /// form has unsaved changes keeps the form on screen while the guard asks, and after Keep Editing.
     @ViewBuilder
     private var page: some View {
-        if let row = shownRow {
-            DNSFormView(model: model, target: .manage(row.id), prefill: nil, initialHost: row.host) {
-                selection = []
+        if let id = shownID {
+            DNSFormView(model: model, target: .manage(id), prefill: nil,
+                        initialHost: shownRow?.host ?? .local) {
+                closePage()
             }
-            .paneHeaderActions { rowActions(for: row, place: .header) }
-            .id(row.id)
-            .paneStep("domain", "domains", order: displayedRows.map(\.id), current: row.id) { open($0) }
+            .paneHeaderActions { if let row = shownRow { rowActions(for: row, place: .header) } }
+            .id(id)
+            .paneStep("domain", "domains", order: displayedRows.map(\.id), current: id) { open($0) }
         } else if shown.count > 1, !selectedRows.isEmpty {
             SelectionSummaryPane(title: "\(selectedRows.count) domains selected",
                                  systemImage: Section.dns.systemImage,
@@ -310,9 +316,20 @@ struct DNSView: View {
     }
 
     /// The one domain the page shows, when one is selected.
-    private var shownRow: HostedDNS? {
-        guard shown.count == 1, let id = shown.first else { return nil }
-        return displayedRows.first { $0.id == id }
+    private var shownID: HostedDNS.ID? { shown.count == 1 ? shown.first : nil }
+
+    /// Its row, from every Mac's domains rather than the filtered list (Kyle, 17 October): neither a
+    /// filter nor the host filter closes the page that's open.
+    private var shownRow: HostedDNS? { shownID.flatMap { id in model.hostedDNS.first { $0.id == id } } }
+
+    /// Every domain with a page, whatever the filters show.
+    private var existingIDs: Set<HostedDNS.ID> { Set(model.hostedDNS.map(\.id)) }
+
+    /// The form's own Cancel or Save: it has already asked whatever it needed to, so the page
+    /// closes with the selection rather than asking again behind it.
+    private func closePage() {
+        selection = []
+        shown = []
     }
 
     /// Shows a domain's page by selecting it, and only it (Q58) — clearing the filter first if it

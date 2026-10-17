@@ -138,8 +138,8 @@ struct MachinesView: View {
         .task { await model.refreshMachines() }
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set.
-        .selection($selection, confinedTo: visibleIDs)
-        .paneFollows($selection, into: $shown, guard: model.formGuard)
+        .selection($selection, confinedTo: visibleIDs, showing: existingIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
@@ -708,11 +708,15 @@ struct MachinesView: View {
         }
     }
 
-    /// The one machine the page shows, when one is selected.
+    /// The one machine the page shows, when one is selected — from every machine, not the filtered
+    /// list (Kyle, 17 October): a filter hides rows in the list, never the page that's open.
     private var shownMachine: ContainerMachine? {
         guard shown.count == 1, let id = shown.first else { return nil }
-        return displayed.first { $0.id == id }
+        return model.machines.first { $0.id == id }
     }
+
+    /// Every machine, whatever the filters show: what one selected row may be.
+    private var existingIDs: Set<ContainerMachine.ID> { Set(model.machines.map(\.id)) }
 
     /// Identity, the row's actions, the stepper and the expand button — no Back: the list is beside it.
     private func detailHeader(for machine: ContainerMachine) -> some View {

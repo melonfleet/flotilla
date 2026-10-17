@@ -114,7 +114,7 @@ expect_rows Clusters   'private var content: some View { > switch model.clusters
 # instead of the list, or the list back on its own changes a chain and fails here.
 expect_split() {   # expect_split <section> <key> <the chain down to the split, without it>
     local f="Sources/Flotilla/$1View.swift" got split
-    split=$(grep -m1 -oE "SplitPanes\(list: \"$2\", pane: ui\.pane, showing: [A-Za-z]+\?\.id\) \{" "$f")
+    split=$(grep -m1 -oE "SplitPanes\(list: \"$2\", pane: ui\.pane, showing: [A-Za-z]+(\?\.id)?\) \{" "$f")
     if [ -z "$split" ]; then
         echo "  ✗ $f: no \`SplitPanes(list: \"$2\", pane: ui.pane, …)\` — the section is not a split"
         fail=1; return
@@ -143,6 +143,8 @@ expect_split Clusters   clusters   'var body: some View { > Group { > if showing
 # The page follows the selection, and both start empty: a section that opens on a selected row is
 # a section that opens on a page, which is the split's screenshot scaffold (the old `detailTarget`
 # pinned below was the slide-in's). The selection reaches the page only through the form guard.
+# And one row stays selected while it exists at all, filtered out or not: a filter hides rows in the
+# list, never the page that's open, and a form page lost its draft to a search (Kyle, 17 October).
 for s in Containers Machines Images Volumes Networks Hosts Registries DNS Clusters; do
     f="Sources/Flotilla/${s}View.swift"
     for v in selection shown; do
@@ -151,7 +153,8 @@ for s in Containers Machines Images Volumes Networks Hosts Registries DNS Cluste
             fail=1
         fi
     done
-    require "$f" '.paneFollows($selection, into: $shown, guard: model.formGuard)'
+    require "$f" '.paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)'
+    require "$f" 'showing: existingIDs)'
 done
 # A row's actions are drawn on hover and on selection only (17 October), so a row that starts
 # hovered is a screenshot scaffold: every row in the list would show its buttons. And the bulk bar

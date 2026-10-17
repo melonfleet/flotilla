@@ -167,8 +167,8 @@ struct ClustersView: View {
         }
         // Filtering and deletion hide rows without clearing their ids; the bar must not count
         // rows nobody can see.
-        .selection($selection, confinedTo: Set(selectableIDs))
-        .paneFollows($selection, into: $shown, guard: model.formGuard)
+        .selection($selection, confinedTo: Set(selectableIDs), showing: existingIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
     }
 
     /// What a recreate keeps and what it loses, said before anything happens.
@@ -269,15 +269,24 @@ struct ClustersView: View {
     }
 
     /// This Mac's clusters and each paired host's last answer, through the host filter.
-    private var allRows: [HostedCluster] {
+    private var allRows: [HostedCluster] { rows(through: ui.hostFilter) }
+
+    /// Every Mac's, through no filter: what the page resolves against, so a filter hides rows in
+    /// the list and never the page that's open (Kyle, 17 October).
+    private var everyRow: [HostedCluster] { rows(through: nil) }
+
+    /// Every row with a page, whatever the filters show: what one selected row may be.
+    private var existingIDs: Set<HostedCluster.ID> { Set(everyRow.map(\.id)) }
+
+    private func rows(through hostFilter: HostRef?) -> [HostedCluster] {
         var rows: [HostedCluster] = []
-        if ui.hostFilter == nil || ui.hostFilter == .local {
+        if hostFilter == nil || hostFilter == .local {
             rows += model.clusters.map { HostedCluster(cluster: $0, host: .local, hostName: model.hostLabel) }
         }
         let now = Date()
         for (peer, snapshot) in model.hostMode.fleetClusters {
             let host = HostRef.peer(peer.fingerprint)
-            if let only = ui.hostFilter, only != host { continue }
+            if let only = hostFilter, only != host { continue }
             let stale = snapshot.isStale(at: now, freshFor: HostModeController.freshFor) ? snapshot.fetchedAt : nil
             rows += snapshot.items.map { HostedCluster(cluster: $0, host: host, hostName: peer.displayName, staleSince: stale) }
         }
@@ -357,7 +366,7 @@ struct ClustersView: View {
     /// The one cluster the page shows, when one is selected.
     private var shownRow: HostedCluster? {
         guard shown.count == 1, let id = shown.first else { return nil }
-        return displayedClusters.first { $0.id == id }
+        return everyRow.first { $0.id == id }
     }
 
     private func select(_ id: HostedCluster.ID) {
