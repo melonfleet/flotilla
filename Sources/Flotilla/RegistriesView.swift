@@ -57,7 +57,7 @@ struct RegistriesView: View {
         }
         // Filtering, searching and removal hide rows without clearing their ids; the bulk bar and
         // menu must not count rows nobody can see.
-        .onChange(of: visibleIDs) { _, ids in selection.formIntersection(ids) }
+        .selection($selection, confinedTo: visibleIDs)
         .alert("Action failed",
                isPresented: Binding(get: { actionError != nil },
                                     set: { if !$0 { actionError = nil } })) {

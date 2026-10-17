@@ -96,9 +96,7 @@ struct VolumesView: View {
         .task { await model.refreshVolumes() }
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set.
-        .onChange(of: visibleIDs) { _, ids in
-            selection.formIntersection(ids)
-        }
+        .selection($selection, confinedTo: visibleIDs)
         // A volume asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }

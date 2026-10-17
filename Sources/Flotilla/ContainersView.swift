@@ -444,12 +444,11 @@ struct ContainersView: View {
         }
     }
 
-    private var visibleIDs: Set<ContainerRow.ID> { Set(rows.map(\.id)) }
-
-    /// What a bulk action may actually touch: the selection **intersected with what is on
-    /// screen**. `selection` outlives the rows that produced it — filter, search and deletion all
-    /// hide rows without clearing their ids — so every bulk path acts on this, never `selection`.
-    private var actionable: Set<ContainerRow.ID> { selection.intersection(visibleIDs) }
+    /// What a bulk action may actually touch: the selection **intersected with the selectable
+    /// rows on screen**. `.selection(_:confinedTo:)` keeps `selection` to the same set, so the two
+    /// agree once it has run; every bulk path still acts on this, never `selection`, so a frame in
+    /// between cannot act on a row that has just gone.
+    private var actionable: Set<ContainerRow.ID> { selection.intersection(selectableIDs) }
 
     /// The groups in the actionable selection.
     private var actionableGroups: [ContainerGroup] {
@@ -491,6 +490,12 @@ struct ContainersView: View {
             guard let container = row.container, applies(container) else { continue }
             await model.perform(action, on: container, host: row.host)
         }
+    }
+
+    /// What the bulk bar would count. It shows only above zero: a selection with nothing a bulk
+    /// action can take is no selection, and "0 containers selected" was the bar saying so.
+    private var actionableCount: Int {
+        actionableContainerIDs.count + actionableRemote.count + actionableGroups.count
     }
 
     /// How the bulk bar and the bulk menu describe the selection: "3 containers", "1 group",
@@ -1080,13 +1085,11 @@ struct ContainersView: View {
             if model.pendingSuggestions == .containers { openSuggestionsFromMenu() }
         }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
-        // from being *counted*. One observation covers all three ways the visible set
-        // moves out from under the selection — filter change, search change, and the data
-        // itself changing (a bulk delete leaves the dead ids behind otherwise, so the bar
-        // would linger claiming rows that no longer exist).
-        .onChange(of: visibleIDs) { _, ids in
-            selection.formIntersection(ids)
-        }
+        // from being *counted*. It covers every way the selectable set moves out from under
+        // the selection — filter, search, a closed group, the data itself changing (a bulk
+        // delete leaves the dead ids behind otherwise) — and every way a row the bar cannot
+        // take gets in: a click, ⇧-click or ⌘A on a member not created yet.
+        .selection($selection, confinedTo: Set(selectableIDs))
         // Single-row delete, from the trash button. Names the container — a dialog that just
         // says "are you sure" makes you go back and check which row you clicked.
         .confirmationDialog(
@@ -1312,7 +1315,7 @@ struct ContainersView: View {
         // 1+, since the checkboxes came back (Kamal, 17 October): ticking one box is a selection
         // you made on purpose, and the bar is where it gets acted on. It was 2+ while a single
         // selected row only meant "the row you last clicked".
-        if !actionable.isEmpty {
+        if actionableCount > 0 {
             BulkActionBar(title: "\(selectionNoun) selected") {
                 // Tags first in the cluster, before the lifecycle controls: it is the one action
                 // here that changes nothing about what the selection *is*.

@@ -101,7 +101,7 @@ struct DNSView: View {
         }
         // Filtering, searching and deletion hide rows without clearing their ids; the bulk bar and
         // menu must not count rows nobody can see.
-        .onChange(of: visibleIDs) { _, ids in selection.formIntersection(ids) }
+        .selection($selection, confinedTo: visibleIDs)
         // File ▸ Suggestions ▸ DNS Domains…. One-shot.
         .onChange(of: model.pendingSuggestions) { _, section in
             if section == .dns { model.pendingSuggestions = nil; form = nil; showingSuggestions = true }

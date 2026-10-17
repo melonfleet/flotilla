@@ -159,7 +159,7 @@ struct ClustersView: View {
         }
         // Filtering and deletion hide rows without clearing their ids; the bar must not count
         // rows nobody can see.
-        .onChange(of: Set(displayedClusters.map(\.id))) { _, ids in selection.formIntersection(ids) }
+        .selection($selection, confinedTo: Set(selectableIDs))
     }
 
     /// What a recreate keeps and what it loses, said before anything happens.

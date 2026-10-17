@@ -36,14 +36,76 @@ require Sources/Flotilla/MainWindowView.swift    '@AppStorage("sidebarRailed") p
 require Sources/Flotilla/MachinesView.swift      '@State private var showingCreate = false'
 # One view per section since Q56 (17 October): the rows, drawn unconditionally. This used to pin
 # `presentation = .list` on Containers and Machines; with Cards scrapped there is no toggle to
-# default, so the known-good state is the list branch itself — a bare `rowsList` line in each
-# section's content. A view switch reintroduced (`if … { rowsList } else { cards }`), or a branch
-# left pointing at a scaffold, removes that line and fails here.
-for section in Containers Machines Images Volumes Networks Hosts Registries DNS Clusters; do
-    f="Sources/Flotilla/${section}View.swift"
-    if ! grep -qE '^[[:space:]]*rowsList$' "$f"; then
+# default, so the known-good state is the list branch itself.
+#
+# A bare `rowsList` line is not enough: it passed with Machines' `rowsList` wrapped in
+# `if Bool.random()` (Kyle, 17 October), because the line was still there, just one level deeper.
+# So this pins what the line is *nested under* — every `if`, `else`, `switch` and `case` between
+# it and `content`, read by indentation — and each section's chain is the known-good one: the
+# loaded state, or the non-empty side of the empty check. A condition added around it, a view
+# switch (`if … { rowsList } else { cards }`, either way round), or `rowsList` moved somewhere else
+# changes the chain and fails here.
+chain() {   # chain <file>: what the bare `rowsList` line is nested under, outermost first
+    perl -e '
+        my @l = <>; chomp @l;
+        my ($at) = grep { $l[$_] =~ /^\s*rowsList\s*$/ } 0..$#l;
+        exit 2 unless defined $at;
+        sub ind { $_[0] =~ /^(\s*)/; length $1 }
+        # Blank lines, comments and modifier or argument continuations are not branches.
+        sub skip { $_[0] =~ /^\s*$/ || $_[0] =~ /^\s*\/\// || $_[0] =~ /^\s*[.)\]]/ }
+        sub trim { (my $s = $_[0]) =~ s/^\s+|\s+$//g; $s }
+        my @chain; my $cur = ind($l[$at]); my $i = $at;
+        while (--$i >= 0) {
+            next if skip($l[$i]);
+            my $n = ind($l[$i]); next unless $n < $cur;
+            my $s = trim($l[$i]);
+            unshift @chain, $s;
+            last if $s =~ /\b(var|func)\b/;
+            # A later branch (`} else {`, `case`, `default:`): name the `if` or `switch` it belongs to.
+            if ($s =~ /^(\}|case |default:)/) {
+                for (my $j = $i - 1; $j >= 0; $j--) {
+                    next if skip($l[$j]) || ind($l[$j]) != $n;
+                    if (trim($l[$j]) =~ /^(if |switch )/) { unshift @chain, trim($l[$j]); $i = $j; last }
+                }
+            }
+            $cur = $n;
+        }
+        print join(" > ", @chain), "\n";
+    ' "$1"
+}
+expect_rows() {   # expect_rows <section> <chain>
+    local f="Sources/Flotilla/$1View.swift" got
+    got=$(chain "$f")
+    if [ $? -eq 2 ]; then
         echo "  ✗ $f"
         echo "      expected: the list drawn unconditionally — a line that is just \`rowsList\`"
+        fail=1
+    elif [ "$got" != "$2" ]; then
+        echo "  ✗ $f: \`rowsList\` is not where the one view belongs"
+        echo "      expected: $2"
+        echo "      found:    $got"
+        fail=1
+    fi
+}
+expect_rows Containers 'private var content: some View { > switch model.state { > case .loaded:'
+expect_rows Machines   'private var content: some View { > switch model.machinesState { > default:'
+expect_rows Images     'private var content: some View { > switch model.imagesState { > case .loaded:'
+expect_rows Volumes    'private var content: some View { > switch model.volumesState { > case .loaded:'
+expect_rows Networks   'private var content: some View { > switch model.networksState { > case .loaded:'
+expect_rows Hosts      'private var content: some View { > if displayedRows.isEmpty { > } else {'
+expect_rows Registries 'private var content: some View { > if displayedRows.isEmpty { > } else { > VStack(spacing: 0) {'
+expect_rows DNS        'private var content: some View { > if case .unavailable(let reason) = model.dnsState { > } else { > VStack(spacing: 0) {'
+expect_rows Clusters   'private var content: some View { > switch model.clustersState { > case .loaded:'
+# And nothing for a second presentation to be: no grid, no card type and no view-mode state in a
+# section or its UI state. `ResourceCard` lives on in the Suggestions galleries, which are not
+# sections. Comments are skipped — this file's own history is written in them.
+for f in Sources/Flotilla/{Containers,Machines,Images,Volumes,Networks,Hosts,Registries,DNS,Clusters}View.swift \
+         Sources/Flotilla/*UIState.swift; do
+    hits=$(grep -nE '\b(LazyVGrid|LazyHGrid|ResourceCard|ContainerCard|ListPresentation|[A-Za-z]*ViewMode|viewMode|presentation)\b' "$f" \
+           | grep -vE '^[0-9]+:[[:space:]]*//')
+    if [ -n "$hits" ]; then
+        echo "  ✗ $f: a second presentation of the list"
+        echo "$hits" | sed 's/^/      /'
         fail=1
     fi
 done

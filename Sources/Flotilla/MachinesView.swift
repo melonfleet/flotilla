@@ -132,9 +132,7 @@ struct MachinesView: View {
         .task { await model.refreshMachines() }
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set.
-        .onChange(of: visibleIDs) { _, ids in
-            selection.formIntersection(ids)
-        }
+        .selection($selection, confinedTo: visibleIDs)
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }

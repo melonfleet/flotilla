@@ -29,6 +29,38 @@ extension Set {
     }
 }
 
+extension View {
+    /// Keeps `selection` inside `selectable` — the rows on screen that a bulk action can take — on
+    /// every change to either.
+    ///
+    /// The `List` selects whatever is clicked, ⇧-clicked or ⌘A'd, including rows whose box is
+    /// disabled (This Mac, a built-in network, a group member not created yet, a host group
+    /// heading), and a closed group or a filter hides rows without clearing their ids. Either way
+    /// the highlight, the boxes and the bulk bar stopped agreeing — "0 containers selected" for a
+    /// member nobody could tick, a bulk tag landing on hosts in a collapsed group (Kyle, 17
+    /// October). Such a row now never stays in the selection, so there is one answer to "what is
+    /// selected". Opening a row does not need it: the title link and the row's buttons open it.
+    func selection<ID: Hashable>(_ selection: Binding<Set<ID>>, confinedTo selectable: Set<ID>) -> some View {
+        modifier(SelectionConfinement(selection: selection, selectable: selectable))
+    }
+}
+
+private struct SelectionConfinement<ID: Hashable>: ViewModifier {
+    @Binding var selection: Set<ID>
+    let selectable: Set<ID>
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: selection, initial: true) { _, _ in confine() }
+            .onChange(of: selectable) { _, _ in confine() }
+    }
+
+    private func confine() {
+        let kept = selection.intersection(selectable)
+        if kept != selection { selection = kept }
+    }
+}
+
 /// The box `ResourceRow` draws from a `RowCheck`.
 struct RowCheckbox: View {
     let check: RowCheck

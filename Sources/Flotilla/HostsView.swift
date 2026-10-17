@@ -233,9 +233,9 @@ struct HostsView: View {
             openHost = subject
             model.clearPendingDetail()
         }
-        // Filtering, searching and removal hide rows without clearing their ids; the bulk bar and
-        // menu must not count rows nobody can see.
-        .onChange(of: visibleIDs) { _, ids in selection.formIntersection(ids) }
+        // Filtering, searching, removal and a closed group hide rows without clearing their ids,
+        // and a click or ⌘A selects This Mac and the headings: none of them stays selected.
+        .selection($selection, confinedTo: Set(selectableIDs))
         .onAppear {
             hostMode.hostsOpened()
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .host {
@@ -580,16 +580,19 @@ struct HostsView: View {
                                                 : row.peer.flatMap { hostMode.facts[$0.fingerprint]?.role })
     }
 
-    private var visibleIDs: Set<HostRow.ID> { Set(displayedRows.map(\.id)) }
+    /// Whether a bulk action can take `row`: This Mac is left out, as its disabled checkbox says
+    /// (Kamal, 17 October), and a group heading is not a host.
+    private func isSelectable(_ row: HostRow) -> Bool { !row.isThisMac && row.header == nil }
 
-    /// The selection, limited to what is on screen and to what a bulk action can take: This Mac
-    /// is left out, as its disabled checkbox says (Kamal, 17 October).
+    /// The selection, limited to the rows **on screen** — `tableRows`, the `List`'s own, so a host
+    /// in a closed group is not on it — and to what a bulk action can take.
     private var selectedRows: [HostRow] {
-        displayedRows.filter { selection.contains($0.id) && !$0.isThisMac }
+        tableRows.filter { selection.contains($0.id) && isSelectable($0) }
     }
 
-    /// Every host on screen but This Mac, for the select-all box. Group headings are not hosts.
-    private var selectableIDs: [HostRow.ID] { displayedRows.filter { !$0.isThisMac }.map(\.id) }
+    /// Every host on screen but This Mac, for the select-all box and the selection's bound. From
+    /// `tableRows`: `displayedRows` still holds the hosts of a closed group.
+    private var selectableIDs: [HostRow.ID] { tableRows.filter(isSelectable).map(\.id) }
 
     private var selectedTagSubjects: [TagSubject] {
         selectedRows.map { TagSubject(kind: .host, id: $0.id) }

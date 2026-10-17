@@ -76,10 +76,9 @@ struct NetworksView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
         // `actionable` already stops a hidden row from being acted on; this stops one from being
-        // counted. Filter, search and the data itself changing all move the visible set.
-        .onChange(of: visibleIDs) { _, ids in
-            selection.formIntersection(ids)
-        }
+        // counted. Filter, search and the data itself changing all move the visible set, and a
+        // click or ⌘A selects the built-in networks, whose boxes are disabled.
+        .selection($selection, confinedTo: Set(selectableIDs))
         // A network asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -302,8 +301,6 @@ struct NetworksView: View {
 
         return networks.sorted(using: sortKey.comparators(ascending: ui.sortAscending))
     }
-
-    private var visibleIDs: Set<HostedNetwork.ID> { Set(displayedNetworks.map(\.id)) }
 
     /// Search and role filters can hide selected rows without clearing their ids; bulk delete is
     /// therefore constrained to what remains on screen.
