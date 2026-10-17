@@ -1100,7 +1100,8 @@ final class AppModel {
             volumesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
             return
         }
-        volumesState = .loading
+        // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
+        if volumesState != .loaded { volumesState = .loading }
         do {
             let fetched = try await Task.detached { [cli] in try cli.listVolumes() }.value
             // Appearance and disappearance are a volume's only events — see `recordExistence`.
@@ -1158,7 +1159,8 @@ final class AppModel {
             networksState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
             return
         }
-        networksState = .loading
+        // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
+        if networksState != .loaded { networksState = .loading }
         do {
             let fetched = try await Task.detached { [cli] in try cli.listNetworks() }.value
             recordExistence(kind: .network, previous: networks.map(\.id),
@@ -1225,7 +1227,8 @@ final class AppModel {
             imagesState = .unavailable(preflight.flatMap(Self.unavailableReason) ?? "container is unavailable.")
             return
         }
-        imagesState = .loading
+        // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
+        if imagesState != .loaded { imagesState = .loading }
         do {
             let fetched = try await Task.detached { [cli] in try cli.listImages() }.value
             // Keyed on `reference`, not `id`: a retag produces a new reference for the same

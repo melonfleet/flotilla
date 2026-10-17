@@ -19,7 +19,8 @@ extension AppModel {
 
     func refreshMachines() async {
         guard runtimeUsable else { return }
-        machinesState = .loading
+        // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
+        if machinesState != .loaded { machinesState = .loading }
         do {
             let fetched = try await Task.detached { [cli] in try cli.machines() }.value
             // Same equality guard as `containers`: `@Observable` notifies on every write, so an

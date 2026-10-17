@@ -118,8 +118,11 @@ final class Greta {
             "Apple Intelligence is off. Turn it on in System Settings ▸ Apple Intelligence & Siri."
         case .unavailable(.deviceNotEligible):
             "This Mac can't run Apple's on-device model. Greta needs Apple silicon with Apple Intelligence — and not a virtual machine."
+        // macOS reports a mismatch between the Mac's language and Siri's as `modelNotReady`, not as
+        // an unsupported language, and it never clears on its own — that was Kamal's Mac on 17
+        // October, "still downloading" for hours. So the language comes first.
         case .unavailable(.modelNotReady):
-            "Apple's model is still downloading. Greta will be ready when it finishes."
+            "Apple's on-device model isn't ready. First check that macOS and Siri use the same language (System Settings ▸ General ▸ Language & Region, and Apple Intelligence & Siri) — a mismatch keeps it from ever becoming ready. Otherwise macOS is still downloading it, which can stall on Low Data Mode or low disk space."
         case .unavailable:
             "Apple's on-device model isn't available on this Mac."
         }

@@ -15,7 +15,8 @@ extension AppModel {
 
     func refreshClusters() async {
         guard runtimeUsable else { return }
-        clustersState = .loading
+        // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
+        if clustersState != .loaded { clustersState = .loading }
         do {
             let fetched = try await Task.detached { [cli] in try cli.k8sNodes() }.value
             // The same equality guard the containers and machines polls use: `@Observable`
