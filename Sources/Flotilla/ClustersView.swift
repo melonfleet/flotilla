@@ -15,6 +15,8 @@ import FlotillaCore
 struct ClustersView: View {
     let model: AppModel
     let ui: ResourceUIState<HostedCluster>
+    /// Held by `MainWindowView`, like `ui` — see `RowSortState`.
+    let sort: RowSortState
 
     @State private var selection = Set<HostedCluster.ID>()
     @State private var showingCreate = false
@@ -28,10 +30,26 @@ struct ClustersView: View {
     /// form, not a dialog — see `LoadImageView`.
     @State private var loadImageTarget: K8sNode?
 
-    static let columnSpecs: [(id: String, title: String)] = [
-        ("host", "Host"), ("role", "Role"), ("cpus", "CPUs"), ("memory", "Memory"),
-        ("address", "Address"), ("ports", "Ports"),
+    /// The old table's sortable columns. Ties break on name.
+    static let sortKeys: [(id: String, title: String)] = [
+        ("name", "Name"), ("state", "State"), ("host", "Host"), ("role", "Role"),
+        ("cpus", "CPUs"), ("memory", "Memory"), ("address", "Address"), ("ports", "Ports"),
     ]
+
+    private var sortOrder: [KeyPathComparator<HostedCluster>] {
+        let order = sort.order
+        let byName = KeyPathComparator(\HostedCluster.name)
+        switch sort.key {
+        case "state": return [KeyPathComparator(\HostedCluster.stateSortKey, order: order), byName]
+        case "host": return [KeyPathComparator(\HostedCluster.hostName, order: order), byName]
+        case "role": return [KeyPathComparator(\HostedCluster.roleSortKey, order: order), byName]
+        case "cpus": return [KeyPathComparator(\HostedCluster.cpuSortKey, order: order), byName]
+        case "memory": return [KeyPathComparator(\HostedCluster.memory, order: order), byName]
+        case "address": return [KeyPathComparator(\HostedCluster.address, order: order), byName]
+        case "ports": return [KeyPathComparator(\HostedCluster.portSortKey, order: order), byName]
+        default: return [KeyPathComparator(\HostedCluster.name, order: order)]
+        }
+    }
 
     var body: some View {
         Group {
@@ -180,12 +198,10 @@ struct ClustersView: View {
             ResourceListControls<HostedCluster>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
-                columnCustomization: Binding(get: { ui.columnCustomization },
-                                             set: { ui.columnCustomization = $0 }),
-                columns: Self.columnSpecs,
                 filters: [],
                 hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
                 hosts: hostChoices)
+            RowSortMenu(state: sort, keys: Self.sortKeys)
         }, trailing: {
             ToolbarIconMenu(systemImage: "plus", label: "Create a cluster") {
                 Button("New Cluster…") { createPrefill = nil; showingCreate = true }
@@ -238,7 +254,7 @@ struct ClustersView: View {
                     || $0.hostName.lowercased().contains(query)
             }
         }
-        return rows.sorted(using: ui.sortOrder)
+        return rows.sorted(using: sortOrder)
     }
 
     @ViewBuilder
@@ -283,114 +299,111 @@ struct ClustersView: View {
 
         case .loaded:
             switch ui.presentation {
-            case .list: table
+            case .list: rowsList
             case .cards: cards
             }
         }
     }
 
-    private var table: some View {
-        SwiftUI.Table(displayedClusters,
-              selection: $selection,
-              sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
-              columnCustomization: Binding(get: { ui.columnCustomization },
-                                           set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text(Image(systemName: "circle.fill")).font(.system(size: 6)).accessibilityLabel("State"), value: \.stateSortKey) { row in
-                let cluster = row.cluster
-                Circle()
-                    .fill(cluster.isRunning ? Theme.online : Color.secondary)
-                    .frame(width: 8, height: 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .help(cluster.state.capitalized)
-                    .accessibilityLabel(cluster.state.capitalized)
-            }
-            .width(min: 26, ideal: 28, max: 34)
-            .customizationID("state")
-
-            TableColumn("Name", value: \.name) { row in
-                Text(row.name)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .help("kubectl --context \(row.name)" + (row.host.isLocal ? "" : " — on \(row.hostName)"))
-            }
-            .width(min: 120, ideal: 170)
-
-            // Which Mac the cluster runs on, as in Volumes and Containers (Q51).
-            TableColumn("Host", value: \.hostName) { row in
-                HostCell(name: row.hostName, staleSince: row.staleSince)
-            }
-            .width(min: 80, ideal: 110)
-            .customizationID("host")
-
-            TableColumn("Role", value: \.roleSortKey) { row in
-                let cluster = row.cluster
-                Text(cluster.roles.joined(separator: ", "))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .help(cluster.roles.isEmpty ? "control-plane runs Kubernetes itself"
-                          : "\(cluster.roles.joined(separator: ", "))\ncontrol-plane runs Kubernetes itself")
-            }
-            .width(min: 110, ideal: 150)
-            .customizationID("role")
-
-            TableColumn("CPUs", value: \.cpuSortKey) { row in
-                let cluster = row.cluster
-                Text(cluster.cpus.map(String.init) ?? "—")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            .width(min: 50, ideal: 60)
-            .customizationID("cpus")
-
-            // Printed as the CLI prints it, `16384 MB`. Not reformatted: the unit is its choice,
-            // and a number without one would lose what it meant.
-            TableColumn("Memory", value: \.memory) { row in
-                let cluster = row.cluster
-                Text(cluster.memory.isEmpty ? "—" : cluster.memory)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            .width(min: 70, ideal: 90)
-            .customizationID("memory")
-
-            TableColumn("Address", value: \.address) { row in
-                let cluster = row.cluster
-                Text(cluster.address.isEmpty ? "—" : cluster.address)
-                    .monospaced()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .help(cluster.address)
-            }
-            .width(min: 100, ideal: 130)
-            .customizationID("address")
-
-            TableColumn("Ports", value: \.portSortKey) { row in
-                let cluster = row.cluster
-                Text(cluster.ports.isEmpty ? "—" : cluster.ports.joined(separator: ", "))
-                    .monospaced()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .help("The API server, reachable on this Mac at that host port")
-            }
-            .width(min: 90, ideal: 120)
-            .customizationID("ports")
-
-            TableColumn("Actions") { row in
-                rowActions(for: row)
-            }
-            .width(min: 120, ideal: 140)
+    /// The rows, filling the pane — `ResourceRow`'s two lines, the list's own selection. Rows are
+    /// as tall as their content; nothing here writes a height down, and the list takes whatever
+    /// the pane gives it (the old table needed `maxHeight: .infinity` for the same reason).
+    ///
+    /// A cluster has no page, so a double-click opens nothing and the name is plain text.
+    private var rowsList: some View {
+        List(displayedClusters, selection: $selection) { row in
+            listRow(row)
+                .listRowInsets(EdgeInsets())
+                .accessibilityActions { rowAccessibilityActions(row) }
         }
-        .tableStyle(.inset)
-        // Load-bearing, and its absence renders the whole section at a negative Y. A `Table` in
-        // a `VStack` inside an unbounded parent asks for as much height as it likes, so the
-        // column of band + toolbar + table grew past the window and pushed everything above the
-        // top edge — a blank screen with the content off-screen, which is the same failure
-        // `VolumesView.createScreen` records for its `ScrollView`.
-        .frame(maxHeight: .infinity)
+        .listStyle(.inset)
         .contextMenu(forSelectionType: HostedCluster.ID.self) { ids in
-            if let row = displayedClusters.first(where: { ids.contains($0.id) }) {
-                menu(for: row)
+            // There are no bulk actions on clusters, so a right-click on several offers none
+            // rather than the first one's menu.
+            let picked = displayedClusters.filter { ids.contains($0.id) }
+            if picked.count == 1, let row = picked.first { menu(for: row) }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func listRow(_ row: HostedCluster) -> some View {
+        ResourceRow(
+            title: row.name,
+            openHelp: "kubectl --context \(row.name)" + (row.host.isLocal ? "" : " — on \(row.hostName)"),
+            detail: detailParts(row).joined(separator: " · "),
+            detailHelp: "The API server is reachable on this Mac at the host port",
+            selected: selection.contains(row.id),
+            summary: rowSummary(row),
+            reservesMetrics: false,
+            dimsPlainTitle: false,
+            leading: { stateMark(row.cluster) },
+            chips: { rowChips(row) },
+            metrics: { EmptyView() },
+            actions: { rowActions(for: row) })
+    }
+
+    private func stateMark(_ cluster: K8sNode) -> some View {
+        Circle()
+            .fill(cluster.isRunning ? Theme.online : Color.secondary)
+            .frame(width: 8, height: 8)
+            .help(cluster.state.capitalized)
+    }
+
+    /// The role (`control-plane, worker`) and — only for another Mac's cluster — the host.
+    @ViewBuilder
+    private func rowChips(_ row: HostedCluster) -> some View {
+        HStack(spacing: 4) {
+            if !row.cluster.roles.isEmpty {
+                ResourceChip(text: row.cluster.roles.joined(separator: ", "))
+                    .help("control-plane runs Kubernetes itself")
             }
+            if !row.host.isLocal {
+                HostCell(name: row.hostName, staleSince: row.staleSince)
+                    .chipStyle()
+                    .fixedSize()
+            }
+        }
+    }
+
+    /// State · CPUs · memory · address · API port, each only when there is one. `k8s list` prints
+    /// no Kubernetes version and no node count (a cluster is its one node on 1.5), so those are not
+    /// here; the memory stays as the CLI prints it.
+    private func detailParts(_ row: HostedCluster) -> [String] {
+        let cluster = row.cluster
+        var parts = [cluster.state.capitalized]
+        if let cpus = cluster.cpus { parts.append("\(cpus) CPU\(cpus == 1 ? "" : "s")") }
+        if !cluster.memory.isEmpty { parts.append(cluster.memory) }
+        if !cluster.address.isEmpty { parts.append(cluster.address) }
+        if !cluster.ports.isEmpty { parts.append("API " + cluster.ports.joined(separator: ", ")) }
+        return parts
+    }
+
+    private func rowSummary(_ row: HostedCluster) -> String {
+        var parts = ["Cluster " + row.name] + detailParts(row).map { $0.replacingOccurrences(of: "->", with: " to ") }
+        if !row.cluster.roles.isEmpty { parts.append(row.cluster.roles.joined(separator: ", ")) }
+        if !row.host.isLocal {
+            parts.append("on " + row.hostName)
+            if row.staleSince != nil { parts.append("not answering") }
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it
+    /// are not reachable any other way. An action the button would refuse is not offered.
+    @ViewBuilder
+    private func rowAccessibilityActions(_ row: HostedCluster) -> some View {
+        let cluster = row.cluster
+        if !model.isBusy(row.host.rowID(cluster.node), kind: .cluster) {
+            if !cluster.isRunning {
+                Button("Recreate \(cluster.node)") { pendingRecreate = row }
+            }
+            if cluster.isRunning, row.host.isLocal {
+                Button("Load an image into \(cluster.node)") { loadImageTarget = cluster }
+            }
+            if row.host.isLocal {
+                Button("Write kubeconfig for \(cluster.node)") { Task { await model.writeKubeconfig(for: cluster) } }
+            }
+            Button("Delete \(cluster.node)") { pendingDelete = row }
         }
     }
 

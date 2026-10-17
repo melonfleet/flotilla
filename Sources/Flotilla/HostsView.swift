@@ -153,9 +153,9 @@ extension AppModel {
     }
 }
 
-/// Hosts — every Mac Flotilla manages, with the same table setup as every other section (the
-/// owner, 6 October): list and cards, search, filter, sortable and hideable columns, row menus that
-/// match the context menu, multi-select, tags, Add and Refresh, and the activity band.
+/// Hosts — every Mac Flotilla manages, with the same setup as every other section (the owner,
+/// 6 October): list and cards, search, filter, a Sort menu, row menus that match the context menu,
+/// multi-select, tags, Add and Refresh. Two-line rows since Q56.
 ///
 /// **Add** pairs a new host (B3b): by the code it shows, or with the fleet enrolment key. Macs that
 /// asked to join with the key wait here for the owner's approval — a banner says how many — and
@@ -164,6 +164,8 @@ extension AppModel {
 struct HostsView: View {
     let model: AppModel
     let ui: ResourceUIState<HostRow>
+    /// Held by `MainWindowView`, like `ui` — see `RowSortState`.
+    let sort: RowSortState
     let go: (Section) -> Void
 
     @State private var selection = Set<HostRow.ID>()
@@ -233,6 +235,9 @@ struct HostsView: View {
             openHost = subject
             model.clearPendingDetail()
         }
+        // Filtering, searching and removal hide rows without clearing their ids; the bulk bar and
+        // menu must not count rows nobody can see.
+        .onChange(of: visibleIDs) { _, ids in selection.formIntersection(ids) }
         .onAppear {
             hostMode.hostsOpened()
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .host {
@@ -402,24 +407,11 @@ struct HostsView: View {
                        matches: displayedRows.count,
                        updated: model.lastRefresh,
                        leading: {
-            Toggle("", isOn: Binding(get: { allVisibleSelected },
-                                     set: { on in
-                                         if on { selection.formUnion(visibleIDs) }
-                                         else { selection.subtract(visibleIDs) }
-                                     }))
-                .labelsHidden()
-                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all hosts" : "Select all hosts")
-                .help(ui.presentation != .list ? "Switch to list view to select"
-                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
-
             ResourceListControls<HostRow>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
-                columnCustomization: Binding(get: { ui.columnCustomization },
-                                             set: { ui.columnCustomization = $0 }),
-                columns: Self.columnSpecs,
                 filters: Self.filters)
+            RowSortMenu(state: sort, keys: Self.sortKeys)
             HostGroupByMenu(store: model.hostCategories, grouping: groupingBinding) { showingCategories = true }
         }, trailing: {
             if model.startingRuntime { ProgressView().controlSize(.small).help("Starting the container system…") }
@@ -440,11 +432,26 @@ struct HostsView: View {
         })
     }
 
-    private static let columnSpecs: [(id: String, title: String)] = [
-        ("tags", "Tags"), ("containers", "Containers"),
-        ("machines", "Machines"), ("macos", "macOS"), ("container", "container"), ("flotilla", "Flotilla"),
-        ("model", "Model"),
+    /// The old table's sortable columns. Ties break on name.
+    private static let sortKeys: [(id: String, title: String)] = [
+        ("name", "Name"), ("status", "Status"), ("containers", "Containers"), ("machines", "Machines"),
+        ("macos", "macOS"), ("container", "container"), ("flotilla", "Flotilla"), ("model", "Model"),
     ]
+
+    private var sortOrder: [KeyPathComparator<HostRow>] {
+        let order = sort.order
+        let byName = KeyPathComparator(\HostRow.nameSortKey)
+        switch sort.key {
+        case "status": return [KeyPathComparator(\HostRow.statusSortKey, order: order), byName]
+        case "containers": return [KeyPathComparator(\HostRow.containersSortKey, order: order), byName]
+        case "machines": return [KeyPathComparator(\HostRow.machinesSortKey, order: order), byName]
+        case "macos": return [KeyPathComparator(\HostRow.macOSSortKey, order: order), byName]
+        case "container": return [KeyPathComparator(\HostRow.containerSortKey, order: order), byName]
+        case "flotilla": return [KeyPathComparator(\HostRow.appSortKey, order: order), byName]
+        case "model": return [KeyPathComparator(\HostRow.modelSortKey, order: order), byName]
+        default: return [KeyPathComparator(\HostRow.nameSortKey, order: order)]
+        }
+    }
 
     private static let filters: [ResourceFilterOption] = [
         .init(id: "all", title: "All", systemImage: "circle.grid.2x2"),
@@ -479,7 +486,7 @@ struct HostsView: View {
                         .contains { $0.lowercased().contains(query) } ?? false)
             }
         }
-        return rows.sorted(using: ui.sortOrder)
+        return rows.sorted(using: sortOrder)
     }
 
     // MARK: Group By
@@ -561,16 +568,6 @@ struct HostsView: View {
         .help(open ? "Hide hosts" : "Show \(row.header?.hostIDs.count ?? 0) hosts")
     }
 
-    /// A header's checkbox selects or clears every host in its group.
-    private func groupToggle(_ header: HostGroupHeader, name: String) -> some View {
-        let ids = Set(header.hostIDs)
-        return Toggle("", isOn: Binding(get: { !ids.isEmpty && ids.isSubset(of: selection) },
-                                        set: { on in if on { selection.formUnion(ids) } else { selection.subtract(ids) } }))
-            .labelsHidden()
-            .accessibilityLabel("Select the hosts in \(name)")
-            .help("Select the \(ids.count) hosts in \(name)")
-    }
-
     private func builtIns(_ row: HostRow) -> [BuiltInHostTag] {
         BuiltInHostTag.tags(isThisMac: row.isThisMac,
                             role: row.isThisMac ? hostMode.mode.rawValue
@@ -579,26 +576,12 @@ struct HostsView: View {
 
     private var visibleIDs: Set<HostRow.ID> { Set(displayedRows.map(\.id)) }
 
-    private var allVisibleSelected: Bool {
-        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
-    }
-
     private var selectedRows: [HostRow] {
         displayedRows.filter { selection.contains($0.id) }
     }
 
     private var selectedTagSubjects: [TagSubject] {
         selectedRows.map { TagSubject(kind: .host, id: $0.id) }
-    }
-
-    private func selectionToggle(for row: HostRow) -> some View {
-        Toggle("", isOn: Binding(get: { selection.contains(row.id) },
-                                 set: { on in
-                                     if on { selection.insert(row.id) } else { selection.remove(row.id) }
-                                 }))
-            .labelsHidden()
-            .accessibilityLabel("Select \(row.name)")
-            .help("Select \(row.name)")
     }
 
     // MARK: Bulk
@@ -646,203 +629,286 @@ struct HostsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if ui.presentation == .list {
-            table
+            rowsList
         } else {
             cards
         }
     }
 
-    /// The right-hand half of the table, split out because `TableColumnBuilder` takes ten columns
-    /// and the Flotilla column made eleven — the same remedy as `ContainersView.trailingColumns`.
-    @TableColumnBuilder<HostRow, KeyPathComparator<HostRow>>
-    private var trailingColumns: some TableColumnContent<HostRow, KeyPathComparator<HostRow>> {
-            TableColumn("macOS", value: \.macOSSortKey) { row in
-                if row.header == nil {
-                    Text(row.macOS ?? "—").monospacedDigit().foregroundStyle(.secondary)
-                }
+    /// The rows, filling the pane — `ResourceRow`'s two lines, the list's own selection. Rows are
+    /// as tall as their content; nothing here writes a height down. When Hosts is grouped, a
+    /// group's header is a row of its own, followed by its hosts unless it is closed.
+    private var rowsList: some View {
+        List(tableRows, selection: $selection) { row in
+            Group {
+                if row.header != nil { headerRow(row) } else { hostRow(row) }
             }
-            .width(min: 60, ideal: 76)
-            .customizationID("macos")
-
-            TableColumn("container", value: \.containerSortKey) { row in
-                if row.header == nil { containerCell(row) }
-            }
-            .width(min: 64, ideal: 100)
-            .customizationID("container")
-
-            // Shown since Phase C, so a host still on an older Flotilla is visible before it
-            // matters. A different build is worth a mark; the wire version, which actually decides
-            // whether the two can talk, is checked when they connect.
-            TableColumn("Flotilla", value: \.appSortKey) { row in
-                if row.header == nil { flotillaCell(row) }
-            }
-            .width(min: 100, ideal: 200)
-            .customizationID("flotilla")
-
-            TableColumn("Model", value: \.modelSortKey) { row in
-                if row.header == nil {
-                    Text(row.modelIdentifier ?? "—").foregroundStyle(.secondary).lineLimit(1)
-                        .help("Apple's model identifier")
-                }
-            }
-            .width(min: 70, ideal: 84)
-            .customizationID("model")
-
-            TableColumn("Actions") { row in
-                if row.header == nil { rowActions(for: row) }
-            }
-            .width(min: 78, ideal: 88)
-    }
-
-    private var table: some View {
-        SwiftUI.Table(tableRows,
-                      selection: $selection,
-                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
-                      columnCustomization: Binding(get: { ui.columnCustomization },
-                                                   set: { ui.columnCustomization = $0 })) {
-            // Column one carries the selection checkbox and the status dot together, as in
-            // Containers: the dot's colour says how the Mac is, its tooltip says it in full, and the
-            // host's page carries it as a line (the owner, 9 October).
-            // A dot as the header, so it has something VoiceOver can name — an untitled header read
-            // as a nameless button (10 October).
-            TableColumn(Text(Image(systemName: "circle.fill")).font(.system(size: 6)).accessibilityLabel("Status"),
-                        value: \.statusSortKey) { row in
-                statusCell(row)
-            }
-            .width(min: 52, ideal: 56, max: 64)
-
-            TableColumn("Name", value: \.nameSortKey) { row in
-                HStack(spacing: 6) {
-                    if let header = row.header {
-                        caret(row)
-                        Text(row.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
-                        Text("\(header.hostIDs.count)").font(.caption).foregroundStyle(.secondary)
-                            .help("\(header.hostIDs.count) host\(header.hostIDs.count == 1 ? "" : "s"), \(header.connected) connected")
-                    } else {
-                        if grouping != .none { Color.clear.frame(width: 16, height: 16) }
-                        Button { open(row) } label: { Text(row.name).lineLimit(1).truncationMode(.middle) }
-                            .buttonStyle(.link)
-                            .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                            .help("Open \(row.name)")
-                    }
-                }
-            }
-            .width(min: 130, ideal: 170)
-
-            TableColumn("Tags") { row in
-                if row.header == nil {
-                    TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true, builtIns: builtIns(row))
-                }
-            }
-            .width(min: 90, ideal: 170)
-            .customizationID("tags")
-
-            TableColumn("Containers", value: \.containersSortKey) { row in
-                Text(row.containersText).monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 96, ideal: 116)
-            .customizationID("containers")
-
-            TableColumn("Machines", value: \.machinesSortKey) { row in
-                Text(row.machinesText).monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 60, ideal: 76)
-            .customizationID("machines")
-
-            trailingColumns
+            .listRowInsets(EdgeInsets())
+            .accessibilityActions { rowAccessibilityActions(row) }
         }
-        .frame(maxHeight: .infinity)
+        .listStyle(.inset)
         .contextMenu(forSelectionType: HostRow.ID.self) { ids in
-            if let row = model.hostRows.first(where: { ids.contains($0.id) }) {
-                menu(for: row)
-            }
+            rowContextMenu(for: ids)
         } primaryAction: { ids in
             guard ids.count == 1, let id = ids.first else { return }
             if id.hasPrefix("group:") {
-                if ui.collapsedIDs.contains(id) { ui.collapsedIDs.remove(id) } else { ui.collapsedIDs.insert(id) }
+                toggleGroup(id)
                 return
             }
             guard let row = model.hostRows.first(where: { $0.id == id }) else { return }
             open(row)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func statusCell(_ row: HostRow) -> some View {
-        HStack(spacing: 6) {
-            if let header = row.header {
-                groupToggle(header, name: row.name)
-                HostGroupDot(header: header)
-            } else {
-                selectionToggle(for: row)
-                HostStatusDot(model: model, row: row)
+    private func toggleGroup(_ id: HostRow.ID) {
+        if ui.collapsedIDs.contains(id) { ui.collapsedIDs.remove(id) } else { ui.collapsedIDs.insert(id) }
+    }
+
+    /// A Group By header: the caret, the connected dot, the group's name, and its totals.
+    private func headerRow(_ row: HostRow) -> some View {
+        let count = row.header?.hostIDs.count ?? 0
+        let open = !ui.collapsedIDs.contains(row.id)
+        var parts = ["\(count) host\(count == 1 ? "" : "s")", row.status]
+        if row.containersRunning != nil { parts.append("containers " + row.containersText) }
+        if row.machines != nil { parts.append("machines " + row.machinesText) }
+        return ResourceRow(
+            title: row.name,
+            opens: { toggleGroup(row.id) },
+            openHelp: open ? "Hide hosts" : "Show \(count) hosts",
+            detail: parts.joined(separator: " · "),
+            selected: selection.contains(row.id),
+            summary: "\(row.name), group, \(parts.joined(separator: ", ")), \(open ? "expanded" : "collapsed")",
+            reservesMetrics: false,
+            leading: {
+                HStack(spacing: 6) {
+                    caret(row)
+                    if let header = row.header { HostGroupDot(header: header) }
+                }
+            },
+            chips: { EmptyView() },
+            metrics: { EmptyView() },
+            actions: { EmptyView() })
+    }
+
+    private func hostRow(_ row: HostRow) -> some View {
+        let facts = hardware(row)
+        return ResourceRow(
+            title: row.name,
+            opens: { open(row) },
+            detail: detailParts(row, facts: facts).joined(separator: " · "),
+            detailHelp: detailParts(row, facts: facts).joined(separator: "\n"),
+            selected: selection.contains(row.id),
+            indent: grouping == .none ? 0 : 28,
+            summary: rowSummary(row, facts: facts),
+            leading: { HostStatusDot(model: model, row: row) },
+            chips: { rowChips(row) },
+            metrics: { lastSeen(row) },
+            actions: { rowActions(for: row) })
+    }
+
+    /// The chip, cores and memory the host last reported — This Mac's read live, a host's from its
+    /// last facts. `nil` until a host has answered once.
+    private func hardware(_ row: HostRow) -> HostFacts? {
+        if row.isThisMac { return model.localHostFacts() }
+        guard let peer = row.peer else { return nil }
+        return hostMode.facts[peer.fingerprint]
+    }
+
+    /// Where it is not simply connected: its state first, because that is what you look at a row
+    /// for. Waiting, turned away, removed and imported are chips on the first line, not repeated.
+    ///
+    /// Then model, chip and cores, memory, macOS, the two versions and the container count. The
+    /// line truncates at the tail, so the order is the order of how much you would miss it.
+    private func detailParts(_ row: HostRow, facts: HostFacts?) -> [String] {
+        var parts: [String] = []
+        if !row.connected, !statusIsChip(row) { parts.append(row.status) }
+        if let model = row.modelIdentifier { parts.append(model) }
+        let chip = OverviewView.chip(facts)
+        if chip != "—" { parts.append(chip) }
+        let memory = OverviewView.memory(facts)
+        if memory != "—" { parts.append(memory) }
+        if let macOS = row.macOS { parts.append("macOS " + macOS) }
+        if let app = row.appVersion { parts.append("Flotilla " + app) }
+        if let version = row.containerVersion { parts.append("container " + version) }
+        if row.containersRunning != nil { parts.append(row.containersText + " containers") }
+        if let machines = row.machines { parts.append("\(machines) machine\(machines == 1 ? "" : "s")") }
+        return parts
+    }
+
+    /// States the first line says as a chip, so the second does not say them again.
+    private func statusIsChip(_ row: HostRow) -> Bool {
+        row.imported != nil || (row.peer.map { !$0.isTrusted } ?? false)
+    }
+
+    private func rowSummary(_ row: HostRow, facts: HostFacts?) -> String {
+        var parts = [row.name]
+        if row.isThisMac { parts.append("this Mac") }
+        parts.append(row.status)
+        parts += detailParts(row, facts: facts).filter { $0 != row.status }
+        let tagNames = model.tags.tags(on: .host, row.id).map(\.name)
+        if !tagNames.isEmpty { parts.append("tags " + tagNames.joined(separator: ", ")) }
+        if let seen = lastSeenText(row) { parts.append("last seen " + seen) }
+        return parts.joined(separator: ", ")
+    }
+
+    private func lastSeenText(_ row: HostRow) -> String? {
+        row.peer?.lastSeen.map(OverviewView.checkIn)
+    }
+
+    /// The right-hand figure: when a paired host was last heard from. This Mac is always here, and
+    /// a host not yet paired has not been heard from, so both leave it empty.
+    @ViewBuilder
+    private func lastSeen(_ row: HostRow) -> some View {
+        if let text = lastSeenText(row), let date = row.peer?.lastSeen {
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .help("Last heard from \(date.formatted(date: .abbreviated, time: .shortened))")
+        }
+    }
+
+    // MARK: Chips
+
+    /// The Mac's own tags (This Mac, Admin, Host), then — where it needs saying — the state of its
+    /// place in the book, then the owner's tags, then anything that wants doing: an update, a
+    /// `container` to install.
+    ///
+    /// A host waiting for approval is **amber**, and the only amber chip here until something is
+    /// wrong: it is the one state that needs the owner, and the banner above the list says how many.
+    @ViewBuilder
+    private func rowChips(_ row: HostRow) -> some View {
+        HStack(spacing: 4) {
+            if row.isPending {
+                noticeChip("Waiting for approval", systemImage: "person.badge.key", tint: Theme.warning)
+                    .help("Approve only a Mac you recognise — check the serial number against your inventory.")
+            } else if row.imported != nil {
+                ResourceChip(text: "Imported — not paired", systemImage: "square.and.arrow.down")
+                    .help("Named in an imported file. Pair it to manage it.")
+            } else if let peer = row.peer, !peer.isTrusted {
+                ResourceChip(text: HostRow.statusText(peer.status))
+            }
+            TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true, builtIns: builtIns(row))
+            hostNotices(row)
+        }
+    }
+
+    /// A tinted chip, for a state that is not a label but a problem or a wait.
+    private func noticeChip(_ text: String, systemImage: String, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: systemImage)
+            Text(text).lineLimit(1)
+        }
+        .font(.caption2)
+        .foregroundStyle(tint)
+        .padding(.horizontal, 5).padding(.vertical, 1)
+        .background(tint.opacity(0.15), in: Capsule())
+        .fixedSize()
+    }
+
+    /// What the version columns' cells used to carry beside the number: Update for a host whose
+    /// Flotilla is behind (DECISIONS Q38), Install or Upgrade for a host whose `container` is
+    /// missing or behind what this Flotilla expects (Q39), and a mark where it cannot be done from
+    /// here. Only for a paired host — an unpaired one has no versions.
+    @ViewBuilder
+    private func hostNotices(_ row: HostRow) -> some View {
+        if row.header == nil, let peer = row.peer, peer.isTrusted {
+            switch model.updateState(peer.fingerprint) {
+            case .available:
+                Button("Update Flotilla") { Task { await model.updateHost(peer.fingerprint) } }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .disabled(hostMode.rollingOut)
+                    .help("Update \(row.name) to This Mac’s Flotilla, build \(model.ownBuild.map(String.init) ?? "?"). "
+                          + "Running containers are not touched.")
+            case .updating:
+                ProgressView().controlSize(.mini)
+                    .help("Updating — \(row.name) relaunches Flotilla when it is idle; containers keep running.")
+            case .failed(let message):
+                noticeChip("Update failed", systemImage: "exclamationmark.triangle.fill", tint: Theme.warning)
+                    .help("The last update failed: \(message)")
+            case .manualOnly:
+                noticeChip("Update by hand", systemImage: "exclamationmark.triangle.fill", tint: Theme.warning)
+                    .help("\(row.name)’s Flotilla is too old to be updated from here — update it by hand once.")
+            case .current, .ahead, .unknown:
+                EmptyView()
+            }
+            switch model.hostRuntimeState(peer.fingerprint) {
+            case .behind, .missing:
+                Button(model.hostRuntimeState(peer.fingerprint) == .missing ? "Install container" : "Upgrade container") {
+                    pendingRuntime = row
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+                .help("Set up container \(ContainerRuntime.expectedVersion) on \(row.name) — the version this Flotilla expects.")
+            case .working:
+                ProgressView().controlSize(.mini).help("Setting up container on \(row.name)…")
+            case .tooOldToAsk:
+                noticeChip("Update Flotilla first", systemImage: "exclamationmark.triangle.fill", tint: Theme.warning)
+                    .help("\(row.name) needs container \(ContainerRuntime.expectedVersion); update its Flotilla first.")
+            case .current, .newer, .unknown:
+                EmptyView()
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A host's Flotilla: its version, and where it stands against This Mac's (DECISIONS Q38) — an
-    /// Update button when it is behind and can be updated from here.
+    // MARK: Context menu and VoiceOver
+
+    /// What a right-click offers: the row's own menu for one host, the bulk actions for several
+    /// (the bar's, word for word), and nothing for a group header.
     @ViewBuilder
-    private func flotillaCell(_ row: HostRow) -> some View {
-        if let peer = row.peer, peer.isTrusted {
-            HStack(spacing: 6) {
-                Text(row.appVersion ?? "—").monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
-                switch model.updateState(peer.fingerprint) {
-                case .available:
-                    Button("Update") { Task { await model.updateHost(peer.fingerprint) } }
-                        .buttonStyle(.link)
-                        .font(.caption)
-                        .disabled(hostMode.rollingOut)
-                        .help("Update \(row.name) to This Mac’s Flotilla, build \(model.ownBuild.map(String.init) ?? "?"). "
-                              + "Running containers are not touched.")
-                case .updating:
-                    ProgressView().controlSize(.mini)
-                        .help("Updating — \(row.name) relaunches Flotilla when it is idle; containers keep running.")
-                case .failed(let message):
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption2).foregroundStyle(Theme.warning)
-                        .help("The last update failed: \(message)")
-                        .accessibilityLabel("The last update failed: \(message)")
-                case .manualOnly:
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption2).foregroundStyle(Theme.warning)
-                        .help("\(row.name)’s Flotilla is too old to be updated from here — update it by hand once.")
-                        .accessibilityLabel("Too old to update from here")
-                case .current, .ahead, .unknown:
-                    EmptyView()
-                }
+    private func rowContextMenu(for ids: Set<HostRow.ID>) -> some View {
+        let picked = displayedRows.filter { ids.contains($0.id) }
+        if picked.count == 1, let row = picked.first {
+            menu(for: row)
+        } else if picked.count > 1 {
+            let pending = picked.compactMap(\.peer).filter { $0.status == .pending }
+            let subjects = picked.map { TagSubject(kind: .host, id: $0.id) }
+            if !pending.isEmpty {
+                Button("Approve \(pending.count)") { pending.forEach { hostMode.approve($0.fingerprint) } }
+                Divider()
             }
-        } else {
-            versionCell(row.appVersion, skew: row.appSkew, warnAt: .build, what: "Flotilla", host: row.name)
+            HostCategoryMenu(store: model.hostCategories, hosts: picked.map(\.id),
+                             newValue: { valueTarget = ValueTarget(category: $0, hosts: picked.map(\.id)) },
+                             editCategories: { showingCategories = true })
+            BulkTagMenu(store: model.tags, subjects: subjects) {
+                tagSheet = TagSheetTarget(subjects)
+            }
         }
     }
 
-    /// A host's `container`: its version, and Install or Upgrade when it is missing or behind the
-    /// version this Flotilla expects (Q39). This Mac's row keeps the plain version and skew mark.
+    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it,
+    /// and the Update and Install links on its first line, are not reachable any other way.
     @ViewBuilder
-    private func containerCell(_ row: HostRow) -> some View {
-        if let peer = row.peer, peer.isTrusted {
-            HStack(spacing: 6) {
-                Text(row.containerVersion ?? "—").monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
-                    .help("Version of Apple's container runtime")
-                switch model.hostRuntimeState(peer.fingerprint) {
-                case .behind, .missing:
-                    Button(model.hostRuntimeState(peer.fingerprint) == .missing ? "Install" : "Upgrade") { pendingRuntime = row }
-                        .buttonStyle(.link)
-                        .font(.caption)
-                        .help("Set up container \(ContainerRuntime.expectedVersion) on \(row.name) — the version this Flotilla expects.")
-                case .working:
-                    ProgressView().controlSize(.mini).help("Setting up container on \(row.name)…")
-                case .tooOldToAsk:
-                    Image(systemName: "exclamationmark.triangle.fill").font(.caption2).foregroundStyle(Theme.warning)
-                        .help("\(row.name) needs container \(ContainerRuntime.expectedVersion); update its Flotilla first.")
-                        .accessibilityLabel("Needs container \(ContainerRuntime.expectedVersion); update its Flotilla first")
-                case .current, .newer, .unknown:
-                    EmptyView()
-                }
+    private func rowAccessibilityActions(_ row: HostRow) -> some View {
+        if let header = row.header {
+            let open = !ui.collapsedIDs.contains(row.id)
+            Button(open ? "Hide the hosts in \(row.name)" : "Show the \(header.hostIDs.count) hosts in \(row.name)") {
+                toggleGroup(row.id)
             }
         } else {
-            versionCell(row.containerVersion, skew: row.containerSkew, warnAt: .minor, what: "container", host: row.name)
+            Button(row.imported != nil ? "Pair \(row.name)" : "Open \(row.name)") { open(row) }
+            if let peer = row.peer {
+                if peer.status == .pending {
+                    Button("Approve \(row.name)") { hostMode.approve(peer.fingerprint) }
+                    Button("Turn away \(row.name)") { hostMode.reject(peer.fingerprint) }
+                }
+                if peer.isTrusted {
+                    if model.updateState(peer.fingerprint) == .available, !hostMode.rollingOut {
+                        Button("Update Flotilla on \(row.name)") { Task { await model.updateHost(peer.fingerprint) } }
+                    }
+                    let runtime = model.hostRuntimeState(peer.fingerprint)
+                    if runtime.needsSetup {
+                        Button("\(runtime == .missing ? "Install" : "Upgrade") container on \(row.name)") {
+                            pendingRuntime = row
+                        }
+                    }
+                }
+            }
+            if !row.isThisMac {
+                Button("Remove \(row.name)") { pendingForget = row }
+            }
         }
     }
 
@@ -889,26 +955,6 @@ struct HostsView: View {
                     try? model.settingsStore.set(on, for: SettingsKeys.autoUpdateHosts)
                     if on { Task { await model.rollOutUpdates() } }
                 }))
-        }
-    }
-
-    /// A version, with a mark when it is behind or ahead of This Mac's by `warnAt` or more.
-    @ViewBuilder
-    private func versionCell(_ version: String?, skew: VersionSkew?, warnAt: VersionSkew.Level,
-                             what: String, host: String) -> some View {
-        HStack(spacing: 4) {
-            Text(version ?? "—").monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
-                .help(what == "container" ? "Version of Apple's container runtime" : "")
-            if let skew, skew.level >= warnAt {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.warning)
-                    .help("\(host)’s \(what) is \(skew.otherIsOlder ? "older" : "newer") than This Mac’s"
-                          + (what == "container"
-                             ? " — Flotilla checks commands against This Mac’s, so it may refuse an option allowed here."
-                             : " — update Flotilla on both Macs to the same build."))
-                    .accessibilityLabel("\(what) version differs from This Mac’s")
-            }
         }
     }
 
@@ -1014,7 +1060,14 @@ struct HostsView: View {
                 default:
                     EmptyView()
                 }
-                // macOS's own ways in, straight from the table (the owner, 9 October): no need to open
+                // `container` missing or behind: the link on the row's first line, for the menu too,
+                // so the keyboard reaches it (Q39).
+                let runtime = model.hostRuntimeState(peer.fingerprint)
+                if runtime.needsSetup {
+                    Button(runtime == .missing ? "Install container…" : "Upgrade container…") { pendingRuntime = row }
+                    Divider()
+                }
+                // macOS's own ways in, straight from the list (the owner, 9 October): no need to open
                 // the host first. The same helper as its page's buttons.
                 ForEach(HostConnect.Kind.allCases, id: \.self) { kind in
                     Button(kind.title) { HostConnect.open(kind, model, peer.fingerprint) }
@@ -1094,6 +1147,16 @@ struct HostsView: View {
         switch action {
         case .stop: Task { await model.stopRuntime() }
         case .restart: Task { await model.restartRuntime() }
+        }
+    }
+}
+
+private extension AppModel.HostRuntimeState {
+    /// Missing or behind — the two states Install and Upgrade answer.
+    var needsSetup: Bool {
+        switch self {
+        case .behind, .missing: true
+        default: false
         }
     }
 }

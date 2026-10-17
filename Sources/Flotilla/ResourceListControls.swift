@@ -35,10 +35,12 @@ struct ResourceFilterOption: Identifiable, Hashable {
 struct ResourceListControls<Row: Identifiable>: View {
     @Binding var presentation: ResourcePresentation
     @Binding var filterID: String
-    @Binding var columnCustomization: TableColumnCustomization<Row>
+    /// Optional since the two-line rows (Q56): a section with no table has no columns to hide, and
+    /// leaves both out, which also leaves out the Columns button.
+    var columnCustomization: Binding<TableColumnCustomization<Row>>? = nil
 
     /// `(id, title)` per hideable column, in the order the popover should list them.
-    let columns: [(id: String, title: String)]
+    var columns: [(id: String, title: String)] = []
     /// Empty, or **two or more** genuine choices. One choice is not a filter.
     let filters: [ResourceFilterOption]
     /// The Host section of the filter (PLAN.md Phase C): offered when there is a host to choose.
@@ -65,12 +67,14 @@ struct ResourceListControls<Row: Identifiable>: View {
             .labelsHidden()
             .fixedSize()
 
-            IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
-                             help: presentation == .list ? "Show or hide columns"
-                                                         : "Columns apply to the list view only",
-                             // Cards have no columns to configure.
-                             disabled: presentation != .list) { showingColumns.toggle() }
-                .popover(isPresented: $showingColumns, arrowEdge: .bottom) { columnsPopover }
+            if columnCustomization != nil, !columns.isEmpty {
+                IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
+                                 help: presentation == .list ? "Show or hide columns"
+                                                             : "Columns apply to the list view only",
+                                 // Cards have no columns to configure.
+                                 disabled: presentation != .list) { showingColumns.toggle() }
+                    .popover(isPresented: $showingColumns, arrowEdge: .bottom) { columnsPopover }
+            }
 
             if filters.count > 1 || offersHosts {
                 IconActionButton(systemImage: "line.3.horizontal.decrease",
@@ -93,8 +97,11 @@ struct ResourceListControls<Row: Identifiable>: View {
         return parts.isEmpty ? "Filter this list" : "Showing " + parts.joined(separator: ", ") + " only"
     }
 
+    @ViewBuilder
     private var columnsPopover: some View {
-        ColumnVisibilityList(columns: columns, customization: $columnCustomization)
+        if let columnCustomization {
+            ColumnVisibilityList(columns: columns, customization: columnCustomization)
+        }
     }
 
     private var filterPopover: some View {

@@ -9,9 +9,8 @@ import FlotillaCore
 /// containers under it — that live in different places and need different permissions. The section
 /// shows both halves per row, says plainly when only one is there, and offers the missing one.
 ///
-/// The same table setup as every other section — list and cards, search, filter, sortable and
-/// hideable columns, row menus that match the context menu, multi-select with bulk actions, tags
-/// and the activity band.
+/// The same setup as every other section — list and cards, search, filter, a Sort menu, row menus
+/// that match the context menu, multi-select with bulk actions and tags. Two-line rows since Q56.
 ///
 /// **Two permissions, both asked for in the open** (the owner's answers, 6 October):
 ///
@@ -23,6 +22,8 @@ import FlotillaCore
 struct DNSView: View {
     let model: AppModel
     let ui: ResourceUIState<HostedDNS>
+    /// Held by `MainWindowView`, like `ui` — see `RowSortState`.
+    let sort: RowSortState
 
     @State private var selection = Set<HostedDNS.ID>()
     @State private var form: DNSFormTarget?
@@ -100,6 +101,9 @@ struct DNSView: View {
         .onAppear {
             if model.pendingDNSForm { form = .add; model.pendingDNSForm = false }
         }
+        // Filtering, searching and deletion hide rows without clearing their ids; the bulk bar and
+        // menu must not count rows nobody can see.
+        .onChange(of: visibleIDs) { _, ids in selection.formIntersection(ids) }
         // File ▸ Suggestions ▸ DNS Domains…. One-shot.
         .onChange(of: model.pendingSuggestions) { _, section in
             if section == .dns { model.pendingSuggestions = nil; form = nil; showingSuggestions = true }
@@ -156,26 +160,13 @@ struct DNSView: View {
                        matches: displayedRows.count,
                        updated: model.dnsLastRefresh,
                        leading: {
-            Toggle("", isOn: Binding(get: { allVisibleSelected },
-                                     set: { on in
-                                         if on { selection.formUnion(visibleIDs) }
-                                         else { selection.subtract(visibleIDs) }
-                                     }))
-                .labelsHidden()
-                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all domains" : "Select all domains")
-                .help(ui.presentation != .list ? "Switch to list view to select"
-                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
-
             ResourceListControls<HostedDNS>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
-                columnCustomization: Binding(get: { ui.columnCustomization },
-                                             set: { ui.columnCustomization = $0 }),
-                columns: Self.columnSpecs,
                 filters: Self.filters,
                 hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
                 hosts: hostChoices)
+            RowSortMenu(state: sort, keys: Self.sortKeys)
         }, trailing: {
             if working { ProgressView().controlSize(.small).help("Applying a DNS change…") }
             ToolbarIconMenu(systemImage: "plus", label: "New domain") {
@@ -193,9 +184,21 @@ struct DNSView: View {
         })
     }
 
-    private static let columnSpecs: [(id: String, title: String)] = [
-        ("tags", "Tags"), ("kind", "Kind"), ("address", "Address"), ("status", "Status"), ("host", "Host"),
+    /// The old table's sortable columns (Address was never sortable). Ties break on name.
+    private static let sortKeys: [(id: String, title: String)] = [
+        ("name", "Name"), ("kind", "Kind"), ("status", "Status"), ("host", "Host"),
     ]
+
+    private var sortOrder: [KeyPathComparator<HostedDNS>] {
+        let order = sort.order
+        let byName = KeyPathComparator(\HostedDNS.nameSortKey)
+        switch sort.key {
+        case "kind": return [KeyPathComparator(\HostedDNS.kindSortKey, order: order), byName]
+        case "status": return [KeyPathComparator(\HostedDNS.statusSortKey, order: order), byName]
+        case "host": return [KeyPathComparator(\HostedDNS.hostName, order: order), byName]
+        default: return [KeyPathComparator(\HostedDNS.nameSortKey, order: order)]
+        }
+    }
 
     private static let filters: [ResourceFilterOption] = [
         .init(id: "all", title: "All", systemImage: "circle.grid.2x2"),
@@ -224,14 +227,10 @@ struct DNSView: View {
                         .contains { $0.name.lowercased().contains(query) }
             }
         }
-        return rows.sorted(using: ui.sortOrder)
+        return rows.sorted(using: sortOrder)
     }
 
     private var visibleIDs: Set<HostedDNS.ID> { Set(displayedRows.map(\.id)) }
-
-    private var allVisibleSelected: Bool {
-        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
-    }
 
     private var selectedRows: [HostedDNS] {
         displayedRows.filter { selection.contains($0.id) }
@@ -239,16 +238,6 @@ struct DNSView: View {
 
     private var selectedTagSubjects: [TagSubject] {
         selectedRows.map { TagSubject(kind: .dns, id: $0.id) }
-    }
-
-    private func selectionToggle(for id: HostedDNS.ID) -> some View {
-        Toggle("", isOn: Binding(get: { selection.contains(id) },
-                                 set: { on in
-                                     if on { selection.insert(id) } else { selection.remove(id) }
-                                 }))
-            .labelsHidden()
-            .accessibilityLabel("Select \(id)")
-            .help("Select \(id)")
     }
 
     // MARK: Bulk
@@ -319,7 +308,7 @@ struct DNSView: View {
         } else {
             VStack(spacing: 0) {
                 setupNote
-                if ui.presentation == .list { table } else { cards }
+                if ui.presentation == .list { rowsList } else { cards }
             }
         }
     }
@@ -360,75 +349,121 @@ struct DNSView: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
     }
 
-    private var table: some View {
-        SwiftUI.Table(displayedRows,
-                      selection: $selection,
-                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
-                      columnCustomization: Binding(get: { ui.columnCustomization },
-                                                   set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text(Image(systemName: "checkmark.square")).font(.system(size: 9)).accessibilityLabel("Selection")) { row in
-                selectionToggle(for: row.id)
-            }
-            .width(min: 28, ideal: 30, max: 34)
-
-            TableColumn("Name", value: \.nameSortKey) { row in
-                Button(row.name) { form = .manage(row.id) }
-                    .buttonStyle(.link)
-                    .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                    .lineLimit(1)
-                    .help("Open \(row.name)")
-            }
-            .width(min: 150, ideal: 220)
-
-            TableColumn("Tags") { row in
-                TagPillRow(tags: model.tags.tags(on: .dns, row.id), compact: true)
-            }
-            .width(min: 60, ideal: 110)
-            .customizationID("tags")
-
-            TableColumn("Kind", value: \.kindSortKey) { row in
-                Text(DNSCopy.kindTitle(row.domain)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .width(min: 90, ideal: 120)
-            .customizationID("kind")
-
-            TableColumn("Address") { row in
-                Text(DNSCopy.address(row.domain, place: model.dnsPlace(row.host)))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .help(DNSCopy.addressHelp(row.domain, place: model.dnsPlace(row.host)))
-            }
-            .width(min: 120, ideal: 190)
-            .customizationID("address")
-
-            TableColumn("Status", value: \.statusSortKey) { row in
-                DNSStatusLabel(row: row.domain, place: model.dnsPlace(row.host))
-            }
-            .width(min: 120, ideal: 200)
-            .customizationID("status")
-
-            // Which Mac the domain is on, as in every other section.
-            TableColumn("Host", value: \.hostName) { row in
-                HostCell(name: row.hostName, staleSince: row.staleSince)
-            }
-            .width(min: 80, ideal: 110)
-            .customizationID("host")
-
-            TableColumn("Actions") { row in
-                rowActions(for: row)
-            }
-            .width(min: 78, ideal: 92)
+    /// The rows, filling the pane — `ResourceRow`'s two lines, the list's own selection. Rows are
+    /// as tall as their content; nothing here writes a height down.
+    private var rowsList: some View {
+        List(displayedRows, selection: $selection) { row in
+            listRow(row)
+                .listRowInsets(EdgeInsets())
+                .accessibilityActions { rowAccessibilityActions(row) }
         }
-        .frame(maxHeight: .infinity)
+        .listStyle(.inset)
         .contextMenu(forSelectionType: HostedDNS.ID.self) { ids in
-            if let row = rows.first(where: { ids.contains($0.id) }) {
-                menu(for: row)
-            }
+            rowContextMenu(for: ids)
         } primaryAction: { ids in
+            // Only when the activation names exactly one row — with several selected,
+            // `ids.first` is an arbitrary member.
             guard ids.count == 1, let id = ids.first else { return }
             form = .manage(id)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func listRow(_ row: HostedDNS) -> some View {
+        let place = model.dnsPlace(row.host)
+        return ResourceRow(
+            title: row.name,
+            opens: { form = .manage(row.id) },
+            detail: DNSCopy.address(row.domain, place: place) + " · " + DNSCopy.statusText(row.domain, place: place),
+            detailHelp: DNSCopy.addressHelp(row.domain, place: place) + "\n"
+                + DNSCopy.statusHelp(row.domain, place: place),
+            selected: selection.contains(row.id),
+            summary: rowSummary(row),
+            reservesMetrics: false,
+            leading: { stateMark(row) },
+            chips: { rowChips(row) },
+            metrics: { EmptyView() },
+            actions: { rowActions(for: row) })
+    }
+
+    /// Green when the domain does what it is for, amber when containers are named under it but this
+    /// Mac cannot look the names up (the half-set-up state this section exists to point at), and
+    /// grey otherwise. The words are on the second line; this is only the glance.
+    private func stateMark(_ row: HostedDNS) -> some View {
+        let domain = row.domain
+        let tint: Color = domain.registersContainers
+            ? (domain.resolverInstalled ? Theme.online : Theme.warning)
+            : (domain.resolverInstalled ? Theme.online.opacity(0.5) : Color.secondary.opacity(0.5))
+        return Circle()
+            .fill(tint)
+            .frame(width: 8, height: 8)
+            .help(DNSCopy.statusText(domain, place: model.dnsPlace(row.host)))
+    }
+
+    /// The kind, the tags and — only for another Mac's domain — the host.
+    @ViewBuilder
+    private func rowChips(_ row: HostedDNS) -> some View {
+        HStack(spacing: 4) {
+            ResourceChip(text: DNSCopy.kindTitle(row.domain),
+                         systemImage: row.domain.isHostAlias ? DNSCopy.hostAliasSymbol : "shippingbox")
+            TagPillRow(tags: model.tags.tags(on: .dns, row.id), compact: true)
+            if !row.host.isLocal {
+                HostCell(name: row.hostName, staleSince: row.staleSince)
+                    .chipStyle()
+                    .fixedSize()
+            }
+        }
+    }
+
+    private func rowSummary(_ row: HostedDNS) -> String {
+        let place = model.dnsPlace(row.host)
+        var parts = [row.name, DNSCopy.kindTitle(row.domain),
+                     DNSCopy.address(row.domain, place: place), DNSCopy.statusText(row.domain, place: place)]
+        let tagNames = model.tags.tags(on: .dns, row.id).map(\.name)
+        if !tagNames.isEmpty { parts.append("tags " + tagNames.joined(separator: ", ")) }
+        if !row.host.isLocal { parts.append("on " + row.hostName) }
+        return parts.joined(separator: ", ")
+    }
+
+    /// What a right-click offers: the row's own menu for one row, the bulk actions for several.
+    @ViewBuilder
+    private func rowContextMenu(for ids: Set<HostedDNS.ID>) -> some View {
+        let picked = displayedRows.filter { ids.contains($0.id) }
+        if picked.count == 1, let row = picked.first {
+            menu(for: row)
+        } else if picked.count > 1 {
+            let subjects = picked.map { TagSubject(kind: .dns, id: $0.id) }
+            let deletable = picked.filter(canDelete)
+            BulkTagMenu(store: model.tags, subjects: subjects) {
+                tagSheet = TagSheetTarget(subjects)
+            }
+            Divider()
+            Button("Delete \(deletable.count)…", role: .destructive) { pendingDelete = deletable }
+                .disabled(deletable.isEmpty || working)
+        }
+    }
+
+    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it
+    /// are not reachable any other way. An action the button would refuse is not offered.
+    @ViewBuilder
+    private func rowAccessibilityActions(_ row: HostedDNS) -> some View {
+        let domain = row.domain
+        let blocked = model.dnsChangeProblem(on: row.host) != nil || working
+        Button("Open \(row.name)") { form = .manage(row.id) }
+        if !domain.isHostAlias, !blocked {
+            if domain.registersContainers {
+                Button("Stop using \(row.name) for containers") { changeHost = row.host; pendingChange = .stop(domain.name) }
+            } else if domain.resolverInstalled {
+                Button("Use \(row.name) for containers") { changeHost = row.host; pendingChange = .use(domain.name) }
+            }
+        }
+        if !domain.resolverInstalled, !blocked {
+            Button("Set up \(row.name) on \(row.host.isLocal ? "this Mac" : row.hostName)") {
+                setUp(domain.name, on: row.host)
+            }
+        }
+        if canDelete(row), !working {
+            Button("Delete \(row.name)") { requestDelete([row]) }
         }
     }
 

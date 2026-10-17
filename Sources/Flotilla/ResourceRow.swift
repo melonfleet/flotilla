@@ -40,6 +40,13 @@ struct ResourceRow<Leading: View, Chips: View, Metrics: View, Actions: View>: Vi
     var indent: CGFloat = 0
     /// What VoiceOver reads for the whole row.
     let summary: String
+    /// Whether the figures column is held open when `metrics` is empty. Containers keep it so the
+    /// buttons line up between running and stopped rows; a section that never has figures says
+    /// `false` rather than spend 88pt of its minimum width on nothing.
+    var reservesMetrics = true
+    /// Whether a title with no page (`opens == nil`) is drawn dimmed. A group member that does not
+    /// exist yet should look unavailable; a cluster, which simply has no page, should not.
+    var dimsPlainTitle = true
     @ViewBuilder var leading: Leading
     @ViewBuilder var chips: Chips
     @ViewBuilder var metrics: Metrics
@@ -75,8 +82,12 @@ struct ResourceRow<Leading: View, Chips: View, Metrics: View, Actions: View>: Vi
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            metrics
-                .frame(width: Self.metricsWidth, alignment: .trailing)
+            if reservesMetrics {
+                metrics
+                    .frame(width: Self.metricsWidth, alignment: .trailing)
+            } else {
+                metrics
+            }
 
             actions
                 .fixedSize()
@@ -109,7 +120,7 @@ struct ResourceRow<Leading: View, Chips: View, Metrics: View, Actions: View>: Vi
         } else {
             Text(title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(dimsPlainTitle ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                 .lineLimit(1).truncationMode(.middle)
                 .help(openHelp ?? title)
         }

@@ -2412,6 +2412,13 @@ the thing is and what it is doing in the same space.
 9. **The other sections follow** in the same pattern: Machines, Images, Volumes, Networks.
    Until each does, its table stands. Containers only in this change.
 
+*17 October, Hosts, Registries, DNS and Clusters follow* (Dave, same pattern, no change to
+`ResourceRow`'s look). Hosts' second line is hardware, versions and counts, with its Update and
+Install-`container` links moved onto the first line as chips; Registries, DNS and Clusters say
+what their table columns said. Each has a Sort menu over the old sortable columns. Logs stays a
+table (Q19), as do the Overview's Hosts and the in-page panels. The DNS zones setup screen is a
+form, not a list.
+
 ## Q57 — The Recent activity strip is removed (settled 2026-10-17)
 
 Removed 17 October at Kamal's request; the Activity section has it all. The "Recent activity"

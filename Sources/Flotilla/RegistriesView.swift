@@ -5,9 +5,9 @@ import FlotillaCore
 /// The Registries section: where images come from, and which of them this Mac is signed in to.
 ///
 /// **Moved out of Settings into the sidebar under Images** (the owner, 5 October), with the same
-/// table setup as every other section — list and cards, search, filter, sortable and hideable
-/// columns, row menus that match the context menu, multi-select with bulk actions, tags and the
-/// activity band. Settings ▸ Registries is gone; the default registry is set from the table.
+/// setup as every other section — list and cards, search, filter, a Sort menu, row menus that
+/// match the context menu, multi-select with bulk actions and tags. Settings ▸ Registries is
+/// gone; the default registry is set from the list. Two-line rows since Q56.
 ///
 /// **The honest framing still matters more than the table** (decision Q20). Apple's `container`
 /// has no supported-registry list — it pulls from anything that speaks the OCI distribution API,
@@ -17,6 +17,8 @@ import FlotillaCore
 struct RegistriesView: View {
     let model: AppModel
     let ui: ResourceUIState<RegistryRow>
+    /// Held by `MainWindowView`, like `ui` — see `RowSortState`.
+    let sort: RowSortState
 
     @State private var selection = Set<RegistryRow.ID>()
     /// The embedded form: Add, or managing one row.
@@ -55,6 +57,9 @@ struct RegistriesView: View {
         .onAppear {
             if model.pendingRegistryForm { form = .add; model.pendingRegistryForm = false }
         }
+        // Filtering, searching and removal hide rows without clearing their ids; the bulk bar and
+        // menu must not count rows nobody can see.
+        .onChange(of: visibleIDs) { _, ids in selection.formIntersection(ids) }
         .alert("Action failed",
                isPresented: Binding(get: { actionError != nil },
                                     set: { if !$0 { actionError = nil } })) {
@@ -118,24 +123,11 @@ struct RegistriesView: View {
                        matches: displayedRows.count,
                        updated: model.registriesLastRefresh,
                        leading: {
-            Toggle("", isOn: Binding(get: { allVisibleSelected },
-                                     set: { on in
-                                         if on { selection.formUnion(visibleIDs) }
-                                         else { selection.subtract(visibleIDs) }
-                                     }))
-                .labelsHidden()
-                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all registries" : "Select all registries")
-                .help(ui.presentation != .list ? "Switch to list view to select"
-                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
-
             ResourceListControls<RegistryRow>(
                 presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
-                columnCustomization: Binding(get: { ui.columnCustomization },
-                                             set: { ui.columnCustomization = $0 }),
-                columns: Self.columnSpecs,
                 filters: Self.filters)
+            RowSortMenu(state: sort, keys: Self.sortKeys)
         }, trailing: {
             ToolbarIconButton(systemImage: "plus", label: "Add a registry…") { form = .add }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh registries") {
@@ -144,10 +136,23 @@ struct RegistriesView: View {
         })
     }
 
-    private static let columnSpecs: [(id: String, title: String)] = [
-        ("tags", "Tags"), ("server", "Server"), ("signIn", "Sign-in"),
+    /// The old table's sortable columns. Ties break on name.
+    private static let sortKeys: [(id: String, title: String)] = [
+        ("name", "Name"), ("server", "Server"), ("signIn", "Sign-in"),
         ("status", "Status"), ("type", "Type"),
     ]
+
+    private var sortOrder: [KeyPathComparator<RegistryRow>] {
+        let order = sort.order
+        let byName = KeyPathComparator(\RegistryRow.nameSortKey)
+        switch sort.key {
+        case "server": return [KeyPathComparator(\RegistryRow.hostSortKey, order: order), byName]
+        case "signIn": return [KeyPathComparator(\RegistryRow.signInSortKey, order: order), byName]
+        case "status": return [KeyPathComparator(\RegistryRow.statusSortKey, order: order), byName]
+        case "type": return [KeyPathComparator(\RegistryRow.kindSortKey, order: order), byName]
+        default: return [KeyPathComparator(\RegistryRow.nameSortKey, order: order)]
+        }
+    }
 
     private static let filters: [ResourceFilterOption] = [
         .init(id: "all", title: "All", systemImage: "circle.grid.2x2"),
@@ -181,32 +186,18 @@ struct RegistriesView: View {
                         .contains { $0.name.lowercased().contains(query) }
             }
         }
-        return rows.sorted(using: ui.sortOrder)
+        return rows.sorted(using: sortOrder)
     }
 
     private var visibleIDs: Set<RegistryRow.ID> { Set(displayedRows.map(\.id)) }
 
-    private var allVisibleSelected: Bool {
-        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
-    }
-
-    /// The selection, limited to what is on screen — filtering does not clear a table's selection.
+    /// The selection, limited to what is on screen — filtering does not clear the list's selection.
     private var selectedRows: [RegistryRow] {
         displayedRows.filter { selection.contains($0.id) }
     }
 
     private var selectedTagSubjects: [TagSubject] {
         selectedRows.map { TagSubject(kind: .registry, id: $0.id) }
-    }
-
-    private func selectionToggle(for id: RegistryRow.ID) -> some View {
-        Toggle("", isOn: Binding(get: { selection.contains(id) },
-                                 set: { on in
-                                     if on { selection.insert(id) } else { selection.remove(id) }
-                                 }))
-            .labelsHidden()
-            .accessibilityLabel("Select \(id)")
-            .help("Select \(id)")
     }
 
     // MARK: Bulk
@@ -274,7 +265,7 @@ struct RegistriesView: View {
         } else {
             VStack(spacing: 0) {
                 runtimeNote
-                if ui.presentation == .list { table } else { cards }
+                if ui.presentation == .list { rowsList } else { cards }
             }
         }
     }
@@ -297,84 +288,143 @@ struct RegistriesView: View {
 
     private var statusKnown: Bool { model.registriesState == .loaded }
 
-    private var table: some View {
-        SwiftUI.Table(displayedRows,
-                      selection: $selection,
-                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
-                      columnCustomization: Binding(get: { ui.columnCustomization },
-                                                   set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text(Image(systemName: "checkmark.square")).font(.system(size: 9)).accessibilityLabel("Selection")) { row in
-                selectionToggle(for: row.id)
-            }
-            .width(min: 28, ideal: 30, max: 34)
-
-            TableColumn("Name", value: \.nameSortKey) { row in
-                HStack(spacing: 6) {
-                    Button(row.name) { form = .manage(row.id) }
-                        .buttonStyle(.link)
-                        .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                        .lineLimit(1)
-                        .help("Open \(row.name)")
-                    badges(for: row)
-                }
-            }
-            .width(min: 170, ideal: 240)
-
-            TableColumn("Tags") { row in
-                TagPillRow(tags: model.tags.tags(on: .registry, row.id), compact: true)
-            }
-            .width(min: 60, ideal: 110)
-            .customizationID("tags")
-
-            TableColumn("Server", value: \.hostSortKey) { row in
-                Text(row.id)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .help(row.id)
-            }
-            .width(min: 120, ideal: 180)
-            .customizationID("server")
-
-            TableColumn("Sign-in", value: \.signInSortKey) { row in
-                Text(row.signInNeed.title)
-                    .foregroundStyle(row.signInNeed == .required ? .primary : .secondary)
-                    .help(row.signInUnavailableReason ?? signInHelp(row.signInNeed))
-            }
-            .width(min: 70, ideal: 90)
-            .customizationID("signIn")
-
-            TableColumn("Status", value: \.statusSortKey) { row in
-                if statusKnown || row.isSignedIn {
-                    RegistryStatusLabel(row: row)
-                } else {
-                    Text("—").foregroundStyle(.tertiary)
-                        .help("Sign-in status needs the container runtime")
-                }
-            }
-            .width(min: 110, ideal: 170)
-            .customizationID("status")
-
-            TableColumn("Type", value: \.kindSortKey) { row in
-                Text(row.kindTitle).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .width(min: 80, ideal: 120)
-            .customizationID("type")
-
-            TableColumn("Actions") { row in
-                rowActions(for: row)
-            }
-            .width(min: 78, ideal: 92)
+    /// The rows, filling the pane — `ResourceRow`'s two lines, the list's own selection. Rows are
+    /// as tall as their content; nothing here writes a height down.
+    private var rowsList: some View {
+        List(displayedRows, selection: $selection) { row in
+            listRow(row)
+                .listRowInsets(EdgeInsets())
+                .accessibilityActions { rowAccessibilityActions(row) }
         }
-        .frame(maxHeight: .infinity)
+        .listStyle(.inset)
         .contextMenu(forSelectionType: RegistryRow.ID.self) { ids in
-            if let row = rows.first(where: { ids.contains($0.id) }) {
-                menu(for: row)
-            }
+            rowContextMenu(for: ids)
         } primaryAction: { ids in
+            // Only when the activation names exactly one row — with several selected,
+            // `ids.first` is an arbitrary member.
             guard ids.count == 1, let id = ids.first else { return }
             form = .manage(id)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func listRow(_ row: RegistryRow) -> some View {
+        ResourceRow(
+            title: row.name,
+            opens: { form = .manage(row.id) },
+            detail: detailParts(row).joined(separator: " · "),
+            detailHelp: row.signInUnavailableReason ?? row.summary,
+            selected: selection.contains(row.id),
+            summary: rowSummary(row),
+            reservesMetrics: false,
+            leading: { stateMark(row) },
+            chips: { rowChips(row) },
+            metrics: { EmptyView() },
+            actions: { rowActions(for: row) })
+    }
+
+    /// Green when this Mac holds a login for it; grey otherwise, which includes "we could not
+    /// look" — the runtime note above the list says that once rather than per row.
+    private func stateMark(_ row: RegistryRow) -> some View {
+        Circle()
+            .fill(row.isSignedIn ? Theme.online : Color.secondary.opacity(0.5))
+            .frame(width: 8, height: 8)
+            .help(statusKnown || row.isSignedIn ? row.statusText : "Sign-in status needs the container runtime")
+    }
+
+    /// Server · type · who you are signed in as. The hosts a registry is signed in on are not here:
+    /// `registry login` is local-only (Q20), so there is only ever This Mac.
+    private func detailParts(_ row: RegistryRow) -> [String] {
+        var parts = [row.id, row.kindTitle]
+        if statusKnown || row.isSignedIn {
+            parts.append(row.statusText)
+        } else if row.signInNeed == .required {
+            parts.append("Sign-in required")
+        }
+        return parts
+    }
+
+    private func rowSummary(_ row: RegistryRow) -> String {
+        var parts = [row.name, row.id, row.kindTitle]
+        if statusKnown || row.isSignedIn { parts.append(row.statusText) }
+        if row.id == model.defaultRegistry { parts.append("default registry") }
+        else if row.known?.isImplicitDefault == true { parts.append("CLI default") }
+        if row.isUserAdded { parts.append("added by you") }
+        if !row.isListed { parts.append("not in your list") }
+        if row.signInNeed == .required, !row.isSignedIn { parts.append("sign-in required") }
+        let tagNames = model.tags.tags(on: .registry, row.id).map(\.name)
+        if !tagNames.isEmpty { parts.append("tags " + tagNames.joined(separator: ", ")) }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Default / CLI default / yours / not in your list, and Sign-in required when it is, then the
+    /// tags. Built-in is the absence of "yours", so it gets no chip of its own.
+    ///
+    /// Two different "defaults", and they stay two chips. `default` is the registry **Flotilla's**
+    /// Pull form completes a bare name against, which you choose; `CLI default` is what the
+    /// **runtime** resolves a bare name to, which you cannot. One chip for both would claim the
+    /// setting changes the runtime.
+    @ViewBuilder
+    private func rowChips(_ row: RegistryRow) -> some View {
+        HStack(spacing: 4) {
+            if row.id == model.defaultRegistry {
+                ResourceChip(text: "default")
+                    .help("Flotilla's Pull uses this for image names with no registry")
+            } else if row.known?.isImplicitDefault == true {
+                ResourceChip(text: "CLI default")
+            }
+            if row.isUserAdded { ResourceChip(text: "yours") }
+            if !row.isListed { ResourceChip(text: "not in your list") }
+            if row.signInNeed == .required, !row.isSignedIn, row.canSignIn {
+                ResourceChip(text: "Sign-in required", systemImage: "lock")
+                    .help(signInHelp(.required))
+            }
+            TagPillRow(tags: model.tags.tags(on: .registry, row.id), compact: true)
+        }
+    }
+
+    /// What a right-click offers: the row's own menu for one row, the bulk actions for several,
+    /// and nothing for empty space.
+    @ViewBuilder
+    private func rowContextMenu(for ids: Set<RegistryRow.ID>) -> some View {
+        let picked = displayedRows.filter { ids.contains($0.id) }
+        if picked.count == 1, let row = picked.first {
+            menu(for: row)
+        } else if picked.count > 1 {
+            let subjects = picked.map { TagSubject(kind: .registry, id: $0.id) }
+            let signedIn = picked.filter(\.isSignedIn)
+            let listed = picked.filter(\.isListed)
+            BulkTagMenu(store: model.tags, subjects: subjects) {
+                tagSheet = TagSheetTarget(subjects)
+            }
+            Divider()
+            Button("Sign Out of \(signedIn.count)…") { pendingSignOut = signedIn }
+                .disabled(signedIn.isEmpty || !model.runtimeUsable)
+            Button("Remove \(listed.count) from List…", role: .destructive) { pendingRemove = listed }
+                .disabled(listed.isEmpty)
+        }
+    }
+
+    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it
+    /// are not reachable any other way.
+    @ViewBuilder
+    private func rowAccessibilityActions(_ row: RegistryRow) -> some View {
+        Button("Open \(row.name)") { form = .manage(row.id) }
+        if row.canSignIn, model.runtimeUsable {
+            Button(row.isSignedIn ? "Switch account on \(row.name)" : "Sign in to \(row.name)") {
+                form = .manage(row.id)
+            }
+        }
+        if row.isSignedIn, model.runtimeUsable {
+            Button("Sign out of \(row.name)") { pendingSignOut = [row] }
+        }
+        if row.id != model.defaultRegistry {
+            Button("Set \(row.name) as default") { model.setDefaultRegistry(row.id) }
+        }
+        if row.isListed {
+            Button("Remove \(row.name) from the list") { requestRemove([row]) }
+        } else {
+            Button("Add \(row.name) to the list") { addToList(row) }
         }
     }
 
@@ -384,30 +434,6 @@ struct RegistriesView: View {
         case .optional: "Public images pull without an account; signing in reaches private ones."
         case .notNeeded: "It has no accounts at all."
         }
-    }
-
-    /// Two different "defaults", and they stay two badges. `default` is the registry
-    /// **Flotilla's** Pull form completes a bare name against, which you choose; `CLI default` is
-    /// what the **runtime** resolves a bare name to, which you cannot. One badge for both would
-    /// claim the setting changes the runtime.
-    @ViewBuilder
-    private func badges(for row: RegistryRow) -> some View {
-        if row.id == model.defaultRegistry {
-            badge("default")
-                .help("Flotilla's Pull uses this for image names with no registry")
-        } else if row.known?.isImplicitDefault == true {
-            badge("CLI default")
-        }
-        if row.isUserAdded { badge("yours") }
-        if !row.isListed { badge("not in your list") }
-    }
-
-    private func badge(_ text: String) -> some View {
-        Text(text)
-            .font(.caption2).fixedSize()
-            .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(.quaternary, in: Capsule())
-            .foregroundStyle(.secondary)
     }
 
     private var cards: some View {

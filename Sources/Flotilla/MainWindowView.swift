@@ -46,6 +46,12 @@ struct MainWindowView: View {
         sortOrder: [KeyPathComparator(\HostedDNS.nameSortKey)])
     @State private var hostsUI = ResourceUIState<HostRow>(
         sortOrder: [KeyPathComparator(\HostRow.nameSortKey)])
+    /// Hosts, Registries, DNS and Clusters are two-line rows (Q56): a Sort menu, not column
+    /// headers, so their sort is a key and a direction. By name, like Containers.
+    @State private var hostsSort = RowSortState(key: "name")
+    @State private var registriesSort = RowSortState(key: "name")
+    @State private var dnsSort = RowSortState(key: "name")
+    @State private var clustersSort = RowSortState(key: "name")
 
     @State private var selection: Section? = .overview
     /// What the sidebar's `List` highlights, kept apart from `selection` so a click can be *asked
@@ -284,23 +290,23 @@ struct MainWindowView: View {
             OverviewView(model: model) { navigate(to: $0) }
         case .hosts:
             // Each host's landing page is the per-Mac dashboard (6 October).
-            HostsView(model: model, ui: hostsUI) { navigate(to: $0) }
+            HostsView(model: model, ui: hostsUI, sort: hostsSort) { navigate(to: $0) }
         case .containers:
             ContainersView(model: model, ui: containersUI)
         case .images:
             ImagesView(model: model, ui: imagesUI)
         case .registries:
-            RegistriesView(model: model, ui: registriesUI)
+            RegistriesView(model: model, ui: registriesUI, sort: registriesSort)
         case .volumes:
             VolumesView(model: model, ui: volumesUI)
         case .networks:
             NetworksView(model: model, ui: networksUI)
         case .dns:
-            DNSView(model: model, ui: dnsUI)
+            DNSView(model: model, ui: dnsUI, sort: dnsSort)
         case .machines:
             MachinesView(model: model, ui: machinesUI)
         case .clusters:
-            ClustersView(model: model, ui: clustersUI)
+            ClustersView(model: model, ui: clustersUI, sort: clustersSort)
         case .settings:
             SettingsView(model: model)
         case .notifications:
