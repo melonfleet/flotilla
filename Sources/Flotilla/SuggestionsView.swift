@@ -42,11 +42,7 @@ struct SuggestionsView: View {
                 FormHeader(title: "Suggestions", systemImage: "sparkles",
                            hasUnsavedChanges: false, onBack: dismiss)
                 Divider()
-                HStack(spacing: 0) {
-                    listPane.frame(minWidth: 240, maxWidth: .infinity)
-                    Divider()
-                    detailPane.frame(minWidth: 260, idealWidth: 400, maxWidth: 400)
-                }
+                SplitPanes { listPane } detail: { detailPane }
                 Divider()
                 footer
             }

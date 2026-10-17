@@ -41,13 +41,7 @@ struct RegistryBrowserView: View {
             FormHeader(title: "Browse Docker Hub", systemImage: "magnifyingglass",
                        hasUnsavedChanges: false, onBack: dismiss)
             Divider()
-            HStack(spacing: 0) {
-                resultsPane
-                    .frame(minWidth: 240, maxWidth: .infinity)
-                Divider()
-                detailPane
-                    .frame(minWidth: 260, idealWidth: 400, maxWidth: 400)
-            }
+            SplitPanes { resultsPane } detail: { detailPane }
             Divider()
             footer
         }

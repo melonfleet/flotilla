@@ -1,11 +1,13 @@
 import SwiftUI
 import FlotillaCore
 
-/// Notifications (the owner, 10 October): every notice for a week, laid out like the Docker Hub
-/// browser — a heading and its detail per row, searchable and scrolling — reached from the bell in
-/// the window bar. A row opens its own page: how long it has been there, when it was last seen,
-/// the fix if it has one. Several can be dismissed at once; errors cannot be dismissed, only dealt
-/// with.
+/// Notifications (the owner, 10 October): every notice for a week, laid out like Suggestions — the
+/// list on the left, the chosen notice's page on the right, reached from the bell in the window bar.
+/// The page shows how long it has been there, when it was last seen, the fix if it has one. Several
+/// can be selected and dismissed at once; errors cannot be dismissed, only dealt with.
+///
+/// There is no Back button and no `FormHeader`: this is a section, not a screen opened from
+/// somewhere, and the list never leaves.
 struct NotificationsView: View {
     let model: AppModel
     let go: (Section) -> Void
@@ -18,7 +20,9 @@ struct NotificationsView: View {
     @State private var filter: Filter = .attention
     @State private var search = ""
     @State private var selection = Set<String>()
-    @State private var open: String?
+    /// The filter, search and order the list had last time it changed, so a notice leaving it can be
+    /// told apart: dismissed or resolved (move on to the next) from filtered out by the user (do not).
+    @State private var lastShown: (ids: [String], filter: Filter, search: String) = ([], .attention, "")
 
     private var store: NoticeStore { model.notices }
 
@@ -38,60 +42,66 @@ struct NotificationsView: View {
         }
     }
 
+    private var selected: [NoticeBook.Notice] { shown.filter { selection.contains($0.id) } }
+
     var body: some View {
-        Group {
-            if let id = open, let notice = store.book.notices.first(where: { $0.id == id }) {
-                NoticeDetailView(model: model, notice: notice, go: go) { open = nil }
-            } else {
-                list
-            }
+        VStack(spacing: 0) {
+            SplitPanes { listPane } detail: { detailPane }
+            Divider()
+            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear(perform: openPending)
+        .onAppear {
+            lastShown = (shown.map(\.id), filter, search)
+            openPending()
+        }
         .onChange(of: model.pendingNotice) { _, _ in openPending() }
+        .onChange(of: shown.map(\.id)) { _, ids in follow(ids) }
+        .onChange(of: filter) { _, _ in selection.formIntersection(shown.map(\.id)) }
     }
 
-    /// A notice whose macOS notification was clicked.
+    /// A notice whose macOS notification was clicked: show it, whatever the filter and search say.
     private func openPending() {
         guard let id = model.pendingNotice else { return }
         model.pendingNotice = nil
-        open = store.book.notices.contains { $0.id == id } ? id : nil
+        guard store.book.notices.contains(where: { $0.id == id }) else { return }
+        search = ""
+        if !shown.contains(where: { $0.id == id }) { filter = .all }
+        selection = [id]
     }
 
-    private var list: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                Toggle("", isOn: Binding(get: { !shown.isEmpty && Set(shown.map(\.id)).isSubset(of: selection) },
-                                         set: { on in if on { selection.formUnion(shown.map(\.id)) } else { selection.subtract(shown.map(\.id)) } }))
-                    .labelsHidden()
-                    .accessibilityLabel("Select all")
-                    .help("Select all \(shown.count)")
+    /// Keeps the selection on notices that are still listed. When the one selected leaves because it
+    /// was dismissed or resolved, selects the next in the list, else the one before, else none.
+    private func follow(_ ids: [String]) {
+        let before = lastShown
+        lastShown = (ids, filter, search)
+        let kept = selection.intersection(ids)
+        guard kept.isEmpty, !selection.isEmpty else { selection = kept; return }
+        guard before.filter == filter, before.search == search,
+              let at = before.ids.firstIndex(where: selection.contains) else { selection = kept; return }
+        let alive = Set(ids)
+        let next = before.ids[(at + 1)...].first(where: alive.contains) ?? before.ids[..<at].last(where: alive.contains)
+        selection = next.map { [$0] } ?? []
+    }
+
+    // MARK: List
+
+    private var listPane: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                TextField("Search notifications", text: $search)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Search notifications")
                 Picker("Show", selection: $filter) {
                     ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
                 }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-                TextField("Search notifications", text: $search)
-                    .textFieldStyle(.roundedBorder).frame(maxWidth: 260)
-                    .accessibilityLabel("Search notifications")
-                Spacer()
-                if !selected.isEmpty {
-                    Text("\(selected.count) selected").font(.caption).foregroundStyle(.secondary)
-                    if selected.contains(where: { $0.dismissed != nil }) {
-                        Button("Restore") { store.restore(Set(selected.map(\.id))); selection.removeAll() }
-                    }
-                    let showing = selected.filter { $0.isActive && $0.dismissed == nil }
-                    let dismissible = showing.filter(\.dismissible)
-                    if !showing.isEmpty {
-                        Button("Dismiss \(dismissible.count)") { store.dismiss(Set(dismissible.map(\.id))); selection.removeAll() }
-                            .disabled(dismissible.isEmpty)
-                            .help(dismissible.isEmpty ? "Errors can't be dismissed, only dealt with" : "Hide until each one changes")
-                    }
-                }
+                .labelsHidden()
+                .fixedSize()
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            Divider()
-            List {
-                ForEach(shown) { notice in row(notice) }
+            Text("\(shown.count) \(shown.count == 1 ? "notice" : "notices")")
+                .font(.caption).foregroundStyle(.secondary)
+            List(selection: $selection) {
+                ForEach(shown) { notice in row(notice).tag(notice.id) }
             }
             .listStyle(.inset)
             .overlay {
@@ -106,17 +116,11 @@ struct NotificationsView: View {
                 }
             }
         }
-        .onChange(of: filter) { _, _ in selection.removeAll() }
+        .padding(16)
     }
-
-    private var selected: [NoticeBook.Notice] { shown.filter { selection.contains($0.id) } }
 
     private func row(_ notice: NoticeBook.Notice) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Toggle("", isOn: Binding(get: { selection.contains(notice.id) },
-                                     set: { on in if on { selection.insert(notice.id) } else { selection.remove(notice.id) } }))
-                .labelsHidden()
-                .accessibilityLabel("Select \(notice.title)")
             Image(systemName: notice.level.symbol).foregroundStyle(notice.level.colour)
                 .accessibilityLabel(notice.level.title)
                 .help(notice.level.title)
@@ -126,18 +130,51 @@ struct NotificationsView: View {
                     Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Text(Self.meta(notice, host: model.noticeHostName(notice)))
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            if let fix = model.fix(for: notice) {
-                Button(fix.title) { fix.run() }.controlSize(.small)
+                    .font(.caption2).foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        .onTapGesture { open = notice.id }
-        .accessibilityAction(named: "Open") { open = notice.id }
+        .padding(.vertical, 3)
         .opacity(notice.isActive && notice.dismissed == nil ? 1 : 0.65)
+    }
+
+    // MARK: Detail
+
+    @ViewBuilder
+    private var detailPane: some View {
+        let chosen = selected
+        if chosen.count == 1, let notice = chosen.first {
+            NoticeDetailView(model: model, notice: notice, go: go)
+        } else if chosen.count > 1 {
+            ContentUnavailableView("\(chosen.count) notices selected", systemImage: "bell",
+                                   description: Text("Dismiss or restore them from the bar below."))
+        } else {
+            ContentUnavailableView("Choose a notice", systemImage: "bell",
+                                   description: Text("What happened, when, and the fix if there is one, show here."))
+        }
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        let chosen = selected
+        let showing = chosen.filter { $0.isActive && $0.dismissed == nil }
+        let dismissible = showing.filter(\.dismissible)
+        return HStack {
+            Text(chosen.isEmpty ? "Select several to dismiss or restore them together."
+                                : "\(chosen.count) selected")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            if chosen.contains(where: { $0.dismissed != nil }) {
+                Button("Restore") { store.restore(Set(chosen.map(\.id))) }
+            }
+            if !showing.isEmpty {
+                Button("Dismiss \(dismissible.count)") { store.dismiss(Set(dismissible.map(\.id))) }
+                    .disabled(dismissible.isEmpty)
+                    .help(dismissible.isEmpty ? "Errors can't be dismissed, only dealt with" : "Hide until each one changes")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     /// "Tahoe-Test-VM · started 5 min ago · dismissed".
@@ -151,64 +188,63 @@ struct NotificationsView: View {
     }
 }
 
-/// One notice's own page.
+/// One notice's own page, in the right pane.
 struct NoticeDetailView: View {
     let model: AppModel
     let notice: NoticeBook.Notice
     let go: (Section) -> Void
-    let back: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            FormHeader(title: notice.title, systemImage: notice.level.symbol, hasUnsavedChanges: false, onBack: back)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: notice.level.symbol).font(.title2).foregroundStyle(notice.level.colour)
-                            .accessibilityLabel(notice.level.title)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(notice.text).font(.body).textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text(status).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    DetailCard(title: "Details", minHeight: nil) {
-                        line("Level", notice.level.title)
-                        if let host = model.noticeHostName(notice) { line("Mac", host) }
-                        line("Started", notice.started.formatted(date: .abbreviated, time: .shortened)
-                             + " (\(RelativeDate.relativeToNow(notice.started)))")
-                        line("Last seen", notice.isActive ? RelativeDate.relativeToNow(notice.lastSeen)
-                             : notice.lastSeen.formatted(date: .abbreviated, time: .shortened))
-                        if let resolved = notice.resolved {
-                            line("Resolved", resolved.formatted(date: .abbreviated, time: .shortened)
-                                 + " — lasted \(Self.duration(resolved.timeIntervalSince(notice.started)))")
-                        } else {
-                            line("Going on for", Self.duration(Date().timeIntervalSince(notice.started)))
-                        }
-                        if let dismissed = notice.dismissed { line("Dismissed", dismissed.formatted(date: .abbreviated, time: .shortened)) }
-                    }
-                    HStack(spacing: 10) {
-                        if let fix = model.fix(for: notice) {
-                            Button(fix.title) { fix.run() }.buttonStyle(.borderedProminent)
-                        }
-                        if let section = Section(rawValue: notice.section) {
-                            Button("Show in \(section.title)") { go(section) }
-                        }
-                        Spacer()
-                        if notice.dismissed != nil {
-                            Button("Restore") { model.notices.restore([notice.id]) }
-                        } else if notice.isActive {
-                            Button("Dismiss") { model.notices.dismiss([notice.id]); back() }
-                                .disabled(!notice.dismissible)
-                                .help(notice.dismissible ? "Hide until it changes" : "An error can't be dismissed, only dealt with")
-                        }
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: notice.level.symbol).font(.title3).foregroundStyle(notice.level.colour)
+                        .accessibilityLabel(notice.level.title)
+                    Text(notice.title).font(.title3.weight(.semibold)).textSelection(.enabled)
                 }
-                .padding(20)
-                .frame(maxWidth: 760, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(notice.text).font(.callout).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(status).font(.caption).foregroundStyle(.secondary)
+                DetailCard(title: "Details", minHeight: nil) {
+                    line("Level", notice.level.title)
+                    if let host = model.noticeHostName(notice) { line("Mac", host) }
+                    line("Started", notice.started.formatted(date: .abbreviated, time: .shortened)
+                         + " (\(RelativeDate.relativeToNow(notice.started)))")
+                    line("Last seen", notice.isActive ? RelativeDate.relativeToNow(notice.lastSeen)
+                         : notice.lastSeen.formatted(date: .abbreviated, time: .shortened))
+                    if let resolved = notice.resolved {
+                        line("Resolved", resolved.formatted(date: .abbreviated, time: .shortened)
+                             + " — lasted \(Self.duration(resolved.timeIntervalSince(notice.started)))")
+                    } else {
+                        line("Going on for", Self.duration(Date().timeIntervalSince(notice.started)))
+                    }
+                    if let dismissed = notice.dismissed { line("Dismissed", dismissed.formatted(date: .abbreviated, time: .shortened)) }
+                }
+                // Wraps to two lines in a narrow pane rather than overflowing it.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { actions }
+                    VStack(alignment: .leading, spacing: 8) { actions }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        if let fix = model.fix(for: notice) {
+            Button(fix.title) { fix.run() }.buttonStyle(.borderedProminent)
+        }
+        if let section = Section(rawValue: notice.section) {
+            Button("Show in \(section.title)") { go(section) }
+        }
+        if notice.dismissed != nil {
+            Button("Restore") { model.notices.restore([notice.id]) }
+        } else if notice.isActive {
+            Button("Dismiss") { model.notices.dismiss([notice.id]) }
+                .disabled(!notice.dismissible)
+                .help(notice.dismissible ? "Hide until it changes" : "An error can't be dismissed, only dealt with")
         }
     }
 
