@@ -2330,3 +2330,42 @@ script checks them against their registries, and a live run on three Macs decide
    - **Next:** the key, the repo, the publish script, and the daily fetch with signature
      checking.
    - **Then:** the live-tested entries, category by category.
+
+## Q56 — Two-line rows replace the table (settled 2026-10-17)
+
+**Amends Q2** ("a table is the primary view"). The primary view of a list is now a list of
+two-line rows, with Cards still the alternate toggle. Kamal approved a three-stage restyle;
+this is stage 2, built for Containers first.
+
+**Why.** Kamal's words: "instead of just a regular table to a two-line table with descriptions
+in them and information like that they need, and they should have the action buttons and
+everything. Similar to what OrbStack is doing, but … I like the way when we click on one of the
+items, our window slides in and gives us more real estate." Not a copy of OrbStack or Orchard:
+take the best ideas. A table spends its width on ten columns most people hide; a row says what
+the thing is and what it is doing in the same space.
+
+1. **Two lines per row.**
+   - *Leading:* the state, as the dot or icon used before.
+   - *Line 1:* the name, then small chips: the kind (Container or Group), the tags, and the host
+     when it isn't This Mac.
+   - *Line 2,* secondary, one line, truncating: image · ports · IP/network.
+   - *A running container* shows live CPU and memory in a small trailing block, monospaced
+     digits, before the actions.
+   - *Trailing:* the same action buttons, with the same busy and disabled rules, labels and help.
+2. **Height comes from the content,** never a constant. At the window's minimum width line 2
+   truncates and the actions never overlap text. Every branch (empty, loading, error,
+   filtered-to-nothing, populated) has bounded height.
+3. **Groups** expand to their members as indented rows in the same layout.
+4. **Opening a row is unchanged:** the embedded detail page slides in, and its ‹ › stepper walks
+   the rows in on-screen order, sort and filter included.
+5. **Selection is the list's own** (⌘-click, ⇧-click, ⌘A, ↑↓, Return opens), replacing the
+   checkbox column; bulk actions appear for two or more selected rows, as before. The right-click
+   menu is the row's `⋯` menu (`check-menu-parity.sh`).
+6. **Sorting is a Sort menu** in the section toolbar (`arrow.up.arrow.down`): the keys the
+   columns sorted by, plus ascending or descending. Default stays name (Q2, amended 9 August).
+7. **Hideable columns go away** for sections that adopt rows. The row is one shared view
+   (`ResourceRow`), so a section changes what it supplies and not the layout.
+8. **VoiceOver:** each row is one element ("web, running, Container, nginx, port 8080…") and
+   every action it carries is a custom action.
+9. **The other sections follow** in the same pattern: Machines, Images, Volumes, Networks.
+   Until each does, its table stands. Containers only in this change.

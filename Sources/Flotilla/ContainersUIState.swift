@@ -46,25 +46,18 @@ final class ContainersUIState {
     /// argument against it is that acting on one *moves it*, so the row you just clicked leaves
     /// the place you were looking. With a long list that turns every stop into a hunt.
     ///
-    /// The state column remains sortable, so running-first is one click away. Q2's ordering of
-    /// the table by relevance was a reasonable guess that using the thing disproved.
-    /// Comparators over `ContainersView.ContainerRow`, not `Container` — the row carries the
-    /// sampled CPU and memory figures, which is what makes those two columns sortable at all, and
-    /// since 5 October it is a group or a member as often as a container, so it carries its own
-    /// sort keys for all three.
-    var sortOrder = [KeyPathComparator(\ContainersView.ContainerRow.name)]
-
-    /// Which columns are shown, in what order and at what width.
+    /// State is still a sort key, so running-first is two clicks away.
     ///
-    /// Two hidden by default:
-    /// - **Host**, until a host is paired: with This Mac alone it prints "This Mac" on every row,
-    ///   and a column identical in every row is pure width. `MainWindowView` shows it in every
-    ///   section once a host is paired, and hides it again if the last one goes.
-    /// - **Created**, so the identifier and the live figures get the space first.
-    var columnCustomization: TableColumnCustomization<ContainersView.ContainerRow> = {
-        var customization = TableColumnCustomization<ContainersView.ContainerRow>()
-        customization[visibility: "host"] = .hidden
-        customization[visibility: "created"] = .hidden
-        return customization
-    }()
+    /// Since Q56 the list is two-line rows with no column headers, so the sort is a **key and a
+    /// direction** chosen from the Sort menu, and `sortOrder` is derived from them. Held here, with
+    /// the rest of the screen's session state, for the same reason as everything else in this class.
+    var sortKey: ContainersView.SortKey = .name
+    var sortAscending = true
+
+    /// Comparators over `ContainersView.ContainerRow`, not `Container` — the row carries the
+    /// sampled CPU and memory figures, and since 5 October it is a group or a member as often as a
+    /// container, so it carries its own sort keys for all three.
+    var sortOrder: [KeyPathComparator<ContainersView.ContainerRow>] {
+        sortKey.comparators(ascending: sortAscending)
+    }
 }

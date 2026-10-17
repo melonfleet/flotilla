@@ -26,11 +26,14 @@ enum GroupFormTarget: Identifiable, Hashable {
 /// because "some of it is running" is not actionable and "2/3" is.
 struct GroupStateDot: View {
     let state: GroupState
+    /// The "2/3" beside a partly running group's dot. Off in a two-line row, where the second line
+    /// says it in words and a fixed-width state mark must not change width with the state.
+    var showsCount = true
 
     var body: some View {
         HStack(spacing: 4) {
             dot
-            if case .partial(let running, let total) = state {
+            if showsCount, case .partial(let running, let total) = state {
                 Text("\(running)/\(total)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)

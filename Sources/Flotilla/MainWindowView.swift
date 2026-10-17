@@ -396,7 +396,6 @@ struct MainWindowView: View {
         // when that changes, so hiding or showing it by hand in between is left alone.
         .onChange(of: model.hostMode.trustedHosts.isEmpty, initial: true) { _, thisMacOnly in
             let visibility: Visibility = thisMacOnly ? .hidden : .visible
-            containersUI.columnCustomization[visibility: "host"] = visibility
             imagesUI.columnCustomization[visibility: "host"] = visibility
             volumesUI.columnCustomization[visibility: "host"] = visibility
             networksUI.columnCustomization[visibility: "host"] = visibility

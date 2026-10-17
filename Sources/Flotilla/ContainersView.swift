@@ -4,9 +4,9 @@ import FlotillaCore
 
 /// The containers section: **the product**.
 ///
-/// Q2 in `DECISIONS.md`: the container list is a **table** by default — running-first,
-/// sortable, multi-select — with the card grid demoted to a toggle, because cards stop
-/// scaling around twenty rows. The table is *cross-host* from the outset (`Host` column),
+/// Q2 in `DECISIONS.md` made the container list a table; **Q56 amended that**: it is two-line
+/// rows now (`ResourceRow`), sortable from a menu, multi-select — with the card grid still a
+/// toggle, because cards stop scaling around twenty rows. The list is *cross-host* from the outset (a host chip),
 /// even though Phase 1 only talks to this Mac: the aggregate view is the differentiator no
 /// comparable tool has, and retrofitting a host dimension later is far more painful than
 /// carrying it from the start.
@@ -22,18 +22,20 @@ struct ContainersView: View {
     @Bindable var ui: ContainersUIState
 
     enum Presentation: String, CaseIterable, Identifiable {
-        case list = "List"
+        // The case keeps its name (`Scripts/check-defaults.sh` pins the default by it); since Q56 it is
+        // two-line rows, not a table, and says so.
+        case list = "Rows"
         case cards = "Cards"
         var id: Self { self }
 
         /// Icons rather than words in the segmented control — the two views are a visual
-        /// choice, and the glyphs read faster than reading "List"/"Cards" every time.
-        /// `list.bullet` is the lines-with-dots list mark; `square.grid.2x2` the four
+        /// choice, and the glyphs read faster than reading "Rows"/"Cards" every time.
+        /// `rectangle.grid.1x2` is two stacked wide rows; `square.grid.2x2` the four
         /// squares. The words survive as accessibility labels and tooltips, so nothing is
         /// lost to anyone who cannot see the glyph.
         var systemImage: String {
             switch self {
-            case .list: "list.bullet"
+            case .list: "rectangle.grid.1x2"
             case .cards: "square.grid.2x2"
             }
         }
@@ -59,6 +61,42 @@ struct ContainersView: View {
             case .all: "circle.grid.2x2"
             case .running: "play.circle"
             case .stopped: "stop.circle"
+            }
+        }
+    }
+
+    /// What the Sort menu orders the rows by — one per column the old table sorted on.
+    ///
+    /// A key and a direction rather than a header you click: the rows have no headers. Ties break
+    /// on name, so equal rows (every stopped container, every row with no ports) keep a stable,
+    /// readable order instead of whatever the sort happened to leave.
+    enum SortKey: String, CaseIterable, Identifiable {
+        case name = "Name"
+        case state = "State"
+        case type = "Type"
+        case image = "Image"
+        case created = "Created"
+        case ports = "Ports"
+        case cpu = "CPU"
+        case memory = "Memory"
+        case ip = "IP / Network"
+        case host = "Host"
+        var id: Self { self }
+
+        func comparators(ascending: Bool) -> [KeyPathComparator<ContainerRow>] {
+            let order: SortOrder = ascending ? .forward : .reverse
+            let byName = KeyPathComparator(\ContainerRow.name)
+            switch self {
+            case .name: return [KeyPathComparator(\ContainerRow.name, order: order)]
+            case .state: return [KeyPathComparator(\ContainerRow.stateRank, order: order), byName]
+            case .type: return [KeyPathComparator(\ContainerRow.kindLabel, order: order), byName]
+            case .image: return [KeyPathComparator(\ContainerRow.imageSortKey, order: order), byName]
+            case .created: return [KeyPathComparator(\ContainerRow.creationSortKey, order: order), byName]
+            case .ports: return [KeyPathComparator(\ContainerRow.portSortKey, order: order), byName]
+            case .cpu: return [KeyPathComparator(\ContainerRow.cpu, order: order), byName]
+            case .memory: return [KeyPathComparator(\ContainerRow.memory, order: order), byName]
+            case .ip: return [KeyPathComparator(\ContainerRow.ipSortKey, order: order), byName]
+            case .host: return [KeyPathComparator(\ContainerRow.hostName, order: order), byName]
             }
         }
     }
@@ -99,7 +137,6 @@ struct ContainersView: View {
     @State private var runPrefill: RunPrefill?
 
 
-    @State private var showingColumns = false
     @State private var showingFilter = false
 
     /// The group form, embedded like every other create form, when "+ ▸ New Group…" or a group's
@@ -120,58 +157,6 @@ struct ContainersView: View {
         let group: ContainerGroup
         let mode: Mode
         var id: String { group.id }
-    }
-
-    /// The columns the Columns popover offers, in table order.
-    ///
-    /// Name and Actions are deliberately absent: Name is the row's identity and Actions is
-    /// how you operate on it, so neither is something to hide. Docker Desktop's own column
-    /// menu makes the same choice about its Name column.
-    private static let columnSpecs: [(id: String, title: String)] = [
-        ("state", "State"),
-        // Group or Container. The owner asked for an indicator column so the two kinds read
-        // apart at a glance, with the caret as the other cue.
-        ("type", "Type"),
-        ("tags", "Tags"),
-        ("image", "Image"),
-        ("created", "Created"),
-        ("ports", "Ports"),
-        ("cpu", "CPU"),
-        ("memory", "Memory"),
-        ("ip", "IP / Network"),
-        ("host", "Host"),
-    ]
-
-    /// Docker Desktop's columns control, which is a good pattern: an explicit button beside
-    /// the view switcher rather than relying on people discovering a right-click on the
-    /// header. The header menu still works — this just makes it findable.
-    private var columnsButton: some View {
-        IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
-                         help: ui.presentation == .list ? "Show or hide columns"
-                                                        : "Columns apply to the list view only") { showingColumns.toggle() }
-        .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 0) {
-                // Checkboxes, not switches. `.checkbox` puts the control leading with the
-                // label after it, so every row shares one left edge — switches trail their
-                // labels, which left the boxes ragged against text of different lengths.
-                ForEach(Self.columnSpecs, id: \.id) { spec in
-                    Toggle(spec.title, isOn: binding(for: spec.id))
-                        .toggleStyle(.checkbox)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 2)
-                }
-                Divider().padding(.vertical, 6)
-                HStack {
-                    Button("Hide All") { setAllColumns(.hidden) }
-                    Spacer()
-                    Button("Show All") { setAllColumns(.visible) }
-                }
-                .controlSize(.small)
-                .padding(.horizontal, 12)
-            }
-            .padding(.vertical, 10)
-            .frame(width: 210)
-        }
     }
 
     /// Embedded, not a sheet, since 9 August — the dimming and the close button went with it.
@@ -388,19 +373,21 @@ struct ContainersView: View {
         return "Showing " + parts.joined(separator: ", ")
     }
 
-    private func binding(for id: String) -> Binding<Bool> {
-        Binding(
-            get: { ui.columnCustomization[visibility: id] != .hidden },
-            set: { ui.columnCustomization[visibility: id] = $0 ? .visible : .hidden }
-        )
-    }
-
-    /// `Visibility` is SwiftUI's own top-level enum, not a type nested in
-    /// `TableColumnCustomization` — the `[visibility:]` subscript trades in the same
-    /// `.automatic / .visible / .hidden` used everywhere else in SwiftUI.
-    private func setAllColumns(_ visibility: Visibility) {
-        for spec in Self.columnSpecs {
-            ui.columnCustomization[visibility: spec.id] = visibility
+    /// The Sort menu: the old table's sortable columns as keys, and a direction. Two groups of
+    /// checkmarked items, so the current choice is read straight off the menu.
+    private var sortMenu: some View {
+        ToolbarIconMenu(systemImage: "arrow.up.arrow.down",
+                        label: "Sort: \(ui.sortKey.rawValue), \(ui.sortAscending ? "ascending" : "descending")") {
+            Picker("Sort by", selection: $ui.sortKey) {
+                ForEach(SortKey.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Picker("Order", selection: $ui.sortAscending) {
+                Text("Ascending").tag(true)
+                Text("Descending").tag(false)
+            }
+            .pickerStyle(.inline)
         }
     }
 
@@ -475,7 +462,7 @@ struct ContainersView: View {
             })
     }
 
-    /// The rows the table shows, in order: each top-level row, followed by its members when the
+    /// The rows the list shows, in order: each top-level row, followed by its members when the
     /// group is open. See `sortedRows`.
     private var rows: [ContainerRow] { sortedRows }
 
@@ -519,24 +506,6 @@ struct ContainersView: View {
             .subtracting(ownedBySelectedGroups)
     }
 
-    private func selectionToggle(for id: ContainerRow.ID, name: String) -> some View {
-        let isOn = Binding<Bool>(
-            get: { selection.contains(id) },
-            set: { on in
-                if on { selection.insert(id) } else { selection.remove(id) }
-            })
-        return Toggle("", isOn: isOn)
-            .labelsHidden()
-            .accessibilityLabel("Select \(name)")
-            .help("Select \(name)")
-    }
-
-    /// True when every visible row is selected — against what is *visible*, so select-all under
-    /// a filter means "all of these" rather than silently reaching rows the filter hides.
-    private var allVisibleSelected: Bool {
-        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
-    }
-
     /// True while any actionable container has an action in flight, so a second click cannot
     /// fire a duplicate operation on top of the first.
     private var selectionBusy: Bool { model.isAnyBusy(actionableContainerIDs, kind: .container) }
@@ -575,9 +544,9 @@ struct ContainersView: View {
         }
     }
 
-    /// Per-row action buttons, in an **Actions** column — the pattern Docker Desktop uses and
+    /// Per-row action buttons, at the trailing edge of each row — the pattern Docker Desktop uses and
     /// the one the owner asked for: small, always-visible, icon-only controls on the row they
-    /// affect, rather than a bar above the table that acts on a selection you have to make
+    /// affect, rather than a bar above the list that acts on a selection you have to make
     /// first.
     ///
     /// Three rules this follows deliberately:
@@ -589,82 +558,6 @@ struct ContainersView: View {
     /// - **Start and Stop swap, they do not both show.** Offering Stop on a stopped container
     ///   would be a control that does nothing, which is the failure mode this whole pass is
     ///   about.
-
-    /// The right-hand half of the containers table.
-    ///
-    /// Split out for two reasons, both mechanical. `TableColumnBuilder` accepts **ten** columns
-    /// and the Tags column made eleven; and wrapping the overflow in a `Group` — the documented
-    /// remedy — pushed this body past what the type checker will solve in reasonable time, which
-    /// it said out loud. A `@TableColumnBuilder` property is the same columns, checked in two
-    /// smaller pieces, and it renders and customises identically.
-    @TableColumnBuilder<ContainerRow, KeyPathComparator<ContainerRow>>
-    private var trailingColumns: some TableColumnContent<ContainerRow, KeyPathComparator<ContainerRow>> {
-                // A group's CPU and memory are its members' sum, so a group row answers "how
-                // much is this whole stack using" — the question you have about a stack.
-                TableColumn("CPU", value: \.cpu) { row in
-                    Text(AppModel.cpuLabel(row.cpu < 0 ? nil : row.cpu))
-                        .monospacedDigit()
-                        .foregroundStyle(row.cpu < 0 ? .tertiary : .secondary)
-                        .lineLimit(1)
-                }
-                .width(min: 56, ideal: 68)
-                .customizationID("cpu")
-
-                TableColumn("Memory", value: \.memory) { row in
-                    Text(AppModel.memoryLabel(row.memory < 0 ? nil : row.memory))
-                        .monospacedDigit()
-                        .foregroundStyle(row.memory < 0 ? .tertiary : .secondary)
-                        .lineLimit(1)
-                }
-                .width(min: 68, ideal: 84)
-                .customizationID("memory")
-
-                TableColumn("IP / Network", value: \.ipSortKey) { row in
-                    Text(ipNetworkLabel(row))
-                        .lineLimit(1)
-                        .foregroundStyle(.secondary)
-                        .help(ipNetworkLabel(row))
-                }
-                .width(min: 90, ideal: 116)
-                .customizationID("ip")
-
-                // Hidden by default (see `ui.columnCustomization`): with one host it reads
-                // "This Mac" on every row, and a column identical in every row is pure width.
-                // **Not sortable, and not an omission** — a column with one distinct value cannot
-                // be ordered. It gains a `value:` the moment a row carries a real host.
-                // Real since Phase C: which Mac the row is on. A host that has stopped answering
-                // keeps its rows, marked with how old they are, rather than emptying the table.
-                TableColumn("Host", value: \.hostName) { row in
-                    HostCell(name: row.hostName, staleSince: row.staleSince)
-                }
-                    .width(min: 70, ideal: 92)
-                    .customizationID("host")
-
-                // Last. Sized to its content rather than fixed, so it compresses with
-                // everything else instead of forcing the table wider than the window.
-                TableColumn("Actions") { row in
-                    switch row.kind {
-                    case .group:
-                        if let group = row.group { groupRowActions(for: group) }
-                    case .container, .member:
-                        if let container = row.container, !row.host.isLocal {
-                            remoteRowActions(for: container, on: row.host)
-                        } else if let container = row.container {
-                            rowActions(for: container)
-                        } else {
-                            // A member the group has not created yet has nothing to act on; its
-                            // group's own Start is what creates it.
-                            Text("Not created")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                                .help("Starting the group creates this container")
-                        }
-                    }
-                }
-                .width(min: 118, ideal: 128)
-                .customizationID("actions")
-    }
-
     @ViewBuilder
     private func rowActions(for container: Container) -> some View {
         let busy = model.isBusy(container.id, kind: .container)
@@ -830,10 +723,10 @@ struct ContainersView: View {
 
     /// The context menu for a right-click that landed on one or more rows.
     ///
-    /// `ids` comes from the table itself, so everything in it is on screen by construction —
+    /// `ids` comes from the list itself, so everything in it is on screen by construction —
     /// this is the one bulk path that does not need intersecting with what is visible.
     @ViewBuilder
-    private func tableContextMenu(for ids: Set<ContainerRow.ID>) -> some View {
+    private func rowContextMenu(for ids: Set<ContainerRow.ID>) -> some View {
         if ids.isEmpty {
             // Right-click on empty space still deserves the primary actions rather than an
             // empty menu that looks like a bug — the same two the toolbar's "+" offers.
@@ -1436,19 +1329,6 @@ struct ContainersView: View {
                        updated: model.lastRefresh,
                        searchHelp: SearchQuery.help + " ⌘F to search.",
                        leading: {
-            // Head of the leading cluster, so it sits above the table's checkbox column. Only
-            // meaningful in list view — cards have no checkbox column to select from.
-            Toggle("", isOn: Binding(get: { allVisibleSelected },
-                                     set: { on in
-                                         if on { selection.formUnion(visibleIDs) }
-                                         else { selection.subtract(visibleIDs) }
-                                     }))
-                .labelsHidden()
-                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all" : "Select all")
-                .help(ui.presentation != .list ? "Switch to list view to select"
-                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
-
             Picker("View", selection: $ui.presentation) {
                 ForEach(Presentation.allCases) { option in
                     Label(option.rawValue, systemImage: option.systemImage)
@@ -1462,10 +1342,10 @@ struct ContainersView: View {
             .labelsHidden()
             .fixedSize()
 
-            // Immediately beside the view switcher, as in Docker Desktop — the two are both
-            // "how do I want to look at this", so they belong together.
-            columnsButton
-                .disabled(ui.presentation != .list)     // cards have no columns to configure
+            // Immediately beside the view switcher: the two are both "how do I want to look at
+            // this". Sort replaces the table's clickable headers, which the rows do not have; it
+            // orders Cards too, since both presentations walk `sortedRows`.
+            sortMenu
 
             filterButton
         }, trailing: {
@@ -1627,23 +1507,11 @@ struct ContainersView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded:
-            if ui.presentation == .list { table } else { cards }
+            if ui.presentation == .list { rowsList } else { cards }
         }
     }
 
-    /// The table fills the pane.
-    ///
-    /// It used to be capped to `count * 28 + 32` for lists under twelve, to avoid the
-    /// alternating placeholder rows macOS draws past the last real row. Two things were wrong
-    /// with that. The constant guessed a 28pt row and the real rows are taller, so the space
-    /// computed for five containers held four and the fifth had to be scrolled to — inside a
-    /// pane with a large empty margin beneath it, which is worse than any placeholder row.
-    /// And the Machines table never had the cap, so the two sections behaved differently.
-    ///
-    /// Any fix that keeps the cap needs the true row height, which depends on the font, the
-    /// control size and whether a cell wraps — a number this file cannot know and would have
-    /// to re-guess every time the row changes. Filling the pane needs no such number.
-    /// One table row: the container **plus the sampled figures shown beside it**.
+    /// One list row: the container **plus the sampled figures shown beside it**.
     ///
     /// The table used to be built straight from `[Container]`, and that is why clicking CPU or
     /// Memory did nothing: a `TableColumn` sorts only when given a `value:` key path, and those
@@ -1835,156 +1703,246 @@ struct ContainersView: View {
         return top.sorted(using: ui.sortOrder).flatMap { [$0] + (children[$0.id] ?? []) }
     }
 
-    private var table: some View {
-        VStack(spacing: 0) {
-            Table(rows, selection: $selection, sortOrder: $ui.sortOrder,
-                  columnCustomization: $ui.columnCustomization) {
-                // **Column one carries the selection checkbox and the state dot together** —
-                // `TableColumnBuilder` accepts at most ten columns. Dot only for state, with the
-                // CLI's own string on hover and for VoiceOver (UI-01, closed as won't-do
-                // 2026-08-23). A group's dot is green, grey or half-filled for partly running.
-                TableColumn(Text(Image(systemName: "circle.fill")).font(.system(size: 6)).accessibilityLabel("State"), value: \.stateRank) { (row: ContainerRow) in
-                    HStack(spacing: 6) {
-                        selectionToggle(for: row.id, name: row.name)
-                        switch row.kind {
-                        case .group:
-                            if let state = row.groupState { GroupStateDot(state: state) }
-                        case .member:
-                            ServiceStateDot(container: row.container)
-                        case .container:
-                            if let c = row.container {
-                                Circle()
-                                    .fill(c.stateColor)
-                                    .frame(width: 8, height: 8)
-                                    .help(c.status.state.capitalized)
-                                    .accessibilityLabel(c.status.state.capitalized)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .width(min: 52, ideal: 64, max: 80)
-                .customizationID("state")
+    /// The rows, filling the pane.
+    ///
+    /// A `List` for the things that cost a hand-rolled `LazyVStack` real work and would be got
+    /// wrong: native multi-selection (⌘-click, ⇧-click, ⌘A), ↑/↓, Return to open, type-select, and
+    /// the right-click that lands on the whole selection. Rows are as tall as their two lines
+    /// make them — no height is written down (the table's `count * 28 + 32` is the cautionary
+    /// tale) — and the list takes whatever the pane gives it, like every other branch of
+    /// `content`.
+    ///
+    /// Sorting is `sortedRows`, the same array the detail stepper walks, so ‹ › goes to the next
+    /// row you can see.
+    private var rowsList: some View {
+        List(rows, selection: $selection) { row in
+            listRow(row)
+                // The row paints its own padding, so its hover wash and the list's selection fill
+                // reach the same edges.
+                .listRowInsets(EdgeInsets())
+                .accessibilityActions { rowAccessibilityActions(row) }
+        }
+        .listStyle(.inset)
+        // On the List, not on a row: a row's `.contextMenu` covers that row for one click and
+        // knows nothing about the selection. This one hands back every selected id.
+        .contextMenu(forSelectionType: ContainerRow.ID.self) { ids in
+            rowContextMenu(for: ids)
+        } primaryAction: { ids in
+            // Double-click and Return open — a container's detail, a group's form — but only when
+            // the activation names exactly ONE row: with several selected, `ids.first` is an
+            // arbitrary member. (Found by Grok 4.6 in review, 2026-08-18.)
+            guard ids.count == 1, let id = ids.first, let row = rowsByID[id] else { return }
+            openRow(row)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
-                TableColumn("Name", value: \.name) { row in
-                    nameCell(row)
-                }
-
-                // The indicator column the owner asked for: a group and a container read apart
-                // at a glance, with the caret as the second cue.
-                TableColumn("Type", value: \.kindLabel) { row in
-                    Label(row.kindLabel, systemImage: row.kind == .group ? Section.groupSymbol : "shippingbox")
-                        .labelStyle(.titleAndIcon)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .width(min: 80, ideal: 100)
-                .customizationID("type")
-
-                // Next to the name, the way Finder puts a tag beside a filename. Unsorted: a row's
-                // tags live in `TagStore`, not on the model.
-                TableColumn("Tags") { row in
-                    if row.kind == .group, let group = row.group {
-                        TagPillRow(tags: model.tags.tags(on: .group, group.id), compact: true)
-                    } else {
-                        TagPillRow(tags: model.tags.tags(on: .container, row.id), compact: true)
-                    }
-                }
-                .width(min: 60, ideal: 104)
-                .customizationID("tags")
-
-                TableColumn("Image", value: \.imageSortKey) { row in
-                    imageCell(row)
-                }
-                .width(min: 90, ideal: 124)
-                .customizationID("image")
-                TableColumn("Created", value: \.creationSortKey) { row in
-                    if let c = row.container {
-                        Text(Self.createdLabel(c.configuration.creationDate))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .help(Self.createdTooltip(c.configuration.creationDate))
-                    } else {
-                        Text("—").foregroundStyle(.tertiary)
-                    }
-                }
-                .width(min: 80, ideal: 100)
-                .customizationID("created")
-                TableColumn("Ports", value: \.portSortKey) { row in
-                    // An em dash, not a blank cell: "publishes nothing" and "we couldn't read
-                    // this" must not look the same.
-                    let summary = row.container?.portSummary
-                    Text(summary ?? "—")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundStyle(summary == nil ? .tertiary : .secondary)
-                        .help(summary ?? "No published ports")
-                }
-                .width(min: 70, ideal: 90)
-                .customizationID("ports")
-                trailingColumns
-            }
-            // On the Table, not on a cell: `.contextMenu` inside a `TableColumn` covers one cell.
-            .contextMenu(forSelectionType: ContainerRow.ID.self) { ids in
-                tableContextMenu(for: ids)
-            } primaryAction: { ids in
-                // Double-click opens — a container's detail, a group's form — but only when the
-                // activation names exactly ONE row: with several selected, `ids.first` is an
-                // arbitrary member. (Found by Grok 4.6 in review, 2026-08-18.)
-                guard ids.count == 1, let id = ids.first, let row = rowsByID[id] else { return }
-                if row.kind == .group, let group = row.group {
-                    editingGroup = .existing(group.id)
-                } else if let container = row.container {
-                    openDetail(container.id)
-                }
-            }
-            .frame(maxHeight: .infinity)
+    /// What opening a row does: a container's page, a group's form. A member the group has not
+    /// created yet has no page.
+    private func openRow(_ row: ContainerRow) {
+        if row.kind == .group, let group = row.group {
+            editingGroup = .existing(group.id)
+        } else if row.container != nil {
+            openDetail(row.id)
         }
     }
 
-    /// The name, by kind.
-    ///
-    /// - A **container** is a link to its detail, the way Docker Desktop does it.
-    /// - A **group** has the caret that opens it, then its name, which opens its form. The caret is
-    ///   a button of its own, so a click on the name never means two things.
-    /// - A **member** is indented under its group and links to its container — or, if the group
-    ///   has not created it yet, is plain text, not a link to a page about nothing.
+    /// One two-line row. The layout is `ResourceRow`'s; this supplies what a container, a group
+    /// and a member each have to say. The buttons are the table's Actions column, unchanged:
+    /// `rowActions`, `remoteRowActions` and `groupRowActions`.
     @ViewBuilder
-    private func nameCell(_ row: ContainerRow) -> some View {
-        switch row.kind {
-        case .container:
-            Button { openDetail(row.id) } label: { Text(row.name).lineLimit(1) }
-                .buttonStyle(.link)
-                // A selected row is filled with the system accent, and a link-blue name on a blue
-                // fill vanishes, so the colour has to know. See `Theme.rowName`.
-                .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                .help("Open \(row.name)")
-        case .group:
-            if let group = row.group {
-                HStack(spacing: 4) {
-                    caret(for: group)
-                    Button(group.name) { editingGroup = .existing(group.id) }
-                        .buttonStyle(.link)
-                        .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                        .lineLimit(1)
-                        .help("Edit \(group.name)")
+    private func listRow(_ row: ContainerRow) -> some View {
+        let selected = selection.contains(row.id)
+        ResourceRow(
+            title: row.name,
+            opens: row.kind == .member && row.container == nil ? nil : { openRow(row) },
+            openHelp: openHelp(for: row),
+            detail: detailLine(row),
+            detailHelp: detailHelp(row),
+            selected: selected,
+            indent: row.kind == .member ? 28 : 0,
+            summary: rowSummary(row),
+            leading: { stateMark(row) },
+            chips: { rowChips(row) },
+            metrics: { rowFigures(row) },
+            actions: { rowTrailingActions(row) })
+    }
+
+    /// The caret slot (kept for every row so names line up) and the state dot.
+    @ViewBuilder
+    private func stateMark(_ row: ContainerRow) -> some View {
+        HStack(spacing: 6) {
+            if row.kind == .group, let group = row.group {
+                caret(for: group)
+            } else {
+                Color.clear.frame(width: 16, height: 16)
+            }
+            switch row.kind {
+            case .group:
+                if let state = row.groupState { GroupStateDot(state: state, showsCount: false) }
+            case .member:
+                ServiceStateDot(container: row.container)
+            case .container:
+                if let c = row.container {
+                    Circle()
+                        .fill(c.stateColor)
+                        .frame(width: 8, height: 8)
+                        .help(c.status.state.capitalized)
                 }
             }
-        case .member:
-            HStack(spacing: 4) {
-                Color.clear.frame(width: 20, height: 16)
-                if row.container != nil {
-                    Button(row.name) { openDetail(row.id) }
-                        .buttonStyle(.link)
-                        .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                        .lineLimit(1)
-                        .help("Open \(row.name)")
-                } else {
-                    Text(row.name)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .help("Not created yet — starting “\(row.group?.name ?? "")” creates it")
+        }
+        .frame(width: 32, alignment: .leading)
+    }
+
+    /// The kind, the tags and — only for another Mac's row — the host.
+    @ViewBuilder
+    private func rowChips(_ row: ContainerRow) -> some View {
+        HStack(spacing: 4) {
+            if row.kind == .group {
+                ResourceChip(text: "Group", systemImage: Section.groupSymbol)
+            } else {
+                ResourceChip(text: "Container", systemImage: "shippingbox")
+            }
+            TagPillRow(tags: tags(for: row), compact: true)
+            if !row.host.isLocal {
+                HostCell(name: row.hostName, staleSince: row.staleSince)
+                    .chipStyle()
+                    .fixedSize()
+            }
+        }
+    }
+
+    private func tags(for row: ContainerRow) -> [Tag] {
+        if row.kind == .group, let group = row.group { return model.tags.tags(on: .group, group.id) }
+        return model.tags.tags(on: .container, row.id)
+    }
+
+    /// Image · ports · IP/network, each only when there is one. The table showed an em dash for a
+    /// missing value because the column had to hold something; a sentence has no such need.
+    private func detailParts(_ row: ContainerRow) -> [String] {
+        switch row.kind {
+        case .group:
+            guard let group = row.group else { return [] }
+            var parts = [group.members.isEmpty ? "No services" : "\(group.members.count) service\(group.members.count == 1 ? "" : "s")"]
+            if let state = row.groupState, case .partial = state { parts.append(state.title.lowercased()) }
+            parts.append("network " + (group.network ?? "default"))
+            return parts
+        case .container, .member:
+            guard let container = row.container else {
+                return [Self.imageLabel(row.member?.image ?? "")]
+            }
+            var parts = [Self.imageLabel(container.configuration.image.reference)]
+            if let ports = container.portSummary { parts.append(ports) }
+            let network = Self.ipNetworkLabel(container)
+            if network != "—" { parts.append(network) }
+            return parts
+        }
+    }
+
+    private func detailLine(_ row: ContainerRow) -> String { detailParts(row).joined(separator: " · ") }
+
+    /// The whole second line on hover, with the full image reference rather than its shortening.
+    private func detailHelp(_ row: ContainerRow) -> String {
+        if row.kind == .group, let group = row.group, !group.members.isEmpty {
+            return group.members.map { "\($0.name) — \($0.image)" }.joined(separator: "\n")
+        }
+        let reference = row.container?.configuration.image.reference ?? row.member?.image ?? ""
+        return ([reference] + detailParts(row).dropFirst()).filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private func openHelp(for row: ContainerRow) -> String {
+        switch row.kind {
+        case .group: "Edit \(row.name)"
+        case .member where row.container == nil: "Not created yet — starting “\(row.group?.name ?? "")” creates it"
+        case .container, .member: "Open \(row.name)"
+        }
+    }
+
+    /// CPU over memory for anything sampled, group sums included. Nothing for a stopped row, an
+    /// unsampled one, or another Mac's — those figures are not on the wire.
+    @ViewBuilder
+    private func rowFigures(_ row: ContainerRow) -> some View {
+        if row.cpu >= 0 || row.memory >= 0 {
+            let cpu = AppModel.cpuLabel(row.cpu < 0 ? nil : row.cpu)
+            let memory = AppModel.memoryLabel(row.memory < 0 ? nil : row.memory)
+            ResourceFigures(top: cpu, bottom: memory, help: "CPU \(cpu) · Memory \(memory)")
+        }
+    }
+
+    @ViewBuilder
+    private func rowTrailingActions(_ row: ContainerRow) -> some View {
+        switch row.kind {
+        case .group:
+            if let group = row.group { groupRowActions(for: group) }
+        case .container, .member:
+            if let container = row.container, !row.host.isLocal {
+                remoteRowActions(for: container, on: row.host)
+            } else if let container = row.container {
+                rowActions(for: container)
+            } else {
+                // A member the group has not created yet has nothing to act on; its
+                // group's own Start is what creates it.
+                Text("Not created")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .help("Starting the group creates this container")
+            }
+        }
+    }
+
+    /// What VoiceOver reads for the row: "web, running, Container, nginx, port 8080→80, …".
+    private func rowSummary(_ row: ContainerRow) -> String {
+        var parts = [row.name]
+        switch row.kind {
+        case .group:
+            parts.append(row.groupState?.title.lowercased() ?? "")
+            parts.append("Group")
+        case .container, .member:
+            parts.append(row.container?.status.state ?? "not created")
+            parts.append("Container")
+        }
+        parts.append(contentsOf: detailParts(row).map { $0.replacingOccurrences(of: "→", with: " to ") })
+        if row.cpu >= 0 { parts.append("CPU " + AppModel.cpuLabel(row.cpu)) }
+        if row.memory >= 0 { parts.append("memory " + AppModel.memoryLabel(row.memory)) }
+        let tagNames = tags(for: row).map(\.name)
+        if !tagNames.isEmpty { parts.append("tags " + tagNames.joined(separator: ", ")) }
+        if !row.host.isLocal { parts.append("on " + row.hostName) }
+        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    /// The row's buttons as VoiceOver actions: the row is one element, so the buttons inside it
+    /// are not reachable any other way. The same calls the buttons make, with the same busy and
+    /// disabled rules — an action the button would refuse is not offered.
+    @ViewBuilder
+    private func rowAccessibilityActions(_ row: ContainerRow) -> some View {
+        switch row.kind {
+        case .group:
+            if let group = row.group {
+                Button("Edit \(group.name)") { editingGroup = .existing(group.id) }
+                if canStart(group) { Button("Start \(group.name)") { Task { await model.startGroup(group) } } }
+                if canStop(group) { Button("Stop \(group.name)") { Task { await model.stopGroup(group) } } }
+                Button("Delete \(group.name)") { pendingGroupDelete = GroupDeleteRequest(group: group, mode: .ask) }
+            }
+        case .container, .member:
+            if let container = row.container {
+                let host = row.host
+                let busy = model.isBusy(host.rowID(container.id), kind: .container)
+                let running = AppModel.isRunning(container)
+                Button("Open \(container.id)") { openDetail(row.id) }
+                if !busy {
+                    if running {
+                        Button("Stop \(container.id)") { Task { await model.perform(.stop, on: container, host: host) } }
+                        Button("Restart \(container.id)") { Task { await model.perform(.restart, on: container, host: host) } }
+                    } else {
+                        Button("Start \(container.id)") { Task { await model.perform(.start, on: container, host: host) } }
+                    }
+                    if host.isLocal {
+                        Button("Logs for \(container.id)") { openDetail(container.id, tab: .logs) }
+                        if running { Button("Terminal in \(container.id)") { openDetail(container.id, tab: .terminal) } }
+                        Button("Delete \(container.id)") { requestDelete(container) }
+                    } else {
+                        Button("Delete \(container.id)") { confirmingRemoteDelete = RemoteTarget(container: container, host: host) }
+                    }
                 }
             }
         }
@@ -2012,31 +1970,6 @@ struct ContainersView: View {
             .accessibilityLabel(open ? "Hide the containers in \(group.name)" : "Show the containers in \(group.name)")
             .help(open ? "Hide containers" : "Show \(group.members.count) containers")
         }
-    }
-
-    @ViewBuilder
-    private func imageCell(_ row: ContainerRow) -> some View {
-        if row.kind == .group, let group = row.group {
-            // What the group is made of, not one image: a count, with every image on hover.
-            Text(group.members.isEmpty ? "No services" : "\(group.members.count) services")
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .help(group.members.map { "\($0.name) — \($0.image)" }.joined(separator: "\n"))
-        } else {
-            let reference = row.container?.configuration.image.reference ?? row.member?.image ?? ""
-            Text(Self.imageLabel(reference))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .foregroundStyle(row.container == nil ? .secondary : .primary)
-                .help(reference)
-        }
-    }
-
-    /// A container's IP and network; a group's network, which all its members join.
-    private func ipNetworkLabel(_ row: ContainerRow) -> String {
-        if row.kind == .group, let group = row.group { return group.network ?? "default" }
-        guard let container = row.container else { return "—" }
-        return Self.ipNetworkLabel(container)
     }
 
     /// The Cards toggle: a card per standalone container and a card per group, in the table's
@@ -2100,13 +2033,6 @@ struct ContainersView: View {
                 }
         }
     }
-
-    /// `creationDate` is an ISO-8601 string from `container`, not a `Date` — parse it here
-    /// for display only; `FlotillaCore` keeps the raw string.
-    private static func createdLabel(_ iso: String?) -> String { RelativeDate.relative(iso) }
-
-    /// The absolute timestamp, for the row's tooltip.
-    private static func createdTooltip(_ iso: String?) -> String { RelativeDate.absolute(iso) }
 
     /// Shortening lives in `FlotillaCore` (`ContainerImage.shortReference`) so its awkward
     /// cases — digests, registry ports — are covered by tests this target cannot have.
