@@ -270,6 +270,9 @@ private struct ToolbarSearchScope: ViewModifier {
 @Observable
 final class PageSearchText {
     var value = ""
+    /// Bumped by the box's Return on a page whose box submits (Docker Hub). The page watches it, so
+    /// the submit closure the box keeps holds this object weakly instead of the page's view.
+    var submissions = 0
 }
 
 /// Gives the page the initial text cursor without restricting later accessibility or Tab focus.

@@ -53,7 +53,7 @@ struct RegistryBrowserView: View {
                              text: Binding(get: { [weak queryText] in queryText?.value ?? "" },
                                            set: { [weak queryText] in queryText?.value = $0 }),
                              matches: nil,
-                             submit: { Task { await search(from: 0) } },
+                             submit: { [weak queryText] in queryText?.submissions += 1 },
                              submitNote: "Return searches Docker Hub")
         // A short pause after typing, so a search is one request per word rather than per key.
         .task(id: query) {
@@ -62,6 +62,9 @@ struct RegistryBrowserView: View {
             await search(from: 0)
         }
         .task(id: selectedID) { await loadTags() }
+        // Return in the box: the closure it keeps holds `queryText` weakly, never this view, so the
+        // model cannot keep this page alive through it (Kyle on 858a353).
+        .onChange(of: queryText.submissions) { _, _ in Task { await search(from: 0) } }
     }
 
     // MARK: Results
