@@ -669,42 +669,21 @@ struct NetworksView: View {
             }
 
             Spacer()
-            stepper
             if let row {
                 ActionCluster { rowActions(for: row) }
             }
+            networkStepper
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    @ViewBuilder
-    private var stepper: some View {
+    private var networkStepper: some View {
         let order = displayedNetworks
         let index = order.firstIndex { $0.detailKey == detailTarget?.id }
-        HStack(spacing: 2) {
-            Button {
-                if let index, index > 0 { open(order[index - 1]) }
-            } label: { Image(systemName: "chevron.up") }
-                .disabled(index == nil || index == 0)
-                .help("Previous network")
-                .accessibilityLabel("Previous network")
-
-            Button {
-                if let index, index < order.count - 1 {
-                    open(order[index + 1])
-                }
-            } label: { Image(systemName: "chevron.down") }
-                .disabled(index == nil || index == order.count - 1)
-                .help("Next network")
-                .accessibilityLabel("Next network")
-
-            if let index {
-                Text("\(index + 1) of \(order.count)")
-                    .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-        }
+        return DetailStepper(singular: "network", plural: "networks", index: index, count: order.count,
+                             previous: { if let index, index > 0 { open(order[index - 1]) } },
+                             next: { if let index, index < order.count - 1 { open(order[index + 1]) } })
     }
 
     private func subtitle(for row: HostedNetwork) -> String {

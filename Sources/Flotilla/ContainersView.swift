@@ -228,7 +228,7 @@ struct ContainersView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    /// Back, identity, the stepper, and the lifecycle actions — the mockup's `toolbar tall`.
+    /// Back, identity, the lifecycle actions, and the stepper — the mockup's `toolbar tall`.
     /// A paired host's container by its row id, from what that host last reported.
     private func remoteContainer(rowID: String) -> (container: Container, host: HostRef)? {
         for (peer, snapshot) in model.hostMode.fleetContainers {
@@ -273,8 +273,6 @@ struct ContainersView: View {
 
             Spacer()
 
-            stepper
-
             if let container {
                 if host.isLocal {
                     ActionCluster { rowActions(for: container) }
@@ -282,54 +280,22 @@ struct ContainersView: View {
                     ActionCluster { remoteRowActions(for: container, on: host) }
                 }
             }
+
+            containerStepper
         }
         // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    /// Steps through the containers **as currently shown** — same filter, same search, same
-    /// sort. Stepping into a row the table is hiding would be its own small betrayal.
-    ///
-    /// Deliberately not wrapping at the ends: the buttons disable instead. Wrapping from the
-    /// last container back to the first, silently, is how you lose track of where you are in a
-    /// list you are stepping through one at a time.
-    @ViewBuilder
-    private var stepper: some View {
-        // Every container on screen, on any host, in on-screen order — by row id, so a remote
-        // container and a local one of the same name are different stops.
+    /// Every container on screen, on any host, in on-screen order — by row id, so a remote
+    /// container and a local one of the same name are different stops.
+    private var containerStepper: some View {
         let order = rows.filter { $0.container != nil }
         let index = order.firstIndex { $0.id == detailTarget?.id }
-
-        HStack(spacing: 2) {
-            Button {
-                if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) }
-            } label: {
-                Image(systemName: "chevron.up")
-            }
-            .disabled(index == nil || index == 0)
-            .help("Previous container")
-            .accessibilityLabel("Previous container")
-
-            Button {
-                if let index, index < order.count - 1 {
-                    detailTarget = DetailTarget(id: order[index + 1].id)
-                }
-            } label: {
-                Image(systemName: "chevron.down")
-            }
-            .disabled(index == nil || index == order.count - 1)
-            .help("Next container")
-            .accessibilityLabel("Next container")
-
-            if let index {
-                Text("\(index + 1) of \(order.count)")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-        }
+        return DetailStepper(singular: "container", plural: "containers", index: index, count: order.count,
+                             previous: { if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) } },
+                             next: { if let index, index < order.count - 1 { detailTarget = DetailTarget(id: order[index + 1].id) } })
     }
 
     private func subtitle(for container: Container, on host: HostRef = .local) -> String {

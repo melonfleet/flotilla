@@ -709,7 +709,7 @@ struct VolumesView: View {
     // MARK: Detail
 
     /// Built to the same shape as the containers and machines detail screens — header with Back,
-    /// identity, a stepper through the list as currently shown, then the row's own actions.
+    /// identity, the row's own actions, then a stepper through the list as currently shown.
     @ViewBuilder
     private func detailScreen(_ target: DetailTarget) -> some View {
         VStack(spacing: 0) {
@@ -770,44 +770,21 @@ struct VolumesView: View {
             }
 
             Spacer()
-            stepper
             if let row {
                 ActionCluster { rowActions(for: row) }
             }
+            volumeStepper
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    /// Steps through volumes as currently shown — same rules as the other steppers: no wrapping,
-    /// buttons disable at the ends, and the position is stated.
-    @ViewBuilder
-    private var stepper: some View {
+    private var volumeStepper: some View {
         let order = displayedVolumes
         let index = order.firstIndex { $0.detailKey == detailTarget?.id }
-        HStack(spacing: 2) {
-            Button {
-                if let index, index > 0 { open(order[index - 1]) }
-            } label: { Image(systemName: "chevron.up") }
-                .disabled(index == nil || index == 0)
-                .help("Previous volume")
-                .accessibilityLabel("Previous volume")
-
-            Button {
-                if let index, index < order.count - 1 {
-                    open(order[index + 1])
-                }
-            } label: { Image(systemName: "chevron.down") }
-                .disabled(index == nil || index == order.count - 1)
-                .help("Next volume")
-                .accessibilityLabel("Next volume")
-
-            if let index {
-                Text("\(index + 1) of \(order.count)")
-                    .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-        }
+        return DetailStepper(singular: "volume", plural: "volumes", index: index, count: order.count,
+                             previous: { if let index, index > 0 { open(order[index - 1]) } },
+                             next: { if let index, index < order.count - 1 { open(order[index + 1]) } })
     }
 
     private func subtitle(for row: HostedVolume) -> String {

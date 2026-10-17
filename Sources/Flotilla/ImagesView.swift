@@ -765,44 +765,21 @@ struct ImagesView: View {
             }
 
             Spacer()
-            stepper
             if let row {
                 ActionCluster { rowActions(for: row) }
             }
+            imageStepper
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    @ViewBuilder
-    private var stepper: some View {
+    private var imageStepper: some View {
         let order = displayedImages
         let index = order.firstIndex { $0.detailKey == detailTarget?.id }
-        HStack(spacing: 2) {
-            Button {
-                if let index, index > 0 {
-                    open(order[index - 1])
-                }
-            } label: { Image(systemName: "chevron.up") }
-                .disabled(index == nil || index == 0)
-                .help("Previous image")
-                .accessibilityLabel("Previous image")
-
-            Button {
-                if let index, index < order.count - 1 {
-                    open(order[index + 1])
-                }
-            } label: { Image(systemName: "chevron.down") }
-                .disabled(index == nil || index == order.count - 1)
-                .help("Next image")
-                .accessibilityLabel("Next image")
-
-            if let index {
-                Text("\(index + 1) of \(order.count)")
-                    .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-        }
+        return DetailStepper(singular: "image", plural: "images", index: index, count: order.count,
+                             previous: { if let index, index > 0 { open(order[index - 1]) } },
+                             next: { if let index, index < order.count - 1 { open(order[index + 1]) } })
     }
 
     private func subtitle(for row: HostedImage) -> String {

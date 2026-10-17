@@ -904,45 +904,22 @@ struct MachinesView: View {
             }
 
             Spacer()
-            stepper
             if let machine {
                 ActionCluster { rowActions(for: machine) }
             }
+            machineStepper
         }
         // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    /// Steps through machines as currently shown, same rules as the containers stepper: no
-    /// wrapping, buttons disable at the ends, and the position is stated.
-    @ViewBuilder
-    private var stepper: some View {
+    private var machineStepper: some View {
         let order = displayed
         let index = order.firstIndex { $0.id == detailTarget?.id }
-        HStack(spacing: 2) {
-            Button {
-                if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) }
-            } label: { Image(systemName: "chevron.up") }
-                .disabled(index == nil || index == 0)
-                .help("Previous machine")
-                .accessibilityLabel("Previous machine")
-
-            Button {
-                if let index, index < order.count - 1 {
-                    detailTarget = DetailTarget(id: order[index + 1].id)
-                }
-            } label: { Image(systemName: "chevron.down") }
-                .disabled(index == nil || index == order.count - 1)
-                .help("Next machine")
-                .accessibilityLabel("Next machine")
-
-            if let index {
-                Text("\(index + 1) of \(order.count)")
-                    .font(.caption).monospacedDigit().foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-        }
+        return DetailStepper(singular: "machine", plural: "machines", index: index, count: order.count,
+                             previous: { if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) } },
+                             next: { if let index, index < order.count - 1 { detailTarget = DetailTarget(id: order[index + 1].id) } })
     }
 
     private func subtitle(for machine: ContainerMachine) -> String {
