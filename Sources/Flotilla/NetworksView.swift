@@ -75,6 +75,11 @@ struct NetworksView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshNetworks() }
+        // `actionable` already stops a hidden row from being acted on; this stops one from being
+        // counted. Filter, search and the data itself changing all move the visible set.
+        .onChange(of: visibleIDs) { _, ids in
+            selection.formIntersection(ids)
+        }
         // A network asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -164,31 +169,18 @@ struct NetworksView: View {
                        matches: displayedNetworks.count,
                        updated: model.networksLastRefresh,
                        leading: {
-            Toggle("", isOn: Binding(get: { allVisibleSelected },
-                                     set: { on in
-                                         if on { selection.formUnion(visibleIDs) }
-                                         else { selection.subtract(visibleIDs) }
-                                     }))
-                .labelsHidden()
-                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all networks" : "Select all networks")
-                .help(ui.presentation != .list ? "Switch to list view to select"
-                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
-
-            ResourceListControls<HostedNetwork>(
-                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+            ResourceListControls(
+                selection: $selection,
+                selectable: selectableIDs,
+                noun: "networks",
+                sort: ui.sortMenu(default: SortKey.name),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
-                columnCustomization: Binding(get: { ui.columnCustomization },
-                                             set: { ui.columnCustomization = $0 }),
-                columns: Self.columnSpecs,
                 filters: Self.roleFilters,
                 hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
                 hosts: hostChoices)
         }, trailing: {
             ToolbarIconMenu(systemImage: "plus", label: "Create a network") {
-                Button("New Network…") { createPrefill = nil; showingCreate = true }
-                Divider()
-                Button("Suggestions…") { showingSuggestions = true }
+                addMenuItems
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh networks") {
                 Task { await model.refreshNetworks() }
@@ -196,11 +188,42 @@ struct NetworksView: View {
         })
     }
 
-    private static let columnSpecs: [(id: String, title: String)] = [
-        ("tags", "Tags"),
-        ("mode", "Mode"), ("subnet", "Subnet"), ("gateway", "Gateway"), ("created", "Created"),
-        ("host", "Host"), ("spread", "On hosts"),
-    ]
+    /// "New Network…" and "Suggestions…": the ways to add to this list, in the toolbar's "+" menu
+    /// and a right-click on empty space alike.
+    @ViewBuilder
+    private var addMenuItems: some View {
+        Button("New Network…") { createPrefill = nil; showingCreate = true }
+        Divider()
+        Button("Suggestions…") { showingSuggestions = true }
+    }
+
+    /// What the Sort menu orders the rows by — one per column the old table sorted on ("On hosts"
+    /// never sorted). Ties break on name, then host, so every Mac's `default` keeps a stable order.
+    enum SortKey: String, RowSortKey, Identifiable {
+        case name = "Name"
+        case mode = "Mode"
+        case subnet = "Subnet"
+        case gateway = "Gateway"
+        case created = "Created"
+        case host = "Host"
+        var id: Self { self }
+
+        func comparators(ascending: Bool) -> [KeyPathComparator<HostedNetwork>] {
+            let order: SortOrder = ascending ? .forward : .reverse
+            let ties = [KeyPathComparator(\HostedNetwork.name), KeyPathComparator(\HostedNetwork.hostName)]
+            switch self {
+            case .name: return [KeyPathComparator(\HostedNetwork.name, order: order), ties[1]]
+            case .mode: return [KeyPathComparator(\HostedNetwork.modeSortKey, order: order)] + ties
+            case .subnet: return [KeyPathComparator(\HostedNetwork.subnetSortKey, order: order)] + ties
+            case .gateway: return [KeyPathComparator(\HostedNetwork.gatewaySortKey, order: order)] + ties
+            case .created: return [KeyPathComparator(\HostedNetwork.creationSortKey, order: order)] + ties
+            case .host: return [KeyPathComparator(\HostedNetwork.hostName, order: order)] + ties
+            }
+        }
+    }
+
+    /// The Sort menu's choice; Name until one is made.
+    private var sortKey: SortKey { ui.sortKey(default: .name) }
 
     /// Built-in versus your own. Fixed rather than derived, because the distinction is always
     /// meaningful here — `default` ships with the runtime and cannot be deleted, and separating
@@ -277,7 +300,7 @@ struct NetworksView: View {
             }
         }
 
-        return networks.sorted(using: ui.sortOrder)
+        return networks.sorted(using: sortKey.comparators(ascending: ui.sortAscending))
     }
 
     private var visibleIDs: Set<HostedNetwork.ID> { Set(displayedNetworks.map(\.id)) }
@@ -295,6 +318,12 @@ struct NetworksView: View {
 
     private var actionableRows: [HostedNetwork] { displayedNetworks.filter { actionable.contains($0.id) } }
 
+    /// The rows the select-all box covers: what is on screen, less the built-in networks, whose
+    /// boxes are disabled for the reason they are left out of `actionable`.
+    private var selectableIDs: [HostedNetwork.ID] {
+        displayedNetworks.filter { !$0.network.isBuiltin }.map(\.id)
+    }
+
     private func open(_ row: HostedNetwork, tab: NetworkDetailTab? = nil) {
         detailTarget = DetailTarget(name: row.name, host: row.host, tab: tab)
     }
@@ -302,22 +331,6 @@ struct NetworksView: View {
     /// Deleting the network whose detail is open goes back to the list, as in Containers.
     private func leaveDetailIfShowing(_ row: HostedNetwork) {
         if detailTarget?.id == row.detailKey { detailTarget = nil }
-    }
-
-    private func selectionToggle(for id: HostedNetwork.ID) -> some View {
-        let isOn = Binding<Bool>(
-            get: { selection.contains(id) },
-            set: { on in
-                if on { selection.insert(id) } else { selection.remove(id) }
-            })
-        return Toggle("", isOn: isOn)
-            .labelsHidden()
-            .accessibilityLabel("Select \(id)")
-            .help("Select \(id)")
-    }
-
-    private var allVisibleSelected: Bool {
-        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
     }
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .network) }
@@ -334,13 +347,10 @@ struct NetworksView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // A single network already has the same delete control in its row.
-        if actionable.count > 1 {
-            HStack(spacing: 12) {
-                Text("\(actionable.count) selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
+        // selection made on purpose, and this is where it is acted on.
+        if !actionable.isEmpty {
+            BulkActionBar(title: "\(actionable.count) selected") {
                 // Tags first in the cluster, before the lifecycle controls, and separated by a
                 // divider: it is the one action here that changes nothing about what the
                 // selection *is*. Same menu the row offers, asking the three-state question a
@@ -356,9 +366,6 @@ struct NetworksView: View {
                     confirmingBulkDelete = true
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
         }
     }
 
@@ -377,6 +384,8 @@ struct NetworksView: View {
                 systemImage: "exclamationmark.triangle",
                 description: Text(reason)
             )
+            // Every branch fills the pane, so none can size the stack to its content.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded where displayedNetworks.isEmpty:
             // Filtered-empty and genuinely-empty are different states, and this used to test
@@ -406,148 +415,115 @@ struct NetworksView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded:
-            if ui.presentation == .list { table } else { cards }
+            rowsList
         }
     }
 
-    private var cards: some View {
-        ResourceCardGrid {
-            ForEach(displayedNetworks) { row in
-                let network = row.network
-                ResourceCard(
-                    title: network.name,
-                    badge: network.isBuiltin ? "built-in" : nil,
-                    fields: [("Mode", network.mode),
-                             ("Subnet", network.subnet),
-                             ("Gateway", network.gateway),
-                             ("Created", RelativeDate.relative(network.configuration.creationDate))]
-                        // Named only when there is more than one Mac to tell apart.
-                        + (hostChoices.count > 1 ? [("Host", row.hostName)] : []),
-                    tags: model.tags.tags(on: .network, row.detailKey),
-                    // The card title opens the detail, so the list/cards toggle does not change
-                    // what you can reach. Every caller of `ResourceCard` passed `nil` here.
-                    onOpen: { open(row) }
-                ) {
-                    rowActions(for: row)
-                }
-                .contextMenu { menu(for: row) }
-            }
-        }
-    }
-
-    /// A `Table`, matching every other section. Was a `List` of two-line rows whose second line
-    /// crammed mode, subnet and gateway into a caption — unsortable, and unreadable past a
-    /// handful of networks.
+    /// Two-line rows (Q56), in Containers' shape: the name, "built-in", its tags and another Mac's
+    /// chip, then mode · subnet · gateway · how far it has been pushed.
     ///
-    /// No state column: a network exists or it does not. The built-in badge stays on the name,
-    /// because "you cannot delete this one" is a property of the row, not a state it is in.
-    private var table: some View {
-        SwiftUI.Table(displayedNetworks,
-                      selection: $selection,
-                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
-                      columnCustomization: Binding(get: { ui.columnCustomization },
-                                                   set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text(Image(systemName: "checkmark.square")).font(.system(size: 9)).accessibilityLabel("Selection")) { row in
-                selectionToggle(for: row.id)
-            }
-            .width(min: 28, ideal: 30, max: 34)
-
-            TableColumn("Name", value: \.name) { row in
-                HStack(spacing: 6) {
-                    // The way in, as in every other table.
-                    Button(row.network.name) { open(row) }
-                        .buttonStyle(.link)
-                        .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                        .lineLimit(1)
-                        .help("Open \(row.network.name)\(onHost(row))")
-                    if row.network.isBuiltin {
-                        Text("built-in")
-                            .font(.caption2).fixedSize()
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(.quaternary, in: Capsule())
-                            .foregroundStyle(.secondary)
-                            .help("Created by container; can't be deleted")
-                    }
-                }
-            }
-            .width(min: 150, ideal: 210)
-
-            // Next to the name, the way Finder puts a tag beside a filename: the whole point is
-            // that you recognise the row without reading it, which only works if the pill is
-            // where your eye already is.
-            //
-            // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**, and a
-            // row's tags live in `TagStore`, not on the model — so a sortable column here would
-            // mean denormalising the user's tags onto the runtime's own types. Hideable instead,
-            // through the same column menu every other column uses.
-            TableColumn("Tags") { row in
-                TagPillRow(tags: model.tags.tags(on: .network, row.detailKey), compact: true)
-            }
-            .width(min: 60, ideal: 130)
-            .customizationID("tags")
-
-            TableColumn("Mode", value: \.modeSortKey) { row in
-                Text(row.network.mode ?? "—").foregroundStyle(.secondary)
-                    .help("How containers reach outside this Mac")
-            }
-            .width(min: 70, ideal: 88)
-            .customizationID("mode")
-
-            TableColumn("Subnet", value: \.subnetSortKey) { row in
-                Text(row.network.subnet ?? "—").monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 110, ideal: 140)
-            .customizationID("subnet")
-
-            TableColumn("Gateway", value: \.gatewaySortKey) { row in
-                Text(row.network.gateway ?? "—").monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 100, ideal: 130)
-            .customizationID("gateway")
-
-            TableColumn("Created", value: \.creationSortKey) { row in
-                Text(RelativeDate.relative(row.network.configuration.creationDate))
-                    .foregroundStyle(.secondary)
-                    .help(RelativeDate.absolute(row.network.configuration.creationDate))
-            }
-            .width(min: 80, ideal: 104)
-            .customizationID("created")
-
-            // Which Mac the network is on, as in Containers, Images and Volumes.
-            TableColumn("Host", value: \.hostName) { row in
-                HostCell(name: row.hostName, staleSince: row.staleSince)
-            }
-            .width(min: 80, ideal: 110)
-            .customizationID("host")
-
-            // How far This Mac's network has been pushed (PLAN.md Phase D) — and whether a host's
-            // copy has drifted from it.
-            TableColumn("On hosts") { row in
-                if row.host.isLocal, !row.network.isBuiltin {
-                    SpreadCell(spread: model.spread(of: row.network))
-                }
-            }
-            .width(min: 70, ideal: 96)
-            .customizationID("spread")
-
-            TableColumn("Actions") { row in
-                rowActions(for: row)
-            }
-            .width(min: 78, ideal: 88)
+    /// No state dot: a network exists or it does not, so the leading slot carries the section's
+    /// glyph. The built-in chip stays on line 1, because "you cannot delete this one" is a property
+    /// of the row, not a state it is in.
+    ///
+    /// This section was two-line rows once before, and became a table because those rows could not
+    /// be sorted and crammed everything into one caption. The Sort menu is what that version lacked,
+    /// and the second line now says only what tells one row from the next.
+    private var rowsList: some View {
+        List(displayedNetworks, selection: $selection) { row in
+            listRow(row)
+                // The row paints its own padding, so its hover wash and the list's selection fill
+                // reach the same edges.
+                .listRowInsets(EdgeInsets())
         }
-        .frame(maxHeight: .infinity)
+        .listStyle(.inset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // On the List, not on a row: this one hands back every selected id.
         .contextMenu(forSelectionType: HostedNetwork.ID.self) { ids in
-            if let row = displayedNetworks.first(where: { ids.contains($0.id) }) {
-                menu(for: row)
-            }
+            rowContextMenu(for: ids)
         } primaryAction: { ids in
             // Double-click opens the detail, and only for an unambiguous activation — `ids` is a
             // `Set`, so with several rows selected `first` is an arbitrary member.
             guard ids.count == 1,
                   let row = displayedNetworks.first(where: { ids.contains($0.id) }) else { return }
             open(row)
+        }
+    }
+
+    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`. No live
+    /// figures — `network list` reports none — so the metrics slot is empty and takes no width.
+    private func listRow(_ row: HostedNetwork) -> some View {
+        ResourceRow(
+            title: row.name,
+            opens: { open(row) },
+            openHelp: "Open \(row.name)\(onHost(row))",
+            detail: detailParts(row).joined(separator: " · "),
+            selected: selection.contains(row.id),
+            check: RowCheck(row.id, in: $selection, unavailable: row.network.isBuiltin ? "Built-in — it cannot be deleted" : nil),
+            summary: rowSummary(row),
+            reservesMetrics: false,
+            leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.networks.systemImage) } },
+            chips: {
+                HStack(spacing: 4) {
+                    if row.network.isBuiltin {
+                        ResourceChip(text: "built-in")
+                            .help("Created by container; can't be deleted")
+                    }
+                    TagPillRow(tags: model.tags.tags(on: .network, row.detailKey), compact: true)
+                    if !row.host.isLocal {
+                        HostCell(name: row.hostName, staleSince: row.staleSince)
+                            .chipStyle()
+                            .fixedSize()
+                    }
+                }
+            },
+            metrics: { EmptyView() },
+            actions: { rowActions(for: row) })
+    }
+
+    /// Mode · subnet · gateway · on N hosts, each only when there is one. "On N hosts" is This
+    /// Mac's own networks only, and only once a host has answered — the rule the On hosts column
+    /// followed; a built-in network is on every Mac by definition and is never pushed.
+    private func detailParts(_ row: HostedNetwork) -> [String] {
+        let network = row.network
+        var parts = [network.mode, network.subnet, network.gateway.map { "gateway " + $0 }].compactMap { $0 }
+        if row.host.isLocal, !network.isBuiltin, let spread = model.spread(of: network).rowText {
+            parts.append(spread)
+        }
+        return parts
+    }
+
+    /// What VoiceOver reads for the row: "default, network, built-in, nat, 192.168.64.0/24, …".
+    private func rowSummary(_ row: HostedNetwork) -> String {
+        var parts = [row.name, "network"]
+        if row.network.isBuiltin { parts.append("built-in") }
+        parts.append(contentsOf: detailParts(row))
+        let tags = model.tags.tags(on: .network, row.detailKey).map(\.name)
+        if !tags.isEmpty { parts.append("tags " + tags.joined(separator: ", ")) }
+        if !row.host.isLocal { parts.append("on " + row.hostName) }
+        return parts.joined(separator: ", ")
+    }
+
+    /// The right-click: the row's own menu for one row, the bulk bar's Delete for several, and the
+    /// "+" menu on empty space. The table this replaced offered the menu of `ids.first` for any
+    /// selection — an arbitrary member.
+    @ViewBuilder
+    private func rowContextMenu(for ids: Set<HostedNetwork.ID>) -> some View {
+        if ids.isEmpty {
+            addMenuItems
+        } else if ids.count == 1, let row = displayedNetworks.first(where: { ids.contains($0.id) }) {
+            menu(for: row)
+        } else {
+            // Counted as the bar counts them: a built-in network is never in a batch delete.
+            let deletable = displayedNetworks.filter { ids.contains($0.id) && !$0.network.isBuiltin }
+            Button("Delete \(deletable.count) Network\(deletable.count == 1 ? "" : "s")…", role: .destructive) {
+                selection = ids            // so the confirmation counts what was right-clicked
+                confirmingBulkDelete = true
+            }
+            .disabled(deletable.isEmpty || model.isAnyBusy(deletable.map(\.id), kind: .network))
         }
     }
 

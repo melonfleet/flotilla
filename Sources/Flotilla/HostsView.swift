@@ -154,8 +154,8 @@ extension AppModel {
 }
 
 /// Hosts — every Mac Flotilla manages, with the same setup as every other section (the owner,
-/// 6 October): list and cards, search, filter, a Sort menu, row menus that match the context menu,
-/// multi-select, tags, Add and Refresh. Two-line rows since Q56.
+/// 6 October): rows, search, filter, a Sort menu, row menus that match the context menu,
+/// checkboxes with bulk actions, tags, Add and Refresh. Two-line rows since Q56.
 ///
 /// **Add** pairs a new host (B3b): by the code it shows, or with the fleet enrolment key. Macs that
 /// asked to join with the key wait here for the owner's approval — a banner says how many — and
@@ -164,8 +164,6 @@ extension AppModel {
 struct HostsView: View {
     let model: AppModel
     let ui: ResourceUIState<HostRow>
-    /// Held by `MainWindowView`, like `ui` — see `RowSortState`.
-    let sort: RowSortState
     let go: (Section) -> Void
 
     @State private var selection = Set<HostRow.ID>()
@@ -407,11 +405,13 @@ struct HostsView: View {
                        matches: displayedRows.count,
                        updated: model.lastRefresh,
                        leading: {
-            ResourceListControls<HostRow>(
-                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+            ResourceListControls(
+                selection: $selection,
+                selectable: selectableIDs,
+                noun: "hosts",
+                sort: ui.sortMenu(default: SortKey.name),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
                 filters: Self.filters)
-            RowSortMenu(state: sort, keys: Self.sortKeys)
             HostGroupByMenu(store: model.hostCategories, grouping: groupingBinding) { showingCategories = true }
         }, trailing: {
             if model.startingRuntime { ProgressView().controlSize(.small).help("Starting the container system…") }
@@ -433,23 +433,29 @@ struct HostsView: View {
     }
 
     /// The old table's sortable columns. Ties break on name.
-    private static let sortKeys: [(id: String, title: String)] = [
-        ("name", "Name"), ("status", "Status"), ("containers", "Containers"), ("machines", "Machines"),
-        ("macos", "macOS"), ("container", "container"), ("flotilla", "Flotilla"), ("model", "Model"),
-    ]
+    enum SortKey: String, RowSortKey {
+        case name = "Name"
+        case status = "Status"
+        case containers = "Containers"
+        case machines = "Machines"
+        case macOS = "macOS"
+        case container = "container"
+        case flotilla = "Flotilla"
+        case model = "Model"
+    }
 
     private var sortOrder: [KeyPathComparator<HostRow>] {
-        let order = sort.order
+        let order: SortOrder = ui.sortAscending ? .forward : .reverse
         let byName = KeyPathComparator(\HostRow.nameSortKey)
-        switch sort.key {
-        case "status": return [KeyPathComparator(\HostRow.statusSortKey, order: order), byName]
-        case "containers": return [KeyPathComparator(\HostRow.containersSortKey, order: order), byName]
-        case "machines": return [KeyPathComparator(\HostRow.machinesSortKey, order: order), byName]
-        case "macos": return [KeyPathComparator(\HostRow.macOSSortKey, order: order), byName]
-        case "container": return [KeyPathComparator(\HostRow.containerSortKey, order: order), byName]
-        case "flotilla": return [KeyPathComparator(\HostRow.appSortKey, order: order), byName]
-        case "model": return [KeyPathComparator(\HostRow.modelSortKey, order: order), byName]
-        default: return [KeyPathComparator(\HostRow.nameSortKey, order: order)]
+        switch ui.sortKey(default: SortKey.name) {
+        case .name: return [KeyPathComparator(\HostRow.nameSortKey, order: order)]
+        case .status: return [KeyPathComparator(\HostRow.statusSortKey, order: order), byName]
+        case .containers: return [KeyPathComparator(\HostRow.containersSortKey, order: order), byName]
+        case .machines: return [KeyPathComparator(\HostRow.machinesSortKey, order: order), byName]
+        case .macOS: return [KeyPathComparator(\HostRow.macOSSortKey, order: order), byName]
+        case .container: return [KeyPathComparator(\HostRow.containerSortKey, order: order), byName]
+        case .flotilla: return [KeyPathComparator(\HostRow.appSortKey, order: order), byName]
+        case .model: return [KeyPathComparator(\HostRow.modelSortKey, order: order), byName]
         }
     }
 
@@ -576,9 +582,14 @@ struct HostsView: View {
 
     private var visibleIDs: Set<HostRow.ID> { Set(displayedRows.map(\.id)) }
 
+    /// The selection, limited to what is on screen and to what a bulk action can take: This Mac
+    /// is left out, as its disabled checkbox says (Kamal, 17 October).
     private var selectedRows: [HostRow] {
-        displayedRows.filter { selection.contains($0.id) }
+        displayedRows.filter { selection.contains($0.id) && !$0.isThisMac }
     }
+
+    /// Every host on screen but This Mac, for the select-all box. Group headings are not hosts.
+    private var selectableIDs: [HostRow.ID] { displayedRows.filter { !$0.isThisMac }.map(\.id) }
 
     private var selectedTagSubjects: [TagSubject] {
         selectedRows.map { TagSubject(kind: .host, id: $0.id) }
@@ -588,13 +599,10 @@ struct HostsView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        if selectedRows.count > 1 {
+        // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
+        if !selectedRows.isEmpty {
             let pending = selectedRows.compactMap(\.peer).filter { $0.status == .pending }
-            HStack(spacing: 12) {
-                Text("\(selectedRows.count) selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            BulkActionBar(title: "\(selectedRows.count) selected") {
                 if !pending.isEmpty {
                     Button("Approve \(pending.count)") { pending.forEach { hostMode.approve($0.fingerprint) } }
                         .controlSize(.small)
@@ -609,9 +617,6 @@ struct HostsView: View {
                     tagSheet = TagSheetTarget(selectedTagSubjects)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
         }
     }
 
@@ -628,10 +633,8 @@ struct HostsView: View {
                 Button("Clear Filter") { ui.search = ""; ui.filterID = "all" }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if ui.presentation == .list {
-            rowsList
         } else {
-            cards
+            rowsList
         }
     }
 
@@ -677,6 +680,7 @@ struct HostsView: View {
             openHelp: open ? "Hide hosts" : "Show \(count) hosts",
             detail: parts.joined(separator: " · "),
             selected: selection.contains(row.id),
+            check: RowCheck(row.id, in: $selection, unavailable: "A heading — select the hosts under it"),
             summary: "\(row.name), group, \(parts.joined(separator: ", ")), \(open ? "expanded" : "collapsed")",
             reservesMetrics: false,
             leading: {
@@ -698,6 +702,8 @@ struct HostsView: View {
             detail: detailParts(row, facts: facts).joined(separator: " · "),
             detailHelp: detailParts(row, facts: facts).joined(separator: "\n"),
             selected: selection.contains(row.id),
+            check: RowCheck(row.id, in: $selection,
+                            unavailable: row.isThisMac ? "This Mac — open it to act on it" : nil),
             indent: grouping == .none ? 0 : 28,
             summary: rowSummary(row, facts: facts),
             leading: { HostStatusDot(model: model, row: row) },
@@ -859,9 +865,11 @@ struct HostsView: View {
     @ViewBuilder
     private func rowContextMenu(for ids: Set<HostRow.ID>) -> some View {
         let picked = displayedRows.filter { ids.contains($0.id) }
+        let bulk = picked.filter { !$0.isThisMac }
         if picked.count == 1, let row = picked.first {
             menu(for: row)
-        } else if picked.count > 1 {
+        } else if !bulk.isEmpty {
+            let picked = bulk
             let pending = picked.compactMap(\.peer).filter { $0.status == .pending }
             let subjects = picked.map { TagSubject(kind: .host, id: $0.id) }
             if !pending.isEmpty {
@@ -922,47 +930,6 @@ struct HostsView: View {
                     if on { Task { await model.rollOutUpdates() } }
                 }))
         }
-    }
-
-    /// Cards, under a heading per group when Hosts is grouped.
-    private var cards: some View {
-        ResourceCardGrid {
-            if grouping == .none {
-                ForEach(displayedRows) { card($0) }
-            } else {
-                ForEach(groups, id: \.header) { group in
-                    SwiftUI.Section {
-                        ForEach(group.rows) { card($0) }
-                    } header: {
-                        HStack(spacing: 6) {
-                            HostGroupDot(header: group.header)
-                            Text(group.header.title).font(.headline)
-                            Text("\(group.rows.count)").font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding(.top, 6)
-                    }
-                }
-            }
-        }
-    }
-
-    private func card(_ row: HostRow) -> some View {
-        ResourceCard(
-            title: row.name,
-            badge: row.isThisMac ? "this Mac" : (row.isPending ? "waiting" : nil),
-            fields: [("Status", row.status),
-                     ("Containers", row.containersText),
-                     ("Machines", row.machinesText),
-                     ("macOS", row.macOS),
-                     ("container", row.containerVersion),
-                     ("Flotilla", row.appVersion)],
-            tags: model.tags.tags(on: .host, row.id),
-            onOpen: { open(row) }
-        ) {
-            rowActions(for: row)
-        }
-        .contextMenu { menu(for: row) }
     }
 
     // MARK: Row actions and menu

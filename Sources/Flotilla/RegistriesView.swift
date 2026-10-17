@@ -5,8 +5,8 @@ import FlotillaCore
 /// The Registries section: where images come from, and which of them this Mac is signed in to.
 ///
 /// **Moved out of Settings into the sidebar under Images** (the owner, 5 October), with the same
-/// setup as every other section — list and cards, search, filter, a Sort menu, row menus that
-/// match the context menu, multi-select with bulk actions and tags. Settings ▸ Registries is
+/// setup as every other section — rows, search, filter, a Sort menu, row menus that match the
+/// context menu, checkboxes with bulk actions and tags. Settings ▸ Registries is
 /// gone; the default registry is set from the list. Two-line rows since Q56.
 ///
 /// **The honest framing still matters more than the table** (decision Q20). Apple's `container`
@@ -17,8 +17,6 @@ import FlotillaCore
 struct RegistriesView: View {
     let model: AppModel
     let ui: ResourceUIState<RegistryRow>
-    /// Held by `MainWindowView`, like `ui` — see `RowSortState`.
-    let sort: RowSortState
 
     @State private var selection = Set<RegistryRow.ID>()
     /// The embedded form: Add, or managing one row.
@@ -123,11 +121,13 @@ struct RegistriesView: View {
                        matches: displayedRows.count,
                        updated: model.registriesLastRefresh,
                        leading: {
-            ResourceListControls<RegistryRow>(
-                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+            ResourceListControls(
+                selection: $selection,
+                selectable: selectableIDs,
+                noun: "registries",
+                sort: ui.sortMenu(default: SortKey.name),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
                 filters: Self.filters)
-            RowSortMenu(state: sort, keys: Self.sortKeys)
         }, trailing: {
             ToolbarIconButton(systemImage: "plus", label: "Add a registry…") { form = .add }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh registries") {
@@ -137,20 +137,23 @@ struct RegistriesView: View {
     }
 
     /// The old table's sortable columns. Ties break on name.
-    private static let sortKeys: [(id: String, title: String)] = [
-        ("name", "Name"), ("server", "Server"), ("signIn", "Sign-in"),
-        ("status", "Status"), ("type", "Type"),
-    ]
+    enum SortKey: String, RowSortKey {
+        case name = "Name"
+        case server = "Server"
+        case signIn = "Sign-in"
+        case status = "Status"
+        case type = "Type"
+    }
 
     private var sortOrder: [KeyPathComparator<RegistryRow>] {
-        let order = sort.order
+        let order: SortOrder = ui.sortAscending ? .forward : .reverse
         let byName = KeyPathComparator(\RegistryRow.nameSortKey)
-        switch sort.key {
-        case "server": return [KeyPathComparator(\RegistryRow.hostSortKey, order: order), byName]
-        case "signIn": return [KeyPathComparator(\RegistryRow.signInSortKey, order: order), byName]
-        case "status": return [KeyPathComparator(\RegistryRow.statusSortKey, order: order), byName]
-        case "type": return [KeyPathComparator(\RegistryRow.kindSortKey, order: order), byName]
-        default: return [KeyPathComparator(\RegistryRow.nameSortKey, order: order)]
+        switch ui.sortKey(default: SortKey.name) {
+        case .name: return [KeyPathComparator(\RegistryRow.nameSortKey, order: order)]
+        case .server: return [KeyPathComparator(\RegistryRow.hostSortKey, order: order), byName]
+        case .signIn: return [KeyPathComparator(\RegistryRow.signInSortKey, order: order), byName]
+        case .status: return [KeyPathComparator(\RegistryRow.statusSortKey, order: order), byName]
+        case .type: return [KeyPathComparator(\RegistryRow.kindSortKey, order: order), byName]
         }
     }
 
@@ -191,6 +194,9 @@ struct RegistriesView: View {
 
     private var visibleIDs: Set<RegistryRow.ID> { Set(displayedRows.map(\.id)) }
 
+    /// Every row on screen: each can be tagged, so each can be in a selection.
+    private var selectableIDs: [RegistryRow.ID] { displayedRows.map(\.id) }
+
     /// The selection, limited to what is on screen — filtering does not clear the list's selection.
     private var selectedRows: [RegistryRow] {
         displayedRows.filter { selection.contains($0.id) }
@@ -204,14 +210,11 @@ struct RegistriesView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        if selectedRows.count > 1 {
+        // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
+        if !selectedRows.isEmpty {
             let signedIn = selectedRows.filter(\.isSignedIn)
             let listed = selectedRows.filter(\.isListed)
-            HStack(spacing: 12) {
-                Text("\(selectedRows.count) selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            BulkActionBar(title: "\(selectedRows.count) selected") {
                 BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
                     tagSheet = TagSheetTarget(selectedTagSubjects)
                 }
@@ -232,9 +235,6 @@ struct RegistriesView: View {
                     pendingRemove = listed
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
         }
     }
 
@@ -265,7 +265,7 @@ struct RegistriesView: View {
         } else {
             VStack(spacing: 0) {
                 runtimeNote
-                if ui.presentation == .list { rowsList } else { cards }
+                rowsList
             }
         }
     }
@@ -314,6 +314,7 @@ struct RegistriesView: View {
             detail: detailParts(row).joined(separator: " · "),
             detailHelp: row.signInUnavailableReason ?? row.summary,
             selected: selection.contains(row.id),
+            check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
             reservesMetrics: false,
             leading: { stateMark(row) },
@@ -410,27 +411,6 @@ struct RegistriesView: View {
         case .required: "Nothing can be pulled from it without an account."
         case .optional: "Public images pull without an account; signing in reaches private ones."
         case .notNeeded: "It has no accounts at all."
-        }
-    }
-
-    private var cards: some View {
-        ResourceCardGrid {
-            ForEach(displayedRows) { row in
-                ResourceCard(
-                    title: row.name,
-                    badge: row.id == model.defaultRegistry ? "default"
-                        : (row.isListed ? nil : "not in your list"),
-                    fields: [("Server", row.id),
-                             ("Sign-in", row.signInNeed.title),
-                             ("Status", statusKnown || row.isSignedIn ? row.statusText : nil),
-                             ("Type", row.kindTitle)],
-                    tags: model.tags.tags(on: .registry, row.id),
-                    onOpen: { form = .manage(row.id) }
-                ) {
-                    rowActions(for: row)
-                }
-                .contextMenu { menu(for: row) }
-            }
         }
     }
 

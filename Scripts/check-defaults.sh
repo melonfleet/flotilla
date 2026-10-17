@@ -34,8 +34,19 @@ require Sources/Flotilla/MainWindowView.swift    '@State private var selection: 
 # screenshot scaffold, and it looks exactly like a broken sidebar.
 require Sources/Flotilla/MainWindowView.swift    '@AppStorage("sidebarRailed") private var railed = true'
 require Sources/Flotilla/MachinesView.swift      '@State private var showingCreate = false'
-require Sources/Flotilla/MachinesUIState.swift   'var presentation: MachinesView.Presentation = .list'
-require Sources/Flotilla/ContainersUIState.swift 'var presentation: ContainersView.Presentation = .list'
+# One view per section since Q56 (17 October): the rows, drawn unconditionally. This used to pin
+# `presentation = .list` on Containers and Machines; with Cards scrapped there is no toggle to
+# default, so the known-good state is the list branch itself — a bare `rowsList` line in each
+# section's content. A view switch reintroduced (`if … { rowsList } else { cards }`), or a branch
+# left pointing at a scaffold, removes that line and fails here.
+for section in Containers Machines Images Volumes Networks Hosts Registries DNS Clusters; do
+    f="Sources/Flotilla/${section}View.swift"
+    if ! grep -qE '^[[:space:]]*rowsList$' "$f"; then
+        echo "  ✗ $f"
+        echo "      expected: the list drawn unconditionally — a line that is just \`rowsList\`"
+        fail=1
+    fi
+done
 # A detail view opens on Overview unless the *caller* asked for a specific tab. The pinned
 # substring is the tail of the expression, so it keeps asserting the fallback while allowing the
 # explicit `requestedTab` in front of it — that parameter exists because routing the request

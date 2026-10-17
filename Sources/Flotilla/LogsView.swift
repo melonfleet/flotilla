@@ -630,7 +630,7 @@ struct LogsView: View {
         if ui.expanded.contains(id) { ui.expanded.remove(id) } else { ui.expanded.insert(id) }
     }
 
-    /// Same checkbox column every other section's table leads with. Plain `Table` selection hides
+    /// The leading checkbox every other section's rows have (`RowCheck`). Plain `Table` selection hides
     /// multi-select behind a modifier key; the box makes it visible.
     private func selectionToggle(for id: AggregatedLogLine.ID) -> some View {
         Toggle("", isOn: Binding(

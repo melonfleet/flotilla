@@ -4,17 +4,14 @@ import FlotillaCore
 /// View state for the Machines screen, owned by `MainWindowView` for exactly the reason
 /// `ContainersUIState` is: the detail views are destroyed and recreated on every sidebar
 /// change, so `@State` held inside `MachinesView` is lost the moment you visit Images and
-/// come back. Presentation, filter, search, sort and column visibility all have to outlive
-/// the view that shows them.
+/// come back. Filter, search and sort all have to outlive the view that shows them.
 ///
 /// Deliberately a **separate** object from `ContainersUIState` rather than a generic one
-/// shared between them. The two screens sort on different key paths and have different
-/// columns, and the machine screen's default sort is not the container screen's — a shared
-/// type would have to be parameterised on all of that to save one small class.
+/// shared between them. The two screens sort on different keys and filter differently — a
+/// shared type would have to be parameterised on all of that to save one small class.
 @Observable
 final class MachinesUIState {
 
-    var presentation: MachinesView.Presentation = .list
     var filter: MachinesView.Filter = .all
     var search = ""
 
@@ -25,28 +22,31 @@ final class MachinesUIState {
     /// moves the instant you act on it. With a handful of machines that is annoying; with a
     /// screenful it means chasing rows up and down. The owner called it, and he is right.
     ///
-    /// Nothing is lost — the state column is still sortable, so running-first is one click away
-    /// for anyone who wants it. A stable default and an available sort beat a clever default.
-    var sortOrder = [KeyPathComparator(\ContainerMachine.id)]
-
-    /// Which columns are shown, in what order and at what width.
+    /// Nothing is lost — State is still a sort key, so running-first is two clicks away. A
+    /// stable default and an available sort beat a clever default.
     ///
-    /// **Disk** starts hidden. It reports the VM's disk image size, which for a freshly created
-    /// Alpine machine is ~75 MB on every row and does not move — a column identical in every
-    /// row is pure width, the same argument that hides Host on the containers screen. It is
-    /// still there for anyone who wants it.
-    var columnCustomization: TableColumnCustomization<ContainerMachine> = {
-        var customization = TableColumnCustomization<ContainerMachine>()
-        customization[visibility: "disk"] = .hidden
-        return customization
-    }()
+    /// Since Q56 the list is two-line rows with no headers, so the sort is a **key and a
+    /// direction** from the Sort menu, exactly as on Containers, and `sortOrder` is derived from
+    /// them. The hideable columns went with the table.
+    var sortKey: MachinesView.SortKey = .name
+    var sortAscending = true
+
+    var sortOrder: [KeyPathComparator<ContainerMachine>] {
+        sortKey.comparators(ascending: sortAscending)
+    }
 }
 
 extension ContainerMachine {
-    /// Running before stopped, then alphabetical inside each group. A plain `status` sort would
-    /// put "running" after "stopped" alphabetically, which is backwards from what you want.
-    var sortRank: String {
-        let group = status.lowercased() == "running" ? "0" : "1"
-        return group + id.lowercased()
+    /// Running first, then the two on their way somewhere, then stopped, then what the runtime
+    /// cannot name. A plain `status` sort would put "running" after "stopped" alphabetically,
+    /// which is backwards from what you want. Just the rank: the Sort menu breaks ties on name,
+    /// so a descending State sort reverses the groups and not the names inside them.
+    var stateRank: Int {
+        switch state {
+        case .running: 0
+        case .starting, .stopping: 1
+        case .stopped: 2
+        case .unknown, .other: 3
+        }
     }
 }

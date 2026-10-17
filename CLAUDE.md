@@ -27,20 +27,27 @@ questions.
   - `StatsSampler` (CPU deltas + bounded history), `JSONPrettyPrinter`, diagnostics
     snapshot, error log, redaction.
 - The macOS app has a `MenuBarExtra` glance and a main window with Containers
-  (sortable, hideable columns, per-row actions, context menus, cards with
-  sparklines), Images, Volumes, Networks, Settings, a run sheet with a validated
+  (two-line rows with a Sort menu, a checkbox per row and select-all, per-row actions,
+  context menus, a CPU sparkline on a running container's row), Images, Volumes, Networks,
+  Settings, a run sheet with a validated
   live command preview, and container detail **embedded in the window** with Overview /
   Processes / Logs / Terminal / Inspect / Configuration, a Back button and a prev/next
   stepper through the containers as currently filtered and sorted.
 - **Machines** (the Linux micro-VMs containers run inside) is a peer section under a
-  `Virtualisation` sidebar heading, built to the same shapes: list/cards toggle,
-  state filter, hideable columns, row actions, a `ModalCard` create form, and an
+  `Virtualisation` sidebar heading, built to the same shapes: two-line rows with
+  checkboxes and a Sort menu, state filter, row actions, an embedded create form, and an
   embedded detail with Overview / Shell / Logs / Settings / Inspect. Its view state
   lives in `MachinesUIState`, owned by `MainWindowView` — a section view is rebuilt on
   every sidebar change, so anything held as its own `@State` is lost. Machine
   terminals use a **second** `TerminalSessionStore`, because the store is keyed by a
   plain string and a machine named `web` would otherwise collide with a container
   named `web`. Read the `MACHINES-SPEC.md` addendum before touching the CLI calls.
+- **Every list section is two-line rows, and only rows** (Q56, amended 17 October): Containers,
+  Machines, Images, Volumes, Networks, Hosts, Registries, DNS and Clusters all draw
+  `ResourceRow`, sort from one `RowSortMenu`, and lead each row with a checkbox (`RowCheck`) that
+  is a view of the `List`'s own selection — never a second one. There is no Cards view and no
+  hideable columns; `ResourceCard` lives on only in the Suggestions galleries. Logs is the one
+  list still a `Table` (Q19). `check-defaults.sh` pins the rows being drawn unconditionally.
 - **Everything is embedded now — forms included** (9 August, the owner's call). This
   **reverses** the old "forms are modal, places are navigable" rule, and the newer
   argument is better: once Machines grew an embedded detail with Back and a tab strip, a
@@ -239,6 +246,10 @@ that we *built* the right command; almost nothing checked the command was
   warning, no build error — so every overflow menu in the app silently disappeared. Verify
   with `NSImage(systemSymbolName:accessibilityDescription:) != nil`; the vertical dots are
   a rotated `ellipsis`.
+- **(The next lesson, and the two about `Set.first` and two presentations further down, describe
+  the containers `Table` and the Cards view, both gone since Q56. The lessons stand: the rows
+  still write no height down, still open nothing on an ambiguous activation, and the stepper
+  walks the one list there is.)**
 - **Do not guess a row height.** The containers table was capped to
   `count * 28 + 32` for short lists, to hide the placeholder rows macOS draws past the last
   row. The real rows are taller, so the space computed for five containers held four and the
@@ -481,7 +492,7 @@ Flotilla.app / SwiftPM executable
 ├── Client UI
 │   ├── MenuBarExtra
 │   ├── main window
-│   └── cross-host container table
+│   └── cross-host container list
 └── Stateful host runtime (Phase 2+; not built)
     ├── mTLS listener + Bonjour advertisement
     ├── certificate and peer allowlists
@@ -513,11 +524,12 @@ must preserve all of the following:
    allowlist and argument schemas. Enforce frame-length, concurrency, and deadline
    limits before spawning. Neither arbitrary command strings nor typed RPCs per
    CLI operation are the design.
-5. **Primary view (Q2):** a table; cards remain an alternate toggle. **The running-first
-   default was reversed on 9 August** — the table now sorts by name. Running-first meant
+5. **Primary view (Q2, amended by Q56):** two-line rows, and only rows — the table became
+   rows on 17 October and the Cards toggle was scrapped the same evening. **The running-first
+   default was reversed on 9 August** — the list sorts by name. Running-first meant
    that stopping a container moved its row to the bottom, so the thing you just acted on
    left the place you were looking; with a screenful of rows that is a hunt every time. The
-   state column is still sortable, so running-first is one click away. Sorting by relevance
+   State is still in the Sort menu, so running-first is two clicks away. Sorting by relevance
    was a reasonable guess that using the app disproved.
 6. **Managed settings (Q4):** two tiers now—`defaults` seed values users may
    change, and `locked` values that override and disable editing.
@@ -574,8 +586,8 @@ must preserve all of the following:
     template rows. `registry login/logout/list` are **local-only**, the password
     goes down the child's stdin and never into argv (the spec has no password
     flag), and Flotilla stores no credential of any kind.
-16. **The Logs feed is a table with no sort order (Q19).** It has the selection,
-    columns and row menu every other section's table has, and deliberately not the
+16. **The Logs feed is a table with no sort order (Q19).** It has the selection and
+    row menu every other section's list has, columns of its own, and deliberately not the
     sorting: `container logs` has no `--timestamps`, so a sortable "Received"
     header would reorder a fetched feed by a clock that is the same for every line
     in it. The Received column is off by default for the same reason.

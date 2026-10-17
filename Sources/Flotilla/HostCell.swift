@@ -59,24 +59,15 @@ struct ContainerSkewNote: View {
     }
 }
 
-/// The On hosts cell (PLAN.md Phase D): on how many hosts This Mac's network or volume exists, and a
-/// mark when any copy differs from it. Empty when no host has answered.
-struct SpreadCell: View {
-    let spread: FleetPush.Spread
-
-    var body: some View {
-        if spread.asked > 0 {
-            HStack(spacing: 4) {
-                Text("\(spread.present) of \(spread.asked)")
-                    .monospacedDigit().foregroundStyle(.secondary).lineLimit(1)
-                if spread.differing > 0 {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption2).foregroundStyle(Theme.warning)
-                        .help("\(spread.differing) host\(spread.differing == 1 ? "’s copy differs" : "s’ copies differ") from This Mac’s")
-                        .accessibilityLabel("\(spread.differing) differ")
-                }
-            }
-            .help("On \(spread.present) of the \(spread.asked) hosts that answered")
-        }
+extension FleetPush.Spread {
+    /// On how many hosts This Mac's network or volume exists (PLAN.md Phase D), in words for a
+    /// two-line row's second line (Q56): "on 2 of 3 hosts", and ", 1 differs" when a host's copy is
+    /// not This Mac's. `nil` when no host has answered. It replaced the On hosts column's cell,
+    /// whose warning triangle said "differs" only on hover; a line has room for the word.
+    var rowText: String? {
+        guard asked > 0 else { return nil }
+        var text = "on \(present) of \(asked) host\(asked == 1 ? "" : "s")"
+        if differing > 0 { text += ", \(differing) differ\(differing == 1 ? "s" : "")" }
+        return text
     }
 }

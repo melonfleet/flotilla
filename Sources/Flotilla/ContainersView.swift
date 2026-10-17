@@ -5,8 +5,8 @@ import FlotillaCore
 /// The containers section: **the product**.
 ///
 /// Q2 in `DECISIONS.md` made the container list a table; **Q56 amended that**: it is two-line
-/// rows now (`ResourceRow`), sortable from a menu, multi-select — with the card grid still a
-/// toggle, because cards stop scaling around twenty rows. The list is *cross-host* from the outset (a host chip),
+/// rows now (`ResourceRow`), sortable from a menu, multi-select with a checkbox per row — and the
+/// only view: the card grid was scrapped on 17 October. The list is *cross-host* from the outset (a host chip),
 /// even though Phase 1 only talks to this Mac: the aggregate view is the differentiator no
 /// comparable tool has, and retrofitting a host dimension later is far more painful than
 /// carrying it from the start.
@@ -20,26 +20,6 @@ struct ContainersView: View {
     /// Without it, navigating to another section and back reset the user's columns, sort,
     /// filter and search.
     @Bindable var ui: ContainersUIState
-
-    enum Presentation: String, CaseIterable, Identifiable {
-        // The case keeps its name (`Scripts/check-defaults.sh` pins the default by it); since Q56 it is
-        // two-line rows, not a table, and says so.
-        case list = "Rows"
-        case cards = "Cards"
-        var id: Self { self }
-
-        /// Icons rather than words in the segmented control — the two views are a visual
-        /// choice, and the glyphs read faster than reading "Rows"/"Cards" every time.
-        /// `rectangle.grid.1x2` is two stacked wide rows; `square.grid.2x2` the four
-        /// squares. The words survive as accessibility labels and tooltips, so nothing is
-        /// lost to anyone who cannot see the glyph.
-        var systemImage: String {
-            switch self {
-            case .list: "rectangle.grid.1x2"
-            case .cards: "square.grid.2x2"
-            }
-        }
-    }
 
     /// What the list is showing. Single-select, and rendered as a **radio group** in the
     /// filter popover.
@@ -70,7 +50,7 @@ struct ContainersView: View {
     /// A key and a direction rather than a header you click: the rows have no headers. Ties break
     /// on name, so equal rows (every stopped container, every row with no ports) keep a stable,
     /// readable order instead of whatever the sort happened to leave.
-    enum SortKey: String, CaseIterable, Identifiable {
+    enum SortKey: String, RowSortKey, Identifiable {
         case name = "Name"
         case state = "State"
         case type = "Type"
@@ -371,24 +351,6 @@ struct ContainersView: View {
         }
         if let host = ui.hostFilter { parts.append("on " + hostName(host)) }
         return "Showing " + parts.joined(separator: ", ")
-    }
-
-    /// The Sort menu: the old table's sortable columns as keys, and a direction. Two groups of
-    /// checkmarked items, so the current choice is read straight off the menu.
-    private var sortMenu: some View {
-        ToolbarIconMenu(systemImage: "arrow.up.arrow.down",
-                        label: "Sort: \(ui.sortKey.rawValue), \(ui.sortAscending ? "ascending" : "descending")") {
-            Picker("Sort by", selection: $ui.sortKey) {
-                ForEach(SortKey.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.inline)
-            Divider()
-            Picker("Order", selection: $ui.sortAscending) {
-                Text("Ascending").tag(true)
-                Text("Descending").tag(false)
-            }
-            .pickerStyle(.inline)
-        }
     }
 
     /// The state filter in the shared listing's terms.
@@ -941,9 +903,8 @@ struct ContainersView: View {
         return group.memberNames.filter(existing.contains)
     }
 
-    /// Start/stop/restart/delete for one container. Attached to both the table rows and
-    /// the cards so the two views offer the same capabilities — a toggle that changes what
-    /// you can *do*, not just how it looks, is a trap.
+    /// Start/stop/restart/delete for one container: the row's `⋯` and its right-click, from one
+    /// definition, so the two cannot offer different things.
     @ViewBuilder
     private func actions(for container: Container) -> some View {
         let busy = model.isBusy(container.id, kind: .container)
@@ -1014,7 +975,7 @@ struct ContainersView: View {
             // `portSummary` lives on the model and `ipNetworkLabel` is this view's own.
             ("Ports", container.portSummary),
             ("IP / Network", Self.ipNetworkLabel(container)),
-            // Carried over from `CopyMenu.forContainer`, which the cards used until this menu
+            // Carried over from `CopyMenu.forContainer`, which the old cards used until this menu
             // became the single definition. It is the one entry that list had and this one did
             // not, and the useful form is something you can paste into a browser rather than the
             // mapping. Dropped by `CopyMenu` when the container publishes no ports.
@@ -1316,23 +1277,12 @@ struct ContainersView: View {
                        updated: model.lastRefresh,
                        searchHelp: SearchQuery.help,
                        leading: {
-            Picker("View", selection: $ui.presentation) {
-                ForEach(Presentation.allCases) { option in
-                    Label(option.rawValue, systemImage: option.systemImage)
-                        .labelStyle(.iconOnly)
-                        .accessibilityLabel("\(option.rawValue) view")
-                        .help("\(option.rawValue) view")
-                        .tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            // At the left, above the rows' checkboxes. It covers what is on screen — closed groups'
+            // members are not, so it does not reach into them.
+            SelectAllCheckbox(selection: $selection, ids: selectableIDs, noun: "containers and groups")
 
-            // Immediately beside the view switcher: the two are both "how do I want to look at
-            // this". Sort replaces the table's clickable headers, which the rows do not have; it
-            // orders Cards too, since both presentations walk `sortedRows`.
-            sortMenu
+            // Sort replaces the table's clickable headers, which the rows do not have.
+            RowSortMenu(key: $ui.sortKey, ascending: $ui.sortAscending)
 
             filterButton
         }, trailing: {
@@ -1347,9 +1297,6 @@ struct ContainersView: View {
         })
     }
 
-    /// Shown only while rows are multi-selected — the hook the `selection` state existed
-    /// for but went unused before this.
-
     /// The selected rows as tag subjects, in the table's own order.
     ///
     /// Built from `actionable`, not from `selection`: filtering does not clear a table's
@@ -1362,16 +1309,11 @@ struct ContainersView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // 2+, not 1+. Every row now carries its own start/stop/restart/delete, so a bar
-        // above the table for a single selection would just be a second way to do the same
-        // thing — and it was the bar the owner didn't want. Bulk is the one thing per-row
-        // controls genuinely cannot do, so that is all it appears for.
-        if actionable.count > 1 {
-            HStack(spacing: 12) {
-                Text("\(selectionNoun) selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        // 1+, since the checkboxes came back (Kamal, 17 October): ticking one box is a selection
+        // you made on purpose, and the bar is where it gets acted on. It was 2+ while a single
+        // selected row only meant "the row you last clicked".
+        if !actionable.isEmpty {
+            BulkActionBar(title: "\(selectionNoun) selected") {
                 // Tags first in the cluster, before the lifecycle controls: it is the one action
                 // here that changes nothing about what the selection *is*.
                 BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
@@ -1405,9 +1347,6 @@ struct ContainersView: View {
                     confirmingBulkDelete = true
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
         }
     }
 
@@ -1475,7 +1414,7 @@ struct ContainersView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded:
-            if ui.presentation == .list { rowsList } else { cards }
+            rowsList
         }
     }
 
@@ -1727,12 +1666,24 @@ struct ContainersView: View {
             detail: detailLine(row),
             detailHelp: detailHelp(row),
             selected: selected,
+            check: RowCheck(row.id, in: $selection, unavailable: checkUnavailable(row)),
             indent: row.kind == .member ? 28 : 0,
             summary: rowSummary(row),
             leading: { stateMark(row) },
             chips: { rowChips(row) },
             metrics: { rowFigures(row) },
             actions: { rowTrailingActions(row) })
+    }
+
+    /// A member its group has not created yet is the one row a bulk action cannot take: there is
+    /// no container to start or delete, and the group's own Start is what makes it.
+    private func checkUnavailable(_ row: ContainerRow) -> String? {
+        row.kind == .member && row.container == nil ? "Not created yet — starting the group creates it" : nil
+    }
+
+    /// The rows on screen the select-all box covers, in list order.
+    private var selectableIDs: [ContainerRow.ID] {
+        rows.filter { checkUnavailable($0) == nil }.map(\.id)
     }
 
     /// The caret slot (kept for every row so names line up) and the state dot.
@@ -1832,7 +1783,11 @@ struct ContainersView: View {
         if row.cpu >= 0 || row.memory >= 0 {
             let cpu = AppModel.cpuLabel(row.cpu < 0 ? nil : row.cpu)
             let memory = AppModel.memoryLabel(row.memory < 0 ? nil : row.memory)
-            ResourceFigures(top: cpu, bottom: memory, help: "CPU \(cpu) · Memory \(memory)")
+            // The CPU line the cards drew, for a container this Mac samples; a group's figures
+            // are sums, and another Mac's are not on the wire, so neither has a history.
+            let sampled = row.kind != .group && row.host.isLocal ? row.container : nil
+            let history = sampled.map { AppModel.isRunning($0) ? model.cpuHistory(for: $0.id) : [] } ?? []
+            ResourceFigures(top: cpu, bottom: memory, history: history, help: "CPU \(cpu) · Memory \(memory)")
         }
     }
 
@@ -1899,68 +1854,6 @@ struct ContainersView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(open ? "Hide the containers in \(group.name)" : "Show the containers in \(group.name)")
             .help(open ? "Hide containers" : "Show \(group.members.count) containers")
-        }
-    }
-
-    /// The Cards toggle: a card per standalone container and a card per group, in the table's
-    /// top-level order. A group's card shows a chip per member, and clicking a chip opens that
-    /// container (the owner, 5 October).
-    private var cards: some View {
-        let topLevel = rows.filter { $0.kind != .member }
-        let members = Dictionary(listing.compactMap { item -> (String, [ContainerListing.Member])? in
-            if case .group(let group, let members, _) = item { return (group.id, members) }
-            return nil
-        }, uniquingKeysWith: { first, _ in first })
-        // The shared grid: top-aligned, the same columns as every section, and every card the
-        // height of the tallest, so a group card no longer sits shorter than its neighbours.
-        return ResourceCardGrid {
-                ForEach(topLevel) { row in
-                    if row.kind == .group, let group = row.group, let state = row.groupState {
-                        GroupCard(group: group, state: state, members: members[group.id] ?? [],
-                                  tags: model.tags.tags(on: .group, group.id),
-                                  onEdit: { editingGroup = .existing(group.id) },
-                                  onOpenMember: { openDetail($0) }) {
-                            groupRowActions(for: group)
-                        }
-                        .contextMenu { groupMenu(for: group) }
-                    } else if let container = row.container, !row.host.isLocal {
-                        // A paired host's container: the same card, acting on that host — no live
-                        // stats, since those would be a stream from another Mac.
-                        let host = row.host
-                        ContainerCard(
-                            container: container,
-                            cpuPercent: nil,
-                            memoryBytes: nil,
-                            history: [],
-                            isBusy: model.isBusy(row.id, kind: .container),
-                            tags: model.tags.tags(on: .container, row.id),
-                            onStart: { Task { await model.perform(.start, on: container, host: host) } },
-                            onStop: { Task { await model.perform(.stop, on: container, host: host) } },
-                            onRestart: { Task { await model.perform(.restart, on: container, host: host) } },
-                            onDetails: { openDetail(row.id) },
-                            onDelete: { confirmingRemoteDelete = RemoteTarget(container: container, host: host) },
-                            menuContent: { remoteActions(for: container, on: host) }
-                        )
-                        .contextMenu { remoteActions(for: container, on: host) }
-                    } else if let container = row.container {
-                        ContainerCard(
-                            container: container,
-                            cpuPercent: model.cpuPercent(for: container.id),
-                            memoryBytes: model.memoryBytes(for: container.id),
-                            history: model.cpuHistory(for: container.id),
-                            isBusy: model.isBusy(container.id, kind: .container),
-                            tags: model.tags.tags(on: .container, container.id),
-                            onStart: { Task { await model.perform(.start, on: container) } },
-                            onStop: { Task { await model.perform(.stop, on: container) } },
-                            onRestart: { Task { await model.perform(.restart, on: container) } },
-                            onDetails: { openDetail(container.id) },
-                            onDelete: { requestDelete(container) },
-                            menuContent: { actions(for: container) }
-                        )
-                        // Same menu as the table row and the card's own `⋯`: one builder.
-                        .contextMenu { actions(for: container) }
-                    }
-                }
         }
     }
 

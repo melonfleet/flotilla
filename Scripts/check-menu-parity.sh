@@ -17,9 +17,11 @@
 # A component that takes its menu from its owner (`ContainerCard`) passes the check with a bare
 # `menuContent()`, and the owner is then held to passing the same builder it right-clicks with.
 #
-# Negative control — the failure this was proved against:
+# Negative controls — the failures this was proved against:
 #   replace `actions(for: container)` in ContainersView's overflow Menu with
-#   `Button("Details…") { openDetail(container.id) }` and this script must fail.
+#   `Button("Details…") { openDetail(container.id) }` and this script must fail;
+#   and (17 October) replace `menu(for: row)` in VolumesView's `rowContextMenu` with any other
+#   builder, and it must fail too — the list's right-click is followed into its delegate.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -39,6 +41,16 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
         continue
     # Bodies of `.contextMenu { <single expression> }`, in any of its spellings.
     ctx = set(re.findall(r'\.contextMenu\s*\{\s*([^\n{}]+?)\s*\}', text))
+    # And the list's own right-click, `.contextMenu(forSelectionType:) { ids in <call> }`, which is
+    # how every row section is right-clicked since the two-line rows (Q56). It hands a *selection*
+    # to a function that picks the single-row menu for one id; every builder that function calls
+    # counts as right-clickable. Until Cards was scrapped this check passed on the cards'
+    # `.contextMenu { … }` alone and never looked at the list's.
+    for delegate in re.findall(
+            r'\.contextMenu\(forSelectionType:[^)]*\)\s*\{\s*\w+\s+in\s*(\w+)\(', text):
+        m = re.search(r'func ' + delegate + r'\(.*?\n    \}\n', text, re.S)
+        if m:
+            ctx |= {c + "(" for c in re.findall(r'\b([A-Za-z_]\w*)\(for:', m.group(0))}
     # Bodies of `Menu { <single expression> } label: { RowOverflowLabel() }`.
     overflow = re.findall(
         r'Menu\s*\{\s*([^\n{}]+?)\s*\}\s*label:\s*\{\s*(?://[^\n]*\n\s*)*RowOverflowLabel\(\)',
@@ -52,6 +64,14 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
     if not overflow:
         FAIL.append(f"{path}: has RowOverflowLabel() but no single-call Menu body to check")
         continue
+
+    # Every `⋯` must be a single shared call. A hand-written body is not extracted above, so a
+    # file with one good `⋯` and one hand-written one used to pass on the good one — which is how
+    # the Containers negative control below had quietly stopped failing.
+    labels = len(re.findall(r'label:\s*\{\s*(?://[^\n]*\n\s*)*RowOverflowLabel\(\)', text))
+    if labels > len(overflow) and path.name not in NOT_A_ROW:
+        FAIL.append(f"{path}: {labels - len(overflow)} `⋯` menu(s) with a hand-written body — "
+                    "share the builder the right-click uses")
 
     # Delegated: the view takes its menu from whoever places it, and the owner is held to
     # passing the same builder it right-clicks with (the `passed` loop, below, in that file).

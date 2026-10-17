@@ -15,8 +15,6 @@ import FlotillaCore
 struct ClustersView: View {
     let model: AppModel
     let ui: ResourceUIState<HostedCluster>
-    /// Held by `MainWindowView`, like `ui` — see `RowSortState`.
-    let sort: RowSortState
 
     @State private var selection = Set<HostedCluster.ID>()
     @State private var showingCreate = false
@@ -26,28 +24,37 @@ struct ClustersView: View {
     /// A recreate awaiting confirmation. Recreate deletes the cluster and everything in it, so it
     /// always asks, whatever `confirmDestructiveActions` says — the same rule bulk deletes follow.
     @State private var pendingRecreate: HostedCluster?
+    /// Several clusters to delete, from the bulk bar or a right-click on a selection. Always asks,
+    /// like the single delete.
+    @State private var pendingBulkDelete: [HostedCluster] = []
     /// The cluster being loaded into, or nil for the list. An embedded screen like the create
     /// form, not a dialog — see `LoadImageView`.
     @State private var loadImageTarget: K8sNode?
 
     /// The old table's sortable columns. Ties break on name.
-    static let sortKeys: [(id: String, title: String)] = [
-        ("name", "Name"), ("state", "State"), ("host", "Host"), ("role", "Role"),
-        ("cpus", "CPUs"), ("memory", "Memory"), ("address", "Address"), ("ports", "Ports"),
-    ]
+    enum SortKey: String, RowSortKey {
+        case name = "Name"
+        case state = "State"
+        case host = "Host"
+        case role = "Role"
+        case cpus = "CPUs"
+        case memory = "Memory"
+        case address = "Address"
+        case ports = "Ports"
+    }
 
     private var sortOrder: [KeyPathComparator<HostedCluster>] {
-        let order = sort.order
+        let order: SortOrder = ui.sortAscending ? .forward : .reverse
         let byName = KeyPathComparator(\HostedCluster.name)
-        switch sort.key {
-        case "state": return [KeyPathComparator(\HostedCluster.stateSortKey, order: order), byName]
-        case "host": return [KeyPathComparator(\HostedCluster.hostName, order: order), byName]
-        case "role": return [KeyPathComparator(\HostedCluster.roleSortKey, order: order), byName]
-        case "cpus": return [KeyPathComparator(\HostedCluster.cpuSortKey, order: order), byName]
-        case "memory": return [KeyPathComparator(\HostedCluster.memory, order: order), byName]
-        case "address": return [KeyPathComparator(\HostedCluster.address, order: order), byName]
-        case "ports": return [KeyPathComparator(\HostedCluster.portSortKey, order: order), byName]
-        default: return [KeyPathComparator(\HostedCluster.name, order: order)]
+        switch ui.sortKey(default: SortKey.name) {
+        case .name: return [KeyPathComparator(\HostedCluster.name, order: order)]
+        case .state: return [KeyPathComparator(\HostedCluster.stateSortKey, order: order), byName]
+        case .host: return [KeyPathComparator(\HostedCluster.hostName, order: order), byName]
+        case .role: return [KeyPathComparator(\HostedCluster.roleSortKey, order: order), byName]
+        case .cpus: return [KeyPathComparator(\HostedCluster.cpuSortKey, order: order), byName]
+        case .memory: return [KeyPathComparator(\HostedCluster.memory, order: order), byName]
+        case .address: return [KeyPathComparator(\HostedCluster.address, order: order), byName]
+        case .ports: return [KeyPathComparator(\HostedCluster.portSortKey, order: order), byName]
         }
     }
 
@@ -69,6 +76,7 @@ struct ClustersView: View {
                 VStack(spacing: 0) {
                     experimentalBand
                     toolbar
+                    bulkActionBar
                     Divider()
                     content
                 }
@@ -132,6 +140,26 @@ struct ClustersView: View {
         } message: { row in
             Text(Self.recreateMessage(for: row.cluster))
         }
+        .confirmationDialog(
+            "Delete \(pendingBulkDelete.count) clusters?",
+            isPresented: Binding(get: { !pendingBulkDelete.isEmpty },
+                                 set: { if !$0 { pendingBulkDelete = [] } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(pendingBulkDelete.count) Clusters", role: .destructive) {
+                let rows = pendingBulkDelete
+                Task { for row in rows { await model.deleteCluster(row.cluster, on: row.host) } }
+                pendingBulkDelete = []
+            }
+            Button("Cancel", role: .cancel) { pendingBulkDelete = [] }
+        } message: {
+            Text([FleetWording.onMacs(pendingBulkDelete.map { ($0.host, $0.hostName) }),
+                  "Everything running in them goes with them. This cannot be undone."]
+                    .compactMap { $0 }.joined(separator: " "))
+        }
+        // Filtering and deletion hide rows without clearing their ids; the bar must not count
+        // rows nobody can see.
+        .onChange(of: Set(displayedClusters.map(\.id))) { _, ids in selection.formIntersection(ids) }
     }
 
     /// What a recreate keeps and what it loses, said before anything happens.
@@ -195,13 +223,15 @@ struct ClustersView: View {
                        matches: displayedClusters.count,
                        updated: model.clustersLastRefresh,
                        leading: {
-            ResourceListControls<HostedCluster>(
-                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+            ResourceListControls(
+                selection: $selection,
+                selectable: selectableIDs,
+                noun: "clusters",
+                sort: ui.sortMenu(default: SortKey.name),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
                 filters: [],
                 hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
                 hosts: hostChoices)
-            RowSortMenu(state: sort, keys: Self.sortKeys)
         }, trailing: {
             ToolbarIconMenu(systemImage: "plus", label: "Create a cluster") {
                 Button("New Cluster…") { createPrefill = nil; showingCreate = true }
@@ -257,6 +287,49 @@ struct ClustersView: View {
         return rows.sorted(using: sortOrder)
     }
 
+    /// Every cluster on screen. Delete is the one thing several clusters can have done to them at
+    /// once — there is no start or stop (see `rowActions`), and Recreate is one at a time.
+    private var selectableIDs: [HostedCluster.ID] { displayedClusters.map(\.id) }
+
+    /// The selection, limited to what is on screen and not already busy.
+    private var selectedRows: [HostedCluster] {
+        displayedClusters.filter { selection.contains($0.id) }
+    }
+
+    private func deletable(_ rows: [HostedCluster]) -> [HostedCluster] {
+        rows.filter { !model.isBusy($0.host.rowID($0.cluster.node), kind: .cluster) }
+    }
+
+    @ViewBuilder
+    private var bulkActionBar: some View {
+        // Clusters had no bulk bar before the checkboxes came back (Kamal, 17 October: "the same
+        // all through"). Delete only, and it asks, as a single delete does.
+        if !selectedRows.isEmpty {
+            let rows = deletable(selectedRows)
+            BulkActionBar(title: "\(selectedRows.count) selected") {
+                IconActionButton(systemImage: "trash",
+                                 label: "Delete \(rows.count) clusters",
+                                 help: rows.isEmpty ? "These clusters are busy" : "Delete \(rows.count) clusters",
+                                 disabled: rows.isEmpty, destructive: true) {
+                    pendingBulkDelete = rows
+                }
+            }
+        }
+    }
+
+    /// What a right-click offers: the row's own menu for one row, the bar's Delete for several.
+    @ViewBuilder
+    private func rowContextMenu(for ids: Set<HostedCluster.ID>) -> some View {
+        let picked = displayedClusters.filter { ids.contains($0.id) }
+        if picked.count == 1, let row = picked.first {
+            menu(for: row)
+        } else if picked.count > 1 {
+            let rows = deletable(picked)
+            Button("Delete \(rows.count) Clusters…", role: .destructive) { pendingBulkDelete = rows }
+                .disabled(rows.isEmpty)
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         switch model.clustersState {
@@ -298,10 +371,7 @@ struct ClustersView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded:
-            switch ui.presentation {
-            case .list: rowsList
-            case .cards: cards
-            }
+            rowsList
         }
     }
 
@@ -317,10 +387,7 @@ struct ClustersView: View {
         }
         .listStyle(.inset)
         .contextMenu(forSelectionType: HostedCluster.ID.self) { ids in
-            // There are no bulk actions on clusters, so a right-click on several offers none
-            // rather than the first one's menu.
-            let picked = displayedClusters.filter { ids.contains($0.id) }
-            if picked.count == 1, let row = picked.first { menu(for: row) }
+            rowContextMenu(for: ids)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -332,6 +399,7 @@ struct ClustersView: View {
             detail: detailParts(row).joined(separator: " · "),
             detailHelp: "The API server is reachable on this Mac at the host port",
             selected: selection.contains(row.id),
+            check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
             reservesMetrics: false,
             dimsPlainTitle: false,
@@ -387,31 +455,6 @@ struct ClustersView: View {
         return parts.joined(separator: ", ")
     }
 
-
-    private var cards: some View {
-        ResourceCardGrid {
-            ForEach(displayedClusters) { row in
-                let cluster = row.cluster
-                ResourceCard(
-                    title: row.name,
-                    badge: cluster.isRunning ? "Running" : cluster.state.capitalized,
-                    fields: [
-                        ("Role", cluster.roles.joined(separator: ", ")),
-                        ("CPUs", cluster.cpus.map(String.init)),
-                        ("Memory", cluster.memory.isEmpty ? nil : cluster.memory),
-                        ("Address", cluster.address.isEmpty ? nil : cluster.address),
-                        ("Ports", cluster.ports.isEmpty ? nil : cluster.ports.joined(separator: ", ")),
-                    ] + (hostChoices.count > 1 ? [("Host", row.hostName)] : []),
-                    // Clusters are not tagged, so no empty pill row.
-                    showsTags: false,
-                    onOpen: nil
-                ) {
-                    rowActions(for: row)
-                }
-                .contextMenu { menu(for: row) }
-            }
-        }
-    }
 
     /// Recreate, then overflow, then bin — the arrangement every other section uses.
     ///

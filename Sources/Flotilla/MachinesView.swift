@@ -5,8 +5,9 @@ import FlotillaCore
 ///
 /// Built to `research/MACHINES-SPEC.md`, and deliberately the **same shapes** as the containers
 /// side — the owner asked for that explicitly. `SectionToolbar` for the control band, an embedded
-/// detail screen with Back and a prev/next stepper, `ModalCard` for the create form, and the
-/// same table/row-action idiom. A machine is a different noun, not a different app.
+/// detail screen with Back and a prev/next stepper, an embedded create form, and the same
+/// two-line rows (Q56, `ResourceRow`) with the same row actions. A machine is a different noun,
+/// not a different app.
 ///
 /// Where it differs, it differs because machines *are* different:
 ///
@@ -19,39 +20,41 @@ import FlotillaCore
 struct MachinesView: View {
     let model: AppModel
 
-    /// Owned by `MainWindowView`, not here — see `MachinesUIState`. Presentation, filter,
-    /// search, sort and column visibility have to survive a trip to another section.
+    /// Owned by `MainWindowView`, not here — see `MachinesUIState`. Filter, search and sort have
+    /// to survive a trip to another section.
     let ui: MachinesUIState
-
-    /// Icons rather than words, same as the containers switcher — the glyph reads faster and
-    /// the word survives as the tooltip and accessibility label.
-    enum Presentation: String, CaseIterable, Identifiable {
-        case list = "List"
-        case cards = "Cards"
-        var id: Self { self }
-        var systemImage: String {
-            switch self {
-            case .list: "list.bullet"
-            case .cards: "square.grid.2x2"
-            }
-        }
-    }
 
     /// The tester compared these menus directly, so Machines uses the Containers vocabulary
     /// rather than keeping an identical second list that can drift unnoticed.
     typealias Filter = ContainersView.Filter
 
-    private static let columnSpecs: [(id: String, title: String)] = [
-        ("state", "State"),
-        ("tags", "Tags"),
-        ("cpus", "CPUs"),
-        ("memory", "Memory"),
-        ("disk", "Disk"),
-        ("ip", "IP"),
-        ("created", "Created"),
-    ]
+    /// What the Sort menu orders the rows by — one per column the old table sorted on. Ties break
+    /// on name, as on Containers, so equal rows keep a stable, readable order.
+    enum SortKey: String, RowSortKey, Identifiable {
+        case name = "Name"
+        case state = "State"
+        case cpus = "CPUs"
+        case memory = "Memory"
+        case disk = "Disk"
+        case ip = "IP"
+        case created = "Created"
+        var id: Self { self }
 
-    @State private var showingColumns = false
+        func comparators(ascending: Bool) -> [KeyPathComparator<ContainerMachine>] {
+            let order: SortOrder = ascending ? .forward : .reverse
+            let byName = KeyPathComparator(\ContainerMachine.id)
+            switch self {
+            case .name: return [KeyPathComparator(\ContainerMachine.id, order: order)]
+            case .state: return [KeyPathComparator(\ContainerMachine.stateRank, order: order), byName]
+            case .cpus: return [KeyPathComparator(\ContainerMachine.cpus, order: order), byName]
+            case .memory: return [KeyPathComparator(\ContainerMachine.memory, order: order), byName]
+            case .disk: return [KeyPathComparator(\ContainerMachine.diskSize, order: order), byName]
+            case .ip: return [KeyPathComparator(\ContainerMachine.ipSortKey, order: order), byName]
+            case .created: return [KeyPathComparator(\ContainerMachine.creationSortKey, order: order), byName]
+            }
+        }
+    }
+
     @State private var showingFilter = false
     @State private var selection = Set<ContainerMachine.ID>()
     @State private var detailTarget: DetailTarget?
@@ -127,6 +130,11 @@ struct MachinesView: View {
             }
         }
         .task { await model.refreshMachines() }
+        // `actionable` already stops a hidden row from being acted on; this stops one from being
+        // counted. Filter, search and the data itself changing all move the visible set.
+        .onChange(of: visibleIDs) { _, ids in
+            selection.formIntersection(ids)
+        }
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
@@ -231,11 +239,11 @@ struct MachinesView: View {
 
     // MARK: List
 
-    /// The containers screen's control band, member for member and in the same order: view
-    /// switcher, columns, filter, search, updated stamp, then the create/refresh cluster.
+    /// The containers screen's control band, member for member and in the same order: select-all,
+    /// sort, filter, updated stamp, then the create/refresh cluster.
     ///
     /// It used to be a bare `SectionToolbar` with only search and refresh, which made Machines
-    /// the one section where you could not switch to cards, filter by state, or choose columns.
+    /// the one section where you could not filter by state.
     /// A section that quietly offers less than its neighbours reads as unfinished rather than
     /// as a deliberate simplification.
     private func useSuggestion(_ suggestion: MachineSuggestion) {
@@ -251,40 +259,18 @@ struct MachinesView: View {
                        matches: displayed.count,
                        updated: model.machinesLastRefresh,
                        leading: {
-            Toggle("", isOn: Binding(get: { allVisibleSelected },
-                                     set: { on in
-                                         if on { selection.formUnion(visibleIDs) }
-                                         else { selection.subtract(visibleIDs) }
-                                     }))
-                .labelsHidden()
-                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all machines" : "Select all machines")
-                .help(ui.presentation != .list ? "Switch to list view to select"
-                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
+            SelectAllCheckbox(selection: $selection, ids: displayed.map(\.id), noun: "machines")
 
-            Picker("View", selection: Binding(get: { ui.presentation },
-                                              set: { ui.presentation = $0 })) {
-                ForEach(Presentation.allCases) { option in
-                    Label(option.rawValue, systemImage: option.systemImage)
-                        .labelStyle(.iconOnly)
-                        .accessibilityLabel("\(option.rawValue) view")
-                        .help("\(option.rawValue) view")
-                        .tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-
-            columnsButton
-                .disabled(ui.presentation != .list)     // cards have no columns to configure
+            // Replaces the table's clickable headers, as on Containers.
+            RowSortMenu(key: Binding(get: { [weak ui] in ui?.sortKey ?? .name },
+                                     set: { [weak ui] in ui?.sortKey = $0 }),
+                        ascending: Binding(get: { [weak ui] in ui?.sortAscending ?? true },
+                                           set: { [weak ui] in ui?.sortAscending = $0 }))
 
             filterButton
         }, trailing: {
             ToolbarIconMenu(systemImage: "plus", label: "Create a machine") {
-                Button("New Machine…") { createPrefill = nil; showingCreate = true }
-                Divider()
-                Button("Suggestions…") { showingSuggestions = true }
+                addMenuItems
             }
             ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh machines") {
                 Task { await model.refreshMachines() }
@@ -292,30 +278,13 @@ struct MachinesView: View {
         })
     }
 
-    private var columnsButton: some View {
-        IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
-                         help: ui.presentation == .list ? "Show or hide columns"
-                                                        : "Columns apply to the list view only") { showingColumns.toggle() }
-        .popover(isPresented: $showingColumns, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Self.columnSpecs, id: \.id) { spec in
-                    Toggle(spec.title, isOn: columnBinding(for: spec.id))
-                        .toggleStyle(.checkbox)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 2)
-                }
-                Divider().padding(.vertical, 6)
-                HStack {
-                    Button("Hide All") { setAllColumns(.hidden) }
-                    Spacer()
-                    Button("Show All") { setAllColumns(.visible) }
-                }
-                .controlSize(.small)
-                .padding(.horizontal, 12)
-            }
-            .padding(.vertical, 10)
-            .frame(width: 200)
-        }
+    /// "New Machine…" and "Suggestions…": the ways to add to this list, in the toolbar's "+" menu
+    /// and a right-click on empty space alike.
+    @ViewBuilder
+    private var addMenuItems: some View {
+        Button("New Machine…") { createPrefill = nil; showingCreate = true }
+        Divider()
+        Button("Suggestions…") { showingSuggestions = true }
     }
 
     /// `IconActionButton`, like every other icon control in the app — **not** a bare `Button`
@@ -341,19 +310,6 @@ struct MachinesView: View {
             .pickerStyle(.radioGroup)
             .labelsHidden()
             .padding(14)
-        }
-    }
-
-    private func columnBinding(for id: String) -> Binding<Bool> {
-        Binding(
-            get: { ui.columnCustomization[visibility: id] != .hidden },
-            set: { ui.columnCustomization[visibility: id] = $0 ? .visible : .hidden }
-        )
-    }
-
-    private func setAllColumns(_ visibility: Visibility) {
-        for spec in Self.columnSpecs {
-            ui.columnCustomization[visibility: spec.id] = visibility
         }
     }
 
@@ -391,25 +347,9 @@ struct MachinesView: View {
 
     private var visibleIDs: Set<ContainerMachine.ID> { Set(displayed.map(\.id)) }
 
-    /// A retained table selection can include rows hidden by a later filter change, so bulk
+    /// A retained list selection can include rows hidden by a later filter change, so bulk
     /// actions only touch ids the user can still see when they press the button.
     private var actionable: Set<ContainerMachine.ID> { selection.intersection(visibleIDs) }
-
-    private func selectionToggle(for id: ContainerMachine.ID) -> some View {
-        let isOn = Binding<Bool>(
-            get: { selection.contains(id) },
-            set: { on in
-                if on { selection.insert(id) } else { selection.remove(id) }
-            })
-        return Toggle("", isOn: isOn)
-            .labelsHidden()
-            .accessibilityLabel("Select \(id)")
-            .help("Select \(id)")
-    }
-
-    private var allVisibleSelected: Bool {
-        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
-    }
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .machine) }
 
@@ -425,14 +365,10 @@ struct MachinesView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // One selected row already has the same controls in its Actions column; this band earns
-        // the extra space only when it can do something a row control cannot.
-        if actionable.count > 1 {
-            HStack(spacing: 12) {
-                Text("\(actionable.count) selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
+        // selection made on purpose, and this is where it is acted on.
+        if !actionable.isEmpty {
+            BulkActionBar(title: "\(actionable.count) selected") {
                 // Tags first in the cluster, before the lifecycle controls, and separated by a
                 // divider: it is the one action here that changes nothing about what the
                 // selection *is*. Same menu the row offers, asking the three-state question a
@@ -452,9 +388,6 @@ struct MachinesView: View {
                     confirmingBulkDelete = true
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
         }
     }
 
@@ -474,6 +407,8 @@ struct MachinesView: View {
             ContentUnavailableView("Can't list machines",
                                    systemImage: "exclamationmark.triangle",
                                    description: Text(reason))
+                // Every branch fills the pane, so none can size the stack to its content.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded where model.machines.isEmpty:
             ContentUnavailableView {
@@ -497,6 +432,7 @@ struct MachinesView: View {
                         more: { showingSuggestions = true })
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         // A filter that matches nothing is not the same as having no machines, and must not
         // render as the "No machines" onboarding — that would invite you to create a second
@@ -516,212 +452,116 @@ struct MachinesView: View {
             } actions: {
                 Button("Clear filters") { ui.search = ""; ui.filter = .all }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         default:
-            switch ui.presentation {
-            case .list: table
-            case .cards: cards
-            }
+            rowsList
         }
     }
 
-    /// The cards presentation. Same rule the containers cards follow: **identical capabilities**
-    /// to the row — name is the link, the overflow menu and the bin are both present. A toggle
-    /// that changes what you can do is a trap, and losing the copy menu here was a bug once.
-    private var cards: some View {
-        ResourceCardGrid {
-            ForEach(displayed) { machine in
-                machineCard(machine)
-                    .contextMenu { machineMenu(for: machine) }
-            }
+    /// The rows, filling the pane — Containers' list, with a machine's say in each slot.
+    ///
+    /// A `List` for native multi-selection (⌘-click, ⇧-click, ⌘A), ↑/↓, Return to open and a
+    /// right-click that lands on the whole selection, with `ResourceRow`'s checkboxes as a view of
+    /// that same selection. No row height is written down: two lines and `ResourceRow`'s padding make it.
+    /// `displayed` is the order the detail stepper walks, so ‹ › goes to the next row you can see.
+    private var rowsList: some View {
+        List(displayed, selection: $selection) { machine in
+            listRow(machine)
+                // The row paints its own padding, so its hover wash and the list's selection fill
+                // reach the same edges.
+                .listRowInsets(EdgeInsets())
+        }
+        .listStyle(.inset)
+        // Fills what is left, like every other branch of `content`. A `List` is bounded, but the
+        // activity strip that used to sit below broke this screen once by leaving its height to chance.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // On the List, not on a row: this one hands back every selected id.
+        .contextMenu(forSelectionType: ContainerMachine.ID.self) { ids in
+            rowContextMenu(for: ids)
+        } primaryAction: { ids in
+            // Double-click and Return open, only when the activation names exactly one row: with
+            // several selected, `ids.first` is an arbitrary member.
+            guard ids.count == 1, let id = ids.first else { return }
+            detailTarget = DetailTarget(id: id)
         }
     }
 
-    private func machineCard(_ machine: ContainerMachine) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Circle().fill(Self.stateColor(machine)).frame(width: 7, height: 7)
-                Button(machine.id) { detailTarget = DetailTarget(id: machine.id) }
-                    .buttonStyle(.link)
-                    .foregroundStyle(Theme.link)
-                    .lineLimit(1)
-                    .help("Open \(machine.id)")
-                if machine.isDefault == true {
-                    // The same grey badge every other card uses ("default" on a registry,
-                    // "built-in" on a network). It was the accent purple here alone.
-                    Text("default")
-                        .font(.caption2)
-                        .fixedSize()
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(.quaternary, in: Capsule())
-                        .foregroundStyle(.secondary)
-                        .help("Used when a command names no machine")
+    /// One two-line row: the state dot; the name, "default" and the tags; the image, the CPUs
+    /// and memory it was given, and its address. No live figures — `machine ls` reports what a
+    /// machine was allocated, not what it is using — so the metrics slot is empty and takes no
+    /// width. The buttons are the table's Actions column, unchanged: `rowActions`.
+    private func listRow(_ machine: ContainerMachine) -> some View {
+        ResourceRow(
+            title: machine.id,
+            opens: { detailTarget = DetailTarget(id: machine.id) },
+            detail: subtitle(for: machine),
+            detailHelp: detailHelp(for: machine),
+            selected: selection.contains(machine.id),
+            check: RowCheck(machine.id, in: $selection),
+            summary: rowSummary(machine),
+            reservesMetrics: false,
+            leading: {
+                RowLeadingMark {
+                    Circle()
+                        .fill(Self.stateColor(machine))
+                        .frame(width: 8, height: 8)
+                        .help(machine.status.capitalized)
                 }
-                Spacer(minLength: 0)
-            }
-
-            Text(machine.status.capitalized)
-                .font(.caption).foregroundStyle(.secondary)
-
-            // Tags, as the table row already showed them and every other card does. The row is
-            // kept when empty so both machines' fields sit on the same line.
-            let tags = model.tags.tags(on: .machine, machine.id)
-            if tags.isEmpty {
-                TagPillRow(tags: [CardSurface.placeholderTag], limit: 1).hidden()
-            } else {
-                TagPillRow(tags: tags, limit: 4)
-            }
-
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
-                GridRow {
-                    Text("CPUs").font(.caption2).foregroundStyle(.secondary)
-                    Text("\(machine.cpus)").font(.caption).monospacedDigit()
-                }
-                GridRow {
-                    Text("Memory").font(.caption2).foregroundStyle(.secondary)
-                    Text(Self.bytes(machine.memory)).font(.caption).monospacedDigit()
-                }
-                GridRow {
-                    Text("IP").font(.caption2).foregroundStyle(.secondary)
-                    Text(machine.ipAddress ?? "—").font(.caption).monospacedDigit()
-                }
-            }
-
-            Divider()
-            rowActions(for: machine)
-        }
-        .cardSurface()
-    }
-
-    private var table: some View {
-        SwiftUI.Table(displayed,
-                      selection: $selection,
-                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
-                      columnCustomization: Binding(get: { ui.columnCustomization },
-                                                   set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text(Image(systemName: "checkmark.square")).font(.system(size: 9)).accessibilityLabel("Selection")) { machine in
-                selectionToggle(for: machine.id)
-            }
-            .width(min: 28, ideal: 30, max: 34)
-
-            // The dot alone, and no header text either — "State" is five times wider than the
-            // thing it labels, and the column exists to be scanned, not read.
-            //
-            // The state survives as the tooltip AND the accessibility label on every cell,
-            // because a colour is not readable to everyone and is meaningless to VoiceOver.
-            // The blank header is the one real cost: the sort control has no name. The
-            // columns popover still lists it as "State" (from `columnSpecs`), which is where
-            // anyone hunting for it will look.
-            TableColumn(Text(Image(systemName: "circle.fill")).font(.system(size: 6)).accessibilityLabel("State"), value: \.sortRank) { machine in
-                Circle()
-                    .fill(Self.stateColor(machine))
-                    .frame(width: 8, height: 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .help(machine.status.capitalized)
-                    .accessibilityLabel(machine.status.capitalized)
-            }
-            .width(min: 26, ideal: 28, max: 34)
-            .customizationID("state")
-
-            TableColumn("Name", value: \.id) { machine in
-                let selected = selection.contains(machine.id)
-                HStack(spacing: 6) {
-                    Button(machine.id) { detailTarget = DetailTarget(id: machine.id) }
-                        .buttonStyle(.link)
-                        .foregroundStyle(Theme.rowName(selected: selected))
-                        .lineLimit(1)
-                        .help("Open \(machine.id)")
-                    // Which machine a bare `machine stop` or `inspect` would hit. Not cosmetic.
+            },
+            chips: {
+                HStack(spacing: 4) {
+                    // Which machine a bare `machine stop` or `inspect` would hit. Not cosmetic,
+                    // and a chip like Containers' kind chip, so it cannot be squeezed to "defa…".
                     if machine.isDefault == true {
-                        Text("default")
-                            .font(.caption2)
-                            // Without this the badge is the first thing the column sacrifices
-                            // and it rendered as "defa…", which reads like a truncated name
-                            // rather than a label. A four-character mystery word is worse than
-                            // no badge; it has to be the last thing to give.
-                            .fixedSize()
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            // The badge is a pink pill on a pink fill when the row is selected —
-                            // the same disappearing act as the name, one size smaller.
-                            .background(selected ? AnyShapeStyle(.quaternary)
-                                                 : AnyShapeStyle(Theme.accentTint),
-                                        in: Capsule())
-                            .foregroundStyle(Theme.rowName(selected: selected))
+                        ResourceChip(text: "default")
                             .help("Used when a command names no machine")
                     }
+                    TagPillRow(tags: model.tags.tags(on: .machine, machine.id), compact: true)
                 }
-            }
-            // Machine names run longer than container names — `container` generates them with a
-            // hash suffix — and at the default width "probe-alpine-latest" wrapped to two lines
-            // and pushed the rows out of alignment.
-            .width(min: 150, ideal: 210)
-            // No `customizationID` — the name is how you identify and open a row, so it is not
-            // something to hide. Same reason the containers table pins its Name column.
+            },
+            metrics: { EmptyView() },
+            actions: { rowActions(for: machine) })
+    }
 
-            // Next to the name, the way Finder puts a tag beside a filename: the whole point is
-            // that you recognise the row without reading it, which only works if the pill is
-            // where your eye already is.
-            //
-            // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**, and a
-            // row's tags live in `TagStore`, not on the model — so a sortable column here would
-            // mean denormalising the user's tags onto the runtime's own types. Hideable instead,
-            // through the same column menu every other column uses.
-            TableColumn("Tags") { machine in
-                TagPillRow(tags: model.tags.tags(on: .machine, machine.id), compact: true)
-            }
-            .width(min: 60, ideal: 130)
-            .customizationID("tags")
+    /// The second line on hover, with the full image reference rather than its shortening.
+    private func detailHelp(for machine: ContainerMachine) -> String {
+        subtitleParts(for: machine, fullImage: true).joined(separator: " · ")
+    }
 
-            TableColumn("CPUs", value: \.cpus) { machine in
-                Text("\(machine.cpus)").monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 52, ideal: 60)
-            .customizationID("cpus")
+    /// What VoiceOver reads for the row: "build, running, default machine, alpine:3.22, 2 CPUs, …".
+    private func rowSummary(_ machine: ContainerMachine) -> String {
+        var parts = [machine.id, machine.status.lowercased()]
+        if machine.isDefault == true { parts.append("default machine") }
+        parts.append(contentsOf: subtitleParts(for: machine))
+        let tags = model.tags.tags(on: .machine, machine.id).map(\.name)
+        if !tags.isEmpty { parts.append("tags " + tags.joined(separator: ", ")) }
+        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
 
-            TableColumn("Memory", value: \.memory) { machine in
-                Text(Self.bytes(machine.memory)).monospacedDigit().foregroundStyle(.secondary)
+    /// The right-click: the row's own menu for one row, the bulk bar's actions for several, and
+    /// the "+" menu on empty space rather than an empty menu that looks like a bug.
+    ///
+    /// `ids` comes from the list, so everything in it is on screen by construction. The table this
+    /// replaced offered the menu of `ids.first` for any selection — an arbitrary member.
+    @ViewBuilder
+    private func rowContextMenu(for ids: Set<ContainerMachine.ID>) -> some View {
+        if ids.isEmpty {
+            addMenuItems
+        } else if ids.count == 1, let machine = model.machines.first(where: { ids.contains($0.id) }) {
+            machineMenu(for: machine)
+        } else {
+            let busy = model.isAnyBusy(ids, kind: .machine)
+            Button("Start \(ids.count) Machines") { Task { await model.performMachineBulk(.start, on: ids) } }
+                .disabled(busy)
+            Button("Stop \(ids.count) Machines") { Task { await model.performMachineBulk(.stop, on: ids) } }
+                .disabled(busy)
+            Divider()
+            Button("Delete \(ids.count) Machines…", role: .destructive) {
+                selection = ids            // so the confirmation counts what was right-clicked
+                confirmingBulkDelete = true
             }
-            .width(min: 72, ideal: 84)
-            .customizationID("memory")
-
-            TableColumn("Disk", value: \.diskSize) { machine in
-                Text(Self.bytes(machine.diskSize)).monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 72, ideal: 84)
-            .customizationID("disk")
-
-            TableColumn("IP", value: \.ipSortKey) { machine in
-                Text(machine.ipAddress ?? "—").foregroundStyle(.secondary)
-            }
-            .width(min: 96, ideal: 120)
-            .customizationID("ip")
-
-            TableColumn("Created", value: \.creationSortKey) { machine in
-                Text(RelativeDate.relative(machine.createdDate))
-                    .foregroundStyle(.secondary)
-                    .help(RelativeDate.absolute(machine.createdDate))
-            }
-            .width(min: 80, ideal: 100)
-            .customizationID("created")
-
-            TableColumn("Actions") { machine in
-                rowActions(for: machine)
-            }
-            .width(min: 108, ideal: 120)
-        }
-        // Bounds the table so it *fills* the space left over rather than dictating the stack's
-        // height. Without it, the Activity strip (since removed, 17 October) broke the whole window: a macOS
-        // `Table` reports a very large ideal height, so the VStack grew past the window and
-        // both columns scrolled — the sidebar ended up above the title bar and the table showed
-        // only its empty filler rows. The containers table already had this; the machines one
-        // did not, which is why only this section broke.
-        .frame(maxHeight: .infinity)
-        .contextMenu(forSelectionType: ContainerMachine.ID.self) { ids in
-            if let machine = model.machines.first(where: { ids.contains($0.id) }) {
-                machineMenu(for: machine)
-            }
-        } primaryAction: { ids in
-            if let id = ids.first { detailTarget = DetailTarget(id: id) }
+            .disabled(busy)
         }
     }
 
@@ -767,7 +607,9 @@ struct MachinesView: View {
             iconButton("trash", "Delete \(machine.id)", busy: busy, destructive: true) {
                 requestDelete(machine)
             }
-            Spacer()
+            // Zero, not a default `Spacer()`: a row fixes the cluster's size, and a default
+            // minimum would leave a gap after the bin that Containers' rows do not have.
+            Spacer(minLength: 0)
         }
     }
 
@@ -846,8 +688,12 @@ struct MachinesView: View {
                     systemImage: "questionmark.square.dashed",
                     description: Text("“\(target.id)” is no longer on this Mac. It may have been deleted.")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        // Header at the top whatever is below it, as Containers' detail does: the unavailable
+        // state takes only its own height, and the stack would otherwise centre header and all.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder
@@ -900,15 +746,22 @@ struct MachinesView: View {
                              next: { if let index, index < order.count - 1 { detailTarget = DetailTarget(id: order[index + 1].id) } })
     }
 
+    /// Image · CPUs · memory · IP — the detail header's subtitle and a row's second line, one
+    /// derivation for both.
     private func subtitle(for machine: ContainerMachine) -> String {
+        subtitleParts(for: machine).joined(separator: " · ")
+    }
+
+    /// `fullImage` for a tooltip, where the whole reference fits.
+    private func subtitleParts(for machine: ContainerMachine, fullImage: Bool = false) -> [String] {
         var parts: [String] = []
         if let image = machine.image?.reference {
-            parts.append(ContainerImage.shortReference(image))
+            parts.append(fullImage ? image : ContainerImage.shortReference(image))
         }
         parts.append("\(machine.cpus) CPU\(machine.cpus == 1 ? "" : "s")")
         parts.append(Self.bytes(machine.memory))
         if let ip = machine.ipAddress { parts.append(ip) }
-        return parts.joined(separator: " · ")
+        return parts
     }
 
     // MARK: Helpers

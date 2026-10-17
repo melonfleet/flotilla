@@ -109,6 +109,11 @@ struct ImagesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshImages() }
+        // `actionable` already stops a hidden row from being acted on; this stops one from being
+        // counted. Filter, search and the data itself changing all move the visible set.
+        .onChange(of: visibleIDs) { _, ids in
+            selection.formIntersection(ids)
+        }
         // A image asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -200,23 +205,12 @@ struct ImagesView: View {
                        matches: displayedImages.count,
                        updated: model.imagesLastRefresh,
                        leading: {
-            Toggle("", isOn: Binding(get: { allVisibleSelected },
-                                     set: { on in
-                                         if on { selection.formUnion(visibleIDs) }
-                                         else { selection.subtract(visibleIDs) }
-                                     }))
-                .labelsHidden()
-                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all images" : "Select all images")
-                .help(ui.presentation != .list ? "Switch to list view to select"
-                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
-
-            ResourceListControls<HostedImage>(
-                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+            ResourceListControls(
+                selection: $selection,
+                selectable: displayedImages.map(\.id),
+                noun: "images",
+                sort: ui.sortMenu(default: SortKey.name),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
-                columnCustomization: Binding(get: { ui.columnCustomization },
-                                             set: { ui.columnCustomization = $0 }),
-                columns: Self.columnSpecs,
                 filters: platformFilters,
                 hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
                 hosts: hostChoices)
@@ -243,10 +237,36 @@ struct ImagesView: View {
         })
     }
 
-    private static let columnSpecs: [(id: String, title: String)] = [
-        ("tag", "Tag"), ("platform", "Platform"), ("digest", "Digest"),
-        ("size", "Size"), ("created", "Created"), ("host", "Host"),
-    ]
+    /// What the Sort menu orders the rows by — one per column the old table sorted on, with Name
+    /// for its Repository column (which sorted the whole reference). Ties break on name, then
+    /// host, so one image on two Macs keeps a stable order.
+    enum SortKey: String, RowSortKey, Identifiable {
+        case name = "Name"
+        case tag = "Tag"
+        case platform = "Platform"
+        case digest = "Digest"
+        case size = "Size"
+        case created = "Created"
+        case host = "Host"
+        var id: Self { self }
+
+        func comparators(ascending: Bool) -> [KeyPathComparator<HostedImage>] {
+            let order: SortOrder = ascending ? .forward : .reverse
+            let ties = [KeyPathComparator(\HostedImage.reference), KeyPathComparator(\HostedImage.hostName)]
+            switch self {
+            case .name: return [KeyPathComparator(\HostedImage.reference, order: order), ties[1]]
+            case .tag: return [KeyPathComparator(\HostedImage.tagSortKey, order: order)] + ties
+            case .platform: return [KeyPathComparator(\HostedImage.platformSortKey, order: order)] + ties
+            case .digest: return [KeyPathComparator(\HostedImage.digestSortKey, order: order)] + ties
+            case .size: return [KeyPathComparator(\HostedImage.sizeSortKey, order: order)] + ties
+            case .created: return [KeyPathComparator(\HostedImage.creationSortKey, order: order)] + ties
+            case .host: return [KeyPathComparator(\HostedImage.hostName, order: order)] + ties
+            }
+        }
+    }
+
+    /// The Sort menu's choice; Name until one is made.
+    private var sortKey: SortKey { ui.sortKey(default: .name) }
 
     /// This Mac and every trusted host, for the filter's Host section.
     private var hostChoices: [(ref: HostRef, name: String)] {
@@ -292,6 +312,8 @@ struct ImagesView: View {
                 systemImage: "exclamationmark.triangle",
                 description: Text(reason)
             )
+            // Every branch fills the pane, so none can size the stack to its content.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded where displayedImages.isEmpty:
             // Filtered-empty and genuinely-empty are different states, and this used to test
@@ -315,130 +337,123 @@ struct ImagesView: View {
                     Button("Browse Docker Hub…") { browsing = true }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded:
-            if ui.presentation == .list { table } else { cards }
+            rowsList
         }
     }
 
-    private var cards: some View {
-        ResourceCardGrid {
-            ForEach(displayedImages) { row in
-                let image = row.image
-                ResourceCard(
-                    title: Self.repository(image),
-                    badge: Self.tag(image),
-                    fields: [("Platform", Self.platformLabel(image)),
-                             ("Digest", Self.shortDigest(image)),
-                             ("Size", image.displaySize.map(Self.byteCount)),
-                             ("Created", RelativeDate.relative(image.configuration.creationDate))]
-                        // Named only when there is more than one Mac to tell apart.
-                        + (hostChoices.count > 1 ? [("Host", row.hostName)] : []),
-                    // Images have no tags (CLAUDE.md: "tag" already means an image reference's).
-                    showsTags: false,
-                    onOpen: { open(row) }
-                ) {
-                    rowActions(for: row)
-                }
-                .contextMenu { menu(for: row) }
-            }
-        }
-    }
-
-    /// A `Table`, matching every other section — repository, tag, platform, digest, size, age.
+    /// Two-line rows (Q56), in Containers' shape: the reference as you would type it, chips for
+    /// "in use" and another Mac, then size · created · platform · digest.
     ///
-    /// The `List` version put the tag and size in a caption under the repository, which meant
-    /// you could not sort by size (the thing you actually want when reclaiming disk) and could
-    /// not see the platform or digest at all without opening Inspect.
-    ///
-    /// Repository and tag are separate columns rather than one reference string: sorting by
-    /// repository groups an image's tags together, which a combined `nginx:alpine` string does
-    /// only by luck of alphabetisation.
-    private var table: some View {
-        SwiftUI.Table(displayedImages,
-                      selection: $selection,
-                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
-                      columnCustomization: Binding(get: { ui.columnCustomization },
-                                                   set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text(Image(systemName: "checkmark.square")).font(.system(size: 9)).accessibilityLabel("Selection")) { row in
-                selectionToggle(for: row.id)
-            }
-            .width(min: 28, ideal: 30, max: 34)
-
-            TableColumn("Repository", value: \.reference) { row in
-                // The way in, as in every other table. This was plain text, because until now
-                // there was nowhere for it to go.
-                Button(Self.repository(row.image)) { open(row) }
-                .buttonStyle(.link)
-                .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                .lineLimit(1).truncationMode(.middle)
-                .help(row.reference + onHost(row))
-            }
-            .width(min: 170, ideal: 260)
-
-            TableColumn("Tag", value: \.tagSortKey) { row in
-                Text(Self.tag(row.image)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .width(min: 70, ideal: 96)
-            .customizationID("tag")
-
-            TableColumn("Platform", value: \.platformSortKey) { row in
-                Text(Self.platformLabel(row.image)).foregroundStyle(.secondary).lineLimit(1)
-                    .help("OS and CPU the image is built for")
-            }
-            .width(min: 84, ideal: 100)
-            .customizationID("platform")
-
-            TableColumn("Digest", value: \.digestSortKey) { row in
-                let image = row.image
-                // Short form. A digest is a public content hash, not a secret — see the
-                // `Redactor(excluding:)` note on the Inspect tab — but 71 characters of it in a
-                // table cell is noise, and the full value is one hover away.
-                Text(Self.shortDigest(image))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .help(image.configuration.descriptor?.digest ?? "no digest reported")
-            }
-            .width(min: 96, ideal: 116)
-            .customizationID("digest")
-
-            TableColumn("Size", value: \.sizeSortKey) { row in
-                Text(row.image.displaySize.map(Self.byteCount) ?? "—")
-                    .monospacedDigit().foregroundStyle(.secondary)
-            }
-            .width(min: 74, ideal: 90)
-            .customizationID("size")
-
-            TableColumn("Created", value: \.creationSortKey) { row in
-                Text(RelativeDate.relative(row.image.configuration.creationDate))
-                    .foregroundStyle(.secondary)
-                    .help(RelativeDate.absolute(row.image.configuration.creationDate))
-            }
-            .width(min: 80, ideal: 104)
-            .customizationID("created")
-
-            // Which Mac the image is on, as in Containers: a host that has stopped answering keeps
-            // its rows, marked with how old they are.
-            TableColumn("Host", value: \.hostName) { row in
-                HostCell(name: row.hostName, staleSince: row.staleSince)
-            }
-            .width(min: 80, ideal: 110)
-            .customizationID("host")
-
-            TableColumn("Actions") { row in
-                rowActions(for: row)
-            }
-            .width(min: 108, ideal: 118)
+    /// What the table this replaced argued for still holds: size is a sort key (the thing you want
+    /// when reclaiming disk) and the platform and digest are on screen without opening Inspect.
+    /// Repository and tag sort separately, from the Sort menu, rather than as two columns.
+    private var rowsList: some View {
+        List(displayedImages, selection: $selection) { row in
+            listRow(row)
+                // The row paints its own padding, so its hover wash and the list's selection fill
+                // reach the same edges.
+                .listRowInsets(EdgeInsets())
         }
-        .frame(maxHeight: .infinity)
+        .listStyle(.inset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // On the List, not on a row: this one hands back every selected id.
         .contextMenu(forSelectionType: HostedImage.ID.self) { ids in
-            if let row = displayedImages.first(where: { ids.contains($0.id) }) {
-                menu(for: row)
-            }
+            rowContextMenu(for: ids)
         } primaryAction: { ids in
             guard ids.count == 1,
                   let row = displayedImages.first(where: { ids.contains($0.id) }) else { return }
             open(row)
+        }
+    }
+
+    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`. No live
+    /// figures — an image has none — so the metrics slot is empty and takes no width.
+    private func listRow(_ row: HostedImage) -> some View {
+        let users = containersUsing(row)
+        return ResourceRow(
+            title: Self.displayName(row.image),
+            opens: { open(row) },
+            openHelp: "Open \(row.reference)\(onHost(row))",
+            detail: detailParts(row).joined(separator: " · "),
+            detailHelp: detailHelp(row),
+            selected: selection.contains(row.id),
+            check: RowCheck(row.id, in: $selection),
+            summary: rowSummary(row, users: users),
+            reservesMetrics: false,
+            leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.images.systemImage) } },
+            chips: {
+                HStack(spacing: 4) {
+                    // Images have no tags (CLAUDE.md: "tag" already means an image reference's).
+                    if !users.isEmpty {
+                        ResourceChip(text: "in use")
+                            .help("Used by " + users.joined(separator: ", "))
+                    }
+                    if !row.host.isLocal {
+                        HostCell(name: row.hostName, staleSince: row.staleSince)
+                            .chipStyle()
+                            .fixedSize()
+                    }
+                }
+            },
+            metrics: { EmptyView() },
+            actions: { rowActions(for: row) })
+    }
+
+    /// The containers on the image's own Mac that were created from it — what "in use" means,
+    /// and the same test the prune preview applies: a reference match, so a container keeps its
+    /// image in use whether it is running or not.
+    private func containersUsing(_ row: HostedImage) -> [String] {
+        model.containers(on: row.host)
+            .filter { $0.configuration.image.reference == row.reference }
+            .map(\.id)
+            .sorted()
+    }
+
+    /// Size · created · platform · digest, each only when the runtime reported it. A sentence has
+    /// no need of the dash a table cell needed to hold its place. `fullDigest` for a tooltip.
+    private func detailParts(_ row: HostedImage, fullDigest: Bool = false) -> [String] {
+        let image = row.image
+        return [image.displaySize.map(Self.byteCount),
+                RelativeDate.relative(image.configuration.creationDate, prefix: "created"),
+                Self.platformLabel(image),
+                fullDigest ? image.configuration.descriptor?.digest : Self.shortDigest(image)]
+            .compactMap { $0 }
+            .filter { $0 != "—" }
+    }
+
+    /// The second line on hover: the full reference and digest rather than their shortenings.
+    private func detailHelp(_ row: HostedImage) -> String {
+        ([row.reference] + detailParts(row, fullDigest: true)).joined(separator: " · ")
+    }
+
+    /// What VoiceOver reads for the row: "nginx:alpine, image, in use by web, 52 MB, …".
+    private func rowSummary(_ row: HostedImage, users: [String]) -> String {
+        var parts = [Self.displayName(row.image), "image"]
+        if !users.isEmpty { parts.append("in use by " + users.joined(separator: ", ")) }
+        parts.append(contentsOf: detailParts(row))
+        if !row.host.isLocal { parts.append("on " + row.hostName) }
+        return parts.joined(separator: ", ")
+    }
+
+    /// The right-click: the row's own menu for one row, the bulk bar's Delete for several, and the
+    /// ways to add an image on empty space. The table this replaced offered the menu of
+    /// `ids.first` for any selection — an arbitrary member.
+    @ViewBuilder
+    private func rowContextMenu(for ids: Set<HostedImage.ID>) -> some View {
+        if ids.isEmpty {
+            Button("New Image…") { newImageMode = .pull }
+            Button("Browse Docker Hub…") { browsing = true }
+        } else if ids.count == 1, let row = displayedImages.first(where: { ids.contains($0.id) }) {
+            menu(for: row)
+        } else {
+            Button("Delete \(ids.count) Images…", role: .destructive) {
+                selection = ids            // so the confirmation counts what was right-clicked
+                confirmingBulkDelete = true
+            }
+            .disabled(model.isAnyBusy(ids, kind: .image))
         }
     }
 
@@ -562,7 +577,7 @@ struct ImagesView: View {
             }
         }
 
-        return rows.sorted(using: ui.sortOrder)
+        return rows.sorted(using: sortKey.comparators(ascending: ui.sortAscending))
     }
 
     private var visibleIDs: Set<HostedImage.ID> { Set(displayedImages.map(\.id)) }
@@ -577,34 +592,14 @@ struct ImagesView: View {
         detailTarget = DetailTarget(reference: row.reference, host: row.host, tab: tab)
     }
 
-    private func selectionToggle(for id: HostedImage.ID) -> some View {
-        let isOn = Binding<Bool>(
-            get: { selection.contains(id) },
-            set: { on in
-                if on { selection.insert(id) } else { selection.remove(id) }
-            })
-        return Toggle("", isOn: isOn)
-            .labelsHidden()
-            .accessibilityLabel("Select \(id)")
-            .help("Select \(id)")
-    }
-
-    private var allVisibleSelected: Bool {
-        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
-    }
-
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .image) }
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // Tag, Run and Prune have deliberately different scopes; multi-selection adds only the
-        // row's existing delete action.
-        if actionable.count > 1 {
-            HStack(spacing: 12) {
-                Text("\(actionable.count) selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
+        // selection made on purpose, and this is where it is acted on.
+        if !actionable.isEmpty {
+            BulkActionBar(title: "\(actionable.count) selected") {
                 IconActionButton(systemImage: "trash",
                                  label: "Delete \(actionable.count) images",
                                  help: "Delete \(actionable.count) images",
@@ -612,9 +607,6 @@ struct ImagesView: View {
                     confirmingBulkDelete = true
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
         }
     }
 
@@ -968,6 +960,21 @@ struct ImagesView: View {
     }
 
     nonisolated static func repository(_ image: ContainerImage) -> String { split(image.reference).repository }
+
+    /// How a row names an image: the reference as you would type it, with Docker Hub's implied
+    /// `docker.io/library/` left off the way `docker images` prints it — `nginx:alpine`, not
+    /// `docker.io/library/nginx:alpine`. Any other registry keeps its host, because two `web:v2`
+    /// from two registries are two different images. Built from `split`, so a digest-only
+    /// reference reads `name@1a2b…` as the Tag column did.
+    nonisolated static func displayName(_ image: ContainerImage) -> String {
+        let (repository, tag) = split(image.reference)
+        var name = Substring(repository)
+        for prefix in ["docker.io/library/", "docker.io/"] where name.hasPrefix(prefix) {
+            name = name.dropFirst(prefix.count)
+            break
+        }
+        return tag.hasPrefix("@") ? name + tag : name + ":" + tag
+    }
     nonisolated static func tag(_ image: ContainerImage) -> String { split(image.reference).tag }
 
     private static func byteCount(_ bytes: Int64) -> String {

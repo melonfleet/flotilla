@@ -9,8 +9,8 @@ import FlotillaCore
 /// containers under it — that live in different places and need different permissions. The section
 /// shows both halves per row, says plainly when only one is there, and offers the missing one.
 ///
-/// The same setup as every other section — list and cards, search, filter, a Sort menu, row menus
-/// that match the context menu, multi-select with bulk actions and tags. Two-line rows since Q56.
+/// The same setup as every other section — rows, search, filter, a Sort menu, row menus that match
+/// the context menu, checkboxes with bulk actions and tags. Two-line rows since Q56.
 ///
 /// **Two permissions, both asked for in the open** (the owner's answers, 6 October):
 ///
@@ -22,8 +22,6 @@ import FlotillaCore
 struct DNSView: View {
     let model: AppModel
     let ui: ResourceUIState<HostedDNS>
-    /// Held by `MainWindowView`, like `ui` — see `RowSortState`.
-    let sort: RowSortState
 
     @State private var selection = Set<HostedDNS.ID>()
     @State private var form: DNSFormTarget?
@@ -160,13 +158,15 @@ struct DNSView: View {
                        matches: displayedRows.count,
                        updated: model.dnsLastRefresh,
                        leading: {
-            ResourceListControls<HostedDNS>(
-                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+            ResourceListControls(
+                selection: $selection,
+                selectable: selectableIDs,
+                noun: "domains",
+                sort: ui.sortMenu(default: SortKey.name),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
                 filters: Self.filters,
                 hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
                 hosts: hostChoices)
-            RowSortMenu(state: sort, keys: Self.sortKeys)
         }, trailing: {
             if working { ProgressView().controlSize(.small).help("Applying a DNS change…") }
             ToolbarIconMenu(systemImage: "plus", label: "New domain") {
@@ -185,18 +185,21 @@ struct DNSView: View {
     }
 
     /// The old table's sortable columns (Address was never sortable). Ties break on name.
-    private static let sortKeys: [(id: String, title: String)] = [
-        ("name", "Name"), ("kind", "Kind"), ("status", "Status"), ("host", "Host"),
-    ]
+    enum SortKey: String, RowSortKey {
+        case name = "Name"
+        case kind = "Kind"
+        case status = "Status"
+        case host = "Host"
+    }
 
     private var sortOrder: [KeyPathComparator<HostedDNS>] {
-        let order = sort.order
+        let order: SortOrder = ui.sortAscending ? .forward : .reverse
         let byName = KeyPathComparator(\HostedDNS.nameSortKey)
-        switch sort.key {
-        case "kind": return [KeyPathComparator(\HostedDNS.kindSortKey, order: order), byName]
-        case "status": return [KeyPathComparator(\HostedDNS.statusSortKey, order: order), byName]
-        case "host": return [KeyPathComparator(\HostedDNS.hostName, order: order), byName]
-        default: return [KeyPathComparator(\HostedDNS.nameSortKey, order: order)]
+        switch ui.sortKey(default: SortKey.name) {
+        case .name: return [KeyPathComparator(\HostedDNS.nameSortKey, order: order)]
+        case .kind: return [KeyPathComparator(\HostedDNS.kindSortKey, order: order), byName]
+        case .status: return [KeyPathComparator(\HostedDNS.statusSortKey, order: order), byName]
+        case .host: return [KeyPathComparator(\HostedDNS.hostName, order: order), byName]
         }
     }
 
@@ -232,6 +235,10 @@ struct DNSView: View {
 
     private var visibleIDs: Set<HostedDNS.ID> { Set(displayedRows.map(\.id)) }
 
+    /// Every row on screen: each can be tagged, so each can be in a selection, even one this
+    /// section cannot delete (the bar's Delete counts only those it can).
+    private var selectableIDs: [HostedDNS.ID] { displayedRows.map(\.id) }
+
     private var selectedRows: [HostedDNS] {
         displayedRows.filter { selection.contains($0.id) }
     }
@@ -244,13 +251,10 @@ struct DNSView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        if selectedRows.count > 1 {
+        // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
+        if !selectedRows.isEmpty {
             let deletable = selectedRows.filter(canDelete)
-            HStack(spacing: 12) {
-                Text("\(selectedRows.count) selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            BulkActionBar(title: "\(selectedRows.count) selected") {
                 BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
                     tagSheet = TagSheetTarget(selectedTagSubjects)
                 }
@@ -263,9 +267,6 @@ struct DNSView: View {
                     pendingDelete = deletable
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
         }
     }
 
@@ -308,12 +309,12 @@ struct DNSView: View {
         } else {
             VStack(spacing: 0) {
                 setupNote
-                if ui.presentation == .list { rowsList } else { cards }
+                rowsList
             }
         }
     }
 
-    /// The two half-set-up states, said once above the table with the fix beside them.
+    /// The two half-set-up states, said once above the list with the fix beside them.
     @ViewBuilder
     private var setupNote: some View {
         if let row = model.containerDNSRow, !row.resolverInstalled {
@@ -377,6 +378,7 @@ struct DNSView: View {
             detailHelp: DNSCopy.addressHelp(row.domain, place: place) + "\n"
                 + DNSCopy.statusHelp(row.domain, place: place),
             selected: selection.contains(row.id),
+            check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
             reservesMetrics: false,
             leading: { stateMark(row) },
@@ -442,26 +444,6 @@ struct DNSView: View {
         }
     }
 
-
-    private var cards: some View {
-        ResourceCardGrid {
-            ForEach(displayedRows) { row in
-                ResourceCard(
-                    title: row.name,
-                    badge: row.domain.registersContainers ? "containers" : nil,
-                    fields: [("Kind", DNSCopy.kindTitle(row.domain)),
-                             ("Address", DNSCopy.address(row.domain, place: model.dnsPlace(row.host))),
-                             ("Status", DNSCopy.statusText(row.domain, place: model.dnsPlace(row.host)))]
-                        + (row.host.isLocal ? [] : [("Host", row.hostName)]),
-                    tags: model.tags.tags(on: .dns, row.id),
-                    onOpen: { form = .manage(row.id) }
-                ) {
-                    rowActions(for: row)
-                }
-                .contextMenu { menu(for: row) }
-            }
-        }
-    }
 
     // MARK: Row actions and menu
 
@@ -613,7 +595,7 @@ struct DNSView: View {
     }
 }
 
-/// A row's status, the same in the table, the cards and the form.
+/// A row's status, the same in the list and the form.
 struct DNSStatusLabel: View {
     let row: LocalDNSDomain
     /// Where the domain is: "this Mac", or a host's name.
@@ -639,7 +621,7 @@ struct DNSStatusLabel: View {
     }
 }
 
-/// The section's words, in one place so the table, cards, form and dialogs say the same thing.
+/// The section's words, in one place so the list, form and dialogs say the same thing.
 enum DNSCopy {
     /// The Mac itself. Verified present, per the `ellipsis.vertical` incident.
     static let hostAliasSymbol = "laptopcomputer"
@@ -734,7 +716,7 @@ enum ContainerDomainChange: Identifiable, Hashable {
 
 extension View {
     /// "Set Up on This Mac…" when the Flotilla Helper is on — the in-app confirmation that stands in for
-    /// the password prompt. Shared by the table and the form.
+    /// the password prompt. Shared by the list and the form.
     func dnsSetUpConfirmation(_ name: Binding<String?>, place: String = "this Mac",
                               perform: @escaping (String) -> Void) -> some View {
         confirmationDialog("Set up “\(name.wrappedValue ?? "")” on \(place)?",
@@ -752,7 +734,7 @@ extension View {
     }
 
     /// The warning before containers are renamed (the owner's answer, 6 October: "Yes, with a clear
-    /// warning"). Shared by the table and the form so it cannot say two different things.
+    /// warning"). Shared by the list and the form so it cannot say two different things.
     func containerDomainConfirmation(_ change: Binding<ContainerDomainChange?>, model: AppModel,
                                      host: HostRef = .local,
                                      perform: @escaping (ContainerDomainChange) -> Void) -> some View {

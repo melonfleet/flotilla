@@ -1,16 +1,12 @@
 import SwiftUI
 import FlotillaCore
 
-/// The Cards presentation for Volumes, Networks and Images.
+/// A suggestion in a Suggestions gallery (`ResourceSuggestionsGallery`): title, an optional badge,
+/// a handful of label/value rows, and an action cluster.
 ///
-/// Deliberately a shared shell: title, an optional badge, a handful of label/value rows, and the
-/// row's own action cluster. The three sections differ only in which values they pass, and a
-/// card that is built per-section is a card that drifts per-section — which is how the container
-/// cards once ended up offering fewer actions than the rows.
-///
-/// **Identical capabilities to the row.** The actions slot takes the same `rowActions` the table
-/// renders, so switching presentation cannot change what you are able to do. That rule exists
-/// because it was broken once: the Cards toggle silently cost you the Copy menu.
+/// **No longer a list presentation.** It was the Cards view of Volumes, Networks, Images and
+/// several more sections until Cards was scrapped in every section on 17 October (Q56, amended):
+/// the lists are two-line rows only. The gallery's cards are what a gallery *is*, so they stay.
 struct ResourceCard<Actions: View>: View {
     let title: String
     var badge: String?
@@ -99,9 +95,9 @@ struct ResourceCard<Actions: View>: View {
 }
 
 /// **One card surface for the whole app** (the owner, 5 October: "we shouldn't have two card
-/// views"). `ResourceCard`, `ContainerCard`, `GroupCard` and the machine card all draw through
-/// this, so they cannot drift apart again — there had been three: white with a hairline here, a
-/// soft tint on containers and groups, and a fainter tint on machines.
+/// views"). Every card drew through this so they could not drift apart again — there had been
+/// three: white with a hairline here, a soft tint on containers and groups, and a fainter tint on
+/// machines. Since the list Cards went (Q56, 17 October) that is the Suggestions galleries.
 ///
 /// It also makes every card in a `ResourceCardGrid` **the same height**: each reports its natural
 /// height, the grid takes the tallest, and hands it back as a minimum. Measured before that
@@ -141,8 +137,8 @@ extension EnvironmentValues {
     @Entry var cardMinHeight: CGFloat = 0
 }
 
-/// The grid every section drops its cards into, so column widths, spacing, alignment and height
-/// match everywhere — Containers and Machines included, which had grids of their own.
+/// The grid a gallery drops its cards into, so column widths, spacing, alignment and height
+/// match everywhere.
 struct ResourceCardGrid<Content: View>: View {
     @ViewBuilder var content: Content
     @State private var cardHeight: CGFloat = 0

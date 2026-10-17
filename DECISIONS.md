@@ -2412,12 +2412,51 @@ the thing is and what it is doing in the same space.
 9. **The other sections follow** in the same pattern: Machines, Images, Volumes, Networks.
    Until each does, its table stands. Containers only in this change.
 
+**All five sections, 2026-10-17 (later the same day).** Machines, Images, Volumes and Networks
+now use the same rows, so point 9 is done and no list in those five is a table. Each keeps its
+toolbar, filter, Cards and actions; the Sort menu offers the keys its table sorted on, default
+name, ties on name. What each row says:
+- *Machines:* the state dot; the name, a `default` chip, tags; image · CPUs · memory · IP. No
+  live figures: `machine ls` reports allocation, not use.
+- *Images:* the reference as typed (`nginx:alpine`, Docker Hub's prefix left off), an `in use`
+  chip naming the containers on that Mac that use it, and the host; size · created · platform ·
+  short digest. Images still have no tags (Q19).
+- *Volumes:* the name, tags, host; format · capacity (labelled so: it is the size asked for, not
+  the size used) · "on 2 of 3 hosts" · created. The driver is omitted while it is `local`, the
+  only one `volume create` can make; it is still a sort key.
+- *Networks:* the name, `built-in`, tags, host; mode · subnet · gateway · "on N of M hosts".
+
+The three sections with no lifecycle carry their sidebar glyph where Containers and Machines
+carry a state dot, in the same 32pt slot, so a name starts at the same x in every list. A right-click
+on several rows offers what the bulk bar offers, rather than the menu of an arbitrary one of them,
+which is what the tables did.
+
 *17 October, Hosts, Registries, DNS and Clusters follow* (Dave, same pattern, no change to
 `ResourceRow`'s look). Hosts' second line is hardware, versions and counts, with its Update and
 Install-`container` links moved onto the first line as chips; Registries, DNS and Clusters say
 what their table columns said. Each has a Sort menu over the old sortable columns. Logs stays a
 table (Q19), as do the Overview's Hosts and the in-page panels. The DNS zones setup screen is a
 form, not a list.
+
+*Amended 17 October (evening), Kamal's call — this amends Q2's "cards remain an alternate toggle"
+and points 5–7 above.* **Cards are scrapped in every section:** no Rows/Cards toggle, one view per
+list section (the rows); `ContainerCard`, `GroupCard` and every card grid are deleted, and
+`ResourceCard` survives only as the Suggestions galleries' card, because a gallery is cards.
+**The checkboxes come back in all nine sections** (Containers with group members, Machines,
+Images, Volumes, Networks, Hosts, Registries, DNS, Clusters): a leading box on every row toggles
+that row in the *same* selection the list uses, so ⌘-click, ⇧-click and ⌘A tick boxes and a tick
+adds without clearing; the toolbar leads with a select-all box over the rows on screen, mixed when
+some are selected; a row that cannot be acted on in bulk (a built-in network, This Mac, a group
+member not yet created, a Hosts group heading) keeps a disabled, empty box with a help tag so the
+column lines up. The box is a real control inside the row — `ResourceRow` stays the labelled
+`.contain` element of 6a9979a (Dave, for Kyle's finding; this supersedes point 8's "one element,
+custom actions"), so VoiceOver reaches the box as "Select web", beside the row's own buttons and
+`⋮` menu, and no section supplies a separate action list; select-all reads "Select all volumes".
+The bulk bar now shows from **one** selected row, with the same actions as before (Clusters, which had none, gains a confirmed
+Delete), and all nine share one Sort menu (`RowSortMenu` over typed `RowSortKey` enums). **A running
+container's CPU sparkline moves into its row,** beside "CPU n%", from the same `StatsSampler`
+history the cards drew and hidden from VoiceOver; Machines have none, because `machine ls` reports
+allocation, not use.
 
 ## Q57 — The Recent activity strip is removed (settled 2026-10-17)
 

@@ -7,8 +7,8 @@ import FlotillaCore
 /// `ContainerCLI` or an argv directly.
 struct VolumesView: View {
     let model: AppModel
-    /// Owned by `MainWindowView` — see `ResourceUIState`. Search, sort and column visibility
-    /// have to outlive a trip to another section.
+    /// Owned by `MainWindowView` — see `ResourceUIState`. Search, sort and filter have to
+    /// outlive a trip to another section.
     let ui: ResourceUIState<HostedVolume>
 
     @State private var selection = Set<HostedVolume.ID>()
@@ -94,6 +94,11 @@ struct VolumesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshVolumes() }
+        // `actionable` already stops a hidden row from being acted on; this stops one from being
+        // counted. Filter, search and the data itself changing all move the visible set.
+        .onChange(of: visibleIDs) { _, ids in
+            selection.formIntersection(ids)
+        }
         // A volume asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -177,23 +182,12 @@ struct VolumesView: View {
                        matches: displayedVolumes.count,
                        updated: model.volumesLastRefresh,
                        leading: {
-            Toggle("", isOn: Binding(get: { allVisibleSelected },
-                                     set: { on in
-                                         if on { selection.formUnion(visibleIDs) }
-                                         else { selection.subtract(visibleIDs) }
-                                     }))
-                .labelsHidden()
-                .disabled(ui.presentation != .list || visibleIDs.isEmpty)
-                .accessibilityLabel(allVisibleSelected ? "Deselect all volumes" : "Select all volumes")
-                .help(ui.presentation != .list ? "Switch to list view to select"
-                      : allVisibleSelected ? "Deselect all" : "Select all \(visibleIDs.count)")
-
-            ResourceListControls<HostedVolume>(
-                presentation: Binding(get: { ui.presentation }, set: { ui.presentation = $0 }),
+            ResourceListControls(
+                selection: $selection,
+                selectable: displayedVolumes.map(\.id),
+                noun: "volumes",
+                sort: ui.sortMenu(default: SortKey.name),
                 filterID: Binding(get: { ui.filterID }, set: { ui.filterID = $0 }),
-                columnCustomization: Binding(get: { ui.columnCustomization },
-                                             set: { ui.columnCustomization = $0 }),
-                columns: Self.columnSpecs,
                 filters: volumeFilters,
                 hostFilter: Binding(get: { ui.hostFilter }, set: { ui.hostFilter = $0 }),
                 hosts: hostChoices)
@@ -286,7 +280,7 @@ struct VolumesView: View {
             }
         }
 
-        return volumes.sorted(using: ui.sortOrder)
+        return volumes.sorted(using: sortKey.comparators(ascending: ui.sortAscending))
     }
 
     private var visibleIDs: Set<HostedVolume.ID> { Set(displayedVolumes.map(\.id)) }
@@ -304,22 +298,6 @@ struct VolumesView: View {
     /// Deleting the volume whose detail is open goes back to the list, as in Containers.
     private func leaveDetailIfShowing(_ row: HostedVolume) {
         if detailTarget?.id == row.detailKey { detailTarget = nil }
-    }
-
-    private func selectionToggle(for id: HostedVolume.ID) -> some View {
-        let isOn = Binding<Bool>(
-            get: { selection.contains(id) },
-            set: { on in
-                if on { selection.insert(id) } else { selection.remove(id) }
-            })
-        return Toggle("", isOn: isOn)
-            .labelsHidden()
-            .accessibilityLabel("Select \(id)")
-            .help("Select \(id)")
-    }
-
-    private var allVisibleSelected: Bool {
-        !visibleIDs.isEmpty && visibleIDs.isSubset(of: selection)
     }
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .volume) }
@@ -341,14 +319,10 @@ struct VolumesView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // The row already owns a delete button; this band appears only when it can delete more
-        // than one row in a single action.
-        if actionable.count > 1 {
-            HStack(spacing: 12) {
-                Text("\(actionable.count) selected")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
+        // selection made on purpose, and this is where it is acted on.
+        if !actionable.isEmpty {
+            BulkActionBar(title: "\(actionable.count) selected") {
                 // Tags first in the cluster, before the lifecycle controls, and separated by a
                 // divider: it is the one action here that changes nothing about what the
                 // selection *is*. Same menu the row offers, asking the three-state question a
@@ -364,9 +338,6 @@ struct VolumesView: View {
                     confirmingBulkDelete = true
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
         }
     }
 
@@ -384,6 +355,8 @@ struct VolumesView: View {
                 systemImage: "exclamationmark.triangle",
                 description: Text(reason)
             )
+            // Every branch fills the pane, so none can size the stack to its content.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded where displayedVolumes.isEmpty:
             // Filtered-empty and genuinely-empty are different states, and this used to test
@@ -413,17 +386,40 @@ struct VolumesView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .loaded:
-            if ui.presentation == .list { table } else { cards }
+            rowsList
         }
     }
 
-    private static let columnSpecs: [(id: String, title: String)] = [
-        ("tags", "Tags"),
-        ("format", "Format"), ("driver", "Driver"), ("size", "Capacity"), ("created", "Created"),
-        ("host", "Host"), ("spread", "On hosts"),
-    ]
+    /// What the Sort menu orders the rows by — one per column the old table sorted on ("On hosts"
+    /// never sorted). Ties break on name, then host, so two Macs' `data` keep a stable order.
+    enum SortKey: String, RowSortKey, Identifiable {
+        case name = "Name"
+        case format = "Format"
+        case driver = "Driver"
+        case capacity = "Capacity"
+        case created = "Created"
+        case host = "Host"
+        var id: Self { self }
+
+        func comparators(ascending: Bool) -> [KeyPathComparator<HostedVolume>] {
+            let order: SortOrder = ascending ? .forward : .reverse
+            let ties = [KeyPathComparator(\HostedVolume.name), KeyPathComparator(\HostedVolume.hostName)]
+            switch self {
+            case .name: return [KeyPathComparator(\HostedVolume.name, order: order), ties[1]]
+            case .format: return [KeyPathComparator(\HostedVolume.formatSortKey, order: order)] + ties
+            case .driver: return [KeyPathComparator(\HostedVolume.driverSortKey, order: order)] + ties
+            case .capacity: return [KeyPathComparator(\HostedVolume.sizeSortKey, order: order)] + ties
+            case .created: return [KeyPathComparator(\HostedVolume.creationSortKey, order: order)] + ties
+            case .host: return [KeyPathComparator(\HostedVolume.hostName, order: order)] + ties
+            }
+        }
+    }
+
+    /// The Sort menu's choice; Name until one is made.
+    private var sortKey: SortKey { ui.sortKey(default: .name) }
 
     /// Prefix for a label filter's id, e.g. `label:team=infra`. Namespaced against
     /// `VolumeAgeBucket.filterID` so the two facets sharing one `filterID` string can never
@@ -505,149 +501,115 @@ struct VolumesView: View {
         return .older
     }
 
-    private var cards: some View {
-        ResourceCardGrid {
-            ForEach(displayedVolumes) { row in
-                let volume = row.volume
-                ResourceCard(
-                    title: volume.name,
-                    fields: [("Format", volume.configuration.format),
-                             ("Driver", volume.configuration.driver),
-                             ("Size", volume.sizeInBytes.map(Self.byteCount)),
-                             ("Created", RelativeDate.relative(volume.configuration.creationDate))]
-                        // Named only when there is more than one Mac to tell apart.
-                        + (hostChoices.count > 1 ? [("Host", row.hostName)] : []),
-                    tags: model.tags.tags(on: .volume, row.detailKey),
-                    // The card title opens the detail, so the list/cards toggle does not change
-                    // what you can reach.
-                    onOpen: { open(row) }
-                ) {
-                    rowActions(for: row)
-                }
-                .contextMenu { menu(for: row) }
-            }
-        }
-    }
-
-    /// A `Table`, matching Containers and Machines.
+    /// Two-line rows (Q56), in Containers' shape: the name, its tags and another Mac's chip, then
+    /// the format, the capacity, how far it has been pushed, and its age.
     ///
-    /// This was a `List` of two-line rows with the metadata crammed into a caption line —
-    /// readable for three volumes, useless for thirty, and not sortable by anything. The owner asked
-    /// for the sections to look the same, and the deeper reason is that they *are* the same kind
-    /// of screen: a list of named things with attributes you want to sort and compare.
+    /// No state dot. A volume has no lifecycle — it exists or it does not — so the leading slot
+    /// carries the section's glyph, the same on every row, rather than a dot that always said the
+    /// same thing.
     ///
-    /// No state column. A volume has no lifecycle — it exists or it does not — so a dot would be
-    /// a decoration that always said the same thing.
-    private var table: some View {
-        SwiftUI.Table(displayedVolumes,
-                      selection: $selection,
-                      sortOrder: Binding(get: { ui.sortOrder }, set: { ui.sortOrder = $0 }),
-                      columnCustomization: Binding(get: { ui.columnCustomization },
-                                                   set: { ui.columnCustomization = $0 })) {
-            TableColumn(Text(Image(systemName: "checkmark.square")).font(.system(size: 9)).accessibilityLabel("Selection")) { row in
-                selectionToggle(for: row.id)
-            }
-            .width(min: 28, ideal: 30, max: 34)
-
-            TableColumn("Name", value: \.name) { row in
-                // The name is the way in, as it is in every other table. It was plain text here,
-                // so the only route to a volume's record was a menu item that opened a sheet.
-                Button(row.name) { open(row) }
-                    .buttonStyle(.link)
-                    .foregroundStyle(Theme.rowName(selected: selection.contains(row.id)))
-                    .lineLimit(1)
-                    .help("Open \(row.name)\(onHost(row))")
-            }
-            .width(min: 160, ideal: 240)
-
-            // Next to the name, the way Finder puts a tag beside a filename: the whole point is
-            // that you recognise the row without reading it, which only works if the pill is
-            // where your eye already is.
-            //
-            // Unsorted, deliberately. `TableColumn`'s sort takes a key path on the **row**, and a
-            // row's tags live in `TagStore`, not on the model — so a sortable column here would
-            // mean denormalising the user's tags onto the runtime's own types. Hideable instead,
-            // through the same column menu every other column uses.
-            TableColumn("Tags") { row in
-                TagPillRow(tags: model.tags.tags(on: .volume, row.detailKey), compact: true)
-            }
-            .width(min: 60, ideal: 130)
-            .customizationID("tags")
-
-            TableColumn("Format", value: \.formatSortKey) { row in
-                Text(row.volume.configuration.format ?? "—").foregroundStyle(.secondary)
-                    .help("Filesystem inside the volume")
-            }
-            .width(min: 70, ideal: 84)
-            .customizationID("format")
-
-            TableColumn("Driver", value: \.driverSortKey) { row in
-                Text(row.volume.configuration.driver ?? "—").foregroundStyle(.secondary)
-                    .help("What stores the volume")
-            }
-            .width(min: 70, ideal: 90)
-            .customizationID("driver")
-
-            // **Capacity, not usage**, and the header says so now. `volume list` reports the
-            // size the volume was *created* with: a volume made with `--size 64M` reports
-            // exactly 67,108,864 bytes, and one made with no size at all reports 549,755,813,888
-            // — the 512 GiB default. Measured 2026-09-12: those same two volumes occupy 2.2 MB
-            // and 66 MB on disk, and `system df` agrees with `du`, not with this field.
-            //
-            // Calling it "Size" put "549.76 GB" in a column on a Mac with nothing like that
-            // free, next to a dashboard total of 141.1 MB for every volume together. Both
-            // numbers were right; one of them was answering a different question.
-            //
-            // There is no per-volume *usage* to show instead — `system df` gives one total for
-            // all volumes and the CLI offers nothing finer — so the honest fix is the label.
-            TableColumn("Capacity", value: \.sizeSortKey) { row in
-                Text(row.volume.sizeInBytes.map(Self.byteCount) ?? "—")
-                    .monospacedDigit().foregroundStyle(.secondary)
-                    .help("The size this volume was created with, not what it is using")
-            }
-            .width(min: 74, ideal: 90)
-            .customizationID("size")
-
-            TableColumn("Created", value: \.creationSortKey) { row in
-                Text(RelativeDate.relative(row.volume.configuration.creationDate))
-                    .foregroundStyle(.secondary)
-                    .help(RelativeDate.absolute(row.volume.configuration.creationDate))
-            }
-            .width(min: 80, ideal: 104)
-            .customizationID("created")
-
-            // Which Mac the volume is on, as in Containers and Images.
-            TableColumn("Host", value: \.hostName) { row in
-                HostCell(name: row.hostName, staleSince: row.staleSince)
-            }
-            .width(min: 80, ideal: 110)
-            .customizationID("host")
-
-            // How far This Mac's volume has been pushed (PLAN.md Phase D), and any drift.
-            TableColumn("On hosts") { row in
-                if row.host.isLocal { SpreadCell(spread: model.spread(of: row.volume)) }
-            }
-            .width(min: 70, ideal: 96)
-            .customizationID("spread")
-
-            TableColumn("Actions") { row in
-                rowActions(for: row)
-            }
-            .width(min: 78, ideal: 88)
+    /// This section was two-line rows once before, and became a table because those rows could not
+    /// be sorted and crammed everything into one caption. The Sort menu is what that version lacked,
+    /// and the second line now says only what tells one row from the next.
+    private var rowsList: some View {
+        List(displayedVolumes, selection: $selection) { row in
+            listRow(row)
+                // The row paints its own padding, so its hover wash and the list's selection fill
+                // reach the same edges.
+                .listRowInsets(EdgeInsets())
         }
-        .frame(maxHeight: .infinity)
+        .listStyle(.inset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // On the List, not on a row: this one hands back every selected id.
         .contextMenu(forSelectionType: HostedVolume.ID.self) { ids in
-            if let row = displayedVolumes.first(where: { ids.contains($0.id) }) {
-                menu(for: row)
-            }
+            rowContextMenu(for: ids)
         } primaryAction: { ids in
-            // Double-click opens the detail, as it does in Containers and Machines — but only
-            // when the activation names exactly one row. `ids` is a `Set`, so with several
-            // selected `first` is an arbitrary member, and opening the wrong volume is worse
-            // than opening none.
+            // Double-click opens the detail — but only when the activation names exactly one
+            // row. `ids` is a `Set`, so with several selected `first` is an arbitrary member,
+            // and opening the wrong volume is worse than opening none.
             guard ids.count == 1, let row = displayedVolumes.first(where: { ids.contains($0.id) })
             else { return }
             open(row)
+        }
+    }
+
+    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`. No live
+    /// figures — `volume list` reports none — so the metrics slot is empty and takes no width.
+    private func listRow(_ row: HostedVolume) -> some View {
+        ResourceRow(
+            title: row.name,
+            opens: { open(row) },
+            openHelp: "Open \(row.name)\(onHost(row))",
+            detail: detailParts(row).joined(separator: " · "),
+            selected: selection.contains(row.id),
+            check: RowCheck(row.id, in: $selection),
+            summary: rowSummary(row),
+            reservesMetrics: false,
+            leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.volumes.systemImage) } },
+            chips: {
+                HStack(spacing: 4) {
+                    TagPillRow(tags: model.tags.tags(on: .volume, row.detailKey), compact: true)
+                    if !row.host.isLocal {
+                        HostCell(name: row.hostName, staleSince: row.staleSince)
+                            .chipStyle()
+                            .fixedSize()
+                    }
+                }
+            },
+            metrics: { EmptyView() },
+            actions: { rowActions(for: row) })
+    }
+
+    /// Format · capacity · on N hosts · created, each only when there is one.
+    ///
+    /// **Capacity, and it says so.** `volume list` reports the size the volume was *created* with:
+    /// one made with `--size 64M` reports exactly 67,108,864 bytes, and one made with no size at all
+    /// 549,755,813,888 — the 512 GiB default. Measured 2026-09-12: those two occupy 2.2 MB and
+    /// 66 MB on disk, and `system df` agrees with `du`, not with this field. A bare "549.76 GB"
+    /// beside a dashboard total of 141.1 MB is answering a different question, and the CLI has no
+    /// per-volume usage to show instead, so the honest fix is the word.
+    ///
+    /// The **driver** is left off unless it is not `local`: `volume create` has no
+    /// `--driver`, so it is the same word on every row this app can make, and "a column identical
+    /// in every row is pure width" holds for a line just as well. It stays a sort key.
+    /// "On N hosts" is This Mac's volume only, and only once a host has answered — the rule the
+    /// On hosts column followed.
+    private func detailParts(_ row: HostedVolume) -> [String] {
+        let configuration = row.volume.configuration
+        var parts: [String] = []
+        if let driver = configuration.driver, driver != "local" { parts.append(driver) }
+        if let format = configuration.format { parts.append(format) }
+        if let size = row.volume.sizeInBytes { parts.append(Self.byteCount(size) + " capacity") }
+        if row.host.isLocal, let spread = model.spread(of: row.volume).rowText { parts.append(spread) }
+        let created = RelativeDate.relative(configuration.creationDate, prefix: "created")
+        if created != "—" { parts.append(created) }
+        return parts
+    }
+
+    /// What VoiceOver reads for the row: "pg-data, volume, ext4, 2 GB capacity, …".
+    private func rowSummary(_ row: HostedVolume) -> String {
+        var parts = [row.name, "volume"] + detailParts(row)
+        let tags = model.tags.tags(on: .volume, row.detailKey).map(\.name)
+        if !tags.isEmpty { parts.append("tags " + tags.joined(separator: ", ")) }
+        if !row.host.isLocal { parts.append("on " + row.hostName) }
+        return parts.joined(separator: ", ")
+    }
+
+    /// The right-click: the row's own menu for one row, the bulk bar's Delete for several, and the
+    /// "+" menu on empty space. The table this replaced offered the menu of `ids.first` for any
+    /// selection — an arbitrary member.
+    @ViewBuilder
+    private func rowContextMenu(for ids: Set<HostedVolume.ID>) -> some View {
+        if ids.isEmpty {
+            addMenuItems
+        } else if ids.count == 1, let row = displayedVolumes.first(where: { ids.contains($0.id) }) {
+            menu(for: row)
+        } else {
+            Button("Delete \(ids.count) Volumes…", role: .destructive) {
+                selection = ids            // so the confirmation counts what was right-clicked
+                confirmingBulkDelete = true
+            }
+            .disabled(model.isAnyBusy(ids, kind: .volume))
         }
     }
 

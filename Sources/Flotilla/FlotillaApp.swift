@@ -11,8 +11,8 @@ import FlotillaCore
 /// Shape per `DECISIONS.md` and the approved mockups in `research/review/mockups/`:
 /// - the **menu-bar popover is a glance**, not the product — status, quick start/stop, and a
 ///   way into the real window. No text entry, no destructive confirmations.
-/// - the **main window is the product** — a cross-host container **table** (Q2: table is the
-///   default, cards are a toggle).
+/// - the **main window is the product** — a cross-host container list (Q2, amended by Q56: two-line
+///   rows, the only view since Cards was scrapped).
 /// - appearance is **chosen at first run**, `auto` pre-selected — so nothing here hardcodes a
 ///   `preferredColorScheme`; the system value is honoured until the user picks.
 /// Run as a bare SwiftPM executable there is no app bundle and no Info.plist, so AppKit

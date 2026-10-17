@@ -1,18 +1,6 @@
 import SwiftUI
 import FlotillaCore
 
-/// List / Cards, per section.
-enum ResourcePresentation: String, CaseIterable, Identifiable {
-    case list = "List", cards = "Cards"
-    var id: Self { self }
-    var systemImage: String {
-        switch self {
-        case .list: "list.bullet"
-        case .cards: "square.grid.2x2"
-        }
-    }
-}
-
 /// One choice in a section's filter. `id` is what gets stored, so it must be stable.
 struct ResourceFilterOption: Identifiable, Hashable {
     let id: String
@@ -20,27 +8,30 @@ struct ResourceFilterOption: Identifiable, Hashable {
     let systemImage: String
 }
 
-/// The view switcher, columns picker and filter that sit to the left of a section's search
-/// field — the cluster Containers and Machines already had and the other three did not.
+/// The cluster at the left of a section's toolbar, in every section on rows that shares
+/// `ResourceUIState`: the select-all box, the Sort menu, then the filter. Containers and Machines
+/// lay out the same three from their own state.
 ///
-/// Shared rather than copied three more times. Parity that lives in five files is parity
-/// somebody has to remember, and this project has already lost that bet: switching to Cards once
-/// silently cost the Copy menu because its definition was private to one view.
+/// Shared rather than copied, because parity that lives in several files is parity somebody has to
+/// remember, and this project has already lost that bet: switching to Cards once silently cost the
+/// Copy menu because its definition was private to one view. Since 17 October there is no view
+/// switcher (Cards is gone, Q56) and no Columns button (rows have no columns).
 ///
 /// **The filter hides itself when there is nothing to choose between.** Options are derived from
 /// the data on screen, so a volumes list where every volume has the same driver shows no filter
 /// at all rather than a control whose every setting returns the same rows. A control that drives
 /// nothing is the failure this project keeps re-learning, and "consistency" is not a reason to
 /// ship one — the sections look the same when the data makes the same controls meaningful.
-struct ResourceListControls<Row: Identifiable>: View {
-    @Binding var presentation: ResourcePresentation
+struct ResourceListControls<ID: Hashable, Key: RowSortKey>: View {
+    /// The list's selection, for the select-all box.
+    @Binding var selection: Set<ID>
+    /// The rows on screen a bulk action can take, in list order.
+    let selectable: [ID]
+    /// The plural noun the select-all box names: "Select all volumes".
+    let noun: String
+    /// `ResourceUIState.sortMenu(default:)`.
+    let sort: RowSortMenu<Key>
     @Binding var filterID: String
-    /// Optional since the two-line rows (Q56): a section with no table has no columns to hide, and
-    /// leaves both out, which also leaves out the Columns button.
-    var columnCustomization: Binding<TableColumnCustomization<Row>>? = nil
-
-    /// `(id, title)` per hideable column, in the order the popover should list them.
-    var columns: [(id: String, title: String)] = []
     /// Empty, or **two or more** genuine choices. One choice is not a filter.
     let filters: [ResourceFilterOption]
     /// The Host section of the filter (PLAN.md Phase C): offered when there is a host to choose.
@@ -49,32 +40,13 @@ struct ResourceListControls<Row: Identifiable>: View {
 
     private var offersHosts: Bool { hostFilter != nil && hosts.count > 1 }
 
-    @State private var showingColumns = false
     @State private var showingFilter = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Picker("View", selection: $presentation) {
-                ForEach(ResourcePresentation.allCases) { option in
-                    Label(option.rawValue, systemImage: option.systemImage)
-                        .labelStyle(.iconOnly)
-                        .accessibilityLabel("\(option.rawValue) view")
-                        .help("\(option.rawValue) view")
-                        .tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            SelectAllCheckbox(selection: $selection, ids: selectable, noun: noun)
 
-            if columnCustomization != nil, !columns.isEmpty {
-                IconActionButton(systemImage: "rectangle.split.3x1", label: "Columns",
-                                 help: presentation == .list ? "Show or hide columns"
-                                                             : "Columns apply to the list view only",
-                                 // Cards have no columns to configure.
-                                 disabled: presentation != .list) { showingColumns.toggle() }
-                    .popover(isPresented: $showingColumns, arrowEdge: .bottom) { columnsPopover }
-            }
+            sort
 
             if filters.count > 1 || offersHosts {
                 IconActionButton(systemImage: "line.3.horizontal.decrease",
@@ -95,13 +67,6 @@ struct ResourceListControls<Row: Identifiable>: View {
             parts.append("on " + name)
         }
         return parts.isEmpty ? "Filter this list" : "Showing " + parts.joined(separator: ", ") + " only"
-    }
-
-    @ViewBuilder
-    private var columnsPopover: some View {
-        if let columnCustomization {
-            ColumnVisibilityList(columns: columns, customization: columnCustomization)
-        }
     }
 
     private var filterPopover: some View {

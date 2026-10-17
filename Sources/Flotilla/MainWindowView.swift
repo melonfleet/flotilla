@@ -19,39 +19,27 @@ struct MainWindowView: View {
 
     /// Owned here, not in `ContainersView`. This view is the window's root and is built
     /// once; the detail views are destroyed and recreated on every sidebar change, so any
-    /// `@State` they hold is lost. Keeping the containers screen's columns, sort, filter and
+    /// `@State` they hold is lost. Keeping the containers screen's sort, filter and
     /// search here is what makes them survive a trip to Images and back.
     @State private var containersUI = ContainersUIState()
 
     /// Same reasoning as `containersUI`, and owned here for the same reason — `MachinesView`
     /// is rebuilt from scratch on every sidebar change.
     @State private var machinesUI = MachinesUIState()
-    @State private var clustersUI = ResourceUIState<HostedCluster>(
-        sortOrder: [KeyPathComparator(\HostedCluster.name)])
     @State private var activityUI = ActivityUIState()
     @State private var logsUI = LogsUIState()
     /// Notifications' filter, here for the reason the others are: the box shows it on the way back.
     @State private var notificationsSearch = PageSearchText()
 
-    /// Volumes, Networks and Images share one generic state type — see `ResourceUIState`.
-    @State private var volumesUI = ResourceUIState<HostedVolume>(
-        sortOrder: [KeyPathComparator(\HostedVolume.name)])
-    @State private var networksUI = ResourceUIState<HostedNetwork>(
-        sortOrder: [KeyPathComparator(\HostedNetwork.name)])
-    @State private var imagesUI = ResourceUIState<HostedImage>(
-        sortOrder: [KeyPathComparator(\HostedImage.reference)])
-    @State private var registriesUI = ResourceUIState<RegistryRow>(
-        sortOrder: [KeyPathComparator(\RegistryRow.nameSortKey)])
-    @State private var dnsUI = ResourceUIState<HostedDNS>(
-        sortOrder: [KeyPathComparator(\HostedDNS.nameSortKey)])
-    @State private var hostsUI = ResourceUIState<HostRow>(
-        sortOrder: [KeyPathComparator(\HostRow.nameSortKey)])
-    /// Hosts, Registries, DNS and Clusters are two-line rows (Q56): a Sort menu, not column
-    /// headers, so their sort is a key and a direction. By name, like Containers.
-    @State private var hostsSort = RowSortState(key: "name")
-    @State private var registriesSort = RowSortState(key: "name")
-    @State private var dnsSort = RowSortState(key: "name")
-    @State private var clustersSort = RowSortState(key: "name")
+    /// The sections on two-line rows share one generic state type — see `ResourceUIState`. Each
+    /// is sorted by name until its Sort menu says otherwise (Q56).
+    @State private var volumesUI = ResourceUIState<HostedVolume>()
+    @State private var networksUI = ResourceUIState<HostedNetwork>()
+    @State private var imagesUI = ResourceUIState<HostedImage>()
+    @State private var registriesUI = ResourceUIState<RegistryRow>()
+    @State private var dnsUI = ResourceUIState<HostedDNS>()
+    @State private var hostsUI = ResourceUIState<HostRow>()
+    @State private var clustersUI = ResourceUIState<HostedCluster>()
 
     @State private var selection: Section? = .overview
     /// What the sidebar's `List` highlights, kept apart from `selection` so a click can be *asked
@@ -290,23 +278,23 @@ struct MainWindowView: View {
             OverviewView(model: model) { navigate(to: $0) }
         case .hosts:
             // Each host's landing page is the per-Mac dashboard (6 October).
-            HostsView(model: model, ui: hostsUI, sort: hostsSort) { navigate(to: $0) }
+            HostsView(model: model, ui: hostsUI) { navigate(to: $0) }
         case .containers:
             ContainersView(model: model, ui: containersUI)
         case .images:
             ImagesView(model: model, ui: imagesUI)
         case .registries:
-            RegistriesView(model: model, ui: registriesUI, sort: registriesSort)
+            RegistriesView(model: model, ui: registriesUI)
         case .volumes:
             VolumesView(model: model, ui: volumesUI)
         case .networks:
             NetworksView(model: model, ui: networksUI)
         case .dns:
-            DNSView(model: model, ui: dnsUI, sort: dnsSort)
+            DNSView(model: model, ui: dnsUI)
         case .machines:
             MachinesView(model: model, ui: machinesUI)
         case .clusters:
-            ClustersView(model: model, ui: clustersUI, sort: clustersSort)
+            ClustersView(model: model, ui: clustersUI)
         case .settings:
             SettingsView(model: model)
         case .notifications:
@@ -407,15 +395,10 @@ struct MainWindowView: View {
         // when there is only This Mac, where it would read "This Mac" on every row. Applied only
         // when that changes, so hiding or showing it by hand in between is left alone.
         .onChange(of: model.hostMode.trustedHosts.isEmpty, initial: true) { _, thisMacOnly in
-            let visibility: Visibility = thisMacOnly ? .hidden : .visible
-            imagesUI.columnCustomization[visibility: "host"] = visibility
-            volumesUI.columnCustomization[visibility: "host"] = visibility
-            networksUI.columnCustomization[visibility: "host"] = visibility
-            dnsUI.columnCustomization[visibility: "host"] = visibility
-            logsUI.columnCustomization[visibility: "host"] = visibility
-            // On hosts says nothing with no hosts, so it follows the same rule.
-            volumesUI.columnCustomization[visibility: "spread"] = visibility
-            networksUI.columnCustomization[visibility: "spread"] = visibility
+            // Logs is the one table left (Q19). The sections on two-line rows (Q56) have no Host
+            // column: their rows carry a host chip only for another Mac's row, which says the same
+            // thing without the setting.
+            logsUI.columnCustomization[visibility: "host"] = thisMacOnly ? .hidden : .visible
         }
         // The search box's dropdown (Q55), hung under the field in the window bar and over the page.
         // Here rather than in `WindowBar`, whose 52pt would clip it. The page stays live under it —

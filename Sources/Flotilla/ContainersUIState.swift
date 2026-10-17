@@ -5,8 +5,8 @@ import FlotillaCore
 ///
 /// `NavigationSplitView`'s detail switches on the sidebar selection, so moving to Images and
 /// returning destroys `ContainersView` and builds a new one. Anything held in its `@State`
-/// resets — which silently threw away the user's column choices, sort order, filter tab and
-/// search text every time they looked at another section.
+/// resets — which silently threw away the user's sort order, filter and search text every time
+/// they looked at another section.
 ///
 /// The Docker Desktop study is what surfaced this: Docker shipped the same class of bug
 /// (hidden columns re-enabling themselves, `docker/for-mac#6391`) and he flagged our surface
@@ -21,7 +21,6 @@ import FlotillaCore
 @Observable
 final class ContainersUIState {
 
-    var presentation: ContainersView.Presentation = .list
     var filter: ContainersView.Filter = .all
     /// Groups, containers or both — the merged list's second filter (5 October). `.containers`
     /// lists every container flat, which is what this screen showed before groups joined it.
