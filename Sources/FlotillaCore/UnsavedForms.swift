@@ -64,3 +64,40 @@ public struct UnsavedForms: Sendable, Equatable {
         return "Discard your changes to \(list)?"
     }
 }
+
+extension UnsavedForms {
+    /// One string for a form's fields, for comparing against the one taken when it opened.
+    ///
+    /// Length-prefixed rather than joined on a separator, so no two field lists can collide: a
+    /// separator character typed into a field — a newline in a multi-line one — would otherwise
+    /// let "ab" + "c" read the same as "a" + "bc", and an edit go unnoticed.
+    public static func signature(_ fields: [String]) -> String {
+        fields.map { "\($0.utf8.count):\($0)" }.joined()
+    }
+}
+
+extension GroupMember {
+    /// The Add Service / Edit Service screen's edit signature: every field it edits or carries, as
+    /// the user typed it.
+    ///
+    /// The text, not the parsed member: a half-typed `sh -c 'echo` does not split, parses to no
+    /// command at all, and would read as untouched on a service that had none.
+    public static func editSignature(name: String, image: String, ports: String, env: String,
+                                     volumes: String, command: String, cpus: String,
+                                     memory: String, readyPort: String,
+                                     secretEnv: [SecretEnv]) -> String {
+        UnsavedForms.signature([name, image, ports, env, volumes, command, cpus, memory, readyPort]
+                               + secretEnv.flatMap { [$0.name, $0.secret] })
+    }
+
+    /// The signature of this member as the service screen first shows it — which is also what the
+    /// group's own signature compares per member, so a service saved with only its environment
+    /// changed still leaves the group with something to lose.
+    public var editSignature: String {
+        Self.editSignature(name: name, image: image,
+                           ports: ports.joined(separator: "\n"), env: env.joined(separator: "\n"),
+                           volumes: volumes.joined(separator: "\n"), command: ShellWords.join(command),
+                           cpus: cpus.map(String.init) ?? "", memory: memory ?? "",
+                           readyPort: readyPort.map(String.init) ?? "", secretEnv: secretEnv)
+    }
+}

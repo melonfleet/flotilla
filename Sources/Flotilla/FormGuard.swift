@@ -18,6 +18,11 @@ import FlotillaCore
 /// buttons, a click on a macOS notification, a `.flotilla` file opened from Finder, and Quit
 /// (`AppDelegate.applicationShouldTerminate`). A new way of changing section that skips this
 /// is the bug this type exists to stop.
+///
+/// **In-page links need nothing:** every `AppModel.request…` asks through `AppModel.present`, and
+/// `pendingSection` cannot be set from outside `AppModel`. The raw one-shot flags a section reads
+/// directly — `pendingRunPrefill` — are the exception: set one only inside `confirmLeaving`, as
+/// Greta's "Open in Run Form" does.
 @MainActor
 @Observable
 final class FormGuard {

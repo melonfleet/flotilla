@@ -9,7 +9,12 @@ import FlotillaCore
 /// pulls (the slow part, and the one that fails), then what other things refer to.
 extension AppModel {
 
+    /// Asks about an unsaved form before the panel, not after: the review screen replaces the section.
     func requestImport() {
+        present { self.chooseImportFile() }
+    }
+
+    private func chooseImportFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [Self.flotillaFileType, .json]
         panel.allowsMultipleSelection = false
@@ -20,7 +25,7 @@ extension AppModel {
 
     /// Opened from Finder (a double-clicked `.flotilla`).
     func openConfigurationFile(_ url: URL) {
-        configurationScreen = .importFile(url)
+        present { self.configurationScreen = .importFile(url) }
     }
 
     /// What this Mac has, for the review screen's clash check.

@@ -62,7 +62,7 @@ struct WindowBar: View {
                 BarGlass {
                     // Notifications (the owner, 10 October): a bell with how many need attention.
                     NotificationsToolbarButton(count: model.notices.attention.count) {
-                        model.formGuard.confirmLeaving { model.pendingSection = .notifications }
+                        model.requestSection(.notifications)
                     }
                     AppLinksMenu()
                     // Beside the gear, because it is the same kind of thing — an app-level
@@ -70,7 +70,7 @@ struct WindowBar: View {
                     AppearanceToggleButton(model: model)
                     SettingsToolbarButton {
                         // Through the model: `pendingSection` drives the window's selection.
-                        model.formGuard.confirmLeaving { model.pendingSection = .settings }
+                        model.requestSection(.settings)
                     }
                 }
             }

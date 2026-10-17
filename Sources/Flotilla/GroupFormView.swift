@@ -112,7 +112,9 @@ struct GroupFormView: View {
 
     private var editSignature: String {
         ([draft.name, draft.network ?? "", draft.place.token, pendingSecrets.keys.sorted().joined(separator: ",")]
-            + draft.members.map { "\($0.id)\u{2}\($0.name)\u{2}\($0.image)\u{2}\($0.ports.joined(separator: ","))" })
+            // Every field of every member: a service saved with only its environment changed must
+            // still leave the group with something to lose.
+            + draft.members.map { "\($0.id)\u{2}\($0.editSignature)" })
             .joined(separator: "\u{1}")
     }
 
@@ -498,6 +500,11 @@ struct GroupMemberFormView: View {
     @State private var cpus = ""
     @State private var memory = ""
     @State private var readyPort = ""
+    /// Its own, not the group's: the service's fields are not in the group's draft until Save, so
+    /// the group's tracker cannot see them. Through `FormHeader` this registers the service with
+    /// the window's guard like any form; Save and Back both take the screen away, and its
+    /// registration with it, leaving the group's own to say whether the group has changed.
+    @State private var edits = FormEditTracker()
 
     init(model: AppModel, member: GroupMember, isNew: Bool,
          problem: @escaping (String) -> String?,
@@ -527,7 +534,7 @@ struct GroupMemberFormView: View {
         VStack(spacing: 0) {
             FormHeader(title: isNew ? "Add Service" : "Edit Service",
                        systemImage: "shippingbox",
-                       hasUnsavedChanges: false,
+                       hasUnsavedChanges: edits.isDirty(editSignature),
                        onBack: onCancel)
             Divider()
             FormScaffold {
@@ -538,6 +545,14 @@ struct GroupMemberFormView: View {
             Divider()
             footer
         }
+        .onAppear { edits.open(editSignature) }
+    }
+
+    /// The fields as typed — see `GroupMember.editSignature(name:…)` for why not `built`.
+    private var editSignature: String {
+        GroupMember.editSignature(name: member.name, image: member.image, ports: ports, env: env,
+                                  volumes: volumes, command: command, cpus: cpus, memory: memory,
+                                  readyPort: readyPort, secretEnv: member.secretEnv)
     }
 
     private var form: some View {

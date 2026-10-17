@@ -1821,8 +1821,28 @@ final class AppModel {
     /// afterwards would be too late.
     let formGuard = FormGuard()
 
+    /// The one way a `request…` below changes what the window shows: through `formGuard`, so a
+    /// caller cannot forget to ask. It used to be each caller's job, and an in-form link — the stack
+    /// form's "Set Up a Domain…" — called `requestDNSForm()` bare and dropped the stack form's
+    /// edits (Kyle, 17 October). Synchronous when nothing is dirty, so a menu command's request
+    /// still lands before the window it opens reads it; nested inside a Discard it does not ask
+    /// again (`FormGuard.discarding`). Internal so the `request…` calls in other files —
+    /// `requestExport`, `requestImport` — use it too.
+    func present(_ change: @escaping () -> Void) {
+        formGuard.confirmLeaving(change)
+    }
+
     /// A section the popover asked the window to show. Cleared by `MainWindowView`.
-    var pendingSection: Section?
+    ///
+    /// `private(set)`: set through `requestSection` and the other guarded requests, never directly,
+    /// for the reason `present` gives; `takePendingSection` is the consumer's half.
+    private(set) var pendingSection: Section?
+
+    /// The pending section, cleared — for `MainWindowView`, which consumes it.
+    func takePendingSection() -> Section? {
+        defer { pendingSection = nil }
+        return pendingSection
+    }
     /// Whether the popover asked for the Run sheet. Cleared by `ContainersView`.
     var pendingRunSheet = false
     /// A notice to open in Notifications, from a click on its macOS notification. Cleared there.
@@ -1865,7 +1885,15 @@ final class AppModel {
     /// Opens the main window from outside SwiftUI; handed over by `MainWindowView`.
     @ObservationIgnored var openMainWindow: (() -> Void)?
 
-    func requestSection(_ section: Section) { pendingSection = section }
+    func requestSection(_ section: Section) { present { self.pendingSection = section } }
+
+    /// A notice to open in Notifications — a click on its macOS notification.
+    func requestNotice(_ id: String?) {
+        present {
+            self.pendingNotice = id
+            self.pendingSection = .notifications
+        }
+    }
     /// Ask a section to open one item's detail screen.
     ///
     /// Carries the subject as well as the section, because "show me `web`" and "show me
@@ -1891,10 +1919,12 @@ final class AppModel {
     /// Containers for `web`'s **Logs** tab, which is the whole point of clicking a source in an
     /// aggregated feed.
     func requestDetail(kind: ActivityKind, subject: String, tab: String? = nil) {
-        pendingSection = kind.section
-        pendingDetailKind = kind
-        pendingDetailSubject = subject
-        pendingDetailTab = tab
+        present {
+            self.pendingSection = kind.section
+            self.pendingDetailKind = kind
+            self.pendingDetailSubject = subject
+            self.pendingDetailTab = tab
+        }
     }
 
     var pendingDetailSubject: String?
@@ -1920,8 +1950,10 @@ final class AppModel {
 
     /// Ask the Machines section to open its create form. Mirrors `requestRunSheet`.
     func requestMachineForm() {
-        pendingSection = .machines
-        pendingMachineForm = true
+        present {
+            self.pendingSection = .machines
+            self.pendingMachineForm = true
+        }
     }
 
     var pendingMachineForm = false
@@ -1932,70 +1964,88 @@ final class AppModel {
     /// than presenting a second copy of the form from the app scene — two code paths to one
     /// screen is how they drift apart.
     func requestPullForm() {
-        pendingSection = .images
-        pendingPullForm = true
+        present {
+            self.pendingSection = .images
+            self.pendingPullForm = true
+        }
     }
 
     var pendingPullForm = false
 
     /// Ask the Images section to open its build form.
     func requestBuildForm() {
-        pendingSection = .images
-        pendingBuildForm = true
+        present {
+            self.pendingSection = .images
+            self.pendingBuildForm = true
+        }
     }
 
     var pendingBuildForm = false
 
     /// Ask the Volumes section to open its create form.
     func requestVolumeForm() {
-        pendingSection = .volumes
-        pendingVolumeForm = true
+        present {
+            self.pendingSection = .volumes
+            self.pendingVolumeForm = true
+        }
     }
 
     var pendingVolumeForm = false
 
     /// Ask the Networks section to open its create form.
     func requestNetworkForm() {
-        pendingSection = .networks
-        pendingNetworkForm = true
+        present {
+            self.pendingSection = .networks
+            self.pendingNetworkForm = true
+        }
     }
 
     var pendingNetworkForm = false
 
     /// Ask the Registries section to open its Add form.
     func requestRegistryForm() {
-        pendingSection = .registries
-        pendingRegistryForm = true
+        present {
+            self.pendingSection = .registries
+            self.pendingRegistryForm = true
+        }
     }
 
     var pendingRegistryForm = false
 
     /// Ask the DNS section to open its New Domain form.
     func requestDNSForm() {
-        pendingSection = .dns
-        pendingDNSForm = true
+        present {
+            self.pendingSection = .dns
+            self.pendingDNSForm = true
+        }
     }
 
     /// File ▸ New Group… — the group form in Containers.
     func requestGroupForm() {
-        pendingSection = .containers
-        pendingGroupForm = true
+        present {
+            self.pendingSection = .containers
+            self.pendingGroupForm = true
+        }
     }
 
     var pendingGroupForm = false
 
     /// File ▸ New Cluster….
     func requestClusterForm() {
-        pendingSection = .clusters
-        pendingClusterForm = true
+        present {
+            self.pendingSection = .clusters
+            self.pendingClusterForm = true
+        }
     }
 
     var pendingClusterForm = false
 
     /// File ▸ Suggestions ▸ …: a section's Suggestions gallery (Q28).
     func requestSuggestions(_ section: Section) {
-        pendingSection = section
-        pendingSuggestions = section
+        present {
+            self.pendingSection = section
+            self.pendingSuggestions = section
+        }
     }
 
     var pendingSuggestions: Section?
@@ -2055,31 +2105,39 @@ final class AppModel {
     var showingSupportBundle = false
 
     func requestSupportBundle() {
-        pendingSection = .settings
-        showingSupportBundle = true
+        present {
+            self.pendingSection = .settings
+            self.showingSupportBundle = true
+        }
     }
 
     /// Hosts' Add Host form, opened from Overview's Get started. One-shot, consumed by HostsView.
     var pendingAddHost = false
 
     func requestAddHost() {
-        pendingSection = .hosts
-        pendingAddHost = true
+        present {
+            self.pendingSection = .hosts
+            self.pendingAddHost = true
+        }
     }
 
     /// About is a sheet in Settings, opened from there or from the menu-bar menu.
     var showingAbout = false
 
     func requestAbout() {
-        pendingSection = .settings
-        showingAbout = true
+        present {
+            self.pendingSection = .settings
+            self.showingAbout = true
+        }
     }
 
     func requestRunSheet() {
         // Run lives on the containers screen, so ask for both — otherwise the sheet would
         // open behind whatever section happened to be selected.
-        pendingSection = .containers
-        pendingRunSheet = true
+        present {
+            self.pendingSection = .containers
+            self.pendingRunSheet = true
+        }
     }
 
     /// This Mac's short host name, for the popover's "This Mac" heading.

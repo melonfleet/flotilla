@@ -160,10 +160,7 @@ extension AppModel {
         case .dismiss:
             if notice != nil { notices.dismiss([id]) }
         case .open:
-            formGuard.confirmLeaving { [weak self] in
-                self?.pendingNotice = notice?.id
-                self?.pendingSection = .notifications
-            }
+            requestNotice(notice?.id)
             NSApp.activate(ignoringOtherApps: true)
             openMainWindow?()
         }

@@ -51,8 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first(where: { $0.pathExtension == ConfigurationFile.fileExtension }),
               let model = model ?? Self.pendingModel else { return }
-        // The review screen replaces whatever the window shows, a half-filled form included.
-        model.formGuard.confirmLeaving { model.openConfigurationFile(url) }
+        // The review screen replaces whatever the window shows, a half-filled form included, so
+        // `openConfigurationFile` asks first.
+        model.openConfigurationFile(url)
         NSApp.activate(ignoringOtherApps: true)
         Self.mainWindow?.makeKeyAndOrderFront(nil)
     }
@@ -331,7 +332,9 @@ private struct FlotillaCommands: Commands {
     ///
     /// Every one of these replaces what the window shows, so each asks `FormGuard` first. With no
     /// unsaved form the request still runs before the window opens; with one, the window is
-    /// brought forward and asks, and the request runs only on Discard.
+    /// brought forward and asks, and the request runs only on Discard. The `request…` calls also
+    /// ask for themselves (`AppModel.present`); nested inside this one they do not ask twice. This
+    /// one stays for "Go To…", which is not a request.
     private func present(_ request: @escaping () -> Void) {
         model.formGuard.confirmLeaving(request)
         NSApp.activate(ignoringOtherApps: true)

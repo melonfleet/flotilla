@@ -130,7 +130,7 @@ struct RuntimeStatusBand: View {
                 .disabled(!needsKernel)
 
             Divider()
-            Button("Settings…") { model.formGuard.confirmLeaving { model.pendingSection = .settings } }
+            Button("Settings…") { model.requestSection(.settings) }
 
             Divider()
             Button("Check for `container` Updates…") {

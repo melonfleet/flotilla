@@ -433,18 +433,16 @@ struct MainWindowView: View {
         } message: {
             Text("Your changes have not been saved. Leaving now loses them.")
         }
-        .onChange(of: model.pendingSection) { _, requested in
-            guard let requested else { return }
+        .onChange(of: model.pendingSection) { _, new in
+            guard new != nil, let requested = model.takePendingSection() else { return }
             // A menu request is for the form it names: an open Export or Import screen, which
             // sits over every section, would otherwise hide it.
             model.configurationScreen = nil
             selection = requested
-            model.pendingSection = nil
         }
         .onAppear {
-            if let requested = model.pendingSection {
+            if let requested = model.takePendingSection() {
                 selection = requested
-                model.pendingSection = nil
             }
             // For a click on a macOS notification, which arrives outside SwiftUI (Q48).
             model.openMainWindow = { [openWindow] in openWindow(id: "main") }

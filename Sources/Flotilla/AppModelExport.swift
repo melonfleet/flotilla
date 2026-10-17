@@ -102,8 +102,9 @@ extension AppModel {
         }
     }
 
+    /// Guarded: the export screen replaces the section, and any form on it.
     func requestExport() {
-        configurationScreen = .export
+        present { self.configurationScreen = .export }
     }
 }
 
