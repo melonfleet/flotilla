@@ -389,7 +389,6 @@ struct DNSFormView: View {
             Spacer()
             if isAdd {
                 FormCancelButton(token: formToken, action: dismiss)
-                    .keyboardShortcut(.cancelAction)
                 // "…" when something follows — the password prompt, or the restart warning.
                 Button(noPrompt && !(kind == .containers && useForContainers)
                        ? "Create" : "Create…", action: submit)

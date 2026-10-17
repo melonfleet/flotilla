@@ -547,7 +547,6 @@ struct RegistryFormView: View {
                 Spacer()
             }
             FormCancelButton(token: formToken, title: isAdd ? "Cancel" : "Done", action: dismiss)
-                .keyboardShortcut(.cancelAction)
             if canSignIn || isAdd {
                 Button(buttonTitle, action: submit)
                     .buttonStyle(.borderedProminent)

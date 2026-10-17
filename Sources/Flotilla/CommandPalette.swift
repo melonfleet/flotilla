@@ -106,7 +106,8 @@ struct CommandPalette: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        let shown = results
+        return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Go to a container, image, host… or an action", text: $query)
@@ -122,8 +123,9 @@ struct CommandPalette: View {
             Divider()
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        let shown = results
+                    // A plain VStack, not lazy: results are capped at 60, and a lazy stack's content
+                    // closure did not re-run as the query changed, leaving stale rows on screen.
+                    VStack(alignment: .leading, spacing: 2) {
                         if shown.isEmpty {
                             Text("Nothing matches “\(query)”.")
                                 .foregroundStyle(.secondary)
@@ -131,7 +133,6 @@ struct CommandPalette: View {
                         }
                         ForEach(Array(shown.enumerated()), id: \.element.id) { index, item in
                             row(item, isSelected: index == selected)
-                                .id(index)
                                 .onTapGesture { selected = index; openSelected() }
                                 // The arrows and Return already work; VoiceOver activates a row too.
                                 .accessibilityAction { selected = index; openSelected() }
@@ -139,7 +140,7 @@ struct CommandPalette: View {
                     }
                     .padding(6)
                 }
-                .onChange(of: selected) { _, now in proxy.scrollTo(now) }
+                .onChange(of: selected) { _, now in if shown.indices.contains(now) { proxy.scrollTo(shown[now].id) } }
             }
             .frame(maxHeight: 360)
             Divider()

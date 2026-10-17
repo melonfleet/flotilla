@@ -525,7 +525,6 @@ struct StackFormView: View {
             if !prepared { ProgressView().controlSize(.small).help("Preparing suggestions…") }
             Spacer()
             FormCancelButton(token: formToken, action: back)
-                .keyboardShortcut(.cancelAction)
             Button("Create") { create() }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)

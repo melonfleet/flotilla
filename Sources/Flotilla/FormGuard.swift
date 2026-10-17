@@ -180,8 +180,8 @@ private struct UnsavedChangesRegistration: ViewModifier {
 ///
 /// Cancel used to close a changed form without a word while Back beside it asked. Give the form's
 /// `FormHeader` the same `token` (`@State private var formToken = UUID()` on the form) and the two
-/// answer for one registration. Keyboard shortcuts stay the caller's, so a form that wants Escape
-/// to cancel writes `.keyboardShortcut(.cancelAction)` after it as before.
+/// answer for one registration. The button is also the form's Escape (`.cancelAction`), so every form
+/// cancels the same way and a changed one asks first; callers must not add the shortcut again.
 struct FormCancelButton: View {
     let token: UUID
     var title = "Cancel"
@@ -193,5 +193,6 @@ struct FormCancelButton: View {
         Button(title) {
             if let formGuard { formGuard.confirmLeaving(form: token, action) } else { action() }
         }
+        .keyboardShortcut(.cancelAction)
     }
 }
