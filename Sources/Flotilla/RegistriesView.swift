@@ -140,7 +140,7 @@ struct RegistriesView: View {
                 filters: Self.filters)
         }, trailing: {
             ToolbarIconButton(systemImage: "plus", label: "Add a registry…") { form = .add }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh registries") {
+            ToolbarRefreshButton(label: "Refresh registries") {
                 Task { await model.refreshRegistries() }
             }
         })
@@ -220,8 +220,9 @@ struct RegistriesView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
-        if !selectedRows.isEmpty {
+        // From two rows, as the page's summary is (Kamal, 17 October, round 2): one row is its page.
+        // And only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, !selectedRows.isEmpty {
             BulkActionBar(title: "\(selectedRows.count) selected") { bulkActions }
         }
     }
@@ -260,6 +261,7 @@ struct RegistriesView: View {
     private var page: some View {
         if let row = shownRow {
             RegistryFormView(model: model, target: .manage(row.id)) { selection = [] }
+                .paneHeaderActions { rowActions(for: row, place: .header) }
                 .id(row.id)
                 .paneStep("registry", "registries", order: displayedRows.map(\.id), current: row.id) { open($0) }
         } else if shown.count > 1, !selectedRows.isEmpty {
@@ -413,21 +415,19 @@ struct RegistriesView: View {
     /// setting changes the runtime.
     @ViewBuilder
     private func rowChips(_ row: RegistryRow) -> some View {
-        HStack(spacing: 4) {
-            if row.id == model.defaultRegistry {
-                ResourceChip(text: "default")
-                    .help("Flotilla's Pull uses this for image names with no registry")
-            } else if row.known?.isImplicitDefault == true {
-                ResourceChip(text: "CLI default")
-            }
-            if row.isUserAdded { ResourceChip(text: "yours") }
-            if !row.isListed { ResourceChip(text: "not in your list") }
-            if row.signInNeed == .required, !row.isSignedIn, row.canSignIn {
-                ResourceChip(text: "Sign-in required", systemImage: "lock")
-                    .help(signInHelp(.required))
-            }
-            TagPillRow(tags: model.tags.tags(on: .registry, row.id), compact: true)
+        if row.id == model.defaultRegistry {
+            ResourceChip(text: "default")
+                .help("Flotilla's Pull uses this for image names with no registry")
+        } else if row.known?.isImplicitDefault == true {
+            ResourceChip(text: "CLI default")
         }
+        if row.isUserAdded { ResourceChip(text: "yours") }
+        if !row.isListed { ResourceChip(text: "not in your list") }
+        if row.signInNeed == .required, !row.isSignedIn, row.canSignIn {
+            ResourceChip(text: "Sign-in required", systemImage: "lock")
+                .help(signInHelp(.required))
+        }
+        TagPillRow(tags: model.tags.tags(on: .registry, row.id), compact: true)
     }
 
     /// What a right-click offers: the row's own menu for one row, the bulk actions for several,
@@ -463,9 +463,26 @@ struct RegistriesView: View {
 
     // MARK: Row actions and menu
 
+    /// On the row, sign-in and the overflow, the arrangement every section's row has — the
+    /// primary action first. In the page's header the overflow and the bin: the page is the
+    /// sign-in form, so a key there would open what is already open.
     @ViewBuilder
-    private func rowActions(for row: RegistryRow) -> some View {
+    private func rowActions(for row: RegistryRow, place: RowActionPlace = .row) -> some View {
         HStack(spacing: 2) {
+            // The one primary action a registry has. Absent, not greyed, where there is no
+            // account to sign in to.
+            if place == .row, row.canSignIn {
+                IconActionButton(systemImage: "key",
+                                 label: row.isSignedIn ? "Switch account on \(row.name)"
+                                                       : "Sign in to \(row.name)",
+                                 help: !model.runtimeUsable ? "Start the container system to sign in"
+                                     : row.isSignedIn ? "Sign in as a different account"
+                                     : "Sign in to \(row.name)",
+                                 disabled: !model.runtimeUsable) {
+                    open(row.id)
+                }
+            }
+
             Menu {
                 menu(for: row)
             } label: {
@@ -477,30 +494,18 @@ struct RegistriesView: View {
             .help("More actions for \(row.name)")
             .accessibilityLabel("More actions for \(row.name)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            // The one primary action a registry has. Absent, not greyed, where there is no
-            // account to sign in to.
-            if row.canSignIn {
-                IconActionButton(systemImage: "key",
-                                 label: row.isSignedIn ? "Switch account on \(row.name)"
-                                                       : "Sign in to \(row.name)",
-                                 help: !model.runtimeUsable ? "Start the container system to sign in"
-                                     : row.isSignedIn ? "Sign in as a different account"
-                                     : "Sign in to \(row.name)",
-                                 disabled: !model.runtimeUsable) {
-                    open(row.id)
+                IconActionButton(systemImage: "trash",
+                                 label: "Remove \(row.name) from the list",
+                                 help: row.isListed ? "Remove from the list. Does not sign out."
+                                                    : "Not in your list — sign out to remove it",
+                                 disabled: !row.isListed,
+                                 destructive: true) {
+                    requestRemove([row])
                 }
             }
-            IconActionButton(systemImage: "trash",
-                             label: "Remove \(row.name) from the list",
-                             help: row.isListed ? "Remove from the list. Does not sign out."
-                                                : "Not in your list — sign out to remove it",
-                             disabled: !row.isListed,
-                             destructive: true) {
-                requestRemove([row])
-            }
-            Spacer(minLength: 0)
         }
     }
 

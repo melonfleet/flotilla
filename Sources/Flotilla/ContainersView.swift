@@ -190,6 +190,7 @@ struct ContainersView: View {
         if row.kind == .group, let group = row.group {
             // A group's page is its form, as it always was; Cancel or Save leaves it.
             GroupFormView(model: model, target: .existing(group.id)) { selection = [] }
+                .paneHeaderActions { groupRowActions(for: group, place: .header) }
                 .id(group.id)
         } else if let container = row.container {
             let tab = request?.id == row.id ? request?.tab : nil
@@ -233,9 +234,9 @@ struct ContainersView: View {
             Spacer(minLength: 0)
 
             if host.isLocal {
-                ActionCluster { rowActions(for: container, reserveSlots: false) }
+                ActionCluster { rowActions(for: container, place: .header) }
             } else {
-                ActionCluster { remoteRowActions(for: container, on: host, reserveSlots: false) }
+                ActionCluster { remoteRowActions(for: container, on: host, place: .header) }
             }
 
             DetailStepper()
@@ -515,22 +516,21 @@ struct ContainersView: View {
         }
     }
 
-    /// Per-row action buttons, at the trailing edge of each row — the pattern Docker Desktop uses and
-    /// the one the owner asked for: small, always-visible, icon-only controls on the row they
-    /// affect, rather than a bar above the list that acts on a selection you have to make
-    /// first.
+    /// A container's actions: on its row, start or stop and `⋮`; in its page's header, Restart and
+    /// the bin as well.
     ///
-    /// Three rules this follows deliberately:
-    /// - **Always visible, never hover-revealed.** `research/FEATURES.md`'s accessibility
-    ///   baseline rules out hover-only affordances, and a control that appears on approach is
-    ///   also unreachable by keyboard.
+    /// Rules this follows deliberately:
+    /// - **On the row, on hover** (Kamal, 17 October), like Mail. This used to be "always visible,
+    ///   never hover-revealed", for `research/FEATURES.md`'s accessibility baseline; `ResourceRow`
+    ///   now keeps that baseline another way — a selected row shows them, VoiceOver always sees
+    ///   them, and every one is in the right-click menu and the page header too.
     /// - **Labelled.** Icon-only buttons carry `accessibilityLabel` plus `help` — a glyph with
     ///   no name is invisible to VoiceOver and ambiguous to everyone else.
     /// - **Start and Stop swap, they do not both show.** Offering Stop on a stopped container
     ///   would be a control that does nothing, which is the failure mode this whole pass is
     ///   about.
     @ViewBuilder
-    private func rowActions(for container: Container, reserveSlots: Bool = true) -> some View {
+    private func rowActions(for container: Container, place: RowActionPlace = .row) -> some View {
         let busy = model.isBusy(container.id, kind: .container)
         let running = AppModel.isRunning(container)
 
@@ -539,19 +539,14 @@ struct ContainersView: View {
                 iconButton("stop.fill", "Stop \(container.id)", busy: busy) {
                     Task { await model.perform(.stop, on: container) }
                 }
-                iconButton("arrow.clockwise", "Restart \(container.id)", busy: busy) {
-                    Task { await model.perform(.restart, on: container) }
+                if place == .header {
+                    iconButton("arrow.clockwise", "Restart \(container.id)", busy: busy) {
+                        Task { await model.perform(.restart, on: container) }
+                    }
                 }
             } else {
                 iconButton("play.fill", "Start \(container.id)", busy: busy) {
                     Task { await model.perform(.start, on: container) }
-                }
-                // Keeps the column a stable width whichever state the row is in, so the
-                // buttons don't jump sideways as containers start and stop. The detail header
-                // passes `reserveSlots: false`: it has no column to line up with.
-                if reserveSlots {
-                    iconButton("arrow.clockwise", "Restart \(container.id)", busy: true) {}
-                        .hidden()
                 }
             }
 
@@ -571,10 +566,12 @@ struct ContainersView: View {
             .help("More actions for \(container.id)")
             .accessibilityLabel("More actions for \(container.id)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            iconButton("trash", "Delete \(container.id)", busy: busy, destructive: true) {
-                requestDelete(container)
+                iconButton("trash", "Delete \(container.id)", busy: busy, destructive: true) {
+                    requestDelete(container)
+                }
             }
         }
     }
@@ -582,7 +579,7 @@ struct ContainersView: View {
     /// A paired host's container: the same controls in the same places as This Mac's — start or
     /// stop, restart, the menu, delete — acting on that host.
     @ViewBuilder
-    private func remoteRowActions(for container: Container, on host: HostRef, reserveSlots: Bool = true) -> some View {
+    private func remoteRowActions(for container: Container, on host: HostRef, place: RowActionPlace = .row) -> some View {
         let busy = model.isBusy(host.rowID(container.id), kind: .container)
         let running = AppModel.isRunning(container)
         HStack(spacing: 2) {
@@ -590,16 +587,14 @@ struct ContainersView: View {
                 iconButton("stop.fill", "Stop \(container.id) on \(hostName(host))", busy: busy) {
                     Task { await model.perform(.stop, on: container, host: host) }
                 }
-                iconButton("arrow.clockwise", "Restart \(container.id) on \(hostName(host))", busy: busy) {
-                    Task { await model.perform(.restart, on: container, host: host) }
+                if place == .header {
+                    iconButton("arrow.clockwise", "Restart \(container.id) on \(hostName(host))", busy: busy) {
+                        Task { await model.perform(.restart, on: container, host: host) }
+                    }
                 }
             } else {
                 iconButton("play.fill", "Start \(container.id) on \(hostName(host))", busy: busy) {
                     Task { await model.perform(.start, on: container, host: host) }
-                }
-                if reserveSlots {
-                    iconButton("arrow.clockwise", "Restart \(container.id)", busy: true) {}
-                        .hidden()
                 }
             }
             Menu {
@@ -613,13 +608,15 @@ struct ContainersView: View {
             .help("More actions for \(container.id) on \(hostName(host))")
             .accessibilityLabel("More actions for \(container.id) on \(hostName(host))")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            iconButton("trash", "Delete \(container.id) on \(hostName(host))", busy: busy, destructive: true) {
-                if model.deletePolicy.requiresConfirmation(.single) {
-                    confirmingRemoteDelete = RemoteTarget(container: container, host: host)
-                } else {
-                    Task { await model.perform(.delete, on: container, host: host) }
+                iconButton("trash", "Delete \(container.id) on \(hostName(host))", busy: busy, destructive: true) {
+                    if model.deletePolicy.requiresConfirmation(.single) {
+                        confirmingRemoteDelete = RemoteTarget(container: container, host: host)
+                    } else {
+                        Task { await model.perform(.delete, on: container, host: host) }
+                    }
                 }
             }
         }
@@ -814,26 +811,30 @@ struct ContainersView: View {
         return model.canReach(group) && state != .empty && state != .stopped && state != .notCreated
     }
 
-    /// Start and Stop together, then the overflow, then the bin — the same arrangement and the
-    /// same width as a container row's controls, so the column does not jump between kinds.
-    /// Both lifecycle buttons rather than one that swaps, because a partly running group needs
-    /// both.
+    /// A group's actions. In its page's header, Start and Stop together, then the overflow, then
+    /// the bin — both lifecycle buttons rather than one that swaps, because a partly running group
+    /// needs both. On its row, on hover, one of them, as a container's row has: Stop while anything
+    /// in it is running, Start otherwise; the other is in `⋮`.
     @ViewBuilder
-    private func groupRowActions(for group: ContainerGroup) -> some View {
+    private func groupRowActions(for group: ContainerGroup, place: RowActionPlace = .row) -> some View {
         HStack(spacing: 2) {
             // Labels name the group, as the retired Groups screen's did: VoiceOver reads the label,
             // and a row of buttons all called "Delete" does not say which row they act on.
-            IconActionButton(systemImage: "play.fill", label: "Start \(group.name)",
-                             help: model.state(of: group) == .empty
-                                 ? "Add a service before starting this group"
-                                 : "Start every service in \(group.name)",
-                             disabled: !canStart(group)) {
-                Task { await model.startGroup(group) }
+            if place == .header || !canStop(group) {
+                IconActionButton(systemImage: "play.fill", label: "Start \(group.name)",
+                                 help: model.state(of: group) == .empty
+                                     ? "Add a service before starting this group"
+                                     : "Start every service in \(group.name)",
+                                 disabled: !canStart(group)) {
+                    Task { await model.startGroup(group) }
+                }
             }
-            IconActionButton(systemImage: "stop.fill", label: "Stop \(group.name)",
-                             help: "Stop every running service in \(group.name)",
-                             disabled: !canStop(group)) {
-                Task { await model.stopGroup(group) }
+            if place == .header || canStop(group) {
+                IconActionButton(systemImage: "stop.fill", label: "Stop \(group.name)",
+                                 help: "Stop every running service in \(group.name)",
+                                 disabled: !canStop(group)) {
+                    Task { await model.stopGroup(group) }
+                }
             }
 
             // The **same** builder the right-click menu uses, which `check-menu-parity.sh` holds
@@ -849,12 +850,14 @@ struct ContainersView: View {
             .help("More actions for \(group.name)")
             .accessibilityLabel("More actions for \(group.name)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            // The bin asks which delete you mean; the menu names each one directly.
-            IconActionButton(systemImage: "trash", label: "Delete \(group.name)",
-                             help: "Delete \(group.name)", destructive: true) {
-                pendingGroupDelete = GroupDeleteRequest(group: group, mode: .ask)
+                // The bin asks which delete you mean; the menu names each one directly.
+                IconActionButton(systemImage: "trash", label: "Delete \(group.name)",
+                                 help: "Delete \(group.name)", destructive: true) {
+                    pendingGroupDelete = GroupDeleteRequest(group: group, mode: .ask)
+                }
             }
         }
     }
@@ -1292,7 +1295,7 @@ struct ContainersView: View {
             ToolbarIconMenu(systemImage: "plus", label: "Run a container or create a group") {
                 addMenuItems
             }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh now") {
+            ToolbarRefreshButton(label: "Refresh now") {
                 Task { await model.reload() }
             }
         })
@@ -1310,10 +1313,9 @@ struct ContainersView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // 1+, since the checkboxes came back (Kamal, 17 October): ticking one box is a selection
-        // you made on purpose, and the bar is where it gets acted on. It was 2+ while a single
-        // selected row only meant "the row you last clicked".
-        if actionableCount > 0 {
+        // 2+, as the page's summary is (Kamal, 17 October, round 2): one row is its page, which
+        // has that row's actions. And only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, actionableCount > 0 {
             BulkActionBar(title: "\(selectionNoun) selected") { bulkActions }
         }
     }
@@ -1629,8 +1631,8 @@ struct ContainersView: View {
     }
 
     /// One two-line row. The layout is `ResourceRow`'s; this supplies what a container, a group
-    /// and a member each have to say. The buttons are the table's Actions column, unchanged:
-    /// `rowActions`, `remoteRowActions` and `groupRowActions`.
+    /// and a member each have to say. The buttons, shown on hover, are the row's share of
+    /// `rowActions`, `remoteRowActions` and `groupRowActions` — the header has the rest.
     @ViewBuilder
     private func listRow(_ row: ContainerRow) -> some View {
         let selected = selection.contains(row.id)
@@ -1664,10 +1666,12 @@ struct ContainersView: View {
     /// can take: a member not created yet has neither.
     private var showableIDs: [ContainerRow.ID] { selectableIDs }
 
-    /// The caret slot (kept for every row so names line up) and the state dot.
+    /// The caret slot (kept for every row so names line up), then what the row is — the group
+    /// glyph or the container's, the sidebar's and the detail header's — with its state dot on the
+    /// corner. The glyph replaced a "Group" / "Container" chip on the first line (Kamal, 17 October).
     @ViewBuilder
     private func stateMark(_ row: ContainerRow) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             if row.kind == .group, let group = row.group {
                 caret(for: group)
             } else {
@@ -1675,36 +1679,34 @@ struct ContainersView: View {
             }
             switch row.kind {
             case .group:
-                if let state = row.groupState { GroupStateDot(state: state, showsCount: false) }
+                RowTypeMark(systemImage: Section.groupSymbol, kind: "Group") {
+                    if let state = row.groupState { GroupStateDot(state: state, showsCount: false) }
+                }
             case .member:
-                ServiceStateDot(container: row.container)
+                RowTypeMark(systemImage: "shippingbox", kind: "Container") {
+                    ServiceStateDot(container: row.container)
+                }
             case .container:
-                if let c = row.container {
-                    Circle()
-                        .fill(c.stateColor)
-                        .frame(width: 8, height: 8)
-                        .help(c.status.state.capitalized)
+                RowTypeMark(systemImage: "shippingbox", kind: "Container") {
+                    if let c = row.container {
+                        Circle()
+                            .fill(c.stateColor)
+                            .help(c.status.state.capitalized)
+                    }
                 }
             }
         }
         .frame(width: 32, alignment: .leading)
     }
 
-    /// The kind, the tags and — only for another Mac's row — the host.
+    /// The tags and — only for another Mac's row — the host, each a chip `ChipLine` may drop.
     @ViewBuilder
     private func rowChips(_ row: ContainerRow) -> some View {
-        HStack(spacing: 4) {
-            if row.kind == .group {
-                ResourceChip(text: "Group", systemImage: Section.groupSymbol)
-            } else {
-                ResourceChip(text: "Container", systemImage: "shippingbox")
-            }
-            TagPillRow(tags: tags(for: row), compact: true)
-            if !row.host.isLocal {
-                HostCell(name: row.hostName, staleSince: row.staleSince)
-                    .chipStyle()
-                    .fixedSize()
-            }
+        TagPillRow(tags: tags(for: row), compact: true)
+        if !row.host.isLocal {
+            HostCell(name: row.hostName, staleSince: row.staleSince)
+                .chipStyle()
+                .fixedSize()
         }
     }
 

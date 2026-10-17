@@ -153,6 +153,17 @@ for s in Containers Machines Images Volumes Networks Hosts Registries DNS Cluste
     done
     require "$f" '.paneFollows($selection, into: $shown, guard: model.formGuard)'
 done
+# A row's actions are drawn on hover and on selection only (17 October), so a row that starts
+# hovered is a screenshot scaffold: every row in the list would show its buttons. And the bulk bar
+# appears from two rows, as the page's summary does — at one, the page beside it is that row.
+require Sources/Flotilla/ResourceRow.swift '@State private var hovering = false'
+for s in Containers Machines Images Volumes Networks Hosts Registries DNS Clusters; do
+    f="Sources/Flotilla/${s}View.swift"
+    if ! grep -B3 -F 'BulkActionBar(title:' "$f" | grep -qE '^        if selection\.count > 1, '; then
+        echo "  ✗ $f: the bulk bar is not held back to a selection of two or more"
+        fail=1
+    fi
+done
 # The split opens as a split: not widened over the list, and not showing the list over the page.
 require Sources/Flotilla/SplitPanes.swift '    var expanded = false'
 require Sources/Flotilla/SplitPanes.swift '    var compactShowsList = false'

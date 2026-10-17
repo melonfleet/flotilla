@@ -277,7 +277,7 @@ struct MachinesView: View {
             ToolbarIconMenu(systemImage: "plus", label: "Create a machine") {
                 addMenuItems
             }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh machines") {
+            ToolbarRefreshButton(label: "Refresh machines") {
                 Task { await model.refreshMachines() }
             }
         })
@@ -370,9 +370,9 @@ struct MachinesView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
-        // selection made on purpose, and this is where it is acted on.
-        if !actionable.isEmpty {
+        // From two rows, as the page's summary is (Kamal, 17 October, round 2): one row is its page.
+        // And only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, !actionable.isEmpty {
             BulkActionBar(title: "\(actionable.count) selected") { bulkActions }
         }
     }
@@ -509,8 +509,8 @@ struct MachinesView: View {
     }
 
     /// One two-line row: the state dot; the name, "default" and the tags; the image, the CPUs
-    /// and memory it was given, and its address. The buttons are the table's Actions column,
-    /// unchanged: `rowActions`.
+    /// and memory it was given, and its address. The buttons, shown on hover, are the row's
+    /// share of `rowActions` — the header has the rest.
     private func listRow(_ machine: ContainerMachine) -> some View {
         ResourceRow(
             title: machine.id,
@@ -528,15 +528,13 @@ struct MachinesView: View {
                 }
             },
             chips: {
-                HStack(spacing: 4) {
-                    // Which machine a bare `machine stop` or `inspect` would hit. Not cosmetic,
-                    // and a chip like Containers' kind chip, so it cannot be squeezed to "defa…".
-                    if machine.isDefault == true {
-                        ResourceChip(text: "default")
-                            .help("Used when a command names no machine")
-                    }
-                    TagPillRow(tags: model.tags.tags(on: .machine, machine.id), compact: true)
+                // Which machine a bare `machine stop` or `inspect` would hit. Not cosmetic, so it
+                // comes first, and a chip, which shows whole or not at all — never "defa…".
+                if machine.isDefault == true {
+                    ResourceChip(text: "default")
+                        .help("Used when a command names no machine")
                 }
+                TagPillRow(tags: model.tags.tags(on: .machine, machine.id), compact: true)
             },
             actions: { rowActions(for: machine) })
     }
@@ -582,29 +580,25 @@ struct MachinesView: View {
         }
     }
 
-    /// Same shape as the containers row: start/stop swap, overflow menu, then delete behind a
-    /// divider — icon-only with the word kept as tooltip and accessibility label.
+    /// Same shape as the containers row: start/stop swap and the overflow menu on the row; Restart
+    /// and the bin as well in the page's header — icon-only with the word kept as tooltip and
+    /// accessibility label.
     @ViewBuilder
-    private func rowActions(for machine: ContainerMachine, reserveSlots: Bool = true) -> some View {
+    private func rowActions(for machine: ContainerMachine, place: RowActionPlace = .row) -> some View {
         let busy = model.isBusy(machine.id, kind: .machine)
         HStack(spacing: 2) {
             if Self.isRunning(machine) {
                 iconButton("stop.fill", "Stop \(machine.id)", busy: busy) {
                     Task { await model.perform(.stop, on: machine) }
                 }
-                iconButton("arrow.clockwise", "Restart \(machine.id)", busy: busy) {
-                    Task { await model.perform(.restart, on: machine) }
+                if place == .header {
+                    iconButton("arrow.clockwise", "Restart \(machine.id)", busy: busy) {
+                        Task { await model.perform(.restart, on: machine) }
+                    }
                 }
             } else {
                 iconButton("play.fill", "Start \(machine.id)", busy: busy) {
                     Task { await model.perform(.start, on: machine) }
-                }
-                // Placeholder so the Actions column keeps one width whichever state the row is
-                // in — the same trick the containers rows use, and for the same reason: buttons
-                // that shift sideways as machines start and stop are hard to hit.
-                if reserveSlots {
-                    iconButton("arrow.clockwise", "Restart \(machine.id)", busy: true) {}
-                        .hidden()
                 }
             }
 
@@ -619,14 +613,13 @@ struct MachinesView: View {
             .help("More actions for \(machine.id)")
             .accessibilityLabel("More actions for \(machine.id)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            iconButton("trash", "Delete \(machine.id)", busy: busy, destructive: true) {
-                requestDelete(machine)
+                iconButton("trash", "Delete \(machine.id)", busy: busy, destructive: true) {
+                    requestDelete(machine)
+                }
             }
-            // Zero, not a default `Spacer()`: a row fixes the cluster's size, and a default
-            // minimum would leave a gap after the bin that Containers' rows do not have.
-            Spacer(minLength: 0)
         }
     }
 
@@ -748,7 +741,7 @@ struct MachinesView: View {
             }
 
             Spacer(minLength: 0)
-            ActionCluster { rowActions(for: machine, reserveSlots: false) }
+            ActionCluster { rowActions(for: machine, place: .header) }
             DetailStepper()
         }
         // Horizontal 12, vertical 8 — the pair every band under the title bar uses.

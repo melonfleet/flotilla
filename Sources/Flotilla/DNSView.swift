@@ -189,7 +189,7 @@ struct DNSView: View {
                 Button("Set Up Zones…") { showingZones = true }
                     .disabled(model.hostMode.trustedHosts.isEmpty)
             }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh domains") {
+            ToolbarRefreshButton(label: "Refresh domains") {
                 Task { await refreshAll() }
             }
         })
@@ -262,8 +262,9 @@ struct DNSView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
-        if !selectedRows.isEmpty {
+        // From two rows, as the page's summary is (Kamal, 17 October, round 2): one row is its page.
+        // And only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, !selectedRows.isEmpty {
             BulkActionBar(title: "\(selectedRows.count) selected") { bulkActions }
         }
     }
@@ -295,6 +296,7 @@ struct DNSView: View {
             DNSFormView(model: model, target: .manage(row.id), prefill: nil, initialHost: row.host) {
                 selection = []
             }
+            .paneHeaderActions { rowActions(for: row, place: .header) }
             .id(row.id)
             .paneStep("domain", "domains", order: displayedRows.map(\.id), current: row.id) { open($0) }
         } else if shown.count > 1, !selectedRows.isEmpty {
@@ -432,12 +434,16 @@ struct DNSView: View {
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
-            leading: { stateMark(row) },
+            leading: { RowLeadingMark { stateMark(row) } },
             chips: { rowChips(row) },
             actions: { rowActions(for: row) })
     }
 
-    /// Green when the domain does what it is for, amber when containers are named under it but this
+    /// What the domain is for — container names or a host alias — as its glyph, with the state dot
+    /// on the corner. The glyph was a "Container names" / "Host alias" chip on the first line until
+    /// the narrow list (Kamal, 17 October); the filter menu uses the same two glyphs.
+    ///
+    /// The dot: green when the domain does what it is for, amber when containers are named under it but this
     /// Mac cannot look the names up (the half-set-up state this section exists to point at), and
     /// grey otherwise. The words are on the second line; this is only the glance.
     private func stateMark(_ row: HostedDNS) -> some View {
@@ -445,24 +451,22 @@ struct DNSView: View {
         let tint: Color = domain.registersContainers
             ? (domain.resolverInstalled ? Theme.online : Theme.warning)
             : (domain.resolverInstalled ? Theme.online.opacity(0.5) : Color.secondary.opacity(0.5))
-        return Circle()
-            .fill(tint)
-            .frame(width: 8, height: 8)
-            .help(DNSCopy.statusText(domain, place: model.dnsPlace(row.host)))
+        return RowTypeMark(systemImage: domain.isHostAlias ? DNSCopy.hostAliasSymbol : "shippingbox",
+                           kind: DNSCopy.kindTitle(domain)) {
+            Circle()
+                .fill(tint)
+                .help(DNSCopy.statusText(domain, place: model.dnsPlace(row.host)))
+        }
     }
 
-    /// The kind, the tags and — only for another Mac's domain — the host.
+    /// The tags and — only for another Mac's domain — the host.
     @ViewBuilder
     private func rowChips(_ row: HostedDNS) -> some View {
-        HStack(spacing: 4) {
-            ResourceChip(text: DNSCopy.kindTitle(row.domain),
-                         systemImage: row.domain.isHostAlias ? DNSCopy.hostAliasSymbol : "shippingbox")
-            TagPillRow(tags: model.tags.tags(on: .dns, row.id), compact: true)
-            if !row.host.isLocal {
-                HostCell(name: row.hostName, staleSince: row.staleSince)
-                    .chipStyle()
-                    .fixedSize()
-            }
+        TagPillRow(tags: model.tags.tags(on: .dns, row.id), compact: true)
+        if !row.host.isLocal {
+            HostCell(name: row.hostName, staleSince: row.staleSince)
+                .chipStyle()
+                .fixedSize()
         }
     }
 
@@ -510,8 +514,10 @@ struct DNSView: View {
         return model.dnsChangesSkipPassword(on: row.host) ? "Delete" : "Delete — asks for an administrator password"
     }
 
+    /// The overflow on the row — a domain's primary action is its page; in the page's header the
+    /// bin as well.
     @ViewBuilder
-    private func rowActions(for row: HostedDNS) -> some View {
+    private func rowActions(for row: HostedDNS, place: RowActionPlace = .row) -> some View {
         HStack(spacing: 2) {
             Menu {
                 menu(for: row)
@@ -524,16 +530,17 @@ struct DNSView: View {
             .help("More actions for \(row.name)")
             .accessibilityLabel("More actions for \(row.name)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            IconActionButton(systemImage: "trash",
-                             label: "Delete \(row.name)",
-                             help: deleteHelp(row),
-                             disabled: !canDelete(row) || working,
-                             destructive: true) {
-                requestDelete([row])
+                IconActionButton(systemImage: "trash",
+                                 label: "Delete \(row.name)",
+                                 help: deleteHelp(row),
+                                 disabled: !canDelete(row) || working,
+                                 destructive: true) {
+                    requestDelete([row])
+                }
             }
-            Spacer(minLength: 0)
         }
     }
 

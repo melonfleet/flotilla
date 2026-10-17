@@ -229,7 +229,7 @@ struct ImagesView: View {
             ToolbarIconButton(systemImage: "magnifyingglass", label: "Browse Docker Hub…") {
                 browsing = true
             }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh images") {
+            ToolbarRefreshButton(label: "Refresh images") {
                 Task { await model.refreshImages() }
             }
             Divider().frame(height: 14)
@@ -378,7 +378,7 @@ struct ImagesView: View {
         }
     }
 
-    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`.
+    /// One row. The buttons, shown on hover, are the row's share of `rowActions` — the header has the rest.
     private func listRow(_ row: HostedImage) -> some View {
         let users = containersUsing(row)
         return ResourceRow(
@@ -391,17 +391,15 @@ struct ImagesView: View {
             summary: rowSummary(row, users: users),
             leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.images.systemImage) } },
             chips: {
-                HStack(spacing: 4) {
-                    // Images have no tags (CLAUDE.md: "tag" already means an image reference's).
-                    if !users.isEmpty {
-                        ResourceChip(text: "in use")
-                            .help("Used by " + users.joined(separator: ", "))
-                    }
-                    if !row.host.isLocal {
-                        HostCell(name: row.hostName, staleSince: row.staleSince)
-                            .chipStyle()
-                            .fixedSize()
-                    }
+                // Images have no tags (CLAUDE.md: "tag" already means an image reference's).
+                if !users.isEmpty {
+                    ResourceChip(text: "in use")
+                        .help("Used by " + users.joined(separator: ", "))
+                }
+                if !row.host.isLocal {
+                    HostCell(name: row.hostName, staleSince: row.staleSince)
+                        .chipStyle()
+                        .fixedSize()
                 }
             },
             actions: { rowActions(for: row) })
@@ -462,10 +460,10 @@ struct ImagesView: View {
         }
     }
 
-    /// Run, tag, overflow, then bin — the same order and the same divider before the
-    /// destructive control as the containers and machines rows.
+    /// Run and the overflow on the row; in the page's header Tag and the bin as well — the same
+    /// order and the same divider before the destructive control as the containers and machines.
     @ViewBuilder
-    private func rowActions(for row: HostedImage) -> some View {
+    private func rowActions(for row: HostedImage, place: RowActionPlace = .row) -> some View {
         let image = row.image
         let busy = model.isBusy(row.id, kind: .image)
         let name = Self.repository(image) + onHost(row)
@@ -476,12 +474,14 @@ struct ImagesView: View {
                              busy: busy) {
                 runImage = RunTarget(reference: image.reference, host: row.host)
             }
-            IconActionButton(systemImage: "tag",
-                             label: "Tag \(name)",
-                             help: "Tag \(name)",
-                             busy: busy) {
-                tagTarget = ""
-                taggingImage = row
+            if place == .header {
+                IconActionButton(systemImage: "tag",
+                                 label: "Tag \(name)",
+                                 help: "Tag \(name)",
+                                 busy: busy) {
+                    tagTarget = ""
+                    taggingImage = row
+                }
             }
 
             Menu {
@@ -495,15 +495,16 @@ struct ImagesView: View {
             .help("More actions for \(name)")
             .accessibilityLabel("More actions for \(name)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            IconActionButton(systemImage: "trash",
-                             label: "Delete \(name)",
-                             help: "Delete \(name)",
-                             busy: busy, destructive: true) {
-                requestDelete(row)
+                IconActionButton(systemImage: "trash",
+                                 label: "Delete \(name)",
+                                 help: "Delete \(name)",
+                                 busy: busy, destructive: true) {
+                    requestDelete(row)
+                }
             }
-            Spacer(minLength: 0)
         }
     }
 
@@ -610,9 +611,9 @@ struct ImagesView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
-        // selection made on purpose, and this is where it is acted on.
-        if !actionable.isEmpty {
+        // From two rows, as the page's summary is (Kamal, 17 October, round 2): one row is its page.
+        // And only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, !actionable.isEmpty {
             BulkActionBar(title: "\(actionable.count) selected") { bulkActions }
         }
     }
@@ -735,7 +736,7 @@ struct ImagesView: View {
             }
 
             Spacer(minLength: 0)
-            ActionCluster { rowActions(for: row) }
+            ActionCluster { rowActions(for: row, place: .header) }
             DetailStepper()
         }
         .padding(.horizontal, 12)

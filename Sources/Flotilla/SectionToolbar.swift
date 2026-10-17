@@ -52,9 +52,16 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
             Spacer()
 
             if let updated {
-                Text("Updated \(updated.formatted(date: .omitted, time: .standard))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Only where there is room for it (Kamal, 17 October): a list beside its page is
+                // 340pt by default, and this was what pushed select-all, Sort, Filter, + and ⟳ into
+                // each other. The time is always on ⟳'s tooltip (`ToolbarRefreshButton`).
+                ViewThatFits(in: .horizontal) {
+                    Text("Updated \(updated.formatted(date: .omitted, time: .standard))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    Color.clear.frame(width: 0, height: 0)
+                }
             } else if let status {
                 Text(status)
                     .font(.caption)
@@ -70,6 +77,7 @@ struct SectionToolbar<Leading: View, Trailing: View>: View {
             // site: `EmptyView` is exactly what "no trailing content" is spelled as.
             if Trailing.self != EmptyView.self {
                 ActionCluster { trailing }
+                    .environment(\.sectionUpdated, updated)
             }
         }
         // Horizontal 12 so the band lines up with the content edge; vertical **8**, which is
@@ -128,6 +136,26 @@ struct ToolbarIconButton: View {
         IconActionButton(systemImage: systemImage, label: label, help: help ?? label,
                          disabled: disabled, destructive: isDestructive,
                          active: active, action: action)
+    }
+}
+
+extension EnvironmentValues {
+    /// When the section beside this button last refreshed, from its `SectionToolbar`.
+    @Entry var sectionUpdated: Date?
+}
+
+/// A section's ⟳, whose tooltip says when the section last refreshed — the "Updated 10:04:02 PM"
+/// the toolbar prints only where it fits.
+struct ToolbarRefreshButton: View {
+    /// "Refresh containers".
+    let label: String
+    let action: () -> Void
+    @Environment(\.sectionUpdated) private var updated
+
+    var body: some View {
+        ToolbarIconButton(systemImage: "arrow.clockwise", label: label,
+                          help: updated.map { "\(label) — updated \($0.formatted(date: .omitted, time: .standard))" } ?? label,
+                          action: action)
     }
 }
 

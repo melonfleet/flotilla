@@ -196,7 +196,7 @@ struct VolumesView: View {
             ToolbarIconMenu(systemImage: "plus", label: "Create a volume") {
                 addMenuItems
             }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh volumes") {
+            ToolbarRefreshButton(label: "Refresh volumes") {
                 Task { await model.refreshVolumes() }
             }
         })
@@ -324,9 +324,9 @@ struct VolumesView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
-        // selection made on purpose, and this is where it is acted on.
-        if !actionable.isEmpty {
+        // From two rows, as the page's summary is (Kamal, 17 October, round 2): one row is its page.
+        // And only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, !actionable.isEmpty {
             BulkActionBar(title: "\(actionable.count) selected") { bulkActions }
         }
     }
@@ -545,7 +545,7 @@ struct VolumesView: View {
         }
     }
 
-    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`.
+    /// One row. The buttons, shown on hover, are the row's share of `rowActions` — the header has the rest.
     private func listRow(_ row: HostedVolume) -> some View {
         ResourceRow(
             title: row.name,
@@ -555,13 +555,11 @@ struct VolumesView: View {
             summary: rowSummary(row),
             leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.volumes.systemImage) } },
             chips: {
-                HStack(spacing: 4) {
-                    TagPillRow(tags: model.tags.tags(on: .volume, row.detailKey), compact: true)
-                    if !row.host.isLocal {
-                        HostCell(name: row.hostName, staleSince: row.staleSince)
-                            .chipStyle()
-                            .fixedSize()
-                    }
+                TagPillRow(tags: model.tags.tags(on: .volume, row.detailKey), compact: true)
+                if !row.host.isLocal {
+                    HostCell(name: row.hostName, staleSince: row.staleSince)
+                        .chipStyle()
+                        .fixedSize()
                 }
             },
             actions: { rowActions(for: row) })
@@ -620,10 +618,11 @@ struct VolumesView: View {
         }
     }
 
-    /// Overflow then bin, in that order and with the same divider — the arrangement every other
-    /// section uses, so the destructive control is always in the same place.
+    /// The overflow on the row — a volume has no primary action to put beside it; in the page's
+    /// header the bin as well, after the same divider every section uses, so the destructive
+    /// control is always in the same place.
     @ViewBuilder
-    private func rowActions(for row: HostedVolume) -> some View {
+    private func rowActions(for row: HostedVolume, place: RowActionPlace = .row) -> some View {
         let busy = model.isBusy(row.id, kind: .volume)
         let name = row.name + onHost(row)
         HStack(spacing: 2) {
@@ -638,15 +637,16 @@ struct VolumesView: View {
             .help("More actions for \(name)")
             .accessibilityLabel("More actions for \(name)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            IconActionButton(systemImage: "trash",
-                             label: "Delete \(name)",
-                             help: "Delete \(name)",
-                             busy: busy, destructive: true) {
-                requestDelete(row)
+                IconActionButton(systemImage: "trash",
+                                 label: "Delete \(name)",
+                                 help: "Delete \(name)",
+                                 busy: busy, destructive: true) {
+                    requestDelete(row)
+                }
             }
-            Spacer(minLength: 0)
         }
     }
 
@@ -700,7 +700,7 @@ struct VolumesView: View {
             }
 
             Spacer(minLength: 0)
-            ActionCluster { rowActions(for: row) }
+            ActionCluster { rowActions(for: row, place: .header) }
             DetailStepper()
         }
         .padding(.horizontal, 12)

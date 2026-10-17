@@ -52,6 +52,7 @@ struct FormHeader<Trailing: View>: View {
     @State private var ownToken = UUID()
     @Environment(FormGuard.self) private var formGuard: FormGuard?
     @Environment(\.paneLayout) private var paneLayout
+    @Environment(\.paneHeaderActions) private var paneActions
 
     var body: some View {
         HStack(spacing: 10) {
@@ -68,7 +69,10 @@ struct FormHeader<Trailing: View>: View {
             if titleBadge != nil { ThisMacPill() }
             Spacer()
             trailing
-            if paneLayout != nil { DetailStepper() }
+            if paneLayout != nil {
+                if let paneActions { ActionCluster { paneActions.content } }
+                DetailStepper()
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

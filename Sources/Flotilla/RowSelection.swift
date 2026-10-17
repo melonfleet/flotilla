@@ -149,15 +149,28 @@ struct SelectAllCheckbox<ID: Hashable>: View {
     }
 }
 
-/// The band under a section's toolbar while one or more rows are selected: how many, then the
+/// The band under a section's toolbar while two or more rows are selected: how many, then the
 /// actions a selection can take. One shape for every section, so the bar is in the same place and
 /// reads the same wherever you selected.
+///
+/// **Only where the page's summary cannot be seen** (Kamal, 17 October). In the split every row
+/// section's page shows "N selected" with the same actions, from the same builder, the moment a
+/// second row is ticked — so above the list the bar was the same buttons twice, and at one row it
+/// sat over a list whose page already had that row's actions. Sections show it from two rows, and
+/// it stands down here whenever the page is beside the list (`pageBesideList`). What is left is a
+/// window too narrow for both panes, where the list is alone and the bar is the only place a
+/// selection of several can be acted on without a right-click.
 struct BulkActionBar<Actions: View>: View {
     /// "3 selected", or the section's own wording ("2 containers, 1 group selected").
     let title: String
     @ViewBuilder var actions: Actions
+    @Environment(\.pageBesideList) private var pageBesideList
 
     var body: some View {
+        if !pageBesideList { bar }
+    }
+
+    private var bar: some View {
         HStack(spacing: 12) {
             Text(title)
                 .font(.subheadline)

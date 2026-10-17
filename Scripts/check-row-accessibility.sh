@@ -20,11 +20,23 @@
 #
 # And the `actions` slot itself must not be hidden from accessibility.
 #
+# **Since 17 October the actions are drawn on hover** (Kamal: "hover actions, like Mail"): on the
+# row they show only while it is hovered or selected, over the trailing end of its text, at zero
+# opacity otherwise. A control at zero opacity is not something to trust to VoiceOver, so the rule
+# this holds now is stronger than "in the tree": **while VoiceOver is running, the actions are
+# drawn**, inline after the text, on every row. Two more things therefore break it:
+#
+#   4. the actions slot being hidden from accessibility, or `.hidden()`, wherever it is drawn;
+#   5. the VoiceOver branch going — `ResourceRow` no longer reading
+#      `accessibilityVoiceOverEnabled`, or that branch no longer drawing the actions, or drawing
+#      them through the hover's opacity.
+#
 # Negative controls — each proved to fail:
 #   (1) change `.accessibilityElement(children: .contain)` in ResourceRow.swift to `.ignore`;
 #   (2) add `.accessibilityActions { }` to the List row in RegistriesView.swift;
 #   (3) delete the `.accessibilityLabel("More actions for …")` under a row's overflow Menu;
-#   (4) add `.accessibilityHidden(true)` after `.layoutPriority(3)` on `actions` in ResourceRow.swift.
+#   (4) add `.accessibilityHidden(true)` after `.allowsHitTesting(showsActions)` in ResourceRow.swift;
+#   (5) delete `actionSlot` from the `if voiceOver {` branch in ResourceRow.swift (17 October).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -43,8 +55,26 @@ if re.search(r'accessibilityElement\(\s*children:\s*\.(ignore|combine)\s*\)', bo
     FAIL.append(f"{row}: the row flattens its children (.ignore/.combine), which hides its ⋮ menu and buttons from VoiceOver")
 if not re.search(r'accessibilityElement\(\s*children:\s*\.contain\s*\)', body):
     FAIL.append(f"{row}: the row is no longer declared `.accessibilityElement(children: .contain)`")
-if re.search(r'\bactions\s*\.fixedSize\(\)(\s*\.\w+\([^()]*\))*?\s*\.accessibility(Hidden|Element)', body):
-    FAIL.append(f"{row}: the `actions` slot is hidden from accessibility")
+# (4) The slot, its definition and every place it is drawn: no modifier that takes it out of the tree.
+slot = re.search(r'private var actionSlot: some View \{(.*?)\n    \}', body, re.S)
+if not slot:
+    FAIL.append(f"{row}: no `actionSlot` — the one place the row's actions are drawn from")
+else:
+    uses = [body[m.start():m.start() + 300].split("\n\n")[0].split("}")[0]
+            for m in re.finditer(r'\bactionSlot\b(?!: some View)', body)]
+    for chunk in [slot.group(1)] + uses:
+        if re.search(r'\.accessibility(Hidden|Element)\b|\.hidden\(\)', chunk):
+            FAIL.append(f"{row}: the row's actions are hidden from accessibility where they are drawn")
+            break
+
+# (5) While VoiceOver runs, the actions are drawn — inline, and not through the hover's opacity.
+if not re.search(r'@Environment\(\\\.accessibilityVoiceOverEnabled\)', body):
+    FAIL.append(f"{row}: the row no longer reads accessibilityVoiceOverEnabled, so its hover-only "
+                "actions are drawn at zero opacity for VoiceOver too")
+else:
+    branch = re.search(r'if voiceOver \{(.*?)\} else \{', body, re.S)
+    if not branch or not re.search(r'^\s*actionSlot\s*$', branch.group(1), re.M):
+        FAIL.append(f"{row}: the VoiceOver branch no longer draws the actions inline")
 
 for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
     text = code(path.read_text())

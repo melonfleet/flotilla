@@ -357,6 +357,7 @@ struct HostsView: View {
             Group {
                 if let imported = row.imported {
                     AddHostView(model: model, importing: imported) { selection = [] }
+                        .paneHeaderActions { rowActions(for: row, place: .header) }
                 } else {
                     hostPage(row)
                 }
@@ -414,6 +415,8 @@ struct HostsView: View {
                         }
                     }
                 }
+                // The row's menu and Remove, which left the row for here (Kamal, 17 October).
+                ActionCluster { rowActions(for: row, place: .header) }
             }
             Divider()
             // One tabbed page for This Mac and every trusted host (the owner, 9 October). A host
@@ -477,7 +480,7 @@ struct HostsView: View {
             if hostMode.isAdmin, !hostMode.trustedHosts.isEmpty {
                 updatesMenu
             }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh hosts") {
+            ToolbarRefreshButton(label: "Refresh hosts") {
                 Task {
                     await model.reload()
                     await model.refreshMachines()
@@ -657,8 +660,9 @@ struct HostsView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
-        if !selectedRows.isEmpty {
+        // From two rows, as the page's summary is (Kamal, 17 October, round 2): one row is its page.
+        // And only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, !selectedRows.isEmpty {
             BulkActionBar(title: "\(selectedRows.count) selected") { bulkActions }
         }
     }
@@ -834,19 +838,17 @@ struct HostsView: View {
     /// wrong: it is the one state that needs the owner, and the banner above the list says how many.
     @ViewBuilder
     private func rowChips(_ row: HostRow) -> some View {
-        HStack(spacing: 4) {
-            if row.isPending {
-                noticeChip("Waiting for approval", systemImage: "person.badge.key", tint: Theme.warning)
-                    .help("Approve only a Mac you recognise — check the serial number against your inventory.")
-            } else if row.imported != nil {
-                ResourceChip(text: "Imported — not paired", systemImage: "square.and.arrow.down")
-                    .help("Named in an imported file. Pair it to manage it.")
-            } else if let peer = row.peer, !peer.isTrusted {
-                ResourceChip(text: HostRow.statusText(peer.status))
-            }
-            TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true, builtIns: builtIns(row))
-            hostNotices(row)
+        if row.isPending {
+            noticeChip("Waiting for approval", systemImage: "person.badge.key", tint: Theme.warning)
+                .help("Approve only a Mac you recognise — check the serial number against your inventory.")
+        } else if row.imported != nil {
+            ResourceChip(text: "Imported — not paired", systemImage: "square.and.arrow.down")
+                .help("Named in an imported file. Pair it to manage it.")
+        } else if let peer = row.peer, !peer.isTrusted {
+            ResourceChip(text: HostRow.statusText(peer.status))
         }
+        TagPillRow(tags: model.tags.tags(on: .host, row.id), compact: true, builtIns: builtIns(row))
+        hostNotices(row)
     }
 
     /// A tinted chip, for a state that is not a label but a problem or a wait.
@@ -984,8 +986,10 @@ struct HostsView: View {
 
     // MARK: Row actions and menu
 
+    /// The overflow on the row — a host's primary action is its page; in the page's header the
+    /// bin (Remove) as well.
     @ViewBuilder
-    private func rowActions(for row: HostRow) -> some View {
+    private func rowActions(for row: HostRow, place: RowActionPlace = .row) -> some View {
         HStack(spacing: 2) {
             Menu {
                 menu(for: row)
@@ -998,15 +1002,16 @@ struct HostsView: View {
             .help("More actions for \(row.name)")
             .accessibilityLabel("More actions for \(row.name)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            IconActionButton(systemImage: "trash",
-                             label: "Remove \(row.name)",
-                             help: row.isThisMac ? Self.removeHelp : "Remove \(row.name)",
-                             disabled: row.isThisMac, destructive: true) {
-                pendingForget = row
+                IconActionButton(systemImage: "trash",
+                                 label: "Remove \(row.name)",
+                                 help: row.isThisMac ? Self.removeHelp : "Remove \(row.name)",
+                                 disabled: row.isThisMac, destructive: true) {
+                    pendingForget = row
+                }
             }
-            Spacer(minLength: 0)
         }
     }
 

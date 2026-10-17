@@ -2549,3 +2549,57 @@ right pane instead … everything has to be split into two panes."
 - `Scripts/check-defaults.sh` pins each section's split: the list's pane and the page as the two
   closures of `SplitPanes(list: …)`, the split as the last branch of the section's form chain, an
   empty `selection` and `shown`, the guard in between, and a pane that opens unexpanded.
+
+## Q59 — The narrow list: the name first, actions on hover (settled 2026-10-17)
+
+Kamal checked Q58's split by eye at the default 340pt list. The page was right; the list was not:
+names squeezed to "…", "s…l", "w…s2" and blank, because the "Container"/"Group" chip, the tags and
+three or four buttons took the width first; the trash clipped at the list's edge; and one selected
+row raised the bulk bar ("1 container selected" and five buttons) over a list whose page already
+showed that container with its actions. **His call: hover actions, like Mail.**
+
+**Amends Q56** (the row's layout and its always-visible actions), **Q58** (the bulk bar at one row)
+and `research/FEATURES.md`'s "no hover-only affordances" baseline, which is now met another way.
+
+- **The row is checkbox · mark · name · chips over line 2.** The name is offered the first line
+  before anything else (`layoutPriority`), and the chips after it are a `ChipLine`: each chip shown
+  whole or dropped, the last first, with a minimum width of zero — a `.fixedSize()` chip in an
+  `HStack` had a minimum as wide as itself, which is what took the name's room. The name truncates
+  (in the middle) only when it alone is wider than the line.
+- **The kind chip became the mark.** `RowTypeMark` draws the kind's glyph — Containers'
+  `shippingbox`, the group symbol, DNS's two domain kinds — with the state dot cut into its corner,
+  so it reads on the accent fill and in dark mode without knowing the background. Other sections'
+  chips are attributes, not kinds ("default", "built-in", "in use", "yours", roles, host status), and
+  stay chips that can drop. Images, Volumes and Networks already had their sidebar glyph as the mark.
+- **Actions appear only while a row is hovered or selected:** the section's primary action — start
+  or stop for containers, members and machines (a group shows Stop while anything in it runs, Start
+  otherwise), Run for an image, sign-in for a registry, Recreate for a cluster — and `⋮`. Volumes,
+  networks, hosts and domains have no primary action on the row: their page is it.
+- **They overlay the trailing end of both lines,** which fade out beneath them (a mask, not a
+  painted background, so the accent fill, the unfocused grey and the hover wash all show through).
+  The row's layout never changes, so nothing moves when they appear and the name does not
+  re-truncate as the pointer crosses it.
+- **Delete left the row** for `⋮`, the right-click menu and the page header. Restart and Tag did
+  too. One builder per section serves the row and the header (`RowActionPlace.row` / `.header`), so
+  the header keeps every action. Pages that are forms — a group, a registry, a domain, an imported
+  host — get the row's header actions through `paneHeaderActions`, drawn by `FormHeader` beside the
+  stepper. `check-menu-parity.sh` is unchanged and passes: `⋮` is still the right-click's builder.
+- **The baseline, kept another way.** A selected row shows its actions, so the keyboard reaches
+  them. While VoiceOver runs they are drawn on every row, inline after the text rather than over
+  it: a control at zero opacity is not something to trust to the accessibility tree, so the row
+  does not ask it to. Every action is also in the right-click menu and the page header.
+  `check-row-accessibility.sh` gained two rules — the actions are never hidden from accessibility
+  where drawn, and the VoiceOver branch draws them — each proved to fail.
+- **The bulk bar from two rows, and only where the summary cannot be seen.** At two or more the
+  page's "N selected" summary carries the same actions from the same builder, so in a split the bar
+  was the same buttons twice: **only the summary is kept.** The bar survives for a window too narrow
+  for both panes, where the list is alone and is the only place a selection of several can be acted
+  on without a right-click (`pageBesideList`, set by `SplitPanes`).
+- **The list's toolbar:** "Updated 10:04:02 PM" is drawn only when it fits, and is always on ⟳'s
+  tooltip (`ToolbarRefreshButton`).
+- **The arithmetic, since nobody building it can see it.** At 340pt the inset list leaves the row
+  about 320. Padding 24, the checkbox and its gap 22, the mark and its gap 42: the two lines get
+  about 232pt, about **33 characters** of a 13pt medium name at rest. Hovered or selected, a 24pt
+  button, a ~20pt `⋮` and a 14pt fade cover about 60pt, leaving **about 24**. Before, the kind chip
+  (~70pt) and four buttons with a divider (~110pt) left the name and the tags about 40pt between
+  them — the "…" Kamal saw.

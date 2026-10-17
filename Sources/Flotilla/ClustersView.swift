@@ -247,7 +247,7 @@ struct ClustersView: View {
                 Divider()
                 Button("Suggestions…") { showingSuggestions = true }
             }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh clusters") {
+            ToolbarRefreshButton(label: "Refresh clusters") {
                 Task { await model.refreshClusters() }
             }
         })
@@ -312,8 +312,9 @@ struct ClustersView: View {
     @ViewBuilder
     private var bulkActionBar: some View {
         // Clusters had no bulk bar before the checkboxes came back (Kamal, 17 October: "the same
-        // all through"). Delete only, and it asks, as a single delete does.
-        if !selectedRows.isEmpty {
+        // all through"). Delete only, and it asks, as a single delete does. From two rows, as the
+        // page's summary is, and only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, !selectedRows.isEmpty {
             BulkActionBar(title: "\(selectedRows.count) selected") { bulkActions }
         }
     }
@@ -385,7 +386,7 @@ struct ClustersView: View {
                     .lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 0)
-            ActionCluster { rowActions(for: row) }
+            ActionCluster { rowActions(for: row, place: .header) }
             DetailStepper()
         }
         .padding(.horizontal, 12)
@@ -497,16 +498,14 @@ struct ClustersView: View {
     /// The role (`control-plane, worker`) and — only for another Mac's cluster — the host.
     @ViewBuilder
     private func rowChips(_ row: HostedCluster) -> some View {
-        HStack(spacing: 4) {
-            if !row.cluster.roles.isEmpty {
-                ResourceChip(text: row.cluster.roles.joined(separator: ", "))
-                    .help("control-plane runs Kubernetes itself")
-            }
-            if !row.host.isLocal {
-                HostCell(name: row.hostName, staleSince: row.staleSince)
-                    .chipStyle()
-                    .fixedSize()
-            }
+        if !row.cluster.roles.isEmpty {
+            ResourceChip(text: row.cluster.roles.joined(separator: ", "))
+                .help("control-plane runs Kubernetes itself")
+        }
+        if !row.host.isLocal {
+            HostCell(name: row.hostName, staleSince: row.staleSince)
+                .chipStyle()
+                .fixedSize()
         }
     }
 
@@ -534,14 +533,15 @@ struct ClustersView: View {
     }
 
 
-    /// Recreate, then overflow, then bin — the arrangement every other section uses.
+    /// Recreate and the overflow on the row; the bin as well in the page's header — the
+    /// arrangement every other section uses.
     ///
     /// **No Start, and no Stop.** `container` 1.5.0 removed `k8s start` (apple/container#2290), and
     /// there was never a command that stops a cluster without destroying it. So the first button
     /// is Recreate, offered for a cluster that is not running: delete and create again, which is
     /// Apple's documented recovery. It asks first, because it destroys what is inside.
     @ViewBuilder
-    private func rowActions(for row: HostedCluster) -> some View {
+    private func rowActions(for row: HostedCluster, place: RowActionPlace = .row) -> some View {
         let cluster = row.cluster
         let busy = model.isBusy(row.host.rowID(cluster.node), kind: .cluster)
         HStack(spacing: 2) {
@@ -565,15 +565,16 @@ struct ClustersView: View {
             .help("More actions for \(cluster.node)")
             .accessibilityLabel("More actions for \(cluster.node)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            IconActionButton(systemImage: "trash",
-                             label: "Delete \(cluster.node)",
-                             help: "Delete \(cluster.node)" + onHost(row),
-                             busy: busy, destructive: true) {
-                pendingDelete = row
+                IconActionButton(systemImage: "trash",
+                                 label: "Delete \(cluster.node)",
+                                 help: "Delete \(cluster.node)" + onHost(row),
+                                 busy: busy, destructive: true) {
+                    pendingDelete = row
+                }
             }
-            Spacer(minLength: 0)
         }
     }
 

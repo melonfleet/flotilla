@@ -12,7 +12,8 @@ import SwiftUI
 /// **One pane has a width; the other takes the rest.** In a row section that is the list — Mail's
 /// message list keeps its width as the window grows, and the page gets the room. The three older
 /// screens remember their *detail* pane instead, because their list is a gallery that reflows and
-/// their detail is a fixed-measure description; each keeps the 400pt it had. Either way the width
+/// their detail is a fixed-measure description. Every split starts with the divider in the centre
+/// (Kamal, 17 October) until it is dragged; after that the width
 /// is remembered **per screen, across launches**, in `UserDefaults` under `paneWidth.<key>`. It is a
 /// window layout, like the sidebar's rail, not a setting an administrator would seed or lock, so it
 /// is not in the settings registry.
@@ -32,7 +33,6 @@ struct SplitPanes<Primary: View, Detail: View>: View {
     enum Sizing { case list, detail }
 
     private let sizing: Sizing
-    private let defaultWidth: CGFloat
     private let minPrimary: CGFloat
     private let minDetail: CGFloat
     /// The section's expand and narrow-window state, or nil for a screen with neither.
@@ -55,25 +55,26 @@ struct SplitPanes<Primary: View, Detail: View>: View {
     /// page on the right.
     init(list key: String, pane: PaneState, showing item: AnyHashable?,
          @ViewBuilder primary: () -> Primary, @ViewBuilder detail: () -> Detail) {
-        self.init(key, sizing: .list, defaultWidth: 340, minPrimary: 260, minDetail: 360,
+        self.init(key, sizing: .list, minPrimary: 260, minDetail: 360,
                   pane: pane, item: item, primary: primary, detail: detail)
     }
 
     /// Suggestions, the Docker Hub browser and Notifications: a flexible list at least 240 wide and
-    /// a detail pane of at least 260, 400 until it is dragged.
-    init(_ key: String, sizing: Sizing = .detail, defaultWidth: CGFloat = 400,
+    /// a detail pane of at least 260, split in the centre until it is dragged.
+    init(_ key: String, sizing: Sizing = .detail,
          minPrimary: CGFloat = 240, minDetail: CGFloat = 260,
          pane: PaneState? = nil, item: AnyHashable? = nil,
          @ViewBuilder primary: () -> Primary, @ViewBuilder detail: () -> Detail) {
         self.sizing = sizing
-        self.defaultWidth = defaultWidth
         self.minPrimary = minPrimary
         self.minDetail = minDetail
         self.pane = pane
         self.item = item
         self.primary = primary()
         self.detail = detail()
-        _storedWidth = AppStorage(wrappedValue: Double(defaultWidth), "paneWidth.\(key)")
+        // 0 means "never dragged": the divider then sits in the centre (Kamal, 17 October), so
+        // neither pane starts squeezed. Once dragged, the width is remembered for this screen.
+        _storedWidth = AppStorage(wrappedValue: 0, "paneWidth.\(key)")
     }
 
     var body: some View {
@@ -85,6 +86,9 @@ struct SplitPanes<Primary: View, Detail: View>: View {
                     primary
                         .frame(width: layout.listOnly ? total : sizedWidth(total, for: .list))
                         .frame(maxHeight: .infinity)
+                        // A row section's page is beside the list unless the window is too narrow
+                        // for both, and that page is where a selection of several is acted on.
+                        .environment(\.pageBesideList, pane != nil && !layout.listOnly)
                 }
                 if layout.showsList, !layout.listOnly {
                     divider(total)
@@ -144,7 +148,8 @@ struct SplitPanes<Primary: View, Detail: View>: View {
     }
 
     private func rememberedWidth(_ total: CGFloat) -> CGFloat {
-        clamped(dragWidth ?? CGFloat(storedWidth), in: total)
+        let wanted = dragWidth ?? (storedWidth > 0 ? CGFloat(storedWidth) : (total - 1) / 2)
+        return clamped(wanted, in: total)
     }
 
     /// `wanted`, held inside both panes' minimums at a total width of `total`.
@@ -234,6 +239,15 @@ struct PaneStep {
 /// Computed defaults, not stored ones: neither type is `Sendable`, and a stored static would have to be.
 private struct PaneLayoutKey: EnvironmentKey { static var defaultValue: PaneLayout? { nil } }
 private struct PaneStepKey: EnvironmentKey { static var defaultValue: PaneStep? { nil } }
+private struct PaneHeaderActionsKey: EnvironmentKey { static var defaultValue: PaneHeaderActions? { nil } }
+
+/// The row's own actions, for a page that is a form with a `FormHeader` of its own — a group, a
+/// registry, a domain. Delete left the rows (Kamal, 17 October) for `⋮` and the page header, and
+/// these pages' headers are drawn by the form, which does not know what section it is in; the
+/// section hands them in with `paneHeaderActions`, as it hands in the stepper with `paneStep`.
+struct PaneHeaderActions {
+    let content: AnyView
+}
 
 extension EnvironmentValues {
     /// Set by `SplitPanes` on a row section's page; nil anywhere else, which is how a header knows
@@ -246,6 +260,14 @@ extension EnvironmentValues {
         get { self[PaneStepKey.self] }
         set { self[PaneStepKey.self] = newValue }
     }
+    /// What a form's header draws before the stepper, while the form is a row's page.
+    var paneHeaderActions: PaneHeaderActions? {
+        get { self[PaneHeaderActionsKey.self] }
+        set { self[PaneHeaderActionsKey.self] = newValue }
+    }
+    /// Set on a row section's list while its page is on screen beside it: the bulk bar stands down,
+    /// because the page's summary of several carries the same actions (`BulkActionBar`).
+    @Entry var pageBesideList = false
 }
 
 /// A form inside a page that needs the whole width while it is on screen. Add Service, inside a
@@ -256,11 +278,17 @@ struct PaneWantsFullWidth: PreferenceKey {
 }
 
 extension View {
+    /// The row's actions — `RowActionPlace.header` — for a form-shaped page's `FormHeader`.
+    func paneHeaderActions<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        environment(\.paneHeaderActions, PaneHeaderActions(content: AnyView(content())))
+    }
+
     /// Leaves the split: no stepper, no expand button, and Back where a form expects one. For a
     /// form that is opened from inside a page and must not behave as the page itself.
     func outsideSplitPane() -> some View {
         environment(\.paneLayout, nil)
             .environment(\.paneStep, nil)
+            .environment(\.paneHeaderActions, nil)
             .preference(key: PaneWantsFullWidth.self, value: true)
     }
 }

@@ -187,7 +187,7 @@ struct NetworksView: View {
             ToolbarIconMenu(systemImage: "plus", label: "Create a network") {
                 addMenuItems
             }
-            ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh networks") {
+            ToolbarRefreshButton(label: "Refresh networks") {
                 Task { await model.refreshNetworks() }
             }
         })
@@ -357,9 +357,9 @@ struct NetworksView: View {
 
     @ViewBuilder
     private var bulkActionBar: some View {
-        // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
-        // selection made on purpose, and this is where it is acted on.
-        if !actionable.isEmpty {
+        // From two rows, as the page's summary is (Kamal, 17 October, round 2): one row is its page.
+        // And only while that summary is not on screen — `BulkActionBar`.
+        if selection.count > 1, !actionable.isEmpty {
             BulkActionBar(title: "\(actionable.count) selected") { bulkActions }
         }
     }
@@ -471,7 +471,7 @@ struct NetworksView: View {
         }
     }
 
-    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`.
+    /// One row. The buttons, shown on hover, are the row's share of `rowActions` — the header has the rest.
     private func listRow(_ row: HostedNetwork) -> some View {
         ResourceRow(
             title: row.name,
@@ -481,17 +481,15 @@ struct NetworksView: View {
             summary: rowSummary(row),
             leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.networks.systemImage) } },
             chips: {
-                HStack(spacing: 4) {
-                    if row.network.isBuiltin {
-                        ResourceChip(text: "built-in")
-                            .help("Created by container; can't be deleted")
-                    }
-                    TagPillRow(tags: model.tags.tags(on: .network, row.detailKey), compact: true)
-                    if !row.host.isLocal {
-                        HostCell(name: row.hostName, staleSince: row.staleSince)
-                            .chipStyle()
-                            .fixedSize()
-                    }
+                if row.network.isBuiltin {
+                    ResourceChip(text: "built-in")
+                        .help("Created by container; can't be deleted")
+                }
+                TagPillRow(tags: model.tags.tags(on: .network, row.detailKey), compact: true)
+                if !row.host.isLocal {
+                    HostCell(name: row.hostName, staleSince: row.staleSince)
+                        .chipStyle()
+                        .fixedSize()
                 }
             },
             actions: { rowActions(for: row) })
@@ -540,8 +538,10 @@ struct NetworksView: View {
         }
     }
 
+    /// The overflow on the row — a network has no primary action; in the page's header the bin as
+    /// well, disabled rather than absent for a built-in network.
     @ViewBuilder
-    private func rowActions(for row: HostedNetwork) -> some View {
+    private func rowActions(for row: HostedNetwork, place: RowActionPlace = .row) -> some View {
         let network = row.network
         let busy = model.isBusy(row.id, kind: .network)
         let name = network.id + onHost(row)
@@ -557,19 +557,20 @@ struct NetworksView: View {
             .help("More actions for \(name)")
             .accessibilityLabel("More actions for \(name)")
 
-            Divider().frame(height: 14)
+            if place == .header {
+                Divider().frame(height: 14)
 
-            IconActionButton(systemImage: "trash",
-                             label: "Delete \(name)",
-                             help: network.isBuiltin
-                                 ? "\(name) is built in and cannot be deleted"
-                                 : "Delete \(name)",
-                             busy: busy,
-                             disabled: network.isBuiltin,
-                             destructive: true) {
-                requestDelete(row)
+                IconActionButton(systemImage: "trash",
+                                 label: "Delete \(name)",
+                                 help: network.isBuiltin
+                                     ? "\(name) is built in and cannot be deleted"
+                                     : "Delete \(name)",
+                                 busy: busy,
+                                 disabled: network.isBuiltin,
+                                 destructive: true) {
+                    requestDelete(row)
+                }
             }
-            Spacer(minLength: 0)
         }
     }
 
@@ -628,7 +629,7 @@ struct NetworksView: View {
             }
 
             Spacer(minLength: 0)
-            ActionCluster { rowActions(for: row) }
+            ActionCluster { rowActions(for: row, place: .header) }
             DetailStepper()
         }
         .padding(.horizontal, 12)
