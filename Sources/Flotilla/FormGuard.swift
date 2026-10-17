@@ -41,6 +41,8 @@ final class FormGuard {
     /// Form" sets a prefill and then changes section, both guarded — does not ask a second time
     /// about a form the user has just discarded but that has not yet left the screen.
     @ObservationIgnored private var discarding = false
+    /// Requests that arrived while `asking` was on screen, oldest first; settled by its answer.
+    @ObservationIgnored private var waiting: [(leave: () -> Void, keepEditing: () -> Void)] = []
 
     func mark(_ token: UUID, title: String, isDirty: Bool) {
         forms.mark(token, title: title, isDirty: isDirty)
@@ -53,28 +55,39 @@ final class FormGuard {
     /// Runs `leave` now if no form would lose anything; otherwise asks, and runs it only on Discard.
     ///
     /// Synchronous when clean, so a menu command's one-shot request still lands before the window
-    /// it opens reads it. A second request while a question is already showing is dropped: the
-    /// open question has to be answered first, and silently replacing it would discard on an
-    /// answer given to something else.
+    /// it opens reads it. A request that arrives while a question is already showing — ⌘Q, a
+    /// notification click, a file opened from Finder — waits behind it, and the one answer settles
+    /// both: the question is about the same unsaved forms either way. Dropping it instead left
+    /// Quit's `.terminateLater` with no reply, so AppKit waited for an answer that never came;
+    /// replacing the open question would apply the answer to something the user did not ask about.
     func confirmLeaving(onKeepEditing: @escaping () -> Void = {},
                         _ leave: @escaping () -> Void) {
         guard !discarding, let text = forms.discardQuestion else { return leave() }
-        guard asking == nil else { return }
+        guard asking == nil else {
+            waiting.append((leave: leave, keepEditing: onKeepEditing))
+            return
+        }
         asking = Question(text: text, discard: leave, keepEditing: onKeepEditing)
     }
 
     func discard() {
         guard let question = asking else { return }
+        let queued = waiting
         asking = nil
+        waiting = []
         discarding = true
         defer { discarding = false }
         question.discard()
+        queued.forEach { $0.leave() }
     }
 
     func keepEditing() {
         guard let question = asking else { return }
+        let queued = waiting
         asking = nil
+        waiting = []
         question.keepEditing()
+        queued.forEach { $0.keepEditing() }
     }
 
     /// The dialog went away by some route other than its buttons. Treated as Keep Editing — losing
