@@ -71,7 +71,8 @@ extension View {
     /// Keep Editing restores only those: when the shown row has been deleted, putting its id back
     /// would be confined straight out again and ask the same question for ever. The page keeps its
     /// form on screen instead (a form page draws from its id, not from the row), so the draft is
-    /// still there to copy or save, and the next choice of row asks again.
+    /// still there to copy or save, and the next choice of row asks again — once: the selection Keep
+    /// Editing puts back is not itself a choice of row.
     func paneFollows<ID: Hashable>(_ selection: Binding<Set<ID>>, into shown: Binding<Set<ID>>,
                                    guard formGuard: FormGuard, existing: Set<ID>? = nil) -> some View {
         modifier(PaneFollowing(selection: selection, shown: shown, formGuard: formGuard, existing: existing))
@@ -102,13 +103,24 @@ private struct PaneFollowing<ID: Hashable>: ViewModifier {
     @Binding var shown: Set<ID>
     let formGuard: FormGuard
     let existing: Set<ID>?
+    /// The selection Keep Editing just put back, when it differs from `shown` because the shown
+    /// row has gone. That change is the guard's own answer, not a new choice of row, so it must not
+    /// ask the question again (Kyle, 17 October). Cleared by the next change, whatever it is.
+    @State private var restored: Set<ID>?
 
     func body(content: Content) -> some View {
         content
             .onChange(of: selection, initial: true) { _, chosen in
+                if let answer = restored {
+                    restored = nil
+                    if chosen == answer { return }
+                }
                 guard chosen != shown else { return }
                 formGuard.confirmLeaving(onKeepEditing: {
-                    selection = existing.map { shown.intersection($0) } ?? shown
+                    let kept = existing.map { shown.intersection($0) } ?? shown
+                    guard kept != chosen else { return }
+                    if kept != shown { restored = kept }
+                    selection = kept
                 }) { shown = chosen }
             }
     }
