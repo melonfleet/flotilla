@@ -406,6 +406,9 @@ struct MainWindowView: View {
             volumesUI.columnCustomization[visibility: "spread"] = visibility
             networksUI.columnCustomization[visibility: "spread"] = visibility
         }
+        // The palette is modal: what is under it takes no clicks or shortcuts while it is open, so
+        // Escape can only ever close the palette — never a form's Cancel beneath it.
+        .disabled(model.showingPalette)
         // ⌘K: over everything, near the top as Spotlight sits; a click outside closes it.
         .overlay(alignment: .top) {
             if model.showingPalette {
