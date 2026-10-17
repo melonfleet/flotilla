@@ -51,7 +51,7 @@ struct HostSettingsTab: View {
         VStack(alignment: .leading, spacing: 0) {
             // Flotilla's settings or container's, as tabs over the box below — the page's own tab
             // strip, so the two read as tabs and not as two buttons (the owner, 10 October).
-            DetailTabBar(items: Source.allCases.map { .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage) },
+            PageTabs(items: Source.allCases.map { .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage) },
                          selection: $source)
             // Copy and Reload lead, then the view switch and the filter — the Inspect tab's order.
             HStack(spacing: 12) {

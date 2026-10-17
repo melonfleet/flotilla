@@ -107,15 +107,13 @@ struct ContainerDetailView: View {
     /// alone.
     private var tabBar: some View {
         let tabs = Self.tabs(for: host)
-        return DetailTabBar(items: tabs.enumerated().map { index, candidate in
+        return PageTabs(items: tabs.enumerated().map { index, candidate in
             .init(tab: candidate,
                   title: candidate.rawValue,
                   systemImage: candidate.systemImage,
                   separatedFromPrevious: index > 0
                       && tabs[index - 1].isShared && !candidate.isShared)
-        }, selection: Binding(get: { shownTab }, set: { tab = $0 }))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Detail sections")
+        }, selection: Binding(get: { shownTab }, set: { tab = $0 }), label: "Container sections", shortcuts: true)
     }
 
     /// The mockup's overview: a grid of cards rather than one long `Form` of label/value rows.

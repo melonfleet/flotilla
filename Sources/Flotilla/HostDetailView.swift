@@ -55,7 +55,7 @@ struct HostDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DetailTabBar(items: HostDetailTab.allCases.map {
+            PageTabs(items: HostDetailTab.allCases.map {
                 .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage)
             }, selection: $tab)
             Group {

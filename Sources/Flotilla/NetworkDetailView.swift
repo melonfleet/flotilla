@@ -40,7 +40,7 @@ struct NetworkDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DetailTabBar(items: NetworkDetailTab.allCases.map {
+            PageTabs(items: NetworkDetailTab.allCases.map {
                 .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage)
             }, selection: $tab)
 

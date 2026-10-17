@@ -44,7 +44,7 @@ struct ImageDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DetailTabBar(items: ImageDetailTab.allCases.map {
+            PageTabs(items: ImageDetailTab.allCases.map {
                 .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage)
             }, selection: $tab)
 

@@ -49,7 +49,7 @@ struct VolumeDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DetailTabBar(items: VolumeDetailTab.allCases.map {
+            PageTabs(items: VolumeDetailTab.allCases.map {
                 .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage)
             }, selection: $tab)
 

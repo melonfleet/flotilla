@@ -106,10 +106,10 @@ struct MachineDetailView: View {
         }
     }
 
-    /// `DetailTabBar` — shared with the container, volume and network detail screens, which all
+    /// `PageTabs` — shared with the container, volume and network detail screens, which all
     /// carried or would have carried a copy of the same strip.
     private var tabBar: some View {
-        DetailTabBar(items: MachineDetailTab.allCases.enumerated().map { index, candidate in
+        PageTabs(items: MachineDetailTab.allCases.enumerated().map { index, candidate in
             .init(tab: candidate,
                   title: candidate.rawValue,
                   systemImage: candidate.systemImage,
@@ -117,7 +117,7 @@ struct MachineDetailView: View {
                   // four always read as a set.
                   separatedFromPrevious: index > 0
                       && MachineDetailTab.allCases[index - 1].isShared && !candidate.isShared)
-        }, selection: $tab)
+        }, selection: $tab, label: "Machine sections", shortcuts: true)
     }
 
     // MARK: Overview
