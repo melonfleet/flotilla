@@ -24,6 +24,11 @@ struct DNSView: View {
     let ui: ResourceUIState<HostedDNS>
 
     @State private var selection = Set<HostedDNS.ID>()
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (Q58). A domain's page is its form, so choosing another row with unsaved edits asks
+    /// first.
+    @State private var shown = Set<HostedDNS.ID>()
+    /// New Domain, full width like every other create form. Managing one domain is its page.
     @State private var form: DNSFormTarget?
     @State private var formPrefill: DNSSuggestion?
     @State private var showingSuggestions = false
@@ -74,13 +79,18 @@ struct DNSView: View {
                     use: useSuggestion,
                     dismiss: { showingSuggestions = false })
             } else {
-                VStack(spacing: 0) {
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    content
+                // Q58: the list, and the selected domain's page beside it.
+                SplitPanes(list: "dns", pane: ui.pane, showing: shownRow?.id) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        bulkActionBar
+                        Divider()
+                        content
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -102,6 +112,7 @@ struct DNSView: View {
         // Filtering, searching and deletion hide rows without clearing their ids; the bulk bar and
         // menu must not count rows nobody can see.
         .selection($selection, confinedTo: visibleIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
         // File ▸ Suggestions ▸ DNS Domains…. One-shot.
         .onChange(of: model.pendingSuggestions) { _, section in
             if section == .dns { model.pendingSuggestions = nil; form = nil; showingSuggestions = true }
@@ -253,21 +264,61 @@ struct DNSView: View {
     private var bulkActionBar: some View {
         // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
         if !selectedRows.isEmpty {
-            let deletable = selectedRows.filter(canDelete)
-            BulkActionBar(title: "\(selectedRows.count) selected") {
-                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
-                    tagSheet = TagSheetTarget(selectedTagSubjects)
-                }
-                Divider().frame(height: 14)
-                IconActionButton(systemImage: "trash",
-                                 label: "Delete \(deletable.count) domains",
-                                 help: deletable.isEmpty ? "None of these can be deleted from here"
-                                                         : "Delete \(deletable.count)",
-                                 disabled: deletable.isEmpty || working, destructive: true) {
-                    pendingDelete = deletable
-                }
-            }
+            BulkActionBar(title: "\(selectedRows.count) selected") { bulkActions }
         }
+    }
+
+    /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
+    @ViewBuilder
+    private var bulkActions: some View {
+        let deletable = selectedRows.filter(canDelete)
+        BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+            tagSheet = TagSheetTarget(selectedTagSubjects)
+        }
+        Divider().frame(height: 14)
+        IconActionButton(systemImage: "trash",
+                         label: "Delete \(deletable.count) domains",
+                         help: deletable.isEmpty ? "None of these can be deleted from here"
+                                                 : "Delete \(deletable.count)",
+                         disabled: deletable.isEmpty || working, destructive: true) {
+            pendingDelete = deletable
+        }
+    }
+
+    // MARK: The page
+
+    /// The page beside the list (Q58): the selected domain's form, read and edited as before, a
+    /// summary of several, or an empty state. Its Cancel or Save closes it.
+    @ViewBuilder
+    private var page: some View {
+        if let row = shownRow {
+            DNSFormView(model: model, target: .manage(row.id), prefill: nil, initialHost: row.host) {
+                selection = []
+            }
+            .id(row.id)
+            .paneStep("domain", "domains", order: displayedRows.map(\.id), current: row.id) { open($0) }
+        } else if shown.count > 1, !selectedRows.isEmpty {
+            SelectionSummaryPane(title: "\(selectedRows.count) domains selected",
+                                 systemImage: Section.dns.systemImage,
+                                 names: selectedRows.map(\.name)) { bulkActions }
+        } else {
+            PaneEmptyState(title: "Choose a domain", systemImage: Section.dns.systemImage,
+                           description: "What it names, where it points and whether this Mac can look it up show here.")
+        }
+    }
+
+    /// The one domain the page shows, when one is selected.
+    private var shownRow: HostedDNS? {
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return displayedRows.first { $0.id == id }
+    }
+
+    /// Shows a domain's page by selecting it, and only it (Q58) — clearing the filter first if it
+    /// is hiding the row.
+    private func open(_ id: HostedDNS.ID) {
+        if !visibleIDs.contains(id) { ui.search = ""; ui.filterID = "all"; ui.hostFilter = nil }
+        selection = [id]
+        ui.pane.reveal()
     }
 
     // MARK: Content
@@ -353,37 +404,36 @@ struct DNSView: View {
     /// The rows, filling the pane — `ResourceRow`'s two lines, the list's own selection. Rows are
     /// as tall as their content; nothing here writes a height down.
     private var rowsList: some View {
-        List(displayedRows, selection: $selection) { row in
-            listRow(row)
-                .listRowInsets(EdgeInsets())
+        SelectionRevealingList(selection: selection) {
+            List(displayedRows, selection: $selection) { row in
+                listRow(row)
+                    .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.inset)
+            .contextMenu(forSelectionType: HostedDNS.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                // Only when the activation names exactly one row — with several selected,
+                // `ids.first` is an arbitrary member.
+                guard ids.count == 1, let id = ids.first else { return }
+                open(id)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .listStyle(.inset)
-        .contextMenu(forSelectionType: HostedDNS.ID.self) { ids in
-            rowContextMenu(for: ids)
-        } primaryAction: { ids in
-            // Only when the activation names exactly one row — with several selected,
-            // `ids.first` is an arbitrary member.
-            guard ids.count == 1, let id = ids.first else { return }
-            form = .manage(id)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func listRow(_ row: HostedDNS) -> some View {
         let place = model.dnsPlace(row.host)
         return ResourceRow(
             title: row.name,
-            opens: { form = .manage(row.id) },
             detail: DNSCopy.address(row.domain, place: place) + " · " + DNSCopy.statusText(row.domain, place: place),
             detailHelp: DNSCopy.addressHelp(row.domain, place: place) + "\n"
                 + DNSCopy.statusHelp(row.domain, place: place),
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
-            reservesMetrics: false,
             leading: { stateMark(row) },
             chips: { rowChips(row) },
-            metrics: { EmptyView() },
             actions: { rowActions(for: row) })
     }
 
@@ -491,7 +541,7 @@ struct DNSView: View {
     private func menu(for row: HostedDNS) -> some View {
         let domain = row.domain
         let blocked = model.dnsChangeProblem(on: row.host) != nil
-        Button("Open…") { form = .manage(row.id) }
+        Button("Open…") { open(row.id) }
         Divider()
         if !domain.isHostAlias {
             if domain.registersContainers {

@@ -50,6 +50,9 @@ struct ContainersView: View {
     /// A key and a direction rather than a header you click: the rows have no headers. Ties break
     /// on name, so equal rows (every stopped container, every row with no ports) keep a stable,
     /// readable order instead of whatever the sort happened to leave.
+    ///
+    /// **No CPU or Memory** since the figures left the rows (Q58): a sort on a number the list does
+    /// not show reorders the rows under you as the number moves, for a reason you cannot see.
     enum SortKey: String, RowSortKey, Identifiable {
         case name = "Name"
         case state = "State"
@@ -57,8 +60,6 @@ struct ContainersView: View {
         case image = "Image"
         case created = "Created"
         case ports = "Ports"
-        case cpu = "CPU"
-        case memory = "Memory"
         case ip = "IP / Network"
         case host = "Host"
         var id: Self { self }
@@ -73,31 +74,30 @@ struct ContainersView: View {
             case .image: return [KeyPathComparator(\ContainerRow.imageSortKey, order: order), byName]
             case .created: return [KeyPathComparator(\ContainerRow.creationSortKey, order: order), byName]
             case .ports: return [KeyPathComparator(\ContainerRow.portSortKey, order: order), byName]
-            case .cpu: return [KeyPathComparator(\ContainerRow.cpu, order: order), byName]
-            case .memory: return [KeyPathComparator(\ContainerRow.memory, order: order), byName]
             case .ip: return [KeyPathComparator(\ContainerRow.ipSortKey, order: order), byName]
             case .host: return [KeyPathComparator(\ContainerRow.hostName, order: order), byName]
             }
         }
     }
 
-    @State private var selection = Set<Container.ID>()
+    @State private var selection = Set<ContainerRow.ID>()
 
-    /// The container whose detail sheet is open, by **id** rather than by value: the sheet can
-    /// outlive the snapshot that opened it, so it re-reads from the model on every refresh and
-    /// shows current state instead of a frozen copy.
-    @State private var detailTarget: DetailTarget?
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (`paneFollows`). By row **id** rather than by value, so the page re-reads from the
+    /// model on every refresh and shows current state instead of a frozen copy.
+    @State private var shown = Set<ContainerRow.ID>()
 
-    /// `sheet(item:)` needs `Identifiable`, and a bare `String` is not. Small enough to live
-    /// here rather than becoming a shared type.
-    /// A container to show, and optionally which tab to land on. Same reasoning as the machines
-    /// screen: the tab travels in the navigation value rather than through a dictionary the detail
-    /// view reads once in `init`, because a request that can be silently dropped is a menu item
-    /// that sometimes does nothing.
-    private struct DetailTarget: Identifiable, Hashable {
+    /// A menu's request for one container's page on a particular tab — "Logs", "Terminal". The tab
+    /// travels with the request rather than through a dictionary the detail view reads once in
+    /// `init`, because a request that can be silently dropped is a menu item that sometimes does
+    /// nothing; and each request is new (`nonce`), so asking for Logs again after leaving the tab
+    /// still lands on it.
+    private struct DetailTarget: Hashable {
         let id: String
         var tab: DetailTab?
+        let nonce = UUID()
     }
+    @State private var request: DetailTarget?
     @State private var confirmingBulkDelete = false
 
     /// The "New Tag…" sheet, when a row's Tags menu opened it. A `TagSheetTarget` rather than a
@@ -119,8 +119,9 @@ struct ContainersView: View {
 
     @State private var showingFilter = false
 
-    /// The group form, embedded like every other create form, when "+ ▸ New Group…" or a group's
-    /// Edit opened it. Groups have lived in this list since 5 October (to-do item 4).
+    /// New Group, full width like every other create form, when "+ ▸ New Group…" opened it. An
+    /// existing group's form is its page, beside the list (Q58). Groups have lived in this list
+    /// since 5 October (to-do item 4).
     @State private var editingGroup: GroupFormTarget?
     /// Suggestions (Q28), embedded like every form. The stack is set when a quick pick in the
     /// empty state opens one straight away.
@@ -147,120 +148,101 @@ struct ContainersView: View {
         }
     }
 
-    /// Detail **embedded in the window**, not a modal — the arrangement
-    /// `research/review/mockups/container-detail.html` specified all along. That mockup has the
-    /// app sidebar in it; the sheet was my divergence, and it cost three things worth having:
-    /// the pane could not be resized, it was capped at a fixed frame that the Terminal tab in
-    /// particular wants more of, and the sidebar behind it was dimmed and inert.
+    /// The page beside the list (Q58): the selected container's detail, a group's form, a summary
+    /// of several, or an empty state.
     ///
-    /// The modal treatment is not discarded, it is now applied where it belongs. `ModalCard` —
-    /// red ×, dim behind — still wraps Run, New Volume and New Network. The line is **a form is
-    /// modal, a place is navigable**: a form is a question you answer and dismiss, and detail is
-    /// somewhere you go and come back from.
+    /// It was a slide-in page that replaced the list, with Back and a ‹ › stepper; before that a
+    /// sheet, and before that a window. Kamal, 17 October: "the views that we already have for each
+    /// item … they'll just show in the right pane instead." So it is the same `ContainerDetailView`
+    /// and the same `GroupFormView`, unchanged, with the list beside them.
     ///
-    /// Going somewhere is why this earns Back and the prev/next stepper. Stepping between
-    /// containers without closing anything is the workflow persistent terminal sessions made
-    /// possible — shells stay alive in `TerminalSessionStore`, so you can leave a build running
-    /// in one container, step to the next, and step back to it still running.
+    /// Stepping between containers without closing anything is still the workflow persistent
+    /// terminal sessions made possible — shells stay alive in `TerminalSessionStore`, so you can
+    /// leave a build running in one container, select the next, and come back to it still running.
+    /// The detail view keeps its identity as the selection moves, as it did while stepping, so the
+    /// tab you are on stays the tab you are on.
     @ViewBuilder
-    private func detailScreen(_ target: DetailTarget) -> some View {
-        VStack(spacing: 0) {
-            if let container = model.containers.first(where: { $0.id == target.id }) {
-                detailHeader(for: container)
-                Divider()
-                ContainerDetailView(model: model, container: container, requestedTab: target.tab)
-            } else if let remote = remoteContainer(rowID: target.id) {
-                detailHeader(for: remote.container, on: remote.host)
-                Divider()
-                ContainerDetailView(model: model, container: remote.container, host: remote.host,
-                                    requestedTab: target.tab)
-            } else {
-                detailHeader(for: nil)
-                Divider()
-                // Named without its host prefix, and without claiming it was on this Mac: a remote
-                // container deleted while open lands here too.
-                ContentUnavailableView(
-                    "Container unavailable",
-                    systemImage: "questionmark.square.dashed",
-                    description: Text("“\(target.id.split(separator: "/").last.map(String.init) ?? target.id)” "
-                                      + "is no longer there. It may have been deleted.")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private var page: some View {
+        if let row = shownRow {
+            rowPage(row)
+                .paneStep("item", "items", order: showableIDs, current: row.id) { select($0) }
+                // A new menu request rebuilds the page, so it opens on the tab it asked for.
+                .id(request?.nonce)
+        } else if shown.count > 1, actionableCount > 0 {
+            SelectionSummaryPane(title: "\(selectionNoun) selected", systemImage: "shippingbox",
+                                 names: rows.filter { actionable.contains($0.id) }.map(\.name)) {
+                bulkActions
             }
+        } else {
+            PaneEmptyState(title: "Choose a container", systemImage: "shippingbox",
+                           description: "Its state, logs and settings show here.")
         }
-        // Header at the top whatever is below it — the unavailable state takes only its own height,
-        // and the stack was centring header and all in the window (seen 7 October).
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    /// Back, identity, the lifecycle actions, and the stepper — the mockup's `toolbar tall`.
-    /// A paired host's container by its row id, from what that host last reported.
-    private func remoteContainer(rowID: String) -> (container: Container, host: HostRef)? {
-        for (peer, snapshot) in model.hostMode.fleetContainers {
-            let host = HostRef.peer(peer.fingerprint)
-            if let container = snapshot.items.first(where: { host.rowID($0.id) == rowID }) {
-                return (container, host)
-            }
-        }
-        return nil
+    /// The one row the page shows, when there is one and it has a page.
+    private var shownRow: ContainerRow? {
+        guard shown.count == 1, let id = shown.first, showableIDs.contains(id) else { return nil }
+        return rowsByID[id]
     }
 
     @ViewBuilder
-    private func detailHeader(for container: Container?, on host: HostRef = .local) -> some View {
+    private func rowPage(_ row: ContainerRow) -> some View {
+        if row.kind == .group, let group = row.group {
+            // A group's page is its form, as it always was; Cancel or Save leaves it.
+            GroupFormView(model: model, target: .existing(group.id)) { selection = [] }
+                .id(group.id)
+        } else if let container = row.container {
+            let tab = request?.id == row.id ? request?.tab : nil
+            VStack(spacing: 0) {
+                detailHeader(for: container, on: row.host)
+                Divider()
+                ContainerDetailView(model: model, container: container, host: row.host, requestedTab: tab)
+            }
+            // Header at the top whatever is below it.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    /// Identity, the lifecycle actions, the stepper and the expand button — the mockup's
+    /// `toolbar tall`, without Back: the list is beside it.
+    @ViewBuilder
+    private func detailHeader(for container: Container, on host: HostRef = .local) -> some View {
         HStack(spacing: 10) {
-            IconActionButton(systemImage: "chevron.left", label: "Back to Containers",
-                             help: "Back to Containers") { detailTarget = nil }
+            Image(systemName: "shippingbox")
+                .font(.system(size: 19))
+                .foregroundStyle(.secondary)
 
-            if let container {
-                Image(systemName: "shippingbox")
-                    .font(.system(size: 19))
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(container.id).font(.headline)
-                        HStack(spacing: 4) {
-                            Circle().fill(container.stateColor).frame(width: 6, height: 6)
-                            Text(container.status.state.capitalized).font(.caption)
-                        }
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(container.id).font(.headline).lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 4) {
+                        Circle().fill(container.stateColor).frame(width: 6, height: 6)
+                        Text(container.status.state.capitalized).font(.caption)
                     }
-                    Text(subtitle(for: container, on: host))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(subtitle(for: container, on: host))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
                 }
+                Text(subtitle(for: container, on: host))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(subtitle(for: container, on: host))
+            }
+
+            Spacer(minLength: 0)
+
+            if host.isLocal {
+                ActionCluster { rowActions(for: container, reserveSlots: false) }
             } else {
-                Text("Container unavailable").font(.headline)
+                ActionCluster { remoteRowActions(for: container, on: host, reserveSlots: false) }
             }
 
-            Spacer()
-
-            if let container {
-                if host.isLocal {
-                    ActionCluster { rowActions(for: container, reserveSlots: false) }
-                } else {
-                    ActionCluster { remoteRowActions(for: container, on: host, reserveSlots: false) }
-                }
-            }
-
-            containerStepper
+            DetailStepper()
         }
         // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-
-    /// Every container on screen, on any host, in on-screen order — by row id, so a remote
-    /// container and a local one of the same name are different stops.
-    private var containerStepper: some View {
-        let order = rows.filter { $0.container != nil }
-        let index = order.firstIndex { $0.id == detailTarget?.id }
-        return DetailStepper(singular: "container", plural: "containers", index: index, count: order.count,
-                             previous: { if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) } },
-                             next: { if let index, index < order.count - 1 { detailTarget = DetailTarget(id: order[index + 1].id) } })
     }
 
     private func subtitle(for container: Container, on host: HostRef = .local) -> String {
@@ -274,8 +256,30 @@ struct ContainersView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func openDetail(_ id: String, tab: DetailTab? = nil) {
-        detailTarget = DetailTarget(id: id, tab: tab)
+    /// Shows a row's page: selects it, and only it. Showing is selecting since the split (Q58), so
+    /// every "open" — a menu's Details, Logs or Terminal, the stepper, a request from the menu bar
+    /// or the search box — goes through the selection and the form guard with it.
+    ///
+    /// A row the list is hiding is brought into view first: the filters are cleared and its group
+    /// opened, because a page for a row the list cannot show has no place in the list to step from.
+    private func open(_ id: ContainerRow.ID, tab: DetailTab? = nil) {
+        if !showableIDs.contains(id) {
+            ui.search = ""
+            ui.filter = .all
+            ui.kindFilter = .all
+            ui.hostFilter = nil
+            if let group = model.groups.groups.first(where: { g in g.memberNames.contains { g.place.rowID($0) == id } }) {
+                ui.expandedGroupIDs.insert(group.id)
+            }
+        }
+        request = tab.map { DetailTarget(id: id, tab: $0) }
+        select(id)
+    }
+
+    /// The stepper's move, and `open`'s last step.
+    private func select(_ id: ContainerRow.ID) {
+        selection = [id]
+        ui.pane.reveal()
     }
 
     /// Same icon-and-popover shape as `columnsButton` — both answer "what am I looking at",
@@ -615,7 +619,6 @@ struct ContainersView: View {
                 if model.deletePolicy.requiresConfirmation(.single) {
                     confirmingRemoteDelete = RemoteTarget(container: container, host: host)
                 } else {
-                    leaveDetailIfShowing(host.rowID(container.id))
                     Task { await model.perform(.delete, on: container, host: host) }
                 }
             }
@@ -654,13 +657,6 @@ struct ContainersView: View {
         .disabled(busy)
     }
 
-    /// Deleting the container whose detail is open goes back to the list: there is nothing left to
-    /// show, and "Container unavailable" is for one that vanished some other way (the owner,
-    /// 7 October, deleting `fleet-test` from its own detail screen).
-    private func leaveDetailIfShowing(_ rowID: String) {
-        if detailTarget?.id == rowID { detailTarget = nil }
-    }
-
     struct RemoteTarget: Identifiable {
         let container: Container
         let host: HostRef
@@ -675,7 +671,6 @@ struct ContainersView: View {
         if model.deletePolicy.requiresConfirmation(.single) {
             confirmingRowDelete = container
         } else {
-            leaveDetailIfShowing(container.id)
             Task { await model.perform(.delete, on: container) }
         }
     }
@@ -868,7 +863,7 @@ struct ContainersView: View {
     @ViewBuilder
     private func groupMenu(for group: ContainerGroup) -> some View {
         // First, above everything: the thing this row opens. A group's detail is its form.
-        Button("Edit…") { editingGroup = .existing(group.id) }
+        Button("Edit…") { open(ContainerRow.groupRowID(group.id)) }
         Divider()
         Button("Start") { Task { await model.startGroup(group) } }
             .disabled(!canStart(group))
@@ -914,16 +909,16 @@ struct ContainersView: View {
     private func actions(for container: Container) -> some View {
         let busy = model.isBusy(container.id, kind: .container)
         let running = AppModel.isRunning(container)
-        Button("Details…") { openDetail(container.id) }
+        Button("Details…") { open(container.id) }
 
         // Jump straight to the tab you actually wanted. The machines menu has done this since
         // "Edit Settings…" existed; containers offered Details and left you to find the tab, on
         // the screen with the most tabs. Logs and Terminal are the two people go looking for.
-        Button("Logs") { openDetail(container.id, tab: .logs) }
-        Button("Terminal") { openDetail(container.id, tab: .terminal) }
+        Button("Logs") { open(container.id, tab: .logs) }
+        Button("Terminal") { open(container.id, tab: .terminal) }
             // A shell needs a running process to attach to.
             .disabled(!running)
-        Button("Inspect") { openDetail(container.id, tab: .inspect) }
+        Button("Inspect") { open(container.id, tab: .inspect) }
 
         Divider()
         // Every lifecycle item, always, with the ones that do not apply greyed out rather than
@@ -1018,16 +1013,20 @@ struct ContainersView: View {
                 SuggestionsView(model: model,
                                 dismiss: { showingSuggestions = false; suggestionPick = nil },
                                 chosen: suggestionPick)
-            } else if let target = detailTarget {
-                detailScreen(target)
             } else {
-                VStack(spacing: 0) {
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    // apple/container#2051: a network that has lost its bridge (Q30).
-                    DisconnectedNetworksBanner(model: model)
-                    content
+                // Q58: the list, and the selected row's page beside it.
+                SplitPanes(list: "containers", pane: ui.pane, showing: shownRow?.id) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        bulkActionBar
+                        Divider()
+                        // apple/container#2051: a network that has lost its bridge (Q30).
+                        DisconnectedNetworksBanner(model: model)
+                        content
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
             }
         }
@@ -1089,7 +1088,8 @@ struct ContainersView: View {
         // the selection — filter, search, a closed group, the data itself changing (a bulk
         // delete leaves the dead ids behind otherwise) — and every way a row the bar cannot
         // take gets in: a click, ⇧-click or ⌘A on a member not created yet.
-        .selection($selection, confinedTo: Set(selectableIDs))
+        .selection($selection, confinedTo: Set(selectableIDs), showing: Set(showableIDs))
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
         // Single-row delete, from the trash button. Names the container — a dialog that just
         // says "are you sure" makes you go back and check which row you clicked.
         .confirmationDialog(
@@ -1100,7 +1100,6 @@ struct ContainersView: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let target = confirmingRowDelete {
-                    leaveDetailIfShowing(target.id)
                     Task { await model.perform(.delete, on: target) }
                 }
                 confirmingRowDelete = nil
@@ -1119,7 +1118,6 @@ struct ContainersView: View {
             presenting: confirmingRemoteDelete
         ) { target in
             Button("Delete", role: .destructive) {
-                leaveDetailIfShowing(target.id)
                 Task { await model.perform(.delete, on: target.container, host: target.host) }
                 confirmingRemoteDelete = nil
             }
@@ -1244,12 +1242,12 @@ struct ContainersView: View {
     private func consumeDetailRequest(_ subject: String) {
         switch model.pendingDetailKind {
         case .container:
-            detailTarget = DetailTarget(id: subject, tab: requestedTab)
+            open(subject, tab: requestedTab)
             model.clearPendingDetail()
         case .group:
-            // The menu bar names a group by name; the form is addressed by id.
+            // The menu bar names a group by name; the row is addressed by id.
             if let group = model.groups.groups.first(where: { $0.name == subject }) {
-                editingGroup = .existing(group.id)
+                open(ContainerRow.groupRowID(group.id))
             }
             model.clearPendingDetail()
         default:
@@ -1316,40 +1314,45 @@ struct ContainersView: View {
         // you made on purpose, and the bar is where it gets acted on. It was 2+ while a single
         // selected row only meant "the row you last clicked".
         if actionableCount > 0 {
-            BulkActionBar(title: "\(selectionNoun) selected") {
-                // Tags first in the cluster, before the lifecycle controls: it is the one action
-                // here that changes nothing about what the selection *is*.
-                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
-                    tagSheet = TagSheetTarget(selectedTagSubjects)
-                }
-                Divider().frame(height: 14)
-                // The rows' glyphs, not words — the same four actions must not look like
-                // different controls depending on how many things you selected. A group in the
-                // selection is started and stopped the way its own row would do it.
-                let containers = actionableContainerIDs, groups = actionableGroups, remote = actionableRemote
-                iconButton("play.fill", "Start \(selectionNoun)", busy: selectionBusy) {
-                    Task {
-                        await startSelected(containers, groups)
-                        await performRemote(.start, on: remote) { !$0.isRunning }
-                    }
-                }
-                iconButton("stop.fill", "Stop \(selectionNoun)", busy: selectionBusy) {
-                    Task {
-                        await stopSelected(containers, groups)
-                        await performRemote(.stop, on: remote) { $0.isRunning }
-                    }
-                }
-                iconButton("arrow.clockwise", "Restart \(selectionNoun)", busy: selectionBusy) {
-                    Task {
-                        await restartSelected(containers, groups)
-                        await performRemote(.restart, on: remote) { $0.isRunning }
-                    }
-                }
-                iconButton("trash", "Delete \(selectionNoun)",
-                           busy: selectionBusy, destructive: true) {
-                    confirmingBulkDelete = true
-                }
+            BulkActionBar(title: "\(selectionNoun) selected") { bulkActions }
+        }
+    }
+
+    /// What a selection can do: the bulk bar's controls, and the page's when several are ticked.
+    /// One builder, so the two cannot offer different things.
+    @ViewBuilder
+    private var bulkActions: some View {
+        // Tags first in the cluster, before the lifecycle controls: it is the one action here
+        // that changes nothing about what the selection *is*.
+        BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+            tagSheet = TagSheetTarget(selectedTagSubjects)
+        }
+        Divider().frame(height: 14)
+        // The rows' glyphs, not words — the same four actions must not look like different
+        // controls depending on how many things you selected. A group in the selection is
+        // started and stopped the way its own row would do it.
+        let containers = actionableContainerIDs, groups = actionableGroups, remote = actionableRemote
+        iconButton("play.fill", "Start \(selectionNoun)", busy: selectionBusy) {
+            Task {
+                await startSelected(containers, groups)
+                await performRemote(.start, on: remote) { !$0.isRunning }
             }
+        }
+        iconButton("stop.fill", "Stop \(selectionNoun)", busy: selectionBusy) {
+            Task {
+                await stopSelected(containers, groups)
+                await performRemote(.stop, on: remote) { $0.isRunning }
+            }
+        }
+        iconButton("arrow.clockwise", "Restart \(selectionNoun)", busy: selectionBusy) {
+            Task {
+                await restartSelected(containers, groups)
+                await performRemote(.restart, on: remote) { $0.isRunning }
+            }
+        }
+        iconButton("trash", "Delete \(selectionNoun)",
+                   busy: selectionBusy, destructive: true) {
+            confirmingBulkDelete = true
         }
     }
 
@@ -1421,13 +1424,8 @@ struct ContainersView: View {
         }
     }
 
-    /// One list row: the container **plus the sampled figures shown beside it**.
-    ///
-    /// The table used to be built straight from `[Container]`, and that is why clicking CPU or
-    /// Memory did nothing: a `TableColumn` sorts only when given a `value:` key path, and those
-    /// two figures do not live on `Container` — they come from `StatsSampler` via the model, keyed
-    /// by id. SwiftUI has no custom-comparator column either (checked the macOS 26 SDK: there is
-    /// no `sortUsing:` initialiser), so the only way to sort on them is to put them on the row.
+    /// One list row: a container, a group or a group's member, with the sort keys the Sort menu
+    /// orders by. The sampled CPU and memory it used to carry left with the figures (Q58).
     struct ContainerRow: Identifiable {
         /// Since 5 October a row is a standalone container, a group, or a member under an open
         /// group (to-do item 4). One type, because `Table` has one value type; a branch on
@@ -1442,10 +1440,6 @@ struct ContainersView: View {
         let group: ContainerGroup?
         let member: GroupMember?
         let groupState: GroupState?
-        /// **`-1` means unsampled, not idle.** The cell renders a dash for it; this value exists
-        /// only to sort with. For a group it is the sum over sampled members.
-        let cpu: Double
-        let memory: Int64
         let id: String
         /// Which Mac the row is on (PLAN.md Phase C). Groups and their members are This Mac's —
         /// a group is a saved form on this Mac until Phase D deploys it.
@@ -1474,15 +1468,13 @@ struct ContainersView: View {
         static func isGroupRowID(_ id: String) -> Bool { id.hasPrefix("group:") }
 
         init(container: Container, kind: Kind = .container, group: ContainerGroup? = nil,
-             member: GroupMember? = nil, cpu: Double, memory: Int64,
+             member: GroupMember? = nil,
              host: HostRef = .local, hostName: String = "This Mac", staleSince: Date? = nil) {
             self.kind = kind
             self.container = container
             self.group = group
             self.member = member
             self.groupState = nil
-            self.cpu = cpu
-            self.memory = memory
             self.host = host
             self.hostName = hostName
             self.staleSince = staleSince
@@ -1503,8 +1495,6 @@ struct ContainersView: View {
             self.group = group
             self.member = member
             self.groupState = nil
-            self.cpu = -1
-            self.memory = -1
             self.host = group.place
             self.hostName = hostName
             self.staleSince = nil
@@ -1518,15 +1508,13 @@ struct ContainersView: View {
             self.ipSortKey = ""
         }
 
-        init(group: ContainerGroup, state: GroupState, cpu: Double, memory: Int64,
+        init(group: ContainerGroup, state: GroupState,
              hostName: String = "This Mac", staleSince: Date? = nil) {
             self.kind = .group
             self.container = nil
             self.group = group
             self.member = nil
             self.groupState = state
-            self.cpu = cpu
-            self.memory = memory
             self.host = group.place
             self.hostName = hostName
             self.staleSince = staleSince
@@ -1549,17 +1537,13 @@ struct ContainersView: View {
     private func containerRow(_ container: Container, kind: ContainerRow.Kind = .container,
                               group: ContainerGroup? = nil, member: GroupMember? = nil) -> ContainerRow {
         ContainerRow(container: container, kind: kind, group: group, member: member,
-                     cpu: model.cpuPercent(for: container.id) ?? -1,
-                     memory: model.memoryBytes(for: container.id) ?? -1,
                      hostName: model.hostLabel)
     }
 
     /// The listing, as rows, for every Mac the host filter shows: top-level rows sorted by
     /// whatever header was clicked, and each open group's members under it, **sorted by the same
     /// header** (the owner, 5 October). A group never splits apart: its members always sit
-    /// directly under it. A host's rows carry no CPU or memory — live stats from other Macs are a
-    /// stream the wire doesn't carry yet — and a host that stopped answering keeps its rows,
-    /// marked with their age. Since 12 October a host's groups are listed with it.
+    /// directly under it. A host that stopped answering keeps its rows, marked with their age. Since 12 October a host's groups are listed with it.
     private var sortedRows: [ContainerRow] {
         var top: [ContainerRow] = []
         var children: [ContainerRow.ID: [ContainerRow]] = [:]
@@ -1585,8 +1569,7 @@ struct ContainersView: View {
                     return containerRow(container, kind: kind, group: group, member: member)
                 }
                 return ContainerRow(container: container, kind: kind, group: group, member: member,
-                                    cpu: -1, memory: -1, host: place.host, hostName: place.name,
-                                    staleSince: place.stale)
+                                    host: place.host, hostName: place.name, staleSince: place.stale)
             }
             for item in listing(on: place.host) {
                 switch item {
@@ -1597,11 +1580,7 @@ struct ContainersView: View {
                         m.container.map { row($0, kind: .member, group: group, member: m.member) }
                             ?? ContainerRow(uncreated: m.member, in: group, hostName: place.name)
                     }
-                    let sampledCPU = memberRows.map(\.cpu).filter { $0 >= 0 }
-                    let sampledMemory = memberRows.map(\.memory).filter { $0 >= 0 }
                     let groupRow = ContainerRow(group: group, state: model.state(of: group),
-                                                cpu: sampledCPU.isEmpty ? -1 : sampledCPU.reduce(0, +),
-                                                memory: sampledMemory.isEmpty ? -1 : sampledMemory.reduce(0, +),
                                                 hostName: place.name, staleSince: place.stale)
                     top.append(groupRow)
                     if ui.expandedGroupIDs.contains(group.id) || expandForSearch {
@@ -1622,37 +1601,30 @@ struct ContainersView: View {
     /// tale) — and the list takes whatever the pane gives it, like every other branch of
     /// `content`.
     ///
-    /// Sorting is `sortedRows`, the same array the detail stepper walks, so ‹ › goes to the next
+    /// Sorting is `sortedRows`, the same array the page's stepper walks, so ↓ goes to the next
     /// row you can see.
     private var rowsList: some View {
-        List(rows, selection: $selection) { row in
-            listRow(row)
-                // The row paints its own padding, so its hover wash and the list's selection fill
-                // reach the same edges.
-                .listRowInsets(EdgeInsets())
-        }
-        .listStyle(.inset)
-        // On the List, not on a row: a row's `.contextMenu` covers that row for one click and
-        // knows nothing about the selection. This one hands back every selected id.
-        .contextMenu(forSelectionType: ContainerRow.ID.self) { ids in
-            rowContextMenu(for: ids)
-        } primaryAction: { ids in
-            // Double-click and Return open — a container's detail, a group's form — but only when
-            // the activation names exactly ONE row: with several selected, `ids.first` is an
-            // arbitrary member. (Found by Grok 4.6 in review, 2026-08-18.)
-            guard ids.count == 1, let id = ids.first, let row = rowsByID[id] else { return }
-            openRow(row)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// What opening a row does: a container's page, a group's form. A member the group has not
-    /// created yet has no page.
-    private func openRow(_ row: ContainerRow) {
-        if row.kind == .group, let group = row.group {
-            editingGroup = .existing(group.id)
-        } else if row.container != nil {
-            openDetail(row.id)
+        SelectionRevealingList(selection: selection) {
+            List(rows, selection: $selection) { row in
+                listRow(row)
+                    // The row paints its own padding, so its hover wash and the list's selection fill
+                    // reach the same edges.
+                    .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.inset)
+            // On the List, not on a row: a row's `.contextMenu` covers that row for one click and
+            // knows nothing about the selection. This one hands back every selected id.
+            .contextMenu(forSelectionType: ContainerRow.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                // Selecting already shows the row (Q58); double-click and Return bring its page forward
+                // in a window too narrow for both panes — but only when the activation names exactly
+                // ONE row: with several selected, `ids.first` is an arbitrary member. (Found by Grok
+                // 4.6 in review, 2026-08-18.)
+                guard ids.count == 1, let id = ids.first, showableIDs.contains(id) else { return }
+                open(id)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -1664,17 +1636,16 @@ struct ContainersView: View {
         let selected = selection.contains(row.id)
         ResourceRow(
             title: row.name,
-            opens: row.kind == .member && row.container == nil ? nil : { openRow(row) },
-            openHelp: openHelp(for: row),
+            titleHelp: titleHelp(for: row),
             detail: detailLine(row),
             detailHelp: detailHelp(row),
             selected: selected,
             check: RowCheck(row.id, in: $selection, unavailable: checkUnavailable(row)),
             indent: row.kind == .member ? 28 : 0,
             summary: rowSummary(row),
+            dimsTitle: row.kind == .member && row.container == nil,
             leading: { stateMark(row) },
             chips: { rowChips(row) },
-            metrics: { rowFigures(row) },
             actions: { rowTrailingActions(row) })
     }
 
@@ -1688,6 +1659,10 @@ struct ContainersView: View {
     private var selectableIDs: [ContainerRow.ID] {
         rows.filter { checkUnavailable($0) == nil }.map(\.id)
     }
+
+    /// The rows with a page, in list order — what the stepper walks. The same rows a bulk action
+    /// can take: a member not created yet has neither.
+    private var showableIDs: [ContainerRow.ID] { selectableIDs }
 
     /// The caret slot (kept for every row so names line up) and the state dot.
     @ViewBuilder
@@ -1771,27 +1746,9 @@ struct ContainersView: View {
         return ([reference] + detailParts(row).dropFirst()).filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    private func openHelp(for row: ContainerRow) -> String {
-        switch row.kind {
-        case .group: "Edit \(row.name)"
-        case .member where row.container == nil: "Not created yet — starting “\(row.group?.name ?? "")” creates it"
-        case .container, .member: "Open \(row.name)"
-        }
-    }
-
-    /// CPU over memory for anything sampled, group sums included. Nothing for a stopped row, an
-    /// unsampled one, or another Mac's — those figures are not on the wire.
-    @ViewBuilder
-    private func rowFigures(_ row: ContainerRow) -> some View {
-        if row.cpu >= 0 || row.memory >= 0 {
-            let cpu = AppModel.cpuLabel(row.cpu < 0 ? nil : row.cpu)
-            let memory = AppModel.memoryLabel(row.memory < 0 ? nil : row.memory)
-            // The CPU line the cards drew, for a container this Mac samples; a group's figures
-            // are sums, and another Mac's are not on the wire, so neither has a history.
-            let sampled = row.kind != .group && row.host.isLocal ? row.container : nil
-            let history = sampled.map { AppModel.isRunning($0) ? model.cpuHistory(for: $0.id) : [] } ?? []
-            ResourceFigures(top: cpu, bottom: memory, history: history, help: "CPU \(cpu) · Memory \(memory)")
-        }
+    private func titleHelp(for row: ContainerRow) -> String? {
+        row.kind == .member && row.container == nil
+            ? "Not created yet — starting “\(row.group?.name ?? "")” creates it" : nil
     }
 
     @ViewBuilder
@@ -1827,8 +1784,6 @@ struct ContainersView: View {
             parts.append("Container")
         }
         parts.append(contentsOf: detailParts(row).map { $0.replacingOccurrences(of: "→", with: " to ") })
-        if row.cpu >= 0 { parts.append("CPU " + AppModel.cpuLabel(row.cpu)) }
-        if row.memory >= 0 { parts.append("memory " + AppModel.memoryLabel(row.memory)) }
         let tagNames = tags(for: row).map(\.name)
         if !tagNames.isEmpty { parts.append("tags " + tagNames.joined(separator: ", ")) }
         if !row.host.isLocal { parts.append("on " + row.hostName) }

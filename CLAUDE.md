@@ -28,15 +28,15 @@ questions.
     snapshot, error log, redaction.
 - The macOS app has a `MenuBarExtra` glance and a main window with Containers
   (two-line rows with a Sort menu, a checkbox per row and select-all, per-row actions,
-  context menus, a CPU sparkline on a running container's row), Images, Volumes, Networks,
+  context menus), Images, Volumes, Networks,
   Settings, a run sheet with a validated
-  live command preview, and container detail **embedded in the window** with Overview /
-  Processes / Logs / Terminal / Inspect / Configuration, a Back button and a prev/next
-  stepper through the containers as currently filtered and sorted.
+  live command preview, and container detail **in the right pane of a split** with Overview /
+  Processes / Logs / Terminal / Inspect / Configuration, an ↑ ↓ stepper that moves the list's
+  selection, and an expand button that widens the page over the list.
 - **Machines** (the Linux micro-VMs containers run inside) is a peer section under a
   `Virtualisation` sidebar heading, built to the same shapes: two-line rows with
-  checkboxes and a Sort menu, state filter, row actions, an embedded create form, and an
-  embedded detail with Overview / Shell / Logs / Settings / Inspect. Its view state
+  checkboxes and a Sort menu, state filter, row actions, an embedded create form, and a
+  detail page beside the list with Overview / Shell / Logs / Settings / Inspect. Its view state
   lives in `MachinesUIState`, owned by `MainWindowView` — a section view is rebuilt on
   every sidebar change, so anything held as its own `@State` is lost. Machine
   terminals use a **second** `TerminalSessionStore`, because the store is keyed by a
@@ -48,6 +48,17 @@ questions.
   is a view of the `List`'s own selection — never a second one. There is no Cards view and no
   hideable columns; `ResourceCard` lives on only in the Suggestions galleries. Logs is the one
   list still a `Table` (Q19). `check-defaults.sh` pins the rows being drawn unconditionally.
+  **No live figures in rows** (Q58): CPU and memory are on the container's page.
+- **Every list is a split view, like Mail** (17 October, `DECISIONS.md` Q58, Kamal's call). The
+  nine row sections draw `SplitPanes(list:)`: the list on the left at a width the user drags and
+  the app remembers (`paneWidth.<key>`), the selected row's **existing** page on the right — no
+  slide-in, no Back. Selecting is showing: one row is its page, none an empty state, several a
+  summary with the bulk bar's actions. The page follows the selection through `FormGuard`
+  (`paneFollows`), because a page can be a form (a group, a registry, a domain). The header's
+  stepper is ↑ ↓ (⌘[ ⌘], kept because ⌘↑ ⌘↓ belong to text fields) beside an expand button that
+  widens the page over the list; in a window too narrow for both, the page wins and that button
+  brings the list back. Suggestions, Notifications and Docker Hub use the same component. Forms
+  stay full width.
 - **Everything is embedded now — forms included** (9 August, the owner's call). This
   **reverses** the old "forms are modal, places are navigable" rule, and the newer
   argument is better: once Machines grew an embedded detail with Back and a tab strip, a
@@ -60,8 +71,9 @@ questions.
   acknowledge, not forms you fill in and save.
   Detail is embedded too, and always should have been —
   `research/review/mockups/container-detail.html` has the app sidebar in it. Detail went
-  window → sheet → embedded over 1–2 August; the sheet cost resizability, height for the
-  Terminal tab, and left the sidebar inert. Do not turn any of it back into a sheet.
+  window → sheet → embedded over 1–2 August, and → the right pane of a split on 17 October
+  (Q58); the sheet cost resizability, height for the Terminal tab, and left the sidebar inert.
+  Do not turn any of it back into a sheet.
 - **⌘K is the window bar's search box now** (17 October, `DECISIONS.md` Q55). One centred field
   (`ToolbarSearch`) filters the current page's list, goes to sections and things by name, and runs
   commands. `>` is commands only. It replaced the floating palette and every per-page search field.

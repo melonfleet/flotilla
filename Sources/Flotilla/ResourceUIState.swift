@@ -16,6 +16,10 @@ import FlotillaCore
 final class ResourceUIState<Row: Identifiable> {
     var search = ""
 
+    /// The split's expand button and narrow-window state, for the session (Q58) — here so a widened
+    /// page is still widened after a visit to another section.
+    let pane = PaneState()
+
     /// The Sort menu's key, as the section's `RowSortKey` raw value, for the reason `filterID` is
     /// a string: the key enum is the owning view's own. `nil` is that view's default, which is
     /// name everywhere. Read it with `sortKey(default:)`; the menu is `sortMenu(default:)`.

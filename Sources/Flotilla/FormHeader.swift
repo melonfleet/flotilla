@@ -14,6 +14,11 @@ import SwiftUI
 ///
 /// Back asks about unsaved changes through `FormGuard`, the same dialog every other route uses.
 ///
+/// **In a split's page there is no Back** (Q58): a form shown as a row's page — a registry, a
+/// domain, a group, a host — has its list beside it, so the header carries the list's ↑ ↓ and the
+/// expand button instead, and leaving is choosing another row (which asks through the same guard).
+/// The form's own Cancel or Done still closes it. Every other form is full width and keeps Back.
+///
 /// Deliberately the same shape as the detail headers in `ContainersView` and `MachinesView`, so
 /// leaving a form and leaving a detail are the same gesture in the same place.
 struct FormHeader<Trailing: View>: View {
@@ -46,12 +51,15 @@ struct FormHeader<Trailing: View>: View {
 
     @State private var ownToken = UUID()
     @Environment(FormGuard.self) private var formGuard: FormGuard?
+    @Environment(\.paneLayout) private var paneLayout
 
     var body: some View {
         HStack(spacing: 10) {
-            IconActionButton(systemImage: "chevron.left", label: "Back", help: "Back") {
-                // Through the guard, which asks the one discard question for this form alone.
-                if let formGuard { formGuard.confirmLeaving(form: token ?? ownToken, onBack) } else { onBack() }
+            if paneLayout == nil {
+                IconActionButton(systemImage: "chevron.left", label: "Back", help: "Back") {
+                    // Through the guard, which asks the one discard question for this form alone.
+                    if let formGuard { formGuard.confirmLeaving(form: token ?? ownToken, onBack) } else { onBack() }
+                }
             }
             Image(systemName: systemImage)
                 .font(.system(size: 17))
@@ -60,6 +68,7 @@ struct FormHeader<Trailing: View>: View {
             if titleBadge != nil { ThisMacPill() }
             Spacer()
             trailing
+            if paneLayout != nil { DetailStepper() }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

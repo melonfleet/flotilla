@@ -58,7 +58,7 @@ struct NotificationsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SplitPanes { listPane } detail: { detailPane }
+            SplitPanes("notifications") { listPane } detail: { detailPane }
             Divider()
             footer
         }

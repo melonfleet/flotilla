@@ -44,7 +44,7 @@ struct RegistryBrowserView: View {
             FormHeader(title: "Browse Docker Hub", systemImage: "magnifyingglass",
                        hasUnsavedChanges: false, onBack: dismiss)
             Divider()
-            SplitPanes { resultsPane } detail: { detailPane }
+            SplitPanes("dockerHub") { resultsPane } detail: { detailPane }
             Divider()
             footer
         }

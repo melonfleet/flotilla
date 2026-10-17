@@ -29,18 +29,18 @@ struct ImagesView: View {
     /// One of This Mac's images, on its way to hosts (PLAN.md Phase D, D2).
     @State private var sendingImage: ContainerImage?
 
-    /// Which image the detail screen is showing, and optionally which tab to open it on.
-    private struct DetailTarget: Identifiable, Hashable {
-        let reference: String
-        var host: HostRef = .local
+    /// A menu's request for one image's page on a particular tab. Each request is new (`nonce`),
+    /// so asking for a tab again after leaving it still lands on it.
+    private struct DetailTarget: Hashable {
+        let id: HostedImage.ID
         var tab: ImageDetailTab?
-        var id: String { host.rowID(reference) }
+        let nonce = UUID()
     }
+    @State private var request: DetailTarget?
 
-    /// The image whose detail screen is showing, or nil for the list. Keyed on the **reference**,
-    /// which is how this section identifies an image everywhere else — `ContainerImage.id` is the
-    /// digest — and on the Mac it is on.
-    @State private var detailTarget: DetailTarget?
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (Q58).
+    @State private var shown = Set<HostedImage.ID>()
 
     @State private var taggingImage: HostedImage?
     /// Shared by the Tag form's header and its Cancel, so both ask about this form alone.
@@ -55,7 +55,11 @@ struct ImagesView: View {
 
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .image else { return }
-        detailTarget = DetailTarget(reference: subject)
+        // Named by **reference**, which is how this section identifies an image everywhere else —
+        // `ContainerImage.id` is the digest — and on This Mac.
+        if let image = model.images.first(where: { $0.reference == subject }) {
+            open(HostedImage(image: image, host: .local, hostName: model.hostLabel).id)
+        }
         model.clearPendingDetail()
     }
 
@@ -82,29 +86,32 @@ struct ImagesView: View {
                 }, dismiss: { browsing = false })
             } else if let image = taggingImage {
                 tagScreen(for: image)
-            } else if let target = detailTarget {
-                detailScreen(target)
             } else {
-                VStack(spacing: 0) {
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    // A pull outlives its form, so the list has to be able to say so. Without
-                    // this, pressing Back during a 40-second pull looks exactly like the pull
-                    // having been cancelled.
-                    if let pull = model.activePull {
-                        ImagePullStatus(pull: pull, compact: true)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
+                // Q58: the list, and the selected image's page beside it.
+                SplitPanes(list: "images", pane: ui.pane, showing: shownRow?.id) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        bulkActionBar
                         Divider()
+                        // A pull outlives its form, so the list has to be able to say so. Without
+                        // this, pressing Back during a 40-second pull looks exactly like the pull
+                        // having been cancelled.
+                        if let pull = model.activePull {
+                            ImagePullStatus(pull: pull, compact: true)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                            Divider()
+                        }
+                        content
                     }
-                    content
+                    // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
+                    // unreachable section is a `ContentUnavailableView`, which takes only its own
+                    // height, and the toolbar then rode down to the middle of the window (the
+                    // owner, on an empty Volumes, 5 October). Machines already did this.
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
-                // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
-                // unreachable section is a `ContentUnavailableView`, which takes only its own
-                // height, and the toolbar then rode down to the middle of the window (the
-                // owner, on an empty Volumes, 5 October). Machines already did this.
-                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -112,6 +119,7 @@ struct ImagesView: View {
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set.
         .selection($selection, confinedTo: visibleIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
         // A image asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -163,7 +171,6 @@ struct ImagesView: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let row = pendingDelete {
-                    leaveDetailIfShowing(row)
                     Task { await model.removeImage(row.image, host: row.host) }
                 }
                 pendingDelete = nil
@@ -349,38 +356,39 @@ struct ImagesView: View {
     /// when reclaiming disk) and the platform and digest are on screen without opening Inspect.
     /// Repository and tag sort separately, from the Sort menu, rather than as two columns.
     private var rowsList: some View {
-        List(displayedImages, selection: $selection) { row in
-            listRow(row)
-                // The row paints its own padding, so its hover wash and the list's selection fill
-                // reach the same edges.
-                .listRowInsets(EdgeInsets())
-        }
-        .listStyle(.inset)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // On the List, not on a row: this one hands back every selected id.
-        .contextMenu(forSelectionType: HostedImage.ID.self) { ids in
-            rowContextMenu(for: ids)
-        } primaryAction: { ids in
-            guard ids.count == 1,
-                  let row = displayedImages.first(where: { ids.contains($0.id) }) else { return }
-            open(row)
+        SelectionRevealingList(selection: selection) {
+            List(displayedImages, selection: $selection) { row in
+                listRow(row)
+                    // The row paints its own padding, so its hover wash and the list's selection fill
+                    // reach the same edges.
+                    .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.inset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // On the List, not on a row: this one hands back every selected id.
+            .contextMenu(forSelectionType: HostedImage.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                // Selecting already shows the image (Q58); double-click and Return bring its page
+                // forward in a window too narrow for both panes.
+                guard ids.count == 1,
+                      let row = displayedImages.first(where: { ids.contains($0.id) }) else { return }
+                open(row)
+            }
         }
     }
 
-    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`. No live
-    /// figures — an image has none — so the metrics slot is empty and takes no width.
+    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`.
     private func listRow(_ row: HostedImage) -> some View {
         let users = containersUsing(row)
         return ResourceRow(
             title: Self.displayName(row.image),
-            opens: { open(row) },
-            openHelp: "Open \(row.reference)\(onHost(row))",
+            titleHelp: row.reference + onHost(row),
             detail: detailParts(row).joined(separator: " · "),
             detailHelp: detailHelp(row),
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row, users: users),
-            reservesMetrics: false,
             leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.images.systemImage) } },
             chips: {
                 HStack(spacing: 4) {
@@ -396,7 +404,6 @@ struct ImagesView: View {
                     }
                 }
             },
-            metrics: { EmptyView() },
             actions: { rowActions(for: row) })
     }
 
@@ -587,7 +594,16 @@ struct ImagesView: View {
     private var actionableRows: [HostedImage] { displayedImages.filter { actionable.contains($0.id) } }
 
     private func open(_ row: HostedImage, tab: ImageDetailTab? = nil) {
-        detailTarget = DetailTarget(reference: row.reference, host: row.host, tab: tab)
+        open(row.id, tab: tab)
+    }
+
+    /// Shows an image's page by selecting it, and only it (Q58) — clearing the filter first if it
+    /// is hiding the row, so the page always has a place in the list to step from.
+    private func open(_ id: HostedImage.ID, tab: ImageDetailTab? = nil) {
+        if !visibleIDs.contains(id) { ui.search = ""; ui.filterID = "all"; ui.hostFilter = nil }
+        request = tab.map { DetailTarget(id: id, tab: $0) }
+        selection = [id]
+        ui.pane.reveal()
     }
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .image) }
@@ -597,14 +613,17 @@ struct ImagesView: View {
         // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
         // selection made on purpose, and this is where it is acted on.
         if !actionable.isEmpty {
-            BulkActionBar(title: "\(actionable.count) selected") {
-                IconActionButton(systemImage: "trash",
-                                 label: "Delete \(actionable.count) images",
-                                 help: "Delete \(actionable.count) images",
-                                 busy: selectionBusy, destructive: true) {
-                    confirmingBulkDelete = true
-                }
-            }
+            BulkActionBar(title: "\(actionable.count) selected") { bulkActions }
+        }
+    }
+
+    /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
+    private var bulkActions: some View {
+        IconActionButton(systemImage: "trash",
+                         label: "Delete \(actionable.count) images",
+                         help: "Delete \(actionable.count) images",
+                         busy: selectionBusy, destructive: true) {
+            confirmingBulkDelete = true
         }
     }
 
@@ -667,83 +686,60 @@ struct ImagesView: View {
 
     // MARK: Detail
 
+    /// The page beside the list (Q58): the selected image's detail, a summary of several, or an
+    /// empty state.
     @ViewBuilder
-    private func detailScreen(_ target: DetailTarget) -> some View {
-        VStack(spacing: 0) {
-            if let row = hostedImage(target) {
+    private var page: some View {
+        if let row = shownRow {
+            VStack(spacing: 0) {
                 detailHeader(for: row)
                 Divider()
-                ImageDetailView(model: model, image: row.image, host: row.host, requestedTab: target.tab)
+                ImageDetailView(model: model, image: row.image, host: row.host,
+                                requestedTab: request?.id == row.id ? request?.tab : nil)
                     .id(row.detailKey)
-            } else {
-                detailHeader(for: nil)
-                Divider()
-                // Top-aligned with neutral wording, as Containers' detail does.
-                ContentUnavailableView(
-                    "Image unavailable",
-                    systemImage: "questionmark.square.dashed",
-                    description: Text("\u{201C}\(target.reference)\u{201D} is no longer on "
-                                      + "\(model.hostMode.hostName(target.host, local: "this Mac")). It may have been deleted.")
-                )
-                .frame(maxHeight: .infinity, alignment: .top)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .paneStep("image", "images", order: displayedImages.map(\.id), current: row.id) { open($0) }
+            .id(request?.nonce)
+        } else if shown.count > 1, !actionable.isEmpty {
+            SelectionSummaryPane(title: "\(actionable.count) images selected",
+                                 systemImage: Section.images.systemImage,
+                                 names: actionableRows.map { $0.reference + onHost($0) }) { bulkActions }
+        } else {
+            PaneEmptyState(title: "Choose an image", systemImage: Section.images.systemImage,
+                           description: "Its platforms, layers and the containers using it show here.")
         }
     }
 
-    /// The row a detail target names: This Mac's by reference, a paired host's from its last answer.
-    private func hostedImage(_ target: DetailTarget) -> HostedImage? {
-        switch target.host {
-        case .local:
-            return model.images.first { $0.reference == target.reference }
-                .map { HostedImage(image: $0, host: .local, hostName: model.hostLabel) }
-        case .peer(let fingerprint):
-            guard let image = model.hostMode.imageSnapshots[fingerprint]?.items
-                .first(where: { $0.reference == target.reference }) else { return nil }
-            return HostedImage(image: image, host: target.host,
-                               hostName: model.hostMode.hostName(target.host, local: model.hostLabel))
-        }
+    /// The one image the page shows, when one is selected.
+    private var shownRow: HostedImage? {
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return displayedImages.first { $0.id == id }
     }
 
-    @ViewBuilder
-    private func detailHeader(for row: HostedImage?) -> some View {
-        HStack(spacing: 10) {
-            IconActionButton(systemImage: "chevron.left", label: "Back to Images",
-                             help: "Back to Images") { detailTarget = nil }
-
-            if let row {
-                let image = row.image
-                Image(systemName: "square.stack.3d.up")
-                    .font(.system(size: 19)).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(Self.repository(image)).font(.headline)
-                        Text(Self.tag(image)).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Text(subtitle(for: row))
-                        .font(.caption).foregroundStyle(.tertiary)
-                        .lineLimit(1).truncationMode(.middle)
-                        .help(subtitle(for: row))
+    /// Identity, the row's actions, the stepper and the expand button — no Back: the list is beside it.
+    private func detailHeader(for row: HostedImage) -> some View {
+        let image = row.image
+        return HStack(spacing: 10) {
+            Image(systemName: "square.stack.3d.up")
+                .font(.system(size: 19)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(Self.repository(image)).font(.headline).lineLimit(1).truncationMode(.middle)
+                    Text(Self.tag(image)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-            } else {
-                Text("Image unavailable").font(.headline)
+                Text(subtitle(for: row))
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(subtitle(for: row))
             }
 
-            Spacer()
-            if let row {
-                ActionCluster { rowActions(for: row) }
-            }
-            imageStepper
+            Spacer(minLength: 0)
+            ActionCluster { rowActions(for: row) }
+            DetailStepper()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-
-    private var imageStepper: some View {
-        let order = displayedImages
-        let index = order.firstIndex { $0.detailKey == detailTarget?.id }
-        return DetailStepper(singular: "image", plural: "images", index: index, count: order.count,
-                             previous: { if let index, index > 0 { open(order[index - 1]) } },
-                             next: { if let index, index < order.count - 1 { open(order[index + 1]) } })
     }
 
     private func subtitle(for row: HostedImage) -> String {
@@ -922,14 +918,8 @@ struct ImagesView: View {
         if model.deletePolicy.requiresConfirmation(.single) {
             pendingDelete = row
         } else {
-            leaveDetailIfShowing(row)
             Task { await model.removeImage(row.image, host: row.host) }
         }
-    }
-
-    /// Deleting the image whose detail is open goes back to the list, as in Containers.
-    private func leaveDetailIfShowing(_ row: HostedImage) {
-        if detailTarget?.id == row.detailKey { detailTarget = nil }
     }
 
     /// `ContainerImage` has no separate repository/tag fields — `reference` is one string

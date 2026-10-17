@@ -38,26 +38,63 @@ extension View {
     /// heading), and a closed group or a filter hides rows without clearing their ids. Either way
     /// the highlight, the boxes and the bulk bar stopped agreeing — "0 containers selected" for a
     /// member nobody could tick, a bulk tag landing on hosts in a collapsed group (Kyle, 17
-    /// October). Such a row now never stays in the selection, so there is one answer to "what is
-    /// selected". Opening a row does not need it: the title link and the row's buttons open it.
-    func selection<ID: Hashable>(_ selection: Binding<Set<ID>>, confinedTo selectable: Set<ID>) -> some View {
-        modifier(SelectionConfinement(selection: selection, selectable: selectable))
+    /// October). Such a row now never stays in a selection of several, so there is one answer to
+    /// "what is selected".
+    ///
+    /// **One row on its own may be any row with a page** (`showing`), since the split (Q58): selecting
+    /// a row is how its page is shown, and This Mac and the built-in networks have pages too. Alone,
+    /// it agrees with everything — the highlight is the page beside it, its box stays empty and
+    /// disabled, and the bulk bar, which counts only what a bulk action can take, does not appear.
+    /// The moment a second row joins it, it drops out as before. `showing` defaults to `selectable`,
+    /// which is the old rule exactly.
+    func selection<ID: Hashable>(_ selection: Binding<Set<ID>>, confinedTo selectable: Set<ID>,
+                                 showing showable: Set<ID>? = nil) -> some View {
+        modifier(SelectionConfinement(selection: selection, selectable: selectable,
+                                      showable: showable ?? selectable))
+    }
+
+    /// The page beside the list follows `selection` into `shown` — **through the form guard**.
+    ///
+    /// A page can be a form (a registry, a domain, a group), and choosing another row would replace
+    /// it, so a choice that would lose unsaved edits asks first, the same question the sidebar asks.
+    /// Keep Editing puts the list's selection back. A page that is not a dirty form changes at once,
+    /// in the same frame: the guard is synchronous when nothing would be lost.
+    func paneFollows<ID: Hashable>(_ selection: Binding<Set<ID>>, into shown: Binding<Set<ID>>,
+                                   guard formGuard: FormGuard) -> some View {
+        modifier(PaneFollowing(selection: selection, shown: shown, formGuard: formGuard))
     }
 }
 
 private struct SelectionConfinement<ID: Hashable>: ViewModifier {
     @Binding var selection: Set<ID>
     let selectable: Set<ID>
+    let showable: Set<ID>
 
     func body(content: Content) -> some View {
         content
             .onChange(of: selection, initial: true) { _, _ in confine() }
             .onChange(of: selectable) { _, _ in confine() }
+            .onChange(of: showable) { _, _ in confine() }
     }
 
     private func confine() {
+        if selection.count == 1, let only = selection.first, showable.contains(only) { return }
         let kept = selection.intersection(selectable)
         if kept != selection { selection = kept }
+    }
+}
+
+private struct PaneFollowing<ID: Hashable>: ViewModifier {
+    @Binding var selection: Set<ID>
+    @Binding var shown: Set<ID>
+    let formGuard: FormGuard
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: selection, initial: true) { _, chosen in
+                guard chosen != shown else { return }
+                formGuard.confirmLeaving(onKeepEditing: { selection = shown }) { shown = chosen }
+            }
     }
 }
 
@@ -131,5 +168,29 @@ struct BulkActionBar<Actions: View>: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.quaternary.opacity(0.3))
+    }
+}
+
+/// A row list that keeps its one selected row in view when something other than a click moved
+/// the selection there — the page's ↑ ↓ stepping while the list is beside it, a menu or the search
+/// box opening a row further down, or the list coming back after the page was widened over it.
+/// A click selects a row that is already on screen, so revealing it moves nothing. Mail's message
+/// list does the same as you step through it.
+struct SelectionRevealingList<ID: Hashable, Content: View>: View {
+    let selection: Set<ID>
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            content
+                // After the rows are laid out: on appear the list has none yet to scroll to.
+                .onAppear { Task { @MainActor in reveal(proxy) } }
+                .onChange(of: selection) { _, _ in reveal(proxy) }
+        }
+    }
+
+    private func reveal(_ proxy: ScrollViewProxy) {
+        guard selection.count == 1, let id = selection.first else { return }
+        proxy.scrollTo(id)
     }
 }

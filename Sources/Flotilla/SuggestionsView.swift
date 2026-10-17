@@ -44,7 +44,7 @@ struct SuggestionsView: View {
                 FormHeader(title: "Suggestions", systemImage: "sparkles",
                            hasUnsavedChanges: false, onBack: dismiss)
                 Divider()
-                SplitPanes { listPane } detail: { detailPane }
+                SplitPanes("suggestions") { listPane } detail: { detailPane }
                 Divider()
                 footer
             }

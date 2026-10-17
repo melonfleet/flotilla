@@ -167,7 +167,10 @@ struct HostsView: View {
     let go: (Section) -> Void
 
     @State private var selection = Set<HostRow.ID>()
-    @State private var openHost: HostRow.ID?
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (Q58). One host on its own may be This Mac, whose box is disabled: selecting it is
+    /// how its page is shown.
+    @State private var shown = Set<HostRow.ID>()
     @State private var showingAdd = false
     @State private var tagSheet: TagSheetTarget?
     @State private var pendingForget: HostRow?
@@ -213,33 +216,37 @@ struct HostsView: View {
         Group {
             if showingAdd || pairing != nil {
                 AddHostView(model: model, importing: pairing) { showingAdd = false; pairing = nil }
-            } else if let id = openHost {
-                hostPage(id)
             } else {
-                VStack(spacing: 0) {
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    approvalBanner
-                    content
+                // Q58: the list, and the selected host's page beside it.
+                SplitPanes(list: "hosts", pane: ui.pane, showing: shownRow?.id) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        bulkActionBar
+                        Divider()
+                        approvalBanner
+                        content
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // A host's name elsewhere — Overview's Hosts table — opens its page here. One-shot.
         .onChange(of: model.pendingDetailSubject) { _, subject in
             guard let subject, model.pendingDetailKind == .host else { return }
-            openHost = subject
+            open(subject)
             model.clearPendingDetail()
         }
         // Filtering, searching, removal and a closed group hide rows without clearing their ids,
         // and a click or ⌘A selects This Mac and the headings: none of them stays selected.
-        .selection($selection, confinedTo: Set(selectableIDs))
+        .selection($selection, confinedTo: Set(selectableIDs), showing: Set(showableIDs))
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
         .onAppear {
             hostMode.hostsOpened()
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .host {
-                openHost = subject
+                open(subject)
                 model.clearPendingDetail()
             }
             if model.pendingAddHost, hostMode.isAdmin { showingAdd = true }
@@ -340,20 +347,68 @@ struct HostsView: View {
         }
     }
 
+    // MARK: The page
+
+    /// The page beside the list (Q58): the selected host's page, a summary of several, or an
+    /// empty state. An imported host's page is its pairing form, as opening it always was.
     @ViewBuilder
-    private func hostPage(_ id: HostRow.ID) -> some View {
-        let row = model.hostRows.first { $0.id == id }
+    private var page: some View {
+        if let row = shownRow {
+            Group {
+                if let imported = row.imported {
+                    AddHostView(model: model, importing: imported) { selection = [] }
+                } else {
+                    hostPage(row)
+                }
+            }
+            .id(row.id)
+            .paneStep("host", "hosts", order: showableIDs, current: row.id) { open($0) }
+        } else if shown.count > 1, !selectedRows.isEmpty {
+            SelectionSummaryPane(title: "\(selectedRows.count) hosts selected",
+                                 systemImage: Section.hosts.systemImage,
+                                 names: selectedRows.map(\.name)) { bulkActions }
+        } else {
+            PaneEmptyState(title: "Choose a host", systemImage: Section.hosts.systemImage,
+                           description: "Its containers, machines, hardware and runtime show here.")
+        }
+    }
+
+    /// The rows with a page, in list order — every host, This Mac included, and no group heading.
+    private var showableIDs: [HostRow.ID] { tableRows.filter { $0.header == nil }.map(\.id) }
+
+    /// The one host the page shows, when one is selected.
+    private var shownRow: HostRow? {
+        guard shown.count == 1, let id = shown.first, showableIDs.contains(id) else { return nil }
+        return model.hostRows.first { $0.id == id }
+    }
+
+    /// Shows a host's page by selecting it, and only it (Q58) — clearing the filter and opening its
+    /// group first if either is hiding the row.
+    private func open(_ id: HostRow.ID) {
+        if !showableIDs.contains(id) {
+            ui.search = ""
+            ui.filterID = "all"
+            ui.collapsedIDs.removeAll()
+        }
+        selection = [id]
+        ui.pane.reveal()
+    }
+
+    @ViewBuilder
+    private func hostPage(_ row: HostRow) -> some View {
         VStack(spacing: 0) {
-            FormHeader(title: row?.name ?? HostModeController.computerName,
+            // The page header every host page has had; in the split it carries the stepper and
+            // the expand button where Back was.
+            FormHeader(title: row.name,
                        systemImage: Section.hosts.systemImage,
-                       hasUnsavedChanges: false, onBack: { openHost = nil },
-                       titleBadge: row?.isThisMac == true ? "This Mac" : nil) {
+                       hasUnsavedChanges: false, onBack: { selection = [] },
+                       titleBadge: row.isThisMac ? "This Mac" : nil) {
                 // Ask this Mac again now rather than waiting for the next look (the owner, 9 October).
-                ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh \(row?.name ?? model.hostLabel)") {
+                ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh \(row.name)") {
                     Task {
-                        if let peer = row?.peer, peer.isTrusted {
+                        if let peer = row.peer, peer.isTrusted {
                             await hostMode.refreshHost(peer.fingerprint)
-                        } else if row?.peer == nil {
+                        } else if row.peer == nil {
                             await model.reload()
                             await model.refreshSystemFacts()
                         }
@@ -363,9 +418,9 @@ struct HostsView: View {
             Divider()
             // One tabbed page for This Mac and every trusted host (the owner, 9 October). A host
             // still waiting for approval keeps the approve/turn-away screen until it is trusted.
-            if let peer = row?.peer, !peer.isTrusted {
-                PeerDetailView(peer: peer, model: model) { openHost = nil }
-            } else if let peer = row?.peer {
+            if let peer = row.peer, !peer.isTrusted {
+                PeerDetailView(peer: peer, model: model) { selection = [] }
+            } else if let peer = row.peer {
                 HostDetailView(model: model, host: .peer(peer.fingerprint), go: go)
             } else {
                 HostDetailView(model: model, host: .local, go: go)
@@ -604,22 +659,26 @@ struct HostsView: View {
     private var bulkActionBar: some View {
         // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
         if !selectedRows.isEmpty {
-            let pending = selectedRows.compactMap(\.peer).filter { $0.status == .pending }
-            BulkActionBar(title: "\(selectedRows.count) selected") {
-                if !pending.isEmpty {
-                    Button("Approve \(pending.count)") { pending.forEach { hostMode.approve($0.fingerprint) } }
-                        .controlSize(.small)
-                }
-                HostCategoryMenu(store: model.hostCategories, hosts: selectedRows.map(\.id),
-                                 newValue: { valueTarget = ValueTarget(category: $0, hosts: selectedRows.map(\.id)) },
-                                 editCategories: { showingCategories = true })
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help("Group the \(selectedRows.count) selected hosts")
-                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
-                    tagSheet = TagSheetTarget(selectedTagSubjects)
-                }
-            }
+            BulkActionBar(title: "\(selectedRows.count) selected") { bulkActions }
+        }
+    }
+
+    /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
+    @ViewBuilder
+    private var bulkActions: some View {
+        let pending = selectedRows.compactMap(\.peer).filter { $0.status == .pending }
+        if !pending.isEmpty {
+            Button("Approve \(pending.count)") { pending.forEach { hostMode.approve($0.fingerprint) } }
+                .controlSize(.small)
+        }
+        HostCategoryMenu(store: model.hostCategories, hosts: selectedRows.map(\.id),
+                         newValue: { valueTarget = ValueTarget(category: $0, hosts: selectedRows.map(\.id)) },
+                         editCategories: { showingCategories = true })
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Group the \(selectedRows.count) selected hosts")
+        BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+            tagSheet = TagSheetTarget(selectedTagSubjects)
         }
     }
 
@@ -645,25 +704,28 @@ struct HostsView: View {
     /// as tall as their content; nothing here writes a height down. When Hosts is grouped, a
     /// group's header is a row of its own, followed by its hosts unless it is closed.
     private var rowsList: some View {
-        List(tableRows, selection: $selection) { row in
-            Group {
-                if row.header != nil { headerRow(row) } else { hostRow(row) }
+        SelectionRevealingList(selection: selection) {
+            List(tableRows, selection: $selection) { row in
+                Group {
+                    if row.header != nil { headerRow(row) } else { hostRow(row) }
+                }
+                .listRowInsets(EdgeInsets())
             }
-            .listRowInsets(EdgeInsets())
-        }
-        .listStyle(.inset)
-        .contextMenu(forSelectionType: HostRow.ID.self) { ids in
-            rowContextMenu(for: ids)
-        } primaryAction: { ids in
-            guard ids.count == 1, let id = ids.first else { return }
-            if id.hasPrefix("group:") {
-                toggleGroup(id)
-                return
+            .listStyle(.inset)
+            .contextMenu(forSelectionType: HostRow.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                guard ids.count == 1, let id = ids.first else { return }
+                if id.hasPrefix("group:") {
+                    toggleGroup(id)
+                    return
+                }
+                // Selecting already shows the host (Q58); double-click and Return bring its page
+                // forward in a window too narrow for both panes.
+                open(id)
             }
-            guard let row = model.hostRows.first(where: { $0.id == id }) else { return }
-            open(row)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func toggleGroup(_ id: HostRow.ID) {
@@ -679,13 +741,10 @@ struct HostsView: View {
         if row.machines != nil { parts.append("machines " + row.machinesText) }
         return ResourceRow(
             title: row.name,
-            opens: { toggleGroup(row.id) },
-            openHelp: open ? "Hide hosts" : "Show \(count) hosts",
             detail: parts.joined(separator: " · "),
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection, unavailable: "A heading — select the hosts under it"),
             summary: "\(row.name), group, \(parts.joined(separator: ", ")), \(open ? "expanded" : "collapsed")",
-            reservesMetrics: false,
             leading: {
                 HStack(spacing: 6) {
                     caret(row)
@@ -693,7 +752,6 @@ struct HostsView: View {
                 }
             },
             chips: { EmptyView() },
-            metrics: { EmptyView() },
             actions: { EmptyView() })
     }
 
@@ -701,17 +759,18 @@ struct HostsView: View {
         let facts = hardware(row)
         return ResourceRow(
             title: row.name,
-            opens: { open(row) },
-            detail: detailParts(row, facts: facts).joined(separator: " · "),
+            // When it was last heard from goes last on the line, where the figures column used to
+            // put it (Q58): it is the part of the line you would miss least.
+            detail: (detailParts(row, facts: facts) + (lastSeenText(row).map { ["seen " + $0] } ?? []))
+                .joined(separator: " · "),
             detailHelp: detailParts(row, facts: facts).joined(separator: "\n"),
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection,
-                            unavailable: row.isThisMac ? "This Mac — open it to act on it" : nil),
+                            unavailable: row.isThisMac ? "This Mac — select it to act on it" : nil),
             indent: grouping == .none ? 0 : 28,
             summary: rowSummary(row, facts: facts),
             leading: { HostStatusDot(model: model, row: row) },
             chips: { rowChips(row) },
-            metrics: { lastSeen(row) },
             actions: { rowActions(for: row) })
     }
 
@@ -764,18 +823,6 @@ struct HostsView: View {
         row.peer?.lastSeen.map(OverviewView.checkIn)
     }
 
-    /// The right-hand figure: when a paired host was last heard from. This Mac is always here, and
-    /// a host not yet paired has not been heard from, so both leave it empty.
-    @ViewBuilder
-    private func lastSeen(_ row: HostRow) -> some View {
-        if let text = lastSeenText(row), let date = row.peer?.lastSeen {
-            Text(text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .help("Last heard from \(date.formatted(date: .abbreviated, time: .shortened))")
-        }
-    }
 
     // MARK: Chips
 
@@ -1070,9 +1117,7 @@ struct HostsView: View {
 
     /// A paired host or This Mac opens its page; an imported one goes straight to pairing, which
     /// is the only thing there is to do with it.
-    private func open(_ row: HostRow) {
-        if let imported = row.imported { pairing = imported } else { openHost = row.id }
-    }
+    private func open(_ row: HostRow) { open(row.id) }
 
     private func ask(_ action: RuntimeLifecycleAction) {
         confirming = action

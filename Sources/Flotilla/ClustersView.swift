@@ -17,6 +17,9 @@ struct ClustersView: View {
     let ui: ResourceUIState<HostedCluster>
 
     @State private var selection = Set<HostedCluster.ID>()
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (Q58).
+    @State private var shown = Set<HostedCluster.ID>()
     @State private var showingCreate = false
     @State private var showingSuggestions = false
     @State private var createPrefill: ClusterSuggestion?
@@ -73,18 +76,23 @@ struct ClustersView: View {
             } else if let target = loadImageTarget {
                 LoadImageView(model: model, cluster: target) { loadImageTarget = nil }
             } else {
-                VStack(spacing: 0) {
-                    experimentalBand
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    content
+                // Q58: the list, and the selected cluster's page beside it.
+                SplitPanes(list: "clusters", pane: ui.pane, showing: shownRow?.id) {
+                    VStack(spacing: 0) {
+                        experimentalBand
+                        toolbar
+                        bulkActionBar
+                        Divider()
+                        content
+                    }
+                    // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
+                    // unreachable section is a `ContentUnavailableView`, which takes only its own
+                    // height, and the toolbar then rode down to the middle of the window (the
+                    // owner, on an empty Volumes, 5 October). Machines already did this.
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
-                // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
-                // unreachable section is a `ContentUnavailableView`, which takes only its own
-                // height, and the toolbar then rode down to the middle of the window (the
-                // owner, on an empty Volumes, 5 October). Machines already did this.
-                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -160,6 +168,7 @@ struct ClustersView: View {
         // Filtering and deletion hide rows without clearing their ids; the bar must not count
         // rows nobody can see.
         .selection($selection, confinedTo: Set(selectableIDs))
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
     }
 
     /// What a recreate keeps and what it loses, said before anything happens.
@@ -305,16 +314,82 @@ struct ClustersView: View {
         // Clusters had no bulk bar before the checkboxes came back (Kamal, 17 October: "the same
         // all through"). Delete only, and it asks, as a single delete does.
         if !selectedRows.isEmpty {
-            let rows = deletable(selectedRows)
-            BulkActionBar(title: "\(selectedRows.count) selected") {
-                IconActionButton(systemImage: "trash",
-                                 label: "Delete \(rows.count) clusters",
-                                 help: rows.isEmpty ? "These clusters are busy" : "Delete \(rows.count) clusters",
-                                 disabled: rows.isEmpty, destructive: true) {
-                    pendingBulkDelete = rows
-                }
-            }
+            BulkActionBar(title: "\(selectedRows.count) selected") { bulkActions }
         }
+    }
+
+    /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
+    private var bulkActions: some View {
+        let rows = deletable(selectedRows)
+        return IconActionButton(systemImage: "trash",
+                                label: "Delete \(rows.count) clusters",
+                                help: rows.isEmpty ? "These clusters are busy" : "Delete \(rows.count) clusters",
+                                disabled: rows.isEmpty, destructive: true) {
+            pendingBulkDelete = rows
+        }
+    }
+
+    // MARK: The page
+
+    /// The page beside the list (Q58): the selected cluster's facts, a summary of several, or an
+    /// empty state.
+    @ViewBuilder
+    private var page: some View {
+        if let row = shownRow {
+            VStack(spacing: 0) {
+                pageHeader(for: row)
+                Divider()
+                ClusterDetailView(row: row)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .paneStep("cluster", "clusters", order: displayedClusters.map(\.id), current: row.id) { select($0) }
+        } else if shown.count > 1, !selectedRows.isEmpty {
+            SelectionSummaryPane(title: "\(selectedRows.count) clusters selected",
+                                 systemImage: Section.clusters.systemImage,
+                                 names: selectedRows.map { $0.name + onHost($0) }) { bulkActions }
+        } else {
+            PaneEmptyState(title: "Choose a cluster", systemImage: Section.clusters.systemImage,
+                           description: "Its state, size and how to reach it with kubectl show here.")
+        }
+    }
+
+    /// The one cluster the page shows, when one is selected.
+    private var shownRow: HostedCluster? {
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return displayedClusters.first { $0.id == id }
+    }
+
+    private func select(_ id: HostedCluster.ID) {
+        selection = [id]
+        ui.pane.reveal()
+    }
+
+    /// The state, the name, where it runs, the row's actions and the stepper — the shape of every
+    /// other page's header.
+    private func pageHeader(for row: HostedCluster) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: Section.clusters.systemImage)
+                .font(.system(size: 19)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(row.name).font(.headline).lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 4) {
+                        stateMark(row.cluster).scaleEffect(0.75)
+                        Text(row.cluster.state.capitalized).font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                }
+                Text(detailParts(row).dropFirst().joined(separator: " · ") + onHost(row))
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+            ActionCluster { rowActions(for: row) }
+            DetailStepper()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     /// What a right-click offers: the row's own menu for one row, the bar's Delete for several.
@@ -379,33 +454,36 @@ struct ClustersView: View {
     /// as tall as their content; nothing here writes a height down, and the list takes whatever
     /// the pane gives it (the old table needed `maxHeight: .infinity` for the same reason).
     ///
-    /// A cluster has no page, so a double-click opens nothing and the name is plain text.
+    /// Selecting a cluster shows its page beside the list (Q58); double-click and Return bring it
+    /// forward in a window too narrow for both panes.
     private var rowsList: some View {
-        List(displayedClusters, selection: $selection) { row in
-            listRow(row)
-                .listRowInsets(EdgeInsets())
+        SelectionRevealingList(selection: selection) {
+            List(displayedClusters, selection: $selection) { row in
+                listRow(row)
+                    .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.inset)
+            .contextMenu(forSelectionType: HostedCluster.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                guard ids.count == 1, let id = ids.first else { return }
+                select(id)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .listStyle(.inset)
-        .contextMenu(forSelectionType: HostedCluster.ID.self) { ids in
-            rowContextMenu(for: ids)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func listRow(_ row: HostedCluster) -> some View {
         ResourceRow(
             title: row.name,
-            openHelp: "kubectl --context \(row.name)" + (row.host.isLocal ? "" : " — on \(row.hostName)"),
+            titleHelp: "kubectl --context \(row.name)" + (row.host.isLocal ? "" : " — on \(row.hostName)"),
             detail: detailParts(row).joined(separator: " · "),
             detailHelp: "The API server is reachable on this Mac at the host port",
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
-            reservesMetrics: false,
-            dimsPlainTitle: false,
             leading: { stateMark(row.cluster) },
             chips: { rowChips(row) },
-            metrics: { EmptyView() },
             actions: { rowActions(for: row) })
     }
 

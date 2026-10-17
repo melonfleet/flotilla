@@ -19,7 +19,11 @@ struct RegistriesView: View {
     let ui: ResourceUIState<RegistryRow>
 
     @State private var selection = Set<RegistryRow.ID>()
-    /// The embedded form: Add, or managing one row.
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (Q58). A registry's page is its manage form, so choosing another row with an
+    /// unsaved sign-in asks first.
+    @State private var shown = Set<RegistryRow.ID>()
+    /// Add Registry, full width like every other create form. Managing one row is its page.
     @State private var form: RegistryFormTarget?
     @State private var pendingRemove: [RegistryRow] = []
     @State private var pendingSignOut: [RegistryRow] = []
@@ -34,13 +38,18 @@ struct RegistriesView: View {
                 RegistryFormView(model: model, target: form) { self.form = nil }
                     .id(form)
             } else {
-                VStack(spacing: 0) {
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    content
+                // Q58: the list, and the selected registry's page beside it.
+                SplitPanes(list: "registries", pane: ui.pane, showing: shownRow?.id) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        bulkActionBar
+                        Divider()
+                        content
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -58,6 +67,7 @@ struct RegistriesView: View {
         // Filtering, searching and removal hide rows without clearing their ids; the bulk bar and
         // menu must not count rows nobody can see.
         .selection($selection, confinedTo: visibleIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
         .alert("Action failed",
                isPresented: Binding(get: { actionError != nil },
                                     set: { if !$0 { actionError = nil } })) {
@@ -212,30 +222,68 @@ struct RegistriesView: View {
     private var bulkActionBar: some View {
         // From one row: a ticked box is a selection made on purpose (Kamal, 17 October).
         if !selectedRows.isEmpty {
-            let signedIn = selectedRows.filter(\.isSignedIn)
-            let listed = selectedRows.filter(\.isListed)
-            BulkActionBar(title: "\(selectedRows.count) selected") {
-                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
-                    tagSheet = TagSheetTarget(selectedTagSubjects)
-                }
-                Divider().frame(height: 14)
-                IconActionButton(systemImage: "person.crop.circle.badge.xmark",
-                                 label: "Sign out of \(signedIn.count) registries",
-                                 help: signedIn.isEmpty ? "None of these is signed in"
-                                     : !model.runtimeUsable ? "Start the container system to sign out"
-                                     : "Sign out of \(signedIn.count)",
-                                 disabled: signedIn.isEmpty || !model.runtimeUsable) {
-                    pendingSignOut = signedIn
-                }
-                IconActionButton(systemImage: "trash",
-                                 label: "Remove \(listed.count) registries from the list",
-                                 help: listed.isEmpty ? "None of these is in your list"
-                                                      : "Remove \(listed.count) from the list",
-                                 disabled: listed.isEmpty, destructive: true) {
-                    pendingRemove = listed
-                }
-            }
+            BulkActionBar(title: "\(selectedRows.count) selected") { bulkActions }
         }
+    }
+
+    /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
+    @ViewBuilder
+    private var bulkActions: some View {
+        let signedIn = selectedRows.filter(\.isSignedIn)
+        let listed = selectedRows.filter(\.isListed)
+        BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+            tagSheet = TagSheetTarget(selectedTagSubjects)
+        }
+        Divider().frame(height: 14)
+        IconActionButton(systemImage: "person.crop.circle.badge.xmark",
+                         label: "Sign out of \(signedIn.count) registries",
+                         help: signedIn.isEmpty ? "None of these is signed in"
+                             : !model.runtimeUsable ? "Start the container system to sign out"
+                             : "Sign out of \(signedIn.count)",
+                         disabled: signedIn.isEmpty || !model.runtimeUsable) {
+            pendingSignOut = signedIn
+        }
+        IconActionButton(systemImage: "trash",
+                         label: "Remove \(listed.count) registries from the list",
+                         help: listed.isEmpty ? "None of these is in your list"
+                                              : "Remove \(listed.count) from the list",
+                         disabled: listed.isEmpty, destructive: true) {
+            pendingRemove = listed
+        }
+    }
+
+    // MARK: The page
+
+    /// The page beside the list (Q58): the selected registry's manage form, read and signed in to
+    /// as before, a summary of several, or an empty state. Done, Cancel and a sign-in close it.
+    @ViewBuilder
+    private var page: some View {
+        if let row = shownRow {
+            RegistryFormView(model: model, target: .manage(row.id)) { selection = [] }
+                .id(row.id)
+                .paneStep("registry", "registries", order: displayedRows.map(\.id), current: row.id) { open($0) }
+        } else if shown.count > 1, !selectedRows.isEmpty {
+            SelectionSummaryPane(title: "\(selectedRows.count) registries selected",
+                                 systemImage: Section.registries.systemImage,
+                                 names: selectedRows.map(\.name)) { bulkActions }
+        } else {
+            PaneEmptyState(title: "Choose a registry", systemImage: Section.registries.systemImage,
+                           description: "Its server, whether it needs a sign-in and who you are signed in as show here.")
+        }
+    }
+
+    /// The one registry the page shows, when one is selected.
+    private var shownRow: RegistryRow? {
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return displayedRows.first { $0.id == id }
+    }
+
+    /// Shows a registry's page by selecting it, and only it (Q58) — clearing the filter first if
+    /// it is hiding the row.
+    private func open(_ id: RegistryRow.ID) {
+        if !visibleIDs.contains(id) { ui.search = ""; ui.filterID = "all" }
+        selection = [id]
+        ui.pane.reveal()
     }
 
     // MARK: Content
@@ -291,35 +339,34 @@ struct RegistriesView: View {
     /// The rows, filling the pane — `ResourceRow`'s two lines, the list's own selection. Rows are
     /// as tall as their content; nothing here writes a height down.
     private var rowsList: some View {
-        List(displayedRows, selection: $selection) { row in
-            listRow(row)
-                .listRowInsets(EdgeInsets())
+        SelectionRevealingList(selection: selection) {
+            List(displayedRows, selection: $selection) { row in
+                listRow(row)
+                    .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.inset)
+            .contextMenu(forSelectionType: RegistryRow.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                // Only when the activation names exactly one row — with several selected,
+                // `ids.first` is an arbitrary member.
+                guard ids.count == 1, let id = ids.first else { return }
+                open(id)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .listStyle(.inset)
-        .contextMenu(forSelectionType: RegistryRow.ID.self) { ids in
-            rowContextMenu(for: ids)
-        } primaryAction: { ids in
-            // Only when the activation names exactly one row — with several selected,
-            // `ids.first` is an arbitrary member.
-            guard ids.count == 1, let id = ids.first else { return }
-            form = .manage(id)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func listRow(_ row: RegistryRow) -> some View {
         ResourceRow(
             title: row.name,
-            opens: { form = .manage(row.id) },
             detail: detailParts(row).joined(separator: " · "),
             detailHelp: row.signInUnavailableReason ?? row.summary,
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
-            reservesMetrics: false,
             leading: { stateMark(row) },
             chips: { rowChips(row) },
-            metrics: { EmptyView() },
             actions: { rowActions(for: row) })
     }
 
@@ -442,7 +489,7 @@ struct RegistriesView: View {
                                      : row.isSignedIn ? "Sign in as a different account"
                                      : "Sign in to \(row.name)",
                                  disabled: !model.runtimeUsable) {
-                    form = .manage(row.id)
+                    open(row.id)
                 }
             }
             IconActionButton(systemImage: "trash",
@@ -460,7 +507,7 @@ struct RegistriesView: View {
     @ViewBuilder
     private func menu(for row: RegistryRow) -> some View {
         Button(row.canSignIn ? (row.isSignedIn ? "Switch Account…" : "Sign In…") : "Open…") {
-            form = .manage(row.id)
+            open(row.id)
         }
         .disabled(row.canSignIn && !model.runtimeUsable)
         if row.isSignedIn {

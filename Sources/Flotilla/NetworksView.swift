@@ -13,16 +13,18 @@ struct NetworksView: View {
     @State private var showingCreate = false
     @State private var showingSuggestions = false
     @State private var createPrefill: NetworkSuggestion?
-    /// Which network the detail screen is showing, and optionally which tab to open it on.
-    private struct DetailTarget: Identifiable, Hashable {
-        let name: String
-        var host: HostRef = .local
+    /// A menu's request for one network's page on a particular tab. Each request is new (`nonce`),
+    /// so asking for a tab again after leaving it still lands on it.
+    private struct DetailTarget: Hashable {
+        let id: HostedNetwork.ID
         var tab: NetworkDetailTab?
-        var id: String { host.rowID(name) }
+        let nonce = UUID()
     }
+    @State private var request: DetailTarget?
 
-    /// The network whose detail screen is showing, or nil for the list.
-    @State private var detailTarget: DetailTarget?
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (Q58).
+    @State private var shown = Set<HostedNetwork.ID>()
     @State private var pendingDelete: HostedNetwork?
     /// This Mac's network being pushed to hosts (PLAN.md Phase D).
     @State private var pushing: ContainerNetwork?
@@ -37,7 +39,7 @@ struct NetworksView: View {
 
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .network else { return }
-        detailTarget = DetailTarget(name: subject)
+        open(HostRef.local.rowID(subject))
         model.clearPendingDetail()
     }
 
@@ -55,22 +57,25 @@ struct NetworksView: View {
                     items: NetworkSuggestion.catalogue,
                     use: useSuggestion,
                     dismiss: { showingSuggestions = false })
-            } else if let target = detailTarget {
-                detailScreen(target)
             } else {
-                VStack(spacing: 0) {
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    // apple/container#2051: a network that has lost its bridge (Q30).
-                    DisconnectedNetworksBanner(model: model)
-                    content
+                // Q58: the list, and the selected network's page beside it.
+                SplitPanes(list: "networks", pane: ui.pane, showing: shownRow?.id) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        bulkActionBar
+                        Divider()
+                        // apple/container#2051: a network that has lost its bridge (Q30).
+                        DisconnectedNetworksBanner(model: model)
+                        content
+                    }
+                    // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
+                    // unreachable section is a `ContentUnavailableView`, which takes only its own
+                    // height, and the toolbar then rode down to the middle of the window (the
+                    // owner, on an empty Volumes, 5 October). Machines already did this.
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
-                // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
-                // unreachable section is a `ContentUnavailableView`, which takes only its own
-                // height, and the toolbar then rode down to the middle of the window (the
-                // owner, on an empty Volumes, 5 October). Machines already did this.
-                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -78,7 +83,9 @@ struct NetworksView: View {
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set, and a
         // click or ⌘A selects the built-in networks, whose boxes are disabled.
-        .selection($selection, confinedTo: Set(selectableIDs))
+        // A built-in network is never in a selection of several, but alone it is how its page is shown.
+        .selection($selection, confinedTo: Set(selectableIDs), showing: visibleIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
         // A network asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -122,7 +129,6 @@ struct NetworksView: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let row = pendingDelete {
-                    leaveDetailIfShowing(row)
                     Task { await model.removeNetwork(row.network, host: row.host) }
                 }
                 pendingDelete = nil
@@ -321,13 +327,20 @@ struct NetworksView: View {
         displayedNetworks.filter { !$0.network.isBuiltin }.map(\.id)
     }
 
+    /// The rows on screen, built-in networks included: each has a page.
+    private var visibleIDs: Set<HostedNetwork.ID> { Set(displayedNetworks.map(\.id)) }
+
     private func open(_ row: HostedNetwork, tab: NetworkDetailTab? = nil) {
-        detailTarget = DetailTarget(name: row.name, host: row.host, tab: tab)
+        open(row.id, tab: tab)
     }
 
-    /// Deleting the network whose detail is open goes back to the list, as in Containers.
-    private func leaveDetailIfShowing(_ row: HostedNetwork) {
-        if detailTarget?.id == row.detailKey { detailTarget = nil }
+    /// Shows a network's page by selecting it, and only it (Q58) — clearing the filter first if it
+    /// is hiding the row, so the page always has a place in the list to step from.
+    private func open(_ id: HostedNetwork.ID, tab: NetworkDetailTab? = nil) {
+        if !visibleIDs.contains(id) { ui.search = ""; ui.filterID = "all"; ui.hostFilter = nil }
+        request = tab.map { DetailTarget(id: id, tab: $0) }
+        selection = [id]
+        ui.pane.reveal()
     }
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .network) }
@@ -347,22 +360,26 @@ struct NetworksView: View {
         // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
         // selection made on purpose, and this is where it is acted on.
         if !actionable.isEmpty {
-            BulkActionBar(title: "\(actionable.count) selected") {
-                // Tags first in the cluster, before the lifecycle controls, and separated by a
-                // divider: it is the one action here that changes nothing about what the
-                // selection *is*. Same menu the row offers, asking the three-state question a
-                // multi-row selection actually poses — see `BulkTagMenu`.
-                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
-                    tagSheet = TagSheetTarget(selectedTagSubjects)
-                }
-                Divider().frame(height: 14)
-                IconActionButton(systemImage: "trash",
-                                 label: "Delete \(actionable.count) networks",
-                                 help: "Delete \(actionable.count) networks",
-                                 busy: selectionBusy, destructive: true) {
-                    confirmingBulkDelete = true
-                }
-            }
+            BulkActionBar(title: "\(actionable.count) selected") { bulkActions }
+        }
+    }
+
+    /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
+    @ViewBuilder
+    private var bulkActions: some View {
+        // Tags first in the cluster, before the lifecycle controls, and separated by a divider:
+        // it is the one action here that changes nothing about what the selection *is*. Same menu
+        // the row offers, asking the three-state question a multi-row selection actually poses —
+        // see `BulkTagMenu`.
+        BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+            tagSheet = TagSheetTarget(selectedTagSubjects)
+        }
+        Divider().frame(height: 14)
+        IconActionButton(systemImage: "trash",
+                         label: "Delete \(actionable.count) networks",
+                         help: "Delete \(actionable.count) networks",
+                         busy: selectionBusy, destructive: true) {
+            confirmingBulkDelete = true
         }
     }
 
@@ -430,38 +447,38 @@ struct NetworksView: View {
     /// be sorted and crammed everything into one caption. The Sort menu is what that version lacked,
     /// and the second line now says only what tells one row from the next.
     private var rowsList: some View {
-        List(displayedNetworks, selection: $selection) { row in
-            listRow(row)
-                // The row paints its own padding, so its hover wash and the list's selection fill
-                // reach the same edges.
-                .listRowInsets(EdgeInsets())
-        }
-        .listStyle(.inset)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // On the List, not on a row: this one hands back every selected id.
-        .contextMenu(forSelectionType: HostedNetwork.ID.self) { ids in
-            rowContextMenu(for: ids)
-        } primaryAction: { ids in
-            // Double-click opens the detail, and only for an unambiguous activation — `ids` is a
-            // `Set`, so with several rows selected `first` is an arbitrary member.
-            guard ids.count == 1,
-                  let row = displayedNetworks.first(where: { ids.contains($0.id) }) else { return }
-            open(row)
+        SelectionRevealingList(selection: selection) {
+            List(displayedNetworks, selection: $selection) { row in
+                listRow(row)
+                    // The row paints its own padding, so its hover wash and the list's selection fill
+                    // reach the same edges.
+                    .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.inset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // On the List, not on a row: this one hands back every selected id.
+            .contextMenu(forSelectionType: HostedNetwork.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                // Selecting already shows the network (Q58); double-click and Return bring its page
+                // forward in a window too narrow for both panes, and only for an unambiguous
+                // activation — `ids` is a `Set`, so with several rows selected `first` is an arbitrary
+                // member.
+                guard ids.count == 1,
+                      let row = displayedNetworks.first(where: { ids.contains($0.id) }) else { return }
+                open(row)
+            }
         }
     }
 
-    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`. No live
-    /// figures — `network list` reports none — so the metrics slot is empty and takes no width.
+    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`.
     private func listRow(_ row: HostedNetwork) -> some View {
         ResourceRow(
             title: row.name,
-            opens: { open(row) },
-            openHelp: "Open \(row.name)\(onHost(row))",
             detail: detailParts(row).joined(separator: " · "),
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection, unavailable: row.network.isBuiltin ? "Built-in — it cannot be deleted" : nil),
             summary: rowSummary(row),
-            reservesMetrics: false,
             leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.networks.systemImage) } },
             chips: {
                 HStack(spacing: 4) {
@@ -477,7 +494,6 @@ struct NetworksView: View {
                     }
                 }
             },
-            metrics: { EmptyView() },
             actions: { rowActions(for: row) })
     }
 
@@ -559,86 +575,64 @@ struct NetworksView: View {
 
     // MARK: Detail
 
+    /// The page beside the list (Q58): the selected network's detail, a summary of several, or an
+    /// empty state.
     @ViewBuilder
-    private func detailScreen(_ target: DetailTarget) -> some View {
-        VStack(spacing: 0) {
-            if let row = hostedNetwork(target) {
+    private var page: some View {
+        if let row = shownRow {
+            VStack(spacing: 0) {
                 detailHeader(for: row)
                 Divider()
-                NetworkDetailView(model: model, network: row.network, host: row.host, requestedTab: target.tab)
+                NetworkDetailView(model: model, network: row.network, host: row.host,
+                                  requestedTab: request?.id == row.id ? request?.tab : nil)
                     .id(row.detailKey)
-            } else {
-                detailHeader(for: nil)
-                Divider()
-                // Top-aligned with neutral wording, as Containers' detail does.
-                ContentUnavailableView(
-                    "Network unavailable",
-                    systemImage: "questionmark.square.dashed",
-                    description: Text("\u{201C}\(target.name)\u{201D} is no longer on "
-                                      + "\(model.hostMode.hostName(target.host, local: "this Mac")). It may have been deleted.")
-                )
-                .frame(maxHeight: .infinity, alignment: .top)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .paneStep("network", "networks", order: displayedNetworks.map(\.id), current: row.id) { open($0) }
+            .id(request?.nonce)
+        } else if shown.count > 1, !actionable.isEmpty {
+            SelectionSummaryPane(title: "\(actionable.count) networks selected",
+                                 systemImage: Section.networks.systemImage,
+                                 names: actionableRows.map { $0.name + onHost($0) }) { bulkActions }
+        } else {
+            PaneEmptyState(title: "Choose a network", systemImage: Section.networks.systemImage,
+                           description: "Its subnet, gateway and the containers on it show here.")
         }
     }
 
-    /// The row a detail target names: This Mac's by name, a paired host's from its last answer.
-    private func hostedNetwork(_ target: DetailTarget) -> HostedNetwork? {
-        switch target.host {
-        case .local:
-            return model.networks.first { $0.id == target.name }
-                .map { HostedNetwork(network: $0, host: .local, hostName: model.hostLabel) }
-        case .peer(let fingerprint):
-            guard let network = model.hostMode.networkSnapshots[fingerprint]?.items
-                .first(where: { $0.id == target.name }) else { return nil }
-            return HostedNetwork(network: network, host: target.host,
-                                 hostName: model.hostMode.hostName(target.host, local: model.hostLabel))
-        }
+    /// The one network the page shows, when one is selected.
+    private var shownRow: HostedNetwork? {
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return displayedNetworks.first { $0.id == id }
     }
 
-    @ViewBuilder
-    private func detailHeader(for row: HostedNetwork?) -> some View {
-        HStack(spacing: 10) {
-            IconActionButton(systemImage: "chevron.left", label: "Back to Networks",
-                             help: "Back to Networks") { detailTarget = nil }
-
-            if let row {
-                let network = row.network
-                Image(systemName: "globe")
-                    .font(.system(size: 19)).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(network.name).font(.headline)
-                        if network.isBuiltin {
-                            Text("built-in").font(.caption2).foregroundStyle(.secondary)
-                                .help("Created by container; can't be deleted")
-                        }
+    /// Identity, the row's actions, the stepper and the expand button — no Back: the list is beside it.
+    private func detailHeader(for row: HostedNetwork) -> some View {
+        let network = row.network
+        return HStack(spacing: 10) {
+            Image(systemName: "globe")
+                .font(.system(size: 19)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(network.name).font(.headline).lineLimit(1).truncationMode(.middle)
+                    if network.isBuiltin {
+                        Text("built-in").font(.caption2).foregroundStyle(.secondary)
+                            .help("Created by container; can't be deleted")
+                            .fixedSize()
                     }
-                    Text(subtitle(for: row))
-                        .font(.caption).foregroundStyle(.tertiary)
-                        .lineLimit(1).truncationMode(.middle)
-                        .help(subtitle(for: row))
                 }
-            } else {
-                Text("Network unavailable").font(.headline)
+                Text(subtitle(for: row))
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(subtitle(for: row))
             }
 
-            Spacer()
-            if let row {
-                ActionCluster { rowActions(for: row) }
-            }
-            networkStepper
+            Spacer(minLength: 0)
+            ActionCluster { rowActions(for: row) }
+            DetailStepper()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-
-    private var networkStepper: some View {
-        let order = displayedNetworks
-        let index = order.firstIndex { $0.detailKey == detailTarget?.id }
-        return DetailStepper(singular: "network", plural: "networks", index: index, count: order.count,
-                             previous: { if let index, index > 0 { open(order[index - 1]) } },
-                             next: { if let index, index < order.count - 1 { open(order[index + 1]) } })
     }
 
     private func subtitle(for row: HostedNetwork) -> String {
@@ -698,7 +692,6 @@ struct NetworksView: View {
         if model.deletePolicy.requiresConfirmation(.single) {
             pendingDelete = row
         } else {
-            leaveDetailIfShowing(row)
             Task { await model.removeNetwork(row.network, host: row.host) }
         }
     }

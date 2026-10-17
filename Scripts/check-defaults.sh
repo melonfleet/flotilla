@@ -45,10 +45,11 @@ require Sources/Flotilla/MachinesView.swift      '@State private var showingCrea
 # loaded state, or the non-empty side of the empty check. A condition added around it, a view
 # switch (`if … { rowsList } else { cards }`, either way round), or `rowsList` moved somewhere else
 # changes the chain and fails here.
-chain() {   # chain <file>: what the bare `rowsList` line is nested under, outermost first
-    perl -e '
+chain() {   # chain <file> [line]: what the bare `rowsList` (or [line]) is nested under, outermost first
+    LINE="${2:-rowsList}" perl -e '
         my @l = <>; chomp @l;
-        my ($at) = grep { $l[$_] =~ /^\s*rowsList\s*$/ } 0..$#l;
+        my $want = $ENV{LINE};
+        my ($at) = grep { $l[$_] =~ /^\s*\Q$want\E\s*$/ } 0..$#l;
         exit 2 unless defined $at;
         sub ind { $_[0] =~ /^(\s*)/; length $1 }
         # Blank lines, comments and modifier or argument continuations are not branches.
@@ -61,8 +62,17 @@ chain() {   # chain <file>: what the bare `rowsList` line is nested under, outer
             my $s = trim($l[$i]);
             unshift @chain, $s;
             last if $s =~ /\b(var|func)\b/;
+            # A labelled trailing closure (`} detail: {`): name the call it belongs to — the nearest
+            # line above at the same depth that does not itself close something.
+            if ($s =~ /^\}\s*\w+:\s*\{$/) {
+                for (my $j = $i - 1; $j >= 0; $j--) {
+                    next if skip($l[$j]) || ind($l[$j]) != $n;
+                    next if trim($l[$j]) =~ /^\}/;
+                    unshift @chain, trim($l[$j]); $i = $j; last;
+                }
+            }
             # A later branch (`} else {`, `case`, `default:`): name the `if` or `switch` it belongs to.
-            if ($s =~ /^(\}|case |default:)/) {
+            elsif ($s =~ /^(\}|case |default:)/) {
                 for (my $j = $i - 1; $j >= 0; $j--) {
                     next if skip($l[$j]) || ind($l[$j]) != $n;
                     if (trim($l[$j]) =~ /^(if |switch )/) { unshift @chain, trim($l[$j]); $i = $j; last }
@@ -96,6 +106,56 @@ expect_rows Hosts      'private var content: some View { > if displayedRows.isEm
 expect_rows Registries 'private var content: some View { > if displayedRows.isEmpty { > } else { > VStack(spacing: 0) {'
 expect_rows DNS        'private var content: some View { > if case .unavailable(let reason) = model.dnsState { > } else { > VStack(spacing: 0) {'
 expect_rows Clusters   'private var content: some View { > switch model.clustersState { > case .loaded:'
+# Q58 (17 October): every row section is a split — the list on the left, the selected row's page on
+# the right. Pinned the same way as the rows: what the bare `content` line (the list's pane) and the
+# bare `page` line (the page) are nested under. The known-good shape is the split as the **last
+# branch** of the section's form chain, so a form still takes the whole width; the list's pane is the
+# split's first closure and the page its `detail:`. A split wrapped in a condition, the page drawn
+# instead of the list, or the list back on its own changes a chain and fails here.
+expect_split() {   # expect_split <section> <key> <the chain down to the split, without it>
+    local f="Sources/Flotilla/$1View.swift" got split
+    split=$(grep -m1 -oE "SplitPanes\(list: \"$2\", pane: ui\.pane, showing: [A-Za-z]+\?\.id\) \{" "$f")
+    if [ -z "$split" ]; then
+        echo "  ✗ $f: no \`SplitPanes(list: \"$2\", pane: ui.pane, …)\` — the section is not a split"
+        fail=1; return
+    fi
+    for part in "content|VStack(spacing: 0) {" "page|} detail: {"; do
+        local line="${part%%|*}" inner="${part#*|}" want
+        want="$3 > $split > $inner"
+        got=$(chain "$f" "$line")
+        if [ "$got" != "$want" ]; then
+            echo "  ✗ $f: \`$line\` is not where the split puts it"
+            echo "      expected: $want"
+            echo "      found:    $got"
+            fail=1
+        fi
+    done
+}
+expect_split Containers containers 'var body: some View { > Group { > if showingRun { > } else {'
+expect_split Machines   machines   'var body: some View { > Group { > if showingCreate { > } else {'
+expect_split Images     images     'var body: some View { > Group { > if let target = runImage { > } else {'
+expect_split Volumes    volumes    'var body: some View { > Group { > if let volume = pushing { > } else {'
+expect_split Networks   networks   'var body: some View { > Group { > if let network = pushing { > } else {'
+expect_split Hosts      hosts      'var body: some View { > Group { > if showingAdd || pairing != nil { > } else {'
+expect_split Registries registries 'var body: some View { > Group { > if let form { > } else {'
+expect_split DNS        dns        'private var screens: some View { > Group { > if let form { > } else {'
+expect_split Clusters   clusters   'var body: some View { > Group { > if showingCreate { > } else {'
+# The page follows the selection, and both start empty: a section that opens on a selected row is
+# a section that opens on a page, which is the split's screenshot scaffold (the old `detailTarget`
+# pinned below was the slide-in's). The selection reaches the page only through the form guard.
+for s in Containers Machines Images Volumes Networks Hosts Registries DNS Clusters; do
+    f="Sources/Flotilla/${s}View.swift"
+    for v in selection shown; do
+        if ! grep -qE "^    @State private var $v = Set<[A-Za-z.]+>\(\)$" "$f"; then
+            echo "  ✗ $f: \`$v\` does not start as an empty set"
+            fail=1
+        fi
+    done
+    require "$f" '.paneFollows($selection, into: $shown, guard: model.formGuard)'
+done
+# The split opens as a split: not widened over the list, and not showing the list over the page.
+require Sources/Flotilla/SplitPanes.swift '    var expanded = false'
+require Sources/Flotilla/SplitPanes.swift '    var compactShowsList = false'
 # And nothing for a second presentation to be: no grid, no card type and no view-mode state in a
 # section or its UI state. `ResourceCard` lives on in the Suggestions galleries, which are not
 # sections. Comments are skipped — this file's own history is written in them.
@@ -128,10 +188,11 @@ require Sources/Flotilla/ContainerDetailView.swift 'model.lastDetailTab[host.row
 require Sources/Flotilla/VolumeDetailView.swift 'requestedTab ?? .overview'
 require Sources/Flotilla/NetworkDetailView.swift 'requestedTab ?? .overview'
 
-# A detail target that opens pre-populated is always a scaffold: both screens navigate to it.
-for f in Sources/Flotilla/MachinesView.swift Sources/Flotilla/ContainersView.swift; do
-    if grep -nE 'var detailTarget: DetailTarget\? *=' "$f" >/dev/null; then
-        echo "  ✗ $f: detailTarget has an initial value — that is a scaffold"
+# A tab request that opens pre-populated is a scaffold too: it would open its page on a tab. (Until
+# Q58 this was `detailTarget`, which opened the slide-in page itself.)
+for f in Sources/Flotilla/{Containers,Machines,Images,Volumes,Networks}View.swift; do
+    if grep -nE 'var request: DetailTarget\? *=' "$f" >/dev/null; then
+        echo "  ✗ $f: request has an initial value — that is a scaffold"
         fail=1
     fi
 done

@@ -15,6 +15,10 @@ final class MachinesUIState {
     var filter: MachinesView.Filter = .all
     var search = ""
 
+    /// The split's expand button and narrow-window state, for the session (Q58) — here so a widened
+    /// page is still widened after a visit to another section.
+    let pane = PaneState()
+
     /// **By name**, not by state.
     ///
     /// This was running-first, and running-first has a flaw that only shows up in use: stopping

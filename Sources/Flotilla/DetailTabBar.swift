@@ -25,35 +25,50 @@ struct DetailTabBar<Tab: Hashable>: View {
     @Binding var selection: Tab
 
     var body: some View {
+        // Icons only when the labelled strip does not fit — a page beside the list can be 360pt,
+        // and the container page has six tabs (Q58). The labels go to the tooltips and VoiceOver,
+        // and come back when the page is widened.
+        ViewThatFits(in: .horizontal) {
+            strip(labelled: true)
+            strip(labelled: false)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func strip(labelled: Bool) -> some View {
         HStack(spacing: 2) {
             ForEach(items) { item in
                 if item.separatedFromPrevious {
-                    Divider().frame(height: 16).padding(.horizontal, 6)
+                    Divider().frame(height: 16).padding(.horizontal, labelled ? 6 : 3)
                 }
                 let selected = item.tab == selection
                 Button { selection = item.tab } label: {
                     HStack(spacing: 6) {
                         Image(systemName: item.systemImage).font(.system(size: 12))
-                        Text(item.title)
-                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        if labelled {
+                            Text(item.title)
+                                .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        }
                     }
                     .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                     .frame(height: 34)
-                    .padding(.horizontal, 11)
+                    .padding(.horizontal, labelled ? 11 : 9)
                     .overlay(alignment: .bottom) {
                         if selected {
                             RoundedRectangle(cornerRadius: 1).fill(Theme.accent)
-                                .frame(height: 2).padding(.horizontal, 8)
+                                .frame(height: 2).padding(.horizontal, labelled ? 8 : 5)
                         }
                     }
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+                .help(labelled ? "" : item.title)
+                .accessibilityLabel(item.title)
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
             }
-            Spacer()
         }
-        .padding(.horizontal, 12)
-        .overlay(alignment: .bottom) { Divider() }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }

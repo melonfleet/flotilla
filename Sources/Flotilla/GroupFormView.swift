@@ -71,6 +71,9 @@ struct GroupFormView: View {
                         }
                         editingMember = nil
                     })
+                    // A form on its own screen, full width with its Back (Q58), even when the group
+                    // it belongs to is a page beside the Containers list.
+                    .outsideSplitPane()
             } else {
                 groupScreen
             }

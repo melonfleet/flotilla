@@ -29,6 +29,10 @@ final class ContainersUIState {
     var hostFilter: HostRef?
     var search = ""
 
+    /// The split's expand button and narrow-window state, for the session (Q58) — here so a widened
+    /// page is still widened after a visit to another section.
+    let pane = PaneState()
+
     /// Groups the user has opened, by group id. Here for the reason everything else is: the section
     /// view is rebuilt on every sidebar change, and an open group would silently close.
     var expandedGroupIDs: Set<String> = []

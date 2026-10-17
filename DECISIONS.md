@@ -2473,3 +2473,79 @@ and the per-page `activityExpanded` state are deleted.
   ‹ › stepper uses `ActionCluster`, the same glass as the action buttons; a stopped container's or
   machine's detail header packs its buttons (`reserveSlots: false`) while list rows keep the
   fixed slots that line the columns up.
+
+## Q58 — Every list is a split view, like Mail (settled 2026-10-17)
+
+Kamal, 17 October: "Keeping the CPU and the memory in the new view is not worth the hassle …
+consider a split view, something similar to the Mail app … the divider can be slid left and right
+to resize the two panes … the views that we already have for each item, when we click on them, we
+can still reuse those, but instead of having their own slide-in page, they'll just show in the
+right pane instead … everything has to be split into two panes."
+
+**Amends Q56** (no slide-in detail; no live figures in rows) **and the ‹ › stepper of Q57's round**
+(now ↑ ↓, plus an expand button).
+
+- **All nine row sections are a split:** Containers, Machines, Images, Volumes, Networks, Hosts,
+  Registries, DNS and Clusters. The left pane is the list exactly as it was — checkboxes,
+  select-all, the Sort menu, the bulk bar, the window bar's search. The right pane is the selected
+  row's **existing** page, reused: the container detail and its tabs, the machine detail, each
+  other section's page; a group's page is its form, a registry's and a domain's are their manage
+  forms, an imported host's is its pairing form — read and edited as before. Clusters had no page,
+  so it gained a small read-only one (`ClusterDetailView`) built from the same `DetailCard`s and
+  only the facts `k8s list` prints.
+- **One component for all twelve splits.** `SplitPanes` is generalised from the fixed-width split
+  Suggestions, Notifications and the Docker Hub browser used; all twelve share its hairline divider,
+  which drags (column-resize pointer, a 9pt grip, VoiceOver-adjustable). A row section remembers its
+  **list's** width (default 340, at least 260; the page at least 360); the three older screens
+  remember their **detail** pane's (default 400, at least 260; the list at least 240). Per screen,
+  across launches, in `UserDefaults` as `paneWidth.<key>` — a window layout like the sidebar rail,
+  not a setting, so it is not in the registry.
+- **Selection drives the page.** One row selected: its page. None: an empty state in Suggestions'
+  style ("Choose a container / Its state, logs and settings show here."). Two or more: "N
+  containers selected", the names, and the bulk bar's actions — one `bulkActions` builder per
+  section serves both. ↑↓ in the list move the selection and the page follows; a click selects and
+  shows. The row name is no longer a link, and double-click and Return no longer open a slide-in.
+  Every "open" — a menu's Details, Logs, Terminal or Edit Settings, a menu-bar or search-box request
+  — selects the row, clearing a filter that hides it first.
+- **Checkbox semantics are unchanged,** and `.selection(_:confinedTo:)` still keeps a selection of
+  several to rows a bulk action can take. It gained one rule: **a single row on its own may be any
+  row with a page** (`showing:`), because selecting is now how a page is shown, and This Mac and the
+  built-in networks have pages. Alone it agrees with everything — the highlight is the page, its box
+  stays disabled, the bulk bar (which counts only actionable rows) does not appear — and it drops
+  out the moment a second row joins.
+- **Through the form guard.** The page follows the selection via `paneFollows`: a choice that would
+  replace a form with unsaved edits asks the sidebar's question, and Keep Editing puts the
+  selection back.
+- **A page keeps its state where it did.** Each detail view keeps its identity as the selection
+  moves, as it did while stepping, so the tab stays the tab and terminals stay in
+  `TerminalSessionStore` by id. A menu's tab request rebuilds the page once, so asking for Logs
+  again after leaving the tab still lands on it.
+- **The page's header has no Back.** The stepper stays in its glass cluster, now `chevron.up` /
+  `chevron.down` like Mail's previous and next, moving the list's selection. **⌘[ ⌘] are kept:**
+  ⌘↑ ⌘↓ are every text field's move-to-start and move-to-end, the page is full of text fields (the
+  Logs filter, Inspect's search, the registry and domain forms), and a button's shortcut takes the
+  key before the field does. Beside it, an **expand button** in the same glass
+  (`arrow.up.left.and.arrow.down.right`, `arrow.down.right.and.arrow.up.left` when expanded) widens
+  the page over the list to the full content width — the sidebar stays — and back to the
+  remembered width. While widened, ↑ ↓ still walk the list. Remembered per section for the session
+  (`PaneState` on the section's UI state). It is what gives Terminal and Logs their width; the
+  container tab strip also drops to icons when its labels do not fit.
+- **Forms stay full width:** Run, New Volume, New Group, Add Service, Add Registry, New Domain,
+  Pull, Tag and every other `FormHeader` form keep Back, Cancel and Save and the whole content area.
+  Only *viewing* an item uses the split. Add Service, opened inside a group's page, leaves the split
+  for the whole width (`outsideSplitPane()`).
+- **Too narrow for both, the page wins.** The window's 700pt minimum is unchanged. With the
+  labelled sidebar the content is about 480pt, which cannot hold 260 + 360, so the split folds:
+  the list while nothing is chosen, the page once something is, and the expand button reads "Show
+  the list". Choosing a row, or Return on the selected one, brings the page back. Raising the
+  minimum instead would make the window wider than half a 13-inch screen for a state the railed
+  sidebar (the default) never reaches: 64 + 260 + 360 fits in 700.
+- **No figures in rows.** CPU, Mem and the sparkline are gone from Containers' rows, with
+  `ResourceFigures`, the metrics slot and `reservesMetrics`/`metricsWidth`; so are the CPU and
+  Memory sort keys, since a sort on a number the list does not show reorders rows for a reason you
+  cannot see. Sampling stays: the container page's Resource use draws from it. Hosts' "last seen"
+  moved from the figures slot to the end of the second line. Rows are checkbox · state mark · name
+  and chips over line 2 · actions.
+- `Scripts/check-defaults.sh` pins each section's split: the list's pane and the page as the two
+  closures of `SplitPanes(list: …)`, the split as the last branch of the section's form chain, an
+  empty `selection` and `shown`, the guard in between, and a pane that opens unexpanded.

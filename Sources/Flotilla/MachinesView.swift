@@ -57,7 +57,11 @@ struct MachinesView: View {
 
     @State private var showingFilter = false
     @State private var selection = Set<ContainerMachine.ID>()
-    @State private var detailTarget: DetailTarget?
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (Q58). By **id**, so the page re-reads live state each pass rather than showing a
+    /// frozen copy.
+    @State private var shown = Set<ContainerMachine.ID>()
+    @State private var request: DetailTarget?
     @State private var showingCreate = false
     @State private var showingSuggestions = false
     @State private var createPrefill: MachineSuggestion?
@@ -71,21 +75,20 @@ struct MachinesView: View {
     /// never appears, because the menu is gone by the time the state changes.
     @State private var tagSheet: TagSheetTarget?
 
-    /// `sheet(item:)` needs `Identifiable` and a bare `String` is not — same small wrapper the
-    /// containers screen uses, and keyed by **id** so the screen re-reads live state each pass
-    /// rather than showing a frozen copy.
-    /// A machine to show, and optionally **which tab to land on**.
+    /// A menu's request for a machine's page on a particular tab — "Edit Settings…".
     ///
     /// The tab used to travel through `model.lastMachineTab`, written by the menu and read by
     /// `MachineDetailView.init`. That is a write-once side channel, and `@State` seeded in `init`
     /// only takes effect when SwiftUI *installs* the view — so from a detail that was already on
     /// screen (stepping between machines, or reopening one) the requested tab was silently
     /// dropped and you stayed where you were. "Edit Settings…" appearing to do nothing is exactly
-    /// what that looks like. Carrying the intent in the navigation value instead means the
-    /// request cannot be lost between being made and being honoured.
-    private struct DetailTarget: Identifiable, Hashable {
+    /// what that looks like. Carrying the intent in the request instead means it cannot be lost
+    /// between being made and being honoured; and each request is new (`nonce`), so asking for
+    /// Settings again after leaving the tab still lands on it.
+    private struct DetailTarget: Hashable {
         let id: String
         var tab: MachineDetailTab?
+        let nonce = UUID()
     }
 
     /// The tab a `requestDetail` asked for, resolved against **this** screen's own tab type.
@@ -114,25 +117,29 @@ struct MachinesView: View {
                     items: MachineSuggestion.catalogue,
                     use: useSuggestion,
                     dismiss: { showingSuggestions = false })
-            } else if let target = detailTarget {
-                detailScreen(target)
             } else {
-                VStack(spacing: 0) {
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    content
+                // Q58: the list, and the selected machine's page beside it.
+                SplitPanes(list: "machines", pane: ui.pane, showing: shownMachine?.id) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        bulkActionBar
+                        Divider()
+                        content
+                    }
+                    // Without this the whole stack centres vertically whenever `content` is a
+                    // `ContentUnavailableView` rather than a table, which floats the control band
+                    // into the middle of the window. The toolbar is chrome; it stays at the top.
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
-                // Without this the whole stack centres vertically whenever `content` is a
-                // `ContentUnavailableView` rather than a table, which floats the control band
-                // into the middle of the window. The toolbar is chrome; it stays at the top.
-                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .task { await model.refreshMachines() }
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set.
         .selection($selection, confinedTo: visibleIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }
         }
@@ -141,12 +148,12 @@ struct MachinesView: View {
         .onChange(of: model.pendingDetailSubject) { _, subject in
             // Only this section's own requests. See `AppModel.requestDetail`.
             guard let subject, model.pendingDetailKind == .machine else { return }
-            detailTarget = DetailTarget(id: subject, tab: requestedTab)
+            open(subject, tab: requestedTab)
             model.clearPendingDetail()
         }
         .onAppear {
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .machine {
-                detailTarget = DetailTarget(id: subject, tab: requestedTab)
+                open(subject, tab: requestedTab)
                 model.clearPendingDetail()
             }
         }
@@ -366,27 +373,40 @@ struct MachinesView: View {
         // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
         // selection made on purpose, and this is where it is acted on.
         if !actionable.isEmpty {
-            BulkActionBar(title: "\(actionable.count) selected") {
-                // Tags first in the cluster, before the lifecycle controls, and separated by a
-                // divider: it is the one action here that changes nothing about what the
-                // selection *is*. Same menu the row offers, asking the three-state question a
-                // multi-row selection actually poses — see `BulkTagMenu`.
-                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
-                    tagSheet = TagSheetTarget(selectedTagSubjects)
-                }
-                Divider().frame(height: 14)
-                iconButton("play.fill", "Start \(actionable.count) machines", busy: selectionBusy) {
-                    Task { await model.performMachineBulk(.start, on: actionable) }
-                }
-                iconButton("stop.fill", "Stop \(actionable.count) machines", busy: selectionBusy) {
-                    Task { await model.performMachineBulk(.stop, on: actionable) }
-                }
-                iconButton("trash", "Delete \(actionable.count) machines",
-                           busy: selectionBusy, destructive: true) {
-                    confirmingBulkDelete = true
-                }
-            }
+            BulkActionBar(title: "\(actionable.count) selected") { bulkActions }
         }
+    }
+
+    /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
+    @ViewBuilder
+    private var bulkActions: some View {
+        // Tags first in the cluster, before the lifecycle controls, and separated by a divider:
+        // it is the one action here that changes nothing about what the selection *is*. Same menu
+        // the row offers, asking the three-state question a multi-row selection actually poses —
+        // see `BulkTagMenu`.
+        BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+            tagSheet = TagSheetTarget(selectedTagSubjects)
+        }
+        Divider().frame(height: 14)
+        iconButton("play.fill", "Start \(actionable.count) machines", busy: selectionBusy) {
+            Task { await model.performMachineBulk(.start, on: actionable) }
+        }
+        iconButton("stop.fill", "Stop \(actionable.count) machines", busy: selectionBusy) {
+            Task { await model.performMachineBulk(.stop, on: actionable) }
+        }
+        iconButton("trash", "Delete \(actionable.count) machines",
+                   busy: selectionBusy, destructive: true) {
+            confirmingBulkDelete = true
+        }
+    }
+
+    /// Shows a machine's page by selecting it, and only it (Q58) — clearing the filter first if it
+    /// is hiding the row, so the page always has a place in the list to step from.
+    private func open(_ id: ContainerMachine.ID, tab: MachineDetailTab? = nil) {
+        if !visibleIDs.contains(id) { ui.search = ""; ui.filter = .all }
+        request = tab.map { DetailTarget(id: id, tab: $0) }
+        selection = [id]
+        ui.pane.reveal()
     }
 
     @ViewBuilder
@@ -462,43 +482,43 @@ struct MachinesView: View {
     /// A `List` for native multi-selection (⌘-click, ⇧-click, ⌘A), ↑/↓, Return to open and a
     /// right-click that lands on the whole selection, with `ResourceRow`'s checkboxes as a view of
     /// that same selection. No row height is written down: two lines and `ResourceRow`'s padding make it.
-    /// `displayed` is the order the detail stepper walks, so ‹ › goes to the next row you can see.
+    /// `displayed` is the order the page's stepper walks, so ↓ goes to the next row you can see.
     private var rowsList: some View {
-        List(displayed, selection: $selection) { machine in
-            listRow(machine)
-                // The row paints its own padding, so its hover wash and the list's selection fill
-                // reach the same edges.
-                .listRowInsets(EdgeInsets())
-        }
-        .listStyle(.inset)
-        // Fills what is left, like every other branch of `content`. A `List` is bounded, but the
-        // activity strip that used to sit below broke this screen once by leaving its height to chance.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // On the List, not on a row: this one hands back every selected id.
-        .contextMenu(forSelectionType: ContainerMachine.ID.self) { ids in
-            rowContextMenu(for: ids)
-        } primaryAction: { ids in
-            // Double-click and Return open, only when the activation names exactly one row: with
-            // several selected, `ids.first` is an arbitrary member.
-            guard ids.count == 1, let id = ids.first else { return }
-            detailTarget = DetailTarget(id: id)
+        SelectionRevealingList(selection: selection) {
+            List(displayed, selection: $selection) { machine in
+                listRow(machine)
+                    // The row paints its own padding, so its hover wash and the list's selection fill
+                    // reach the same edges.
+                    .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.inset)
+            // Fills what is left, like every other branch of `content`. A `List` is bounded, but the
+            // activity strip that used to sit below broke this screen once by leaving its height to chance.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // On the List, not on a row: this one hands back every selected id.
+            .contextMenu(forSelectionType: ContainerMachine.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                // Selecting already shows the machine (Q58); double-click and Return bring its page
+                // forward in a window too narrow for both panes, only when the activation names
+                // exactly one row: with several selected, `ids.first` is an arbitrary member.
+                guard ids.count == 1, let id = ids.first else { return }
+                open(id)
+            }
         }
     }
 
     /// One two-line row: the state dot; the name, "default" and the tags; the image, the CPUs
-    /// and memory it was given, and its address. No live figures — `machine ls` reports what a
-    /// machine was allocated, not what it is using — so the metrics slot is empty and takes no
-    /// width. The buttons are the table's Actions column, unchanged: `rowActions`.
+    /// and memory it was given, and its address. The buttons are the table's Actions column,
+    /// unchanged: `rowActions`.
     private func listRow(_ machine: ContainerMachine) -> some View {
         ResourceRow(
             title: machine.id,
-            opens: { detailTarget = DetailTarget(id: machine.id) },
             detail: subtitle(for: machine),
             detailHelp: detailHelp(for: machine),
             selected: selection.contains(machine.id),
             check: RowCheck(machine.id, in: $selection),
             summary: rowSummary(machine),
-            reservesMetrics: false,
             leading: {
                 RowLeadingMark {
                     Circle()
@@ -518,7 +538,6 @@ struct MachinesView: View {
                     TagPillRow(tags: model.tags.tags(on: .machine, machine.id), compact: true)
                 }
             },
-            metrics: { EmptyView() },
             actions: { rowActions(for: machine) })
     }
 
@@ -621,12 +640,12 @@ struct MachinesView: View {
         // greyed on one surface and live on the other.
         let busy = model.isBusy(machine.id, kind: .machine)
 
-        Button("Details…") { detailTarget = DetailTarget(id: machine.id) }
+        Button("Details…") { open(machine.id) }
         // Edit opens the machine's own Settings tab rather than a second copy of the form.
         // `machine set` only accepts cpus, memory and home-mount — an "edit" that showed the
         // image and name as though they were changeable would be lying about what the CLI can
         // do, and the Settings tab already states the restart requirement.
-        Button("Edit Settings…") { detailTarget = DetailTarget(id: machine.id, tab: .settings) }
+        Button("Edit Settings…") { open(machine.id, tab: .settings) }
         Divider()
         // Greyed out when it is already the default, rather than absent — same rule as the
         // lifecycle items below.
@@ -671,77 +690,70 @@ struct MachinesView: View {
 
     // MARK: Detail
 
+    /// The page beside the list (Q58): the selected machine's detail, a summary of several, or an
+    /// empty state. `MachineDetailView` keeps its identity as the selection moves, as it did while
+    /// stepping, so the tab you are on stays the tab you are on and a shell keeps running.
     @ViewBuilder
-    private func detailScreen(_ target: DetailTarget) -> some View {
-        VStack(spacing: 0) {
-            if let machine = model.machines.first(where: { $0.id == target.id }) {
+    private var page: some View {
+        if let machine = shownMachine {
+            VStack(spacing: 0) {
                 detailHeader(for: machine)
                 Divider()
-                MachineDetailView(model: model, machine: machine, requestedTab: target.tab)
-            } else {
-                detailHeader(for: nil)
-                Divider()
-                ContentUnavailableView(
-                    "Machine unavailable",
-                    systemImage: "questionmark.square.dashed",
-                    description: Text("“\(target.id)” is no longer on this Mac. It may have been deleted.")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                MachineDetailView(model: model, machine: machine,
+                                  requestedTab: request?.id == machine.id ? request?.tab : nil)
             }
+            // Header at the top whatever is below it.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .paneStep("machine", "machines", order: displayed.map(\.id), current: machine.id) { open($0) }
+            .id(request?.nonce)
+        } else if shown.count > 1, !actionable.isEmpty {
+            SelectionSummaryPane(title: "\(actionable.count) machines selected", systemImage: "server.rack",
+                                 names: displayed.filter { actionable.contains($0.id) }.map(\.id)) { bulkActions }
+        } else {
+            PaneEmptyState(title: "Choose a machine", systemImage: "server.rack",
+                           description: "Its state, shell, logs and settings show here.")
         }
-        // Header at the top whatever is below it, as Containers' detail does: the unavailable
-        // state takes only its own height, and the stack would otherwise centre header and all.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    @ViewBuilder
-    private func detailHeader(for machine: ContainerMachine?) -> some View {
+    /// The one machine the page shows, when one is selected.
+    private var shownMachine: ContainerMachine? {
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return displayed.first { $0.id == id }
+    }
+
+    /// Identity, the row's actions, the stepper and the expand button — no Back: the list is beside it.
+    private func detailHeader(for machine: ContainerMachine) -> some View {
         HStack(spacing: 10) {
-            IconActionButton(systemImage: "chevron.left", label: "Back to Machines",
-                             help: "Back to Machines") { detailTarget = nil }
-
-            if let machine {
-                Image(systemName: "server.rack")
-                    .font(.system(size: 19)).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(machine.id).font(.headline)
-                        HStack(spacing: 4) {
-                            Circle().fill(Self.stateColor(machine)).frame(width: 6, height: 6)
-                            Text(machine.status.capitalized).font(.caption)
-                        }
-                        .foregroundStyle(.secondary)
-                        if machine.isDefault == true {
-                            Text("default").font(.caption2).foregroundStyle(Theme.accent)
-                                .help("Used when a command names no machine")
-                        }
+            Image(systemName: "server.rack")
+                .font(.system(size: 19)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(machine.id).font(.headline).lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 4) {
+                        Circle().fill(Self.stateColor(machine)).frame(width: 6, height: 6)
+                        Text(machine.status.capitalized).font(.caption)
                     }
-                    Text(subtitle(for: machine))
-                        .font(.caption).foregroundStyle(.tertiary)
-                        .lineLimit(1).truncationMode(.middle)
-                        .help(subtitle(for: machine))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    if machine.isDefault == true {
+                        Text("default").font(.caption2).foregroundStyle(Theme.accent)
+                            .help("Used when a command names no machine")
+                            .fixedSize()
+                    }
                 }
-            } else {
-                Text("Machine unavailable").font(.headline)
+                Text(subtitle(for: machine))
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(subtitle(for: machine))
             }
 
-            Spacer()
-            if let machine {
-                ActionCluster { rowActions(for: machine, reserveSlots: false) }
-            }
-            machineStepper
+            Spacer(minLength: 0)
+            ActionCluster { rowActions(for: machine, reserveSlots: false) }
+            DetailStepper()
         }
         // Horizontal 12, vertical 8 — the pair every band under the title bar uses.
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-
-    private var machineStepper: some View {
-        let order = displayed
-        let index = order.firstIndex { $0.id == detailTarget?.id }
-        return DetailStepper(singular: "machine", plural: "machines", index: index, count: order.count,
-                             previous: { if let index, index > 0 { detailTarget = DetailTarget(id: order[index - 1].id) } },
-                             next: { if let index, index < order.count - 1 { detailTarget = DetailTarget(id: order[index + 1].id) } })
     }
 
     /// Image · CPUs · memory · IP — the detail header's subtitle and a row's second line, one

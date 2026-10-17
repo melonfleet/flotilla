@@ -594,8 +594,7 @@ final class AppModel {
 
     func memoryLabel(for id: String) -> String { Self.memoryLabel(memoryUsage[id]) }
 
-    /// The one rendering of a CPU figure, shared by a container row and a group row's sum so the
-    /// two never disagree about how "12%" is written.
+    /// The one rendering of a CPU figure, so every place that shows one writes "12%" the same way.
     static func cpuLabel(_ percent: Double?) -> String {
         guard let percent else { return "—" }
         return percent < 10 ? String(format: "%.1f%%", percent) : String(format: "%.0f%%", percent)
@@ -606,7 +605,7 @@ final class AppModel {
         return ByteCountFormatStyle(style: .memory).format(bytes)
     }
 
-    /// CPU history for one container, oldest → newest, for the card's sparkline.
+    /// CPU history for one container, oldest → newest, for the detail page's sparkline.
     ///
     /// `nil` entries are preserved rather than dropped: they are the samples where a
     /// percentage could not be computed (first sample, or a counter reset after a restart),

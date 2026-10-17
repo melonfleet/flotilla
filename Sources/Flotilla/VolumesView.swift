@@ -13,19 +13,19 @@ struct VolumesView: View {
 
     @State private var selection = Set<HostedVolume.ID>()
     @State private var showingCreate = false
-    /// Which volume the detail screen is showing, and optionally which tab to open it on.
-    /// Private per section, as it is in Containers and Machines — the tab type differs.
-    private struct DetailTarget: Identifiable, Hashable {
-        let name: String
-        var host: HostRef = .local
+    /// A menu's request for one volume's page on a particular tab. Private per section, as it is
+    /// in Containers and Machines — the tab type differs. Each request is new (`nonce`), so asking
+    /// for a tab again after leaving it still lands on it.
+    private struct DetailTarget: Hashable {
+        let id: HostedVolume.ID
         var tab: VolumeDetailTab?
-        var id: String { host.rowID(name) }
+        let nonce = UUID()
     }
+    @State private var request: DetailTarget?
 
-    /// The volume whose detail screen is showing, or nil for the list. A `DetailTarget` rather
-    /// than a value, exactly as Containers and Machines hold theirs: the screen looks the volume
-    /// up each render, so a deleted one becomes an explanation rather than stale data.
-    @State private var detailTarget: DetailTarget?
+    /// The rows the page beside the list is showing: `selection`, once the form guard has let it
+    /// through (Q58). The page looks the volume up each render, so it is never stale data.
+    @State private var shown = Set<HostedVolume.ID>()
     @State private var newVolumeName = ""
     /// Suggestions (Q28): the gallery, and — once one is used — where its volume should be
     /// mounted, said in the form because a volume at the wrong path stores nothing.
@@ -59,7 +59,7 @@ struct VolumesView: View {
 
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .volume else { return }
-        detailTarget = DetailTarget(name: subject)
+        open(HostRef.local.rowID(subject))
         model.clearPendingDetail()
     }
 
@@ -76,20 +76,23 @@ struct VolumesView: View {
                     items: VolumeSuggestion.catalogue,
                     use: useSuggestion,
                     dismiss: { showingSuggestions = false })
-            } else if let target = detailTarget {
-                detailScreen(target)
             } else {
-                VStack(spacing: 0) {
-                    toolbar
-                    bulkActionBar
-                    Divider()
-                    content
+                // Q58: the list, and the selected volume's page beside it.
+                SplitPanes(list: "volumes", pane: ui.pane, showing: shownRow?.id) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        bulkActionBar
+                        Divider()
+                        content
+                    }
+                    // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
+                    // unreachable section is a `ContentUnavailableView`, which takes only its own
+                    // height, and the toolbar then rode down to the middle of the window (the
+                    // owner, on an empty Volumes, 5 October). Machines already did this.
+                    .frame(maxHeight: .infinity, alignment: .top)
+                } detail: {
+                    page
                 }
-                // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
-                // unreachable section is a `ContentUnavailableView`, which takes only its own
-                // height, and the toolbar then rode down to the middle of the window (the
-                // owner, on an empty Volumes, 5 October). Machines already did this.
-                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -97,6 +100,7 @@ struct VolumesView: View {
         // `actionable` already stops a hidden row from being acted on; this stops one from being
         // counted. Filter, search and the data itself changing all move the visible set.
         .selection($selection, confinedTo: visibleIDs)
+        .paneFollows($selection, into: $shown, guard: model.formGuard)
         // A volume asked for by name elsewhere — the window bar's search box. One-shot, as Containers does it.
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .onAppear { consumeDetailRequest() }
@@ -140,7 +144,6 @@ struct VolumesView: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let row = pendingDelete {
-                    leaveDetailIfShowing(row)
                     Task { await model.removeVolume(row.volume, host: row.host) }
                 }
                 pendingDelete = nil
@@ -290,12 +293,16 @@ struct VolumesView: View {
     private var actionableRows: [HostedVolume] { displayedVolumes.filter { actionable.contains($0.id) } }
 
     private func open(_ row: HostedVolume, tab: VolumeDetailTab? = nil) {
-        detailTarget = DetailTarget(name: row.name, host: row.host, tab: tab)
+        open(row.id, tab: tab)
     }
 
-    /// Deleting the volume whose detail is open goes back to the list, as in Containers.
-    private func leaveDetailIfShowing(_ row: HostedVolume) {
-        if detailTarget?.id == row.detailKey { detailTarget = nil }
+    /// Shows a volume's page by selecting it, and only it (Q58) — clearing the filter first if it
+    /// is hiding the row, so the page always has a place in the list to step from.
+    private func open(_ id: HostedVolume.ID, tab: VolumeDetailTab? = nil) {
+        if !visibleIDs.contains(id) { ui.search = ""; ui.filterID = "all"; ui.hostFilter = nil }
+        request = tab.map { DetailTarget(id: id, tab: $0) }
+        selection = [id]
+        ui.pane.reveal()
     }
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .volume) }
@@ -320,22 +327,26 @@ struct VolumesView: View {
         // From one row, since the checkboxes came back (Kamal, 17 October): a ticked box is a
         // selection made on purpose, and this is where it is acted on.
         if !actionable.isEmpty {
-            BulkActionBar(title: "\(actionable.count) selected") {
-                // Tags first in the cluster, before the lifecycle controls, and separated by a
-                // divider: it is the one action here that changes nothing about what the
-                // selection *is*. Same menu the row offers, asking the three-state question a
-                // multi-row selection actually poses — see `BulkTagMenu`.
-                BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
-                    tagSheet = TagSheetTarget(selectedTagSubjects)
-                }
-                Divider().frame(height: 14)
-                IconActionButton(systemImage: "trash",
-                                 label: "Delete \(actionable.count) volumes",
-                                 help: "Delete \(actionable.count) volumes",
-                                 busy: selectionBusy, destructive: true) {
-                    confirmingBulkDelete = true
-                }
-            }
+            BulkActionBar(title: "\(actionable.count) selected") { bulkActions }
+        }
+    }
+
+    /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
+    @ViewBuilder
+    private var bulkActions: some View {
+        // Tags first in the cluster, before the lifecycle controls, and separated by a divider:
+        // it is the one action here that changes nothing about what the selection *is*. Same menu
+        // the row offers, asking the three-state question a multi-row selection actually poses —
+        // see `BulkTagMenu`.
+        BulkTagMenu(store: model.tags, subjects: selectedTagSubjects) {
+            tagSheet = TagSheetTarget(selectedTagSubjects)
+        }
+        Divider().frame(height: 14)
+        IconActionButton(systemImage: "trash",
+                         label: "Delete \(actionable.count) volumes",
+                         help: "Delete \(actionable.count) volumes",
+                         busy: selectionBusy, destructive: true) {
+            confirmingBulkDelete = true
         }
     }
 
@@ -510,39 +521,38 @@ struct VolumesView: View {
     /// be sorted and crammed everything into one caption. The Sort menu is what that version lacked,
     /// and the second line now says only what tells one row from the next.
     private var rowsList: some View {
-        List(displayedVolumes, selection: $selection) { row in
-            listRow(row)
-                // The row paints its own padding, so its hover wash and the list's selection fill
-                // reach the same edges.
-                .listRowInsets(EdgeInsets())
-        }
-        .listStyle(.inset)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // On the List, not on a row: this one hands back every selected id.
-        .contextMenu(forSelectionType: HostedVolume.ID.self) { ids in
-            rowContextMenu(for: ids)
-        } primaryAction: { ids in
-            // Double-click opens the detail — but only when the activation names exactly one
-            // row. `ids` is a `Set`, so with several selected `first` is an arbitrary member,
-            // and opening the wrong volume is worse than opening none.
-            guard ids.count == 1, let row = displayedVolumes.first(where: { ids.contains($0.id) })
-            else { return }
-            open(row)
+        SelectionRevealingList(selection: selection) {
+            List(displayedVolumes, selection: $selection) { row in
+                listRow(row)
+                    // The row paints its own padding, so its hover wash and the list's selection fill
+                    // reach the same edges.
+                    .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.inset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // On the List, not on a row: this one hands back every selected id.
+            .contextMenu(forSelectionType: HostedVolume.ID.self) { ids in
+                rowContextMenu(for: ids)
+            } primaryAction: { ids in
+                // Selecting already shows the volume (Q58); double-click and Return bring its page
+                // forward in a window too narrow for both panes — but only when the activation names
+                // exactly one row. `ids` is a `Set`, so with several selected `first` is an arbitrary
+                // member, and opening the wrong volume is worse than opening none.
+                guard ids.count == 1, let row = displayedVolumes.first(where: { ids.contains($0.id) })
+                else { return }
+                open(row)
+            }
         }
     }
 
-    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`. No live
-    /// figures — `volume list` reports none — so the metrics slot is empty and takes no width.
+    /// One row. The buttons are the table's Actions column, unchanged: `rowActions`.
     private func listRow(_ row: HostedVolume) -> some View {
         ResourceRow(
             title: row.name,
-            opens: { open(row) },
-            openHelp: "Open \(row.name)\(onHost(row))",
             detail: detailParts(row).joined(separator: " · "),
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
-            reservesMetrics: false,
             leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.volumes.systemImage) } },
             chips: {
                 HStack(spacing: 4) {
@@ -554,7 +564,6 @@ struct VolumesView: View {
                     }
                 }
             },
-            metrics: { EmptyView() },
             actions: { rowActions(for: row) })
     }
 
@@ -643,83 +652,59 @@ struct VolumesView: View {
 
     // MARK: Detail
 
-    /// Built to the same shape as the containers and machines detail screens — header with Back,
-    /// identity, the row's own actions, then a stepper through the list as currently shown.
+    /// The page beside the list (Q58): the selected volume's detail, a summary of several, or an
+    /// empty state. Built to the same shape as the containers and machines pages — a header with
+    /// identity, the row's own actions and the stepper, then the detail.
     @ViewBuilder
-    private func detailScreen(_ target: DetailTarget) -> some View {
-        VStack(spacing: 0) {
-            if let row = hostedVolume(target) {
+    private var page: some View {
+        if let row = shownRow {
+            VStack(spacing: 0) {
                 detailHeader(for: row)
                 Divider()
-                VolumeDetailView(model: model, volume: row.volume, host: row.host, requestedTab: target.tab)
-                    // Keyed so stepping to the next volume rebuilds rather than keeping the
+                VolumeDetailView(model: model, volume: row.volume, host: row.host,
+                                 requestedTab: request?.id == row.id ? request?.tab : nil)
+                    // Keyed so moving to the next volume rebuilds rather than keeping the
                     // previous one's tab state under a new name.
                     .id(row.detailKey)
-            } else {
-                detailHeader(for: nil)
-                Divider()
-                // Top-aligned with neutral wording, as Containers' detail does.
-                ContentUnavailableView(
-                    "Volume unavailable",
-                    systemImage: "questionmark.square.dashed",
-                    description: Text("\u{201C}\(target.name)\u{201D} is no longer on "
-                                      + "\(model.hostMode.hostName(target.host, local: "this Mac")). It may have been deleted.")
-                )
-                .frame(maxHeight: .infinity, alignment: .top)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .paneStep("volume", "volumes", order: displayedVolumes.map(\.id), current: row.id) { open($0) }
+            .id(request?.nonce)
+        } else if shown.count > 1, !actionable.isEmpty {
+            SelectionSummaryPane(title: "\(actionable.count) volumes selected",
+                                 systemImage: Section.volumes.systemImage,
+                                 names: actionableRows.map { $0.name + onHost($0) }) { bulkActions }
+        } else {
+            PaneEmptyState(title: "Choose a volume", systemImage: Section.volumes.systemImage,
+                           description: "Its size, where it is mounted and what uses it show here.")
         }
     }
 
-    /// The row a detail target names: This Mac's by name, a paired host's from its last answer.
-    private func hostedVolume(_ target: DetailTarget) -> HostedVolume? {
-        switch target.host {
-        case .local:
-            return model.volumes.first { $0.name == target.name }
-                .map { HostedVolume(volume: $0, host: .local, hostName: model.hostLabel) }
-        case .peer(let fingerprint):
-            guard let volume = model.hostMode.volumeSnapshots[fingerprint]?.items
-                .first(where: { $0.name == target.name }) else { return nil }
-            return HostedVolume(volume: volume, host: target.host,
-                                hostName: model.hostMode.hostName(target.host, local: model.hostLabel))
-        }
+    /// The one volume the page shows, when one is selected.
+    private var shownRow: HostedVolume? {
+        guard shown.count == 1, let id = shown.first else { return nil }
+        return displayedVolumes.first { $0.id == id }
     }
 
-    @ViewBuilder
-    private func detailHeader(for row: HostedVolume?) -> some View {
+    /// Identity, the row's actions, the stepper and the expand button — no Back: the list is beside it.
+    private func detailHeader(for row: HostedVolume) -> some View {
         HStack(spacing: 10) {
-            IconActionButton(systemImage: "chevron.left", label: "Back to Volumes",
-                             help: "Back to Volumes") { detailTarget = nil }
-
-            if let row {
-                Image(systemName: "cylinder.split.1x2")
-                    .font(.system(size: 19)).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.name).font(.headline)
-                    Text(subtitle(for: row))
-                        .font(.caption).foregroundStyle(.tertiary)
-                        .lineLimit(1).truncationMode(.middle)
-                        .help(subtitle(for: row))
-                }
-            } else {
-                Text("Volume unavailable").font(.headline)
+            Image(systemName: "cylinder.split.1x2")
+                .font(.system(size: 19)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.name).font(.headline).lineLimit(1).truncationMode(.middle)
+                Text(subtitle(for: row))
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(subtitle(for: row))
             }
 
-            Spacer()
-            if let row {
-                ActionCluster { rowActions(for: row) }
-            }
-            volumeStepper
+            Spacer(minLength: 0)
+            ActionCluster { rowActions(for: row) }
+            DetailStepper()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-
-    private var volumeStepper: some View {
-        let order = displayedVolumes
-        let index = order.firstIndex { $0.detailKey == detailTarget?.id }
-        return DetailStepper(singular: "volume", plural: "volumes", index: index, count: order.count,
-                             previous: { if let index, index > 0 { open(order[index - 1]) } },
-                             next: { if let index, index < order.count - 1 { open(order[index + 1]) } })
     }
 
     private func subtitle(for row: HostedVolume) -> String {
@@ -1051,7 +1036,6 @@ struct VolumesView: View {
         if model.deletePolicy.requiresConfirmation(.single) {
             pendingDelete = row
         } else {
-            leaveDetailIfShowing(row)
             Task { await model.removeVolume(row.volume, host: row.host) }
         }
     }
