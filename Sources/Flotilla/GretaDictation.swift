@@ -242,6 +242,8 @@ final class GretaDictation {
 
     /// The field changed under us (a keystroke, a paste, Send clearing it).
     func textChanged(to text: String) {
+        // Typing while the model downloads means they've moved on: don't open the mic after it.
+        if case .downloading = state { listenAfterDownload = false }
         guard state == .listening, let lastDelivered, text != lastDelivered else { return }
         stop(finalize: false)
     }
