@@ -14,7 +14,7 @@ import FlotillaCore
 ///
 /// **Routes, for whoever adds the next one:** the sidebar (`MainWindowView.navigate`), the app
 /// menus (`FlotillaCommands.present`), the menu-bar menu (`MenuBarView.present`), the window bar's
-/// search box (`ToolbarSearch.pick`), the window bar's bell and gear, the runtime band's Settings…, Greta's
+/// search box (`ToolbarSearch.pick`), the window bar's bell and gear, the status bar's runtime-menu Settings…, Greta's
 /// buttons, a click on a macOS notification, a `.flotilla` file opened from Finder, and Quit
 /// (`AppDelegate.applicationShouldTerminate`). A new way of changing section that skips this
 /// is the bug this type exists to stop.

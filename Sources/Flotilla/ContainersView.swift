@@ -973,7 +973,7 @@ struct ContainersView: View {
 
         Divider()
         // Every lifecycle item, always, with the ones that do not apply greyed out rather than
-        // absent — the rule the runtime band's menu follows, in the same order, and carried here
+        // absent — the rule the status bar's runtime menu follows, in the same order, and carried here
         // so containers and machines answer a right-click the same way. The old shape showed
         // Stop/Restart/Force Kill *or* Start, so which item sat under the pointer depended on the
         // row you happened to open it on.

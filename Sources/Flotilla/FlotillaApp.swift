@@ -480,6 +480,9 @@ struct FlotillaApp: App {
         // same reason — it gives the side-by-side Throughput and Resources panels and the
         // six-column utilisation table real room without exceeding the narrowest Mac screen.
         //
+        // (History: the notes below describe the sidebar runtime band, removed 18 October; the
+        // current number and why are at `defaultSize`.)
+        //
         // **800, not 860, because the owner set the height by where two lines meet**: the bottom
         // of the Utilisation table and the hairline above "Container system running" in the
         // sidebar's runtime band. Measured on screen — the divider sat at y=1022 with the table
@@ -501,7 +504,14 @@ struct FlotillaApp: App {
         // still pushes everything below it down, so the dashboard still scrolls sooner with more
         // containers; but when it fits, the bottom lands in the same place every time, because
         // the panel that ends the content has a fixed height.
-        .defaultSize(width: 1280, height: 854)
+        // **834 since the sidebar's runtime band went (18 October).** The line the content's bottom
+        // used to meet was the band's divider, 43pt above the window's bottom (hairline, 8pt, the
+        // two-line status, 8pt — the band as it stood at the 854 above, sidebar expanded). The
+        // line it meets now is the status bar's hairline, 23pt above the bottom. Content is
+        // anchored to the top, so the bottom edge it lands on is at `height - 23`; keeping it where
+        // 854 put it (`854 - 43`) gives 834. Derived from those two measured heights, not re-read
+        // off a screen: re-measure on the next run, and move this number, not the status bar.
+        .defaultSize(width: 1280, height: 834)
         // **This is the fix for "it only shows in the menu bar".**
         //
         // Left to `.automatic`, SwiftUI infers whether to present this scene at launch from the

@@ -1041,7 +1041,7 @@ struct HostsView: View {
         }
     }
 
-    /// This Mac's runtime items match the sidebar band's menu word for word; a host's items are its
+    /// This Mac's runtime items match the status bar's menu word for word; a host's items are its
     /// trust — approve, turn away, remove access.
     @ViewBuilder
     private func menu(for row: HostRow) -> some View {

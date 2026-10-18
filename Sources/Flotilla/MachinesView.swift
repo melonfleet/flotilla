@@ -646,7 +646,7 @@ struct MachinesView: View {
             .disabled(machine.isDefault == true || busy)
 
         // All three lifecycle items, always, with the ones that do not apply greyed out rather
-        // than absent — the rule the runtime band's menu follows, in the same order, and for the
+        // than absent — the rule the status bar's runtime menu follows, in the same order, and for the
         // same reason: a menu whose items rearrange as state changes teaches nothing about what
         // the section can do, while a greyed-out Stop says plainly that this machine is already
         // stopped. The old shape showed Stop and Restart *or* Start, so the item under the

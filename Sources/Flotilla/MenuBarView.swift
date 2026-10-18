@@ -116,7 +116,7 @@ struct MenuBarView: View {
 
     // MARK: Status
 
-    /// One line, in the words the runtime band uses (`RuntimeStatus.describe`), with the fleet
+    /// One line, in the words the status bar uses (`RuntimeStatus.describe`), with the fleet
     /// beneath it when there is one. Disabled, as Docker's is: it is a statement, not a command.
     private var statusLine: some View {
         let runtime = RuntimeStatus.describe(model.preflight)
@@ -203,7 +203,7 @@ struct MenuBarView: View {
         }
     }
 
-    /// Stop and Restart ask first, in the same words as the Hosts menu and the runtime band
+    /// Stop and Restart ask first, in the same words as the Hosts menu and the status bar
     /// (`RuntimeLifecycleAction`). A menu has no sheet to show, so it is an alert.
     private func confirm(_ action: RuntimeLifecycleAction) {
         NSApp.activate(ignoringOtherApps: true)

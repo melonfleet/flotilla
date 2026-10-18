@@ -154,11 +154,6 @@ struct MainWindowView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             Color.clear.frame(height: sidebarTopInset)
         }
-        // The corner furthest from the toolbar, which is where the runtime's own state belongs:
-        // visible without being asked for, and out of the way of the things you manage.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            RuntimeStatusBand(model: model, railed: railed)
-        }
         // The collapse control, in the middle of the sidebar's edge (the owner, 6 October) —
         // moved from the window bar, where it sat beside the logo.
         .overlay(alignment: .trailing) {
@@ -331,9 +326,9 @@ struct MainWindowView: View {
                 //
                 // A **negative top padding** is the one shape that moves it without dragging the
                 // bottom: the child is offset up by this much and given that much more height,
-                // so the card rises and the runtime band stays exactly where it is — which
-                // matters, because the window's height is set by that band's divider lining up
-                // with the Utilisation table.
+                // so the card rises and the bottom of the window stays exactly where it is — which
+                // matters, because the window's height (`defaultSize` in `FlotillaApp`) is set by
+                // the status bar's hairline lining up with the bottom of the dashboard's content.
                 .padding(.top, -sidebarCardLift)
                 // ⌘G: Greta floating over whichever page is showing (Q52). Escape or ⌘G closes it.
                 .overlay(alignment: .bottomTrailing) {

@@ -1,25 +1,15 @@
 import SwiftUI
 import FlotillaCore
 
-/// The sidebar's bottom band: whether `container` is running, and the few things you might want
-/// to do about it.
-///
-/// It replaces the "Client mode / No paired hosts" footer, which described a client/host split
-/// that does not exist in this build. The space is worth keeping — a runtime the whole app depends
-/// on should say whether it is up without being asked, and the corner furthest from the toolbar is
-/// where Docker Desktop puts the same thing.
+/// The runtime's state and menu, in the window's status bar: whether `container` is running, and
+/// the few things you might want to do about it. The sidebar used to carry this as a band of its
+/// own; the status bar is the one place now.
 ///
 /// **Nothing here reaches the network.** "Check for updates" opens Apple's releases page in the
 /// browser rather than comparing versions, because Flotilla makes no requests of its own and a
-/// background version check would be precisely the phone-home it promises it does not do. The
-/// installed version is printed beside the link so the comparison takes one glance.
+/// background version check would be precisely the phone-home it promises it does not do.
 struct RuntimeStatusBand: View {
     let model: AppModel
-    /// In rail mode the words go; the dot and the menu stay, and the sentence moves to the
-    /// tooltip — the same trade the sidebar rows already make.
-    let railed: Bool
-    /// The full-window status bar uses the same menu and confirmation owner.
-    var compact = false
 
     @Environment(\.openURL) private var openURL
     /// Which of the two destructive items is being confirmed, and whether the dialog is up.
@@ -35,25 +25,14 @@ struct RuntimeStatusBand: View {
     @State private var showingConfirmation = false
 
     var body: some View {
-        Group {
-            if compact {
-                // The dot sits beside the menu, not in its label: a borderless macOS `Menu` draws
-                // its label's text and drops the shapes around it, so the dot never showed.
-                HStack(spacing: 2) {
-                    indicator
-                    menu
-                }
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                .frame(height: 23)
-            } else {
-                VStack(spacing: 0) {
-                    Divider()
-                    content
-                        .padding(.horizontal, railed ? 8 : 12)
-                        .padding(.vertical, 8)
-                }
-            }
+        // The dot sits beside the menu, not in its label: a borderless macOS `Menu` draws
+        // its label's text and drops the shapes around it, so the dot never showed.
+        HStack(spacing: 2) {
+            indicator
+            menu
         }
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .frame(height: 23)
         .confirmationDialog(confirming.question,
                             isPresented: $showingConfirmation,
                             titleVisibility: .visible) {
@@ -61,34 +40,6 @@ struct RuntimeStatusBand: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirming.consequence)
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if railed {
-            VStack(spacing: 6) {
-                indicator
-                menu
-            }
-            .help(status.title)
-        } else {
-            HStack(spacing: 8) {
-                indicator
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(status.title)
-                        .font(.caption)
-                        .lineLimit(1)
-                    if let detail = status.detail {
-                        Text(detail)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-                menu
-            }
         }
     }
 
@@ -115,28 +66,23 @@ struct RuntimeStatusBand: View {
         Menu {
             runtimeActions()
         } label: {
-            if compact {
-                Text(status.title)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            Text(status.title)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .font(.system(size: 11))
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .frame(height: 23)
                 .contentShape(Rectangle())
-            } else {
-                RowOverflowLabel()
-            }
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .fixedSize(horizontal: !compact, vertical: false)
-        .help(compact ? "Container runtime options" : "Runtime options")
-        .accessibilityLabel(compact ? "Container runtime: \(status.title)" : "Runtime options")
+        .help("Container runtime options")
+        .accessibilityLabel("Container runtime: \(status.title)")
         .accessibilityHint("Opens the runtime menu")
         .disabled(model.startingRuntime)
     }
 
-    /// One builder for the sidebar and window status bar, including enablement and confirmations.
+    /// The one builder for the menu, including enablement and confirmations.
     @ViewBuilder
     private func runtimeActions() -> some View {
         // All three lifecycle items, always, with the ones that do not apply greyed out
@@ -218,7 +164,7 @@ struct RuntimeStatusBand: View {
 }
 
 /// What the runtime is doing and what may be done to it, from the one preflight verdict — shared by
-/// the sidebar band and the Hosts table so the two cannot say different things.
+/// the status bar and the Hosts table so the two cannot say different things.
 enum RuntimeStatus {
     /// Which lifecycle items are live, from the one verdict the rest of the app already trusts.
     ///
@@ -243,7 +189,7 @@ enum RuntimeStatus {
         }
     }
 
-    /// What the band says, straight from the preflight the rest of the app already acts on — so it
+    /// What the status bar says, straight from the preflight the rest of the app already acts on — so it
     /// cannot claim the runtime is fine while the container list explains that it is not.
     static func describe(_ preflight: PreflightResult?) -> (title: String, detail: String?, tint: Color) {
         switch preflight {

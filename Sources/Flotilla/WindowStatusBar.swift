@@ -18,7 +18,7 @@ struct WindowStatusBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RuntimeStatusBand(model: model, railed: false, compact: true)
+            RuntimeStatusBand(model: model)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             versionMenu
                 .layoutPriority(1)

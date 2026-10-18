@@ -2606,6 +2606,7 @@ the right, always present across every section and form, regardless of the sideb
   aligned with the Utilisation table. Removing it would change that established layout. This is
   the explicit exception to removing the old runtime surface; the full-width bar is independent
   of its rail/expanded presentation.
+  **Amended 18 October:** the band is gone; the status bar carries the dot and the menu, and the window's default height was re-derived (834) in `FlotillaApp`.
 - The version appears once in window chrome, from `CFBundleShortVersionString` (including the
   release's +N suffix), without the parenthesised build. Overview's badge and `VersionBadge`
   are removed. Its menu calls Sparkle's existing Check for Updates, reads Sparkle's last-check

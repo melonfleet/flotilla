@@ -2,7 +2,7 @@ import Foundation
 
 /// The handful of web addresses the app offers to open.
 ///
-/// One place, because the same three are reachable from the sidebar's runtime menu and from the
+/// One place, because the same three are reachable from the status bar's runtime menu and from the
 /// app menus, and two copies of a URL is two things to get wrong. Nothing here is ever fetched —
 /// these are handed to the browser on an explicit click.
 ///

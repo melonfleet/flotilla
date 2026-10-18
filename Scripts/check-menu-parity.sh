@@ -83,7 +83,7 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
 
     # A file with its own row menu and no context menu anywhere offers that menu one way only,
     # which is the very thing this check exists to stop. One surface is legitimately exempt: the
-    # sidebar's runtime band borrows the glyph for a menu that has no row to right-click. Named
+    # status bar's runtime menu borrows the glyph for a menu that has no row to right-click. Named
     # rather than skipped by rule, so a new one has to be looked at rather than inherited.
     if not ctx:
         if path.name not in NOT_A_ROW:
@@ -101,14 +101,14 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
         if not any(c.split("(")[0] == name for c in ctx):
             FAIL.append(f"{path}: passes `{body}` as a card menu but right-clicks a different builder")
 
-# Both runtime surfaces instantiate one component; its Menu must contain only the shared
-# builder, so a compact-only handwritten menu cannot quietly diverge from the sidebar.
+# The status bar's runtime menu must contain only the shared builder, so a handwritten menu
+# cannot quietly diverge from the one Hosts and the menu-bar popover describe.
 runtime = pathlib.Path("Sources/Flotilla/RuntimeStatusBand.swift").read_text()
 bar = pathlib.Path("Sources/Flotilla/WindowStatusBar.swift").read_text()
 if (len(re.findall(r'\bMenu\s*\{', runtime)) != 1 or
         not re.search(r'Menu\s*\{\s*runtimeActions\(\)\s*\}\s*label:', runtime) or
-        'RuntimeStatusBand(model: model, railed: false, compact: true)' not in bar):
-    FAIL.append("runtime status bar and sidebar must use RuntimeStatusBand's one runtimeActions builder")
+        'RuntimeStatusBand(model: model)' not in bar):
+    FAIL.append("runtime status bar must use RuntimeStatusBand's one runtimeActions builder")
 
 if FAIL:
     print("Row `⋯` menu and right-click menu disagree:")
