@@ -34,7 +34,7 @@ public struct SuggestionLibrary: Sendable, Codable, Equatable {
         self.entries = entries
     }
 
-    /// Only the entries that pass every check, with why each other one was dropped. A library whose
+    /// Only the entries that pass every check, with reasons for dropped entries or icons. A library whose
     /// version isn't valid is refused whole: it comes back empty, with `"library"` in `dropped`.
     public func checked() -> (library: SuggestionLibrary, dropped: [(id: String, problem: String)]) {
         guard Self.isValidVersion(version) else {
@@ -44,9 +44,13 @@ public struct SuggestionLibrary: Sendable, Codable, Equatable {
         var kept: [LibraryEntry] = []
         var dropped: [(String, String)] = []
         var seen = Set<String>()
-        for entry in entries.prefix(Self.maxEntries) {
+        for var entry in entries.prefix(Self.maxEntries) {
             if let problem = entry.problem() { dropped.append((entry.id, problem)); continue }
             guard seen.insert(entry.id).inserted else { dropped.append((entry.id, "Its id is used twice.")); continue }
+            if let problem = entry.icon?.problem() {
+                dropped.append((entry.id, "Icon ignored: " + problem))
+                entry.icon = nil
+            }
             kept.append(entry)
         }
         if entries.count > Self.maxEntries { dropped.append(("…", "More than \(Self.maxEntries) entries; the rest were ignored.")) }
@@ -90,6 +94,7 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
     public var tested: Tested?
     public var container: LibraryContainer?
     public var stack: LibraryStack?
+    public var icon: LibraryIcon?
 
     public struct Tested: Sendable, Codable, Equatable {
         public var date: String
@@ -116,10 +121,10 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
 
     public init(id: String, title: String, summary: String, categories: [String], kind: Kind,
                 licenceNote: String? = nil, tested: Tested? = nil,
-                container: LibraryContainer? = nil, stack: LibraryStack? = nil) {
+                container: LibraryContainer? = nil, stack: LibraryStack? = nil, icon: LibraryIcon? = nil) {
         self.id = id; self.title = title; self.summary = summary; self.categories = categories
         self.kind = kind; self.licenceNote = licenceNote; self.tested = tested
-        self.container = container; self.stack = stack
+        self.container = container; self.stack = stack; self.icon = icon
     }
 
     /// The images it pulls.
@@ -170,6 +175,41 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
                              readyPort: service.readyPort, command: service.command)
             },
             notes: stack.notes, opens: stack.opens)
+    }
+}
+
+/// A PNG shipped beside the signed library. Invalid metadata removes only this decoration.
+public struct LibraryIcon: Sendable, Codable, Equatable {
+    public static let maxBytes = 64 * 1024
+    public var file: String
+    public var sha256: String
+    public var bytes: Int
+
+    public init(file: String, sha256: String, bytes: Int) {
+        self.file = file; self.sha256 = sha256; self.bytes = bytes
+    }
+
+    private enum CodingKeys: String, CodingKey { case file, sha256, bytes }
+
+    // Malformed icon fields must not stop the surrounding entry (or library) decoding.
+    public init(from decoder: Decoder) throws {
+        let values = try? decoder.container(keyedBy: CodingKeys.self)
+        file = (try? values?.decode(String.self, forKey: .file)) ?? ""
+        sha256 = (try? values?.decode(String.self, forKey: .sha256)) ?? ""
+        bytes = (try? values?.decode(Int.self, forKey: .bytes)) ?? 0
+    }
+
+    public func problem() -> String? {
+        guard file.utf8.count <= 74, !file.contains(".."),
+              file.range(of: #"\Aicons/[a-z0-9][a-z0-9.-]{0,63}\.png\z"#, options: .regularExpression) != nil else {
+            return "Its file isn't a PNG name inside icons/."
+        }
+        guard sha256.utf8.count == 64,
+              sha256.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
+            return "Its SHA-256 isn't 64 lowercase hexadecimal digits."
+        }
+        guard (1...Self.maxBytes).contains(bytes) else { return "Its size isn't between 1 and 65536 bytes." }
+        return nil
     }
 }
 

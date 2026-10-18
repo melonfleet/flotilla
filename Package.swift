@@ -46,6 +46,8 @@ let package = Package(
                                          .product(name: "SwiftTerm", package: "SwiftTerm"),
                                          .product(name: "Sparkle", package: "Sparkle")]),
 
+        .testTarget(name: "FlotillaTests", dependencies: ["Flotilla", "FlotillaCore"]),
+
         // The Flotilla Helper (decision 19, amended 7 October; Q41): Flotilla's one root SMAppService
         // daemon, running the typed jobs in HelperProtocol for the signed app and nothing else. Its interface lives in
         // FlotillaPrivileged, shared with the app. Both are macOS-only (Security, XPC), so both are

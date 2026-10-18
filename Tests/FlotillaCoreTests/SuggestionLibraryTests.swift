@@ -39,6 +39,57 @@ import Testing
         #expect(pg?.env.contains { $0.contains("change-me") } == false)
     }
 
+    @Test func iconsAreOptionalAndRoundTrip() throws {
+        var entry = container()
+        let old = try JSONEncoder().encode(entry)
+        #expect(!String(decoding: old, as: UTF8.self).contains("\"icon\""))
+        #expect(try JSONDecoder().decode(LibraryEntry.self, from: old).icon == nil)
+        entry.icon = .init(file: "icons/nginx.png", sha256: String(repeating: "a", count: 64), bytes: 65536)
+        let decoded = try JSONDecoder().decode(LibraryEntry.self, from: JSONEncoder().encode(entry))
+        let result = SuggestionLibrary(version: "2026.10.18.0", entries: [decoded]).checked()
+        #expect(result.library.entries == [entry])
+        #expect(result.dropped.isEmpty)
+    }
+
+    @Test func invalidIconsKeepTheirEntryAndRecordAReason() {
+        let hash = String(repeating: "a", count: 64)
+        var invalid = [LibraryIcon]()
+        for file in ["icons/../web.png", "icons/a..b.png", "icons/sub/web.png", "/icons/web.png",
+                     "https://example.com/web.png", "icons/Web.png", "icons/.web.png", "icons/web.svg",
+                     "icons/web.png\n", "icons/" + String(repeating: "a", count: 65) + ".png"] {
+            invalid.append(.init(file: file, sha256: hash, bytes: 100))
+        }
+        for badHash in ["abc", String(repeating: "A", count: 64), String(repeating: "g", count: 64)] {
+            invalid.append(.init(file: "icons/web.png", sha256: badHash, bytes: 100))
+        }
+        for bytes in [-1, 0, 65537, Int.max] {
+            invalid.append(.init(file: "icons/web.png", sha256: hash, bytes: bytes))
+        }
+        for icon in invalid {
+            var entry = container(); entry.icon = icon
+            let result = SuggestionLibrary(version: "2026.10.18.0", entries: [entry]).checked()
+            entry.icon = nil
+            #expect(result.library.entries == [entry])
+            #expect(result.dropped.count == 1)
+            #expect(result.dropped.first?.id == entry.id)
+            #expect(result.dropped.first?.problem.hasPrefix("Icon ignored:") == true)
+        }
+        #expect(LibraryIcon(file: "icons/" + String(repeating: "a", count: 64) + ".png", sha256: hash, bytes: 1).problem() == nil)
+    }
+
+    @Test func malformedIconShapesDoNotBreakLibraryDecoding() throws {
+        let data = try JSONEncoder().encode(container())
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        for bad: Any in ["wrong", ["file": 123], ["file": "icons/web.png", "sha256": "bad", "bytes": "large"]] {
+            object["icon"] = bad
+            let decoded = try JSONDecoder().decode(LibraryEntry.self, from: JSONSerialization.data(withJSONObject: object))
+            let result = SuggestionLibrary(version: "2026.10.18.0", entries: [decoded]).checked()
+            #expect(result.library.entries.count == 1)
+            #expect(result.library.entries.first?.icon == nil)
+            #expect(result.dropped.count == 1)
+        }
+    }
+
     @Test func aGoodEntryPasses() {
         #expect(container().problem() == nil)
     }

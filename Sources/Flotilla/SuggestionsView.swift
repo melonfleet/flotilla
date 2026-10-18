@@ -87,16 +87,24 @@ struct SuggestionsView: View {
     }
 
     private func row(_ entry: LibraryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(entry.title).font(.body.weight(.medium)).lineLimit(1)
-                badge(entry.kind == .stack ? "Stack" : "Container")
-                if entry.licenceNote != nil { badge("Licence") }
+        HStack(alignment: .top, spacing: 10) {
+            logo(entry)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(entry.title).font(.body.weight(.medium)).lineLimit(1)
+                    badge(entry.kind == .stack ? "Stack" : "Container")
+                    if entry.licenceNote != nil { badge("Licence") }
+                }
+                Text(entry.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(Self.stats(entry)).font(.caption2).foregroundStyle(.tertiary)
             }
-            Text(entry.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            Text(Self.stats(entry)).font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.vertical, 3)
+    }
+
+    private func logo(_ entry: LibraryEntry) -> some View {
+        SuggestionLogo(data: entry.icon.flatMap { model.libraryUpdater.icons[$0.sha256] },
+                       category: entry.categories.first)
     }
 
     private func badge(_ text: String) -> some View {
@@ -122,10 +130,15 @@ struct SuggestionsView: View {
         if let entry = selected {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(entry.title).font(.title3.weight(.semibold)).textSelection(.enabled)
-                    Text(entry.summary).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(entry.categories.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 12) {
+                        logo(entry)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(entry.title).font(.title3.weight(.semibold)).textSelection(.enabled)
+                            Text(entry.summary).font(.callout).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(entry.categories.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                     if let stack = entry.stack {
                         section("Services") {
                             ForEach(stack.services, id: \.role) { service in

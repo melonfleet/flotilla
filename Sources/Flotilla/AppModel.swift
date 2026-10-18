@@ -1860,6 +1860,7 @@ final class AppModel {
 
     /// Checks GitHub for a newer library now — from Settings, or the daily loop.
     func checkSuggestionLibrary() async {
+        guard settingsStore[SettingsKeys.suggestionLibraryUpdates] else { return }
         if let newer = await libraryUpdater.check(current: suggestionLibrary) { suggestionLibrary = newer }
     }
 
@@ -1867,6 +1868,7 @@ final class AppModel {
     func startLibraryUpdates() {
         libraryUpdater.noteInUse(suggestionLibrary)
         Task { [weak self] in
+            if let self { await self.libraryUpdater.loadIcons(for: self.suggestionLibrary) }
             while let self {
                 if self.settingsStore[SettingsKeys.suggestionLibraryUpdates], self.libraryUpdater.isDue {
                     await self.checkSuggestionLibrary()

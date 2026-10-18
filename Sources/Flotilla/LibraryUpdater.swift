@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ImageIO
 import FlotillaCore
 
 /// Fetches a newer suggestions library from GitHub, once a day (DECISIONS Q54).
@@ -24,6 +25,9 @@ final class LibraryUpdater {
     private(set) var lastChecked: Date?
     private(set) var status: String = "Not checked yet."
     private(set) var checking = false
+    /// Only verified, decoded PNG bytes; views never fetch or read files.
+    private(set) var icons: [String: Data] = [:]
+    nonisolated static let maxIconTotalBytes = 8 * 1024 * 1024
 
     private let defaults = UserDefaults.standard
     private static let lastCheckedKey = "suggestionLibraryLastChecked"
@@ -98,7 +102,7 @@ final class LibraryUpdater {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 20
         configuration.httpAdditionalHeaders = ["User-Agent": "Flotilla"]
-        let session = URLSession(configuration: configuration)
+        let session = URLSession(configuration: configuration, delegate: LibraryRedirectPolicy(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         do {
             let data = try await fetch("library.json", session)
@@ -106,21 +110,25 @@ final class LibraryUpdater {
             // An answer arrived, good or bad: the next try is tomorrow, not in an hour.
             lastChecked = Date()
             defaults.set(lastChecked, forKey: Self.lastCheckedKey)
-            let library = try Self.verified(data, signature: signature)
+            let library = try await Blocking.run { try Self.verified(data, signature: signature) }
             if let highest = defaults.string(forKey: Self.highestVersionKey),
                library.isOlder(than: SuggestionLibrary(version: highest, entries: [])) {
                 status = "GitHub offered an older library (\(library.version)) than one already used, so it was ignored."
                 return nil
             }
             guard current.isOlder(than: library) else {
+                if library.version == current.version { await updateIcons(current, session: session) }
                 status = "Up to date (library \(current.version))."
                 return nil
             }
-            if let folder = Self.cacheFolder {
-                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                try data.write(to: folder.appendingPathComponent("library.json"), options: .atomic)
-                try signature.write(to: folder.appendingPathComponent("library.json.sig"), options: .atomic)
+            try await Blocking.run {
+                if let folder = Self.cacheFolder {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try data.write(to: folder.appendingPathComponent("library.json"), options: .atomic)
+                    try signature.write(to: folder.appendingPathComponent("library.json.sig"), options: .atomic)
+                }
             }
+            await updateIcons(library, session: session)
             defaults.set(library.version, forKey: Self.highestVersionKey)
             status = "Updated to library \(library.version): \(library.entries.count) suggestions."
             return library
@@ -131,20 +139,20 @@ final class LibraryUpdater {
     }
 
     /// Read as it arrives and abandoned past the cap, so an oversized answer is never held whole.
-    private func fetch(_ name: String, _ session: URLSession) async throws -> Data {
+    private func fetch(_ name: String, _ session: URLSession, cap: Int = LibraryUpdater.maxBytes) async throws -> Data {
         let (bytes, response) = try await session.bytes(from: Self.source.appendingPathComponent(name))
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             bytes.task.cancel()
             throw Failure("GitHub didn't have \(name) (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)).")
         }
-        if response.expectedContentLength > Int64(Self.maxBytes) {
+        if response.expectedContentLength > Int64(cap) {
             bytes.task.cancel()
             throw Failure("The library is larger than Flotilla accepts.")
         }
         var data = Data()
         for try await byte in bytes {
             data.append(byte)
-            if data.count > Self.maxBytes {
+            if data.count > cap {
                 bytes.task.cancel()
                 throw Failure("The library is larger than Flotilla accepts.")
             }
@@ -152,8 +160,103 @@ final class LibraryUpdater {
         return data
     }
 
+    /// Cache loading is local, even with updates disabled. Recheck hashes and PNGs on launch.
+    func loadIcons(for library: SuggestionLibrary) async {
+        icons = await Blocking.run { Self.cachedIcons(library) }
+    }
+
+    nonisolated static func iconURL(_ icon: LibraryIcon) -> URL? {
+        cacheFolder?.appendingPathComponent("icon-" + icon.sha256 + ".png")
+    }
+
+    /// Exact signed length and hash, a real PNG, bounded dimensions, and successful pixel decode.
+    nonisolated static func validIcon(_ data: Data, metadata: LibraryIcon) -> Bool {
+        guard metadata.problem() == nil, data.count == metadata.bytes,
+              data.count <= LibraryIcon.maxBytes,
+              SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == metadata.sha256,
+              data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetType(source) as String? == "public.png",
+              CGImageSourceGetCount(source) == 1,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              (1...512).contains(width), (1...512).contains(height),
+              CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) != nil
+        else { return false }
+        return true
+    }
+
+    nonisolated private static func readIcon(_ icon: LibraryIcon) -> Data? {
+        guard icon.problem() == nil, let url = iconURL(icon),
+              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size == icon.bytes, let data = try? Data(contentsOf: url), validIcon(data, metadata: icon)
+        else { return nil }
+        return data
+    }
+
+    nonisolated private static func cachedIcons(_ library: SuggestionLibrary) -> [String: Data] {
+        var found: [String: Data] = [:]
+        var remaining = maxIconTotalBytes
+        for icon in library.entries.compactMap(\.icon) where found[icon.sha256] == nil {
+            guard icon.bytes <= remaining, let data = readIcon(icon) else { continue }
+            remaining -= data.count
+            found[icon.sha256] = data
+        }
+        return found
+    }
+
+    /// Only called as part of a library check. Failure of any icon leaves its fallback tile.
+    private func updateIcons(_ library: SuggestionLibrary, session: URLSession) async {
+        var found: [String: Data] = [:]
+        var seen = Set<String>()
+        var remaining = Self.maxIconTotalBytes
+        for icon in library.entries.compactMap(\.icon) {
+            guard icon.problem() == nil, seen.insert(icon.sha256).inserted else { continue }
+            if let cached = await Blocking.run({ Self.readIcon(icon) }) {
+                if cached.count <= remaining {
+                    found[icon.sha256] = cached
+                    remaining -= cached.count
+                }
+                continue
+            }
+            // Reserve the full streaming allowance even for failed or dishonest responses.
+            // This bounds all icon traffic during a check, not just successfully stored bytes.
+            guard remaining >= LibraryIcon.maxBytes else { continue }
+            remaining -= LibraryIcon.maxBytes
+            do {
+                let data = try await fetch(icon.file, session, cap: LibraryIcon.maxBytes)
+                let valid = await Blocking.run {
+                    guard Self.validIcon(data, metadata: icon) else { return false }
+                    if let url = Self.iconURL(icon) { try? data.write(to: url, options: .atomic) }
+                    return true
+                }
+                if valid { found[icon.sha256] = data }
+            } catch { /* Decoration is optional; the library remains accepted. */ }
+        }
+        icons = found
+        let referenced = Set(library.entries.compactMap { $0.icon.map { "icon-" + $0.sha256 + ".png" } })
+        await Blocking.run {
+            guard let folder = Self.cacheFolder,
+                  let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            else { return }
+            for file in files where file.lastPathComponent.hasPrefix("icon-") && file.pathExtension == "png"
+                && !referenced.contains(file.lastPathComponent) {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+    }
+
     /// Whether a day has passed since the last check.
     var isDue: Bool { lastChecked.map { Date().timeIntervalSince($0) >= 86_400 } ?? true }
 
     struct Failure: Error { let message: String; init(_ message: String) { self.message = message } }
+}
+
+/// Keep this anonymous request on the configured GitHub source, including icon requests.
+private final class LibraryRedirectPolicy: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
 }
