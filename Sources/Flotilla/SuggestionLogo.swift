@@ -46,11 +46,11 @@ struct SuggestionLogo: View {
 
 // Resolve artwork only from the updater's verified, in-memory PNGs.
 extension AppModel {
-    func containerLogo(for image: String) -> Data? {
+    func libraryLogo(for image: String) -> Data? {
         suggestionLibrary.entry(forImage: image)?.icon.flatMap { libraryUpdater.icons[$0.sha256] }
     }
 
-    func containerLogo(for group: ContainerGroup) -> Data? {
+    func libraryLogo(for group: ContainerGroup) -> Data? {
         suggestionLibrary.entry(forGroup: group)?.icon.flatMap { libraryUpdater.icons[$0.sha256] }
     }
 }

@@ -391,7 +391,17 @@ struct ImagesView: View {
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row, users: users),
-            leading: { RowLeadingMark { RowKindGlyph(systemImage: Section.images.systemImage) } },
+            leading: {
+                // The library's logo for this repository, in the containers' 20pt size; the
+                // glyph otherwise. Both sit at the slot's trailing edge, so names stay aligned.
+                RowLeadingMark {
+                    if let logo = model.libraryLogo(for: row.reference) {
+                        SuggestionLogo(data: logo, category: nil, size: 20)
+                    } else {
+                        RowKindGlyph(systemImage: Section.images.systemImage)
+                    }
+                }
+            },
             chips: {
                 // Images have no tags (CLAUDE.md: "tag" already means an image reference's).
                 if !users.isEmpty {
@@ -733,8 +743,12 @@ struct ImagesView: View {
     private func detailHeader(for row: HostedImage) -> some View {
         let image = row.image
         return HStack(spacing: 10) {
-            Image(systemName: "square.stack.3d.up")
-                .font(.system(size: 19)).foregroundStyle(.secondary)
+            if let logo = model.libraryLogo(for: row.reference) {
+                SuggestionLogo(data: logo, category: nil, size: 32)
+            } else {
+                Image(systemName: "square.stack.3d.up")
+                    .font(.system(size: 19)).foregroundStyle(.secondary)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(Self.repository(image)).font(.headline).lineLimit(1).truncationMode(.middle)

@@ -231,7 +231,7 @@ struct ContainersView: View {
     @ViewBuilder
     private func detailHeader(for container: Container, on host: HostRef = .local) -> some View {
         HStack(spacing: 10) {
-            if let logo = model.containerLogo(for: container.imageReference) {
+            if let logo = model.libraryLogo(for: container.imageReference) {
                 SuggestionLogo(data: logo, category: nil, size: 32)
             } else {
                 Image(systemName: "shippingbox")
@@ -1750,8 +1750,8 @@ struct ContainersView: View {
     @ViewBuilder
     private func stateMark(_ row: ContainerRow) -> some View {
         let logo = row.kind == .group
-            ? row.group.flatMap { model.containerLogo(for: $0) }
-            : (row.container?.imageReference ?? row.member?.image).flatMap { model.containerLogo(for: $0) }
+            ? row.group.flatMap { model.libraryLogo(for: $0) }
+            : (row.container?.imageReference ?? row.member?.image).flatMap { model.libraryLogo(for: $0) }
         RowGroupMark(markWidth: 20) {
             if row.kind == .group, let group = row.group {
                 caret(for: group)
