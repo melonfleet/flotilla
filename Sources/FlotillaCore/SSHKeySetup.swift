@@ -430,8 +430,10 @@ public enum SSHKeySetup {
 
     /// What ssh-keygen left at Flotilla's key paths, read **the moment it exited** — while the
     /// operation lock is held, so no other key step could have written there since the snapshot.
-    /// `made` is each file this ssh-keygen wrote, by identity: a regular file of the user's whose
-    /// inode was not present in the snapshot. `foreign` is any other path holding something.
+    /// `made` is each file this ssh-keygen probably wrote, by identity: a regular file of the user's
+    /// whose inode was not present in the snapshot. The lock cannot keep out a writer that isn't
+    /// Flotilla (Kyle, 18 October), so `made` is only ever used to say what the rollback moved —
+    /// which is everything at those paths either way. `foreign` is any other path holding something.
     public struct KeygenOutput: Sendable, Equatable {
         public let made: [String: FileStamp]
         public let foreign: [String]
@@ -451,60 +453,170 @@ public enum SSHKeySetup {
         return KeygenOutput(made: made, foreign: foreign)
     }
 
-    /// Whether the file found when a rollback is about to remove it is still the exact one ssh-keygen
-    /// left — same device and inode, still a regular file of the user's. Recency is never evidence
-    /// (Kyle, 18 October): a file another operation wrote is new and the user's too, and is not this.
+    /// Whether a file found after the rollback moved it is still the exact one ssh-keygen left —
+    /// same device and inode, still a regular file of the user's. It decides only what the outcome
+    /// **says** was moved; nothing is ever removed on its strength (Kyle, 18 October: an external
+    /// file created during ssh-keygen is new and the user's too, and an identity check run by this
+    /// app's lock cannot exclude other writers). Recency is never evidence.
     public static func isStillMade(_ recorded: FileStamp, now: FileStamp?) -> Bool {
         guard let now else { return false }
         return now.isSameFile(as: recorded) && now.isRegularFile && now.ownedByUser
     }
 
-    /// A directory one rollback creates for itself and holds open — on this Mac, `mkdtemp` in
-    /// `~/.ssh`, mode 0700 and the user's, reached through its descriptor (Kyle, 18 October). Only
-    /// the user can write inside it, so a process that can write to `~/.ssh` cannot swap the entry
-    /// between the check and the unlink. It holds one entry at a time.
-    public protocol RollbackDirectory {
-        /// Where the entry is, for saying so when it has to stay there.
-        var entryPath: String { get }
-        /// Renames `path` into the directory, never over anything.
-        func moveIn(_ path: String) -> RollbackMove
-        /// `lstat` of the entry, relative to the directory's descriptor.
-        func stampEntry() -> FileStamp?
-        /// Unlinks the entry, relative to the directory's descriptor; nil on success, else why not.
-        func unlinkEntry() -> String?
-        /// Renames the entry back to `path`, never over anything.
-        func moveBack(to path: String) -> Bool
+    /// `flotilla-rollback-<YYYY-MM-DD-HHMMSS>` in `timeZone`, then `-2`, `-3`… for later attempts.
+    /// Whether a name is free is never asked: only an exclusive `mkdir` can answer that without a race.
+    public static func quarantineName(date: Date, timeZone: TimeZone, attempt: Int) -> String? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let at = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        guard let year = at.year, let month = at.month, let day = at.day,
+              let hour = at.hour, let minute = at.minute, let second = at.second else { return nil }
+        func two(_ n: Int) -> String { n < 10 ? "0\(n)" : "\(n)" }
+        let base = "flotilla-rollback-\(year)-\(two(month))-\(two(day))-\(two(hour))\(two(minute))\(two(second))"
+        return attempt == 1 ? base : "\(base)-\(attempt)"
     }
+
+    /// Everything a rollback does to the disk, and nothing else — **there is no way to delete
+    /// through it**. Whatever is at Flotilla's key paths is renamed into a quarantine folder the
+    /// rollback makes for itself; the only removal is `rmdir` of that folder, which removes nothing
+    /// but an empty directory.
+    public protocol RollbackFileOps {
+        /// `lstat` of `path`: nil if nothing is there. A symlink is reported as itself.
+        func stamp(_ path: String) -> FileStamp?
+        /// Makes `path` — a new directory, the user's, mode 0700, exclusively, never one already
+        /// there — and holds it open, so every later step is inside the folder it made.
+        func makeQuarantine(_ path: String) -> QuarantineMade
+        /// Renames `path` into the quarantine under its own name, never over anything.
+        func quarantine(_ path: String) -> RollbackMove
+        /// `lstat` of `name` inside the quarantine, through the folder it made.
+        func stampQuarantined(_ name: String) -> FileStamp?
+        /// Renames `from` to `to`, never over anything: nil on success, else why not.
+        func rename(_ from: String, to: String) -> String?
+        /// `rmdir` of the quarantine — only if it is still the folder made, and only if it is
+        /// empty — then lets go of it. Whether it is gone.
+        func finishQuarantine() -> Bool
+    }
+
+    public enum QuarantineMade: Sendable, Equatable { case made, exists, failed(String) }
 
     public enum RollbackMove: Sendable, Equatable { case moved, missing, failed(String) }
 
-    public enum RollbackRemoval: Sendable, Equatable {
-        case removed
-        /// Not the file ssh-keygen left (or nothing was there); it is still at its path.
-        case notMade
-        /// Not the file ssh-keygen left, and it could not be put back: where it is now.
-        case setAside(String)
-        /// The file ssh-keygen left, which could not be unlinked: why, and whether it is back.
-        case failed(String, setAside: String?)
+    /// What a rollback did, for saying so.
+    public struct Rollback: Sendable, Equatable {
+        public struct Moved: Sendable, Equatable {
+            public var path: String
+            /// The exact file this ssh-keygen left there, rather than something else that turned up.
+            public var madeByKeygen: Bool
+            public init(path: String, madeByKeygen: Bool) { self.path = path; self.madeByKeygen = madeByKeygen }
+        }
+
+        public struct Stuck: Sendable, Equatable {
+            public var path: String
+            public var reason: String
+            public init(path: String, reason: String) { self.path = path; self.reason = reason }
+        }
+
+        /// The quarantine folder, while it holds something; nil if none was needed or it was empty.
+        public var folder: String?
+        /// What went into `folder`, from Flotilla's key paths.
+        public var moved: [Moved] = []
+        /// Key paths still holding something that could not be moved — so the old pair stays aside.
+        public var stuck: [Stuck] = []
+        /// Where the old pair went back to, when it did.
+        public var restored: [String] = []
+        /// Why the old pair could not go back, when it was tried and failed.
+        public var restoreFailure: String?
+
+        /// The sentences for the outcome. `previousKeyAt` is where the old pair is, found by inode
+        /// after the rollback, for when it is not back.
+        public func description(previousKeyAt: String, abbreviate: (String) -> String) -> String {
+            var parts: [String] = []
+            let folder = (self.folder.map(abbreviate) ?? "a rollback folder in ~/.ssh") + "/"
+            let made = moved.filter(\.madeByKeygen).map { abbreviate($0.path) }
+            let other = moved.filter { !$0.madeByKeygen }.map { abbreviate($0.path) }
+            if !made.isEmpty { parts.append("Flotilla moved the half-made key to \(folder).") }
+            if !other.isEmpty {
+                parts.append("Something that isn\u{2019}t the file ssh-keygen made turned up at \(other.joined(separator: " and ")); Flotilla moved it to \(folder) too and deleted nothing.")
+            }
+            if !stuck.isEmpty {
+                let paths = stuck.map { abbreviate($0.path) }.joined(separator: " and ")
+                parts.append("Flotilla couldn\u{2019}t move \(paths) out of the way (\(stuck[0].reason)), so it left it there and didn\u{2019}t put the old key back.")
+            }
+            if let restoreFailure {
+                parts.append("Flotilla couldn\u{2019}t put the old key back (\(restoreFailure)).")
+            }
+            if let first = restored.first {
+                parts.append("Your previous key is back at \(abbreviate(first)).")
+            } else {
+                parts.append("Your previous key is at \(previousKeyAt).")
+            }
+            return parts.joined(separator: " ")
+        }
     }
 
-    /// Removes exactly the file `recorded` names, never whatever is at `path` now: it is moved into
-    /// `directory`, checked there by device and inode, and unlinked there only if it is the same
-    /// file. Anything else goes back to `path`, never over anything, and is never unlinked.
-    public static func removeMade(_ path: String, ifStill recorded: FileStamp,
-                                  in directory: some RollbackDirectory) -> RollbackRemoval {
-        switch directory.moveIn(path) {
-        case .missing: return .notMade
-        case .failed(let reason): return .failed(reason, setAside: nil)
-        case .moved: break
+    /// Undoes an ssh-keygen that left no whole pair, **never deleting anything** (Kyle, 18 October).
+    /// Both of Flotilla's key paths were empty at the snapshot, so whatever is at either now was not
+    /// there before: it is renamed into a fresh quarantine folder in `~/.ssh`, never over anything.
+    /// `made` — what was at each path the moment ssh-keygen exited — says only which of those were
+    /// this run's. Then, if both paths are clear, the old pair is renamed back (`archive`, as it was
+    /// moved aside), never over anything; and a quarantine left empty is removed with `rmdir`.
+    public static func rollBack(sshDirectory: String, archive moves: [(from: String, to: String)],
+                                made: [String: FileStamp], date: Date, timeZone: TimeZone,
+                                ops: some RollbackFileOps) -> Rollback {
+        var result = Rollback()
+        var folder: String?
+        var folderProblem: String?
+        for path in [flotillaKeyName, flotillaPublicKeyName].map({ self.path(sshDirectory, $0) }) where ops.stamp(path) != nil {
+            if folder == nil, folderProblem == nil {
+                folderProblem = "Flotilla couldn\u{2019}t make a folder in ~/.ssh to move it to"
+                for attempt in 1...99 {
+                    guard let name = quarantineName(date: date, timeZone: timeZone, attempt: attempt) else { break }
+                    let candidate = self.path(sshDirectory, name)
+                    let outcome = ops.makeQuarantine(candidate)
+                    if outcome == .exists { continue }
+                    if outcome == .made { folder = candidate; folderProblem = nil }
+                    if case .failed(let reason) = outcome { folderProblem = reason }
+                    break
+                }
+            }
+            guard folder != nil else {
+                result.stuck.append(.init(path: path, reason: folderProblem ?? ""))
+                continue
+            }
+            switch ops.quarantine(path) {
+            case .missing: continue
+            case .failed(let reason): result.stuck.append(.init(path: path, reason: reason))
+            case .moved:
+                let name = (path as NSString).lastPathComponent
+                let wasMade = made[path].map { isStillMade($0, now: ops.stampQuarantined(name)) } ?? false
+                result.moved.append(.init(path: path, madeByKeygen: wasMade))
+            }
         }
-        guard isStillMade(recorded, now: directory.stampEntry()) else {
-            return directory.moveBack(to: path) ? .notMade : .setAside(directory.entryPath)
+        if result.stuck.isEmpty {
+            if let failure = renameAll(moves.map { (from: $0.to, to: $0.from) }, rename: ops.rename) {
+                result.restoreFailure = failure.reason
+            } else {
+                result.restored = moves.map(\.from)
+            }
         }
-        if let reason = directory.unlinkEntry() {
-            return .failed(reason, setAside: directory.moveBack(to: path) ? nil : directory.entryPath)
+        if let folder, !ops.finishQuarantine() { result.folder = folder }
+        return result
+    }
+
+    /// Renames each pair in order with `rename` (never over anything). If one fails, those already
+    /// done are put back, and any that cannot be are reported as `stranded` — where each is now.
+    /// Nothing is ever deleted.
+    public static func renameAll(_ moves: [(from: String, to: String)],
+                                 rename: (String, String) -> String?) -> (reason: String, stranded: [String])? {
+        var done: [(from: String, to: String)] = []
+        for move in moves {
+            if let reason = rename(move.from, move.to) {
+                let stranded = done.reversed().compactMap { undo in rename(undo.to, undo.from) == nil ? nil : undo.to }
+                return (reason, stranded)
+            }
+            done.append(move)
         }
-        return .removed
+        return nil
     }
 
     // MARK: Putting it on a host

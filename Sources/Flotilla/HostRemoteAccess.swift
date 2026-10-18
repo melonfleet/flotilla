@@ -565,8 +565,9 @@ struct HostSSHTab: View {
         runKeygen(op, snapshot: snapshot,
                   stopped: "ssh-keygen was closed before it finished, so Flotilla changed nothing more. Your previous key is at \(archived); if ssh-keygen left part of a new key, Regenerate Key sets it aside.") { made, output, code, lastLines in
             guard made else {
-                // Nothing whole to use: take away exactly what this ssh-keygen made, and put the old
-                // pair back. The lock is still held, so nothing else has written there since.
+                // Nothing whole to use: move whatever is at Flotilla's paths into a quarantine folder
+                // — never delete it; the lock keeps out other key steps, not other writers — and
+                // put the old pair back.
                 let undo = rollBack(moves, archivedFiles: archivedFiles, output: output)
                 keys.end(op)
                 Task { await keys.refresh() }
@@ -613,34 +614,22 @@ struct HostSSHTab: View {
         }
     }
 
-    /// After an ssh-keygen that left no whole pair (Kyle, 18 October): removes each half this
-    /// ssh-keygen made — the exact inode found at its path the moment it exited, never "recent and
-    /// the user's" — then renames the old pair back, never over anything. Says what happened, and
-    /// where the previous key is whenever it is not back in place.
+    /// After an ssh-keygen that left no whole pair (Kyle, 18 October): **never deletes anything.**
+    /// Whatever is at Flotilla's key paths now is moved into `~/.ssh/flotilla-rollback-<date-time>/`,
+    /// then the old pair is renamed back, never over anything (`SSHKeySetup.rollBack`). Which of the
+    /// moved files were this ssh-keygen's — the inode found the moment it exited — only decides what
+    /// the outcome says. It says where the folder is, and where the previous key is.
     private func rollBack(_ moves: [(from: String, to: String)], archivedFiles: [SSHKeySetup.FileStamp],
                           output: SSHKeySetup.KeygenOutput?) -> String {
         guard let output else { return "Your previous key is at \(locate(moves, archivedFiles))." }
-        var left = output.foreign
-        var removed: [String] = []
-        var setAside: [String] = []
-        for (path, file) in output.made.sorted(by: { $0.key < $1.key }) {
-            switch SSHKeyState.remove(path, ifStill: file) {
-            case .removed: removed.append(path)
-            case .notMade, .failed(_, setAside: nil): left.append(path)
-            case .setAside(let aside), .failed(_, setAside: let aside?): setAside.append(aside)
-            }
+        let result = SSHKeySetup.rollBack(sshDirectory: sshDirectory, archive: moves, made: output.made,
+                                          date: Date(), timeZone: .current, ops: SSHKeyState.RollbackOps())
+        if let stuck = result.stuck.first {
+            model.record("Regenerate couldn't restore the old SSH key: couldn't move a file out of the way (\(stuck.reason))", subsystem: "terminal")
+        } else if let failure = result.restoreFailure {
+            model.record("Regenerate couldn't restore the old SSH key: \(failure)", subsystem: "terminal")
         }
-        let tidied = removed.isEmpty ? "" : "Flotilla removed the half-made \(removed.map(homeAbbreviated).joined(separator: " and ")). "
-        let moved = setAside.isEmpty ? "" : "A file that turned up at Flotilla\u{2019}s key path is now \(setAside.map(homeAbbreviated).joined(separator: " and ")); Flotilla didn\u{2019}t delete it. "
-        guard left.isEmpty else {
-            model.record("Regenerate couldn't restore the old SSH key: a file it didn't make is in the way", subsystem: "terminal")
-            return tidied + moved + "\(left.map(homeAbbreviated).joined(separator: " and ")) isn\u{2019}t something this run made, so Flotilla left it and couldn\u{2019}t put the old key back. Your previous key is at \(locate(moves, archivedFiles))."
-        }
-        if let failure = SSHKeyState.move(moves.map { (from: $0.to, to: $0.from) }) {
-            model.record("Regenerate couldn't restore the old SSH key: \(failure.reason)", subsystem: "terminal")
-            return tidied + moved + "Flotilla couldn\u{2019}t put the old key back (\(failure.reason)). Your previous key is at \(locate(moves, archivedFiles))."
-        }
-        return tidied + moved + "The old key is back in place."
+        return result.description(previousKeyAt: locate(moves, archivedFiles), abbreviate: homeAbbreviated)
     }
 
     /// Where the old pair's files are now — at the archive name or back at Flotilla's — found by

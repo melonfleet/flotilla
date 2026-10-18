@@ -172,18 +172,9 @@ final class SSHKeyState {
     /// already done are put back, and any that cannot be are reported as `stranded` (Kyle, 18
     /// October: a failed undo used to be dropped). Nothing is ever deleted.
     nonisolated static func move(_ moves: [(from: String, to: String)]) -> MoveFailure? {
-        var done: [(from: String, to: String)] = []
-        for move in moves {
-            if renamex_np(move.from, move.to, UInt32(RENAME_EXCL)) != 0 {
-                let reason = String(cString: strerror(errno))
-                let stranded = done.reversed().compactMap { undo in
-                    renamex_np(undo.to, undo.from, UInt32(RENAME_EXCL)) == 0 ? nil : undo.to
-                }
-                return MoveFailure(reason: reason, stranded: stranded)
-            }
-            done.append(move)
+        SSHKeySetup.renameAll(moves, rename: RollbackOps.renameExclusive).map {
+            MoveFailure(reason: $0.reason, stranded: $0.stranded)
         }
-        return nil
     }
 
     /// `lstat` of one path, for Regenerate's rollback: nil if nothing is there. A symlink is
@@ -191,82 +182,74 @@ final class SSHKeyState {
     nonisolated static func stamp(_ path: String) -> SSHKeySetup.FileStamp? {
         var info = stat()
         guard lstat(path, &info) == 0 else { return nil }
-        return SSHKeySetup.FileStamp(device: UInt64(bitPattern: Int64(info.st_dev)), inode: UInt64(info.st_ino),
-                                     isRegularFile: (info.st_mode & S_IFMT) == S_IFREG,
-                                     ownedByUser: info.st_uid == getuid())
+        return RollbackOps.stamp(info)
     }
 
-    /// Removes exactly the file `recorded` names (Kyle, 18 October), never whatever is at `path`
-    /// now — `SSHKeySetup.removeMade`, in a directory this call makes for itself. Nil from
-    /// `PrivateDirectory` means no such directory could be made, and nothing was touched.
-    nonisolated static func remove(_ path: String, ifStill recorded: SSHKeySetup.FileStamp) -> SSHKeySetup.RollbackRemoval {
-        guard let directory = PrivateDirectory(beside: path) else {
-            return .failed("Flotilla couldn\u{2019}t make a private folder in ~/.ssh", setAside: nil)
-        }
-        defer { directory.close() }
-        return SSHKeySetup.removeMade(path, ifStill: recorded, in: directory)
-    }
+    /// Regenerate's rollback on this Mac's disk (`SSHKeySetup.rollBack`). **It has no unlink**
+    /// (Kyle, 18 October): whatever is at Flotilla's key paths is renamed into a quarantine folder,
+    /// `mkdir`ed exclusively in `~/.ssh`, mode 0700, and held open by descriptor — so the renames in
+    /// and the `lstat`s there are relative to the folder Flotilla made even if its name is swapped.
+    /// The one removal is `rmdir` of that folder, which removes nothing but an empty directory.
+    final class RollbackOps: SSHKeySetup.RollbackFileOps {
+        private var path: String?
+        private var fd: Int32 = -1
+        private var identity: SSHKeySetup.FileStamp?
 
-    /// `mkdtemp` beside the key, mode 0700 and the user's, held open by descriptor: every step inside
-    /// it — the rename in, the `lstat`, the unlink, the rename back — is relative to that descriptor
-    /// (`renameatx_np`, `fstatat`, `unlinkat`), so it is the directory Flotilla made even if its name
-    /// in `~/.ssh` is swapped, and only the user can change what is inside it.
-    final class PrivateDirectory: SSHKeySetup.RollbackDirectory {
-        private static let entry = "file"
-        let path: String
-        private let fd: Int32
-        private let identity: SSHKeySetup.FileStamp
+        deinit { if fd >= 0 { Darwin.close(fd) } }
 
-        var entryPath: String { path + "/" + Self.entry }
+        func stamp(_ path: String) -> SSHKeySetup.FileStamp? { SSHKeyState.stamp(path) }
 
-        init?(beside keyPath: String) {
-            let parent = (keyPath as NSString).deletingLastPathComponent
-            var template = Array((parent + "/.flotilla-rollback-XXXXXX").utf8CString)
-            guard mkdtemp(&template) != nil else { return nil }
-            let path = String(cString: template)
+        func makeQuarantine(_ path: String) -> SSHKeySetup.QuarantineMade {
+            guard fd < 0 else { return .failed("a folder is already open") }
+            // Exclusive: EEXIST rather than ever reuse a directory that is already there.
+            guard mkdir(path, 0o700) == 0 else {
+                return errno == EEXIST ? .exists : .failed(String(cString: strerror(errno)))
+            }
             let fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             var info = stat()
             // Whatever the descriptor reached must be a directory of the user's that only the user
-            // can write to — the one mkdtemp made, not one swapped in at its name.
+            // can write to — the one mkdir made, not one swapped in at its name.
             guard fd >= 0, fstat(fd, &info) == 0, info.st_uid == getuid(), (info.st_mode & S_IFMT) == S_IFDIR,
                   info.st_mode & 0o077 == 0 else {
                 if fd >= 0 { Darwin.close(fd) }
-                return nil
+                return .failed("the folder Flotilla made in ~/.ssh wasn\u{2019}t private")
             }
             self.path = path
             self.fd = fd
             identity = Self.stamp(info)
+            return .made
         }
 
-        func moveIn(_ source: String) -> SSHKeySetup.RollbackMove {
-            if renameatx_np(AT_FDCWD, source, fd, Self.entry, UInt32(RENAME_EXCL)) == 0 { return .moved }
+        func quarantine(_ source: String) -> SSHKeySetup.RollbackMove {
+            guard fd >= 0 else { return .failed("no folder") }
+            let name = (source as NSString).lastPathComponent
+            if renameatx_np(AT_FDCWD, source, fd, name, UInt32(RENAME_EXCL)) == 0 { return .moved }
             return errno == ENOENT ? .missing : .failed(String(cString: strerror(errno)))
         }
 
-        func stampEntry() -> SSHKeySetup.FileStamp? {
+        func stampQuarantined(_ name: String) -> SSHKeySetup.FileStamp? {
             var info = stat()
-            guard fstatat(fd, Self.entry, &info, AT_SYMLINK_NOFOLLOW) == 0 else { return nil }
+            guard fd >= 0, fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { return nil }
             return Self.stamp(info)
         }
 
-        func unlinkEntry() -> String? {
-            unlinkat(fd, Self.entry, 0) == 0 ? nil : String(cString: strerror(errno))
-        }
+        func rename(_ from: String, to: String) -> String? { Self.renameExclusive(from, to) }
 
-        func moveBack(to destination: String) -> Bool {
-            renameatx_np(fd, Self.entry, AT_FDCWD, destination, UInt32(RENAME_EXCL)) == 0
-        }
-
-        /// Removes the directory if it is empty — an entry that could not go back keeps it — and only
-        /// while its name still reaches the directory Flotilla made. `rmdir` removes nothing but an
-        /// empty directory, so a swap between the check and it can cost nothing but that.
-        func close() {
+        /// Only while the folder's name still reaches the directory Flotilla made; `rmdir` removes
+        /// nothing but an empty directory, so a swap between the check and it can cost nothing.
+        func finishQuarantine() -> Bool {
+            guard fd >= 0, let path, let identity else { return false }
+            defer { Darwin.close(fd); fd = -1 }
             var info = stat()
-            if lstat(path, &info) == 0, Self.stamp(info).isSameFile(as: identity) { rmdir(path) }
-            Darwin.close(fd)
+            guard lstat(path, &info) == 0, Self.stamp(info).isSameFile(as: identity) else { return false }
+            return rmdir(path) == 0
         }
 
-        private static func stamp(_ info: stat) -> SSHKeySetup.FileStamp {
+        nonisolated static func renameExclusive(_ from: String, _ to: String) -> String? {
+            renamex_np(from, to, UInt32(RENAME_EXCL)) == 0 ? nil : String(cString: strerror(errno))
+        }
+
+        nonisolated static func stamp(_ info: stat) -> SSHKeySetup.FileStamp {
             SSHKeySetup.FileStamp(device: UInt64(bitPattern: Int64(info.st_dev)), inode: UInt64(info.st_ino),
                                   isRegularFile: (info.st_mode & S_IFMT) == S_IFREG, ownedByUser: info.st_uid == getuid())
         }

@@ -2110,11 +2110,13 @@ its `PageTabs` pill, after a divider. This Mac's page has none of them: it does 
   - **Regenerate Key…**, behind an inline confirmation that lists every step: rename — never delete
     — the pair to `flotilla_ed25519.old-<YYYY-MM-DD>` (`-2`, `-3`… if taken; `renamex_np` with
     `RENAME_EXCL`, so nothing is ever overwritten); `ssh-keygen` in the tab's PTY (if it ends without
-    a whole pair, any half it left is removed by identity — the device and inode found at that path
-    the moment ssh-keygen exited, absent from a snapshot taken after the rename, moved into a
-    private folder the rollback makes for itself (`mkdtemp` in `~/.ssh`, 0700) and checked and
-    unlinked there through its descriptor, so another writer of `~/.ssh` cannot swap it in between; never by "recent and the user's" (Kyle, 18 October) — and the old
-    pair is renamed back; closing ssh-keygen mid-passphrase removes and restores nothing; when anything cannot be undone the outcome says "Your previous
+    a whole pair, **rollback quarantines, never deletes**: whatever is at Flotilla's key paths is
+    renamed into `~/.ssh/flotilla-rollback-<YYYY-MM-DD-HHMMSS>/`, made by an exclusive `mkdir`,
+    0700, and reached through its descriptor — Kyle, 18 October, reproduced an external file created
+    during ssh-keygen passing every identity check, and the app's lock cannot exclude other writers,
+    so the device-and-inode check now only decides whether the outcome calls it "the half-made key";
+    `SSHKeySetup.RollbackFileOps` has no delete, and the one removal is `rmdir` of that folder when
+    it is empty — and the old pair is renamed back, and the outcome names the folder; closing ssh-keygen mid-passphrase removes and restores nothing; when anything cannot be undone the outcome says "Your previous
     key is at …", found by inode, and no undo error is dropped); `ssh-copy-id -i ~/.ssh/flotilla_ed25519.pub` to this host;
     and, with a checkbox on by default, the old key's lines out of this host's `authorized_keys`.
   - **One key step at a time, app-wide** (`SSHKeySetup.OperationGate`, Kyle, 18 October). Make a Key,

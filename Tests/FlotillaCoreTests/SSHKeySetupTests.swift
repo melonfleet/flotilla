@@ -546,43 +546,96 @@ private let ssh = "/home/u/.ssh"
         #expect(barrier.close() == .nothing && barrier.deadlinePassed() == .nothing)
     }
 
-    /// Kyle, 18 October: rollback checked the aside path's inode, then unlinked that pathname, and
-    /// another writer of ~/.ssh could swap the entry between. The check and the unlink are now in a
-    /// private directory, and a mismatch there never unlinks.
-    @Test func anInodeMismatchInThePrivateDirectoryNeverDeletes() {
-        let path = ssh + "/flotilla_ed25519"
-        let made = stamp(30)
+    private let october18 = Date(timeIntervalSince1970: 1_792_331_000)  // 2026-10-18 13:43:20 UTC
+    private let utc = TimeZone(identifier: "UTC")!
+    private let archive = [(from: "\(ssh)/flotilla_ed25519", to: "\(ssh)/flotilla_ed25519.old-2026-10-18"),
+                           (from: "\(ssh)/flotilla_ed25519.pub", to: "\(ssh)/flotilla_ed25519.old-2026-10-18.pub")]
 
-        let swapped = FakeRollbackDirectory(found: stamp(31))
-        #expect(SSHKeySetup.removeMade(path, ifStill: made, in: swapped) == .notMade)
-        #expect(swapped.calls == ["in " + path, "stamp", "back " + path])
-
-        let notRegular = FakeRollbackDirectory(found: stamp(30, regular: false))
-        #expect(SSHKeySetup.removeMade(path, ifStill: made, in: notRegular) == .notMade)
-        #expect(!notRegular.calls.contains("unlink"))
-
-        let stuck = FakeRollbackDirectory(found: stamp(31), canMoveBack: false)
-        #expect(SSHKeySetup.removeMade(path, ifStill: made, in: stuck) == .setAside(stuck.entryPath))
-        #expect(!stuck.calls.contains("unlink"))
-
-        let gone = FakeRollbackDirectory(found: nil)
-        #expect(SSHKeySetup.removeMade(path, ifStill: made, in: gone) == .notMade)
-        #expect(!gone.calls.contains("unlink"))
-
-        let missing = FakeRollbackDirectory(found: made, move: .missing)
-        #expect(SSHKeySetup.removeMade(path, ifStill: made, in: missing) == .notMade)
-        #expect(missing.calls == ["in " + path])
+    @Test func theQuarantineFolderIsNamedForTheSecond() {
+        #expect(SSHKeySetup.quarantineName(date: october18, timeZone: utc, attempt: 1) == "flotilla-rollback-2026-10-18-134320")
+        #expect(SSHKeySetup.quarantineName(date: october18, timeZone: utc, attempt: 3) == "flotilla-rollback-2026-10-18-134320-3")
     }
 
-    @Test func theFileKeygenLeftIsUnlinkedInsideThePrivateDirectory() {
-        let path = ssh + "/flotilla_ed25519.pub"
-        let same = FakeRollbackDirectory(found: stamp(30))
-        #expect(SSHKeySetup.removeMade(path, ifStill: stamp(30), in: same) == .removed)
-        #expect(same.calls == ["in " + path, "stamp", "unlink"])
+    /// Kyle, 18 October (P1 on d0e4bdb): a file another process created at the key path while
+    /// ssh-keygen ran is new and the user's, so it read as `made`, and the rollback deleted it. Now
+    /// nothing is deleted: it is quarantined beside ssh-keygen's half, and the old pair comes back.
+    @Test func anExternalFileMadeDuringKeygenIsQuarantinedNeverDeleted() throws {
+        let fs = FakeRollbackFiles(files: ["\(ssh)/flotilla_ed25519.old-2026-10-18": stamp(10),
+                                           "\(ssh)/flotilla_ed25519.old-2026-10-18.pub": stamp(11)])
+        let snapshot = try #require(SSHKeySetup.KeygenSnapshot(sshDirectory: ssh, archived: [stamp(10), stamp(11)]) { fs.files[$0] })
+        fs.files["\(ssh)/flotilla_ed25519"] = stamp(20)       // ssh-keygen's half
+        fs.files["\(ssh)/flotilla_ed25519.pub"] = stamp(21)   // another process's, new and the user's
+        let output = SSHKeySetup.keygenOutput(after: snapshot) { fs.files[$0] }
+        #expect(output.made.count == 2, "indistinguishable from keygen's — which is why nothing may be deleted on it")
 
-        let refused = FakeRollbackDirectory(found: stamp(30), unlinkError: "Operation not permitted")
-        #expect(SSHKeySetup.removeMade(path, ifStill: stamp(30), in: refused) == .failed("Operation not permitted", setAside: nil))
-        #expect(refused.calls.last == "back " + path)
+        let result = SSHKeySetup.rollBack(sshDirectory: ssh, archive: archive, made: output.made,
+                                          date: october18, timeZone: utc, ops: fs)
+        let folder = "\(ssh)/flotilla-rollback-2026-10-18-134320"
+        #expect(result.folder == folder)
+        #expect(fs.quarantined == ["flotilla_ed25519": stamp(20), "flotilla_ed25519.pub": stamp(21)])
+        #expect(fs.files == ["\(ssh)/flotilla_ed25519": stamp(10), "\(ssh)/flotilla_ed25519.pub": stamp(11)])
+        #expect(result.restored == ["\(ssh)/flotilla_ed25519", "\(ssh)/flotilla_ed25519.pub"])
+        #expect(result.description(previousKeyAt: "unused", abbreviate: { $0.replacingOccurrences(of: "/home/u/", with: "~/") })
+                == "Flotilla moved the half-made key to ~/.ssh/flotilla-rollback-2026-10-18-134320/. Your previous key is back at ~/.ssh/flotilla_ed25519.")
+        #expect(fs.calls.allSatisfy(FakeRollbackFiles.permitted))
+    }
+
+    /// A file that replaced ssh-keygen's after it exited is moved all the same, and said to be
+    /// something else rather than the half-made key.
+    @Test func aFileThatIsNotKeygensIsMovedAndNamedAsSomethingElse() {
+        let fs = FakeRollbackFiles(files: ["\(ssh)/flotilla_ed25519.old-2026-10-18": stamp(10),
+                                           "\(ssh)/flotilla_ed25519.pub": stamp(31, regular: false)])
+        let result = SSHKeySetup.rollBack(sshDirectory: ssh, archive: [archive[0]],
+                                          made: ["\(ssh)/flotilla_ed25519.pub": stamp(30)],
+                                          date: october18, timeZone: utc, ops: fs)
+        #expect(result.moved == [.init(path: "\(ssh)/flotilla_ed25519.pub", madeByKeygen: false)])
+        #expect(fs.quarantined == ["flotilla_ed25519.pub": stamp(31, regular: false)])
+        #expect(result.restored == ["\(ssh)/flotilla_ed25519"])
+        let text = result.description(previousKeyAt: "unused") { $0 }
+        #expect(text.contains("isn\u{2019}t the file ssh-keygen made") && text.contains("deleted nothing"))
+        #expect(!text.contains("half-made"))
+    }
+
+    @Test func aTakenFolderNameIsNeverReused() {
+        let fs = FakeRollbackFiles(files: ["\(ssh)/flotilla_ed25519": stamp(20)],
+                                   existingFolders: ["\(ssh)/flotilla-rollback-2026-10-18-134320"])
+        let result = SSHKeySetup.rollBack(sshDirectory: ssh, archive: [], made: [:], date: october18, timeZone: utc, ops: fs)
+        #expect(result.folder == "\(ssh)/flotilla-rollback-2026-10-18-134320-2")
+        #expect(fs.calls.filter { $0.hasPrefix("mkdir") }.count == 2)
+    }
+
+    @Test func nothingLeftMakesNoFolderAndPutsTheOldKeyBack() {
+        let fs = FakeRollbackFiles(files: ["\(ssh)/flotilla_ed25519.old-2026-10-18": stamp(10),
+                                           "\(ssh)/flotilla_ed25519.old-2026-10-18.pub": stamp(11)])
+        let result = SSHKeySetup.rollBack(sshDirectory: ssh, archive: archive, made: [:], date: october18, timeZone: utc, ops: fs)
+        #expect(result.folder == nil && result.moved.isEmpty && !fs.calls.contains { $0.hasPrefix("mkdir") })
+        #expect(result.restored.count == 2)
+    }
+
+    /// Something that cannot be moved keeps the old pair aside — never put back half — and an empty
+    /// folder is `rmdir`ed.
+    @Test func aFileThatCannotBeMovedLeavesTheOldKeyAsideAndTheEmptyFolderGoes() {
+        let fs = FakeRollbackFiles(files: ["\(ssh)/flotilla_ed25519.old-2026-10-18": stamp(10),
+                                           "\(ssh)/flotilla_ed25519": stamp(20)],
+                                   immovable: ["\(ssh)/flotilla_ed25519"])
+        let result = SSHKeySetup.rollBack(sshDirectory: ssh, archive: [archive[0]], made: ["\(ssh)/flotilla_ed25519": stamp(20)],
+                                          date: october18, timeZone: utc, ops: fs)
+        #expect(result.stuck == [.init(path: "\(ssh)/flotilla_ed25519", reason: "Operation not permitted")])
+        #expect(result.restored.isEmpty && result.folder == nil)
+        #expect(fs.calls.last == "rmdir")
+        #expect(fs.files["\(ssh)/flotilla_ed25519"] == stamp(20) && fs.files["\(ssh)/flotilla_ed25519.old-2026-10-18"] == stamp(10))
+        #expect(result.description(previousKeyAt: "~/.ssh/flotilla_ed25519.old-2026-10-18") { $0 }
+            .hasSuffix("Your previous key is at ~/.ssh/flotilla_ed25519.old-2026-10-18."))
+    }
+
+    /// A restore that fails half-way undoes its first half, so the pair stays together.
+    @Test func aFailedRestoreKeepsThePairTogether() {
+        let fs = FakeRollbackFiles(files: ["\(ssh)/flotilla_ed25519.old-2026-10-18": stamp(10),
+                                           "\(ssh)/flotilla_ed25519.old-2026-10-18.pub": stamp(11)],
+                                   unrenamable: ["\(ssh)/flotilla_ed25519.old-2026-10-18.pub"])
+        let result = SSHKeySetup.rollBack(sshDirectory: ssh, archive: archive, made: [:], date: october18, timeZone: utc, ops: fs)
+        #expect(result.restoreFailure == "File exists" && result.restored.isEmpty)
+        #expect(fs.files == ["\(ssh)/flotilla_ed25519.old-2026-10-18": stamp(10), "\(ssh)/flotilla_ed25519.old-2026-10-18.pub": stamp(11)])
     }
 
     // MARK: Which hosts have the key
@@ -688,24 +741,64 @@ private struct RemoteHome {
     }
 }
 
-private final class FakeRollbackDirectory: SSHKeySetup.RollbackDirectory {
-    let found: SSHKeySetup.FileStamp?
-    let move: SSHKeySetup.RollbackMove
-    let canMoveBack: Bool
-    let unlinkError: String?
+/// An in-memory `~/.ssh` for `SSHKeySetup.rollBack`. `RollbackFileOps` has no delete of any kind, so
+/// the rollback cannot unlink through it; every call is logged, and `permitted` is the whole list
+/// of what one may be. The one removal is `rmdir`, which — like the real one — removes only an empty folder.
+private final class FakeRollbackFiles: SSHKeySetup.RollbackFileOps {
+    var files: [String: SSHKeySetup.FileStamp]
+    var quarantined: [String: SSHKeySetup.FileStamp] = [:]
+    var existingFolders: Set<String>
+    let immovable: Set<String>
+    let unrenamable: Set<String>
     var calls: [String] = []
-    let entryPath = ssh + "/.flotilla-rollback-abc123/file"
+    private var folder: String?
 
-    init(found: SSHKeySetup.FileStamp?, move: SSHKeySetup.RollbackMove = .moved, canMoveBack: Bool = true,
-         unlinkError: String? = nil) {
-        self.found = found
-        self.move = move
-        self.canMoveBack = canMoveBack
-        self.unlinkError = unlinkError
+    static func permitted(_ call: String) -> Bool {
+        ["stamp ", "mkdir ", "quarantine ", "stampQuarantined ", "rename ", "rmdir"].contains { call.hasPrefix($0) }
     }
 
-    func moveIn(_ path: String) -> SSHKeySetup.RollbackMove { calls.append("in " + path); return move }
-    func stampEntry() -> SSHKeySetup.FileStamp? { calls.append("stamp"); return found }
-    func unlinkEntry() -> String? { calls.append("unlink"); return unlinkError }
-    func moveBack(to path: String) -> Bool { calls.append("back " + path); return canMoveBack }
+    init(files: [String: SSHKeySetup.FileStamp], existingFolders: Set<String> = [],
+         immovable: Set<String> = [], unrenamable: Set<String> = []) {
+        self.files = files
+        self.existingFolders = existingFolders
+        self.immovable = immovable
+        self.unrenamable = unrenamable
+    }
+
+    func stamp(_ path: String) -> SSHKeySetup.FileStamp? { calls.append("stamp " + path); return files[path] }
+
+    func makeQuarantine(_ path: String) -> SSHKeySetup.QuarantineMade {
+        calls.append("mkdir " + path)
+        if existingFolders.contains(path) { return .exists }
+        existingFolders.insert(path)
+        folder = path
+        return .made
+    }
+
+    func quarantine(_ path: String) -> SSHKeySetup.RollbackMove {
+        calls.append("quarantine " + path)
+        if immovable.contains(path) { return .failed("Operation not permitted") }
+        guard let file = files.removeValue(forKey: path) else { return .missing }
+        let name = (path as NSString).lastPathComponent
+        #expect(quarantined[name] == nil, "renamed over something in the quarantine")
+        quarantined[name] = file
+        return .moved
+    }
+
+    func stampQuarantined(_ name: String) -> SSHKeySetup.FileStamp? { calls.append("stampQuarantined " + name); return quarantined[name] }
+
+    func rename(_ from: String, to: String) -> String? {
+        calls.append("rename \(from) \(to)")
+        if unrenamable.contains(from) || files[to] != nil { return "File exists" }
+        guard let file = files.removeValue(forKey: from) else { return "No such file or directory" }
+        files[to] = file
+        return nil
+    }
+
+    func finishQuarantine() -> Bool {
+        calls.append("rmdir")
+        guard quarantined.isEmpty else { return false }
+        if let folder { existingFolders.remove(folder) }
+        return true
+    }
 }
