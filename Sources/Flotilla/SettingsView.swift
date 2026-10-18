@@ -262,7 +262,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Opened from the first-run assistant or elsewhere to land on Host Mode (Terry, first run).
+    /// Opened from the first-run assistant or elsewhere to land on Host Mode.
     private func takeHostModeRequest() {
         guard model.pendingHostModeSettings else { return }
         model.pendingHostModeSettings = false

@@ -56,8 +56,58 @@ import Testing
 
     @Test func laterContainerPrefillMovesPastAClaimedPort() {
         let entry = LibraryContainer(image: "docker.io/library/nginx:1.27", name: "app", ports: ["3000:3000"])
-        let specs = SuggestionPorts.publishSpecs(for: entry, avoiding: [3000])
-        #expect(specs == ["127.0.0.1:3001:3000"])
+        let specs = SuggestionPorts.publishSpecs(for: entry, avoiding: [3000], isPortFree: { _ in true })
+        #expect(specs.specs == ["127.0.0.1:3001:3000"])
+        #expect(specs.unavailablePorts.isEmpty)
+    }
+
+    @Test func replacementIsProbedAndAvoidsStackAndBatchReservations() {
+        let entry = LibraryContainer(image: "nginx", name: "app", ports: ["3000:80", "3000:81/udp"])
+        var probed: [Int] = []
+        // 3000 and 3001 are local listeners; 3002 and 3003 are stack/batch reservations.
+        let result = SuggestionPorts.publishSpecs(for: entry, avoiding: [3002, 3003]) { port in
+            probed.append(port)
+            return ![3000, 3001].contains(port)
+        }
+        #expect(result.specs == ["127.0.0.1:3004:80", "127.0.0.1:3005:81/udp"])
+        #expect(result.unavailablePorts.isEmpty)
+        #expect(probed == [3000, 3001, 3004, 3000, 3001, 3005])
+    }
+
+    @Test func exhaustedSearchLeavesHostBlankAndReportsPreferredPort() {
+        let entry = LibraryContainer(image: "nginx", name: "app", ports: ["3000:80"])
+        var probed: [Int] = []
+        let result = SuggestionPorts.publishSpecs(for: entry, avoiding: []) { port in
+            probed.append(port)
+            return false
+        }
+        #expect(probed == Array(3000..<3020))
+        #expect(probed.count == SuggestionPorts.searchLimit)
+        #expect(result.specs == ["127.0.0.1::80"])
+        #expect(result.unavailablePorts == [0: 3000])
+        guard case .failure = Allowlist.validate(["run", "--publish", result.specs[0], "nginx"]) else {
+            Issue.record("An unavailable host port must block Run")
+            return
+        }
+        #expect(SuggestionPorts.unavailableMessage(near: 3000) == "No free port near 3000 — choose one")
+        // Stack defaults must stay within the same range that the app probes.
+        #expect(StackPlanner.defaultWebPorts(for: stack(id: "s", title: "S", webPort: 3000).stackSuggestion!,
+                                            avoiding: Set(3000..<3020)).isEmpty)
+    }
+
+    @Test func claimedLastPortIsUnavailableWithoutProbingOutOfRange() {
+        let entry = LibraryContainer(image: "nginx", name: "app", ports: ["65535:80"])
+        var batch = SuggestionBatch(queue: ["first", "last"])
+        batch.advance(claiming: [65535])
+        var probed: [Int] = []
+        let result = SuggestionPorts.publishSpecs(for: entry, avoiding: batch.claimedPorts) { port in
+            probed.append(port)
+            return true
+        }
+        #expect(probed.isEmpty)
+        #expect(result.specs == ["127.0.0.1::80"])
+        #expect(result.unavailablePorts == [0: 65535])
+        #expect(SuggestionPorts.unavailableMessage(near: 65535) == "No free port near 65535 — choose one")
     }
 
     @Test func preferredWebHostPortMatchesStackDefaults() {

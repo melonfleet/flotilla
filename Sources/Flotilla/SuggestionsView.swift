@@ -126,11 +126,13 @@ struct SuggestionsView: View {
         }
         await model.prepareSuggestions()
         if model.volumesState != .loaded { await model.refreshVolumes() }
-        var avoiding = (batch?.claimedPorts ?? []).union(model.stackTaken(on: .local).hostPorts)
-        for port in SuggestionPorts.preferredHostPorts(for: entry) where !AppModel.isPortFree(port) {
-            avoiding.insert(port)
+        let avoiding = (batch?.claimedPorts ?? []).union(model.stackTaken(on: .local).hostPorts)
+        let ports = await Blocking.run {
+            SuggestionPorts.publishSpecs(for: container, avoiding: avoiding, isPortFree: AppModel.isPortFree)
         }
-        batchRunPrefill = runPrefill(for: container, ports: SuggestionPorts.publishSpecs(for: container, avoiding: avoiding))
+        var prefill = runPrefill(for: container, ports: ports.specs)
+        prefill.unavailablePorts = ports.unavailablePorts
+        batchRunPrefill = prefill
     }
 
     private func advanceBatch(claiming ports: Set<Int> = []) {
@@ -436,6 +438,9 @@ struct StackFormView: View {
 
     private func portProblem(_ role: String) -> String? {
         let text = (webPorts[role] ?? "").trimmingCharacters(in: .whitespaces)
+        if text.isEmpty, let web = stack.services.first(where: { $0.role == role })?.webPort {
+            return SuggestionPorts.unavailableMessage(near: SuggestionPorts.preferredWebHostPort(web))
+        }
         guard let port = Int(text), (1024...65535).contains(port) else {
             return "Use a port from 1024 to 65535."
         }

@@ -260,8 +260,10 @@ extension AppModel {
         // Only This Mac can be asked what else is listening; a host's containers are all we know.
         guard host.isLocal else { return taken }
         let candidates = stack.services.compactMap(\.webPort).flatMap { web -> [Int] in
-            let base = web < 1024 ? 8000 + web : web
-            return Array(base..<(base + 20))
+            let base = max(SuggestionPorts.preferredWebHostPort(web), StackPlanner.hostPortRange.lowerBound)
+            guard StackPlanner.hostPortRange.contains(base) else { return [] }
+            let last = min(base + SuggestionPorts.searchLimit - 1, StackPlanner.hostPortRange.upperBound)
+            return Array(base...last)
         }
         let busy = await Blocking.run {
             Set(candidates.filter { !AppModel.isPortFree($0) })

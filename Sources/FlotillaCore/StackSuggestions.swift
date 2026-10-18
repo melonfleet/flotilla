@@ -444,14 +444,15 @@ public enum StackPlanner {
     }
 
     /// Default web ports for a stack: each service's own web port mapped near 8080-style
-    /// conventions (80 → 8080), moved up past anything already taken.
+    /// conventions (80 → 8080), within the same bounded range the app probes for listeners.
     public static func defaultWebPorts(for stack: StackSuggestion, avoiding used: Set<Int>) -> [String: Int] {
         var used = used
         var ports: [String: Int] = [:]
         for service in stack.services {
             guard let web = service.webPort else { continue }
             // None free: left out, so the form asks and the planner refuses rather than guesses.
-            guard let port = freePort(preferring: web < 1024 ? 8000 + web : web, avoiding: used) else { continue }
+            guard let port = SuggestionPorts.freePort(preferring: web < 1024 ? 8000 + web : web,
+                                                     avoiding: used, isPortFree: { _ in true }) else { continue }
             ports[service.role] = port
             used.insert(port)
         }

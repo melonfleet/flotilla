@@ -31,6 +31,8 @@ struct RunPrefill: Equatable {
     var image: String
     var name: String
     var ports: [String]
+    /// Exhausted suggestion searches, keyed by the editable publish row.
+    var unavailablePorts: [Int: Int] = [:]
     var cpus: Int?
     var memoryMB: Int?
     /// True when the source container had env or mounts we could not carry, so the sheet can say
@@ -142,7 +144,9 @@ struct RunSheetView: View {
         self.portsInUse = prefill?.portsInUse ?? []
         _image = State(initialValue: prefill?.image ?? initialImage)
         _name = State(initialValue: prefill?.name ?? "")
-        _ports = State(initialValue: (prefill?.ports ?? []).map { Row(value: $0) })
+        _ports = State(initialValue: (prefill?.ports ?? []).enumerated().map {
+            Row(value: $0.element, unavailablePort: prefill?.unavailablePorts[$0.offset])
+        })
         _limitResources = State(initialValue: prefill?.cpus != nil || prefill?.memoryMB != nil)
         // Seeded from **Defaults for new containers**. Those two settings had no consumer at all:
         // the registry declared them, Settings offered steppers for them, and the run sheet had no
@@ -220,6 +224,7 @@ struct RunSheetView: View {
     private struct Row: Identifiable {
         let id = UUID()
         var value: String
+        var unavailablePort: Int? = nil
     }
 
     private static let maxPorts = 16
@@ -679,6 +684,7 @@ struct RunSheetView: View {
             HStack {
                 TextField(placeholder, text: $row.value)
                     .textFieldStyle(.roundedBorder)
+                    .onChange(of: row.value) { _, _ in row.unavailablePort = nil }
                 Button(role: .destructive) {
                     list.wrappedValue.removeAll { $0.id == row.id }
                 } label: {
@@ -783,8 +789,11 @@ struct RunSheetView: View {
     }
 
     private func message(for field: Field) -> String? {
-        // Ahead of the `hasStarted` gate: a quote left open is wrong in a field the user has typed
-        // into, whether or not the image is filled in yet.
+        // An exhausted suggestion must ask for a host port before Run.
+        if field == .ports, let port = ports.compactMap(\.unavailablePort).first {
+            return SuggestionPorts.unavailableMessage(near: port)
+        }
+        // A quote left open is wrong whether or not the image is filled in yet.
         if field == .command, let commandSplitError { return commandSplitError.description }
         // An untouched form is not a broken one. With no image typed yet the validator
         // legitimately fails, and reporting that as `'' isn't a valid imageReference` greets
