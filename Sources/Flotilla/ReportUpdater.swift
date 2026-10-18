@@ -74,6 +74,9 @@ final class ReportUpdater {
               let report = try? verified(data, signature: signature, publicKey: key)
         else { return nil }
         if isReplay(report, defaults: defaults) { return nil }
+        // Accepting a cache advances the watermark: an update interrupted after writing the cache
+        // but before saving the date must not leave an older signed report free to replace it.
+        advanceWatermark(to: report, defaults: defaults)
         return report
     }
 
@@ -89,6 +92,12 @@ final class ReportUpdater {
         else { throw Failure("The vulnerability report's signature didn't verify, so it wasn't used.") }
         do { return try VulnerabilityReport.decode(data) }
         catch let failure as VulnerabilityReport.Failure { throw Failure(failure.message) }
+    }
+
+    nonisolated static func advanceWatermark(to report: VulnerabilityReport, defaults: UserDefaults) {
+        guard let generated = report.generatedDate else { return }
+        if let highest = defaults.object(forKey: highestGeneratedKey) as? Date, highest >= generated { return }
+        defaults.set(generated, forKey: highestGeneratedKey)
     }
 
     /// Older than the newest ever accepted.
@@ -121,6 +130,9 @@ final class ReportUpdater {
                 activity.report(.finished(status), from: .report)
                 return
             }
+            // Before the cache is written, not after: an interruption in between leaves the date
+            // recorded, never a newer file with no date.
+            Self.advanceWatermark(to: fresh, defaults: defaults)
             let folder = cacheFolder
             try await Blocking.run {
                 guard let folder else { return }
@@ -128,7 +140,6 @@ final class ReportUpdater {
                 try data.write(to: folder.appendingPathComponent("report.json"), options: .atomic)
                 try signature.write(to: folder.appendingPathComponent("report.json.sig"), options: .atomic)
             }
-            if let generated = fresh.generatedDate { defaults.set(generated, forKey: Self.highestGeneratedKey) }
             let changed = report != fresh
             report = fresh
             status = changed ? "Updated: \(fresh.images.count) images scanned." : "Up to date."

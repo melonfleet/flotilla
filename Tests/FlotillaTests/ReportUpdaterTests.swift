@@ -142,6 +142,26 @@ import Testing
         #expect(ReportUpdater(defaults: h.defaults, key: key, cacheFolder: h.folder).report?.generated == "2026-10-18T07:00:00Z")
     }
 
+    @Test func acceptingACachedReportAdvancesTheReplayWatermark() async throws {
+        // An update interrupted after the cache was written but before the date was saved.
+        let key = publicText(reportKey)
+        let cached = try reportData(generated: "2026-10-18T07:00:00Z")
+        let older = try reportData(generated: "2026-10-10T07:00:00Z")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try cached.write(to: folder.appendingPathComponent("report.json"))
+        try sign(cached, with: reportKey).write(to: folder.appendingPathComponent("report.json.sig"))
+        let defaults = UserDefaults(suiteName: "dev.melonfleet.Flotilla.tests.\(UUID().uuidString)")!
+        #expect(defaults.object(forKey: ReportUpdater.highestGeneratedKey) == nil)
+        let h = harness(key: key, folder: folder, defaults: defaults) { [reportKey] name in
+            name == "report.json" ? older : Data(try reportKey.signature(for: older).base64EncodedString().utf8)
+        }
+        #expect(h.updater.report?.generated == "2026-10-18T07:00:00Z")
+        await h.updater.check()
+        #expect(h.updater.report?.generated == "2026-10-18T07:00:00Z")
+        #expect(h.updater.status.contains("older"))
+    }
+
     @Test func noReportPublishedYetIsQuiet() async {
         let h = harness(key: publicText(reportKey)) { name in
             throw ReportUpdater.Failure("GitHub didn't have \(name) (HTTP 404).", notPublished: true)
