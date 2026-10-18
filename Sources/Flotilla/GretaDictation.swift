@@ -40,6 +40,13 @@ final class GretaDictation {
     @ObservationIgnored private var finalized: [String] = []
     @ObservationIgnored private var volatile = ""
     @ObservationIgnored private var lastDelivered: String?
+    /// The model download, kept apart from `task` so switching windows doesn't abandon it.
+    @ObservationIgnored private var downloadTask: Task<Void, Never>?
+    /// Set by Download, cleared by anything that stops or leaves dictation. A finished download
+    /// starts listening only while this holds (Kyle, 18 October).
+    @ObservationIgnored private var listenAfterDownload = false
+    /// A reservation this app made only to look, released if the user says Not Now.
+    @ObservationIgnored private var probeReservation: Locale?
 
     var isListening: Bool { state == .listening }
     /// The ⇧⌘D menu command is offered only while a composer is on screen to take the words.
@@ -56,6 +63,7 @@ final class GretaDictation {
 
     func detach() {
         stop(finalize: false)
+        listenAfterDownload = false
         composer = nil
     }
 
@@ -127,8 +135,9 @@ final class GretaDictation {
             // Often the model is already on this Mac (macOS's own dictation put it there) and only
             // this app's reservation is missing, which is local bookkeeping and fetches nothing.
             // Reserve, then ask again, so the Download prompt appears only for a real download.
-            _ = try? await AssetInventory.reserve(locale: locale)
+            await reserveForProbe(locale)
             model = await AssetInventory.status(forModules: [transcriber])
+            if model == .installed { probeReservation = nil }   // in use now: keep it
         }
         guard session == mine else { return }
         switch model {
@@ -243,6 +252,7 @@ final class GretaDictation {
     /// the mic. Send, typing, a closed panel and a lost window drop it instead: those must not have
     /// words arrive in a field afterwards.
     func stop(finalize: Bool) {
+        listenAfterDownload = false
         silenceTask?.cancel(); silenceTask = nil
         task?.cancel()
         let analyzer = analyzer, feed = feed, results = resultsTask
@@ -301,37 +311,63 @@ final class GretaDictation {
         guard state == .needsModel, let locale else { return }
         apply(.downloadRequested)
         message = nil
-        task = Task { [weak self] in
+        probeReservation = nil                  // asked for: the reservation is wanted now
+        listenAfterDownload = true
+        downloadTask = Task { [weak self] in
             let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
             do {
-                guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) else {
-                    self?.apply(.downloadFinished)      // nothing to fetch: already installed
-                    self?.begin()
-                    return
-                }
-                let progress = request.progress
-                let poll = Task { [weak self] in
-                    while !Task.isCancelled {
-                        let fraction = progress.fractionCompleted
-                        self?.apply(.downloadProgress(fraction > 0 ? fraction : nil))
-                        try? await Task.sleep(for: .milliseconds(250))
+                if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                    let progress = request.progress
+                    let poll = Task { [weak self] in
+                        while !Task.isCancelled {
+                            let fraction = progress.fractionCompleted
+                            self?.apply(.downloadProgress(fraction > 0 ? fraction : nil))
+                            try? await Task.sleep(for: .milliseconds(250))
+                        }
                     }
+                    defer { poll.cancel() }
+                    try await request.downloadAndInstall()
                 }
-                defer { poll.cancel() }
-                try await request.downloadAndInstall()
-                _ = try? await AssetInventory.reserve(locale: locale)
-                self?.apply(.downloadFinished)
-                // The click on the mic was a request to dictate: carry it on, with the chime.
-                self?.begin()
+                _ = try await AssetInventory.reserve(locale: locale)
+                self?.downloadFinished()
             } catch {
+                self?.listenAfterDownload = false
                 self?.message = "The download didn't finish: \(error.localizedDescription)"
                 self?.apply(.downloadFailed)
             }
         }
     }
 
+    /// The click on the mic asked to dictate, so carry it on, but only if nothing has happened
+    /// since: no stop, no lost key window, no other app in front, the composer still there.
+    private func downloadFinished() {
+        apply(.downloadFinished)
+        let carryOn = listenAfterDownload && composer != nil && NSApp.isActive && NSApp.keyWindow != nil
+        listenAfterDownload = false
+        if carryOn { begin() } else { message = "Speech recognition for \(languageName) is ready. Click the mic to dictate." }
+    }
+
+    /// Reserves `locale` to see whether the model is already here, remembering whether this was
+    /// a new reservation so Not Now can give it back. Stale reservations for other languages are
+    /// released first, so the per-app quota can't fill up as the language changes.
+    private func reserveForProbe(_ locale: Locale) async {
+        let reserved = await AssetInventory.reservedLocales
+        let isNew = !reserved.contains { $0.identifier(.bcp47) == locale.identifier(.bcp47) }
+        for stale in reserved where stale.identifier(.bcp47) != locale.identifier(.bcp47) {
+            await AssetInventory.release(reservedLocale: stale)
+        }
+        guard isNew else { return }
+        if (try? await AssetInventory.reserve(locale: locale)) == true { probeReservation = locale }
+    }
+
     /// "Not now": back to the idle button without fetching anything.
-    func dismissModelPrompt() { apply(.stopped); message = nil }
+    func dismissModelPrompt() {
+        apply(.stopped); message = nil
+        if let probe = probeReservation {
+            probeReservation = nil
+            Task { await AssetInventory.release(reservedLocale: probe) }
+        }
+    }
 
     func dismissMessage() { message = nil }
 
