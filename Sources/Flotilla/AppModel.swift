@@ -1895,16 +1895,6 @@ final class AppModel {
 
     func requestSection(_ section: Section) { present { self.pendingSection = section } }
 
-    /// Settings, on its Host Mode pane — from Overview's checklist on a host, where pairing and the
-    /// listener live. Cleared by `SettingsView`.
-    var pendingHostModeSettings = false
-
-    func requestHostModeSettings() {
-        present {
-            self.pendingHostModeSettings = true
-            self.pendingSection = .settings
-        }
-    }
 
     /// A notice to open in Notifications — a click on its macOS notification.
     func requestNotice(_ id: String?) {

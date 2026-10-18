@@ -752,13 +752,12 @@ struct SetupAssistantView: View {
         }
     }
 
-    /// Saves the appearance — which is what marks setup complete — and hands over to Overview, whose
-    /// Get started card is now the checklist for this role.
+    /// Saves the appearance — which is what marks setup complete — and hands over to Overview. The
+    /// assistant leaves Overview's Get started card alone (Kamal, 18 October): it is its own window.
     private func finish() {
         if let mode = context.roleSaved(leaving: .finish) { saveRole(mode) }
         if !appearanceLocked { model.chooseAppearance(appearance) }
         model.appearancePreview = nil
-        UserDefaults.standard.set(false, forKey: OverviewView.getStartedDismissedKey)
         model.requestSection(.overview)
         NSApp.activate(ignoringOtherApps: true)
         openWindow(id: "main")
