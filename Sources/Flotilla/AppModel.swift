@@ -1793,6 +1793,8 @@ final class AppModel {
     /// The slower half of this Mac's host facts — power, FileVault, sharing, the helper's version —
     /// read in the background every five minutes rather than on every call (`refreshSystemFacts`).
     var systemFacts: HostFacts?
+    /// Which `refreshSystemFacts` may still write: a slower, older one must not overwrite a newer one.
+    @ObservationIgnored var systemFactsGeneration = RefreshGeneration()
 
     /// Retained history for one container, for the dashboard's charts and the detail sparkline.
     func statsHistory(for id: String) -> [StatsSampler.HistoryPoint] { sampler.history(for: id) }

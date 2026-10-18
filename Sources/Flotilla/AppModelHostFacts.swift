@@ -75,18 +75,31 @@ extension AppModel {
     }
 
     /// Reads the slower facts now, off the main actor.
+    ///
+    /// Refreshes overlap — the five-minute watch, the host page's Refresh — and each suspends twice.
+    /// Whatever one reads is applied only while it is the latest to have started, and the helper's
+    /// version only while the helper is still on: an older refresh's reply arriving after a newer
+    /// one cleared the version would otherwise write it back (Kyle's review, 18 October).
     func refreshSystemFacts() async {
+        let ticket = systemFactsGeneration.begin()
         // On GCD, not `Task.detached`: five child processes block a thread, and a starved cooperative
         // pool (see `Blocking`) would leave this unread — and so every sharing dot on the admin grey.
         var slow = await Blocking.run { Self.readSlowSystemFacts() }
-        // Published before the helper is asked: the probe is an XPC round trip with no deadline, and
-        // a helper that never answers must not hold back the facts that do not depend on it.
+        guard systemFactsGeneration.isCurrent(ticket) else { return }
+        // Published before the helper is asked, so a slow helper cannot hold back the facts that do
+        // not depend on it.
         slow.helperVersion = systemFacts?.helperVersion
         systemFacts = slow
         guard PrivilegedHelper.status == .enabled else { systemFacts?.helperVersion = nil; return }
-        let version = await PrivilegedHelper.runningVersion()
+        // XPC gives the probe no deadline of its own, and a helper that never answers would hold this
+        // refresh — and the watch loop behind it — forever.
+        let version = await Deadline.value(within: Self.helperProbeLimit) { await PrivilegedHelper.runningVersion() }
+        guard systemFactsGeneration.isCurrent(ticket), PrivilegedHelper.status == .enabled else { return }
         systemFacts?.helperVersion = version
     }
+
+    /// Long enough for `runningVersion`'s two attempts and the pause between them.
+    private static let helperProbeLimit: Duration = .seconds(5)
 
     func startSystemFactsWatch() {
         Task { [weak self] in
