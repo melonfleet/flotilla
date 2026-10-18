@@ -85,8 +85,10 @@ struct ResourceRow<Leading: View, Chips: View, Actions: View>: View {
     /// Optional third line; joins the detail on wide rows.
     var thirdLine: String? = nil
     var selected: Bool
-    /// The leading checkbox: this row's membership of the list's selection.
-    let check: RowCheck
+    /// The leading checkbox: this row's membership of the list's selection. Nil for a list with no
+    /// bulk action to take a selection to — Activity — which draws no box at all rather than a
+    /// disabled one in every row.
+    var check: RowCheck? = nil
     /// Extra leading space, for a row nested under another (a group's member).
     var indent: CGFloat = 0
     /// What VoiceOver reads for the whole row.
@@ -111,7 +113,7 @@ struct ResourceRow<Leading: View, Chips: View, Actions: View>: View {
         HStack(alignment: .center, spacing: 8) {
             // Outside the indent, so a group member's box sits in the same column as everyone
             // else's and under the toolbar's select-all.
-            RowCheckbox(check: check, name: title)
+            if let check { RowCheckbox(check: check, name: title) }
             content
                 .padding(.leading, indent)
         }

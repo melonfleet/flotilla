@@ -385,16 +385,6 @@ struct MainWindowView: View {
                              set: { if $0 == nil { model.activeOperation = nil } })) { operation in
             OperationProgressView(progress: operation) { model.activeOperation = nil }
         }
-        // The Host column follows the fleet (the owner, 7 October): shown once a host is paired —
-        // four `default` networks with nothing to tell them apart is what it is for — and hidden
-        // when there is only This Mac, where it would read "This Mac" on every row. Applied only
-        // when that changes, so hiding or showing it by hand in between is left alone.
-        .onChange(of: model.hostMode.trustedHosts.isEmpty, initial: true) { _, thisMacOnly in
-            // Logs is the one table left (Q19). The sections on two-line rows (Q56) have no Host
-            // column: their rows carry a host chip only for another Mac's row, which says the same
-            // thing without the setting.
-            logsUI.columnCustomization[visibility: "host"] = thisMacOnly ? .hidden : .visible
-        }
         // The search box's dropdown (Q55), hung under the field in the window bar and over the page.
         // Here rather than in `WindowBar`, whose 52pt would clip it. The page stays live under it —
         // the box filters that page as you type — so nothing is disabled; the keys that would

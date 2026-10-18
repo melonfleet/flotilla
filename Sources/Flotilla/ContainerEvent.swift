@@ -107,4 +107,48 @@ struct ContainerEvent: Identifiable, Hashable {
 
     var detail: String { "from \(from.lowercased())" }
 
+    // MARK: As a row
+
+    /// Kinds whose subject is a name that can carry " on <Mac>" — a paired host's event is recorded
+    /// as "web on mac-mini" (`AppModel.events(for:kind:host:)`). A host's, registry's or DNS zone's
+    /// subject is its own name, and is left whole.
+    private var namesAMac: Bool {
+        switch kind {
+        case .container, .machine, .image, .volume, .network, .group, .cluster: true
+        case .runtime, .registry, .dns, .host: false
+        }
+    }
+
+    private var hostSplit: (name: String, host: String)? {
+        guard namesAMac, let range = subject.range(of: " on ", options: .backwards) else { return nil }
+        let host = String(subject[range.upperBound...])
+        return host.isEmpty ? nil : (String(subject[..<range.lowerBound]), host)
+    }
+
+    /// The subject without its " on <Mac>".
+    var subjectName: String { hostSplit?.name ?? subject }
+
+    /// Which other Mac this happened on, or nil for This Mac.
+    var hostName: String? { hostSplit?.host }
+
+    /// What a row says first: "Started web". An observed appearance or disappearance reads as
+    /// "Added" or "Removed" — `summary` says "Present", which is a state, not a thing that happened.
+    var headline: String { "\(verb) \(subjectName)" }
+
+    /// What happened, as a verb.
+    var verb: String {
+        switch (action, to.lowercased()) {
+        case (let action?, _): action
+        case (nil, "present"): "Added"
+        case (nil, "absent"): "Removed"
+        default: summary
+        }
+    }
+
+    /// The raw transition, only when there is one. A performed action reads "running → running",
+    /// which means nothing.
+    var transition: String? {
+        guard action == nil, !from.isEmpty, !["present", "absent"].contains(to.lowercased()) else { return nil }
+        return "\(from) \u{2192} \(to)"
+    }
 }

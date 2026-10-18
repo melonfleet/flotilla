@@ -69,35 +69,14 @@ final class LogsUIState {
 
     // MARK: Presentation
 
-    /// Whether a long message wraps onto as many lines as it needs, or stays on one and is
-    /// truncated.
-    ///
-    /// **Off by default**, which is the opposite of what reading prose would want and right for
-    /// this screen: a log is scanned far more often than it is read, and one line per event is
-    /// what makes two hundred of them scannable. A single 900-character stack trace with wrapping
-    /// on pushes everything else off the screen. Turning it on is one click, and a single row can
-    /// be expanded without turning it on for everything.
-    var wrapLines = false
-
-    /// Rows the user has opened to see the whole message. Ids, so an expansion survives the feed
-    /// being refetched — the line keeps its `source#index` identity across a reload of the same
-    /// window of output.
-    var expanded: Set<String> = []
-
-    /// Selected rows, for copy and for "export just these".
+    /// Selected lines, by id: one opens its page, several are for the bulk bar's Copy and Export.
     ///
     /// Held here rather than as view `@State` for the same reason every other filter is: this
     /// section is rebuilt on each sidebar change, and a selection you made in order to export it
     /// must survive looking something up.
     var selection: Set<String> = []
 
-    /// Which columns the feed table is showing, and how wide.
-    ///
-    /// Same mechanism every other section's table uses, for the same reason: a column you hid
-    /// must stay hidden when you come back from looking something up.
-    var columnCustomization = TableColumnCustomization<AggregatedLogLine>()
-
-    /// Whether the Received column is showing.
+    /// Whether a row shows the time Flotilla received the line.
     ///
     /// **Off by default, and the default is the honest one.** `container logs` has no
     /// `--timestamps`, so there is no time in the data; the column shows when *Flotilla* received

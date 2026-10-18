@@ -20,12 +20,40 @@ struct ActivityView: View {
     @State private var showingFilters = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            Divider()
-            content
+        // Rows and a page, like every list (Q58), opening on the rows alone (`PaneMode`): a feed is
+        // read top to bottom, and an entry's page is something you open over it.
+        SplitPanes("activity", item: shown?.id, clearing: { ui.selected = nil }) {
+            VStack(spacing: 0) {
+                toolbar
+                Divider()
+                content
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+        } detail: {
+            detailPane
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The entry whose page is open. Looked up in the feed as filtered, so an entry filtered away
+    /// or trimmed off the end of the 500 closes its page rather than leaving one with no row.
+    private var shown: ContainerEvent? {
+        guard let id = ui.selected else { return nil }
+        return filtered.first { $0.id == id }
+    }
+
+    @ViewBuilder
+    private var detailPane: some View {
+        if let event = shown {
+            ActivityEventDetailView(event: event, openHelp: openHelp(event),
+                                    open: { open(event) },
+                                    filter: { filterToSubject(event) },
+                                    filtered: ui.subject == event.subject)
+                .id(event.id)
+        } else {
+            PaneEmptyState(title: "Choose an entry", systemImage: "clock.arrow.circlepath",
+                           description: "What happened, when, and to what show here.")
+        }
     }
 
     // MARK: Controls
@@ -50,6 +78,7 @@ struct ActivityView: View {
                        // than every other one.
                        status: "\(filtered.count) of \(model.activity.count)",
                        leading: {
+            PaneModeButton()
             // Filled when narrowed, hollow when not — the same signal every other filter gives.
             IconActionButton(systemImage: "line.3.horizontal.decrease", label: "Filter",
                              help: filterHelp, active: isFiltered) {
@@ -179,85 +208,84 @@ struct ActivityView: View {
                 Button("Clear filters") { ui.kind = nil; ui.subject = nil; ui.search = "" }
             }
         } else {
-            SwiftUI.Table(filtered) {
-                TableColumn(Text(Image(systemName: "circle.fill")).font(.system(size: 6)).accessibilityLabel("Result")) { event in
-                    Circle().fill(colour(for: event)).frame(width: 8, height: 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .help(event.summary)
-                        .accessibilityLabel(event.summary)
-                }
-                .width(min: 26, ideal: 28, max: 34)
-
-                TableColumn("Time") { event in
-                    Text(RelativeDate.clockTime(event.date))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .help(event.date.formatted(date: .abbreviated, time: .standard))
-                }
-                .width(min: 76, ideal: 88)
-
-                TableColumn("Kind") { event in
-                    Label(event.kind.title, systemImage: event.kind.systemImage)
-                        .labelStyle(.titleAndIcon)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .width(min: 96, ideal: 112)
-
-                TableColumn("Subject") { event in
-                    Button(event.subject) { open(event) }
-                        .buttonStyle(.link)
-                        .foregroundStyle(Theme.link)
-                        .lineLimit(1)
-                        .help(openHelp(event))
-                }
-                .width(min: 130, ideal: 200)
-
-                TableColumn("What happened") { event in
-                    Text(event.summary).lineLimit(1)
-                        .help(event.summary)
-                }
-                .width(min: 110, ideal: 150)
-
-                TableColumn("Detail") { event in
-                    // The raw transition, and only when there is one. A performed action reads
-                    // "running → running", which means nothing.
-                    Text(event.action == nil ? "\(event.from) → \(event.to)" : "—")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .help(event.action == nil ? "\(event.from) → \(event.to)" : "")
-                }
-                .width(min: 110, ideal: 160)
+            // Rows, no sort and **no checkboxes**: this feed has no bulk action to take a selection
+            // to — it is read, opened and filtered, never acted on in batches — so a box on every
+            // row would tick things for nothing. Selection is single, and is the page.
+            List(filtered, selection: Binding(get: { ui.selected }, set: { ui.selected = $0 })) { event in
+                row(event)
+                    .listRowInsets(EdgeInsets())
             }
-            .frame(maxHeight: .infinity)
+            .listStyle(.inset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contextMenu(forSelectionType: ContainerEvent.ID.self) { ids in
-                if let event = filtered.first(where: { ids.contains($0.id) }) {
-                    rowMenu(for: event)
-                }
-            } primaryAction: { ids in
-                // Double-click does what the subject link does. Only when the activation names
-                // exactly one row: `ids` is a `Set`, and opening an arbitrary member of a
-                // multi-row activation is the bug the containers table was fixed for.
-                guard ids.count == 1, let event = filtered.first(where: { ids.contains($0.id) })
-                else { return }
-                open(event)
+                rowContextMenu(for: ids)
             }
         }
     }
 
-    /// Right-click offers what the row's own link offers, plus the two things you come to this
-    /// feed wanting: the name, and everything else about that subject. The table had **no**
-    /// context menu at all, which made it the one list in the app where right-clicking a row did
-    /// nothing.
+    /// "Started web", the time on the trailing end, and the result under it.
+    private func row(_ event: ContainerEvent) -> some View {
+        ResourceRow(
+            title: event.headline,
+            trailingText: RelativeDate.clockTime(event.date),
+            detail: detail(event),
+            detailHelp: event.date.formatted(date: .abbreviated, time: .standard),
+            selected: ui.selected == event.id,
+            summary: "\(event.headline), \(detail(event)), \(RelativeDate.clockTime(event.date))",
+            leading: {
+                RowLeadingMark {
+                    // The kind's glyph with the result's dot: where it ended up, as the table's first
+                    // column coloured it.
+                    RowTypeMark(systemImage: event.kind.systemImage, kind: event.kind.title) {
+                        Circle().fill(colour(for: event))
+                    }
+                }
+            },
+            chips: {
+                if let host = event.hostName {
+                    ResourceChip(text: host, systemImage: "desktopcomputer")
+                }
+            },
+            actions: {
+                Menu {
+                    menu(for: event)
+                } label: {
+                    RowOverflowLabel()
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More actions for \(event.headline)")
+                .accessibilityLabel("More actions for \(event.headline)")
+            })
+    }
+
+    /// The result: the raw transition when it was observed ("running → stopped"), or who did it
+    /// when Flotilla performed it.
+    private func detail(_ event: ContainerEvent) -> String {
+        let how = event.transition ?? (event.action == nil ? "observed" : "done in Flotilla")
+        return "\(event.kind.title) \u{00B7} \(how)"
+    }
+
     @ViewBuilder
-    private func rowMenu(for event: ContainerEvent) -> some View {
+    private func rowContextMenu(for ids: Set<ContainerEvent.ID>) -> some View {
+        if ids.count == 1, let event = filtered.first(where: { ids.contains($0.id) }) {
+            menu(for: event)
+        }
+    }
+
+    private func filterToSubject(_ event: ContainerEvent) {
+        ui.subject = event.subject
+        ui.kind = event.kind
+    }
+
+    /// Right-click and `⋮` offer what the page offers, plus the two things you come to this feed
+    /// wanting: the name, and everything else about that subject.
+    @ViewBuilder
+    private func menu(for event: ContainerEvent) -> some View {
         Button(openHelp(event)) { open(event) }
         Divider()
-        Button("Filter to \(event.subject)") {
-            ui.subject = event.subject
-            ui.kind = event.kind
-        }
+        Button("Filter to \(event.subject)") { filterToSubject(event) }
         .disabled(ui.subject == event.subject)
         CopyMenu([
             ("Subject", event.subject),
@@ -300,7 +328,77 @@ struct ActivityView: View {
 /// Filter state for the Activity feed, owned by `MainWindowView` like every other section's.
 @Observable
 final class ActivityUIState {
+    /// The entry whose page is open. Single: the feed has no bulk action, so no checkboxes.
+    var selected: ContainerEvent.ID?
     var kind: ActivityKind?
     var subject: String?
     var search = ""
+}
+
+/// One entry's own page, in the right pane: the whole event.
+struct ActivityEventDetailView: View {
+    let event: ContainerEvent
+    let openHelp: String
+    let open: () -> Void
+    let filter: () -> Void
+    /// The feed is already narrowed to this subject.
+    let filtered: Bool
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: event.kind.systemImage).foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text(event.headline).font(.title3.weight(.semibold)).textSelection(.enabled)
+                    Spacer(minLength: 0)
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { actions }
+                    VStack(alignment: .leading, spacing: 8) { actions }
+                }
+                DetailCard(title: "Details", minHeight: nil) {
+                    row("Time", event.date.formatted(date: .abbreviated, time: .standard)
+                        + " (\(RelativeDate.relativeToNow(event.date)))")
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Subject").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer(minLength: 12)
+                        // The way in: the subject's own page where it has one, else its section.
+                        Button(event.subjectName, action: open)
+                            .buttonStyle(.link)
+                            .foregroundStyle(Theme.link)
+                            .font(.system(size: 12))
+                            .help(openHelp)
+                    }
+                    row("Kind", event.kind.title)
+                    row("Action", event.verb)
+                    row("Result", event.transition ?? (event.action == nil ? "Observed" : "Done in Flotilla"))
+                    row("Mac", event.hostName ?? "This Mac")
+                }
+                Text(event.action == nil
+                     ? "Flotilla saw this change between two refreshes; it may have been made elsewhere."
+                     : "Flotilla did this itself.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        Button(openHelp, action: open)
+        Button("Filter to \(event.subjectName)", action: filter).disabled(filtered)
+        Button("Copy") {
+            Clipboard.copy("\(event.headline) \u{2014} \(event.date.formatted(date: .abbreviated, time: .standard))")
+        }
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value).font(.system(size: 12)).multilineTextAlignment(.trailing).textSelection(.enabled)
+        }
+    }
 }

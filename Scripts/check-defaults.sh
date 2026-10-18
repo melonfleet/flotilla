@@ -174,6 +174,24 @@ require Sources/Flotilla/ResourceRow.swift '@State private var hovering = false'
 for s in Notifications Suggestions; do
     require "Sources/Flotilla/${s}View.swift" '        ResourceRow('
 done
+# Logs and Activity are rows on that same template, in a split that opens on the rows alone (18
+# October). The `SplitPanes` key is what ties each to `listOnlyByDefault`, so it is pinned with it;
+# the known-good starting state is nothing selected, not streaming, no timestamps (Q19: a fetched
+# feed's times are all one value), and no `Table` left to put the old columns back in.
+require Sources/Flotilla/LogsView.swift     '        return ResourceRow('
+require Sources/Flotilla/ActivityView.swift '        ResourceRow('
+require Sources/Flotilla/LogsView.swift     'SplitPanes("logs", item: shownLine?.id'
+require Sources/Flotilla/ActivityView.swift 'SplitPanes("activity", item: shown?.id'
+require Sources/Flotilla/LogsUIState.swift  '    var selection: Set<String> = []'
+require Sources/Flotilla/LogsUIState.swift  '    var live = false'
+require Sources/Flotilla/LogsUIState.swift  '    var showTimestamps = false'
+require Sources/Flotilla/ActivityView.swift '    var selected: ContainerEvent.ID?'
+for f in Sources/Flotilla/LogsView.swift Sources/Flotilla/ActivityView.swift; do
+    if grep -vE '^[0-9]*:?[[:space:]]*//' "$f" | grep -qE '(SwiftUI\.)?\bTable\('; then
+        echo "  ✗ $f: a Table again — Logs and Activity are rows (Q56)"
+        fail=1
+    fi
+done
 require Sources/Flotilla/ResourceRow.swift '        ResourceTextLayout(reservesActions: !voiceOver) {'
 
 for s in Containers Machines Images Volumes Networks Hosts Registries DNS Clusters; do
@@ -191,7 +209,7 @@ require Sources/Flotilla/SplitPanes.swift '    var compactShowsList = false'
 require Sources/Flotilla/SplitPanes.swift '    static let listOnlyByDefault: Set<String> = ["logs", "activity"]'
 require Sources/Flotilla/SplitPanes.swift '        listOnlyByDefault.contains(screen) ? .listOnly : .twoPanes'
 require Sources/Flotilla/SplitPanes.swift '_storedMode = AppStorage(wrappedValue: PaneMode.standard(for: key).rawValue, PaneMode.defaultsKey(key))'
-for f in ResourceListControls Containers Machines Greta Notifications Suggestions RegistryBrowser; do
+for f in ResourceListControls Containers Machines Greta Notifications Suggestions RegistryBrowser Logs Activity; do
     file="Sources/Flotilla/${f}View.swift"; [ -f "$file" ] || file="Sources/Flotilla/${f}.swift"
     require "$file" 'PaneModeButton()'
 done
