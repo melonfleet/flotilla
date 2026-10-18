@@ -115,7 +115,7 @@ final class GretaDictation {
         }
 
         // 2. The speech model. Missing means the user is asked; nothing is fetched here.
-        guard let locale = await resolveLocale() else { return }
+        guard let locale = await resolveLocale(), session == mine else { return }
         let transcriber = makeTranscriber(locale)
         switch await AssetInventory.status(forModules: [transcriber]) {
         case .installed: break
@@ -146,10 +146,17 @@ final class GretaDictation {
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
             throw DictationError.noAudioFormat
         }
+        // Stopped while waiting for the format: never open the microphone (Kyle, 18 October).
+        guard session == mine, !Task.isCancelled else { return }
         let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let feed = AudioFeed()
         try await analyzer.start(inputSequence: stream)
+        // And again after starting the analyser, before the engine and its tap exist.
+        guard session == mine, !Task.isCancelled else {
+            continuation.finish(); await analyzer.cancelAndFinishNow()
+            return
+        }
         do {
             try feed.start(target: format, into: continuation)
         } catch {
