@@ -103,6 +103,13 @@ struct RunSheetView: View {
     /// binding is the single source of truth for whether it is open, and two mechanisms for
     /// closing one thing is how a sheet gets stuck.
     let dismiss: () -> Void
+    /// "1 of N" while walking several suggestions; nil for a normal Run.
+    private let progressLabel: String?
+    /// Skip this suggestion without running — only set during a multi-suggest walk.
+    private let onSkip: (() -> Void)?
+    /// After Run during a multi-suggest walk: claim these host ports and open the next form.
+    /// Single Use… leaves this nil and `dismiss` closes as before.
+    private let onRan: ((Set<Int>) -> Void)?
 
     @State private var image: String
     /// Where it runs (PLAN.md Phase C): This Mac, or a paired host.
@@ -123,10 +130,14 @@ struct RunSheetView: View {
     private let portsInUse: [Int]
 
     init(model: AppModel, initialImage: String = "", initialHost: HostRef = .local, prefill: RunPrefill? = nil,
+         progressLabel: String? = nil, onSkip: (() -> Void)? = nil, onRan: ((Set<Int>) -> Void)? = nil,
          dismiss: @escaping () -> Void) {
         self.model = model
         _host = State(initialValue: initialHost)
         self.dismiss = dismiss
+        self.progressLabel = progressLabel
+        self.onSkip = onSkip
+        self.onRan = onRan
         self.prefilled = prefill?.mayHaveUncarriedSettings ?? false
         self.portsInUse = prefill?.portsInUse ?? []
         _image = State(initialValue: prefill?.image ?? initialImage)
@@ -157,6 +168,7 @@ struct RunSheetView: View {
     @State private var edits = FormEditTracker()
     /// Shared by the header and the Cancel button, so both ask about this form alone.
     @State private var formToken = UUID()
+    @Environment(FormGuard.self) private var formGuard: FormGuard?
 
     /// Everything a Back would throw away, in one string. Compared against the value captured when
     /// the screen appeared — not against defaults, because a prefilled run sheet opens full and
@@ -240,7 +252,11 @@ struct RunSheetView: View {
     /// content had to fit the window rather than the other way round.
     private var header: some View {
         FormHeader(title: "Run Container", systemImage: "shippingbox",
-                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken)
+                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken) {
+            if let progressLabel {
+                Text(progressLabel).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var content: some View {
@@ -567,13 +583,23 @@ struct RunSheetView: View {
         HStack {
             Spacer()
             FormCancelButton(token: formToken, action: dismiss)
+            if let onSkip {
+                Button("Skip") {
+                    if let formGuard { formGuard.confirmLeaving(form: formToken, onSkip) } else { onSkip() }
+                }
+            }
             Button("Run") {
                 let ranImage = trimmedImage
                 let ranOptions = options
                 let ranCommand = command
                 let ranHost = host
                 let ranPolicy = policy
-                dismiss()
+                let hostPorts = Set(publishedHostPorts)
+                if let onRan {
+                    onRan(hostPorts)
+                } else {
+                    dismiss()
+                }
                 Task {
                     await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost)
                     // Kept once it exists, so a policy never watches a container that failed to start.
