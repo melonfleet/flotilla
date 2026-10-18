@@ -54,7 +54,7 @@ struct WindowBar: View {
                     Color.clear.frame(width: 18, height: 1)
 
                     // The owner's bar (6 October): the full lockup in white, straight on the bar.
-                    Wordmark(size: 16, lockup: .bar)
+                    Wordmark(size: 24, lockup: .bar)
                         .fixedSize()          // a lockup, never wrapped
                 }
                 .padding(.leading, trafficLightInset)
