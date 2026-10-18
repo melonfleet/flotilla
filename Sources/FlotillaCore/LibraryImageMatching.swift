@@ -24,11 +24,14 @@ extension SuggestionLibrary {
         return parts.joined(separator: "/")
     }
 
-    /// Prefer an entry dedicated to this container over a stack that happens to pull it.
+    /// Prefer an entry dedicated to this container over a stack that happens to pull it. With no
+    /// dedicated entry, a stack's logo is used only when it is the one stack pulling the image: a
+    /// database several stacks share is none of theirs, so it doesn't wear Gitea's logo.
     public func entry(forImage image: String) -> LibraryEntry? {
         let repository = Self.imageRepository(image)
         let matches = entries.filter { $0.images.contains { Self.imageRepository($0) == repository } }
-        return matches.first { $0.kind == .container && $0.images.count == 1 } ?? matches.first
+        if let dedicated = matches.first(where: { $0.kind == .container && $0.images.count == 1 }) { return dedicated }
+        return matches.count == 1 ? matches.first : nil
     }
 
     /// The entry covering the most distinct member repositories; on a tie, the one pulling fewest

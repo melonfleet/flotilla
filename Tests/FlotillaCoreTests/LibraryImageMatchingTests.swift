@@ -55,7 +55,10 @@ import Testing
         let database = container("database", "docker.io/library/mariadb:11")
         let duplicate = container("duplicate", "mariadb:10")
         #expect(library([first, second, database, duplicate]).entry(forImage: "mariadb")?.id == "database")
-        #expect(library([first, second]).entry(forImage: "mariadb")?.id == "site")
+        // Shared by two stacks and dedicated to neither: no one's logo.
+        #expect(library([first, second]).entry(forImage: "mariadb") == nil)
+        #expect(library([first]).entry(forImage: "mariadb")?.id == "site")
+        #expect(library([first, second]).entry(forImage: "wordpress")?.id == "site")
         #expect(library([duplicate, database]).entry(forImage: "mariadb")?.id == "duplicate")
     }
 
