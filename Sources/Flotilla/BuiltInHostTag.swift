@@ -42,7 +42,7 @@ enum BuiltInHostTag: String, CaseIterable, Identifiable {
     /// A Mac's built-in tags, This Mac first. `role` is a `RunMode` raw value — This Mac's own
     /// mode, or the one a host reported; nil on a listed host means a host.
     static func tags(isThisMac: Bool, role: String?) -> [BuiltInHostTag] {
-        let mode = role.flatMap(RunMode.init(rawValue:)) ?? (isThisMac ? .client : .host)
+        let mode = role.flatMap(RunMode.init(reported:)) ?? (isThisMac ? .client : .host)
         var tags: [BuiltInHostTag] = isThisMac ? [.thisMac] : []
         if mode != .host { tags.append(.admin) }
         if mode != .client { tags.append(.host) }

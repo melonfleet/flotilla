@@ -339,6 +339,12 @@ private struct FlotillaCommands: Commands {
         }
 
         CommandGroup(before: .help) {
+            // The first-run assistant, again (decided 13 October). Its own window, so it asks
+            // nothing of a form in the main one.
+            Button("Setup Assistant…") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: SetupAssistantView.windowID)
+            }
             Button("Create Support Bundle…") { present(model.requestSupportBundle) }
         }
     }
@@ -443,12 +449,7 @@ struct FlotillaApp: App {
                 // For the list pages, which lend their filter to the window bar's search box.
                 .environment(model.toolbarSearch)
                 .task { await model.reloadUnlessLoading() }
-                // First run: ask, with Auto pre-selected. `needsAppearanceOnboarding` is
-                // false once answered, including when the answer was Auto — which is
-                // exactly why the store models `notChosen` separately.
-                .sheet(isPresented: .constant(model.needsAppearanceOnboarding)) {
-                    OnboardingView(model: model)
-                }
+                .modifier(OpensSetupOnFirstRun(model: model))
         }
         // Content to the top of the window, traffic lights floating over it.
         //
@@ -533,6 +534,22 @@ struct FlotillaApp: App {
             FlotillaCommands(model: model)
         }
 
+        // The setup assistant (13 October): a window of its own, 720 × 600 on every step, opened by
+        // the main window on a first run and by Help ▸ Setup Assistant… after. Suppressed at launch
+        // and never restored: whether it opens is decided by `needsAppearanceOnboarding`, not by
+        // SwiftUI's guess or by a window left open at quit.
+        Window("Set Up Flotilla", id: SetupAssistantView.windowID) {
+            SetupAssistantView(model: model)
+                .environment(\.themeChoice, model.themeChoice)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        // Not in the Window menu: it is reached from Help, and only while there is something to set up.
+        .commandsRemoved()
+
         // Container detail used to be a `WindowGroup` here. It is now a modal sheet presented
         // by `ContainersView`, for the reason the owner gave: a real window brought its own traffic
         // lights back and left the app behind it undimmed, so detail was the one surface that
@@ -540,5 +557,23 @@ struct FlotillaApp: App {
         //
         // The trade is real and worth naming: detail is no longer resizable, and you can no
         // longer keep several open beside the table. Both were genuine advantages of a window.
+    }
+}
+
+/// First run: the setup assistant, in front of the main window. `needsAppearanceOnboarding` is the
+/// one "completed" flag — the assistant saves the appearance at Finish — so a Mac that has finished
+/// it, or whose profile answers it, never sees it again unless Help asks.
+///
+/// On the main window's appearance rather than at launch: the main window is the one scene SwiftUI
+/// is told to present (`defaultLaunchBehavior(.presented)`), so this runs on every launch that has a
+/// window at all, and reopening the main window mid-setup only brings the assistant forward.
+private struct OpensSetupOnFirstRun: ViewModifier {
+    let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content.onAppear {
+            if model.needsAppearanceOnboarding { openWindow(id: SetupAssistantView.windowID) }
+        }
     }
 }

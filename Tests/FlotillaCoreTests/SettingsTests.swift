@@ -383,14 +383,52 @@ import Testing
     }
 }
 
-/// Admin + Host retired, 9 October.
+/// Admin + Host retired, 9 October; the case left `RunMode` on 18 October.
 @Suite struct RetiredModeTests {
-    @Test func aStoredBothBecomesAdminAndAProfileBothReadsAsAdmin() {
+    @Test func aStoredBothBecomesAdminInTheSnapshotThePersistenceLayerSaves() {
         let stored = SettingsStore(userValues: [SettingsKeys.mode.name: .string("both")])
         #expect(stored[SettingsKeys.mode] == .client)
-        let locked = SettingsStore(managed: StaticManagedPreferences(locked: [SettingsKeys.mode.name: .string("both")]))
-        #expect(locked[SettingsKeys.mode] == .both && locked[SettingsKeys.mode].effective == .client)
-        #expect(RunMode.offered == [.client, .host])
-        #expect(RunMode.host.effective == .host)
+        #expect(stored.source(of: SettingsKeys.mode) == .user)
+        // What `SettingsPersistence.makeStore` compares with what it loaded, and writes back when
+        // they differ — so the old value is on disk for one launch, not for ever.
+        #expect(stored.userValuesSnapshot() == [SettingsKeys.mode.name: .string("client")])
+    }
+
+    @Test func aStoredHostOrAdminIsUntouched() {
+        for raw in ["client", "host"] {
+            let store = SettingsStore(userValues: [SettingsKeys.mode.name: .string(raw)])
+            #expect(store.userValuesSnapshot() == [SettingsKeys.mode.name: .string(raw)])
+        }
+    }
+
+    @Test func aProfileThatLockedBothStillLocksAdmin() {
+        let locked = SettingsStore(managed: StaticManagedPreferences(locked: [SettingsKeys.mode.name: .string("both")]),
+                                   userValues: [SettingsKeys.mode.name: .string("host")])
+        #expect(locked[SettingsKeys.mode] == .client)
+        #expect(locked.isLocked(SettingsKeys.mode))
+        #expect(locked.source(of: SettingsKeys.mode) == .locked)
+        #expect(throws: SettingsError.self) { try locked.set(.host, for: SettingsKeys.mode) }
+    }
+
+    @Test func aProfileThatSeededBothSeedsAdmin() {
+        let seeded = SettingsStore(managed: StaticManagedPreferences(defaults: [SettingsKeys.mode.name: .string("both")]))
+        #expect(seeded[SettingsKeys.mode] == .client)
+        #expect(seeded.source(of: SettingsKeys.mode) == .managedDefault)
+    }
+
+    @Test func bothIsNoLongerAModeAndAnOldExportImportsAsAdmin() throws {
+        #expect(RunMode.allCases == [.client, .host])
+        #expect(RunMode.offered == RunMode.allCases)
+        let store = SettingsStore(userValues: [SettingsKeys.mode.name: .string("host")])
+        try store.setRaw(.string("both"), forKeyNamed: SettingsKeys.mode.name)
+        #expect(store.userValuesSnapshot()[SettingsKeys.mode.name] == .string("client"))
+        #expect(throws: SettingsError.self) { try store.setRaw(.string("neither"), forKeyNamed: SettingsKeys.mode.name) }
+    }
+
+    @Test func anOlderHostReportingBothReadsAsAdmin() {
+        #expect(RunMode(reported: "both") == .client)
+        #expect(RunMode(reported: "host") == .host)
+        #expect(RunMode(reported: "client") == .client)
+        #expect(RunMode(reported: "nonsense") == nil)
     }
 }

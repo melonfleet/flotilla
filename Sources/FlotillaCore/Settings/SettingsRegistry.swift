@@ -195,7 +195,7 @@ public enum SettingsKeys {
 
     /// How this Mac is used (Phase B, 7 October): `client` is shown as **Admin** — it manages this
     /// Mac and others — and `host` lets an admin Mac manage it. `both` is retired and read as
-    /// `client` (9 October, `RunMode.effective`). The stored values
+    /// `client` (9 October; see `retiredValues`). The stored values
     /// keep the names `reference/jamf-config-profile.md` documents. Asked at first run unless a
     /// profile sets it; never switchable by a peer. Applied live — `HostModeController.apply()`
     /// starts or stops the listener — as are the port and Bonjour below.
@@ -409,6 +409,29 @@ public enum SettingsRegistry {
         // Keychain, with no certificate authority.
         "identityKeychainLabel", "peerAllowlist", "trustAnchorFingerprints",
     ]
+
+    /// Values a key no longer offers, and what each now means: `[key: [retired: current]]`.
+    ///
+    /// The values keep meaning something wherever they can still arrive. A user's stored value is
+    /// rewritten at load (and saved by the app, so the migration happens once); a profile's is
+    /// read through this table without being rewritten, because the profile is the organisation's
+    /// to fix — but a profile that pinned `both` must go on pinning Admin, not fall through to a
+    /// value the user can change.
+    public static let retiredValues: [String: [String: String]] = [
+        // 9 October: Admin + Host became Admin; the case left `RunMode` on 18 October.
+        "mode": ["both": "client"],
+    ]
+
+    /// `raw` with a retired value replaced by what it now means; anything else unchanged.
+    public static func currentValue(of raw: String, forKeyNamed name: String) -> String {
+        retiredValues[name]?[raw] ?? raw
+    }
+
+    /// The same, for a whole setting value.
+    static func currentValue(_ value: SettingValue, forKeyNamed name: String) -> SettingValue {
+        guard case .string(let raw) = value else { return value }
+        return .string(currentValue(of: raw, forKeyNamed: name))
+    }
 
     /// Descriptors an MDM profile may carry, for generating the Jamf payload docs.
     ///

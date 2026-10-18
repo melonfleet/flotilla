@@ -245,10 +245,13 @@ enum SettingsPersistence {
         // `presentation` → `showDockIcon` change this Mac still had `{"presentation":"both"}` in
         // its preferences after a clean launch. Correct behaviour, indefinitely derived from a key
         // nothing else understands any more.
+        //
+        // Values, not just keys: this compared `keys` until 18 October, so a migration that rewrote a
+        // value (a stored `mode = both` becoming `client`) left the old value on disk for ever.
         let migrated = store.userValuesSnapshot()
-        if migrated.keys != loaded.keys {
+        if migrated != loaded {
             save(migrated)
-            log.info("Migrated retired preference keys.")
+            log.info("Migrated retired preferences.")
         }
 
         return (store, observation)

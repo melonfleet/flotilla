@@ -173,7 +173,16 @@ final class AppModel {
     private(set) var appearance: AppearanceMode
     /// True until the user (or a managed profile) has answered the first-run question.
     /// Distinct from "chose auto" — see `AppearancePreference.notChosen`.
+    ///
+    /// **This is the setup assistant's "completed" flag**, and the only one: Finish saves the
+    /// appearance, so a first run abandoned half way is asked again at the next launch.
     private(set) var needsAppearanceOnboarding: Bool
+    /// The setup assistant's Appearance step, drawn before it is saved — saving it is what marks
+    /// setup complete, so the choice is held until Finish and only *shown* here. Nil means the
+    /// saved preference; the assistant clears it when its window closes, finished or not.
+    var appearancePreview: AppearanceMode? {
+        didSet { if appearancePreview != oldValue { applyAppKitAppearance() } }
+    }
     /// The light and dark themes. Observable for the same reason as `appearance`: the scenes put
     /// it into the environment, and the bar and background repaint from it.
     private(set) var themeChoice: ThemeChoice
@@ -296,7 +305,7 @@ final class AppModel {
     /// `nil` for Auto is the load-bearing part: it means "inherit", so the system's own value
     /// applies and, crucially, any appearance a previous Light/Dark choice pinned is *cleared*.
     private func applyAppKitAppearance() {
-        let named: NSAppearance.Name? = switch appearance {
+        let named: NSAppearance.Name? = switch appearancePreview ?? appearance {
         case .auto: nil
         case .light: .aqua
         case .dark: .darkAqua
@@ -1883,6 +1892,17 @@ final class AppModel {
     @ObservationIgnored var openMainWindow: (() -> Void)?
 
     func requestSection(_ section: Section) { present { self.pendingSection = section } }
+
+    /// Settings, on its Host Mode pane — from Overview's checklist on a host, where pairing and the
+    /// listener live. Cleared by `SettingsView`.
+    var pendingHostModeSettings = false
+
+    func requestHostModeSettings() {
+        present {
+            self.pendingHostModeSettings = true
+            self.pendingSection = .settings
+        }
+    }
 
     /// A notice to open in Notifications — a click on its macOS notification.
     func requestNotice(_ id: String?) {

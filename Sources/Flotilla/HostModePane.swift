@@ -10,13 +10,12 @@ extension RunMode {
         switch self {
         case .client: "Admin"
         case .host: "Host"
-        case .both: "Admin"
         }
     }
 
     var explanation: String {
         switch self {
-        case .client, .both: "Manage other Macs from here. This Mac runs its own containers too."
+        case .client: "Manage other Macs from here. This Mac runs its own containers too."
         case .host: "Let an admin Mac manage this Mac. It runs its own containers either way."
         }
     }

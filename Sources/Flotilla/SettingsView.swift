@@ -262,6 +262,13 @@ struct SettingsView: View {
         }
     }
 
+    /// Opened from the first-run assistant or elsewhere to land on Host Mode (Terry, first run).
+    private func takeHostModeRequest() {
+        guard model.pendingHostModeSettings else { return }
+        model.pendingHostModeSettings = false
+        section = .hosts
+    }
+
     private var sidebarGroups: [[SettingsSidebarItem<Section>]] {
         [Section.main, Section.last].map { group in
             group.map { SettingsSidebarItem(id: $0, title: $0.title, symbol: $0.systemImage, tile: $0.tile) }
@@ -281,6 +288,9 @@ struct SettingsView: View {
         }
         .frame(minWidth: 720, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
         .navigationTitle("Settings")
+        // Overview's checklist on a host asks for this pane: on arrival, or while already here.
+        .onAppear(perform: takeHostModeRequest)
+        .onChange(of: model.pendingHostModeSettings) { takeHostModeRequest() }
         .sheet(isPresented: Binding(
             get: { model.showingSupportBundle },
             set: { model.showingSupportBundle = $0 }

@@ -361,3 +361,17 @@ struct FleetTool: Tool {
     }
 }
 
+
+extension GretaAvailability {
+    /// What `SystemLanguageModel` says now, for the setup assistant. The wording for each case is in
+    /// `FlotillaCore`, where it is tested; Greta's chat keeps its own sentences in `unavailableReason`.
+    static var current: GretaAvailability {
+        switch SystemLanguageModel.default.availability {
+        case .available: .available
+        case .unavailable(.appleIntelligenceNotEnabled): .appleIntelligenceOff
+        case .unavailable(.deviceNotEligible): .deviceNotEligible
+        case .unavailable(.modelNotReady): .modelNotReady
+        case .unavailable: .unknown
+        }
+    }
+}

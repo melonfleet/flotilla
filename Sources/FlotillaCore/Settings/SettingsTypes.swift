@@ -101,19 +101,23 @@ public enum DarkTheme: String, SettingEnum, Codable {
 /// Client (shown as Admin) or host. A `UserDefaults`-backed key from day one so a Phase 6
 /// profile can pin a mini to host mode without a code change.
 ///
-/// **`both` is retired** (the owner, 9 October). Every Mac runs its own containers whatever its
-/// mode — "host" only means another Mac may manage this one — so a Mac that manages others and is
-/// itself managed by a different admin was rare and read as confusing. The case stays so a stored
-/// or profile value still decodes: a stored one becomes `client` at load, a managed one is read as
-/// `client` (`effective`).
+/// **`both` is retired** (the owner, 9 October) **and gone from the type** (18 October, with the
+/// setup assistant). Every Mac runs its own containers whatever its mode — "host" only means another
+/// Mac may manage this one — so a Mac that manages others and is itself managed by a different admin
+/// was rare and read as confusing. A value written before then still means Admin wherever it can
+/// arrive: a stored one is rewritten at load (`SettingsStore`, then saved by the app's persistence),
+/// a profile's is read as Admin (`SettingsRegistry.retiredValues`), and an older host reporting
+/// its role is read with `init(reported:)`.
 public enum RunMode: String, SettingEnum, Codable {
-    case client, host, both
+    case client, host
 
-    /// The modes Settings and first run offer.
+    /// The modes Settings and first run offer: all of them, now that `both` is gone.
     public static let offered: [RunMode] = [.client, .host]
 
-    /// What the Mac does: `both` is treated as `client`.
-    public var effective: RunMode { self == .both ? .client : self }
+    /// A role as another Mac reported it, which may be an older build's `both`.
+    public init?(reported raw: String) {
+        self.init(rawValue: SettingsRegistry.currentValue(of: raw, forKeyNamed: SettingsKeys.mode.name))
+    }
 }
 
 /// **Retired.** Kept only so `SettingsStore.migrateLegacyKeys` can recognise a stored

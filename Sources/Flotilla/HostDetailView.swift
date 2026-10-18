@@ -757,7 +757,7 @@ struct HostDetailView: View {
     }
 
     private var roleText: String {
-        guard let role = facts?.role.flatMap(RunMode.init(rawValue:)) else { return "—" }
+        guard let role = facts?.role.flatMap(RunMode.init(reported:)) else { return "—" }
         return role.title
     }
 

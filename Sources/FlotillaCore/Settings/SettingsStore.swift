@@ -68,11 +68,12 @@ public final class SettingsStore: @unchecked Sendable {
     /// Runs at load, on the user tier only — a managed profile that still names a retired key is
     /// the organisation's to fix, and silently rewriting a managed value would hide that.
     ///
-    /// The one migration so far: `presentation` (`menuBar`/`dock`/`both`) became `showDockIcon`.
+    /// The first migration: `presentation` (`menuBar`/`dock`/`both`) became `showDockIcon`.
     /// Only `menuBar` carried information, because `dock` and `both` mapped to the same activation
     /// policy. Someone running menu-bar-only would otherwise have had a Dock icon reappear after
     /// an update, with the setting that removed it gone from the window — which reads as the app
-    /// ignoring a preference rather than replacing one.
+    /// ignoring a preference rather than replacing one. The second is of values rather than keys:
+    /// `SettingsRegistry.retiredValues`.
     private static func migratingLegacyKeys(in values: [String: SettingValue]) -> [String: SettingValue] {
         var migrated = values
         if let legacy = migrated.removeValue(forKey: "presentation") {
@@ -82,9 +83,11 @@ public final class SettingsStore: @unchecked Sendable {
             }
         }
         for name in SettingsRegistry.retiredKeyNames { migrated.removeValue(forKey: name) }
-        // Retired 9 October: Admin + Host is now Admin (`RunMode.effective`).
-        if case .string(RunMode.both.rawValue)? = migrated[SettingsKeys.mode.name] {
-            migrated[SettingsKeys.mode.name] = .string(RunMode.client.rawValue)
+        // Retired values become what they now mean — Admin + Host is Admin (9 October).
+        for name in SettingsRegistry.retiredValues.keys {
+            if let value = migrated[name] {
+                migrated[name] = SettingsRegistry.currentValue(value, forKeyNamed: name)
+            }
         }
         return migrated
     }
@@ -125,7 +128,7 @@ public final class SettingsStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard let value = managed.lockedValues[name] else { return false }
-        return descriptor.accepts(value)
+        return descriptor.accepts(SettingsRegistry.currentValue(value, forKeyNamed: name))
     }
 
     /// Every registered key with its effective value. Used by the settings export,
@@ -145,15 +148,20 @@ public final class SettingsStore: @unchecked Sendable {
 
     /// Caller must hold `lock`.
     private func resolveLocked(_ descriptor: SettingDescriptor) -> (value: SettingValue, source: SettingSource) {
+        // A profile's retired value is read as what it now means, never rewritten: see
+        // `SettingsRegistry.retiredValues`.
+        let name = descriptor.name
         if descriptor.isManageable,
-           let locked = managed.lockedValues[descriptor.name], descriptor.accepts(locked) {
+           let locked = managed.lockedValues[name].map({ SettingsRegistry.currentValue($0, forKeyNamed: name) }),
+           descriptor.accepts(locked) {
             return (locked, .locked)
         }
         if let user = userValues[descriptor.name], descriptor.accepts(user) {
             return (user, .user)
         }
         if descriptor.isManageable,
-           let seed = managed.managedDefaults[descriptor.name], descriptor.accepts(seed) {
+           let seed = managed.managedDefaults[name].map({ SettingsRegistry.currentValue($0, forKeyNamed: name) }),
+           descriptor.accepts(seed) {
             return (seed, .managedDefault)
         }
         return (descriptor.defaultValue, .builtIn)
@@ -168,10 +176,14 @@ public final class SettingsStore: @unchecked Sendable {
     /// Untyped setter for the places that genuinely only have a name — the Wire
     /// `setSettings` message and settings import. Validates against the registry, so
     /// it is not a hole in the typing: unknown or wrong-shaped keys are rejected.
-    public func setRaw(_ newValue: SettingValue, forKeyNamed name: String) throws {
+    ///
+    /// A retired value is accepted as what it now means, so a settings file exported by an older
+    /// build — `mode = both` — still imports, as Admin.
+    public func setRaw(_ value: SettingValue, forKeyNamed name: String) throws {
         guard let descriptor = SettingsRegistry.descriptor(named: name) else {
             throw SettingsError.unknownKey(name)
         }
+        let newValue = SettingsRegistry.currentValue(value, forKeyNamed: name)
         guard newValue.kind == descriptor.kind else {
             throw SettingsError.typeMismatch(key: name, expected: descriptor.kind, found: newValue.kind)
         }

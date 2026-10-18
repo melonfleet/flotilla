@@ -230,6 +230,25 @@ require Sources/Flotilla/MainWindowView.swift '            WindowStatusBar(model
 require Sources/Flotilla/WindowStatusBar.swift '        .frame(height: 23)'
 require Sources/Flotilla/WindowStatusBar.swift '            .layoutPriority(1)'
 
+# The setup assistant (13 October) opens on a first run only, and at its first step. Three ways to
+# force it open for a screenshot, each pinned by its known-good line: the condition on the main
+# window (an `|| true`, or no condition), the scene's launch behaviour (`.presented` would open it on
+# every launch, and it would be restored if left open at quit), and the step it starts on.
+require Sources/Flotilla/FlotillaApp.swift '            if model.needsAppearanceOnboarding { openWindow(id: SetupAssistantView.windowID) }'
+require Sources/Flotilla/FlotillaApp.swift '        .defaultLaunchBehavior(.suppressed)'
+require Sources/Flotilla/FlotillaApp.swift '        .restorationBehavior(.disabled)'
+require Sources/Flotilla/SetupAssistantView.swift '    @State private var flow = SetupFlow()'
+require Sources/FlotillaCore/SetupAssistant.swift '    public init(step: SetupStep = .welcome, done: Set<SetupStep> = []) {'
+# And "completed" is the one flag the store already had: appearance not yet chosen. A default of
+# anything but `.notChosen` would skip the assistant on every new Mac.
+require Sources/FlotillaCore/Settings/SettingsRegistry.swift '"appearance", default: .notChosen,'
+# Exactly one place opens it unasked.
+opens=$(grep -rn 'openWindow(id: SetupAssistantView.windowID)' Sources/Flotilla | wc -l | tr -d ' ')
+if [ "$opens" != "2" ]; then
+    echo "  ✗ the setup assistant is opened from $opens places; expected 2 (first run, and Help ▸ Setup Assistant…)"
+    fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo
     echo "Refusing to package: a screenshot scaffold is still in the source."

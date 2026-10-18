@@ -365,45 +365,55 @@ struct OverviewView: View {
         }
     }
 
-    /// The first things to do (Iris, 8 October; Add Host, the owner). Shown once `container` is
-    /// usable — until then the top line is its setup — and **until the owner closes it** with the X
-    /// (the owner, 9 October), which records `getStartedDismissed` in the preferences domain.
-    /// Nothing else hides it: having containers already does not.
-    @AppStorage("getStartedDismissed") private var getStartedDismissed = false
+    /// The first things to do (Iris, 8 October; Add Host, the owner), as a checklist for this Mac's
+    /// role since the setup assistant (13 October; `GetStartedItem`): an admin runs a container, adds
+    /// a host and tries a suggestion; a host is paired, is reachable, and runs a container. Each item
+    /// is ticked from what Flotilla can see, never from a click — trying a suggestion leaves no
+    /// trace, so it is never ticked.
+    ///
+    /// Shown once `container` is usable — until then the top line is its setup — and **until the
+    /// owner closes it** with the X (the owner, 9 October), which records `getStartedDismissed` in the
+    /// preferences domain. The assistant's Finish clears that, so the checklist follows it. Nothing
+    /// else hides it: having containers already does not.
+    static let getStartedDismissedKey = "getStartedDismissed"
+    @AppStorage(OverviewView.getStartedDismissedKey) private var getStartedDismissed = false
+
+    private var getStartedFacts: GetStartedItem.Facts {
+        let listening = if case .listening = model.hostMode.listener { true } else { false }
+        return GetStartedItem.Facts(containerCount: model.containers.count,
+                                    hostCount: model.hostMode.trustedHosts.count,
+                                    adminCount: model.hostMode.admins.count(where: \.isTrusted),
+                                    listening: listening)
+    }
 
     @ViewBuilder
     private var getStarted: some View {
         if !getStartedDismissed, model.runtimeUsable, model.state == .loaded {
-            // A card of its own, centred, with the first step in colour (the owner, beta 2's
-            // test): left-aligned plain buttons under a small heading read as a footnote.
+            let role = model.hostMode.mode
+            let facts = getStartedFacts
+            // A card of its own, centred (the owner, beta 2's test): left-aligned plain buttons under
+            // a small heading read as a footnote.
             VStack(spacing: 14) {
-                Image(systemName: "shippingbox")
+                Image(systemName: role == .host ? "desktopcomputer" : "shippingbox")
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(Theme.info)
                 VStack(spacing: 4) {
                     Text("Get started").font(.title2.weight(.semibold))
-                    Text("Run your first container, bring in an image, or add another Mac.")
+                    Text(role == .host ? "Three things make this Mac a working host."
+                                       : "Run your first container, add another Mac, or start from a suggestion.")
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-                HStack(spacing: 10) {
-                    Button { model.requestRunSheet() } label: {
-                        Label("Run a Container\u{2026}", systemImage: "play.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button { model.requestPullForm() } label: {
-                        Label("Pull Image\u{2026}", systemImage: "arrow.down.circle")
-                    }
-                    if model.hostMode.isAdmin {
-                        Button { model.requestAddHost() } label: {
-                            Label("Add Host\u{2026}", systemImage: "desktopcomputer")
-                        }
-                    }
-                    Button { model.requestSuggestions(.containers) } label: {
-                        Label("Try a Suggested Stack\u{2026}", systemImage: "square.grid.2x2")
+                VStack(spacing: 0) {
+                    let items = GetStartedItem.items(for: role)
+                    ForEach(items, id: \.self) { item in
+                        checklistRow(item, done: item.isDone(facts), first: item == items.first)
+                        if item != items.last { Divider().padding(.leading, 40) }
                     }
                 }
-                .controlSize(.large)
+                .background(Theme.raisedSurface.opacity(0.92), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline))
+                .frame(maxWidth: 560)
             }
             .padding(.vertical, 28)
             .padding(.horizontal, 20)
@@ -426,6 +436,68 @@ struct OverviewView: View {
                 .padding(10)
                 .help("Close Get started")
                 .accessibilityLabel("Close Get started")
+            }
+        }
+    }
+
+    /// One item: its tick, what it is, and the button that does it. The first undone item's button
+    /// is the prominent one, so the card still leads with one thing in colour.
+    private func checklistRow(_ item: GetStartedItem, done: Bool?, first: Bool) -> some View {
+        let next = GetStartedItem.items(for: model.hostMode.mode).first { $0.isDone(getStartedFacts) == false }
+        return HStack(spacing: 12) {
+            Image(systemName: done == true ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 18))
+                .foregroundStyle(done == true ? AnyShapeStyle(Theme.online) : AnyShapeStyle(.tertiary))
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(checklistTitle(item)).fontWeight(.medium)
+                Text(checklistDetail(item)).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            if item == next {
+                checklistButton(item).buttonStyle(.borderedProminent)
+            } else {
+                checklistButton(item)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(checklistTitle(item))\(done == true ? ", done" : "")")
+    }
+
+    private func checklistButton(_ item: GetStartedItem) -> some View {
+        let title: String, action: () -> Void
+        switch item {
+        case .runContainer: (title, action) = ("Run a Container\u{2026}", { model.requestRunSheet() })
+        case .addHost: (title, action) = ("Add Host\u{2026}", { model.requestAddHost() })
+        case .trySuggestion: (title, action) = ("Suggestions\u{2026}", { model.requestSuggestions(.containers) })
+        case .pairWithAdmin, .checkReachable: (title, action) = ("Host Mode\u{2026}", { model.requestHostModeSettings() })
+        }
+        return Button(title, action: action)
+    }
+
+    private func checklistTitle(_ item: GetStartedItem) -> String {
+        switch item {
+        case .runContainer: "Run a container"
+        case .addHost: "Add a host"
+        case .trySuggestion: "Try a suggested stack"
+        case .pairWithAdmin: "Pair with an admin Mac"
+        case .checkReachable: "Be reachable"
+        }
+    }
+
+    private func checklistDetail(_ item: GetStartedItem) -> String {
+        switch item {
+        case .runContainer: "On this Mac, from an image or a Dockerfile."
+        case .addHost: "Another Mac running Flotilla as a host, found on your network or by its address."
+        case .trySuggestion: "A database, a web app and more, each set up from one form."
+        case .pairWithAdmin: "On the admin Mac, choose Add Host and pick this Mac, then compare the words both show."
+        case .checkReachable:
+            if case .listening(let port) = model.hostMode.listener {
+                "Listening on port \(port), so an admin Mac can reach it."
+            } else {
+                "Not listening yet. Host Mode says why."
             }
         }
     }
