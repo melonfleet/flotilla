@@ -106,6 +106,15 @@ expect_rows Hosts      'private var content: some View { > if displayedRows.isEm
 expect_rows Registries 'private var content: some View { > if displayedRows.isEmpty { > } else { > VStack(spacing: 0) {'
 expect_rows DNS        'private var content: some View { > if case .unavailable(let reason) = model.dnsState { > } else { > VStack(spacing: 0) {'
 expect_rows Clusters   'private var content: some View { > switch model.clustersState { > case .loaded:'
+# Hosts' category headings use Containers' disclosure gutter and icon badge, rather than a
+# List Section header or a separate dot. Members keep ResourceRow's indent (checkbox outside).
+for s in Containers Hosts; do
+    require "Sources/Flotilla/${s}View.swift" 'RowGroupMark {'
+    require "Sources/Flotilla/${s}View.swift" 'RowGroupDisclosure('
+done
+require Sources/Flotilla/HostsView.swift 'RowTypeMark(systemImage: groupSymbol, kind: groupNoun) {'
+require Sources/Flotilla/HostsView.swift 'indent: grouping == .none ? 0 : 28,'
+require Sources/Flotilla/HostsView.swift 'if row.header != nil { headerRow(row) } else { hostRow(row) }'
 # Q58 (17 October): every row section is a split — the list on the left, the selected row's page on
 # the right. Pinned the same way as the rows: what the bare `content` line (the list's pane) and the
 # bare `page` line (the page) are nested under. The known-good shape is the split as the **last

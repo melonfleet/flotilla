@@ -97,3 +97,53 @@ import Testing
         #expect(try PropertyListDecoder().decode(HostCategoryBook.self, from: data) == book)
     }
 }
+
+@Suite struct HostCategorySymbolTests {
+    @Test func oldBookWithoutSymbolsStillDecodes() throws {
+        let data = Data(#"{"categories":[{"id":"site","name":"Site"},{"id":"custom","name":"Team"}],"values":{"host":{"site":"Doha"}}}"#.utf8)
+        let book = try JSONDecoder().decode(HostCategoryBook.self, from: data)
+        #expect(book.categories[0].symbol == nil)
+        #expect(book.categories[0].resolvedSymbol == "building.2")
+        #expect(book.categories[1].resolvedSymbol == HostCategory.defaultSymbol)
+        #expect(book.value(of: "site", for: "host") == "Doha")
+    }
+
+    @Test func unknownSymbolFallsBackOnLoad() throws {
+        let data = Data(#"{"id":"custom","name":"Team","symbol":"not.a.real.symbol"}"#.utf8)
+        let category = try JSONDecoder().decode(HostCategory.self, from: data)
+        #expect(category.symbol == HostCategory.defaultSymbol)
+        #expect(category.resolvedSymbol == HostCategory.defaultSymbol)
+    }
+
+    @Test func defaultAndChosenSymbolsPersist() throws {
+        var book = HostCategoryBook()
+        let added = book.addCategory(named: "Team")
+        let category = try #require(added)
+        #expect(category.symbol == nil)
+        #expect(category.resolvedSymbol == HostCategory.defaultSymbol)
+        book.setSymbol("cloud", for: category.id)
+        let data = try PropertyListEncoder().encode(book)
+        let loaded = try PropertyListDecoder().decode(HostCategoryBook.self, from: data)
+        #expect(loaded.categories[0].symbol == "cloud")
+        #expect(loaded.categories[0].resolvedSymbol == "cloud")
+        #expect(HostCategory(name: "sItE", symbol: "cloud").resolvedSymbol == "building.2")
+        #expect(HostCategory(name: "Team", symbol: "bad").resolvedSymbol == HostCategory.defaultSymbol)
+        for name in HostCategoryBook.suggestions + [HostCategoryBook.subnetName] {
+            #expect(HostCategory.builtInSymbol(for: name) != nil)
+        }
+    }
+}
+
+#if canImport(AppKit)
+import AppKit
+
+extension HostCategorySymbolTests {
+    @Test func everyOfferedAndBuiltInSymbolExists() {
+        let symbols = Set(HostCategory.symbols + Array(HostCategory.builtInSymbols.values) + [HostCategory.defaultSymbol])
+        #expect(HostCategory.symbols.count == 24)
+        for symbol in symbols {
+            #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "Missing SF Symbol: \(symbol)")
+        }
+    }
+}
+#endif

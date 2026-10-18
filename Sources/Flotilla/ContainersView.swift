@@ -1730,12 +1730,13 @@ struct ContainersView: View {
     /// corner. The glyph replaced a "Group" / "Container" chip on the first line (Kamal, 17 October).
     @ViewBuilder
     private func stateMark(_ row: ContainerRow) -> some View {
-        HStack(spacing: 0) {
+        RowGroupMark {
             if row.kind == .group, let group = row.group {
                 caret(for: group)
             } else {
                 Color.clear.frame(width: 16, height: 16)
             }
+        } mark: {
             switch row.kind {
             case .group:
                 RowTypeMark(systemImage: Section.groupSymbol, kind: "Group") {
@@ -1755,7 +1756,6 @@ struct ContainersView: View {
                 }
             }
         }
-        .frame(width: 32, alignment: .leading)
     }
 
     /// The tags and — only for another Mac's row — the host, each a chip `ChipLine` may drop.
@@ -1860,19 +1860,13 @@ struct ContainersView: View {
             Color.clear.frame(width: 16, height: 16)
         } else {
             let open = ui.expandedGroupIDs.contains(group.id)
-            Button {
+            RowGroupDisclosure(
+                open: open,
+                label: open ? "Hide the containers in \(group.name)" : "Show the containers in \(group.name)",
+                help: open ? "Hide containers" : "Show \(group.members.count) containers"
+            ) {
                 if open { ui.expandedGroupIDs.remove(group.id) } else { ui.expandedGroupIDs.insert(group.id) }
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(open ? 90 : 0))
-                    .frame(width: 16, height: 16)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(open ? "Hide the containers in \(group.name)" : "Show the containers in \(group.name)")
-            .help(open ? "Hide containers" : "Show \(group.members.count) containers")
         }
     }
 

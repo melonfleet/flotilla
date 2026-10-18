@@ -592,6 +592,14 @@ struct HostsView: View {
         }
     }
 
+    private var groupSymbol: String {
+        switch grouping {
+        case .none: HostCategory.defaultSymbol
+        case .subnet: HostCategory.builtInSymbols[HostCategoryBook.subnetName]!
+        case .category(let id): model.hostCategories.book.category(id: id)?.resolvedSymbol ?? HostCategory.defaultSymbol
+        }
+    }
+
     /// Each group's header and its hosts, in table order.
     private var groups: [(header: HostGroupHeader, rows: [HostRow])] {
         let rows = displayedRows
@@ -600,7 +608,15 @@ struct HostsView: View {
             let members = bucket.hosts.compactMap { byID[$0] }
             let title = bucket.value.map { grouping == .subnet ? $0 : "\(groupNoun) \($0)" } ?? "No \(groupNoun.lowercased())"
             return (HostGroupHeader(value: bucket.value, title: title, hostIDs: bucket.hosts,
-                                    connected: members.filter(\.connected).count), members)
+                                    connected: members.filter(\.connected).count,
+                                    unreachable: members.filter { member in
+                                        guard let peer = member.peer, peer.isTrusted,
+                                              let live = hostMode.live[peer.fingerprint],
+                                              case .failed = live.state else { return false }
+                                        return !hostMode.updating.contains(peer.fingerprint)
+                                            && !model.hostMissingContainer(peer.fingerprint)
+                                            && !model.hostRuntimeStopped(peer.fingerprint)
+                                    }.count), members)
         }
     }
 
@@ -621,19 +637,11 @@ struct HostsView: View {
     /// The disclosure caret on a group's header.
     private func caret(_ row: HostRow) -> some View {
         let open = !ui.collapsedIDs.contains(row.id)
-        return Button {
-            if open { ui.collapsedIDs.insert(row.id) } else { ui.collapsedIDs.remove(row.id) }
-        } label: {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(open ? 90 : 0))
-                .frame(width: 16, height: 16)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(open ? "Hide the hosts in \(row.name)" : "Show the hosts in \(row.name)")
-        .help(open ? "Hide hosts" : "Show \(row.header?.hostIDs.count ?? 0) hosts")
+        return RowGroupDisclosure(
+            open: open,
+            label: open ? "Hide the hosts in \(row.name)" : "Show the hosts in \(row.name)",
+            help: open ? "Hide hosts" : "Show \(row.header?.hostIDs.count ?? 0) hosts"
+        ) { toggleGroup(row.id) }
     }
 
     private func builtIns(_ row: HostRow) -> [BuiltInHostTag] {
@@ -740,7 +748,7 @@ struct HostsView: View {
         if ui.collapsedIDs.contains(id) { ui.collapsedIDs.remove(id) } else { ui.collapsedIDs.insert(id) }
     }
 
-    /// A Group By header: the caret, the connected dot, the group's name, and its totals.
+    /// A Group By header, using Containers' disclosure and icon badge, with host totals.
     private func headerRow(_ row: HostRow) -> some View {
         let count = row.header?.hostIDs.count ?? 0
         let open = !ui.collapsedIDs.contains(row.id)
@@ -754,9 +762,12 @@ struct HostsView: View {
             check: RowCheck(row.id, in: $selection, unavailable: "A heading — select the hosts under it"),
             summary: "\(row.name), group, \(parts.joined(separator: ", ")), \(open ? "expanded" : "collapsed")",
             leading: {
-                HStack(spacing: 6) {
+                RowGroupMark {
                     caret(row)
-                    if let header = row.header { HostGroupDot(header: header) }
+                } mark: {
+                    RowTypeMark(systemImage: groupSymbol, kind: groupNoun) {
+                        if let header = row.header { HostGroupDot(header: header) }
+                    }
                 }
             },
             chips: { EmptyView() },
@@ -777,7 +788,15 @@ struct HostsView: View {
                             unavailable: row.isThisMac ? "This Mac — select it to act on it" : nil),
             indent: grouping == .none ? 0 : 28,
             summary: rowSummary(row, facts: facts),
-            leading: { HostStatusDot(model: model, row: row) },
+            leading: {
+                RowGroupMark {
+                    Color.clear
+                } mark: {
+                    RowTypeMark(systemImage: "desktopcomputer", kind: "Host") {
+                        HostStatusDot(model: model, row: row)
+                    }
+                }
+            },
             chips: { rowChips(row) },
             actions: { rowActions(for: row) })
     }

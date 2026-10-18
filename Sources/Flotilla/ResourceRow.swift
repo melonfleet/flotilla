@@ -365,3 +365,39 @@ struct RowKindGlyph: View {
             .accessibilityHidden(true)
     }
 }
+
+/// The disclosure gutter and mark used by Containers and Hosts, including member rows.
+struct RowGroupMark<Disclosure: View, Mark: View>: View {
+    @ViewBuilder var disclosure: Disclosure
+    @ViewBuilder var mark: Mark
+
+    var body: some View {
+        HStack(spacing: 0) {
+            disclosure.frame(width: 16, height: 16)
+            mark
+        }
+        .frame(width: 32, alignment: .leading)
+    }
+}
+
+/// Containers' disclosure button, shared with host category groups.
+struct RowGroupDisclosure: View {
+    let open: Bool
+    let label: String
+    let help: String
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(open ? 90 : 0))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .help(help)
+    }
+}

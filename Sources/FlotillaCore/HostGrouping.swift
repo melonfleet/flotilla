@@ -8,10 +8,50 @@ import Foundation
 public struct HostCategory: Codable, Sendable, Equatable, Identifiable, Hashable {
     public let id: String
     public var name: String
+    /// Optional for books saved before category icons existed. Use `resolvedSymbol` to draw it.
+    public var symbol: String?
 
-    public init(id: String = UUID().uuidString, name: String) {
+    public static let defaultSymbol = "square.stack.3d.up"
+    /// The app offers only these symbols; decoding rejects names outside this verified set.
+    public static let symbols = [
+        "square.stack.3d.up", "building.2", "building", "server.rack", "network", "globe",
+        "tag", "shippingbox", "house", "cloud", "cpu", "externaldrive",
+        "antenna.radiowaves.left.and.right", "location", "point.3.connected.trianglepath.dotted",
+        "door.left.hand.closed", "target", "person", "person.3", "folder", "wrench.and.screwdriver",
+        "bolt", "lock", "desktopcomputer"
+    ]
+    /// The seeded categories and the built-in suggestions have fixed glyphs, including Subnet.
+    public static let builtInSymbols = [
+        "Site": "building.2", "Subnet": "point.3.connected.trianglepath.dotted",
+        "Building": "building", "Room": "door.left.hand.closed", "Rack": "server.rack",
+        "VLAN": "network", "Purpose": "target", "Owner": "person", "Department": "person.3"
+    ]
+
+    public static func builtInSymbol(for name: String) -> String? {
+        builtInSymbols.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
+
+    public var resolvedSymbol: String {
+        Self.builtInSymbol(for: name) ?? Self.validatedSymbol(symbol) ?? Self.defaultSymbol
+    }
+
+    private static func validatedSymbol(_ symbol: String?) -> String? {
+        symbol.map { symbols.contains($0) ? $0 : defaultSymbol }
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, symbol }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        symbol = Self.validatedSymbol(try values.decodeIfPresent(String.self, forKey: .symbol))
+    }
+
+    public init(id: String = UUID().uuidString, name: String, symbol: String? = nil) {
         self.id = id
         self.name = name
+        self.symbol = Self.validatedSymbol(symbol)
     }
 }
 
@@ -76,9 +116,9 @@ public struct HostCategoryBook: Codable, Sendable, Equatable {
     // MARK: Changing
 
     @discardableResult
-    public mutating func addCategory(named raw: String) -> HostCategory? {
+    public mutating func addCategory(named raw: String, symbol: String? = nil) -> HostCategory? {
         guard problem(withName: raw) == nil else { return nil }
-        let category = HostCategory(name: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        let category = HostCategory(name: raw.trimmingCharacters(in: .whitespacesAndNewlines), symbol: symbol)
         categories.append(category)
         return category
     }
@@ -89,6 +129,11 @@ public struct HostCategoryBook: Codable, Sendable, Equatable {
               let index = categories.firstIndex(where: { $0.id == categoryID }) else { return false }
         categories[index].name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return true
+    }
+
+    public mutating func setSymbol(_ symbol: String?, for categoryID: String) {
+        guard let index = categories.firstIndex(where: { $0.id == categoryID }) else { return }
+        categories[index].symbol = symbol.map { HostCategory.symbols.contains($0) ? $0 : HostCategory.defaultSymbol }
     }
 
     /// Removes the category and every host's value in it.

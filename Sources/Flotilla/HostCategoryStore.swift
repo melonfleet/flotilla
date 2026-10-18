@@ -45,12 +45,17 @@ final class HostCategoryStore {
     // MARK: Writing
 
     @discardableResult
-    func addCategory(named name: String) -> HostCategory? {
+    func addCategory(named name: String, symbol: String? = nil) -> HostCategory? {
         defer { persist() }
-        return book.addCategory(named: name)
+        return book.addCategory(named: name, symbol: symbol)
     }
 
     func rename(_ category: HostCategory, to name: String) { if book.rename(category.id, to: name) { persist() } }
+
+    func setSymbol(_ symbol: String, for category: HostCategory) {
+        book.setSymbol(symbol, for: category.id)
+        persist()
+    }
 
     func remove(_ category: HostCategory) { book.removeCategory(category.id); persist() }
 

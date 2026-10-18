@@ -11,21 +11,19 @@ struct HostGroupHeader: Hashable {
     let title: String
     let hostIDs: [String]
     let connected: Int
+    let unreachable: Int
 }
 
-/// What a header row's dot says about its hosts: all connected, some, or none.
+/// Green when any member is connected, red when all are unreachable, grey otherwise.
 struct HostGroupDot: View {
     let header: HostGroupHeader
 
     var body: some View {
         Group {
-            if header.connected == header.hostIDs.count {
+            if header.connected > 0 {
                 Circle().fill(Theme.online)
-            } else if header.connected > 0 {
-                ZStack {
-                    Circle().strokeBorder(Theme.online, lineWidth: 1.2)
-                    Circle().fill(Theme.online).mask(HStack(spacing: 0) { Rectangle(); Color.clear })
-                }
+            } else if header.unreachable == header.hostIDs.count {
+                Circle().fill(Theme.danger)
             } else {
                 Circle().fill(Color.secondary)
             }
@@ -142,6 +140,7 @@ struct HostCategoriesSheet: View {
     let dismiss: () -> Void
 
     @State private var newName = ""
+    @State private var newSymbol = HostCategory.defaultSymbol
     @State private var removing: HostCategory?
 
     private var problem: String? {
@@ -156,7 +155,7 @@ struct HostCategoriesSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 List {
                     HStack {
-                        Image(systemName: "network").foregroundStyle(.secondary).frame(width: 16)
+                        Image(systemName: HostCategory.builtInSymbols[HostCategoryBook.subnetName]!).foregroundStyle(.secondary).frame(width: 16)
                         Text(HostCategoryBook.subnetName)
                         Spacer()
                         Text("Filled in by Flotilla").font(.caption).foregroundStyle(.tertiary)
@@ -171,6 +170,11 @@ struct HostCategoriesSheet: View {
                 .listStyle(.bordered)
 
                 HStack {
+                    if let fixed = HostCategory.builtInSymbol(for: newName.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                        Image(systemName: fixed).frame(width: 24).help("Built-in category icon")
+                    } else {
+                        CategorySymbolPicker(symbol: $newSymbol)
+                    }
                     TextField("New category", text: $newName)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(add)
@@ -210,8 +214,9 @@ struct HostCategoriesSheet: View {
     }
 
     private func add() {
-        guard problem == nil, store.addCategory(named: newName) != nil else { return }
+        guard problem == nil, store.addCategory(named: newName, symbol: newSymbol) != nil else { return }
         newName = ""
+        newSymbol = HostCategory.defaultSymbol
     }
 
     /// One category: its name, editable in place, and Remove.
@@ -225,6 +230,13 @@ struct HostCategoriesSheet: View {
             HStack {
                 Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary).frame(width: 16)
                     .help("Drag to reorder")
+                if HostCategory.builtInSymbol(for: category.name) != nil {
+                    Image(systemName: category.resolvedSymbol).frame(width: 24).help("Built-in category icon")
+                } else {
+                    CategorySymbolPicker(symbol: Binding(
+                        get: { category.resolvedSymbol },
+                        set: { store.setSymbol($0, for: category) }))
+                }
                 TextField("Name", text: $name)
                     .textFieldStyle(.plain)
                     .onSubmit { commit() }
@@ -311,5 +323,22 @@ struct HostCategoryValueField: View {
     private func commit() {
         guard text.trimmingCharacters(in: .whitespaces) != (store.value(category, for: host) ?? "") else { return }
         store.setValue(text, of: category, for: [host])
+    }
+}
+
+/// The same curated choices on creation and editing; built-in categories keep their fixed icon.
+private struct CategorySymbolPicker: View {
+    @Binding var symbol: String
+
+    var body: some View {
+        Picker("Icon", selection: $symbol) {
+            ForEach(HostCategory.symbols, id: \.self) { name in
+                Label(name.replacingOccurrences(of: ".", with: " "), systemImage: name).tag(name)
+            }
+        }
+        .labelsHidden()
+        .frame(width: 48)
+        .help("Category icon")
+        .accessibilityLabel("Category icon")
     }
 }
