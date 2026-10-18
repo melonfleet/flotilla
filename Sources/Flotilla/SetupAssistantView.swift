@@ -545,7 +545,7 @@ struct SetupAssistantView: View {
 
     private var finishPage: some View {
         VStack(alignment: .leading, spacing: 18) {
-            heading("You're Set Up", "Here's where this Mac stands. Overview has a checklist for what's next.")
+            heading("You're Set Up", "Here's where this Mac stands. You can change any of it later in Settings.")
             VStack(spacing: 0) {
                 summaryRow("Role", role.title, ok: true)
                 summaryRow("Appearance", "\(appearanceTitle) · \(model.themeChoice.light.title) and "
