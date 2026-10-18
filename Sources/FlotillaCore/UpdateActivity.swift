@@ -1,8 +1,9 @@
 import Foundation
 
-/// Which updater is speaking: Flotilla itself (Sparkle) or the suggestions library.
+/// Which updater is speaking: Flotilla itself (Sparkle), the suggestions library, or the library's
+/// daily vulnerability report (a separate download with a separate key, so a separate source).
 public enum UpdateSource: Hashable, Sendable, CaseIterable {
-    case app, library
+    case app, library, report
 }
 
 /// One step of an update check, in words. Sparkle's delegate and the library fetch each report the
@@ -51,6 +52,8 @@ public enum UpdateStage: Equatable, Sendable {
         case (.downloading(let version?), .app): "Downloading Flotilla \(version)…"
         case (.downloading, .app): "Downloading the update…"
         case (.downloading, .library): "Downloading library…"
+        case (.checking, .report): "Checking vulnerability report…"
+        case (.downloading, .report), (.downloaded, .report): "Downloading vulnerability report…"
         case (.downloaded, .app): "Downloaded the update"
         case (.downloaded, .library): "Downloaded library…"
         case (.verifying, _): "Verifying…"
@@ -59,6 +62,7 @@ public enum UpdateStage: Equatable, Sendable {
         case (.readyToInstall(let version), _): "Flotilla \(version) is ready to install"
         case (.logos(let done, let total), _): "Downloading logos (\(done) of \(total))…"
         case (.upToDate, .app): "Flotilla is up to date"
+        case (.upToDate, .report): "Vulnerability report up to date"
         case (.upToDate(let version?), .library): "Suggestions up to date (\(version))"
         case (.upToDate(nil), .library): "Suggestions up to date"
         case (.updated(let version, let count), _): "Updated to \(version), \(count) suggestions"

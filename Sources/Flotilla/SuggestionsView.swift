@@ -302,6 +302,7 @@ struct SuggestionsView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                    SuggestionAdvisory(model: model, entry: entry)
                     if let licence = entry.licenceNote {
                         Label(licence, systemImage: "doc.text").font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
