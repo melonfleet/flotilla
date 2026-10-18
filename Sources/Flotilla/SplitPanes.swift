@@ -151,13 +151,10 @@ struct SplitPanes<Primary: View, Detail: View>: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: layout.full)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: layout.overlay)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: layout.listOnly)
-            // Esc closes an open page in list only. A form's own Cancel is a key equivalent and
-            // takes Esc first; the window bar's search box, while it has focus, takes it before this.
-            .onKeyPress(.escape) {
-                guard let closing else { return .ignored }
-                closing()
-                return .handled
-            }
+            // Esc closes an open page in list only. `.onKeyPress` and `.onExitCommand` cannot do it:
+            // both need SwiftUI focus inside this view, and the list's rows are an AppKit table that
+            // keeps first responder, so Esc never reached them. See `EscapeCloser`.
+            .background { if layout.overlay, let closing { EscapeCloser(close: closing) } }
             .focusedSceneValue(\.paneModeCommand, PaneModeCommand(mode: mode, toggle: toggleMode))
         }
         // A newly chosen item is shown, in a narrow window, rather than left behind the list.
@@ -305,6 +302,68 @@ struct SplitPanes<Primary: View, Detail: View>: View {
                 storedWidth = Double(clamped(rememberedWidth(total) + step, in: total))
             }
     }
+}
+
+// MARK: - Esc
+
+/// Closes the overlaid page on Esc while the list has focus. A local monitor, installed only while
+/// it is in the tree (the page lies over the list), because the list's `NSTableView` is first
+/// responder and SwiftUI's key handlers on an ancestor never see its keys.
+///
+/// It yields to anything that owns Esc. Focus anywhere but the list (the window bar's search box, a
+/// field or button in the page) is left alone. With the list focused, the window gets the key
+/// equivalent first, so a form's Cancel (`.cancelAction`) still fires and only an Esc nothing claims
+/// closes the page.
+private struct EscapeCloser: NSViewRepresentable {
+    let close: () -> Void
+
+    @MainActor final class Coordinator {
+        var close: () -> Void = {}
+        var monitor: Any?
+        weak var view: NSView?
+
+        func start() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let window = self.view?.window, event.window === window,
+                      event.keyCode == 53,
+                      event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+                      Self.listHasFocus(window) else { return event }
+                if window.performKeyEquivalent(with: event) { return nil }
+                self.close()
+                return nil
+            }
+        }
+
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        /// The list, or nothing in particular, is first responder.
+        private static func listHasFocus(_ window: NSWindow) -> Bool {
+            guard let responder = window.firstResponder, responder !== window else { return true }
+            var view = responder as? NSView
+            while let current = view {
+                if current is NSTableView { return true }
+                view = current.superview
+            }
+            return false
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.close = close
+        context.coordinator.start()
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) { context.coordinator.close = close }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.stop() }
 }
 
 // MARK: - Layout mode
