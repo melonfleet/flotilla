@@ -15,44 +15,12 @@ import FlotillaCore
 ///   it and the allowlist checks it like anything typed. She has no tool that changes anything, so
 ///   nothing a container's name or label says can make her do something.
 
-/// One message in a chat with Greta.
-struct GretaMessage: Codable, Identifiable, Equatable {
-    enum Role: String, Codable { case user, greta }
-    var id = UUID()
-    var date = Date()
-    var role: Role
-    var text: String
-    /// A container she drafted, for the Run form.
-    var draft: GretaDraftRecord?
-    /// She couldn't answer; the text says why.
-    var isProblem = false
-    /// Offers Suggestions, for something that needs a stack. Optional so older chats still load.
-    var opensStacks: Bool?
-}
-
-/// A draft as saved with its chat — `RunPrefill` itself isn't stored.
-struct GretaDraftRecord: Codable, Equatable {
-    var image: String
-    var name: String
-    var ports: [String]
-    var env: [String]
-    var volumes: [String]
-
-    var prefill: RunPrefill { RunPrefill(draftImage: image, name: name, ports: ports, env: env, volumes: volumes) }
-}
-
 extension GretaDraftRecord {
+    var prefill: RunPrefill { RunPrefill(draftImage: image, name: name, ports: ports, env: env, volumes: volumes) }
+
     init(_ draft: GretaDraft) {
         self.init(image: draft.image, name: draft.name, ports: draft.ports, env: draft.env, volumes: draft.volumes)
     }
-}
-
-/// One conversation, titled by its first question.
-struct GretaConversation: Codable, Identifiable, Equatable {
-    var id = UUID()
-    var started = Date()
-    var title: String
-    var messages: [GretaMessage] = []
 }
 
 @MainActor
@@ -91,7 +59,7 @@ final class Greta {
                 if GretaText.mentionsSecret(chat.title) { chat.title = "Hidden message"; scrubbed = true }
                 return chat
             }
-            currentID = conversations.first?.id
+            currentID = orderedConversations.first(where: { !$0.isArchived })?.id
             if scrubbed { save() }
         }
     }
@@ -106,6 +74,38 @@ final class Greta {
     static var defaultFile: URL? {
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
         return support.appendingPathComponent(SettingsPersistence.domain).appendingPathComponent("greta-chats.json")
+    }
+
+    var orderedConversations: [GretaConversation] { GretaConversation.ordered(conversations) }
+
+    func pin(_ ids: Set<UUID>, pinned: Bool) {
+        for index in conversations.indices where ids.contains(conversations[index].id) {
+            conversations[index].isPinned = pinned
+        }
+        save()
+    }
+
+    func archive(_ ids: Set<UUID>, archived: Bool) {
+        for index in conversations.indices where ids.contains(conversations[index].id) {
+            conversations[index].isArchived = archived
+        }
+        save()
+    }
+
+    func rename(_ id: UUID, title: String) {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        conversations[index].title = GretaText.mentionsSecret(title) ? "Hidden message" : String(title.prefix(120))
+        save()
+    }
+
+    func duplicate(_ id: UUID) {
+        guard var chat = conversations.first(where: { $0.id == id }) else { return }
+        chat.id = UUID()
+        chat.title += " (copy)"
+        conversations.insert(chat, at: 0)
+        currentID = chat.id
+        save()
     }
 
     var current: GretaConversation? { conversations.first { $0.id == currentID } }
@@ -130,7 +130,7 @@ final class Greta {
 
     func newConversation() {
         // An empty chat is reused rather than piled up.
-        if let current, current.messages.isEmpty { return }
+        if let current, current.messages.isEmpty, !current.isArchived { return }
         let chat = GretaConversation(title: "New chat")
         conversations.insert(chat, at: 0)
         currentID = chat.id
@@ -139,7 +139,7 @@ final class Greta {
 
     func delete(_ id: UUID) {
         conversations.removeAll { $0.id == id }
-        if currentID == id { currentID = conversations.first?.id }
+        if currentID == id { currentID = orderedConversations.first(where: { !$0.isArchived })?.id }
         save()
     }
 
@@ -204,7 +204,7 @@ final class Greta {
 
     private func append(_ message: GretaMessage, to id: UUID) {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        if conversations[index].messages.isEmpty, message.role == .user {
+        if conversations[index].messages.isEmpty, conversations[index].title == "New chat", message.role == .user {
             conversations[index].title = message.text == GretaText.hiddenMessage ? "Hidden message" : String(message.text.prefix(60))
         }
         conversations[index].messages.append(message)

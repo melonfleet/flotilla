@@ -75,6 +75,8 @@ struct ResourceRow<Leading: View, Chips: View, Actions: View>: View {
     let title: String
     /// The name's tooltip, when there is more to say than the name.
     var titleHelp: String?
+    /// Optional first-line date, aligned to the trailing edge.
+    var trailingText: String?
     /// The second line. One line, truncating at the tail.
     let detail: String
     var detailHelp: String?
@@ -149,6 +151,9 @@ struct ResourceRow<Leading: View, Chips: View, Actions: View>: View {
                     .layoutPriority(1)
                 ChipLine { chips }
                 Spacer(minLength: 0)
+                if let trailingText {
+                    Text(trailingText).font(.caption2).foregroundStyle(.secondary).fixedSize()
+                }
             }
             Text(detail)
                 .font(.caption)

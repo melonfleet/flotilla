@@ -132,8 +132,7 @@ struct MainWindowView: View {
                 row(.activity, count: model.activity.isEmpty ? nil : model.activity.count)
                 row(.logs, count: nil)
             }
-            // Greta (Q52), when she's on: her face, and "Ask Greta" beside it when expanded. The
-            // window bar's glass made her too faint there (the owner, 12 October).
+            // Greta (Q52) uses the same plain SF Symbol treatment as her sidebar neighbours.
             if model.gretaEnabled {
                 SwiftUI.Section { gretaRow }
             }
@@ -225,13 +224,13 @@ struct MainWindowView: View {
     private var gretaRow: some View {
         Group {
             if railed {
-                GretaAvatarView(style: model.gretaAvatar, size: railIconSize + 10, tiled: true)
+                Image(systemName: Section.greta.systemImage)
+                    .font(.system(size: railIconSize))
                     .frame(maxWidth: .infinity, minHeight: 26)
                     .help("Ask Greta (⌘G opens her over any page)")
             } else {
                 HStack(spacing: 7) {
-                    GretaAvatarView(style: model.gretaAvatar, size: 22, tiled: true)
-                    Text("Ask Greta")
+                    Label("Ask Greta", systemImage: Section.greta.systemImage)
                     Spacer(minLength: 6)
                     Text("⌘G").font(.caption).foregroundStyle(.tertiary)
                 }

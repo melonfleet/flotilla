@@ -1,13 +1,33 @@
 import SwiftUI
 import FlotillaCore
 
-/// Greta's full page (DECISIONS Q52), from "Ask Greta" in the sidebar: chat history on the left,
-/// the current chat on the right. ⌘G opens the same chat floating over any page (`GretaOverlay`).
+/// Greta's local history uses the same rows, selection and split as the fleet sections.
 struct GretaView: View {
     let model: AppModel
     let go: (Section) -> Void
 
+    @State private var selection: Set<UUID> = []
+    @State private var pane = PaneState()
+    @State private var search = ""
+    @State private var archived = false
+    @State private var deleting: Set<UUID> = []
+    @State private var confirmingDelete = false
+    @State private var renaming: UUID?
+    @State private var newTitle = ""
+    @State private var showingRename = false
+
     private var greta: Greta { model.greta }
+    private var chats: [GretaConversation] {
+        greta.orderedConversations.filter {
+            $0.isArchived == archived && (search.isEmpty || $0.title.localizedStandardContains(search)
+                || $0.messages.contains { $0.text.localizedStandardContains(search) })
+        }
+    }
+    private var existingIDs: Set<UUID> { Set(greta.conversations.map(\.id)) }
+    private var selectedChats: [GretaConversation] {
+        greta.orderedConversations.filter { selection.contains($0.id) }
+    }
+    private var shownChat: GretaConversation? { selection.count == 1 ? selectedChats.first : nil }
 
     var body: some View {
         Group {
@@ -19,50 +39,172 @@ struct GretaView: View {
                 } actions: {
                     Button("Turn On in Settings") { go(.settings) }.buttonStyle(.borderedProminent)
                 }
-            } else if let reason = greta.unavailableReason {
-                ContentUnavailableView("Greta isn't available", systemImage: "exclamationmark.triangle",
-                                       description: Text(reason))
             } else {
-                HStack(spacing: 0) {
-                    history.frame(width: 230)
-                    Divider()
-                    GretaChatView(model: model, go: go, compact: false)
+                // History remains available even when the on-device model cannot answer.
+                SplitPanes(list: "greta", pane: pane, showing: shownChat?.id) {
+                    history
+                } detail: {
+                    page
                 }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .selection($selection, confinedTo: Set(chats.map(\.id)), showing: existingIDs)
+        .onAppear { selection = greta.currentID.map { [$0] } ?? [] }
+        .onChange(of: selection) { _, ids in
+            greta.currentID = ids.count == 1 ? ids.first : nil
+        }
+        .onChange(of: greta.currentID) { _, id in
+            if let id, selection != [id] { selection = [id] }
+        }
+        .confirmationDialog("Delete \(deleting.count == 1 ? "conversation" : "conversations")?",
+                            isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                for id in deleting { greta.delete(id) }
+                deleting = []
+            }
+            Button("Cancel", role: .cancel) { deleting = [] }
+        } message: {
+            Text("This permanently deletes the selected chat history from this Mac.")
+        }
+        .alert("Rename Conversation", isPresented: $showingRename) {
+            TextField("Title", text: $newTitle).accessibilityLabel("Conversation title")
+            Button("Save") { if let renaming { greta.rename(renaming, title: newTitle) } }
+                .disabled(newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
+    }
+
+    private var history: some View {
+        VStack(spacing: 0) {
+            SectionToolbar(search: $search, searchPrompt: "Search conversations", matches: chats.count) {
+                SelectAllCheckbox(selection: $selection, ids: chats.map(\.id), noun: "conversations")
+                Picker("Conversations", selection: $archived) {
+                    Text("Active").tag(false)
+                    Text("Archived").tag(true)
+                }
+                .pickerStyle(.menu).fixedSize()
+            } trailing: {
+                ToolbarIconButton(systemImage: "square.and.pencil", label: "New conversation") {
+                    archived = false
+                    search = ""
+                    greta.newConversation()
+                    if let id = greta.currentID { selection = [id] }
+                    pane.reveal()
+                }
+            }
+            if selection.count > 1 {
+                BulkActionBar(title: "\(selection.count) selected") { bulkActions(for: selection).labelStyle(.iconOnly) }
+            }
+            Divider()
+            SelectionRevealingList(selection: selection) {
+                List(chats, selection: $selection) { chat in
+                    conversationRow(chat).listRowInsets(EdgeInsets())
+                }
+                .listStyle(.inset)
+                .contextMenu(forSelectionType: UUID.self) { ids in
+                    rowContextMenu(for: ids)
+                } primaryAction: { ids in
+                    if ids.count == 1 { selection = ids; pane.reveal() }
+                }
+                .overlay {
+                    if chats.isEmpty {
+                        Text(search.isEmpty ? "No \(archived ? "archived" : "active") conversations" : "No matching conversations")
+                            .font(.caption).foregroundStyle(.secondary).padding()
+                            .allowsHitTesting(false)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private var history: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Chats").font(.headline)
-                Spacer()
-                Button { greta.newConversation() } label: { Image(systemName: "square.and.pencil") }
-                    .buttonStyle(.borderless)
-                    .help("New chat")
-                    .accessibilityLabel("New chat")
-            }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            List(selection: Binding(get: { greta.currentID }, set: { greta.currentID = $0 })) {
-                ForEach(greta.conversations) { chat in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(chat.title).lineLimit(1)
-                        Text(RelativeDate.relativeToNow(chat.messages.last?.date ?? chat.started))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    .tag(chat.id)
-                    .contextMenu {
-                        Button("Delete Chat", role: .destructive) { greta.delete(chat.id) }
-                    }
+    private func conversationRow(_ chat: GretaConversation) -> some View {
+        let preview = chat.messages.last?.text.replacingOccurrences(of: "\n", with: " ") ?? "No messages yet"
+        return ResourceRow(
+            title: chat.title,
+            trailingText: (chat.isPinned ? "📌 " : "") + RelativeDate.relativeToNow(chat.lastActivity),
+            detail: preview,
+            selected: selection.contains(chat.id),
+            check: RowCheck(chat.id, in: $selection),
+            summary: "\(chat.title), \(chat.isPinned ? "pinned, " : "")\(preview)",
+            leading: { RowLeadingMark { RowKindGlyph(systemImage: "bubble.left.and.bubble.right") } },
+            chips: { EmptyView() },
+            actions: { overflow(for: chat) })
+    }
+
+    private func overflow(for chat: GretaConversation) -> some View {
+        Menu {
+            menu(for: chat)
+        } label: { RowOverflowLabel() }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help("More actions for \(chat.title)")
+        .accessibilityLabel("More actions for \(chat.title)")
+    }
+
+    @ViewBuilder
+    private func menu(for chat: GretaConversation) -> some View {
+        Button(chat.isPinned ? "Unpin" : "Pin") { greta.pin([chat.id], pinned: !chat.isPinned) }
+        Button("Rename…") { renaming = chat.id; newTitle = chat.title; showingRename = true }
+        Button("Duplicate") { greta.duplicate(chat.id) }
+        Button(chat.isArchived ? "Unarchive" : "Archive") { greta.archive([chat.id], archived: !chat.isArchived) }
+        Divider()
+        Button("Delete…", role: .destructive) { requestDelete([chat.id]) }
+    }
+
+    @ViewBuilder
+    private func rowContextMenu(for ids: Set<UUID>) -> some View {
+        if ids.count == 1, let chat = greta.conversations.first(where: { ids.contains($0.id) }) {
+            menu(for: chat)
+        } else if ids.count > 1 {
+            bulkActions(for: ids)
+        }
+    }
+
+    @ViewBuilder
+    private func bulkActions(for ids: Set<UUID>) -> some View {
+        Button { greta.pin(ids, pinned: true) } label: { Label("Pin", systemImage: "pin") }
+            .help("Pin selected conversations")
+        Button { greta.archive(ids, archived: !archived) } label: {
+            Label(archived ? "Unarchive" : "Archive", systemImage: "archivebox")
+        }
+        .help(archived ? "Unarchive selected conversations" : "Archive selected conversations")
+        Button(role: .destructive) { requestDelete(ids) } label: { Label("Delete…", systemImage: "trash") }
+            .help("Delete selected conversations")
+    }
+
+    private func requestDelete(_ ids: Set<UUID>) {
+        deleting = ids
+        confirmingDelete = true
+    }
+
+    @ViewBuilder
+    private var page: some View {
+        if let chat = shownChat {
+            VStack(spacing: 0) {
+                HStack {
+                    Text(chat.title).font(.headline).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    overflow(for: chat)
+                    DetailStepper()
                 }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                Divider()
+                GretaChatView(model: model, go: go, compact: false)
+                    .id(chat.id)
             }
-            .listStyle(.sidebar)
-            .overlay {
-                if greta.conversations.isEmpty {
-                    Text("No chats yet").font(.caption).foregroundStyle(.secondary)
-                }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .paneStep("conversation", "conversations", order: chats.map(\.id), current: chat.id) {
+                selection = [$0]
+                pane.reveal()
             }
+        } else if selection.count > 1 {
+            SelectionSummaryPane(title: "\(selection.count) conversations selected", systemImage: "bubble.left.and.bubble.right",
+                                 names: selectedChats.map(\.title)) { bulkActions(for: selection).labelStyle(.iconOnly) }
+        } else {
+            PaneEmptyState(title: "Choose a conversation", systemImage: "bubble.left.and.bubble.right",
+                           description: greta.unavailableReason ?? "Select a conversation or start a new one to ask Greta.")
         }
     }
 }
@@ -76,6 +218,7 @@ struct GretaChatView: View {
     var onOpenDraft: (() -> Void)? = nil
 
     @State private var text = ""
+    @State private var composerPaneWidth: CGFloat = 360
     @FocusState private var focused: Bool
 
     private var greta: Greta { model.greta }
@@ -86,6 +229,10 @@ struct GretaChatView: View {
             ScrollViewReader { reader in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
+                        if let reason = greta.unavailableReason {
+                            Label(reason, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.secondary)
+                        }
                         if (greta.current?.messages ?? []).isEmpty { welcome }
                         ForEach(greta.current?.messages ?? []) { message in
                             bubble(message).id(message.id)
@@ -112,8 +259,13 @@ struct GretaChatView: View {
                 .onAppear { reader.scrollTo(greta.current?.messages.last?.id, anchor: .bottom) }
             }
             Divider()
-            composer.padding(compact ? 10 : 14)
+            composer
+                .frame(width: min(720, composerPaneWidth * 0.8))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, compact ? 10 : 14)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { composerPaneWidth = $0 }
         .onAppear { focused = true }
     }
 
@@ -145,20 +297,23 @@ struct GretaChatView: View {
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("Ask Greta, or describe a container to run…", text: $text, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                    .focused($focused)
-                    .onSubmit(send)
-                Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .buttonStyle(.borderless)
-                    .disabled(greta.working || text.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .help("Send")
-                    .accessibilityLabel("Send")
-            }
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("Ask Greta…", text: $text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...4)
+                .focused($focused)
+                .accessibilityLabel("Message to Greta")
+                .onSubmit(send)
+                .padding(.vertical, 5)
+            Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
+                .buttonStyle(.borderless)
+                .disabled(greta.working || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .help("Send")
+                .accessibilityLabel("Send")
         }
+        .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 5)
+        .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Theme.hairline))
     }
 
     private func send() {
