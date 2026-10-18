@@ -110,6 +110,8 @@ private struct PaneFollowing<ID: Hashable>: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // How the list-only page closes: by emptying the selection this modifier is following.
+            .environment(\.paneClearSelection, { selection = [] })
             .onChange(of: selection, initial: true) { _, chosen in
                 if let answer = restored {
                     restored = nil

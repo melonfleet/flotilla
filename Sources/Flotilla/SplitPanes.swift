@@ -36,6 +36,18 @@ import SwiftUI
 /// widened out of the fold forgets that the list was showing, so narrowing it again shows the page —
 /// the rule for a narrow window — rather than hiding a page that may have been edited meanwhile.
 ///
+/// **Two panes, or list only** (Kamal, 18 October). Each screen remembers, under `paneMode.<key>`
+/// beside its `paneWidth.<key>`, whether it is the split above or just the rows. In list only the
+/// list takes the whole width and a chosen row's page **slides in over the list's trailing edge**,
+/// exactly where it would sit in the split — the remembered divider, the same width — rather than
+/// beside the list. Over, because beside would squeeze the list and reflow every row to a narrower
+/// layout the moment you clicked one, so the row you clicked would move under the pointer; over, the
+/// rows stay where they are and the page covers only what it needs. The page's ✕ and Esc close it
+/// and clear the selection, through the same form guard as choosing another row. Two or more ticked
+/// rows open no page (there is no one page to show): the bulk bar is the way to act on them.
+/// Both are one view in the tree whichever mode is on, so changing mode never rebuilds a page and
+/// its unsaved form.
+///
 /// **Every pane is bounded.** Both are given the whole height and an exact width; neither sizes the
 /// window (`CLAUDE.md`, "one unbounded child can scroll the whole window").
 struct SplitPanes<Primary: View, Detail: View>: View {
@@ -52,8 +64,12 @@ struct SplitPanes<Primary: View, Detail: View>: View {
     private let item: AnyHashable?
     private let primary: Primary
     private let detail: Detail
+    private let screen: String
+    /// Clears the screen's selection, for screens that do not use `paneFollows` (which supplies it).
+    private let clearing: (() -> Void)?
 
     @AppStorage private var storedWidth: Double
+    @AppStorage private var storedMode: String
     /// The width while a drag is in progress; written to `storedWidth` when it ends, so a drag is
     /// one write rather than one per frame.
     @State private var dragWidth: CGFloat?
@@ -62,61 +78,70 @@ struct SplitPanes<Primary: View, Detail: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Optional, like everywhere else: a split drawn outside the main window has no guard to ask.
     @Environment(FormGuard.self) private var formGuard: FormGuard?
+    @Environment(\.paneClearSelection) private var inheritedClear
+    @Environment(\.themeChoice) private var themes
 
     /// A row section's split: the list on the left at its remembered width, the selected item's
     /// page on the right.
     init(list key: String, pane: PaneState, showing item: AnyHashable?,
+         clearing: (() -> Void)? = nil,
          @ViewBuilder primary: () -> Primary, @ViewBuilder detail: () -> Detail) {
         self.init(key, sizing: .list, minPrimary: 260, minDetail: 360,
-                  pane: pane, item: item, primary: primary, detail: detail)
+                  pane: pane, item: item, clearing: clearing, primary: primary, detail: detail)
     }
 
     /// Suggestions, the Docker Hub browser and Notifications: a flexible list at least 240 wide and
     /// a detail pane of at least 260, split in the centre until it is dragged.
     init(_ key: String, sizing: Sizing = .detail,
          minPrimary: CGFloat = 240, minDetail: CGFloat = 260,
-         pane: PaneState? = nil, item: AnyHashable? = nil,
+         pane: PaneState? = nil, item: AnyHashable? = nil, clearing: (() -> Void)? = nil,
          @ViewBuilder primary: () -> Primary, @ViewBuilder detail: () -> Detail) {
         self.sizing = sizing
         self.minPrimary = minPrimary
         self.minDetail = minDetail
         self.pane = pane
         self.item = item
+        self.screen = key
+        self.clearing = clearing
         self.primary = primary()
         self.detail = detail()
         // 0 means "never dragged": the divider then sits in the centre (Kamal, 17 October), so
         // neither pane starts squeezed. Once dragged, the width is remembered for this screen.
         _storedWidth = AppStorage(wrappedValue: 0, "paneWidth.\(key)")
+        _storedMode = AppStorage(wrappedValue: PaneMode.standard(for: key).rawValue, PaneMode.defaultsKey(key))
     }
 
     var body: some View {
         GeometryReader { proxy in
             let total = proxy.size.width
             let layout = arrangement(total)
-            HStack(spacing: 0) {
+            let closing = closeAction(layout)
+            // One tree for both modes: the list at the left, the page (and its divider) at the
+            // trailing edge. In the split their widths add up to the whole, so they only meet; in
+            // list only the list is the whole width and the page lies over its end.
+            ZStack(alignment: .trailing) {
                 if layout.showsList {
                     primary
-                        .frame(width: layout.listOnly ? total : sizedWidth(total, for: .list))
+                        .frame(width: layout.listFillsWidth ? total : sizedWidth(total, for: .list))
                         .frame(maxHeight: .infinity)
+                        .frame(width: total, alignment: .leading)
                         // A row section's page is beside the list unless the window is too narrow
-                        // for both, and that page is where a selection of several is acted on.
-                        .environment(\.pageBesideList, pane != nil && !layout.listOnly)
-                }
-                if layout.showsList, !layout.listOnly {
-                    divider(total)
+                        // for both or the list is on its own, and that page is where a selection of
+                        // several is acted on.
+                        .environment(\.pageBesideList, pane != nil && !layout.listOnly && !layout.overlay)
+                        .environment(\.paneModeControl, PaneModeControl(mode: mode, toggle: toggleMode))
                 }
                 if !layout.listOnly {
-                    detail
-                        .frame(width: layout.full ? total : sizedWidth(total, for: .detail))
-                        .frame(maxHeight: .infinity)
-                        .environment(\.paneLayout, pane.map { pane in
-                            PaneLayout(isFull: layout.full, isCompact: layout.compact) {
-                                guard layout.compact else { return pane.expanded.toggle() }
-                                // Hides the page, and any form on it with its draft: ask first.
-                                let showList = { pane.compactShowsList = true }
-                                if let formGuard { formGuard.confirmLeaving(showList) } else { showList() }
-                            }
-                        })
+                    HStack(spacing: 0) {
+                        if layout.showsList { divider(total) }
+                        page(layout, total: total, close: closing)
+                    }
+                    .background {
+                        // Opaque, and the window's own ground: the rows must not show through.
+                        if layout.overlay { Theme.contentBackground(themes, opaque: true) }
+                    }
+                    .shadow(color: .black.opacity(layout.overlay ? 0.14 : 0), radius: 8, x: -2)
+                    .transition(.move(edge: .trailing))
                 }
             }
             .coordinateSpace(.named(Self.space))
@@ -124,9 +149,71 @@ struct SplitPanes<Primary: View, Detail: View>: View {
             // Out of the fold, the list is beside the page again; back into it, the page wins.
             .onChange(of: layout.compact) { _, compact in if !compact { pane?.compactShowsList = false } }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: layout.full)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: layout.overlay)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: layout.listOnly)
+            // Esc closes an open page in list only. A form's own Cancel is a key equivalent and
+            // takes Esc first; the window bar's search box, while it has focus, takes it before this.
+            .onKeyPress(.escape) {
+                guard let closing else { return .ignored }
+                closing()
+                return .handled
+            }
+            .focusedSceneValue(\.paneModeCommand, PaneModeCommand(mode: mode, toggle: toggleMode))
         }
         // A newly chosen item is shown, in a narrow window, rather than left behind the list.
-        .onChange(of: item) { _, chosen in if chosen != nil { pane?.compactShowsList = false } }
+        .onChange(of: item) { _, chosen in
+            if chosen != nil { pane?.compactShowsList = false }
+            // A closed page forgets that it was widened: the next one opens at the divider.
+            else if mode == .listOnly { pane?.expanded = false }
+        }
+    }
+
+    /// The page, with a close bar of its own where its header has no stepper to carry the ✕ — the
+    /// screens that are not row sections.
+    @ViewBuilder
+    private func page(_ layout: Arrangement, total: CGFloat, close: (() -> Void)?) -> some View {
+        let width = layout.full ? total : sizedWidth(total, for: .detail)
+        VStack(spacing: 0) {
+            if pane == nil, let close {
+                HStack {
+                    Spacer(minLength: 0)
+                    ActionCluster {
+                        IconActionButton(systemImage: "xmark", label: "Close", help: "Close (Esc)", action: close)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                Divider()
+            }
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .environment(\.paneLayout, pane.map { pane in
+            PaneLayout(isFull: layout.full, isCompact: layout.compact, close: close) {
+                guard layout.compact else { return pane.expanded.toggle() }
+                // Hides the page, and any form on it with its draft: ask first.
+                let showList = { pane.compactShowsList = true }
+                if let formGuard { formGuard.confirmLeaving(showList) } else { showList() }
+            }
+        })
+    }
+
+    // MARK: Mode
+
+    private var mode: PaneMode { PaneMode(rawValue: storedMode) ?? .standard(for: screen) }
+
+    private func toggleMode() {
+        storedMode = (mode == .listOnly ? PaneMode.twoPanes : .listOnly).rawValue
+    }
+
+    /// Closes the open page, in list only, or nil when there is nothing to close. Clearing the
+    /// selection is the close: the page follows the selection through the form guard
+    /// (`paneFollows`), which asks about a dirty form and, on Keep Editing, puts the selection back.
+    private func closeAction(_ layout: Arrangement) -> (() -> Void)? {
+        guard mode == .listOnly, item != nil, let clear = clearing ?? inheritedClear else { return nil }
+        return clear
     }
 
     // MARK: Layout
@@ -136,17 +223,25 @@ struct SplitPanes<Primary: View, Detail: View>: View {
         var compact: Bool
         /// The page covers the list.
         var full: Bool
-        /// Only the list, at the whole width.
+        /// Only the list, at the whole width, and no page.
         var listOnly: Bool
+        /// List only with a page open: the page lies over the list's trailing edge.
+        var overlay = false
         var showsList: Bool { !full }
+        var listFillsWidth: Bool { listOnly || overlay }
     }
 
     private func arrangement(_ total: CGFloat) -> Arrangement {
-        guard let pane else { return Arrangement(compact: false, full: false, listOnly: false) }
+        let listMode = mode == .listOnly
+        guard let pane else {
+            // A screen with no narrow-window fold: the split, or the rows with a page over them.
+            return Arrangement(compact: false, full: false, listOnly: listMode && item == nil,
+                               overlay: listMode && item != nil)
+        }
         let compact = total < minPrimary + minDetail + 1
         guard item != nil else {
             // Nothing to widen: the list, beside an empty page if there is room for one.
-            return Arrangement(compact: compact, full: false, listOnly: compact)
+            return Arrangement(compact: compact, full: false, listOnly: compact || listMode)
         }
         if formWantsFullWidth { return Arrangement(compact: compact, full: true, listOnly: false) }
         if compact {
@@ -154,7 +249,8 @@ struct SplitPanes<Primary: View, Detail: View>: View {
                 ? Arrangement(compact: true, full: false, listOnly: true)
                 : Arrangement(compact: true, full: true, listOnly: false)
         }
-        return Arrangement(compact: false, full: pane.expanded, listOnly: false)
+        return Arrangement(compact: false, full: pane.expanded, listOnly: false,
+                           overlay: listMode && !pane.expanded)
     }
 
     /// The width of `side` with the window at `total`: the remembered pane's own width, held inside
@@ -211,6 +307,64 @@ struct SplitPanes<Primary: View, Detail: View>: View {
     }
 }
 
+// MARK: - Layout mode
+
+/// Whether a screen is the split or just its rows. Remembered per screen across launches under
+/// `paneMode.<key>`, beside `paneWidth.<key>`: window layout, not a setting, so it is not in the
+/// registry.
+enum PaneMode: String {
+    case twoPanes, listOnly
+
+    /// Logs and Activity are long feeds read top to bottom, not things you pick one of: they open on
+    /// the rows. They become row lists in the next job and are given their key now.
+    static let listOnlyByDefault: Set<String> = ["logs", "activity"]
+
+    static func standard(for screen: String) -> PaneMode {
+        listOnlyByDefault.contains(screen) ? .listOnly : .twoPanes
+    }
+
+    static func defaultsKey(_ screen: String) -> String { "paneMode.\(screen)" }
+}
+
+/// The mode and the flip, for the toolbar's button.
+struct PaneModeControl {
+    let mode: PaneMode
+    let toggle: () -> Void
+}
+
+/// The same, for the View menu: published by the split on screen as a focused scene value, so the
+/// item is disabled wherever there is no split.
+struct PaneModeCommand {
+    let mode: PaneMode
+    let toggle: () -> Void
+}
+
+struct PaneModeCommandKey: FocusedValueKey { typealias Value = PaneModeCommand }
+
+extension FocusedValues {
+    var paneModeCommand: PaneModeCommand? {
+        get { self[PaneModeCommandKey.self] }
+        set { self[PaneModeCommandKey.self] = newValue }
+    }
+}
+
+/// The toggle at the left of a list's toolbar, before select-all. Draws nothing outside a split.
+///
+/// Its glyph is the layout a click **switches to**, as the expand button's is: `rectangle` while the
+/// split is showing (go to the rows alone) and `rectangle.split.2x1` while the rows are alone.
+struct PaneModeButton: View {
+    @Environment(\.paneModeControl) private var control
+
+    var body: some View {
+        if let control {
+            let toList = control.mode == .twoPanes
+            let label = toList ? "Show List Only" : "Show Two Panes"
+            IconActionButton(systemImage: toList ? "rectangle" : "rectangle.split.2x1",
+                             label: label, help: label, action: control.toggle)
+        }
+    }
+}
+
 // MARK: - Pane state
 
 /// A row section's expand button and narrow-window state, for the session.
@@ -236,6 +390,9 @@ struct PaneLayout {
     let isFull: Bool
     /// The window is too narrow for both, so the button can only swap them.
     let isCompact: Bool
+    /// Closes the page and clears the selection — set only in list-only mode, where the page is
+    /// something opened over the rows rather than half of the screen.
+    let close: (() -> Void)?
     let toggle: () -> Void
 }
 
@@ -256,6 +413,8 @@ struct PaneStep {
 /// Computed defaults, not stored ones: neither type is `Sendable`, and a stored static would have to be.
 private struct PaneLayoutKey: EnvironmentKey { static var defaultValue: PaneLayout? { nil } }
 private struct PaneStepKey: EnvironmentKey { static var defaultValue: PaneStep? { nil } }
+private struct PaneClearSelectionKey: EnvironmentKey { static var defaultValue: (() -> Void)? { nil } }
+private struct PaneModeControlKey: EnvironmentKey { static var defaultValue: PaneModeControl? { nil } }
 private struct PaneHeaderActionsKey: EnvironmentKey { static var defaultValue: PaneHeaderActions? { nil } }
 
 /// The row's own actions, for a page that is a form with a `FormHeader` of its own — a group, a
@@ -276,6 +435,17 @@ extension EnvironmentValues {
     var paneStep: PaneStep? {
         get { self[PaneStepKey.self] }
         set { self[PaneStepKey.self] = newValue }
+    }
+    /// Empties the list's selection; set by `paneFollows` above the split, so closing the page needs
+    /// no argument from the section.
+    var paneClearSelection: (() -> Void)? {
+        get { self[PaneClearSelectionKey.self] }
+        set { self[PaneClearSelectionKey.self] = newValue }
+    }
+    /// Set by `SplitPanes` on the list: the screen's mode and how to flip it, for the toolbar button.
+    var paneModeControl: PaneModeControl? {
+        get { self[PaneModeControlKey.self] }
+        set { self[PaneModeControlKey.self] = newValue }
     }
     /// What a form's header draws before the stepper, while the form is a row's page.
     var paneHeaderActions: PaneHeaderActions? {
@@ -366,5 +536,16 @@ struct SelectionSummaryPane<Actions: View>: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// View ▸ Show List Only / Show Two Panes, for the split on screen.
+struct PaneModeMenuItem: View {
+    @FocusedValue(\.paneModeCommand) private var command
+
+    var body: some View {
+        Button(command?.mode == .listOnly ? "Show Two Panes" : "Show List Only") { command?.toggle() }
+            .keyboardShortcut("l", modifiers: [.command, .option])
+            .disabled(command == nil)
     }
 }

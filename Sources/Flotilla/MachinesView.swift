@@ -268,6 +268,7 @@ struct MachinesView: View {
                        matches: displayed.count,
                        updated: model.machinesLastRefresh,
                        leading: {
+            PaneModeButton()
             SelectAllCheckbox(selection: $selection, ids: displayed.map(\.id), noun: "machines")
 
             // Replaces the table's clickable headers, as on Containers.

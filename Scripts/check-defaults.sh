@@ -186,6 +186,15 @@ done
 # The split opens as a split: not widened over the list, and not showing the list over the page.
 require Sources/Flotilla/SplitPanes.swift '    var expanded = false'
 require Sources/Flotilla/SplitPanes.swift '    var compactShowsList = false'
+# Two panes, or list only (18 October): every screen opens as the split except the two long feeds,
+# and the toggle sits before select-all in every list's toolbar. Pinned as the known-good lines.
+require Sources/Flotilla/SplitPanes.swift '    static let listOnlyByDefault: Set<String> = ["logs", "activity"]'
+require Sources/Flotilla/SplitPanes.swift '        listOnlyByDefault.contains(screen) ? .listOnly : .twoPanes'
+require Sources/Flotilla/SplitPanes.swift '_storedMode = AppStorage(wrappedValue: PaneMode.standard(for: key).rawValue, PaneMode.defaultsKey(key))'
+for f in ResourceListControls Containers Machines Greta Notifications Suggestions RegistryBrowser; do
+    file="Sources/Flotilla/${f}View.swift"; [ -f "$file" ] || file="Sources/Flotilla/${f}.swift"
+    require "$file" 'PaneModeButton()'
+done
 # And nothing for a second presentation to be: no grid, no card type and no view-mode state in a
 # section or its UI state. `ResourceCard` lives on in the Suggestions galleries, which are not
 # sections. Comments are skipped — this file's own history is written in them.

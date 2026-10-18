@@ -41,7 +41,7 @@ struct GretaView: View {
                 }
             } else {
                 // History remains available even when the on-device model cannot answer.
-                SplitPanes(list: "greta", pane: pane, showing: shownChat?.id) {
+                SplitPanes(list: "greta", pane: pane, showing: shownChat?.id, clearing: { selection = [] }) {
                     history
                 } detail: {
                     page
@@ -78,6 +78,7 @@ struct GretaView: View {
     private var history: some View {
         VStack(spacing: 0) {
             SectionToolbar(search: $search, searchPrompt: "Search conversations", matches: chats.count) {
+                PaneModeButton()
                 SelectAllCheckbox(selection: $selection, ids: chats.map(\.id), noun: "conversations")
                 Picker("Conversations", selection: $archived) {
                     Text("Active").tag(false)

@@ -59,7 +59,7 @@ struct SuggestionsView: View {
                 FormHeader(title: "Suggestions", systemImage: "sparkles",
                            hasUnsavedChanges: false, onBack: dismiss)
                 Divider()
-                SplitPanes("suggestions") { listPane } detail: { detailPane }
+                SplitPanes("suggestions", item: selected?.id, clearing: { selection = [] }) { listPane } detail: { detailPane }
                 Divider()
                 footer
             }
@@ -163,6 +163,7 @@ struct SuggestionsView: View {
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
+                PaneModeButton()
                 SelectAllCheckbox(selection: $selection, ids: shownIDs, noun: "suggestions")
                 // The search is the window bar's box now (Q55).
                 Picker("", selection: $category) {

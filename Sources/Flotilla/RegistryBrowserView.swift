@@ -44,7 +44,7 @@ struct RegistryBrowserView: View {
             FormHeader(title: "Browse Docker Hub", systemImage: "magnifyingglass",
                        hasUnsavedChanges: false, onBack: dismiss)
             Divider()
-            SplitPanes("dockerHub") { resultsPane } detail: { detailPane }
+            SplitPanes("dockerHub", item: selectedID, clearing: { selectedID = nil }) { resultsPane } detail: { detailPane }
             Divider()
             footer
         }
@@ -78,6 +78,7 @@ struct RegistryBrowserView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
+                PaneModeButton()
                 Text(query.trimmingCharacters(in: .whitespaces).isEmpty
                      ? "Docker Official Images" : "\(total.formatted()) result\(total == 1 ? "" : "s")")
                     .font(.caption).foregroundStyle(.secondary)

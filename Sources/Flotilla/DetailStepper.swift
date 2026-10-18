@@ -62,6 +62,13 @@ struct DetailStepper: View {
                                      active: layout.isFull && !layout.isCompact,
                                      action: layout.toggle)
                 }
+                // List only: the page is opened over the rows, and this puts it away (Esc does too).
+                if let close = layout.close {
+                    ActionCluster {
+                        IconActionButton(systemImage: "xmark", label: "Close", help: "Close (Esc)",
+                                         action: close)
+                    }
+                }
             }
         }
         .fixedSize()

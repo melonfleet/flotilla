@@ -44,6 +44,8 @@ struct ResourceListControls<ID: Hashable, Key: RowSortKey>: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            PaneModeButton()
+
             SelectAllCheckbox(selection: $selection, ids: selectable, noun: noun)
 
             sort

@@ -70,7 +70,8 @@ struct NotificationsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SplitPanes("notifications") { listPane } detail: { detailPane }
+            SplitPanes("notifications", item: selected.count == 1 ? selected.first?.id : nil,
+                        clearing: { selection = [] }) { listPane } detail: { detailPane }
             Divider()
             footer
         }
@@ -118,6 +119,7 @@ struct NotificationsView: View {
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
+                PaneModeButton()
                 SelectAllCheckbox(selection: $selection, ids: selectableIDs, noun: "notifications")
                 // The search is the window bar's box now (Q55); the filter stays with the list it narrows.
                 Picker("Show", selection: $filter) {

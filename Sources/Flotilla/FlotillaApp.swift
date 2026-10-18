@@ -249,6 +249,12 @@ private struct FlotillaCommands: Commands {
                 .keyboardShortcut("f", modifiers: .command)
         }
 
+        // List only / two panes, for whichever split is on screen (18 October). Disabled where there
+        // is none. ⌥⌘L was unused by this app or the standard menus.
+        CommandGroup(after: .toolbar) {
+            PaneModeMenuItem()
+        }
+
         // There is one main window, and forms and details are embedded in it. Commands for
         // arranging all of an app's windows cannot change this layout. The save group remains
         // for Close, and the size group remains for Minimize and Zoom.
