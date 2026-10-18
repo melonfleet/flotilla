@@ -109,9 +109,11 @@ expect_rows Clusters   'private var content: some View { > switch model.clusters
 # Hosts' category headings use Containers' disclosure gutter and icon badge, rather than a
 # List Section header or a separate dot. Members keep ResourceRow's indent (checkbox outside).
 for s in Containers Hosts; do
-    require "Sources/Flotilla/${s}View.swift" 'RowGroupMark {'
     require "Sources/Flotilla/${s}View.swift" 'RowGroupDisclosure('
 done
+# Containers reserve a 20pt artwork slot after the disclosure gutter, in both row layouts.
+require Sources/Flotilla/ContainersView.swift 'RowGroupMark(markWidth: 20) {'
+require Sources/Flotilla/HostsView.swift 'RowGroupMark {'
 require Sources/Flotilla/HostsView.swift 'RowTypeMark(systemImage: groupSymbol, kind: groupNoun) {'
 require Sources/Flotilla/HostsView.swift 'indent: grouping == .none ? 0 : 28,'
 require Sources/Flotilla/HostsView.swift 'if row.header != nil { headerRow(row) } else { hostRow(row) }'

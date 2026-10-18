@@ -104,7 +104,9 @@ struct GroupOverviewView<Actions: View>: View {
 
     private func identity(_ group: ContainerGroup) -> some View {
         HStack(spacing: 10) {
-            RowTypeMark(systemImage: Section.groupSymbol, kind: "Group") {
+            RowTypeMark(systemImage: Section.groupSymbol, kind: "Group",
+                        logo: model.containerLogo(for: group),
+                        size: model.containerLogo(for: group) == nil ? 16 : 32) {
                 GroupStateDot(state: model.state(of: group), showsCount: false)
             }
             VStack(alignment: .leading, spacing: 2) {

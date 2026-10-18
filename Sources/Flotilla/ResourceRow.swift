@@ -366,13 +366,22 @@ struct RowTypeMark<Badge: View>: View {
     let systemImage: String
     /// The kind, for the tooltip: "Group".
     let kind: String
+    var logo: Data? = nil
+    var size: CGFloat = 16
+    var symbolSize: CGFloat = 12
     @ViewBuilder var badge: Badge
 
     var body: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
-            .frame(width: 16, height: 16)
+        Group {
+            if let logo {
+                SuggestionLogo(data: logo, category: nil, size: size)
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: symbolSize))
+                    .foregroundStyle(.secondary)
+            }
+        }
+            .frame(width: size, height: size)
             // The hole the dot sits in: 2pt wider than the dot all round.
             .mask {
                 Rectangle()
@@ -452,15 +461,16 @@ struct RowKindGlyph: View {
 
 /// The disclosure gutter and mark used by Containers and Hosts, including member rows.
 struct RowGroupMark<Disclosure: View, Mark: View>: View {
+    var markWidth: CGFloat = 16
     @ViewBuilder var disclosure: Disclosure
     @ViewBuilder var mark: Mark
 
     var body: some View {
         HStack(spacing: 0) {
             disclosure.frame(width: 16, height: 16)
-            mark
+            mark.frame(width: markWidth, height: markWidth)
         }
-        .frame(width: 32, alignment: .leading)
+        .frame(width: 16 + markWidth, alignment: .leading)
     }
 }
 

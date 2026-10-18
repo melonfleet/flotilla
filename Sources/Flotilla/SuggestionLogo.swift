@@ -1,9 +1,11 @@
 import SwiftUI
+import FlotillaCore
 
 /// Decorative, verified library artwork. There is no file or network access in a gallery tile.
 struct SuggestionLogo: View {
     let data: Data?
     let category: String?
+    var size: CGFloat = 44
 
     static let categorySymbols = [
         "Education": "graduationcap", "Business & Office": "briefcase",
@@ -25,19 +27,30 @@ struct SuggestionLogo: View {
             // A logo sits on a light tile in both appearances: four official marks are dark with
             // no light version. `cream` is the palette's near-white; dark mode adds a hairline.
             if let image {
-                RoundedRectangle(cornerRadius: 9).fill(Color(hex: ThemePalette.cream))
+                RoundedRectangle(cornerRadius: size * 9 / 44).fill(Color(hex: ThemePalette.cream))
                 if colorScheme == .dark {
-                    RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.hairline, lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: size * 9 / 44).strokeBorder(Theme.hairline, lineWidth: 0.5)
                 }
-                Image(nsImage: image).resizable().scaledToFit().padding(4)
+                Image(nsImage: image).resizable().scaledToFit().padding(size * 4 / 44)
             } else {
-                RoundedRectangle(cornerRadius: 9).fill(.quaternary)
+                RoundedRectangle(cornerRadius: size * 9 / 44).fill(.quaternary)
                 Image(systemName: Self.categorySymbols[category ?? ""] ?? "square.grid.2x2")
-                    .font(.system(size: 23)).foregroundStyle(.secondary)
+                    .font(.system(size: size * 23 / 44)).foregroundStyle(.secondary)
             }
         }
-        .frame(width: 44, height: 44)
-        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 9 / 44))
         .accessibilityHidden(true)
+    }
+}
+
+// Resolve artwork only from the updater's verified, in-memory PNGs.
+extension AppModel {
+    func containerLogo(for image: String) -> Data? {
+        suggestionLibrary.entry(forImage: image)?.icon.flatMap { libraryUpdater.icons[$0.sha256] }
+    }
+
+    func containerLogo(for group: ContainerGroup) -> Data? {
+        suggestionLibrary.entry(forGroup: group)?.icon.flatMap { libraryUpdater.icons[$0.sha256] }
     }
 }

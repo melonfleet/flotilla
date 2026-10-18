@@ -231,9 +231,13 @@ struct ContainersView: View {
     @ViewBuilder
     private func detailHeader(for container: Container, on host: HostRef = .local) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "shippingbox")
-                .font(.system(size: 19))
-                .foregroundStyle(.secondary)
+            if let logo = model.containerLogo(for: container.imageReference) {
+                SuggestionLogo(data: logo, category: nil, size: 32)
+            } else {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 19))
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
@@ -1745,7 +1749,10 @@ struct ContainersView: View {
     /// corner. The glyph replaced a "Group" / "Container" chip on the first line (Kamal, 17 October).
     @ViewBuilder
     private func stateMark(_ row: ContainerRow) -> some View {
-        RowGroupMark {
+        let logo = row.kind == .group
+            ? row.group.flatMap { model.containerLogo(for: $0) }
+            : (row.container?.imageReference ?? row.member?.image).flatMap { model.containerLogo(for: $0) }
+        RowGroupMark(markWidth: 20) {
             if row.kind == .group, let group = row.group {
                 caret(for: group)
             } else {
@@ -1754,15 +1761,15 @@ struct ContainersView: View {
         } mark: {
             switch row.kind {
             case .group:
-                RowTypeMark(systemImage: Section.groupSymbol, kind: "Group") {
+                RowTypeMark(systemImage: Section.groupSymbol, kind: "Group", logo: logo, size: 20, symbolSize: 16) {
                     if let state = row.groupState { GroupStateDot(state: state, showsCount: false) }
                 }
             case .member:
-                RowTypeMark(systemImage: "shippingbox", kind: "Container") {
+                RowTypeMark(systemImage: "shippingbox", kind: "Container", logo: logo, size: 20, symbolSize: 16) {
                     ServiceStateDot(container: row.container)
                 }
             case .container:
-                RowTypeMark(systemImage: "shippingbox", kind: "Container") {
+                RowTypeMark(systemImage: "shippingbox", kind: "Container", logo: logo, size: 20, symbolSize: 16) {
                     if let c = row.container {
                         Circle()
                             .fill(c.stateColor)
