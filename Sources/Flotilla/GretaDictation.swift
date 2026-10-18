@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Speech
 import FlotillaCore
@@ -59,7 +60,11 @@ final class GretaDictation {
     }
 
     private func apply(_ event: DictationEvent) {
+        let was = state
         state = DictationMachine.reduce(state, event)
+        // A chime on each edge, so it's audible when the microphone opens and closes (Kamal).
+        if was != .listening, state == .listening { DictationSound.begin.play() }
+        if was == .listening, state != .listening { DictationSound.end.play() }
     }
 
     /// The user's current language, if `SpeechTranscriber` offers it. Nil marks the button
@@ -369,5 +374,32 @@ private final class AudioFeed: @unchecked Sendable {
         engine.stop()
         continuation?.finish()
         continuation = nil
+    }
+}
+
+/// The chimes macOS's own dictation plays, read from the system rather than shipped, with a
+/// standard system sound if a future macOS moves them. Silent when "Play user interface sound
+/// effects" is off, as macOS's own are.
+@MainActor
+enum DictationSound {
+    case begin, end
+
+    private static let folder = "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/"
+    private static var cache: [DictationSound: NSSound] = [:]
+
+    private var sound: NSSound? {
+        if let cached = Self.cache[self] { return cached }
+        let (file, fallback) = self == .begin ? ("begin_record.caf", "Tink") : ("end_record.caf", "Pop")
+        let loaded = NSSound(contentsOfFile: Self.folder + file, byReference: true) ?? NSSound(named: fallback)
+        Self.cache[self] = loaded
+        return loaded
+    }
+
+    func play() {
+        // The global preference; absent means on, which is macOS's default.
+        let enabled = UserDefaults.standard.object(forKey: "com.apple.sound.uiaudio.enabled") as? Bool ?? true
+        guard enabled, let sound else { return }
+        sound.stop()
+        sound.play()
     }
 }
