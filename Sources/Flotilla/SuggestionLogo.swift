@@ -17,12 +17,21 @@ struct SuggestionLogo: View {
         "Science & Research": "atom", "Messaging & Queues": "tray.2",
     ]
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
+        let image = data.flatMap { NSImage(data: $0) }
         ZStack {
-            RoundedRectangle(cornerRadius: 9).fill(.quaternary)
-            if let data, let image = NSImage(data: data) {
+            // A logo sits on a light tile in both appearances: four official marks are dark with
+            // no light version. `cream` is the palette's near-white; dark mode adds a hairline.
+            if let image {
+                RoundedRectangle(cornerRadius: 9).fill(Color(hex: ThemePalette.cream))
+                if colorScheme == .dark {
+                    RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.hairline, lineWidth: 0.5)
+                }
                 Image(nsImage: image).resizable().scaledToFit().padding(4)
             } else {
+                RoundedRectangle(cornerRadius: 9).fill(.quaternary)
                 Image(systemName: Self.categorySymbols[category ?? ""] ?? "square.grid.2x2")
                     .font(.system(size: 23)).foregroundStyle(.secondary)
             }
