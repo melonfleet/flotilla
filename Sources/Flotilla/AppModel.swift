@@ -73,6 +73,9 @@ final class AppModel {
     /// `RegistryStore`.
     let registries = RegistryStore()
 
+    /// Presentation choice survives tab/section reconstruction for this session only.
+    var filesViewModes: [String: FilesViewMode] = [:]
+
     /// Saved groups of containers that start and stop together. Data rather than view state, for
     /// the reason `tags` gives; `GroupStore` says why it is not in `SettingsStore`.
     let groups = GroupStore()
@@ -1612,28 +1615,6 @@ final class AppModel {
     /// a stale log view failing to reload shouldn't pop a modal over the rest of the app.
     func fetchLogs(for id: String, lines: Int = 200) async throws -> LogChunk {
         try await Task.detached { [cli] in try cli.logs(id, lines: lines) }.value
-    }
-
-    // MARK: Files
-
-    /// Raw `ls -la` for one directory inside a container. Off the main actor: this shells out.
-    func listDirectory(_ path: String, in containerID: String) async throws -> String {
-        try await Task.detached { [cli] in try cli.listDirectory(containerID, path: path) }.value
-    }
-
-    /// Copies a file out of a container to a path the user chose in a save panel.
-    func download(_ containerPath: String, from containerID: String, to hostURL: URL) async throws {
-        try await Task.detached { [cli] in
-            try cli.copy(from: "\(containerID):\(containerPath)", to: hostURL.path)
-        }.value
-    }
-
-    /// Copies a file from this Mac into a container. The same `container copy`, reversed —
-    /// no separate mechanism, and still no network: this is local IPC to the runtime, not scp.
-    func upload(_ hostURL: URL, to containerPath: String, in containerID: String) async throws {
-        try await Task.detached { [cli] in
-            try cli.copy(from: hostURL.path, to: "\(containerID):\(containerPath)")
-        }.value
     }
 
     /// What we have actually **watched happen** to each container, newest first.

@@ -1,0 +1,7 @@
+total 16
+drwx------     6 504  20    192 Oct 17 23:59 .
+drwx------@ 1123 504  20  35936 Oct 17 23:59 ..
+drwxr-xr-x     2 504  20     64 Oct 17 23:59 Documents
+-rw-r--r--     1 504  20      6 Oct 17 23:59 My Notes.txt
+-rw-r--r--     1 504  20      4 Nov 23  2022 old.txt
+lrwxr-xr-x     1 504  20     12 Oct 17 23:59 shortcut -> My Notes.txt

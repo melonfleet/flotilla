@@ -519,10 +519,44 @@ public struct ContainerCLI: Sendable {
     /// walk a container's filesystem is not something to enable by accident.
     ///
     /// `--` before the path so a filename beginning with `-` is read as a path and not as an
-    /// `ls` flag. Returns raw output; parsing is the caller's problem because `ls` formatting
-    /// varies between busybox and coreutils and the UI is where that judgement belongs.
-    public func listDirectory(_ id: String, path: String) throws -> String {
-        try execute(["exec", id, "--", "ls", "-la", "--", path]).stdout
+    /// `ls` flag. find's NUL-delimited paths supply identities; ls formatting varies between
+    /// BusyBox and coreutils and supplies only best-effort metadata.
+    public func listDirectory(_ id: String, path: String) throws -> [FileEntry] {
+        try FileCommand.validatePath(path, allowRoot: true)
+        let directory = "/" + FileCommand.pathComponents(path).joined(separator: "/")
+        let listing = try fileCommand(["exec", id, "--", "ls", "-lan", "--", directory], timeout: 15)
+        // GNU and BusyBox find support -print0 (not BusyBox -printf). Fail closed if
+        // omitted by an image's build. Numeric ls owners keep account names out of metadata.
+        let names = try fileCommand(["exec", id, "--", "find", directory,
+                                     "-mindepth", "1", "-maxdepth", "1", "-print0"], timeout: 15)
+        guard !listing.stdoutTruncated, !names.stdoutTruncated else {
+            throw ContainerCLIError.unsupported("File listing was truncated; no file operations are available.")
+        }
+        return try FileEntry.listing(listing.stdout, pathsOutput: names.stdout, directory: directory)
+    }
+
+    /// Same local-owner capability and allowlist as the Terminal. No wire operation is added.
+    public func performFileCommand(_ command: FileCommand, in id: String) throws {
+        if case .find = command { throw ContainerCLIError.unsupported("Use searchFiles for a bounded search.") }
+        _ = try fileCommand(command.arguments(containerID: id), timeout: 30)
+    }
+
+    /// Results are capped at 500; the runner also bounds retained output and kills find at 10s.
+    /// A timed-out search reports failure, never claims an incomplete traversal was complete.
+    public func searchFiles(_ id: String, directory: String, term: String) throws -> FileSearchResults {
+        let result = try fileCommand(FileCommand.find(directory: directory, term: term).arguments(containerID: id), timeout: 10)
+        let directoryBytes = Array(directory.utf8)
+        let prefix = Array((directory == "/" ? "/" : directory + "/").utf8)
+        let paths = Array(result.stdout.utf8.split(separator: 0).lazy.filter {
+            $0.first == 47 && ($0.elementsEqual(directoryBytes) || $0.starts(with: prefix))
+        }.prefix(501).map { String(decoding: $0, as: UTF8.self) })
+        return FileSearchResults(paths: Array(paths.prefix(500)), capped: paths.count > 500 || result.stdoutTruncated)
+    }
+
+    private func fileCommand(_ arguments: [String], timeout: TimeInterval) throws -> CommandResult {
+        let validated = try Allowlist.validated(arguments, mountPolicy: mountPolicy,
+                                                execPolicy: execPolicy, wirePolicy: wirePolicy)
+        return try succeeding(validated.arguments, timeout: timeout)
     }
 
     /// `container copy <source> <destination>`, either direction.

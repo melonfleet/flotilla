@@ -130,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // with the whole app. Measured — a clean quit while the Logs section streamed five
         // sources left all five running under launchd.
         LiveStreamRegistry.shared.cancelAll()
+        FileTemporaryStore.shared.cleanUp()
     }
 
     /// Honours **Show Dock icon**, which is now a toggle rather than a three-way picker.

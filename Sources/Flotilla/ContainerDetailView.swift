@@ -70,7 +70,7 @@ struct ContainerDetailView: View {
                 case .logs: LogViewer(model: model, source: host.isLocal ? .container(container.id)
                                                                           : .remoteContainer(container.id, host))
                 case .terminal: TerminalTab(model: model, container: container, host: host)
-                case .files: FilesTab(model: model, container: container)
+                case .files: FilesTab(model: model, container: container).id(container.id)
                 case .inspect: InspectTab(model: model, container: container, host: host)
                 }
             }
