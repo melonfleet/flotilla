@@ -172,7 +172,7 @@ extension AppModel {
                         if let (service, mount) = declared, let owner = mount.volumeOwner {
                             let spec = "\(volume):\(mount.path)"
                             try await prepareVolumeOwnership(cli: cli, host: host, image: service.image,
-                                mounts: [spec], owners: [spec: owner], requireNewVolumes: true, createOnly: true, progress: progress)
+                                mounts: [spec], owners: [spec: owner], requireNewVolumes: true, progress: progress)
                         } else {
                             _ = try await Blocking.run { try cli.createVolume(volume) }
                         }

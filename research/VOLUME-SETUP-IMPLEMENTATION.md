@@ -90,4 +90,4 @@ Validation on this mirror:
 - `git diff --check` and the patch's reverse-apply check pass. Nothing is committed.
   The sandbox denies writing `.git/index`; `git add -N` and `git diff` were instead
   run with a temporary index and object directory in `/tmp` to include new files
-  in `/Users/terry/out/volume-init.patch`. The real repository index is untouched.
+  in `/Users/example/out/volume-init.patch`. The real repository index is untouched.

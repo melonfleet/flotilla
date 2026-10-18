@@ -822,7 +822,7 @@ public enum Allowlist {
             // (which Flotilla does not expose) — it removes every stopped container.
             CommandSpec(["prune"], mutates: true, timeoutHint: 120),
             // VolumeSetupStore uses exactly run --rm -v NAME:/mnt <pinned busybox>
-            // chown UID:GID /mnt. No new flags, shell or wire command.
+            // sh -c <exact empty-volume script> volume-setup UID GID.
             // The app-owned pin is Allowlist.volumeSetupBusyboxDigest;
             // library input can never select the helper image.
             CommandSpec(["run"], mutates: true, timeoutHint: 600,
@@ -1451,6 +1451,25 @@ public enum Allowlist {
         if case .command(let maxTokens) = spec.trailing {
             guard trailing.count <= maxTokens else {
                 throw AllowlistError.tooManyArguments(count: trailing.count, limit: maxTokens)
+            }
+            // The setup shell exception is confined to the exact script and numeric argv
+            // on the pinned BusyBox image, with only --rm and one named /mnt mount.
+            if (operands == ["docker.io/library/busybox@sha256:\(volumeSetupBusyboxDigest)"] && trailing.starts(with: ["sh", "-c"])) || trailing.contains(where: { $0.compare(VolumeSetupStore.helperScript, options: .literal) == .orderedSame }) {
+                let numeric: (String) -> Bool = { value in
+                    !value.isEmpty && value.utf8.allSatisfy { (48...57).contains($0) }
+                        && Int(value).map { (0...2_147_483_647).contains($0) } == true
+                }
+                guard spec.path == ["run"],
+                      operands == ["docker.io/library/busybox@sha256:\(volumeSetupBusyboxDigest)"],
+                      trailing.count == 6, trailing[0] == "sh", trailing[1] == "-c",
+                      trailing[2].compare(VolumeSetupStore.helperScript, options: .literal) == .orderedSame,
+                      trailing[3] == "volume-setup", numeric(trailing[4]), numeric(trailing[5]),
+                      flagTokens.count == 3, flagTokens[0] == "--rm",
+                      flagTokens[1] == "--volume",
+                      flagTokens[2].hasSuffix(":/mnt"),
+                      isIdentifier(String(flagTokens[2].dropLast(5))) else {
+                    throw AllowlistError.invalidValue(context: "volume setup", value: "invalid helper profile", shape: .commandToken)
+                }
             }
             for token in trailing {
                 if let error = check(token, as: .commandToken, context: "command", mountPolicy: mountPolicy) { throw error }

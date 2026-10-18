@@ -695,7 +695,7 @@ public struct ContainerCLI: Sendable {
     @discardableResult
     func setupVolume(_ volume: String, owner: VolumeOwner, digest: String) throws -> CommandResult {
         let args = try VolumeSetupStore.helperArguments(volume: volume, owner: owner, digest: digest)
-        return try execute(Array(args.prefix(5)) + ["--"] + args.suffix(3))
+        return try execute(Array(args.prefix(5)) + ["--"] + args.dropFirst(5))
     }
 
     // MARK: Images

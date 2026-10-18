@@ -17,6 +17,24 @@ public struct VolumeOwner: Sendable, Codable, Equatable {
 public final class VolumeSetupStore: @unchecked Sendable {
     public static let label = "dev.melonfleet.flotilla.init"
     public static let operationLabel = "dev.melonfleet.flotilla.init-operation"
+    // Captured volume-inspect fixtures (1.0.0 and 1.5.0) expose these fields;
+    // id is only the name. Preserve the timestamp verbatim, without Date rounding.
+    private struct Identity: Codable, Equatable {
+        var creationDate: String
+        var source: String
+        init(_ volume: ContainerVolume) throws {
+            guard let date = volume.createdAt, !date.isEmpty,
+                  let source = volume.source, !source.isEmpty, volume.format == "ext4" else {
+                throw ContainerCLIError.unsupported("Volume identity is unavailable; ownership was left unchanged.")
+            }
+            self.creationDate = date
+            self.source = source
+        }
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.creationDate.compare(rhs.creationDate, options: .literal) == .orderedSame
+                && lhs.source.compare(rhs.source, options: .literal) == .orderedSame
+        }
+    }
     private struct Record: Codable {
         var host: String
         var volume: String
@@ -24,6 +42,7 @@ public final class VolumeSetupStore: @unchecked Sendable {
         var owner: VolumeOwner
         var image: String
         var state: String
+        var identity: Identity?
     }
     private let file: URL
     private let digest: String
@@ -37,6 +56,12 @@ public final class VolumeSetupStore: @unchecked Sendable {
     // Only tests may supply a synthetic digest; production has one pin in Allowlist.swift.
     init(file: URL, testDigest: String) { self.file = file; self.digest = testDigest }
 
+    // Narrow exception to no shell: BusyBox needs a conditional empty-volume check.
+    // This exact constant is allowlisted; no library or user text enters shell source.
+    // Check visible AND hidden entries before changing anything. Never recurse, and
+    // reject a symlink named lost+found as well as any other unexpected entry.
+    static let helperScript = #"cd /mnt || exit 43; for entry in * .[!.]* ..?*; do if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then continue; fi; if [ "$entry" = lost+found ] && [ -d "$entry" ] && [ ! -L "$entry" ]; then continue; fi; exit 42; done; chown "$1:$2" ."#
+
     /// A fixed argv; never accepts host paths, helper images, scripts, or command tokens.
     static func helperArguments(volume: String, owner: VolumeOwner, digest: String) throws -> [String] {
         guard owner.isValid, Allowlist.accepts(volume, as: .identifier) else {
@@ -47,14 +72,14 @@ public final class VolumeSetupStore: @unchecked Sendable {
             throw ContainerCLIError.unsupported("Volume setup needs the approved BusyBox digest. Andy must fill Allowlist.volumeSetupBusyboxDigest from a real pull.")
         }
         return ["run", "--rm", "-v", "\(volume):/mnt", "docker.io/library/busybox@sha256:\(digest)",
-                "chown", owner.numericPair, "/mnt"]
+                "sh", "-c", helperScript, "volume-setup", String(owner.uid), String(owner.gid)]
     }
 
     /// `newOwners` contains only original, unedited Suggestions mounts. Other mounts may only
     /// resume an already recorded pending operation; they can never acquire setup provenance.
     /// Existing volumes without our record are left alone, even if their labels say pending.
     public func prepare(cli: ContainerCLI, host: String, image: String, mounts: [String],
-                        newOwners: [String: VolumeOwner] = [:], requireNewVolumes: Bool = false, createOnly: Bool = false,
+                        newOwners: [String: VolumeOwner] = [:], requireNewVolumes: Bool = false,
                         settingUp: @Sendable (String) -> Void = { _ in }) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -67,7 +92,7 @@ public final class VolumeSetupStore: @unchecked Sendable {
         guard !newOwners.isEmpty || records.contains(where: {
             $0.host == host && $0.image == image && mounted.contains($0.volume) && $0.state == $0.owner.pending
         }) else { return }
-        var volumes = try cli.listVolumes()
+        let volumes = try cli.listVolumes()
         for name in mounted.sorted() {
             var index = records.firstIndex { $0.host == host && $0.volume == name }
             let requestedOwner = mounts.compactMap { mount -> VolumeOwner? in
@@ -93,25 +118,34 @@ public final class VolumeSetupStore: @unchecked Sendable {
                     ]))
                 } catch {
                     // An ambiguous remote failure may have created it. Keep the intent: only
-                    // the matching operation label will authorize a retry on the next start.
+                    // a captured identity and matching labels can authorize a retry.
                     throw error
                 }
-                volumes = try cli.listVolumes()
                 index = records.count - 1
+                let created = try cli.inspectVolume(name)
+                guard created.name == name,
+                      created.labels?[Self.operationLabel] == record.operation,
+                      created.labels?[Self.label] == owner.pending else {
+                    throw ContainerCLIError.unsupported("Volume \(name) no longer matches its creation operation. Ownership was left unchanged.")
+                }
+                records[records.count - 1].identity = try Identity(created)
+                try write(records)
             }
-            guard !createOnly, let index else { continue }
+            guard let index else { continue }
             let record = records[index]
             guard record.image == image, record.state == record.owner.pending else { continue }
-            guard let volume = volumes.first(where: { $0.name == name }),
+            let args = try Self.helperArguments(volume: name, owner: record.owner, digest: digest)
+            // The helper gets precisely one named volume, regardless of MountPolicy.
+            _ = try Allowlist.validated(Array(args.prefix(5)) + ["--"] + args.dropFirst(5), mountPolicy: .denyHostPaths, wirePolicy: cli.wirePolicy)
+            settingUp("Setting up \(name) for \(image)…")
+            // No unrelated work or suspension between the last inspect and the helper.
+            let volume = try cli.inspectVolume(name)
+            guard volume.name == name, let identity = record.identity,
+                  try Identity(volume) == identity,
                   volume.labels?[Self.operationLabel] == record.operation,
                   volume.labels?[Self.label] == record.owner.pending else {
                 throw ContainerCLIError.unsupported("Volume \(name) no longer matches its fresh-volume setup record. Ownership was left unchanged.")
             }
-            let args = try Self.helperArguments(volume: name, owner: record.owner, digest: digest)
-            // Validate under the actual CLI policy too. The helper gets precisely one named
-            // volume, regardless of the local owner's broader MountPolicy.
-            _ = try Allowlist.validated(Array(args.prefix(5)) + ["--"] + args.suffix(3), mountPolicy: .denyHostPaths, wirePolicy: cli.wirePolicy)
-            settingUp("Setting up \(name) for \(image)…")
             _ = try cli.setupVolume(name, owner: record.owner, digest: digest)
             records[index].state = record.owner.done
             try write(records)

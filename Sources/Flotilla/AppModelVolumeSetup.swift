@@ -5,7 +5,7 @@ extension AppModel {
     /// The same validated container commands on This Mac and peers, without a new wire request
     /// or administrator operation. Mutable receipts live in the app, keyed by the host identity.
     func prepareVolumeOwnership(cli: ContainerCLI, host: HostRef, image: String, mounts: [String],
-                                owners: [String: VolumeOwner] = [:], requireNewVolumes: Bool = false, createOnly: Bool = false, progress: OperationProgress) async throws {
+                                owners: [String: VolumeOwner] = [:], requireNewVolumes: Bool = false, progress: OperationProgress) async throws {
         let hostKey: String
         switch host {
         case .local: hostKey = "local"
@@ -13,7 +13,7 @@ extension AppModel {
         }
         let store = volumeSetups
         try await Blocking.run {
-            try store.prepare(cli: cli, host: hostKey, image: image, mounts: mounts, newOwners: owners, requireNewVolumes: requireNewVolumes, createOnly: createOnly) { line in
+            try store.prepare(cli: cli, host: hostKey, image: image, mounts: mounts, newOwners: owners, requireNewVolumes: requireNewVolumes) { line in
                 Task { @MainActor in progress.note(line) }
             }
         }
