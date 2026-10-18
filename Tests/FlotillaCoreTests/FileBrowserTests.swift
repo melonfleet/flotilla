@@ -92,7 +92,7 @@ import Testing
     #expect(FileGrouping.kind.groups(entries).map(\.name) == ["Folder", "PNG File", "TXT File"])
     #expect(FileGrouping.modified.groups(entries).map(\.name) == ["2025-07-16", "2025-07-15"])
     #expect(FileGrouping.size.groups(entries).map(\.name) == ["Folders", "Under 1 KB", "1 KB – 1 MB", "1 MB – 1 GB"])
-    for unavailable in [FileGrouping.created, .opened, .added, .application, .tags] { #expect(!unavailable.available) }
+    for unavailable in [FileGrouping.created, .opened, .added, .application] { #expect(!unavailable.available) }
 }
 
 private final class FilesHost: ContainerHost, @unchecked Sendable {

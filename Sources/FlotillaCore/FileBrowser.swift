@@ -123,7 +123,7 @@ public struct FileEntry: Identifiable, Hashable, Sendable {
 
 public enum FileGrouping: String, CaseIterable, Sendable {
     case none = "None", name = "Name", kind = "Kind", modified = "Date Modified", created = "Date Created", size = "Size"
-    case application = "Application", opened = "Date Last Opened", added = "Date Added", tags = "Tags"
+    case application = "Application", opened = "Date Last Opened", added = "Date Added"
     public var available: Bool { [.none, .name, .kind, .modified, .size].contains(self) }
     public func key(for entry: FileEntry, calendar: Calendar = .current) -> String {
         switch self {
@@ -138,7 +138,7 @@ public enum FileGrouping: String, CaseIterable, Sendable {
             if entry.isDirectory { return "Folders" }
             guard let bytes = entry.sizeBytes else { return "Unknown size" }
             return bytes < 1_024 ? "Under 1 KB" : bytes < 1_048_576 ? "1 KB – 1 MB" : bytes < 1_073_741_824 ? "1 MB – 1 GB" : "1 GB or more"
-        case .created, .application, .opened, .added, .tags: return "Unavailable"
+        case .created, .application, .opened, .added: return "Unavailable"
         }
     }
     /// Stable group order; sorting within groups belongs to the selected column.
