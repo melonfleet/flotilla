@@ -18,6 +18,9 @@ public enum UpdateStage: Equatable, Sendable {
     case verifying
     case extracting
     case installing
+    /// Unpacked and waiting for the owner's Install and Relaunch (its display version). A result:
+    /// Sparkle's window waits as long as it likes, and nothing here should spin meanwhile.
+    case readyToInstall(String)
     /// Logo `done` of `total`, one fetch at a time.
     case logos(done: Int, of: Int)
     /// The library's version, if known.
@@ -32,7 +35,7 @@ public enum UpdateStage: Equatable, Sendable {
     public var isInProgress: Bool {
         switch self {
         case .checking, .downloading, .downloaded, .verifying, .extracting, .installing, .logos: true
-        case .found, .upToDate, .updated, .finished, .failed: false
+        case .found, .readyToInstall, .upToDate, .updated, .finished, .failed: false
         }
     }
 
@@ -53,6 +56,7 @@ public enum UpdateStage: Equatable, Sendable {
         case (.verifying, _): "Verifying…"
         case (.extracting, _): "Unpacking the update…"
         case (.installing, _): "Installing the update…"
+        case (.readyToInstall(let version), _): "Flotilla \(version) is ready to install"
         case (.logos(let done, let total), _): "Downloading logos (\(done) of \(total))…"
         case (.upToDate, .app): "Flotilla is up to date"
         case (.upToDate(let version?), .library): "Suggestions up to date (\(version))"
@@ -101,6 +105,13 @@ public struct UpdateActivity: Equatable, Sendable {
         entries = entries.filter { _, entry in
             entry.stage.isInProgress || now.timeIntervalSince(entry.at) < Self.resultLifetime
         }
+    }
+
+    /// When the earliest result still showing is due to fade, so one timer can wait for exactly
+    /// that, however often other sources report steps meanwhile.
+    public var nextExpiry: Date? {
+        entries.values.filter { !$0.stage.isInProgress }
+            .map { $0.at.addingTimeInterval(Self.resultLifetime) }.min()
     }
 
     /// The one line to show: the latest step if anything is working, otherwise the latest result.

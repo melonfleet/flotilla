@@ -19,14 +19,19 @@ final class UpdateActivityCenter {
 
     func clear(_ source: UpdateSource) {
         activity.clear(source)
+        scheduleExpiry()
     }
 
+    /// Waits for the earliest result's own deadline, not five seconds from the latest report, so
+    /// a stream of logo steps can't hold an old result up (Kyle, 18 October).
     private func scheduleExpiry() {
         expiry?.cancel()
+        guard let deadline = activity.nextExpiry else { return }
         expiry = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(UpdateActivity.resultLifetime + 0.1))
-            guard !Task.isCancelled else { return }
-            self?.activity.expire()
+            try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow) + 0.1))
+            guard !Task.isCancelled, let self else { return }
+            activity.expire()
+            scheduleExpiry()
         }
     }
 }

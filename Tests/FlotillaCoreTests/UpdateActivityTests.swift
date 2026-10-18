@@ -64,4 +64,18 @@ import Testing
         #expect(activity.stage(of: .app) == nil)
         #expect(activity.isBusy(.library))
     }
+
+    @Test func readyToInstallIsAResultSoNothingSpinsWhileSparkleWaits() {
+        #expect(!UpdateStage.readyToInstall("1.0 beta 5").isInProgress)
+        #expect(UpdateStage.readyToInstall("1.0 beta 5").text(for: .app) == "Flotilla 1.0 beta 5 is ready to install")
+    }
+
+    @Test func nextExpiryIsTheEarliestResultsDeadlineNotTheLatestReport() {
+        var activity = UpdateActivity()
+        activity.report(.upToDate(nil), from: .app, at: t0)
+        activity.report(.logos(done: 1, of: 9), from: .library, at: t0.addingTimeInterval(4))
+        #expect(activity.nextExpiry == t0.addingTimeInterval(UpdateActivity.resultLifetime))
+        activity.clear(.app)
+        #expect(activity.nextExpiry == nil)
+    }
 }

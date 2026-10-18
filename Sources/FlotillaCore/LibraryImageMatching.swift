@@ -15,6 +15,8 @@ extension SuggestionLibrary {
             && (first.contains(".") || first.contains(":") || first.lowercased() == "localhost")
         if explicitRegistry {
             parts[0] = first.lowercased()
+            // Docker's legacy name for its own registry (distribution/reference normalize.go).
+            if parts[0] == "index.docker.io" { parts[0] = "docker.io" }
         } else {
             parts.insert("docker.io", at: 0)
         }

@@ -26,7 +26,8 @@ import Testing
 
     @Test(arguments: ["nginx", "nginx:latest", "docker.io/nginx:1.27",
                       "docker.io/library/nginx", "DOCKER.IO/library/nginx:stable",
-                      "nginx@sha256:abc", "docker.io/library/nginx:1.27@sha256:abc"])
+                      "nginx@sha256:abc", "docker.io/library/nginx:1.27@sha256:abc",
+                      "index.docker.io/library/nginx:latest", "index.docker.io/nginx"])
     func dockerHubAliases(_ reference: String) {
         #expect(SuggestionLibrary.imageRepository(reference) == "docker.io/library/nginx")
         #expect(library([container("web", "docker.io/library/nginx:1.27")])

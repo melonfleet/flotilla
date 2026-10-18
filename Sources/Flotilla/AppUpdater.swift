@@ -84,10 +84,12 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     var canCheck: Bool { controller?.updater.canCheckForUpdates ?? false }
 
     func checkForUpdates() {
-        guard canCheck else { return }
+        guard canCheck, let controller else { return }
         explicitCheck = true
-        activity.report(.checking, from: .app)
-        controller?.checkForUpdates(nil)
+        // With an update window already open, Sparkle only brings it forward: no check runs, so
+        // saying "Checking…" would spin until that window is dealt with (Kyle, 18 October).
+        if !controller.updater.sessionInProgress { activity.report(.checking, from: .app) }
+        controller.checkForUpdates(nil)
     }
 
     /// Delegate callbacks arrive on the main thread; this hops explicitly rather than assume it.
@@ -129,6 +131,11 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     nonisolated func updater(_ updater: SPUUpdater, willExtractUpdate item: SUAppcastItem) {
         report(.extracting)
+    }
+
+    /// Unpacked: Sparkle now waits for Install and Relaunch, which may be never.
+    nonisolated func updater(_ updater: SPUUpdater, didExtractUpdate item: SUAppcastItem) {
+        report(.readyToInstall(item.displayVersionString))
     }
 
     nonisolated func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
