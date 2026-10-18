@@ -357,6 +357,7 @@ struct MainWindowView: View {
                                      set: { if $0 == nil { model.hostMode.wordsPrompt?.reply(false) } })) { prompt in
                     PairingWordsSheet(prompt: prompt)
                 }
+            WindowStatusBar(model: model)
         }
         // Up into the traffic-light row, so the bar IS the top of the window rather than a
         // second band under it. `.hiddenTitleBar` stops the title bar being *drawn* but SwiftUI

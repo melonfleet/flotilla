@@ -2590,7 +2590,39 @@ right pane instead … everything has to be split into two panes."
   closures of `SplitPanes(list: …)`, the split as the last branch of the section's form chain, an
   empty `selection` and `shown`, the guard in between, and a pane that opens unexpanded.
 
-## Q59 — The narrow list: the name first, actions on hover (settled 2026-10-17)
+## Q59 — A status bar across the bottom of the window (settled 2026-10-17)
+
+Kamal asked for a status bar like VS Code: runtime on the left, version and software updates on
+the right, always present across every section and form, regardless of the sidebar's width.
+
+- `WindowStatusBar` is the last child of `MainWindowView`'s window stack, below the entire
+  navigation split. It is 23pt high with small text, a theme-aware surface and a top hairline.
+  Every branch is bounded; no vertical `fixedSize`. At 700pt, runtime words truncate before the
+  version loses space (`layoutPriority` on the version).
+- The runtime dot, words, setup state, enablement, menu and Stop/Restart confirmations come from
+  `RuntimeStatusBand`, in compact mode. Both surfaces call its one `runtimeActions` builder;
+  `check-menu-parity.sh` pins this sharing. No duplicate lifecycle or installation logic.
+- **The sidebar band stays:** `MainWindowView` documents its divider as the window-height anchor
+  aligned with the Utilisation table. Removing it would change that established layout. This is
+  the explicit exception to removing the old runtime surface; the full-width bar is independent
+  of its rail/expanded presentation.
+- The version appears once in window chrome, from `CFBundleShortVersionString` (including the
+  release's +N suffix), without the parenthesised build. Overview's badge and `VersionBadge`
+  are removed. Its menu calls Sparkle's existing Check for Updates, reads Sparkle's last-check
+  date and automatic-check preference, and opens the existing releases link for Release Notes.
+  The automatic-check toggle writes the same SettingsStore key and respects managed locks.
+  The menu also reads the effective update channel (Stable or Pre-release) and offers a
+  switching submenu bound to the Settings row's existing `updateChannel` key. A locked
+  channel is read-only, says "Set by your organisation", and has no switching submenu.
+  VoiceOver names it "Update channel, Pre-release" (or Stable). Settings writes refresh
+  the menu, and Sparkle's existing allowed-channels delegate reads the same store.
+  Host-only and development builds retain their existing updater restrictions.
+- A separate Suggestions library heading shows the current library version, its own last check,
+  and Check Now through `checkSuggestionLibrary`. No new update logic or requests on menu open.
+- Both items remain native menu buttons with spoken labels and hints explaining that they open
+  menus. Busy, stopped, missing and setup states use the existing runtime presentation.
+
+## Q60 — The narrow list: the name first, actions on hover (settled 2026-10-17)
 
 Kamal checked Q58's split by eye at the default 340pt list. The page was right; the list was not:
 names squeezed to "…", "s…l", "w…s2" and blank, because the "Container"/"Group" chip, the tags and

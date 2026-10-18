@@ -18,6 +18,8 @@ struct RuntimeStatusBand: View {
     /// In rail mode the words go; the dot and the menu stay, and the sentence moves to the
     /// tooltip — the same trade the sidebar rows already make.
     let railed: Bool
+    /// The full-window status bar uses the same menu and confirmation owner.
+    var compact = false
 
     @Environment(\.openURL) private var openURL
     /// Which of the two destructive items is being confirmed, and whether the dialog is up.
@@ -33,11 +35,19 @@ struct RuntimeStatusBand: View {
     @State private var showingConfirmation = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            content
-                .padding(.horizontal, railed ? 8 : 12)
-                .padding(.vertical, 8)
+        Group {
+            if compact {
+                menu
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 23)
+            } else {
+                VStack(spacing: 0) {
+                    Divider()
+                    content
+                        .padding(.horizontal, railed ? 8 : 12)
+                        .padding(.vertical, 8)
+                }
+            }
         }
         .confirmationDialog(confirming.question,
                             isPresented: $showingConfirmation,
@@ -98,58 +108,75 @@ struct RuntimeStatusBand: View {
 
     private var menu: some View {
         Menu {
-            // All three lifecycle items, always, with the ones that do not apply greyed out
-            // rather than absent — the owner's call, and the right one: a menu whose items move
-            // around teaches nothing, while a disabled Stop says plainly that the system is
-            // already stopped. Which is which comes from `enablement` below.
-            Button("Start Container System") { Task { await model.startRuntime() } }
-                .disabled(!enablement.start)
-            Button("Stop Container System…") { ask(.stop) }
-                .disabled(!enablement.stopRestart)
-            // The remedy for a skewed runtime is exactly this item, and there it runs *without*
-            // the confirmation: nothing useful is running in that state anyway.
-            if case .needsRestart = model.preflight {
-                Button("Restart Container System") { Task { await model.restartRuntime() } }
-            } else {
-                Button("Restart Container System…") { ask(.restart) }
-                    .disabled(!enablement.stopRestart)
-            }
-
-            // Always present, greyed out unless they apply, like the lifecycle items above: a menu
-            // whose items come and go teaches nothing. Installing container was missing from this
-            // menu, so with everything else greyed out there was no way in from here (8 October).
-            Button("Download and Install container \(ContainerRuntime.expectedVersion)…") {
-                if model.hostMode.mode == .host, model.helperEnabled, case .missing? = model.preflight {
-                    Task { model.hostRuntimeNote = await model.ensureHostRuntime(allowStoppingContainers: true) }
-                } else {
-                    Task { await model.installContainerInteractively() }
-                }
-            }
-            .disabled(!model.needsContainerInstall || settingUp)
-            Button("Install Recommended Kernel") { Task { await model.installKernel() } }
-                .disabled(!needsKernel)
-
-            Divider()
-            Button("Settings…") { model.requestSection(.settings) }
-
-            Divider()
-            Button("Check for `container` Updates…") {
-                openURL(ExternalLinks.appleContainerReleases)
-            }
-            Button("Apple `container` on GitHub") { openURL(ExternalLinks.appleContainer) }
-            Button("Flotilla on GitHub") { openURL(ExternalLinks.flotilla) }
+            runtimeActions()
         } label: {
-            // `RowOverflowLabel`, the same vertical dots every row menu in the app uses — and the
-            // same reason they are a rotated `ellipsis`: `ellipsis.vertical` is not a real SF
-            // Symbol, and an unknown name renders nothing at all.
-            RowOverflowLabel()
+            if compact {
+                HStack(spacing: 6) {
+                    indicator
+                    Text(status.title)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .font(.system(size: 11))
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .frame(height: 23)
+                .contentShape(Rectangle())
+            } else {
+                RowOverflowLabel()
+            }
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Runtime options")
-        .accessibilityLabel("Runtime options")
+        .fixedSize(horizontal: !compact, vertical: false)
+        .help(compact ? "Container runtime options" : "Runtime options")
+        .accessibilityLabel(compact ? "Container runtime: \(status.title)" : "Runtime options")
+        .accessibilityHint("Opens the runtime menu")
         .disabled(model.startingRuntime)
+    }
+
+    /// One builder for the sidebar and window status bar, including enablement and confirmations.
+    @ViewBuilder
+    private func runtimeActions() -> some View {
+        // All three lifecycle items, always, with the ones that do not apply greyed out
+        // rather than absent — the owner's call, and the right one: a menu whose items move
+        // around teaches nothing, while a disabled Stop says plainly that the system is
+        // already stopped. Which is which comes from `enablement` below.
+        Button("Start Container System") { Task { await model.startRuntime() } }
+            .disabled(!enablement.start)
+        Button("Stop Container System…") { ask(.stop) }
+            .disabled(!enablement.stopRestart)
+        // The remedy for a skewed runtime is exactly this item, and there it runs *without*
+        // the confirmation: nothing useful is running in that state anyway.
+        if case .needsRestart = model.preflight {
+            Button("Restart Container System") { Task { await model.restartRuntime() } }
+        } else {
+            Button("Restart Container System…") { ask(.restart) }
+                .disabled(!enablement.stopRestart)
+        }
+
+        // Always present, greyed out unless they apply, like the lifecycle items above: a menu
+        // whose items come and go teaches nothing. Installing container was missing from this
+        // menu, so with everything else greyed out there was no way in from here (8 October).
+        Button("Download and Install container \(ContainerRuntime.expectedVersion)…") {
+            if model.hostMode.mode == .host, model.helperEnabled, case .missing? = model.preflight {
+                Task { model.hostRuntimeNote = await model.ensureHostRuntime(allowStoppingContainers: true) }
+            } else {
+                Task { await model.installContainerInteractively() }
+            }
+        }
+        .disabled(!model.needsContainerInstall || settingUp)
+        Button("Install Recommended Kernel") { Task { await model.installKernel() } }
+            .disabled(!needsKernel)
+
+        Divider()
+        Button("Settings…") { model.requestSection(.settings) }
+
+        Divider()
+        Button("Check for `container` Updates…") {
+            openURL(ExternalLinks.appleContainerReleases)
+        }
+        Button("Apple `container` on GitHub") { openURL(ExternalLinks.appleContainer) }
+        Button("Flotilla on GitHub") { openURL(ExternalLinks.flotilla) }
     }
 
     private var needsKernel: Bool {

@@ -49,7 +49,7 @@ questions.
   hideable columns; `ResourceCard` lives on only in the Suggestions galleries. Logs is the one
   list still a `Table` (Q19). `check-defaults.sh` pins the rows being drawn unconditionally.
   **No live figures in rows** (Q58): CPU and memory are on the container's page.
-  **The name fits first and the actions are on hover** (Q59, 17 October, Kamal's call, like Mail):
+  **The name fits first and the actions are on hover** (Q60, 17 October, Kamal's call, like Mail):
   chips drop whole before the name truncates (`ChipLine`), the kind is the mark's glyph
   (`RowTypeMark`) rather than a chip, and a row draws only its primary action and `⋮` — over its
   trailing end, while hovered or selected, and inline on every row while VoiceOver runs. Delete is in

@@ -101,6 +101,15 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
         if not any(c.split("(")[0] == name for c in ctx):
             FAIL.append(f"{path}: passes `{body}` as a card menu but right-clicks a different builder")
 
+# Both runtime surfaces instantiate one component; its Menu must contain only the shared
+# builder, so a compact-only handwritten menu cannot quietly diverge from the sidebar.
+runtime = pathlib.Path("Sources/Flotilla/RuntimeStatusBand.swift").read_text()
+bar = pathlib.Path("Sources/Flotilla/WindowStatusBar.swift").read_text()
+if (len(re.findall(r'\bMenu\s*\{', runtime)) != 1 or
+        not re.search(r'Menu\s*\{\s*runtimeActions\(\)\s*\}\s*label:', runtime) or
+        'RuntimeStatusBand(model: model, railed: false, compact: true)' not in bar):
+    FAIL.append("runtime status bar and sidebar must use RuntimeStatusBand's one runtimeActions builder")
+
 if FAIL:
     print("Row `⋯` menu and right-click menu disagree:")
     for line in FAIL:

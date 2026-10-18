@@ -220,6 +220,11 @@ for f in Sources/Flotilla/{Containers,Machines,Images,Volumes,Networks}View.swif
     fi
 done
 
+# Q59: window chrome is always below the split, rather than inside a section or sidebar.
+require Sources/Flotilla/MainWindowView.swift '            WindowStatusBar(model: model)'
+require Sources/Flotilla/WindowStatusBar.swift '        .frame(height: 23)'
+require Sources/Flotilla/WindowStatusBar.swift '            .layoutPriority(1)'
+
 if [ "$fail" -ne 0 ]; then
     echo
     echo "Refusing to package: a screenshot scaffold is still in the source."

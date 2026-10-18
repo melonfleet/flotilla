@@ -77,7 +77,7 @@ registry all want to land there), and Phases 2–4 hinge on one protocol decisio
 | Progress sheet for long ops | `.pkg` install, pull, build, export: determinate where the CLI gives it, collapsible+searchable log, Cancel, run-in-background | UX | **[core]** |
 | Destructive-action policy | Confirm with the object named, count on bulk, "don't ask again"; **never a confirmation inside the popover**; `prune` always previews exactly what dies | UX, RUN, SET | **[core]** |
 | Quit semantics stated in the menu item | "Quit Flotilla — containers keep running" (Docker's ⌘Q ambiguity is its most-cited UX failure) | UX | **[core]** |
-| Dark mode + accessibility baseline | Light/Dark/Increase Contrast/Reduce Transparency passes; keyboard-reachable everything, VoiceOver status in words, no hover-only affordances (row actions show on hover since Q59, and are never only there — selection, VoiceOver, ⋮ and the page header reach them), Reduce Motion kills glass morphs | UX | **[core]** |
+| Dark mode + accessibility baseline | Light/Dark/Increase Contrast/Reduce Transparency passes; keyboard-reachable everything, VoiceOver status in words, no hover-only affordances (row actions show on hover since Q60, and are never only there — selection, VoiceOver, ⋮ and the page header reach them), Reduce Motion kills glass morphs | UX | **[core]** |
 | Liquid Glass placement | Glass on popover chrome, toolbar, sidebar, control clusters (one `GlassEffectContainer`); **tables and cards stay opaque**; never glass-on-glass | UX | **[core]** |
 | Sparklines on cards | Needs streaming; Phase 1 ships numeric cells. **⚠ mockup shows sparklines** | UX, RUN | **[later]** |
 | Dockerfile drag-to-build | The one concrete feature request in the Davit HN thread | UX | **[later]** |

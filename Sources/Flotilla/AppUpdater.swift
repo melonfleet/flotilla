@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Sparkle
 import FlotillaCore
@@ -14,8 +15,9 @@ import FlotillaCore
 /// **Admins only.** A host-only Mac is updated by its admin (Q38), so it never checks Sparkle too;
 /// the menu item says so there.
 @MainActor
-final class AppUpdater: NSObject, SPUUpdaterDelegate {
+final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     private var controller: SPUStandardUpdaterController?
+    private var observations: [NSKeyValueObservation] = []
     private let settings: SettingsStore
 
     init(settings: SettingsStore) {
@@ -31,12 +33,30 @@ final class AppUpdater: NSObject, SPUUpdaterDelegate {
     /// Starts or stops the updater for this Mac's role — and applies the settings — whenever the
     /// mode or a setting changes.
     func apply(isAdmin: Bool) {
+        // SettingsStore is not observable by SwiftUI. Refresh update menus after settings
+        // writes too, including channel changes that do not change any Sparkle KVO property.
+        objectWillChange.send()
         guard Self.isConfigured, isAdmin else {
+            observations = []
             controller = nil
             return
         }
         if controller == nil {
             controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
+            if let updater = controller?.updater {
+                // Bridge Sparkle's KVO into SwiftUI; values still come directly from Sparkle.
+                observations = [
+                    updater.observe(\.lastUpdateCheckDate, options: [.new]) { [weak self] _, _ in
+                        Task { @MainActor [weak self] in self?.objectWillChange.send() }
+                    },
+                    updater.observe(\.automaticallyChecksForUpdates, options: [.new]) { [weak self] _, _ in
+                        Task { @MainActor [weak self] in self?.objectWillChange.send() }
+                    },
+                    updater.observe(\.canCheckForUpdates, options: [.new]) { [weak self] _, _ in
+                        Task { @MainActor [weak self] in self?.objectWillChange.send() }
+                    }
+                ]
+            }
         }
         guard let updater = controller?.updater else { return }
         if settings.source(of: SettingsKeys.automaticUpdateChecks) != .builtIn {
@@ -52,6 +72,9 @@ final class AppUpdater: NSObject, SPUUpdaterDelegate {
 
     /// Whether Sparkle checks on its own schedule, as the About page reports it.
     var checksAutomatically: Bool { controller?.updater.automaticallyChecksForUpdates ?? false }
+
+    /// Sparkle owns and persists this date; every update surface reads the same value.
+    var lastChecked: Date? { controller?.updater.lastUpdateCheckDate }
 
     var canCheck: Bool { controller?.updater.canCheckForUpdates ?? false }
 
