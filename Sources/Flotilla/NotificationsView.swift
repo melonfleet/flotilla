@@ -56,6 +56,18 @@ struct NotificationsView: View {
 
     private var selected: [NoticeBook.Notice] { shown.filter { selection.contains($0.id) } }
 
+    /// Shown notices whose checkbox can be ticked: dismissible active ones and dismissed ones that can be restored.
+    private var selectableIDs: [String] { shown.filter { checkUnavailable($0) == nil }.map(\.id) }
+
+    /// Every notice still in the book, so clicking a single error or resolved row can still show its page.
+    private var existingIDs: Set<String> { Set(store.book.notices.map(\.id)) }
+
+    private func checkUnavailable(_ notice: NoticeBook.Notice) -> String? {
+        if !notice.dismissible { return "Errors clear when they're fixed" }
+        if !notice.isActive { return "Already resolved" }
+        return nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             SplitPanes("notifications") { listPane } detail: { detailPane }
@@ -63,6 +75,7 @@ struct NotificationsView: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .selection($selection, confinedTo: Set(selectableIDs), showing: existingIDs)
         .searchesFromToolbar(prompt: "Search notifications",
                              text: Binding(get: { [weak searchText] in searchText?.value ?? "" },
                                            set: { [weak searchText] in searchText?.value = $0 }),
@@ -104,12 +117,15 @@ struct NotificationsView: View {
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // The search is the window bar's box now (Q55); the filter stays with the list it narrows.
-            Picker("Show", selection: $filter) {
-                ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
+            HStack(spacing: 8) {
+                SelectAllCheckbox(selection: $selection, ids: selectableIDs, noun: "notifications")
+                // The search is the window bar's box now (Q55); the filter stays with the list it narrows.
+                Picker("Show", selection: $filter) {
+                    ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
             }
-            .labelsHidden()
-            .fixedSize()
             Text("\(shown.count) \(shown.count == 1 ? "notice" : "notices")")
                 .font(.caption).foregroundStyle(.secondary)
             List(selection: $selection) {
@@ -133,6 +149,8 @@ struct NotificationsView: View {
 
     private func row(_ notice: NoticeBook.Notice) -> some View {
         HStack(alignment: .top, spacing: 10) {
+            RowCheckbox(check: RowCheck(notice.id, in: $selection, unavailable: checkUnavailable(notice)),
+                        name: notice.title)
             Image(systemName: notice.level.symbol).foregroundStyle(notice.level.colour)
                 .accessibilityLabel(notice.level.title)
                 .help(notice.level.title)
@@ -169,17 +187,18 @@ struct NotificationsView: View {
 
     private var footer: some View {
         let chosen = selected
+        let bulk = chosen.count > 1
         let showing = chosen.filter { $0.isActive && $0.dismissed == nil }
         let dismissible = showing.filter(\.dismissible)
         return HStack {
-            Text(chosen.isEmpty ? "Select several to dismiss or restore them together."
-                                : "\(chosen.count) selected")
+            Text(bulk ? "\(chosen.count) selected"
+                      : "Select several to dismiss or restore them together.")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
-            if chosen.contains(where: { $0.dismissed != nil }) {
+            if bulk, chosen.contains(where: { $0.dismissed != nil }) {
                 Button("Restore") { store.restore(Set(chosen.map(\.id))) }
             }
-            if !showing.isEmpty {
+            if bulk, !showing.isEmpty {
                 Button("Dismiss \(dismissible.count)") { store.dismiss(Set(dismissible.map(\.id))) }
                     .disabled(dismissible.isEmpty)
                     .help(dismissible.isEmpty ? "Errors can't be dismissed, only dealt with" : "Hide until each one changes")
