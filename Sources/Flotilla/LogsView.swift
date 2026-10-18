@@ -495,7 +495,7 @@ struct LogsView: View {
         // lines took 2s to arrive without it and never finished in 16s with it (about 2,000 in).
         // `ScrollPosition.scrollTo(edge:)` is cheap but a `List` ignores it. So `TailPinner` moves the
         // list's own scroll view to the end of its document.
-        .background(TailPinner(trigger: pinTail))
+        .background(TailPinner(trigger: pinTail, live: ui.live))
         .onChange(of: feed.last?.id) { _, newest in
             guard ui.live, newest != nil else { return }
             // No animation: a tail that eases to each new line lags behind the output
@@ -804,7 +804,7 @@ struct LogsView: View {
         var nextIndex: [String: Int] = [:]
 
         while !Task.isCancelled {
-            let batch = inbox.drain()
+            let (batch, ended, finished) = inbox.snapshot(targets: targets.count)
             if !batch.isEmpty {
                 loading = false
                 for item in batch {
@@ -823,7 +823,6 @@ struct LogsView: View {
                 rebuildFeed()
             }
 
-            let ended = inbox.takeEnded()
             if !ended.isEmpty {
                 loading = false
                 liveFailures.append(contentsOf: ended)
@@ -831,7 +830,7 @@ struct LogsView: View {
                 rebuildFeed()
             }
 
-            if inbox.closedCount >= targets.count {
+            if finished {
                 loading = false
                 ui.live = false
                 break
@@ -976,7 +975,7 @@ struct LogsView: View {
 /// Written from the readers' own tasks and drained by the tick on the main actor, so every access
 /// is under one lock. Deliberately plain and *not* observed state — one state write per line is
 /// exactly what the tick exists to avoid.
-private final class LiveAggregateInbox: @unchecked Sendable {
+final class LiveAggregateInbox: @unchecked Sendable {
     struct Item {
         let source: String
         let kind: ActivityKind
@@ -1000,8 +999,6 @@ private final class LiveAggregateInbox: @unchecked Sendable {
     /// both fails and then closes must not be counted twice — that would end the tail early
     /// while other children were still running.
     private var closed: Set<String> = []
-
-    var closedCount: Int { lock.withLock { closed.count } }
 
     /// No more than the feed keeps: anything older would be trimmed on the next tick anyway.
     private let cap: Int
@@ -1041,17 +1038,15 @@ private final class LiveAggregateInbox: @unchecked Sendable {
         closeLocked(source, kind: kind)
     }
 
-    func drain() -> [Item] {
+    /// Lines, ends and the closed count taken under one hold of the lock. Reading them in three
+    /// calls let a reader append its last line or failure and close between the drain and the
+    /// closed check, so the loop saw "everything closed" without ever having consumed it.
+    /// `finished` is true only when every one of `targets` was closed *as of this same snapshot*,
+    /// so nothing can arrive after it.
+    func snapshot(targets: Int) -> (items: [Item], ended: [AggregatedLogChunk], finished: Bool) {
         lock.withLock {
-            defer { pending.removeAll(keepingCapacity: true) }
-            return pending
-        }
-    }
-
-    func takeEnded() -> [AggregatedLogChunk] {
-        lock.withLock {
-            defer { endedPending.removeAll(keepingCapacity: true) }
-            return endedPending
+            defer { pending.removeAll(keepingCapacity: true); endedPending.removeAll(keepingCapacity: true) }
+            return (pending, endedPending, closed.count >= targets)
         }
     }
 }
@@ -1063,20 +1058,31 @@ private final class LiveAggregateInbox: @unchecked Sendable {
 /// rather than held, because SwiftUI gives no handle to the table.
 private struct TailPinner: NSViewRepresentable {
     let trigger: Int
+    /// Whether the tail is still being followed. Read again when a delayed scroll fires.
+    let live: Bool
 
-    final class Coordinator { var seen = 0 }
+    final class Coordinator {
+        var seen = 0
+        var live = false
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ view: NSView, context: Context) {
-        guard context.coordinator.seen != trigger else { return }
-        context.coordinator.seen = trigger
+        let coordinator = context.coordinator
+        coordinator.live = live
+        guard coordinator.seen != trigger else { return }
+        coordinator.seen = trigger
+        let generation = trigger
         // After this update's rows exist, or the end is the one before the newest — and again a beat
         // later and again after that: the document's height is an estimate until the rows near the
         // end have been drawn, so the first landing is a few rows short of the real bottom.
         for delay in [0.0, 0.08, 0.2] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view, weak coordinator] in
+                // Live may have been switched off, or a newer trigger issued, since this was
+                // queued; a stale callback must not drag a list the user has since scrolled.
+                guard let coordinator, coordinator.live, coordinator.seen == generation else { return }
                 guard let root = view?.window?.contentView, let table = Self.table(near: view, in: root),
                       let scroll = table.enclosingScrollView else { return }
                 // The clip view to the document's end, not `scrollRowToVisible`: that sizes every

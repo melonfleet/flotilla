@@ -110,30 +110,44 @@ struct ContainerEvent: Identifiable, Hashable {
     // MARK: As a row
 
     /// Kinds whose subject is a name that can carry " on <Mac>" — a paired host's event is recorded
-    /// as "web on mac-mini" (`AppModel.events(for:kind:host:)`). A host's, registry's or DNS zone's
-    /// subject is its own name, and is left whole.
+    /// as "web on mac-mini" (`AppModel.events(for:kind:host:)`), and so is a remote DNS zone's. A
+    /// host's or registry's subject is its own name, and is left whole.
     private var namesAMac: Bool {
         switch kind {
-        case .container, .machine, .image, .volume, .network, .group, .cluster: true
-        case .runtime, .registry, .dns, .host: false
+        case .container, .machine, .image, .volume, .network, .group, .cluster, .dns: true
+        case .runtime, .registry, .host: false
         }
     }
 
-    private var hostSplit: (name: String, host: String)? {
-        guard namesAMac, let range = subject.range(of: " on ", options: .backwards) else { return nil }
-        let host = String(subject[range.upperBound...])
-        return host.isEmpty ? nil : (String(subject[..<range.lowerBound]), host)
+    /// Splits " on <Mac>" off the subject, but only when what follows is the display name of a Mac
+    /// Flotilla knows. A subject is free text — "db on call" is a plausible container name — so
+    /// the text after an " on " is not evidence of a host by itself; anything unrecognised is
+    /// This Mac with the subject whole. Matching the known name as a suffix, longest first, also
+    /// keeps a host whose own name contains " on " from being cut in the middle.
+    ///
+    /// The host is not stored on the event: subjects are the key the per-page feeds filter on
+    /// (`AppModel.events(for:kind:host:)`), so a separate field would have to be kept in step with
+    /// every one of those sites. `hosts` is the paired Macs' display names.
+    private func hostSplit(_ hosts: Set<String>) -> (name: String, host: String)? {
+        guard namesAMac else { return nil }
+        for host in hosts.sorted(by: { $0.count > $1.count }) where !host.isEmpty {
+            let suffix = " on " + host
+            if subject.hasSuffix(suffix), subject.count > suffix.count {
+                return (String(subject.dropLast(suffix.count)), host)
+            }
+        }
+        return nil
     }
 
     /// The subject without its " on <Mac>".
-    var subjectName: String { hostSplit?.name ?? subject }
+    func subjectName(hosts: Set<String>) -> String { hostSplit(hosts)?.name ?? subject }
 
     /// Which other Mac this happened on, or nil for This Mac.
-    var hostName: String? { hostSplit?.host }
+    func hostName(hosts: Set<String>) -> String? { hostSplit(hosts)?.host }
 
     /// What a row says first: "Started web". An observed appearance or disappearance reads as
     /// "Added" or "Removed" — `summary` says "Present", which is a state, not a thing that happened.
-    var headline: String { "\(verb) \(subjectName)" }
+    func headline(hosts: Set<String>) -> String { "\(verb) \(subjectName(hosts: hosts))" }
 
     /// What happened, as a verb.
     var verb: String {

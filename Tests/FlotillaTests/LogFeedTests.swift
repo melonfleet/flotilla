@@ -33,22 +33,31 @@ import FlotillaCore
     }
 
     @Test func headlineNamesTheThingAndWhatHappenedToIt() {
-        #expect(event(.container, "web", from: "stopped", to: "running").headline == "Started web")
-        #expect(event(.container, "web", from: "running", to: "stopped").headline == "Stopped web")
-        #expect(event(.volume, "data", from: "absent", to: "present").headline == "Added data")
-        #expect(event(.network, "n", from: "present", to: "absent").headline == "Removed n")
-        #expect(event(.container, "web", from: "running", to: "running", action: "Restarted").headline == "Restarted web")
+        #expect(event(.container, "web", from: "stopped", to: "running").headline(hosts: []) == "Started web")
+        #expect(event(.container, "web", from: "running", to: "stopped").headline(hosts: []) == "Stopped web")
+        #expect(event(.volume, "data", from: "absent", to: "present").headline(hosts: []) == "Added data")
+        #expect(event(.network, "n", from: "present", to: "absent").headline(hosts: []) == "Removed n")
+        #expect(event(.container, "web", from: "running", to: "running", action: "Restarted").headline(hosts: []) == "Restarted web")
     }
 
     @Test func anotherMacsEventsCarryTheirHost() {
+        let hosts: Set<String> = ["mac-mini", "studio on the left"]
         let remote = event(.container, "web on mac-mini", action: "Deleted")
-        #expect(remote.subjectName == "web")
-        #expect(remote.hostName == "mac-mini")
-        #expect(remote.headline == "Deleted web")
-        #expect(event(.container, "web").hostName == nil)
+        #expect(remote.subjectName(hosts: hosts) == "web")
+        #expect(remote.hostName(hosts: hosts) == "mac-mini")
+        #expect(remote.headline(hosts: hosts) == "Deleted web")
+        #expect(event(.container, "web").hostName(hosts: hosts) == nil)
+        // A remote DNS zone is recorded the same way.
+        #expect(event(.dns, "corp.test on mac-mini").hostName(hosts: hosts) == "mac-mini")
+        // A host whose own name contains " on " is not cut in the middle.
+        #expect(event(.volume, "data on studio on the left").hostName(hosts: hosts) == "studio on the left")
+        #expect(event(.volume, "data on studio on the left").subjectName(hosts: hosts) == "data")
+        // Text after " on " that is not a known Mac is part of the name.
+        #expect(event(.container, "db on call").hostName(hosts: hosts) == nil)
+        #expect(event(.container, "db on call").subjectName(hosts: hosts) == "db on call")
         // A host's own subject is its name, whatever it contains.
-        #expect(event(.host, "Studio on the left").hostName == nil)
-        #expect(event(.host, "Studio on the left").subjectName == "Studio on the left")
+        #expect(event(.host, "x on mac-mini").hostName(hosts: hosts) == nil)
+        #expect(event(.host, "Studio on the left").subjectName(hosts: hosts) == "Studio on the left")
     }
 
     @Test func aPerformedActionHasNoTransition() {
@@ -214,5 +223,32 @@ import FlotillaCore
         #expect(NSLocationInRange(table.numberOfRows - 1, visible), "the newest line is in view")
         ui.live = false
         window.orderOut(nil)
+    }
+}
+
+@Suite struct LiveAggregateInboxTests {
+    private let source = LogSource(key: "web", kind: .container, host: .local, hostName: "This Mac")
+
+    @Test func aFinalLineAndTheCloseArriveInOneSnapshot() {
+        let inbox = LiveAggregateInbox(cap: 100)
+        // Nothing has closed yet: the loop must keep going.
+        #expect(!inbox.snapshot(targets: 1).finished)
+        // The reader's last line and its close land after that snapshot. The next one must carry
+        // the line *and* say finished — never finished with the line left behind.
+        inbox.accept(.line(.stdout, "last words"), from: source)
+        inbox.close(source.key, kind: source.kind)
+        let final = inbox.snapshot(targets: 1)
+        #expect(final.items.map(\.text) == ["last words"])
+        #expect(final.finished)
+    }
+
+    @Test func aFailureArrivesWithTheSnapshotThatReportsFinished() {
+        let inbox = LiveAggregateInbox(cap: 100)
+        inbox.accept(.failed("boom"), from: source)
+        let final = inbox.snapshot(targets: 1)
+        #expect(final.ended.map(\.failure) == ["boom"])
+        #expect(final.finished)
+        // Consumed once.
+        #expect(inbox.snapshot(targets: 1).ended.isEmpty)
     }
 }

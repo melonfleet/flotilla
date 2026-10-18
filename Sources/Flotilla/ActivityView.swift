@@ -19,6 +19,9 @@ struct ActivityView: View {
 
     @State private var showingFilters = false
 
+    /// The paired Macs' display names, which is what tells " on <Mac>" from a name that merely contains " on ".
+    private var knownHosts: Set<String> { Set(model.hostMode.hosts.map(\.displayName)) }
+
     var body: some View {
         // Rows and a page, like every list (Q58), opening on the rows alone (`PaneMode`): a feed is
         // read top to bottom, and an entry's page is something you open over it.
@@ -48,7 +51,7 @@ struct ActivityView: View {
             ActivityEventDetailView(event: event, openHelp: openHelp(event),
                                     open: { open(event) },
                                     filter: { filterToSubject(event) },
-                                    filtered: ui.subject == event.subject)
+                                    filtered: ui.subject == event.subject, knownHosts: knownHosts)
                 .id(event.id)
         } else {
             PaneEmptyState(title: "Choose an entry", systemImage: "clock.arrow.circlepath",
@@ -226,12 +229,12 @@ struct ActivityView: View {
     /// "Started web", the time on the trailing end, and the result under it.
     private func row(_ event: ContainerEvent) -> some View {
         ResourceRow(
-            title: event.headline,
+            title: event.headline(hosts: knownHosts),
             trailingText: RelativeDate.clockTime(event.date),
             detail: detail(event),
             detailHelp: event.date.formatted(date: .abbreviated, time: .standard),
             selected: ui.selected == event.id,
-            summary: "\(event.headline), \(detail(event)), \(RelativeDate.clockTime(event.date))",
+            summary: "\(event.headline(hosts: knownHosts)), \(detail(event)), \(RelativeDate.clockTime(event.date))",
             leading: {
                 RowLeadingMark {
                     // The kind's glyph with the result's dot: where it ended up, as the table's first
@@ -242,7 +245,7 @@ struct ActivityView: View {
                 }
             },
             chips: {
-                if let host = event.hostName {
+                if let host = event.hostName(hosts: knownHosts) {
                     ResourceChip(text: host, systemImage: "desktopcomputer")
                 }
             },
@@ -255,8 +258,8 @@ struct ActivityView: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("More actions for \(event.headline)")
-                .accessibilityLabel("More actions for \(event.headline)")
+                .help("More actions for \(event.headline(hosts: knownHosts))")
+                .accessibilityLabel("More actions for \(event.headline(hosts: knownHosts))")
             })
     }
 
@@ -343,6 +346,7 @@ struct ActivityEventDetailView: View {
     let filter: () -> Void
     /// The feed is already narrowed to this subject.
     let filtered: Bool
+    let knownHosts: Set<String>
 
     var body: some View {
         ScrollView {
@@ -350,7 +354,7 @@ struct ActivityEventDetailView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: event.kind.systemImage).foregroundStyle(.secondary)
                         .accessibilityHidden(true)
-                    Text(event.headline).font(.title3.weight(.semibold)).textSelection(.enabled)
+                    Text(event.headline(hosts: knownHosts)).font(.title3.weight(.semibold)).textSelection(.enabled)
                     Spacer(minLength: 0)
                 }
                 ViewThatFits(in: .horizontal) {
@@ -364,7 +368,7 @@ struct ActivityEventDetailView: View {
                         Text("Subject").font(.system(size: 12)).foregroundStyle(.secondary)
                         Spacer(minLength: 12)
                         // The way in: the subject's own page where it has one, else its section.
-                        Button(event.subjectName, action: open)
+                        Button(event.subjectName(hosts: knownHosts), action: open)
                             .buttonStyle(.link)
                             .foregroundStyle(Theme.link)
                             .font(.system(size: 12))
@@ -373,7 +377,7 @@ struct ActivityEventDetailView: View {
                     row("Kind", event.kind.title)
                     row("Action", event.verb)
                     row("Result", event.transition ?? (event.action == nil ? "Observed" : "Done in Flotilla"))
-                    row("Mac", event.hostName ?? "This Mac")
+                    row("Mac", event.hostName(hosts: knownHosts) ?? "This Mac")
                 }
                 Text(event.action == nil
                      ? "Flotilla saw this change between two refreshes; it may have been made elsewhere."
@@ -388,9 +392,9 @@ struct ActivityEventDetailView: View {
     @ViewBuilder
     private var actions: some View {
         Button(openHelp, action: open)
-        Button("Filter to \(event.subjectName)", action: filter).disabled(filtered)
+        Button("Filter to \(event.subjectName(hosts: knownHosts))", action: filter).disabled(filtered)
         Button("Copy") {
-            Clipboard.copy("\(event.headline) \u{2014} \(event.date.formatted(date: .abbreviated, time: .standard))")
+            Clipboard.copy("\(event.headline(hosts: knownHosts)) \u{2014} \(event.date.formatted(date: .abbreviated, time: .standard))")
         }
     }
 
