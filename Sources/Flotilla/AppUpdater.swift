@@ -19,9 +19,14 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     private var controller: SPUStandardUpdaterController?
     private var observations: [NSKeyValueObservation] = []
     private let settings: SettingsStore
+    private let activity: UpdateActivityCenter
+    /// Whether the check in flight was asked for, so a quiet background check that finds nothing
+    /// does not flash "up to date" at someone who did not ask.
+    private var explicitCheck = false
 
-    init(settings: SettingsStore) {
+    init(settings: SettingsStore, activity: UpdateActivityCenter) {
         self.settings = settings
+        self.activity = activity
         super.init()
     }
 
@@ -78,7 +83,20 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     var canCheck: Bool { controller?.updater.canCheckForUpdates ?? false }
 
-    func checkForUpdates() { controller?.checkForUpdates(nil) }
+    func checkForUpdates() {
+        guard canCheck else { return }
+        explicitCheck = true
+        activity.report(.checking, from: .app)
+        controller?.checkForUpdates(nil)
+    }
+
+    /// Delegate callbacks arrive on the main thread; this hops explicitly rather than assume it.
+    private nonisolated func report(_ stage: UpdateStage, ifExplicit: Bool = false) {
+        Task { @MainActor [weak self] in
+            guard let self, !ifExplicit || explicitCheck else { return }
+            activity.report(stage, from: .app)
+        }
+    }
 
     // MARK: SPUUpdaterDelegate
 
@@ -86,6 +104,56 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     nonisolated func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         MainActor.assumeIsolated {
             settings[SettingsKeys.updateChannel] == .prerelease ? ["beta"] : []
+        }
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        report(.found(item.displayVersionString))
+    }
+
+    nonisolated func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: any Error) {
+        report(.upToDate(nil), ifExplicit: true)
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
+        report(.downloading(item.displayVersionString))
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, didDownloadUpdate item: SUAppcastItem) {
+        report(.downloaded)
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, failedToDownloadUpdate item: SUAppcastItem, error: any Error) {
+        report(.failed("Couldn't download the update: \(error.localizedDescription)"))
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, willExtractUpdate item: SUAppcastItem) {
+        report(.extracting)
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        report(.installing)
+    }
+
+    /// Sparkle also ends a check that found nothing, and a cancelled authorisation, through here:
+    /// neither is a failure. A background check that can't reach GitHub stays quiet too.
+    nonisolated func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
+        let error = error as NSError
+        if error.domain == SUSparkleErrorDomain,
+           [Int(SUError.noUpdateError.rawValue), Int(SUError.installationCanceledError.rawValue)].contains(error.code) {
+            return
+        }
+        report(.failed("Couldn't check: \(error.localizedDescription)"), ifExplicit: true)
+    }
+
+    /// The last word on a cycle. A failure or result already reported stays; a step still showing
+    /// means the cycle ended without saying more (a dismissed dialog), so the step is cleared
+    /// rather than left spinning.
+    nonisolated func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            explicitCheck = false
+            if activity.activity.isBusy(.app) { activity.clear(.app) }
         }
     }
 }

@@ -1786,8 +1786,10 @@ final class AppModel {
     /// See `HostMetricsSampler` — host and container metrics answer different questions and
     /// the dashboard shows both, labelled distinctly.
     @ObservationIgnored let hostMetrics = HostMetricsSampler()
+    /// What the update checks are doing; the app's and the library's both report here.
+    let updateActivity = UpdateActivityCenter()
     /// Sparkle, for this Mac's own Flotilla (Q40). Admins only.
-    @ObservationIgnored lazy var updater = AppUpdater(settings: settingsStore)
+    @ObservationIgnored lazy var updater = AppUpdater(settings: settingsStore, activity: updateActivity)
     /// A `container` install or upgrade in progress, for the banner and onboarding (Q39).
     var runtimeSetup: RuntimeSetupProgress?
     /// On a host: why its own automatic install of `container` is waiting, if it is — shown in the
@@ -1872,11 +1874,12 @@ final class AppModel {
         guard let cached = LibraryUpdater.cached(), builtIn.isOlder(than: cached) else { return builtIn }
         return cached
     }()
-    let libraryUpdater = LibraryUpdater()
+    @ObservationIgnored lazy var libraryUpdater = LibraryUpdater(activity: updateActivity)
 
-    /// Checks GitHub for a newer library now — from Settings, or the daily loop.
-    func checkSuggestionLibrary() async {
-        guard settingsStore[SettingsKeys.suggestionLibraryUpdates] else { return }
+    /// Checks GitHub for a newer library now. The daily setting gates only the automatic check; a
+    /// click on Check Now is the owner's own request, as Sparkle's Check for Updates is.
+    func checkSuggestionLibrary(explicit: Bool = false) async {
+        guard explicit || settingsStore[SettingsKeys.suggestionLibraryUpdates] else { return }
         if let newer = await libraryUpdater.check(current: suggestionLibrary) { suggestionLibrary = newer }
     }
 

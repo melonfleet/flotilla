@@ -6,6 +6,7 @@ struct WindowStatusBar: View {
     let model: AppModel
     @ObservedObject private var updater: AppUpdater
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel) {
         self.model = model
@@ -20,8 +21,16 @@ struct WindowStatusBar: View {
         HStack(spacing: 12) {
             RuntimeStatusBand(model: model)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            if let content = UpdateBadgeContent.current(model) {
+                UpdateActivityBadge(content: content)
+                    .transition(.opacity)
+            }
             versionMenu
                 .layoutPriority(1)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: UpdateBadgeContent.current(model))
+        .onChange(of: UpdateBadgeContent.current(model)) { _, new in
+            if let new, new.announces { AccessibilityNotification.Announcement(new.text).post() }
         }
         .padding(.horizontal, 10)
         .frame(height: 23)
@@ -32,8 +41,9 @@ struct WindowStatusBar: View {
     private var versionMenu: some View {
         Menu {
             SwiftUI.Section("Flotilla") {
-                Button("Check for Updates…") { updater.checkForUpdates() }
-                    .disabled(!updater.canCheck)
+                let appBusy = model.updateActivity.activity.isBusy(.app)
+                Button(appBusy ? "Checking…" : "Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheck || appBusy)
                 Text(lastChecked(updater.lastChecked)).disabled(true)
                 updateChannelMenu
                 Toggle("Automatically check", isOn: Binding(
@@ -50,8 +60,10 @@ struct WindowStatusBar: View {
             SwiftUI.Section("Suggestions library") {
                 Text("Version \(model.suggestionLibrary.version)").disabled(true)
                 Text(lastChecked(model.libraryUpdater.lastChecked)).disabled(true)
-                Button("Check Now") { Task { await model.checkSuggestionLibrary() } }
-                    .disabled(model.libraryUpdater.checking)
+                Button(model.libraryUpdater.checking ? "Checking…" : "Check Now") {
+                    Task { await model.checkSuggestionLibrary(explicit: true) }
+                }
+                .disabled(model.libraryUpdater.checking)
             }
         } label: {
             Text("v\(version)")
@@ -89,10 +101,5 @@ struct WindowStatusBar: View {
         }
     }
 
-    private func lastChecked(_ date: Date?) -> String {
-        guard let date else { return "Last checked: never" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return "Last checked: \(formatter.localizedString(for: date, relativeTo: .now))"
-    }
+    private func lastChecked(_ date: Date?) -> String { UpdateText.lastChecked(date) }
 }

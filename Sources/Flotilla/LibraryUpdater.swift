@@ -29,13 +29,18 @@ final class LibraryUpdater {
     private(set) var icons: [String: Data] = [:]
     nonisolated static let maxIconTotalBytes = 8 * 1024 * 1024
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    private let activity: UpdateActivityCenter
+    /// Tests only: stands in for the network. Receives the file name and the byte cap.
+    @ObservationIgnored var fetchOverride: ((String, Int) async throws -> Data)?
     private static let lastCheckedKey = "suggestionLibraryLastChecked"
     /// The newest version ever accepted. A library older than this is never used again, even if
     /// signed — so an old file can't be replayed in (Kyle, 13 October).
     nonisolated static let highestVersionKey = "suggestionLibraryHighestVersion"
 
-    init() {
+    init(activity: UpdateActivityCenter = UpdateActivityCenter(), defaults: UserDefaults = .standard) {
+        self.activity = activity
+        self.defaults = defaults
         lastChecked = defaults.object(forKey: Self.lastCheckedKey) as? Date
         // Saying "Not checked yet." after a relaunch, hours after the daily check ran, was untrue.
         if let lastChecked { status = Self.lastCheckedText(lastChecked) }
@@ -99,26 +104,31 @@ final class LibraryUpdater {
         guard !checking else { return nil }
         checking = true
         defer { checking = false }
+        activity.report(.checking, from: .library)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 20
         configuration.httpAdditionalHeaders = ["User-Agent": "Flotilla"]
         let session = URLSession(configuration: configuration, delegate: LibraryRedirectPolicy(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         do {
+            activity.report(.downloading(nil), from: .library)
             let data = try await fetch("library.json", session)
             let signature = try await fetch("library.json.sig", session)
             // An answer arrived, good or bad: the next try is tomorrow, not in an hour.
             lastChecked = Date()
             defaults.set(lastChecked, forKey: Self.lastCheckedKey)
+            activity.report(.verifying, from: .library)
             let library = try await Blocking.run { try Self.verified(data, signature: signature) }
             if let highest = defaults.string(forKey: Self.highestVersionKey),
                library.isOlder(than: SuggestionLibrary(version: highest, entries: [])) {
                 status = "GitHub offered an older library (\(library.version)) than one already used, so it was ignored."
+                activity.report(.finished(status), from: .library)
                 return nil
             }
             guard current.isOlder(than: library) else {
                 if library.version == current.version { await updateIcons(current, session: session) }
-                status = "Up to date (library \(current.version))."
+                status = UpdateStage.upToDate(current.version).text(for: .library) + "."
+                activity.report(.upToDate(current.version), from: .library)
                 return nil
             }
             try await Blocking.run {
@@ -130,16 +140,21 @@ final class LibraryUpdater {
             }
             await updateIcons(library, session: session)
             defaults.set(library.version, forKey: Self.highestVersionKey)
-            status = "Updated to library \(library.version): \(library.entries.count) suggestions."
+            let updated = UpdateStage.updated(version: library.version, count: library.entries.count)
+            status = updated.text(for: .library) + "."
+            activity.report(updated, from: .library)
             return library
         } catch {
-            status = (error as? Failure)?.message ?? "Couldn't check: \(error.localizedDescription)"
+            let reason = (error as? Failure)?.message ?? error.localizedDescription
+            status = "Couldn't check: \(reason)"
+            activity.report(.failed(status), from: .library)
             return nil
         }
     }
 
     /// Read as it arrives and abandoned past the cap, so an oversized answer is never held whole.
     private func fetch(_ name: String, _ session: URLSession, cap: Int = LibraryUpdater.maxBytes) async throws -> Data {
+        if let fetchOverride { return try await fetchOverride(name, cap) }
         let (bytes, response) = try await session.bytes(from: Self.source.appendingPathComponent(name))
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             bytes.task.cancel()
@@ -211,6 +226,7 @@ final class LibraryUpdater {
         var found: [String: Data] = [:]
         var seen = Set<String>()
         var remaining = Self.maxIconTotalBytes
+        let total = Set(library.entries.compactMap(\.icon).filter { $0.problem() == nil }.map(\.sha256)).count
         for icon in library.entries.compactMap(\.icon) {
             guard icon.problem() == nil, seen.insert(icon.sha256).inserted else { continue }
             if let cached = await Blocking.run({ Self.readIcon(icon) }) {
@@ -224,6 +240,7 @@ final class LibraryUpdater {
             // This bounds all icon traffic during a check, not just successfully stored bytes.
             guard remaining >= LibraryIcon.maxBytes else { continue }
             remaining -= LibraryIcon.maxBytes
+            activity.report(.logos(done: seen.count, of: total), from: .library)
             do {
                 let data = try await fetch(icon.file, session, cap: LibraryIcon.maxBytes)
                 let valid = await Blocking.run {

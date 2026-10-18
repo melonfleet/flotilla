@@ -583,6 +583,13 @@ struct SettingsView: View {
     @ViewBuilder
     private var updatesPane: some View {
         SettingsGroup {
+            if model.updater.isRunning {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if model.updateActivity.activity.isBusy(.app) { UpdateSpinner() }
+                    SettingsNote(verbatim: "Flotilla: " + (model.updateActivity.activity.entries[.app]?.text
+                                                          ?? UpdateText.lastChecked(model.updater.lastChecked)))
+                }
+            }
             SettingToggle(store: store, key: SettingsKeys.automaticUpdateChecks, title: "Automatically check for updates")
             SettingToggle(store: store, key: SettingsKeys.automaticallyDownloadUpdates, title: "Automatically download updates")
             SettingRow(store: store, key: SettingsKeys.updateCheckIntervalSeconds, title: "Check every", colon: false) { binding in
@@ -603,9 +610,12 @@ struct SettingsView: View {
         SettingsGroup("Suggestions library") {
             SettingToggle(store: store, key: SettingsKeys.suggestionLibraryUpdates, title: "Check for new suggestions daily")
             HStack(alignment: .firstTextBaseline) {
-                SettingsNote(verbatim: "Library \(model.suggestionLibrary.version), \(model.suggestionLibrary.entries.count) suggestions. \(model.libraryUpdater.status)")
+                let live = model.updateActivity.activity.entries[.library]
+                SettingsNote(verbatim: "Library \(model.suggestionLibrary.version), \(model.suggestionLibrary.entries.count) suggestions. "
+                             + (live?.stage.isInProgress == true ? live!.text : model.libraryUpdater.status))
                 Spacer()
-                Button("Check Now") { Task { await model.checkSuggestionLibrary() } }
+                if model.libraryUpdater.checking { UpdateSpinner() }
+                Button("Check Now") { Task { await model.checkSuggestionLibrary(explicit: true) } }
                     .disabled(model.libraryUpdater.checking)
             }
         }
