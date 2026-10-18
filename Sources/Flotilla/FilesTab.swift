@@ -17,7 +17,6 @@ struct FilesTab: View {
     let container: Container
 
     @State private var path = "/"
-    @State private var toolbarWidth: CGFloat = 0
     @State private var history = ["/"]
     @State private var historyIndex = 0
     @State private var entries: [FileEntry] = []
@@ -80,9 +79,19 @@ struct FilesTab: View {
             Divider()
             if let edit { editor(edit) }
             content
-            HStack {
+            // The path sits at the bottom with the counts, as Finder's path bar does (Kamal, 18
+            // October): the toolbar keeps the controls, the footer says where you are and how much.
+            HStack(spacing: 10) {
+                // Left-aligned when it fits; a long path scrolls, showing its last folder.
+                ViewThatFits(in: .horizontal) {
+                    breadcrumbs.frame(maxWidth: .infinity, alignment: .leading)
+                    ScrollView(.horizontal) { breadcrumbs }
+                        .scrollIndicators(.hidden)
+                        .defaultScrollAnchor(.trailing)
+                }
+                .layoutPriority(-1)
                 Text(submittedSearch.isEmpty ? "\(entries.count) items · \(selection.count) selected" : "\(results.count) results\(searchCapped ? " · first 500 / output limit" : "")")
-                Spacer()
+                    .fixedSize()
                 if loading || busy { ProgressView().controlSize(.small) }
                 tool("arrow.clockwise", "Reload", disabled: loading || busy) { Task { await load() } }
             }
@@ -127,7 +136,6 @@ struct FilesTab: View {
                     HStack(spacing: 6) {
                         tool("chevron.left", "Back", disabled: historyIndex == 0) { step(-1) }
                         tool("chevron.right", "Forward", disabled: historyIndex == history.count - 1) { step(1) }
-                        if geometry.size.width > 800 { breadcrumbs.frame(maxWidth: 220) }
                         Divider().frame(height: 18)
                         ForEach(FilesViewMode.allCases, id: \.self) { candidate in
                             tool(candidate.symbol, candidate.rawValue) { model.filesViewModes[container.id] = candidate }
@@ -172,7 +180,6 @@ struct FilesTab: View {
             }.scrollIndicators(.hidden)
         }
         .frame(height: 48)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { toolbarWidth = $0 }
 
     }
 
@@ -204,9 +211,6 @@ struct FilesTab: View {
             ContentUnavailableView("Files are unavailable", systemImage: "lock", description: Text("Browsing needs this Mac's owner's interactive exec permission."))
         } else {
             VStack(spacing: 0) {
-                if toolbarWidth <= 800 {
-                    ScrollView(.horizontal) { breadcrumbs.padding(.horizontal, 10).padding(.vertical, 5) }.scrollIndicators(.hidden)
-                }
                 if let listingFailure {
                     ContentUnavailableView {
                         Label("Cannot read these files", systemImage: "exclamationmark.triangle")
