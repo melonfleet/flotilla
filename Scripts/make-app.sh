@@ -71,6 +71,8 @@ echo "▸ checking view defaults…"
 # A blocking `container` call put back in a `Task` holds one of Swift's few pool threads for its
 # whole timeout; enough unreachable hosts and the app cannot even quit. Looks like correct code.
 "$ROOT/Scripts/check-blocking.sh"
+# A page whose tabs are listed in another order than every other page's (PageTabKind).
+"$ROOT/Scripts/check-tab-order.sh"
 
 echo "▸ building ($CONFIG)…"
 if [ "$CONFIG" = "release" ]; then

@@ -4,21 +4,37 @@ import FlotillaCore
 import FlotillaNet
 
 /// The tabs of a Mac's page (the owner, 9 October): the same shape as a container's or a machine's.
+///
+/// In `PageTabKind`'s order, as every page is (Kamal, 18 October): Overview, the Mac's own views,
+/// Settings, then Activity where a container's Logs is; behind the divider SSH where a container's
+/// Terminal is, then Files, then Screen Sharing.
 enum HostDetailTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case system = "System"
     case flotilla = "Flotilla"
-    case settings = "Settings"
     case updates = "Updates"
+    case settings = "Settings"
     case activity = "Activity"
     // macOS's own ways in (Kamal, 17 October), a host's only: This Mac does not connect to itself.
     case ssh = "SSH"
-    case screenSharing = "Screen Sharing"
     case files = "Files"
+    case screenSharing = "Screen Sharing"
     var id: Self { self }
 
     /// The tabs every Mac's page has.
-    static let pages: [HostDetailTab] = [.overview, .system, .flotilla, .settings, .updates, .activity]
+    static let pages: [HostDetailTab] = [.overview, .system, .flotilla, .updates, .settings, .activity]
+
+    var kind: PageTabKind {
+        switch self {
+        case .overview: .overview
+        case .system, .flotilla, .updates: .view
+        case .settings: .settings
+        case .activity: .history
+        case .ssh: .session
+        case .files: .files
+        case .screenSharing: .screen
+        }
+    }
 
     /// The macOS service behind a remote-access tab.
     var service: RemoteAccess.Service? {
@@ -32,7 +48,8 @@ enum HostDetailTab: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .overview: "square.grid.2x2"
+        // The Overview every other page has, with its icon: the same thing in the same place.
+        case .overview: "info.circle"
         case .system: "desktopcomputer"
         case .flotilla: "sailboat"
         case .settings: "slider.horizontal.3"
@@ -113,16 +130,17 @@ struct HostDetailView: View {
 
     // MARK: The tab pill
 
-    /// Every Mac's pages, then — on a host's page only — SSH, Screen Sharing and Files, each with a
+    /// Every Mac's pages, then — on a host's page only — SSH, Files and Screen Sharing, each with a
     /// dot for whether that host says it is on.
     private var tabItems: [PageTabs<HostDetailTab>.Item] {
-        var items = HostDetailTab.pages.map { PageTabs<HostDetailTab>.Item(tab: $0, title: $0.rawValue, systemImage: $0.systemImage) }
+        var items = HostDetailTab.pages.map {
+            PageTabs<HostDetailTab>.Item(tab: $0, title: $0.rawValue, systemImage: $0.systemImage, kind: $0.kind)
+        }
         guard fingerprint != nil else { return items }
-        for (index, tab) in [HostDetailTab.ssh, .screenSharing, .files].enumerated() {
+        for tab in [HostDetailTab.ssh, .files, .screenSharing] {
             guard let service = tab.service else { continue }
             let state = RemoteAccess.state(of: service, in: facts)
-            items.append(.init(tab: tab, title: tab.rawValue, systemImage: tab.systemImage,
-                               separatedFromPrevious: index == 0,
+            items.append(.init(tab: tab, title: tab.rawValue, systemImage: tab.systemImage, kind: tab.kind,
                                status: .init(colour: state.colour, value: state.value,
                                              help: RemoteAccessPage.help(service, state, hostName: name))))
         }

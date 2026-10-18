@@ -8,6 +8,8 @@ enum NetworkDetailTab: String, CaseIterable, Identifiable {
     case inspect = "Inspect"
     var id: Self { self }
 
+    var kind: PageTabKind { self == .overview ? .overview : .inspect }
+
     var systemImage: String {
         switch self {
         case .overview: "info.circle"
@@ -41,7 +43,7 @@ struct NetworkDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             PageTabs(items: NetworkDetailTab.allCases.map {
-                .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage)
+                .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage, kind: $0.kind)
             }, selection: $tab)
 
             Group {

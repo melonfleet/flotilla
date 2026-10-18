@@ -1800,6 +1800,9 @@ final class AppModel {
     /// user's own `/usr/bin/ssh` (`HostSSHTab`), not a Flotilla connection.
     @ObservationIgnored let sshTerminals = TerminalSessionStore()
 
+    /// Whether this Mac's user has an SSH key, for the SSH tab's key card (`SSHKeyState`).
+    @ObservationIgnored let sshKeys = SSHKeyState()
+
     // MARK: Requests from menus
     //
     // The popover and app menus can *ask* for a screen; they cannot reach into the window's

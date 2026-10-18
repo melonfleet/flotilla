@@ -231,47 +231,15 @@ struct TerminalTab: View {
 
     var body: some View {
         Group {
-            if !host.isLocal {
-                // `ContainerDetailView` does not offer this tab for another Mac's container. Said
-                // here too, because a shell opened from this view would run on this Mac.
-                ContentUnavailableView {
-                    Label("Terminal is for this Mac's containers", systemImage: "terminal")
-                } description: {
-                    Text("A shell runs through this Mac's container CLI, so it can't reach a container on another Mac.")
-                }
-            } else if !AppModel.isRunning(container) {
-                // A stopped container has no namespace to exec into. Say so, rather than
-                // offering a button that will fail — the CLI's own error here is "container is
-                // not running", which is true but arrives too late to help.
-                ContentUnavailableView {
-                    Label("Container is not running", systemImage: "terminal")
-                } description: {
-                    Text("Start “\(container.id)” to open a shell inside it.")
-                }
-            } else if let current = model.terminals.current(for: key) {
+            if host.isLocal, AppModel.isRunning(container), let current = model.terminals.current(for: key) {
+                // A shell already open for this container is the tab, with no start page.
                 VStack(spacing: 0) {
                     shellStrip(current: current)
                     Divider()
                     TerminalSurface(store: model.terminals, session: current)
                 }
-            } else if let failure {
-                ContentUnavailableView {
-                    Label("Cannot open a shell", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(failure)
-                } actions: {
-                    Button("Try again") { openShell() }
-                }
             } else {
-                ContentUnavailableView {
-                    Label("Terminal", systemImage: "terminal")
-                } description: {
-                    Text(LocalizedStringKey("Opens `sh` inside “\(container.id)” as root. "
-                         + "Anything you run here affects the container, not this Mac."))
-                } actions: {
-                    Button("Open shell") { openShell() }
-                        .buttonStyle(.borderedProminent)
-                }
+                startPage
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -280,6 +248,48 @@ struct TerminalTab: View {
         .onChange(of: AppModel.isRunning(container)) { _, running in
             if !running { model.terminals.closeAll(for: key) }
         }
+    }
+
+    /// No shell yet: the start page every session tab has (`SessionStartPage`), rather than a
+    /// message centred in the pane.
+    private var startPage: some View {
+        let running = AppModel.isRunning(container)
+        return SessionStartPage(systemImage: "terminal", title: "Terminal",
+                                statusColour: host.isLocal && running ? Theme.online : .gray,
+                                statusLine: statusLine(running: running),
+                                purpose: "A shell inside \u{201C}\(container.id)\u{201D}, as root. Anything you run here affects the container, not this Mac.") {
+            DetailCard(title: "Open Terminal", minHeight: nil) {
+                if !host.isLocal {
+                    // `ContainerDetailView` does not offer this tab for another Mac's container. Said
+                    // here too, because a shell opened from this view would run on this Mac.
+                    Text("A shell runs through this Mac\u{2019}s container CLI, so it can\u{2019}t reach a container on another Mac.")
+                        .font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                } else if !running {
+                    // A stopped container has no namespace to exec into. Said before the click,
+                    // rather than the CLI's "container is not running" after it.
+                    Text("Start \u{201C}\(container.id)\u{201D} to open a shell inside it.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Button("Open Terminal") {}.disabled(true)
+                } else {
+                    if let failure { SessionOutcomeNote(outcome: .problem(failure)) }
+                    if let preview { SessionCommandLine(text: preview) }
+                    Button("Open Terminal") { openShell() }.buttonStyle(.borderedProminent)
+                        .accessibilityLabel("Open Terminal in \(container.id)")
+                }
+            }
+        }
+    }
+
+    private func statusLine(running: Bool) -> String {
+        if !host.isLocal { return "Terminal is for this Mac\u{2019}s containers." }
+        return running ? "\u{201C}\(container.id)\u{201D} is running." : "\u{201C}\(container.id)\u{201D} isn\u{2019}t running."
+    }
+
+    /// What Open Terminal runs, as the allowlist returns it — never assembled for show.
+    private var preview: String? {
+        guard let validated = try? Allowlist.validated(["exec", "-i", "-t", container.id, "--", Self.shell],
+                                                       execPolicy: model.cli.execPolicy) else { return nil }
+        return (["container"] + validated.arguments).joined(separator: " ")
     }
 
     /// `ShellStrip`, shared with the machine Terminal tab — which carried a copy that had

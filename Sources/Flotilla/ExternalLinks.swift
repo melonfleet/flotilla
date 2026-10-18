@@ -37,6 +37,11 @@ enum ExternalLinks {
     static let appleFileSharing = URL(string: "https://support.apple.com/guide/mac-help/mh17131/mac")!
     /// File Sharing ⓘ ▸ Options ▸ "Share files and folders using SMB".
     static let appleFileSharingSMB = URL(string: "https://support.apple.com/guide/mac-help/mh14107/mac")!
+    /// The SSH tab's key help (18 October). OpenSSH's own manual pages, because Apple has no current
+    /// guide to SSH keys — its one is for the retired Server app. Both fetched and checked on 18
+    /// October; `ssh-copy-id` has no page there (it is not part of OpenBSD's OpenSSH).
+    static let opensshKeygen = URL(string: "https://man.openbsd.org/ssh-keygen.1")!
+    static let opensshAuthentication = URL(string: "https://man.openbsd.org/ssh.1#AUTHENTICATION")!
     // Energy recommendations on a host's System tab (10 October), each checked by its page title.
     static let appleEnergyDesktop = URL(string: "https://support.apple.com/guide/mac-help/change-energy-settings-mchlp1168/mac")!
     static let appleBatteryLaptop = URL(string: "https://support.apple.com/guide/mac-help/change-battery-settings-mchlfc3b7879/mac")!

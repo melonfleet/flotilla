@@ -12,6 +12,8 @@ enum VolumeDetailTab: String, CaseIterable, Identifiable {
     case inspect = "Inspect"
     var id: Self { self }
 
+    var kind: PageTabKind { self == .overview ? .overview : .inspect }
+
     var systemImage: String {
         switch self {
         case .overview: "info.circle"
@@ -50,7 +52,7 @@ struct VolumeDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             PageTabs(items: VolumeDetailTab.allCases.map {
-                .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage)
+                .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage, kind: $0.kind)
             }, selection: $tab)
 
             Group {

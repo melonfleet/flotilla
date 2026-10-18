@@ -65,7 +65,7 @@ extension RemoteAccess.Service {
 
     var connectTitle: String {
         switch self {
-        case .ssh: "Connect"
+        case .ssh: "Start SSH Session"
         case .screenSharing: "Open Screen Sharing"
         case .fileSharing: "Open in Finder"
         }
@@ -122,7 +122,7 @@ struct RemoteAccessPage: View {
     let fingerprint: PeerFingerprint
     let service: RemoteAccess.Service
     let hostName: String
-    /// The SSH tab's "Connect anyway", which opens its own session rather than a URL.
+    /// The SSH tab's "Start SSH Session anyway", which opens its own session rather than a URL.
     var connect: (() -> Void)?
 
     private var state: RemoteAccess.State { RemoteAccess.state(of: service, in: model.hostMode.facts[fingerprint]) }
@@ -138,58 +138,36 @@ struct RemoteAccessPage: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: service.systemImage).font(.system(size: 22)).foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.title3.weight(.semibold))
-                        HStack(spacing: 5) {
-                            Circle().fill(state.colour).frame(width: 7, height: 7).accessibilityHidden(true)
-                            Text(stateLine).font(.callout).foregroundStyle(.secondary)
-                        }
-                        .accessibilityElement(children: .combine)
+        SessionStartPage(systemImage: service.systemImage, title: title, statusColour: state.colour,
+                         statusLine: stateLine, purpose: service.purpose(hostName)) {
+            if state == .on {
+                DetailCard(title: service.connectTitle, minHeight: nil) { actions }
+            } else {
+                DetailCard(title: "To turn it on, at \(hostName)", minHeight: nil) {
+                    step(1, "Open System Settings ▸ General ▸ Sharing\(macOSNote).")
+                    ForEach(Array(service.steps.enumerated()), id: \.offset) { index, text in
+                        step(index + 2, text)
                     }
                 }
-                Text(service.purpose(hostName)).font(.callout)
-                    .lineLimit(5).frame(maxWidth: 520, alignment: .leading)
-
-                if state == .on {
-                    DetailCard(title: service.connectTitle, minHeight: nil) { actions }
-                        .frame(maxWidth: 520)
-                } else {
-                    DetailCard(title: "To turn it on, at \(hostName)", minHeight: nil) {
-                        step(1, "Open System Settings ▸ General ▸ Sharing\(macOSNote).")
-                        ForEach(Array(service.steps.enumerated()), id: \.offset) { index, text in
-                            step(index + 2, text)
-                        }
-                    }
-                    .frame(maxWidth: 520)
-                    DetailCard(title: "Apple’s instructions", minHeight: nil) {
-                        ForEach(service.guides, id: \.url) { guide in
-                            VStack(alignment: .leading, spacing: 1) {
-                                Button {
-                                    NSWorkspace.shared.open(guide.url)
-                                } label: {
-                                    Label(guide.title, systemImage: "arrow.up.forward.square")
-                                        .foregroundStyle(Theme.link)
-                                }
-                                .buttonStyle(.link)
-                                .help(guide.url.absoluteString)
-                                .accessibilityLabel("Apple: \(guide.title)")
-                                .accessibilityHint("Opens in your browser")
-                                Text(guide.path).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                DetailCard(title: "Apple’s instructions", minHeight: nil) {
+                    ForEach(service.guides, id: \.url) { guide in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Button {
+                                NSWorkspace.shared.open(guide.url)
+                            } label: {
+                                Label(guide.title, systemImage: "arrow.up.forward.square")
+                                    .foregroundStyle(Theme.link)
                             }
+                            .buttonStyle(.link)
+                            .help(guide.url.absoluteString)
+                            .accessibilityLabel("Apple: \(guide.title)")
+                            .accessibilityHint("Opens in your browser")
+                            Text(guide.path).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                         }
                     }
-                    .frame(maxWidth: 520)
-                    DetailCard(title: "Already on?", minHeight: nil) { actions }
-                        .frame(maxWidth: 520)
                 }
+                DetailCard(title: "Already on?", minHeight: nil) { actions }
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 
@@ -264,14 +242,11 @@ struct HostSSHTab: View {
     let fingerprint: PeerFingerprint
     let hostName: String
 
-    @State private var failure: Failure?
+    /// How the last thing this tab ran ended: a session, ssh-keygen or ssh-copy-id.
+    @State private var outcome: SessionOutcome?
+    /// Which of them it was, so the note sits in the card it belongs to.
+    @State private var outcomeFromKeySetup = false
     @State private var connectingAnyway = false
-
-    struct Failure: Equatable {
-        let message: String
-        /// What ssh printed last, since its terminal is gone.
-        let output: String
-    }
 
     private var store: TerminalSessionStore { model.sshTerminals }
     private var key: String { fingerprint.hex }
@@ -288,6 +263,7 @@ struct HostSSHTab: View {
     var body: some View {
         Group {
             if let current = store.current(for: key) {
+                // A session already running for this host — ssh, or a key step — is the tab.
                 VStack(spacing: 0) {
                     ShellStrip(store: store, subjectID: key, current: current,
                                newShellHelp: "Open another SSH session to \(hostName)", onOpen: openSession)
@@ -304,27 +280,18 @@ struct HostSSHTab: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            // Clicking the tab is asking for a session, when the host says SSH is on.
-            if state == .on, store.current(for: key) == nil, failure == nil { openSession() }
-        }
+        // Clicking the tab shows this page and nothing more (Kamal, 18 October): the session starts
+        // from its button. What is read on the way in is whether a key exists, read-only.
+        .task { await model.sshKeys.refresh() }
     }
 
-    /// No session: what will run, as whom, and the button that runs it.
+    /// No session: what will run, as whom, the button that runs it, and the key help.
     private var startPage: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Label("SSH to \(hostName)", systemImage: "apple.terminal").font(.title3.weight(.semibold))
-                if let failure {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label(failure.message, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.warning).font(.callout)
-                        if !failure.output.isEmpty {
-                            Text(failure.output).font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.secondary).textSelection(.enabled).lineLimit(6)
-                        }
-                    }
-                }
+        SessionStartPage(systemImage: RemoteAccess.Service.ssh.systemImage, title: "SSH",
+                         statusColour: state.colour, statusLine: statusLine,
+                         purpose: RemoteAccess.Service.ssh.purpose(hostName)) {
+            DetailCard(title: "Start SSH Session", minHeight: nil) {
+                if let outcome, !outcomeFromKeySetup { SessionOutcomeNote(outcome: outcome) }
                 HStack(spacing: 8) {
                     Text("Connect as").font(.callout).foregroundStyle(.secondary)
                     TextField(model.hostMode.facts[fingerprint]?.loginUser ?? NSUserName(), text: connectAs)
@@ -333,12 +300,11 @@ struct HostSSHTab: View {
                 }
                 switch argv {
                 case .success(let arguments)?:
-                    Text(([RemoteAccess.sshExecutable] + arguments).joined(separator: " "))
-                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+                    SessionCommandLine(text: ([RemoteAccess.sshExecutable] + arguments).joined(separator: " "))
                     Text("Uses this Mac\u{2019}s ssh with your own keys, agent and ~/.ssh/config. If \(hostName) asks for a password, you type it to ssh in the terminal; Flotilla never sees or keeps it.")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(3).frame(maxWidth: 520, alignment: .leading)
-                    Button("Connect", action: openSession).buttonStyle(.borderedProminent)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                    Button("Start SSH Session", action: openSession).buttonStyle(.borderedProminent)
+                        .accessibilityLabel("Start SSH Session to \(hostName)")
                 case .failure(let problem)?:
                     Label(problem.description, systemImage: "xmark.octagon").font(.callout).foregroundStyle(Theme.danger)
                 case nil:
@@ -346,9 +312,31 @@ struct HostSSHTab: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            SSHKeyCard(keys: model.sshKeys, hostName: hostName,
+                       host: validatedHost, user: validatedUser,
+                       outcome: outcomeFromKeySetup ? outcome : nil,
+                       makeKey: makeKey, copyKey: copyKey, tryIt: openSession)
         }
+    }
+
+    private var statusLine: String {
+        switch state {
+        case .on: "Remote Login is on at \(hostName)."
+        case .off: "Remote Login is off at \(hostName), by its report; you chose to try anyway."
+        case .unknown: "\(hostName) hasn\u{2019}t said whether Remote Login is on."
+        }
+    }
+
+    /// The host and user only once `sshArguments` accepted them: the key steps take nothing ssh
+    /// itself would not.
+    private var validatedHost: String? {
+        guard case .success? = argv else { return nil }
+        return address
+    }
+
+    private var validatedUser: String? {
+        guard case .success? = argv, let user, !user.isEmpty else { return nil }
+        return user
     }
 
     private var connectAs: Binding<String> {
@@ -356,17 +344,20 @@ struct HostSSHTab: View {
                 set: { HostConnect.setTypedUser($0, model, for: fingerprint) })
     }
 
+    private var environment: [String] {
+        RemoteAccess.sshEnvironment(base: SwiftTerm.Terminal.getEnvironmentVariables(termName: "xterm-256color"),
+                                    inherited: ProcessInfo.processInfo.environment)
+    }
+
     private func openSession() {
-        failure = nil
+        outcome = nil
         guard let argv else { return }
         switch argv {
         case .failure(let problem):
-            failure = Failure(message: problem.description, output: "")
+            show(.problem(problem.description), keySetup: false)
             // Without the value: the error log goes into support bundles.
             model.record("Refused to open SSH to a host: \(problem)", subsystem: "terminal")
         case .success(let arguments):
-            let environment = RemoteAccess.sshEnvironment(base: SwiftTerm.Terminal.getEnvironmentVariables(termName: "xterm-256color"),
-                                                          inherited: ProcessInfo.processInfo.environment)
             let host = hostName
             store.open(containerID: key, executable: RemoteAccess.sshExecutable, argv: arguments,
                        environment: environment) { code, lastLines in
@@ -374,11 +365,64 @@ struct HostSSHTab: View {
                 case nil, 0?: break
                 case 255?:
                     // ssh's own code for "could not connect or sign in".
-                    failure = Failure(message: "ssh couldn\u{2019}t connect to \(host) or sign in.", output: lastLines)
+                    show(.problem("ssh couldn\u{2019}t connect to \(host) or sign in.", output: lastLines), keySetup: false)
                 case let code?:
-                    failure = Failure(message: "The session ended with status \(code).", output: lastLines)
+                    show(.problem("The session ended with status \(code).", output: lastLines), keySetup: false)
                 }
             }
         }
+    }
+
+    /// `ssh-keygen -t ed25519` in this tab's terminal, where it asks for a place and a passphrase.
+    /// Offered only with no key in `~/.ssh`; ssh-keygen asks again before it would overwrite one.
+    private func makeKey() {
+        outcome = nil
+        let session = store.open(containerID: key, executable: SSHKeySetup.keygenExecutable,
+                                 argv: SSHKeySetup.keygenArguments, environment: environment) { code, lastLines in
+            Task {
+                await model.sshKeys.refresh()
+                if code == 0, model.sshKeys.status?.keyToCopy != nil {
+                    show(.done("Your key is made. Next, put it on \(hostName)."), keySetup: true)
+                } else if code == 0 {
+                    show(.problem("ssh-keygen finished, but there\u{2019}s no key in the usual place in ~/.ssh — it may have been saved somewhere else.", output: lastLines), keySetup: true)
+                } else {
+                    show(.problem("ssh-keygen ended without making a key (status \(code.map(String.init) ?? "unknown")).", output: lastLines), keySetup: true)
+                }
+            }
+        }
+        store.rename(session, in: key, to: "ssh-keygen")
+    }
+
+    /// `ssh-copy-id -i ~/.ssh/<name> [user@]host` in this tab's terminal, where ssh asks for the
+    /// host's password once.
+    private func copyKey(_ publicKey: String) {
+        outcome = nil
+        guard let host = validatedHost else { return }
+        let user = validatedUser
+        let arguments: [String]
+        do {
+            arguments = try SSHKeySetup.copyIDArguments(sshDirectory: SSHKeyState.sshDirectory, publicKey: publicKey,
+                                                        host: host, user: user)
+        } catch {
+            show(.problem(error.description), keySetup: true)
+            model.record("Refused to copy an SSH key to a host: \(error)", subsystem: "terminal")
+            return
+        }
+        let name = hostName
+        let session = store.open(containerID: key, executable: SSHKeySetup.copyIDExecutable, argv: arguments,
+                                 environment: environment) { code, lastLines in
+            if code == 0 {
+                model.sshKeys.recordCopied(host: host, user: user)
+                show(.done("Your key is on \(name). Try it: the next session should go straight in.", output: lastLines), keySetup: true)
+            } else {
+                show(.problem("ssh-copy-id couldn\u{2019}t put your key on \(name) (status \(code.map(String.init) ?? "unknown")).", output: lastLines), keySetup: true)
+            }
+        }
+        store.rename(session, in: key, to: "ssh-copy-id")
+    }
+
+    private func show(_ value: SessionOutcome, keySetup: Bool) {
+        outcome = value
+        outcomeFromKeySetup = keySetup
     }
 }

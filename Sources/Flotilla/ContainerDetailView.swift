@@ -4,7 +4,7 @@ import AppKit
 import UniformTypeIdentifiers
 import FlotillaCore
 
-/// Detail sheet for one container: Overview, Processes, Logs, Terminal, Inspect, Configuration.
+/// Detail for one container: Overview, Processes, Logs, Inspect | Terminal, Files (`PageTabKind`).
 ///
 /// Logs is still a repeated bounded fetch (`cli.logs(id, lines:, bootLog:)`), not a
 /// subscription — even "Follow" is that fetch on a timer. Live *streaming* remains Phase 4.
@@ -42,7 +42,7 @@ struct ContainerDetailView: View {
     }
 
     static func tabs(for host: HostRef) -> [Tab] {
-        host.isLocal ? Tab.allCases : [.overview, .logs, .inspect, .processes]
+        host.isLocal ? Tab.allCases : [.overview, .processes, .logs, .inspect]
     }
 
     /// The tab drawn: `tab` if this container can have it, otherwise Overview.
@@ -106,13 +106,8 @@ struct ContainerDetailView: View {
     /// heavier weight and full-strength text — three signals, so it does not rely on colour
     /// alone.
     private var tabBar: some View {
-        let tabs = Self.tabs(for: host)
-        return PageTabs(items: tabs.enumerated().map { index, candidate in
-            .init(tab: candidate,
-                  title: candidate.rawValue,
-                  systemImage: candidate.systemImage,
-                  separatedFromPrevious: index > 0
-                      && tabs[index - 1].isShared && !candidate.isShared)
+        PageTabs(items: Self.tabs(for: host).map {
+            .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage, kind: $0.kind)
         }, selection: Binding(get: { shownTab }, set: { tab = $0 }), label: "Container sections", shortcuts: true)
     }
 
@@ -612,23 +607,26 @@ private struct ProcessesTab: View {
 /// Top-level rather than nested in the view because `AppModel` remembers the last one per
 /// container, and a model reaching into a view's private nested type would be backwards.
 enum DetailTab: String, CaseIterable, Identifiable {
-    // Overview, Terminal, Logs, Inspect are the four both detail screens have, in this order on
-    // both — so moving between a container and a machine does not move the tabs under you. What
-    // only one of them can offer comes after, behind a divider.
+    // In `PageTabKind`'s order, as every page is (Kamal, 18 October): Overview, Processes (a
+    // container's own view), Logs, Inspect, then the ways in — Terminal, Files — behind the divider.
+    // A machine's page is Overview · Settings · Logs · Inspect | Terminal, so moving between the two
+    // never moves a shared tab relative to the others.
     case overview = "Overview"
-    case terminal = "Terminal"
+    case processes = "Processes"
     case logs = "Logs"
     case inspect = "Inspect"
-    case processes = "Processes"
+    case terminal = "Terminal"
     case files = "Files"
     var id: Self { self }
 
-    /// True for the four tabs the machine detail also has. The tab bar draws a divider where this
-    /// stops being true, so the shared set reads as one group.
-    var isShared: Bool {
+    var kind: PageTabKind {
         switch self {
-        case .overview, .terminal, .logs, .inspect: true
-        case .processes, .files: false
+        case .overview: .overview
+        case .processes: .view
+        case .logs: .history
+        case .inspect: .inspect
+        case .terminal: .session
+        case .files: .files
         }
     }
 

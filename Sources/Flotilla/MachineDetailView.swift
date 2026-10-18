@@ -8,22 +8,23 @@ import FlotillaCore
 /// `machine ps`, no `machine copy` and no per-machine config file, so those tabs would be
 /// controls with nothing behind them. `Settings` replaces them because `machine set` is real.
 enum MachineDetailTab: String, CaseIterable, Identifiable {
-    // Overview, Terminal, Logs, Inspect in the same order as the container detail, so the two
-    // screens do not shuffle the tabs under you. Settings is the one only a machine has — `machine
-    // set` is real, where a container cannot be changed after creation — so it comes last, behind
-    // a divider.
+    // In `PageTabKind`'s order, as every page is (Kamal, 18 October): Overview, Settings — `machine
+    // set` is real, where a container cannot be changed after creation — Logs, Inspect, then the
+    // shell behind the divider, in the place a container's Terminal and a host's SSH take.
     case overview = "Overview"
-    case shell = "Terminal"
+    case settings = "Settings"
     case logs = "Logs"
     case inspect = "Inspect"
-    case settings = "Settings"
+    case shell = "Terminal"
     var id: Self { self }
 
-    /// True for the four tabs the container detail also has. See `DetailTab.isShared`.
-    var isShared: Bool {
+    var kind: PageTabKind {
         switch self {
-        case .overview, .shell, .logs, .inspect: true
-        case .settings: false
+        case .overview: .overview
+        case .settings: .settings
+        case .logs: .history
+        case .inspect: .inspect
+        case .shell: .session
         }
     }
 
@@ -109,14 +110,8 @@ struct MachineDetailView: View {
     /// `PageTabs` — shared with the container, volume and network detail screens, which all
     /// carried or would have carried a copy of the same strip.
     private var tabBar: some View {
-        PageTabs(items: MachineDetailTab.allCases.enumerated().map { index, candidate in
-            .init(tab: candidate,
-                  title: candidate.rawValue,
-                  systemImage: candidate.systemImage,
-                  // Fences off the tabs a machine has and a container does not, so the shared
-                  // four always read as a set.
-                  separatedFromPrevious: index > 0
-                      && MachineDetailTab.allCases[index - 1].isShared && !candidate.isShared)
+        PageTabs(items: MachineDetailTab.allCases.map {
+            .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage, kind: $0.kind)
         }, selection: $tab, label: "Machine sections", shortcuts: true)
     }
 
@@ -293,33 +288,31 @@ private struct MachineShellTab: View {
                     Divider()
                     TerminalSurface(store: model.machineTerminals, session: current)
                 }
-            } else if let failure {
-                ContentUnavailableView {
-                    Label("Cannot open a shell", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(failure)
-                } actions: {
-                    Button("Try again") { open() }
-                }
             } else {
-                ContentUnavailableView {
-                    Label("Terminal", systemImage: "terminal")
-                } description: {
-                    Text(LocalizedStringKey(MachinesView.isRunning(machine)
-                         ? "Opens a login shell inside the machine “\(machine.id)”. This is the "
-                           + "VM itself, not a container — changes here affect every container "
-                           + "running in it."
-                         : "The machine is stopped. Opening a shell will start it first, which "
-                           + "`machine run` does automatically."))
-                } actions: {
-                    Button(MachinesView.isRunning(machine) ? "Open shell" : "Start and open shell") {
-                        open()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
+                startPage
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// No shell yet: the start page every session tab has (`SessionStartPage`).
+    private var startPage: some View {
+        let running = MachinesView.isRunning(machine)
+        return SessionStartPage(systemImage: "terminal", title: "Terminal",
+                                statusColour: MachinesView.stateColor(machine),
+                                statusLine: "The machine \u{201C}\(machine.id)\u{201D} is \(machine.status.lowercased()).",
+                                purpose: "A login shell inside the machine \u{201C}\(machine.id)\u{201D}. This is the VM itself, not a container — changes here affect every container running in it.") {
+            DetailCard(title: "Open Shell", minHeight: nil) {
+                if let failure { SessionOutcomeNote(outcome: .problem(failure)) }
+                if !running {
+                    Text("It\u{2019}s stopped. Opening a shell starts it first, which machine run does by itself.")
+                        .font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                }
+                Button(running ? "Open Shell" : "Start and Open Shell") { open() }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("\(running ? "Open Shell" : "Start and Open Shell") in \(machine.id)")
+            }
+        }
     }
 
     /// `ShellStrip`, the same one the container Terminal tab draws. This was a copy that had
