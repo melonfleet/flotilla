@@ -314,6 +314,59 @@ import Testing
         let data = try JSONEncoder().encode(SuggestionLibrary.builtIn)
         #expect(try JSONDecoder().decode(SuggestionLibrary.self, from: data) == SuggestionLibrary.builtIn)
     }
+
+    @Test func artworkIsOptionalValidatedAndLookedUpByID() throws {
+        let validSHA = String(repeating: "a", count: 64)
+        let json = #"""
+        {"schema": 2, "version": "2026.10.18.2", "entries": [],
+         "artwork": [
+           {"id": "distro.debian", "icon": {"file": "icons/debian.png", "sha256": "\#(validSHA)", "bytes": 1024},
+            "attribution": "Debian Open Use Logo — Software in the Public Interest, Inc. (LGPL-3.0 / CC-BY-3.0)"},
+           {"id": "registry.registry.k8s.io", "icon": {"file": "icons/k8s.png", "sha256": "\#(validSHA)", "bytes": 2048}},
+           {"id": "distro.fallback", "icon": {"file": "icons/tux.png", "sha256": "\#(validSHA)", "bytes": 4096},
+            "attribution": "Tux by Larry Ewing, Simon Budig and Garrett LeSage (CC0)"}
+         ]}
+        """#
+        let decoded = try JSONDecoder().decode(SuggestionLibrary.self, from: Data(json.utf8))
+        let (checked, dropped) = decoded.checked()
+        #expect(dropped.isEmpty, "\(dropped)")
+        #expect(checked.artwork?.count == 3)
+        #expect(checked.artwork(for: "distro.debian")?.icon.file == "icons/debian.png")
+        #expect(checked.artwork(id: "registry.registry.k8s.io")?.attribution == nil)
+        #expect(checked.artwork(for: "distro.fallback")?.attribution?.hasPrefix("Tux by Larry Ewing") == true)
+        #expect(checked.artwork(for: "distro.unknown") == nil)
+
+        // Libraries without artwork still decode with artwork == nil.
+        let without = try JSONDecoder().decode(
+            SuggestionLibrary.self,
+            from: Data(#"{"schema": 2, "version": "2026.10.18.2", "entries": []}"#.utf8)
+        )
+        #expect(without.artwork == nil)
+        #expect(without.checked().library.artwork == nil)
+
+        // Invalid artwork items are dropped and named while valid ones stay.
+        let validIcon = LibraryIcon(file: "icons/ok.png", sha256: validSHA, bytes: 512)
+        for badID in ["", "debian", "distro.", "distro..debian", "distro.Debian", "distro.debian/etc",
+                      "other.debian", "distro." + String(repeating: "a", count: 60)] {
+            #expect(LibraryArtwork(id: badID, icon: validIcon).problem() != nil, "\(badID)")
+        }
+        #expect(LibraryArtwork(id: "distro.debian", icon: LibraryIcon(file: "../x.png", sha256: validSHA, bytes: 10)).problem() != nil)
+        #expect(LibraryArtwork(id: "distro.debian", icon: validIcon, attribution: "").problem() != nil)
+        #expect(LibraryArtwork(id: "distro.debian", icon: validIcon,
+                               attribution: String(repeating: "a", count: 301)).problem() != nil)
+        #expect(LibraryArtwork(id: "distro.debian", icon: validIcon,
+                               attribution: "Bad\u{202E}text").problem() != nil)
+        #expect(LibraryArtwork(id: "distro.debian", icon: validIcon,
+                               attribution: String(repeating: "a", count: 300)).problem() == nil)
+
+        let mixed = SuggestionLibrary(version: "2026.10.18.2", entries: [], artwork: [
+            LibraryArtwork(id: "distro.alpine", icon: validIcon),
+            LibraryArtwork(id: "distro.alpine", icon: validIcon),
+            LibraryArtwork(id: "bad-id", icon: validIcon),
+        ]).checked()
+        #expect(mixed.library.artwork?.map(\.id) == ["distro.alpine"])
+        #expect(mixed.dropped.count == 2)
+    }
 }
 
 private extension LibraryEntry {

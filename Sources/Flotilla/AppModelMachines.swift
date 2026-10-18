@@ -22,7 +22,19 @@ extension AppModel {
         // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
         if machinesState != .loaded { machinesState = .loading }
         do {
-            let fetched = try await Blocking.run { [cli] in try cli.machines() }
+            // `machine list` omits `image`; a machine's image is create-only, so inspect once per
+            // id and carry the known `image` across subsequent polls.
+            let knownImages = Dictionary(uniqueKeysWithValues: machines.compactMap { m in
+                m.image.map { (m.id, $0) }
+            })
+            let fetched = try await Blocking.run { [cli] in
+                try cli.machines().map { machine -> ContainerMachine in
+                    guard machine.image == nil else { return machine }
+                    var copy = machine
+                    copy.image = knownImages[machine.id] ?? (try? cli.inspectMachine(machine.id))?.image
+                    return copy
+                }
+            }
             // Same equality guard as `containers`: `@Observable` notifies on every write, so an
             // unconditional assignment invalidates every view on each poll even when nothing
             // moved. That was half of the original flicker.

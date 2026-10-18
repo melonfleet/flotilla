@@ -177,6 +177,7 @@ struct RegistryFormView: View {
         VStack(spacing: 0) {
             FormHeader(title: managed?.name ?? (isAdd ? "Add Registry" : "Registry"),
                        systemImage: Section.registries.systemImage,
+                       logo: isAdd ? nil : model.registryLogo(for: target.id),
                        hasUnsavedChanges: edits.isDirty(editSignature),
                        onBack: dismiss, token: formToken)
             Divider()

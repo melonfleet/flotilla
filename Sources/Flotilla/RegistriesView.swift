@@ -400,10 +400,14 @@ struct RegistriesView: View {
     /// Green when this Mac holds a login for it; grey otherwise, which includes "we could not
     /// look" — the runtime note above the list says that once rather than per row.
     private func stateMark(_ row: RegistryRow) -> some View {
-        Circle()
-            .fill(row.isSignedIn ? Theme.online : Color.secondary.opacity(0.5))
-            .frame(width: 8, height: 8)
-            .help(statusKnown || row.isSignedIn ? row.statusText : "Sign-in status needs the container runtime")
+        RowLeadingMark {
+            RowTypeMark(systemImage: Section.registries.systemImage, kind: "Registry",
+                        logo: model.registryLogo(for: row), size: 20, symbolSize: 16) {
+                Circle()
+                    .fill(row.isSignedIn ? Theme.online : Color.secondary.opacity(0.5))
+                    .help(statusKnown || row.isSignedIn ? row.statusText : "Sign-in status needs the container runtime")
+            }
+        }
     }
 
     /// Server · type · who you are signed in as. The hosts a registry is signed in on are not here:
