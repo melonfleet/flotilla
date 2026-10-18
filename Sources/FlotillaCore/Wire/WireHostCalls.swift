@@ -217,9 +217,16 @@ public struct HostFacts: Sendable, Equatable, Codable {
     public var keepAwakeUntil: Date?
     /// Whether Flotilla is a login item there, so it opens when its user is signed in.
     public var launchesAtLogin: Bool?
+    /// Remote Login (SSH), Screen Sharing (or Remote Management) and File Sharing: whether each
+    /// has a listener for other Macs (`SystemReport.sharingOn`). Nil from a host too old to say,
+    /// which the page draws as unknown, never as off.
     public var remoteLogin: Bool?
     public var screenSharing: Bool?
     public var fileSharing: Bool?
+    /// Its Bonjour host name without `.local` — `Kamals-Mac-mini` — so a host the admin finds by
+    /// Bonjour can be reached by ssh, Screen Sharing and Finder, which cannot use a service name
+    /// (17 October). Optional like the rest: no protocol bump.
+    public var localHostName: String?
     /// The account Flotilla runs under there — the one signed in. What SSH, Screen Sharing and File
     /// Sharing connect as unless the admin says otherwise.
     public var loginUser: String?

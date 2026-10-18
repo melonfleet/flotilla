@@ -332,7 +332,10 @@ struct HostsView: View {
                             isPresented: Binding(get: { pendingForget != nil }, set: { if !$0 { pendingForget = nil } }),
                             titleVisibility: .visible, presenting: pendingForget) { row in
             Button("Remove", role: .destructive) {
-                if let peer = row.peer { hostMode.remove(peer.fingerprint) }
+                if let peer = row.peer {
+                    hostMode.remove(peer.fingerprint)
+                    model.sshTerminals.closeAll(for: peer.fingerprint.hex)
+                }
                 if let imported = row.imported { hostMode.removeImported(imported.fingerprint) }
                 model.hostCategories.forgetHost(row.id)
                 selection.remove(row.id)

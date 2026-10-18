@@ -536,7 +536,11 @@ must preserve all of the following:
 1. **Integration:** shell out to `container` and decode `--format json`; do not
    link the Containerization framework.
 2. **Transport:** Network.framework + mTLS, with Bonjour and mandatory manual host
-   entry. No system `ssh`, gRPC, generic remote shell, or Kubernetes.
+   entry. No system `ssh`, gRPC, generic remote shell, or Kubernetes. **Amended 2026-10-17
+   (Kamal):** a host's page has an SSH tab that runs the *user's* `/usr/bin/ssh` with the user's own
+   credentials. It is not a Flotilla transport, carries no Flotilla command, and Flotilla stores no
+   credential for it; its argv is built only by `RemoteAccess.sshArguments` from a validated host and
+   user. Do not grow it into one (`DECISIONS.md` #2 and Q44 amended).
 3. **Product shape:** one app with client and host modes; host mode is
    **stateful**, with a persisted policy store.
 4. **Wire shape (Q1):** args passthrough constrained by a default-deny subcommand

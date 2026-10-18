@@ -1,6 +1,7 @@
 import Foundation
 import IOKit
 import IOKit.ps
+import SystemConfiguration
 import FlotillaCore
 import FlotillaNet
 
@@ -32,6 +33,7 @@ extension AppModel {
         facts.ipv4Interfaces = interfaces
         facts.timeZone = TimeZone.current.identifier
         facts.loginUser = NSUserName()
+        facts.localHostName = SCDynamicStoreCopyLocalHostName(nil) as String?
         let battery = Self.battery
         facts.hasBattery = battery.present
         facts.onBattery = battery.present ? battery.onBattery : nil
@@ -89,8 +91,8 @@ extension AppModel {
         }
     }
 
-    /// Serial number, power settings, FileVault, Remote Login and Screen Sharing — each from the
-    /// tool that reports it without admin rights. Blocking: runs three short processes.
+    /// Serial number, power settings, FileVault, Remote Login, Screen Sharing and File Sharing —
+    /// each from the tool that reports it without admin rights. Blocking: runs five short processes.
     nonisolated static func readSlowSystemFacts() -> HostFacts {
         var facts = HostFacts()
         facts.serialNumber = serialNumber
@@ -102,13 +104,13 @@ extension AppModel {
         // Readable by everyone; only whether a user is set, never the name.
         facts.autoLogin = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.loginwindow.plist")
             .map { ($0["autoLoginUser"] as? String).map { !$0.isEmpty } ?? false }
+        // Whether each has a listener another Mac can reach, launchd's switch only if the listeners
+        // can't be read (`SystemReport.listeningPorts`). Both without admin rights: no helper call.
         let services = run("/bin/launchctl", ["print-disabled", "system"])
-        facts.remoteLogin = SystemReport.serviceEnabled(SystemReport.remoteLoginLabel, in: services) ?? false
-        facts.screenSharing = SystemReport.serviceEnabled(SystemReport.screenSharingLabel, in: services) ?? false
-        // File Sharing is absent from that list until it has been turned on once; a loaded SMB
-        // service is the other sign it is on.
-        facts.fileSharing = SystemReport.serviceEnabled(SystemReport.fileSharingLabel, in: services)
-            ?? !run("/bin/launchctl", ["print", "system/\(SystemReport.fileSharingLabel)"]).isEmpty
+        let listening = SystemReport.listeningPorts(run(SystemReport.netstatTool, SystemReport.netstatListenersArguments))
+        facts.remoteLogin = SystemReport.sharingOn(.ssh, listening: listening, printDisabled: services)
+        facts.screenSharing = SystemReport.sharingOn(.screenSharing, listening: listening, printDisabled: services)
+        facts.fileSharing = SystemReport.sharingOn(.fileSharing, listening: listening, printDisabled: services)
         return facts
     }
 

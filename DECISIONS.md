@@ -23,6 +23,13 @@ second-guess settled choices mid-project.
   on OpenSSH patches, but more importantly the menu-bar host/client model means
   both ends are our Swift code — a native Swift-to-Swift link is simpler and gives
   typed streaming, discovery, and a cert model that maps onto Jamf.
+  **Amended 2026-10-17 (Kamal approved it that day):** Flotilla's own transport is still
+  Network.framework + mTLS, and nothing else. A host's page now has an **SSH tab** that runs the
+  *user's* `/usr/bin/ssh` to that host inside the window, in a PTY, for convenience — with the user's
+  own keys, agent and `~/.ssh/config`. It is not a Flotilla transport: it carries no Flotilla command,
+  no wire message travels over it, and nothing Flotilla does depends on it. Flotilla stores no
+  credential for it (Q20): the argv is `-l <user> <host>`, both validated (`RemoteAccess`), and a
+  password, if ssh asks for one, is typed to ssh in its own PTY. See "Q44 amended" below.
 - **gRPC / third-party networking.** Rejected: Network.framework covers it with no
   dependencies and native mTLS; gRPC adds ceremony for no gain at this scale.
 - **Kubernetes (or any CRI-based orchestrator).** Rejected: `container` is not a CRI
@@ -2018,6 +2025,39 @@ Flotilla never kept a Mac awake, never noticed sleep or wake, and polled whateve
 - **No remote shell of Flotilla's own.** A host's System tab offers macOS's own ways in — Terminal
   over SSH and Screen Sharing — behind each Mac's own login, and links to Apple's instructions for
   turning Remote Login or Screen Sharing on where they are off.
+
+### Q44 amended — SSH, Screen Sharing and Files in a host's tab pill (2026-10-17)
+
+Kamal's request; he chose the recommended option in each case. A host's page gains three icons in
+its `PageTabs` pill, after a divider. This Mac's page has none of them: it does not connect to itself.
+
+- **SSH is a tab:** this Mac's `/usr/bin/ssh` in a SwiftTerm PTY, the container Terminal's machinery
+  in a third `TerminalSessionStore` keyed by fingerprint. Still **no remote shell of Flotilla's own**
+  — this is the user's ssh client, with the user's credentials (DECISIONS #2, amended the same day).
+  The argv is built by `RemoteAccess.sshArguments` from two validated strings and nothing else: no
+  shell, no `-o`, no command; a host or user that could be an option, a second destination or a
+  shell fragment (ssh expands `%h`/`%r` into the user's own `ProxyCommand`) is refused. The
+  environment passes through `SSH_AUTH_SOCK`, `SHELL`, `PATH` and `TMPDIR` only, so the agent works.
+- **Screen Sharing and Files are clicks, not pages:** `vnc://` in Screen Sharing and `smb://` in
+  Finder, through `NSWorkspace`, as the System tab already did (`HostConnect`). Nothing is embedded
+  and nothing is browsed in the window.
+- **Where:** the wire's own rule (`PeerBook.reach`), with a Bonjour service name turned into the
+  host's own `.local` host name, which hosts now report (`HostFacts.localHostName`).
+- **As whom:** *Connect as*, if the admin typed one, else the host's signed-in user. It is content and
+  now lives in the host's book entry (`Peer.connectAs`); the old `connectAs` defaults key is migrated
+  into the book once and deleted.
+- **Green, red or grey:** each icon has a dot from the host's `HostFacts` — no protocol bump, the
+  fields are optional and an older host's absence is **unknown, never off**. A host decides by
+  whether something listens for other Macs on 22, 5900 and 445 (`netstat -anL -p tcp`, no admin
+  rights, no helper call), falling back to launchd's switch only if that cannot be read. Launchd's
+  switch alone was not enough: File Sharing is absent from `print-disabled` until first turned on,
+  and Remote Management serves screen sharing through its own agent rather than
+  `com.apple.screensharing`'s switch. All three are socket-activated, so the port is held whenever the
+  service is on — and it is what the admin's Mac will connect to.
+- **Off or unknown, the click explains:** what the service is, that it is off there, where its switch
+  is (System Settings ▸ General ▸ Sharing), and Apple's guide — from `ExternalLinks`, the one place
+  those URLs live. "Connect anyway" stays available, because a user's own ssh config may use another
+  port than the one the host checked.
 
 
 ## Q45 — Hosts: built-in tags, a status dot, and groups by category (settled 2026-10-09)

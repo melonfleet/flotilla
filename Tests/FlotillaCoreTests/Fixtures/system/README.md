@@ -7,3 +7,9 @@ Captured 9 October 2026 on the development Mac (macOS 27.0.1, on AC power):
   unedited and in their captured order.
 - `socketfilterfw-getglobalstate-on.txt` — `/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate`
   with the firewall on, unedited. Runs without admin rights.
+
+Captured 17 October 2026 on the development Mac (macOS 27.0.1):
+
+- `netstat-anL-tcp-remote-login.txt` — `netstat -anL -p tcp`, unedited, run without admin rights, with
+  Remote Login on and Screen Sharing and File Sharing off. Listening sockets only: no foreign address
+  appears in this form of the command, so nothing needed removing.

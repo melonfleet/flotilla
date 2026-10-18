@@ -60,6 +60,10 @@ public struct Peer: Sendable, Hashable, Codable, Identifiable {
     /// so an office admin used to lose a home host's Tailscale address the first evening it was
     /// found at home (the owner, 12 October). Optional so older books still decode.
     public var address: PeerEndpoint?
+    /// Admin side: the user the admin connects as over SSH, Screen Sharing and File Sharing, if they
+    /// typed one — else the host's signed-in user (17 October). A user name, never a password.
+    /// Content kept with the host, not a setting. Optional so older books still decode.
+    public var connectAs: String?
 
     public var id: PeerFingerprint { fingerprint }
     public var displayName: String { nickname ?? details.computerName }
@@ -209,6 +213,13 @@ public struct PeerBook: Sendable, Equatable, Codable {
         guard let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) else { return }
         let trimmed = nickname?.trimmingCharacters(in: .whitespacesAndNewlines)
         peers[index].nickname = trimmed?.isEmpty == false ? trimmed : nil
+    }
+
+    /// The user to connect to a host as; empty or nil clears it back to the host's own.
+    public mutating func setConnectAs(_ fingerprint: PeerFingerprint, _ user: String?) {
+        guard let index = peers.firstIndex(where: { $0.fingerprint == fingerprint }) else { return }
+        let trimmed = user?.trimmingCharacters(in: .whitespacesAndNewlines)
+        peers[index].connectAs = trimmed?.isEmpty == false ? trimmed : nil
     }
 
     public mutating func setEndpoint(_ fingerprint: PeerFingerprint, _ endpoint: PeerEndpoint) {

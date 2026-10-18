@@ -471,7 +471,11 @@ final class AppModel {
     ///
     /// Throws, having forgotten nothing, when the controller stopped short — for Settings to say so.
     func forgetAllHostsAndTrust() async throws {
-        for host in try await hostMode.forgetAllHostsAndTrust() { hostCategories.forgetHost(host) }
+        for host in try await hostMode.forgetAllHostsAndTrust() {
+            hostCategories.forgetHost(host)
+            // Its page is gone; a session left open would be a process nothing on screen owns.
+            sshTerminals.closeAll(for: host)
+        }
     }
 
     /// Whether there is any paired host or trust material to forget. The control is shown anyway,
@@ -1809,6 +1813,11 @@ final class AppModel {
     /// still react to shells opening and closing; what must not be tracked is this constant
     /// property, which never changes.
     @ObservationIgnored let terminals = TerminalSessionStore()
+
+    /// SSH sessions to hosts, keyed by fingerprint hex — a third store for the same reason as
+    /// `machineTerminals`: a host's key is not a container's or a machine's name. Each is the
+    /// user's own `/usr/bin/ssh` (`HostSSHTab`), not a Flotilla connection.
+    @ObservationIgnored let sshTerminals = TerminalSessionStore()
 
     // MARK: Requests from menus
     //

@@ -11,7 +11,24 @@ enum HostDetailTab: String, CaseIterable, Identifiable {
     case settings = "Settings"
     case updates = "Updates"
     case activity = "Activity"
+    // macOS's own ways in (Kamal, 17 October), a host's only: This Mac does not connect to itself.
+    case ssh = "SSH"
+    case screenSharing = "Screen Sharing"
+    case files = "Files"
     var id: Self { self }
+
+    /// The tabs every Mac's page has.
+    static let pages: [HostDetailTab] = [.overview, .system, .flotilla, .settings, .updates, .activity]
+
+    /// The macOS service behind a remote-access tab.
+    var service: RemoteAccess.Service? {
+        switch self {
+        case .ssh: .ssh
+        case .screenSharing: .screenSharing
+        case .files: .fileSharing
+        default: nil
+        }
+    }
 
     var systemImage: String {
         switch self {
@@ -21,6 +38,7 @@ enum HostDetailTab: String, CaseIterable, Identifiable {
         case .settings: "slider.horizontal.3"
         case .updates: "arrow.down.circle"
         case .activity: "clock.arrow.circlepath"
+        case .ssh, .screenSharing, .files: service?.systemImage ?? "questionmark"
         }
     }
 }
@@ -55,9 +73,7 @@ struct HostDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PageTabs(items: HostDetailTab.allCases.map {
-                .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage)
-            }, selection: $tab)
+            PageTabs(items: tabItems, selection: tabSelection)
             Group {
                 switch tab {
                 case .overview: overview
@@ -66,6 +82,16 @@ struct HostDetailView: View {
                 case .settings: HostSettingsTab(model: model, host: host)
                 case .updates: scrolling { updatesTab }
                 case .activity: scrolling { activityTab }
+                case .ssh, .screenSharing, .files:
+                    if let fingerprint, let service = tab.service {
+                        if service == .ssh {
+                            HostSSHTab(model: model, fingerprint: fingerprint, hostName: name)
+                        } else {
+                            RemoteAccessPage(model: model, fingerprint: fingerprint, service: service, hostName: name)
+                        }
+                    } else {
+                        overview
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -83,6 +109,30 @@ struct HostDetailView: View {
         } message: { action in
             Text(Self.controlConsequence(action, running: runningHere))
         }
+    }
+
+    // MARK: The tab pill
+
+    /// Every Mac's pages, then — on a host's page only — SSH, Screen Sharing and Files, each with a
+    /// dot for whether that host says it is on.
+    private var tabItems: [PageTabs<HostDetailTab>.Item] {
+        var items = HostDetailTab.pages.map { PageTabs<HostDetailTab>.Item(tab: $0, title: $0.rawValue, systemImage: $0.systemImage) }
+        guard fingerprint != nil else { return items }
+        for (index, tab) in [HostDetailTab.ssh, .screenSharing, .files].enumerated() {
+            guard let service = tab.service else { continue }
+            let state = RemoteAccess.state(of: service, in: facts)
+            items.append(.init(tab: tab, title: tab.rawValue, systemImage: tab.systemImage,
+                               separatedFromPrevious: index == 0,
+                               status: .init(colour: state.colour, value: state.value,
+                                             help: RemoteAccessPage.help(service, state, hostName: name))))
+        }
+        return items
+    }
+
+    /// Every tab is a page, Screen Sharing and Files included: a click never opens an app or
+    /// mounts anything — that is the page's button (Kamal, 17 October).
+    private var tabSelection: Binding<HostDetailTab> {
+        Binding(get: { tab }, set: { tab = $0 })
     }
 
     // MARK: Starting and stopping container (Q50)
@@ -578,14 +628,14 @@ struct HostDetailView: View {
     }
 
 
-    /// What the admin typed for this host in Connect as — kept by `HostConnect`, per host.
+    /// What the admin typed for this host in Connect as — kept in the host's book entry.
     @State private var connectAsRevision = 0
 
     private var connectAsBinding: Binding<String> {
-        Binding(get: { _ = connectAsRevision; return fingerprint.map(HostConnect.typedUser) ?? "" },
+        Binding(get: { _ = connectAsRevision; return fingerprint.map { HostConnect.typedUser(model, $0) } ?? "" },
                 set: { value in
                     guard let fingerprint else { return }
-                    HostConnect.setTypedUser(value, for: fingerprint)
+                    HostConnect.setTypedUser(value, model, for: fingerprint)
                     connectAsRevision += 1
                 })
     }

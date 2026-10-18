@@ -19,8 +19,19 @@ struct PageTabs<Tab: Hashable>: View {
         /// Draws a divider before this tab. The container and machine screens use it to fence
         /// off the tabs only one of them has, so the shared four always read as a set.
         var separatedFromPrevious = false
+        /// A dot on the icon's corner saying what it reaches is like — a host's SSH on or off. Its
+        /// value is the tooltip's and VoiceOver's too ("SSH, on"), so colour is never the only sign.
+        var status: Status?
 
         var id: Tab { tab }
+    }
+
+    struct Status {
+        let colour: Color
+        /// "on", "off", "unknown".
+        let value: String
+        /// The tooltip, when "Title — value" says too little.
+        var help: String?
     }
 
     let items: [Item]
@@ -55,6 +66,11 @@ struct PageTabs<Tab: Hashable>: View {
         .overlay(alignment: .bottom) { Divider() }
     }
 
+    private func helpText(_ item: Item, shortcut: Character?) -> String {
+        let title = item.status.map { $0.help ?? "\(item.title) — \($0.value)" } ?? item.title
+        return shortcut.map { "\(title) (⌘\($0))" } ?? title
+    }
+
     private func button(_ item: Item, index: Int) -> some View {
         let selected = item.tab == selection
         let shortcut = shortcuts && index < 9 ? Character("\(index + 1)") : nil
@@ -70,14 +86,23 @@ struct PageTabs<Tab: Hashable>: View {
                         Capsule().fill(.primary.opacity(0.08))
                     }
                 }
+                .overlay(alignment: .topTrailing) {
+                    if let status = item.status {
+                        Circle().fill(status.colour)
+                            .frame(width: 6, height: 6)
+                            .overlay { Circle().strokeBorder(.background, lineWidth: 1) }
+                            .padding(.top, 3).padding(.trailing, 6)
+                    }
+                }
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)
         .onHover { inside in
             if inside { hovered = item.tab } else if hovered == item.tab { hovered = nil }
         }
-        .help(shortcut.map { "\(item.title) (⌘\($0))" } ?? item.title)
+        .help(helpText(item, shortcut: shortcut))
         .accessibilityLabel(item.title)
+        .accessibilityValue(item.status?.value ?? "")
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .background {
             // A hidden twin carries the shortcut, so the visible button keeps its plain style.

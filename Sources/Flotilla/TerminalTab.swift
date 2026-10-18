@@ -76,14 +76,27 @@ final class TerminalSessionStore {
     @discardableResult
     func open(containerID: String, executable: String, argv: [String],
               onExit: @escaping (String?) -> Void) -> TerminalSession {
+        open(containerID: containerID, executable: executable, argv: argv, environment: nil) { code, _ in
+            // A clean `exit` is not an error and must not be reported as one; a non-zero code
+            // usually means the shell could not start at all, which is worth surfacing.
+            onExit(code.flatMap { $0 == 0 ? nil : "The shell exited with status \($0)." })
+        }
+    }
+
+    /// The same, with the process's environment chosen by the caller (nil is SwiftTerm's own), and
+    /// told how it ended: the exit code and the last lines it printed, since the view that showed
+    /// them goes with it. ssh's "Permission denied" would otherwise vanish as it appeared.
+    @discardableResult
+    func open(containerID: String, executable: String, argv: [String], environment: [String]?,
+              onEnd: @escaping (_ exitCode: Int32?, _ lastLines: String) -> Void) -> TerminalSession {
         let session = TerminalSession(id: UUID(), ordinal: nextOrdinal(for: containerID), name: nil)
 
         let view = ContainerTerminalView(frame: .zero)
-        let delegate = SessionDelegate { [weak self] reason in
+        let delegate = SessionDelegate { [weak self] code, lastLines in
             // The shell ended by itself — `exit`, or it could not start. Drop it so the strip
             // stops offering a dead black rectangle.
             self?.forget(session, in: containerID)
-            onExit(reason)
+            onEnd(code, lastLines)
         }
         view.processDelegate = delegate
 
@@ -92,7 +105,7 @@ final class TerminalSessionStore {
         sessions[containerID, default: []].append(session)
         selected[containerID] = session.id
 
-        view.startProcess(executable: executable, args: argv, environment: nil, execName: nil)
+        view.startProcess(executable: executable, args: argv, environment: environment, execName: nil)
         return session
     }
 
@@ -137,17 +150,15 @@ final class TerminalSessionStore {
     /// view is: a coordinator dies with its representable, and this has to outlive it.
     @MainActor
     private final class SessionDelegate: NSObject, LocalProcessTerminalViewDelegate {
-        private let onExit: (String?) -> Void
-        init(onExit: @escaping (String?) -> Void) { self.onExit = onExit }
+        private let onEnd: (Int32?, String) -> Void
+        init(onEnd: @escaping (Int32?, String) -> Void) { self.onEnd = onEnd }
 
         nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
-            // A clean `exit` is not an error and must not be reported as one; a non-zero code
-            // usually means the shell could not start at all, which is worth surfacing.
-            let reason: String? = switch exitCode {
-            case nil, 0: nil
-            case let code?: "The shell exited with status \(code)."
+            MainActor.assumeIsolated {
+                let text = String(decoding: source.getBufferAsData(kind: .normal), as: UTF8.self)
+                let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                onEnd(exitCode, lines.suffix(4).joined(separator: "\n"))
             }
-            MainActor.assumeIsolated { onExit(reason) }
         }
 
         nonisolated func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}

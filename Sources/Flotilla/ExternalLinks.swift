@@ -27,11 +27,16 @@ enum ExternalLinks {
     /// Flotilla's own releases. Updates themselves come through Sparkle (DECISIONS Q40).
     static let flotillaReleases = URL(string: "https://github.com/melonfleet/flotilla/releases")!
 
-    /// Apple's own instructions for the two ways into a Mac that a host's page offers (Q44): Flotilla
-    /// opens macOS's tools rather than carrying a remote shell of its own. Checked 9 October.
-    static let appleRemoteLogin = URL(string: "https://support.apple.com/guide/mac-help/allow-a-remote-computer-to-access-your-mac-mchlp1066/mac")!
-    static let appleScreenSharing = URL(string: "https://support.apple.com/guide/mac-help/turn-screen-sharing-on-or-off-mh11848/mac")!
-    static let appleFileSharing = URL(string: "https://support.apple.com/guide/mac-help/set-up-file-sharing-on-mac-mh17131/mac")!
+    /// Apple's own instructions for the ways into a Mac that a host's page offers (Q44): Flotilla
+    /// opens macOS's tools rather than carrying a remote shell of its own. Each page read directly
+    /// by Iris on 17 October.
+    static let appleRemoteLogin = URL(string: "https://support.apple.com/guide/mac-help/mchlp1066/mac")!
+    static let appleScreenSharing = URL(string: "https://support.apple.com/guide/mac-help/mh11848/mac")!
+    /// Cannot be on at the same time as Screen Sharing.
+    static let appleRemoteManagement = URL(string: "https://support.apple.com/guide/mac-help/mh11851/mac")!
+    static let appleFileSharing = URL(string: "https://support.apple.com/guide/mac-help/mh17131/mac")!
+    /// File Sharing ⓘ ▸ Options ▸ "Share files and folders using SMB".
+    static let appleFileSharingSMB = URL(string: "https://support.apple.com/guide/mac-help/mh14107/mac")!
     // Energy recommendations on a host's System tab (10 October), each checked by its page title.
     static let appleEnergyDesktop = URL(string: "https://support.apple.com/guide/mac-help/change-energy-settings-mchlp1168/mac")!
     static let appleBatteryLaptop = URL(string: "https://support.apple.com/guide/mac-help/change-battery-settings-mchlfc3b7879/mac")!

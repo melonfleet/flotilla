@@ -1,5 +1,6 @@
 import AppKit
 import FlotillaCore
+import FlotillaNet
 
 /// macOS's own ways into a host — SSH in Terminal, VNC in Screen Sharing, SMB in Finder (DECISIONS
 /// Q44) — shared by a host's page and the Hosts table's menus, so the two cannot drift.
@@ -55,43 +56,31 @@ enum HostConnect {
         }
     }
 
-    /// Where to reach a host: the address the admin connects to, else its own first address.
+    /// Where to reach a host — the wire's own rule, with a Bonjour name turned into the host's
+    /// `.local` host name (`RemoteAccess.address`), so the SSH tab, Terminal, Screen Sharing and
+    /// Finder all go where Flotilla goes.
     static func address(_ model: AppModel, _ fingerprint: PeerFingerprint) -> String? {
-        let peer = model.hostMode.hosts.first { $0.fingerprint == fingerprint }
-        // The address its owner typed first — a `.lan` name over a Tailscale subnet route, say — as
-        // the wire does when Bonjour can't see the host (12 October).
-        if case .address(let address, _)? = peer?.address { return address }
-        if case .address(let address, _)? = peer?.endpoint { return address }
-        return model.hostMode.facts[fingerprint]?.ipv4Addresses?.first
+        let hostMode = model.hostMode
+        let peer = hostMode.hosts.first { $0.fingerprint == fingerprint }
+        let advertised = hostMode.discovered.first { $0.fingerprintHint == WireTLS.fingerprintHint(fingerprint) }
+        return RemoteAccess.address(advertised: advertised.flatMap { PeerEndpoint($0.endpoint) },
+                                    typed: peer?.address, last: peer?.endpoint, facts: hostMode.facts[fingerprint])
     }
 
     // MARK: Connect as
 
-    private static let storeKey = "connectAs"
-
-    private static var overrides: [String: String] {
-        get {
-            let text = UserDefaults.standard.string(forKey: storeKey) ?? "{}"
-            return (try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))) ?? [:]
-        }
-        set {
-            UserDefaults.standard.set((try? String(decoding: JSONEncoder().encode(newValue), as: UTF8.self)) ?? "{}",
-                                      forKey: storeKey)
-        }
+    /// What the admin typed for this host, or "". Kept with the host in the book (`Peer.connectAs`).
+    static func typedUser(_ model: AppModel, _ fingerprint: PeerFingerprint) -> String {
+        model.hostMode.hosts.first { $0.fingerprint == fingerprint }?.connectAs ?? ""
     }
 
-    /// What the admin typed for this host, or "".
-    static func typedUser(_ fingerprint: PeerFingerprint) -> String { overrides[fingerprint.hex] ?? "" }
-
-    static func setTypedUser(_ value: String, for fingerprint: PeerFingerprint) {
-        let trimmed = value.trimmingCharacters(in: .whitespaces)
-        var all = overrides
-        all[fingerprint.hex] = trimmed.isEmpty ? nil : trimmed
-        overrides = all
+    static func setTypedUser(_ value: String, _ model: AppModel, for fingerprint: PeerFingerprint) {
+        model.hostMode.setConnectAs(fingerprint, value.trimmingCharacters(in: .whitespaces))
     }
 
+    /// The typed user, else the one signed in there. Nil when neither is known — then ssh decides.
     static func user(_ model: AppModel, _ fingerprint: PeerFingerprint) -> String? {
-        let typed = typedUser(fingerprint)
+        let typed = typedUser(model, fingerprint)
         return typed.isEmpty ? model.hostMode.facts[fingerprint]?.loginUser : typed
     }
 

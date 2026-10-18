@@ -275,6 +275,7 @@ final class HostModeController {
         adminKey = keyStore.adminKey()
         mode = settings[SettingsKeys.mode].effective
         bridge.controller = self
+        migrateConnectAs()
     }
 
     /// Held here, not read through: `SettingsStore` is not observable, so a view reading the
@@ -558,6 +559,32 @@ final class HostModeController {
     func rename(_ fingerprint: PeerFingerprint, to nickname: String?) {
         book.rename(fingerprint, to: nickname)
         save()
+    }
+
+    /// The user the admin connects to a host as (`Peer.connectAs`), kept in the book.
+    func setConnectAs(_ fingerprint: PeerFingerprint, _ user: String?) {
+        let before = book[fingerprint]?.connectAs
+        book.setConnectAs(fingerprint, user)
+        guard book[fingerprint]?.connectAs != before else { return }
+        save()
+    }
+
+    /// Connect as used to be a JSON blob in its own defaults key, beside the book rather than in it.
+    /// It is the host's, so it moved into the host's record (17 October); this carries the old
+    /// values across once and deletes the key — written, not just read, so it is not re-derived on
+    /// every launch (CLAUDE.md, "an in-memory migration is not a migration").
+    private func migrateConnectAs() {
+        let key = "connectAs"
+        guard let text = localStore.string(forKey: key) else { return }
+        let old = (try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))) ?? [:]
+        var changed = false
+        for (hex, user) in old {
+            guard let fingerprint = PeerFingerprint(hex: hex), let peer = book[fingerprint], peer.connectAs == nil else { continue }
+            book.setConnectAs(fingerprint, user)
+            changed = true
+        }
+        if changed { try? bookStore.save(book) }
+        localStore.removeObject(forKey: key)
     }
 
     private func name(_ fingerprint: PeerFingerprint) -> String { book[fingerprint]?.displayName ?? "A Mac" }
