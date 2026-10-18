@@ -9,6 +9,12 @@ import Testing
 /// parallel in this process and holds pool threads of its own: measured on 18 October, the probe
 /// waited up to 2.3 s in a full run whatever the jobs' length, so at 0.8 s against 1 s jobs this
 /// failed about one full run in three with `Blocking` working.
+///
+/// **macOS only.** On Linux, libdispatch serves the Swift executor and every queue from one global
+/// pool with a hard thread cap, so 64 parked jobs can delay any other task there. That is a
+/// property of the platform, not of `Blocking`, and the app — the only thing relying on this — is
+/// macOS-only. The Linux CI runner failed it on most pushes on 18 October.
+#if os(macOS)
 @Test func blockingWorkLeavesTheCooperativePoolFree() async {
     let jobs = 64
     let started = Date()
@@ -23,6 +29,7 @@ import Testing
     #expect(probe.timeIntervalSince(started) < 3.5)
     #expect(await blocked.count == jobs)
 }
+#endif
 
 /// The sweep moved ~100 `try await Task.detached { try … }.value` onto `Blocking.run`: what the work
 /// throws must reach the caller as itself, and a value must come back unchanged.
