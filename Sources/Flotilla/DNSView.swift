@@ -56,6 +56,14 @@ struct DNSView: View {
             + model.hostMode.trustedHosts.map { (HostRef.peer($0.fingerprint), $0.displayName) }
     }
 
+    private func consumeDetailRequest() {
+        guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .dns else { return }
+        form = nil
+        showingSuggestions = false
+        open(subject)
+        model.clearPendingDetail()
+    }
+
     var body: some View {
         dialogs(screens)
     }
@@ -94,6 +102,8 @@ struct DNSView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { consumeDetailRequest() }
+        .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .task { await refreshAll() }
     }
 

@@ -59,7 +59,10 @@ struct VolumesView: View {
 
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .volume else { return }
-        open(HostRef.local.rowID(subject))
+        showingCreate = false
+        showingSuggestions = false
+        pushing = nil
+        if let row = everyRow.first(where: { $0.detailKey == subject }) { open(row.id) }
         model.clearPendingDetail()
     }
 

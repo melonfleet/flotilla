@@ -61,6 +61,18 @@ struct ClustersView: View {
         }
     }
 
+    private func consumeDetailRequest() {
+        guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .cluster else { return }
+        showingCreate = false
+        showingSuggestions = false
+        loadImageTarget = nil
+        ui.search = ""
+        ui.filterID = "all"
+        ui.hostFilter = nil
+        select(subject)
+        model.clearPendingDetail()
+    }
+
     var body: some View {
         Group {
             if showingCreate {
@@ -96,6 +108,8 @@ struct ClustersView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { consumeDetailRequest() }
+        .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .task { await model.refreshClusters() }
         // File ▸ New Cluster… and File ▸ Suggestions ▸ Clusters…. One-shot.
         .onChange(of: model.pendingClusterForm) { _, requested in

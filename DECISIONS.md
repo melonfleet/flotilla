@@ -2445,6 +2445,16 @@ Left with their own fields, because they search inside one panel of a page rathe
 the page: a container's Logs tab, the Inspect tabs' key filters, a host's settings filter, and
 the host checklist inside forms.
 
+**Amended 2026-10-18 (Kamal).** Leading singular/plural scope prefixes (container, group,
+image, volume, network, machine, cluster, host, dns, registry, notification, suggestion;
+vol/net/img aliases, case-insensitive) search that kind across all Macs in the dropdown,
+leaving the page unfiltered. Unknown `word:` remains ordinary text. Suggestions use the
+library's matching and open with the entry selected. Scope names autocomplete with Tab.
+`/` offers commands by title-derived slugs and a few shorter aliases; `>` remains commands
+only. Return or Tab runs a highlighted slash command through the existing form guard.
+The field help, empty ⌘K hint, footer and Search tips explain both modes. Plain text,
+Escape, page filtering, focus and guarded navigation retain their existing behavior.
+
 ## Q56 — Two-line rows replace the table (settled 2026-10-17)
 
 **Amends Q2** ("a table is the primary view"). The primary view of a list is now a list of

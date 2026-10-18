@@ -32,6 +32,13 @@ struct RegistriesView: View {
 
     private var rows: [RegistryRow] { model.registryRows }
 
+    private func consumeDetailRequest() {
+        guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .registry else { return }
+        form = nil
+        open(subject)
+        model.clearPendingDetail()
+    }
+
     var body: some View {
         Group {
             if let form {
@@ -53,6 +60,8 @@ struct RegistriesView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { consumeDetailRequest() }
+        .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .task { await model.refreshRegistries() }
         .sheet(item: $tagSheet) { target in
             NewTagSheet(store: model.tags, applyTo: target.subjects) { tagSheet = nil }

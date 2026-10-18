@@ -48,9 +48,19 @@ struct SuggestionsView: View {
                                  text: Binding(get: { [weak queryText] in queryText?.value ?? "" },
                                                set: { [weak queryText] in queryText?.value = $0 }),
                                  matches: shown.count)
+            .onAppear { openRequestedEntry() }
+            .onChange(of: model.pendingSuggestionEntry) { _, _ in openRequestedEntry() }
             // Use… checks a container's new volumes against what is here, so the list must be.
             .task { if model.volumesState != .loaded { await model.refreshVolumes() } }
         }
+    }
+
+    private func openRequestedEntry() {
+        guard let id = model.pendingSuggestionEntry else { return }
+        category = nil
+        queryText.value = ""
+        selectedID = id
+        model.pendingSuggestionEntry = nil
     }
 
     // MARK: List

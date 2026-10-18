@@ -1301,11 +1301,18 @@ struct ContainersView: View {
     private func consumeDetailRequest(_ subject: String) {
         switch model.pendingDetailKind {
         case .container:
+            showingRun = false
+            showingSuggestions = false
+            editingGroup = nil
             open(subject, tab: requestedTab)
             model.clearPendingDetail()
         case .group:
-            // The menu bar names a group by name; the row is addressed by id.
-            if let group = model.groups.groups.first(where: { $0.name == subject }) {
+            showingRun = false
+            showingSuggestions = false
+            editingGroup = nil
+            // Palette picks use stable ids; older menu requests can still name a group.
+            if let group = model.groups.groups.first(where: { $0.id == subject })
+                ?? model.groups.groups.first(where: { $0.name == subject }) {
                 open(ContainerRow.groupRowID(group.id))
             }
             model.clearPendingDetail()

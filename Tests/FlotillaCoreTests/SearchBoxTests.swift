@@ -236,3 +236,125 @@ import Testing
         #expect(!state.dropdownShown)          // a later click or ⌘F is not ⌘K
     }
 }
+
+@Suite struct SearchScopeTests {
+    @Test func parsesEveryScopeAndAlias() {
+        for scope in SearchBox.Scope.allCases {
+            for alias in scope.aliases {
+                let input = SearchBox.read("  \(alias.uppercased()):  data ")
+                #expect(input.scope == scope)
+                #expect(input.query == "data")
+                #expect(input.pageFilter == nil)
+                #expect(!input.commandsOnly)
+            }
+        }
+    }
+
+    @Test func unknownPrefixesAndEmbeddedPrefixesStayPlainText() {
+        for text in ["unknown: web", "nginx:latest", "find volume: data"] {
+            let input = SearchBox.read(text)
+            #expect(input.scope == nil)
+            #expect(input.pageFilter == text)
+            #expect(input.query == text)
+        }
+    }
+
+    @Test func slashAndChevronParseBeforeScopes() {
+        for marker in ["/", ">"] {
+            for suffix in ["", "run", " volume: data"] {
+                let input = SearchBox.read(" \(marker)\(suffix)")
+                #expect(input.commandsOnly)
+                #expect(input.slashMode == (marker == "/"))
+                #expect(input.scope == nil)
+                #expect(input.pageFilter == nil)
+                #expect(input.query == suffix.trimmingCharacters(in: .whitespaces))
+            }
+        }
+    }
+
+    @Test func slugsComeFromTitlesWithStableAliases() {
+        let examples: [(String, [String])] = [
+            ("Run Container…", ["/run-container"]), ("New Group…", ["/new-group"]),
+            ("Pull Image…", ["/pull-image"]),
+            ("Build Image from Dockerfile…", ["/build-image", "/build-image-from-dockerfile"]),
+            ("New Volume…", ["/create-volume", "/new-volume"]),
+            ("New Network…", ["/create-network", "/new-network"]),
+            ("New Machine…", ["/new-machine"]), ("New Cluster…", ["/new-cluster"]),
+            ("Add Registry…", ["/add-registry"]), ("New DNS Domain…", ["/new-dns-domain"]),
+            ("Add Host…", ["/add-host"]),
+            ("Import Configuration…", ["/import", "/import-configuration"]),
+            ("Export Configuration…", ["/export", "/export-configuration"]),
+            ("Settings", ["/settings"]), ("Greta", ["/greta"]),
+            ("A Future Action!", ["/a-future-action"])
+        ]
+        for (title, slugs) in examples { #expect(SearchBox.commandSlugs(for: title) == slugs) }
+    }
+
+    @Test func scopeFiltersKindsAcrossHostsWithoutCommandsOrSections() {
+        for scope in SearchBox.Scope.allCases {
+            let list: [SearchBox.Candidate] = [
+                .init(title: "data", isCommand: false, scope: scope),
+                .init(title: "data", subtitle: "on Mini", isCommand: false, scope: scope),
+                .init(title: "other", isCommand: false, scope: scope),
+                .init(title: "data", isCommand: false),
+                .init(title: "data", isCommand: true, scope: scope),
+                .init(title: "data", isCommand: false, isSection: true, scope: scope)
+            ]
+            #expect(SearchBox.results(for: "\(scope.rawValue):data", among: list).all == [0, 1])
+            #expect(SearchBox.results(for: "\(scope.rawValue):", among: list).all == [0, 1, 2])
+        }
+    }
+
+    @Test func slashMatchesSlugComponentsAndAliases() {
+        let list = ["Run Container…", "New Volume…", "Settings"].map {
+            SearchBox.Candidate(title: $0, isCommand: true, slugs: SearchBox.commandSlugs(for: $0))
+        } + [.init(title: "run-container", isCommand: false)]
+        #expect(SearchBox.results(for: "/", among: list).commands == [0, 1, 2])
+        #expect(SearchBox.results(for: "/run", among: list).all == [0])
+        #expect(SearchBox.results(for: "/r-c", among: list).all == [0])
+        #expect(SearchBox.results(for: "/create-vol", among: list).all == [1])
+        #expect(SearchBox.results(for: "/new-vol", among: list).all == [1])
+        #expect(SearchBox.results(for: ">volume", among: list).all == [1])
+    }
+
+    @Test func scopeNamesCompleteOnlyWhileTypingALeadingWord() {
+        #expect(SearchBox.scopeCompletions(for: "vo") == [.volume])
+        #expect(SearchBox.scopeCompletions(for: "IMG") == [.image])
+        #expect(SearchBox.scopeCompletions(for: "volume:").isEmpty)
+        #expect(SearchBox.scopeCompletions(for: "some vo").isEmpty)
+        #expect(SearchBox.scopeCompletions(for: "/vo").isEmpty)
+        let list: [SearchBox.Candidate] = [
+            .init(title: "volume:", isCommand: false, completion: .volume),
+            .init(title: "vo", isCommand: false, scope: .container),
+            .init(title: "New Volume…", isCommand: true)
+        ]
+        #expect(SearchBox.results(for: "vo", among: list).completions == [0])
+        #expect(SearchBox.results(for: "vo", among: list).all == [0, 2, 1])
+        #expect(SearchBox.results(for: "volume:", among: list).isEmpty)
+    }
+
+    @Test func suggestionsUseLibraryMatchingBeyondTheirSubtitle() {
+        let entry = LibraryEntry(id: "demo", title: "Example", summary: "A searchable summary",
+                                 categories: ["Databases"], kind: .container,
+                                 licenceNote: "Special licence")
+        let list: [SearchBox.Candidate] = [
+            .init(title: entry.title, isCommand: false, scope: .suggestion, libraryEntry: entry)
+        ]
+        for query in ["database", "summary", "license", "special"] {
+            #expect(SearchBox.results(for: "suggestion:\(query)", among: list).places == [0])
+        }
+        #expect(SearchBox.results(for: "suggestion:missing", among: list).isEmpty)
+    }
+
+    @Test func scopedAndSlashModesLeavePageUnfilteredAndKeepTheirTextOnEcho() {
+        for text in ["vol:data", "/run"] {
+            var state = SearchBox.State()
+            state.attach(pageText: "web")
+            #expect(state.type(text) == "")
+            state.pageChanged("")
+            #expect(state.text == text)
+            #expect(state.type(text + "x") == nil)
+            #expect(state.type("plain") == "plain")
+        }
+    }
+}

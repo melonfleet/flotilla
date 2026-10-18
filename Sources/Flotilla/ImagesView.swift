@@ -55,11 +55,13 @@ struct ImagesView: View {
 
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .image else { return }
-        // Named by **reference**, which is how this section identifies an image everywhere else —
-        // `ContainerImage.id` is the digest — and on This Mac.
-        if let image = model.images.first(where: { $0.reference == subject }) {
-            open(HostedImage(image: image, host: .local, hostName: model.hostLabel).id)
-        }
+        runImage = nil
+        sendingImage = nil
+        newImageMode = nil
+        browsing = false
+        taggingImage = nil
+        // References are host-qualified by the palette, just like detail keys in this list.
+        if let row = everyRow.first(where: { $0.detailKey == subject }) { open(row.id) }
         model.clearPendingDetail()
     }
 

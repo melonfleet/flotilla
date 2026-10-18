@@ -2045,6 +2045,16 @@ final class AppModel {
         }
     }
 
+    var pendingSuggestionEntry: LibraryEntry.ID?
+
+    func requestSuggestion(_ id: LibraryEntry.ID) {
+        present {
+            self.pendingSuggestionEntry = id
+            self.pendingSection = .containers
+            self.pendingSuggestions = .containers
+        }
+    }
+
     var pendingSuggestions: Section?
 
     var pendingDNSForm = false

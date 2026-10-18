@@ -76,8 +76,9 @@ final class ToolbarSearch {
 
     var results: SearchBox.Results {
         SearchBox.results(for: text, among: entries.map {
-            SearchBox.Candidate(title: $0.title, subtitle: $0.subtitle, isCommand: $0.kind == .action,
-                                isSection: $0.kind == .section)
+            SearchBox.Candidate(title: $0.title, subtitle: $0.subtitle, isCommand: $0.kind == .action || (input.slashMode && $0.kind == .section),
+                                isSection: $0.kind == .section, scope: $0.scope, completion: $0.completion,
+                                slugs: $0.slugs, libraryEntry: $0.libraryEntry)
         }, browsing: state.browsing)
     }
 
@@ -87,7 +88,8 @@ final class ToolbarSearch {
         let count = results.all.count
         if let highlighted = state.highlighted, highlighted < count { return highlighted }
         guard count > 0 else { return nil }
-        return scope?.submit != nil && !input.commandsOnly ? nil : 0
+        if entries[results.all[0]].completion != nil { return 0 }
+        return scope?.submit != nil && !input.commandsOnly && input.scope == nil ? nil : 0
     }
 
     // MARK: Scope
@@ -176,19 +178,26 @@ final class ToolbarSearch {
             case .leaveBox: release()
             }
             return true
+        case 48: // Tab accepts a scope completion or runs a slash command.
+            guard dropdownShown, input.slashMode || !SearchBox.scopeCompletions(for: text).isEmpty,
+                  let index = activeIndex(in: results), results.all.indices.contains(index) else { return false }
+            let item = entries[results.all[index]]
+            guard input.slashMode || item.completion != nil else { return false }
+            open?(item)
+            return true
         case 36, 76:  // Return, Enter
             let results = results
             if dropdownShown, let index = activeIndex(in: results),
                results.all.indices.contains(index), entries.indices.contains(results.all[index]) {
                 open?(entries[results.all[index]])
-            } else if let submit = scope?.submit, !input.commandsOnly {
+            } else if let submit = scope?.submit, !input.commandsOnly, input.scope == nil {
                 state.dropdownClosed = true
                 submit()
             }
             // Swallowed either way: a Return that fell through would press the form's default button.
             return true
         case 125, 126:  // ↓, ↑
-            guard !text.isEmpty else { return false }
+            guard dropdownShown || !text.isEmpty else { return false }
             if !dropdownShown { state.dropdownClosed = false; return true }
             // From the entry already drawn highlighted, so the first ↓ moves off the first entry.
             state.highlighted = SearchBox.move(activeIndex(in: results), by: event.keyCode == 125 ? 1 : -1,
@@ -221,6 +230,10 @@ final class ToolbarSearch {
     /// the palette's did, so nothing it opens skips the unsaved-changes question. The text is cleared
     /// only if the pick goes ahead. It was a query for the dropdown, and Keep Editing leaves it.
     func pick(_ item: PaletteItem, formGuard: FormGuard) {
+        if let completion = item.completion {
+            text = completion.rawValue + ":"
+            return
+        }
         release()
         formGuard.confirmLeaving { [weak self] in
             self?.text = ""
@@ -340,7 +353,7 @@ struct ToolbarSearchField: View {
                 .focused($focused)
                 .accessibilityLabel(Text(box.prompt))
                 .accessibilityAddTraits(.isSearchField)
-                .accessibilityHint(Text("Filters this page as you type, and lists commands and places. Type > for commands only."))
+                .accessibilityHint(Text("Filters this page as you type, and lists commands and places. Type / or > for commands, or type: for scopes (for example volume:)."))
             if box.text.isEmpty {
                 Text("⌘K")
                     .font(.system(size: 11, weight: .medium))
@@ -361,8 +374,8 @@ struct ToolbarSearchField: View {
         .frame(height: 28)
         .glassEffect(.regular.tint(.white.opacity(0.2)), in: .capsule)
         .environment(\.colorScheme, .light)
-        .help(box.scope?.help.map { $0 + " ⌘K or ⌘F to search." }
-              ?? "Filter this page, go anywhere, or run a command (⌘K or ⌘F). Type > for commands only.")
+        .help((box.scope?.help.map { $0 + " " } ?? "")
+              + "⌘K or ⌘F to search. Type / or > for commands; type: for scopes, such as volume:.")
         .anchorPreference(key: ToolbarSearchAnchor.self, value: .bounds) { $0 }
         .background(GeometryReader { proxy in
             Color.clear
@@ -430,6 +443,7 @@ struct ToolbarSearchDropdown: View {
     /// The rows' own height, measured, so a short list gets a short dropdown and a long one scrolls
     /// at 360. Not a row count times a guessed row height, and not `fixedSize` (see `CLAUDE.md`).
     @State private var contentHeight: CGFloat = 0
+    @State private var showingTips = false
 
     private var box: ToolbarSearch { model.toolbarSearch }
 
@@ -453,8 +467,9 @@ struct ToolbarSearchDropdown: View {
                                 .foregroundStyle(.secondary)
                                 .padding(10)
                         }
-                        group("Commands", items: shown(results.commands), offset: 0, active: active)
-                        group("Go to", items: shown(results.places), offset: results.commands.count, active: active)
+                        group("Scopes", items: shown(results.completions), offset: 0, active: active)
+                        group("Commands", items: shown(results.commands), offset: results.completions.count, active: active)
+                        group("Go to", items: shown(results.places), offset: results.completions.count + results.commands.count, active: active)
                     }
                     .padding(6)
                     .background(GeometryReader { proxy in
@@ -469,7 +484,20 @@ struct ToolbarSearchDropdown: View {
             }
             .frame(height: min(max(contentHeight, 1), 360))
             Divider()
-            Text("↑↓ to move · Return to open · Esc to close · > for commands only")
+            Button("Search tips", systemImage: "questionmark.circle") { showingTips.toggle() }
+                .buttonStyle(.plain)
+                .font(.caption2).foregroundStyle(.secondary)
+                .padding(.horizontal, 14).padding(.top, 5)
+                .popover(isPresented: $showingTips) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Search tips").font(.headline)
+                        Text("Plain text filters this page and finds places. Use / or > for commands. Use type: for a kind across all Macs; Tab completes a scope or runs a slash command.")
+                        Text(SearchBox.Scope.allCases.map { $0.rawValue + ":" }.joined(separator: " · "))
+                        Text("For example: volume: data, suggestion: database, /run-container")
+                    }
+                    .font(.callout).padding().frame(width: 340)
+                }
+            Text("↑↓ · Return opens · Esc closes · / commands · type: scopes")
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.vertical, 6)
@@ -489,6 +517,8 @@ struct ToolbarSearchDropdown: View {
 
     /// The top line: whether the page is being filtered, and by how much.
     private var status: String {
+        if let scope = box.input.scope { return "Searching \(scope.plural) on all Macs" }
+        if box.text.isEmpty { return "Type / for commands or type: for scopes, such as volume:" }
         if box.input.commandsOnly { return "Commands only — this page is not filtered" }
         guard let scope = box.scope else { return "Nothing to filter on this page" }
         if let note = scope.submitNote { return note }
@@ -523,9 +553,15 @@ struct ToolbarSearchDropdown: View {
 
     private func row(_ item: PaletteItem, isSelected: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: item.systemImage)
-                .frame(width: 20)
-                .foregroundStyle(isSelected ? Color.white : .secondary)
+            if let entry = item.libraryEntry {
+                SuggestionLogo(data: entry.icon.flatMap { model.libraryUpdater.icons[$0.sha256] },
+                               category: entry.categories.first)
+                    .scaleEffect(0.5).frame(width: 22, height: 22)
+            } else {
+                Image(systemName: item.systemImage)
+                    .frame(width: 20)
+                    .foregroundStyle(isSelected ? Color.white : .secondary)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title).lineLimit(1).truncationMode(.middle)
                 if let subtitle = item.subtitle {
@@ -534,7 +570,10 @@ struct ToolbarSearchDropdown: View {
                 }
             }
             Spacer(minLength: 8)
-            if item.kind == .section {
+            if let slug = item.slugs.first {
+                Text(slug).font(.caption2.monospaced())
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
+            } else if item.kind == .section {
                 Text("Section").font(.caption2)
                     .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
             }

@@ -39,6 +39,9 @@ struct NetworksView: View {
 
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .network else { return }
+        showingCreate = false
+        showingSuggestions = false
+        pushing = nil
         open(HostRef.local.rowID(subject))
         model.clearPendingDetail()
     }

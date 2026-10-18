@@ -10,10 +10,54 @@ import Foundation
 ///
 /// Foundation-only and free of the app's types, so the rules are tested here rather than by eye.
 public enum SearchBox {
+    public enum Scope: String, CaseIterable, Sendable {
+        case container, group, image, volume, network, machine, cluster, host, dns, registry, notification, suggestion
+
+        public var plural: String {
+            switch self {
+            case .registry: "registries"
+            case .dns: "DNS domains"
+            default: rawValue + "s"
+            }
+        }
+        public var aliases: [String] {
+            let short: [String] = switch self {
+            case .volume: ["vol"]
+            case .network: ["net"]
+            case .image: ["img"]
+            default: []
+            }
+            return [rawValue, self == .dns ? "dns" : plural] + short
+        }
+    }
+
+    public static func scopeCompletions(for text: String) -> [Scope] {
+        let query = text.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty, query.allSatisfy({ $0.isLetter }) else { return [] }
+        return Scope.allCases.filter { scope in scope.aliases.contains { $0.hasPrefix(query) } }
+    }
+
+    /// Derive once from the displayed title; the small alias map also supplies shorter spellings.
+    public static func commandSlugs(for title: String) -> [String] {
+        let words = title.lowercased().split { !$0.isLetter && !$0.isNumber }
+        let derived = "/" + words.joined(separator: "-")
+        let preferred: String? = switch derived {
+        case "/new-volume": "/create-volume"
+        case "/new-network": "/create-network"
+        case "/build-image-from-dockerfile": "/build-image"
+        case "/import-configuration": "/import"
+        case "/export-configuration": "/export"
+        default: nil
+        }
+        return preferred.map { [$0, derived] } ?? [derived]
+    }
+
     /// A line of box text, read.
     public struct Input: Sendable, Equatable {
         /// True after a leading `>`: commands only, and the page left unfiltered.
         public var commandsOnly: Bool
+        public var slashMode = false
+        public var scope: Scope? = nil
         /// What to match the dropdown against: the text without the `>`, trimmed.
         public var query: String
 
@@ -25,9 +69,14 @@ public enum SearchBox {
 
     public static func read(_ text: String) -> Input {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix(">") {
+        if trimmed.hasPrefix(">") || trimmed.hasPrefix("/") {
             let rest = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-            return Input(commandsOnly: true, query: rest, pageFilter: nil)
+            return Input(commandsOnly: true, slashMode: trimmed.hasPrefix("/"), query: rest, pageFilter: nil)
+        }
+        if let colon = trimmed.firstIndex(of: ":"),
+           let scope = Scope.allCases.first(where: { $0.aliases.contains(String(trimmed[..<colon]).lowercased()) }) {
+            return Input(commandsOnly: false, scope: scope,
+                         query: trimmed[trimmed.index(after: colon)...].trimmingCharacters(in: .whitespaces), pageFilter: nil)
         }
         return Input(commandsOnly: false, query: trimmed, pageFilter: text)
     }
@@ -41,8 +90,15 @@ public enum SearchBox {
         /// A section of the window (Containers, Volumes…): what ⌘K lists before anything is typed.
         public var isSection: Bool
 
-        public init(title: String, subtitle: String? = nil, isCommand: Bool, isSection: Bool = false) {
+        public var scope: Scope?
+        public var completion: Scope?
+        public var slugs: [String]
+        public var libraryEntry: LibraryEntry?
+
+        public init(title: String, subtitle: String? = nil, isCommand: Bool, isSection: Bool = false, scope: Scope? = nil,
+                    completion: Scope? = nil, slugs: [String] = [], libraryEntry: LibraryEntry? = nil) {
             self.title = title; self.subtitle = subtitle; self.isCommand = isCommand; self.isSection = isSection
+            self.scope = scope; self.completion = completion; self.slugs = slugs; self.libraryEntry = libraryEntry
         }
     }
 
@@ -50,14 +106,15 @@ public enum SearchBox {
     public struct Results: Sendable, Equatable {
         public var commands: [Int]
         public var places: [Int]
+        public var completions: [Int]
 
-        public init(commands: [Int] = [], places: [Int] = []) {
-            self.commands = commands; self.places = places
+        public init(commands: [Int] = [], places: [Int] = [], completions: [Int] = []) {
+            self.commands = commands; self.places = places; self.completions = completions
         }
 
-        /// Both groups as one list, which is what ↑↓ walk.
-        public var all: [Int] { commands + places }
-        public var isEmpty: Bool { commands.isEmpty && places.isEmpty }
+        /// Scope completions first, then commands and places: what ↑↓ walk.
+        public var all: [Int] { completions + commands + places }
+        public var isEmpty: Bool { all.isEmpty }
     }
 
     /// What the dropdown lists for `text`.
@@ -71,7 +128,7 @@ public enum SearchBox {
                                commandLimit: Int = 8, placeLimit: Int = 40) -> Results {
         let input = read(text)
         let words = input.words
-        if words.isEmpty && !input.commandsOnly {
+        if words.isEmpty && !input.commandsOnly && input.scope == nil {
             guard browsing else { return Results() }
             return Results(commands: candidates.indices.filter { candidates[$0].isCommand },
                            places: candidates.indices.filter { candidates[$0].isSection })
@@ -79,7 +136,27 @@ public enum SearchBox {
 
         let matching = candidates.indices.filter { index in
             let candidate = candidates[index]
+            if let completion = candidate.completion {
+                return scopeCompletions(for: text).contains(completion)
+            }
             guard !input.commandsOnly || candidate.isCommand else { return false }
+            if let scope = input.scope {
+                guard !candidate.isCommand, !candidate.isSection, candidate.scope == scope else { return false }
+            }
+            if input.slashMode {
+                let query = input.query.lowercased()
+                // Each typed component can abbreviate a component of the slug, in order.
+                let parts = query.split { $0 == "-" || $0.isWhitespace }
+                return candidate.slugs.contains { slug in
+                    var remaining = slug.dropFirst().split(separator: "-")[...]
+                    return parts.allSatisfy { part in
+                        guard let index = remaining.firstIndex(where: { $0.hasPrefix(part) }) else { return false }
+                        remaining = remaining.dropFirst(remaining.distance(from: remaining.startIndex, to: index) + 1)
+                        return true
+                    }
+                }
+            }
+            if let entry = candidate.libraryEntry { return entry.matches(input.query) }
             return words.allSatisfy {
                 SearchQuery.contains(candidate.title, $0) || SearchQuery.contains(candidate.subtitle ?? "", $0)
             }
@@ -87,10 +164,11 @@ public enum SearchBox {
         // Sorted on (rank, original position), because `sorted` is not stable and the order given
         // is the palette's own: the most likely command first.
         let ranked = matching.sorted {
-            (rank(candidates[$0], input.query), $0) < (rank(candidates[$1], input.query), $1)
+            (candidates[$0].completion == nil ? 1 : 0, rank(candidates[$0], input.query), $0) < (candidates[$1].completion == nil ? 1 : 0, rank(candidates[$1], input.query), $1)
         }
-        return Results(commands: Array(ranked.filter { candidates[$0].isCommand }.prefix(commandLimit)),
-                       places: Array(ranked.filter { !candidates[$0].isCommand }.prefix(placeLimit)))
+        return Results(commands: Array(ranked.filter { candidates[$0].isCommand }.prefix(input.slashMode ? candidates.count : commandLimit)),
+                       places: Array(ranked.filter { !candidates[$0].isCommand && candidates[$0].completion == nil }.prefix(placeLimit)),
+                       completions: ranked.filter { candidates[$0].completion != nil })
     }
 
     private static func rank(_ candidate: Candidate, _ query: String) -> Int {

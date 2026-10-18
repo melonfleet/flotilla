@@ -148,11 +148,15 @@ struct MachinesView: View {
         .onChange(of: model.pendingDetailSubject) { _, subject in
             // Only this section's own requests. See `AppModel.requestDetail`.
             guard let subject, model.pendingDetailKind == .machine else { return }
+            showingCreate = false
+            showingSuggestions = false
             open(subject, tab: requestedTab)
             model.clearPendingDetail()
         }
         .onAppear {
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .machine {
+                showingCreate = false
+                showingSuggestions = false
                 open(subject, tab: requestedTab)
                 model.clearPendingDetail()
             }
