@@ -42,12 +42,15 @@ questions.
   terminals use a **second** `TerminalSessionStore`, because the store is keyed by a
   plain string and a machine named `web` would otherwise collide with a container
   named `web`. Read the `MACHINES-SPEC.md` addendum before touching the CLI calls.
-- **Every list section is two-line rows, and only rows** (Q56, amended 17 October): Containers,
+- **Every list section is responsive rows, and only rows** (Q56, amended 17 October): Containers,
   Machines, Images, Volumes, Networks, Hosts, Registries, DNS and Clusters all draw
   `ResourceRow`, sort from one `RowSortMenu`, and lead each row with a checkbox (`RowCheck`) that
   is a view of the `List`'s own selection — never a second one. There is no Cards view and no
   hideable columns; `ResourceCard` lives on only in the Suggestions galleries. Logs is the one
   list still a `Table` (Q19). `check-defaults.sh` pins the rows being drawn unconditionally.
+  Notifications and Suggestions now use the same row, as Greta already did (18 October).
+  Rows become one line when their own width permits the full name; narrow rows keep two or
+  three lines. `ResourceTextLayout` owns that switch, with no window-width or hover dependency.
   **No live figures in rows** (Q58): CPU and memory are on the container's page.
   **The name fits first and the actions are on hover** (Q60, 17 October, Kamal's call, like Mail):
   chips drop whole before the name truncates (`ChipLine`), the kind is the mark's glyph

@@ -2544,6 +2544,14 @@ container's CPU sparkline moves into its row,** beside "CPU n%", from the same `
 history the cards drew and hidden from VoiceOver; Machines have none, because `machine ls` reports
 allocation, not use.
 
+*Amended 18 October, Kamal's Gmail row request.* Notifications and Suggestions now use
+`ResourceRow`, too (severity mark or library logo, with an optional third line); Greta keeps
+using it. Every shared row goes to one line when its own available width is generous — about
+760pt including the mark and checkbox — and the full name fits. Detail truncates and chips drop
+before the name gives way. Below that, the hanging detail and optional third line return. The
+same text views, selection container and hover actions survive the switch; fitting another chip
+or revealing actions never changes the height. VoiceOver keeps the same summary and controls.
+
 ## Q57 — The Recent activity strip is removed (settled 2026-10-17)
 
 Removed 17 October at Kamal's request; the Activity section has it all. The "Recent activity"

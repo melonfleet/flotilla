@@ -204,23 +204,31 @@ struct SuggestionsView: View {
     }
 
     private func row(_ entry: LibraryEntry) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            RowCheckbox(check: RowCheck(entry.id, in: $selection), name: entry.title)
-            logo(entry)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(entry.title).font(.body.weight(.medium)).lineLimit(1)
-                    badge(entry.kind == .stack ? "Stack" : "Container")
-                    if entry.licenceNote != nil { badge("Licence") }
-                }
-                Text(entry.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                Text(Self.stats(entry)).font(.caption2).foregroundStyle(.tertiary)
-            }
+        ResourceRow(
+            title: entry.title,
+            detail: entry.summary,
+            thirdLine: Self.stats(entry),
+            selected: selection.contains(entry.id),
+            check: RowCheck(entry.id, in: $selection),
+            summary: "\(entry.title), \(entry.kind == .stack ? "Stack" : "Container"), \(entry.summary), \(Self.stats(entry))\(entry.licenceNote == nil ? "" : ", Licence")",
+            leading: { logo(entry) },
+            chips: {
+                badge(entry.kind == .stack ? "Stack" : "Container")
+                if entry.licenceNote != nil { badge("Licence") }
+            },
+            actions: {
+                Menu { suggestionMenu(entry) } label: { RowOverflowLabel() }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("More actions for \(entry.title)")
+            })
+        .contextMenu { suggestionMenu(entry) }
+    }
+
+    private func suggestionMenu(_ entry: LibraryEntry) -> some View {
+        Button(selection.contains(entry.id) && selection.count > 1 ? "Use \(selection.count) Suggestions…" : "Use…") {
+            if selection.contains(entry.id), selection.count > 1 { startBatch() }
+            else { use(entry) }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
     }
 
     private func logo(_ entry: LibraryEntry) -> some View {
@@ -351,6 +359,10 @@ struct SuggestionsView: View {
 
     private func use() {
         guard let entry = selected else { return }
+        use(entry)
+    }
+
+    private func use(_ entry: LibraryEntry) {
         if let stack = entry.stackSuggestion {
             chosen = stack
         } else if let container = entry.container {

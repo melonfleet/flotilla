@@ -129,7 +129,7 @@ struct NotificationsView: View {
             Text("\(shown.count) \(shown.count == 1 ? "notice" : "notices")")
                 .font(.caption).foregroundStyle(.secondary)
             List(selection: $selection) {
-                ForEach(shown) { notice in row(notice).tag(notice.id) }
+                ForEach(shown) { notice in row(notice).tag(notice.id).listRowInsets(EdgeInsets()) }
             }
             .listStyle(.inset)
             .overlay {
@@ -148,23 +148,41 @@ struct NotificationsView: View {
     }
 
     private func row(_ notice: NoticeBook.Notice) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            RowCheckbox(check: RowCheck(notice.id, in: $selection, unavailable: checkUnavailable(notice)),
-                        name: notice.title)
-            Image(systemName: notice.level.symbol).foregroundStyle(notice.level.colour)
-                .accessibilityLabel(notice.level.title)
-                .help(notice.level.title)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(notice.title).font(.body.weight(.medium)).lineLimit(1).help(notice.text)
-                if let detail = notice.detail {
-                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        ResourceRow(
+            title: notice.title,
+            titleHelp: notice.text,
+            trailingText: RelativeDate.relativeToNow(notice.started),
+            detail: notice.detail ?? "",
+            thirdLine: Self.meta(notice, host: model.noticeHostName(notice)),
+            selected: selection.contains(notice.id),
+            check: RowCheck(notice.id, in: $selection, unavailable: checkUnavailable(notice)),
+            summary: "\(notice.level.title), \(notice.text), \(Self.meta(notice, host: model.noticeHostName(notice)))",
+            leading: {
+                RowLeadingMark {
+                    Image(systemName: notice.level.symbol).foregroundStyle(notice.level.colour)
+                        .accessibilityHidden(true)
+                        .help(notice.level.title)
                 }
-                Text(Self.meta(notice, host: model.noticeHostName(notice)))
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.vertical, 3)
+            },
+            chips: { EmptyView() },
+            actions: {
+                Menu { noticeMenu(notice) } label: { RowOverflowLabel() }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("More actions for \(notice.title)")
+            })
+        .contextMenu { noticeMenu(notice) }
         .opacity(notice.isActive && notice.dismissed == nil ? 1 : 0.65)
+    }
+
+    private func noticeMenu(_ notice: NoticeBook.Notice) -> some View {
+        let chosen = selection.contains(notice.id) && selection.count > 1 ? selected : [notice]
+        return Group {
+            if chosen.contains(where: { $0.dismissed != nil }) {
+                Button("Restore") { store.restore(Set(chosen.map(\.id))) }
+            }
+            Button("Dismiss") { store.dismiss(Set(chosen.filter(\.dismissible).map(\.id))) }
+                .disabled(!chosen.contains { $0.isActive && $0.dismissed == nil && $0.dismissible })
+        }
     }
 
     // MARK: Detail

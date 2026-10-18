@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The two-line list row that replaces the table (Q56), written for Containers first and shaped
+/// The responsive list row that replaces the table (Q56), written for Containers first and shaped
 /// so every row section takes it with no change here.
 ///
 /// ```
@@ -8,8 +8,10 @@ import SwiftUI
 ///           nginx:latest · 8080→80 · 192.168.64.3 (default)
 /// ```
 ///
-/// Checkbox · state mark · name and chips over the second line. A section supplies what is
-/// genuinely its own — the mark, the chips, the second line and the actions — and this owns the
+/// Narrow: checkbox · state mark · name and chips over the detail (and optional third line).
+/// Wide: mark · name · chips · detail · metadata · time, with room for the hover actions.
+/// The row's own proposed width decides; a long name delays the switch until it fits in full.
+/// A section supplies its mark, chips, detail and actions, and this owns the
 /// part that must not drift between sections: the padding, the hover wash, the truncation rules,
 /// when the actions show, and the accessibility shape.
 ///
@@ -75,11 +77,13 @@ struct ResourceRow<Leading: View, Chips: View, Actions: View>: View {
     let title: String
     /// The name's tooltip, when there is more to say than the name.
     var titleHelp: String?
-    /// Optional first-line date, aligned to the trailing edge.
+    /// Optional trailing date, aligned to the trailing edge in either layout.
     var trailingText: String?
     /// The second line. One line, truncating at the tail.
     let detail: String
     var detailHelp: String?
+    /// Optional third line; joins the detail on wide rows.
+    var thirdLine: String? = nil
     var selected: Bool
     /// The leading checkbox: this row's membership of the list's selection.
     let check: RowCheck
@@ -143,26 +147,26 @@ struct ResourceRow<Leading: View, Chips: View, Actions: View>: View {
     }
 
     private var text: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                name
-                    // Offered the whole line first: the chips' minimum is zero, so this takes
-                    // its full width whenever it can.
-                    .layoutPriority(1)
-                ChipLine { chips }
-                Spacer(minLength: 0)
-                if let trailingText {
-                    Text(trailingText).font(.caption2).foregroundStyle(.secondary).fixedSize()
-                }
-            }
+        ResourceTextLayout(reservesActions: !voiceOver) {
+            name
+            ChipLine { chips }
             Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(detailHelp ?? detail)
-                // `summary` already says it.
                 .accessibilityHidden(true)
+            Text(thirdLine ?? "")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .help(thirdLine ?? "")
+                .accessibilityHidden(true)
+            Text(trailingText ?? "")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -197,6 +201,79 @@ struct ResourceRow<Leading: View, Chips: View, Actions: View>: View {
             .help(titleHelp ?? title)
             // `summary` already names the row.
             .accessibilityHidden(true)
+    }
+}
+
+/// Places the same text views in one or several lines, from the row's own proposed width.
+/// No geometry state or animation: resize computes height and positions together, and hover
+/// changes neither. The accessibility container and its children keep their identities.
+struct ResourceTextLayout: Layout {
+    var reservesActions: Bool
+
+    /// About 760pt including the checkbox, mark and padding. Below this, keep the hanging
+    /// detail line. Even above it, an unusually long name keeps the narrow form until it fits.
+    static let singleLineWidth: CGFloat = 660
+    private let gap: CGFloat = 6
+
+    private func frames(_ width: CGFloat, _ views: Subviews) -> [CGRect] {
+        frames(width: width, ideal: views.map { $0.sizeThatFits(.unspecified) }) { available in
+            views[1].sizeThatFits(ProposedViewSize(width: available, height: nil)).width
+        }
+    }
+
+    /// Geometry kept independent of SwiftUI's subview handles so the fitting invariants can be
+    /// checked with long names, dropped chips and different font metrics.
+    func frames(width: CGFloat, ideal: [CGSize], chipWidth: (CGFloat) -> CGFloat) -> [CGRect] {
+        // Keep room under the hover overlay even at rest, so appearing actions never cover the
+        // name or change the layout. VoiceOver has its own inline action slot outside this layout.
+        let actionSpace: CGFloat = reservesActions ? 80 : 0
+        let wide = width >= Self.singleLineWidth
+            && ideal[0].width + ideal[4].width + actionSpace + 120 <= width
+        let usable = max(0, width - (wide ? actionSpace : 0))
+        let trailing = min(ideal[4].width, max(0, usable / 3))
+        let title = min(ideal[0].width, max(0, usable - trailing - (trailing > 0 ? gap : 0)))
+        let chipRoom = max(0, usable - title - trailing - gap * 2 - (wide ? 120 : 0))
+        var widths = [title, min(chipRoom, chipWidth(chipRoom)), CGFloat(0), CGFloat(0), trailing]
+        if wide {
+            let remaining = max(0, usable - title - widths[1] - trailing - gap * 4)
+            widths[3] = min(ideal[3].width, remaining / 3)
+            widths[2] = max(0, remaining - widths[3])
+        } else {
+            widths[2] = width
+            widths[3] = width
+        }
+        // Every label has a one-line limit. Use its intrinsic height even when a chip drops,
+        // so fitting another chip cannot change the row height inside either arrangement.
+        let sizes = ideal
+        let firstHeight = [sizes[0].height, sizes[1].height, sizes[4].height].max() ?? 0
+        var result = Array(repeating: CGRect.zero, count: 5)
+        var x: CGFloat = 0
+        for index in (wide ? [0, 1, 2, 3, 4] : [0, 1, 4]) {
+            let height = wide ? (sizes.map(\.height).max() ?? 0) : firstHeight
+            if index == 4 { x = usable - widths[4] }
+            result[index] = CGRect(x: x, y: (height - sizes[index].height) / 2,
+                                   width: widths[index], height: sizes[index].height)
+            if widths[index] > 0 { x += widths[index] + gap }
+        }
+        if !wide {
+            result[2] = CGRect(x: 0, y: firstHeight + 2, width: width, height: sizes[2].height)
+            result[3] = CGRect(x: 0, y: result[2].maxY + 2, width: width,
+                               height: ideal[3].width > 0 ? sizes[3].height : 0)
+        }
+        return result
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? Self.singleLineWidth
+        let rects = frames(width, subviews)
+        return CGSize(width: width, height: rects.filter { $0.height > 0 }.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (view, rect) in zip(subviews, frames(bounds.width, subviews)) {
+            view.place(at: CGPoint(x: bounds.minX + rect.minX, y: bounds.minY + rect.minY),
+                       anchor: .topLeading, proposal: ProposedViewSize(width: rect.width, height: rect.height))
+        }
     }
 }
 
