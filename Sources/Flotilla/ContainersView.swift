@@ -95,6 +95,7 @@ struct ContainersView: View {
     private struct DetailTarget: Hashable {
         let id: String
         var tab: DetailTab?
+        var editGroup = false
         let nonce = UUID()
     }
     @State private var request: DetailTarget?
@@ -120,7 +121,7 @@ struct ContainersView: View {
     @State private var showingFilter = false
 
     /// New Group, full width like every other create form, when "+ ▸ New Group…" opened it. An
-    /// existing group's form is its page, beside the list (Q58). Groups have lived in this list
+    /// existing group opens its overview beside the list, with Edit for its draft. Groups live here
     /// since 5 October (to-do item 4).
     @State private var editingGroup: GroupFormTarget?
     /// Suggestions (Q28), embedded like every form. The stack is set when a quick pick in the
@@ -148,13 +149,13 @@ struct ContainersView: View {
         }
     }
 
-    /// The page beside the list (Q58): the selected container's detail, a group's form, a summary
+    /// The page beside the list (Q58): the selected container's detail, a group's overview, a summary
     /// of several, or an empty state.
     ///
     /// It was a slide-in page that replaced the list, with Back and a ‹ › stepper; before that a
     /// sheet, and before that a window. Kamal, 17 October: "the views that we already have for each
     /// item … they'll just show in the right pane instead." So it is the same `ContainerDetailView`
-    /// and the same `GroupFormView`, unchanged, with the list beside them.
+    /// and a live `GroupOverviewView`, with the list beside them.
     ///
     /// Stepping between containers without closing anything is still the workflow persistent
     /// terminal sessions made possible — shells stay alive in `TerminalSessionStore`, so you can
@@ -190,7 +191,7 @@ struct ContainersView: View {
         return row
     }
 
-    /// The id the page is drawn from. A group's page is its form, drawn from the id rather than
+    /// The id the page is drawn from. A group's editor is drawn from the id rather than
     /// the row, so a group deleted (or its host forgotten) while its draft has unsaved changes
     /// keeps the form on screen while the guard asks, and after Keep Editing.
     private var shownID: ContainerRow.ID? {
@@ -203,23 +204,16 @@ struct ContainersView: View {
         Set(everyRow.filter { checkUnavailable($0) == nil }.map(\.id))
     }
 
-    /// The group form's own Cancel or Save: it has already asked whatever it needed to, so the page
-    /// closes with the selection rather than asking again behind it.
-    private func closePage() {
-        selection = []
-        shown = []
-    }
-
     @ViewBuilder
     private func rowPage(_ id: ContainerRow.ID) -> some View {
         if ContainerRow.isGroupRowID(id) {
             let groupID = ContainerRow.groupID(fromRowID: id)
-            // A group's page is its form, as it always was; Cancel or Save leaves it.
-            GroupFormView(model: model, target: .existing(groupID)) { closePage() }
-                .paneHeaderActions {
-                    if let group = model.groups.group(groupID) { groupRowActions(for: group, place: .header) }
-                }
-                .id(groupID)
+            GroupOverviewView(model: model, groupID: groupID,
+                              initiallyEditing: request?.id == id && request?.editGroup == true,
+                              openContainer: { open($0) }) { group in
+                groupRowActions(for: group, place: .header)
+            }
+            .id(groupID)
         } else if let row = shownRow, let container = row.container {
             let tab = request?.id == row.id ? request?.tab : nil
             VStack(spacing: 0) {
@@ -885,6 +879,13 @@ struct ContainersView: View {
                 }
             }
 
+            if place == .header {
+                IconActionButton(systemImage: "arrow.clockwise", label: "Restart \(group.name)",
+                                 help: "Restart every service in \(group.name)", disabled: !canStop(group)) {
+                    Task { await model.restartGroup(group) }
+                }
+            }
+
             // The **same** builder the right-click menu uses, which `check-menu-parity.sh` holds
             // every row to.
             Menu {
@@ -913,8 +914,14 @@ struct ContainersView: View {
     /// A group row's menu, shared by its `⋯` and a right-click.
     @ViewBuilder
     private func groupMenu(for group: ContainerGroup) -> some View {
-        // First, above everything: the thing this row opens. A group's detail is its form.
-        Button("Edit…") { open(ContainerRow.groupRowID(group.id)) }
+        // Editing is explicit; selecting the row opens its live overview.
+        Button("Edit…") {
+            model.formGuard.confirmLeaving {
+                let id = ContainerRow.groupRowID(group.id)
+                open(id)
+                request = DetailTarget(id: id, tab: nil, editGroup: true)
+            }
+        }
         Divider()
         Button("Start") { Task { await model.startGroup(group) } }
             .disabled(!canStart(group))
