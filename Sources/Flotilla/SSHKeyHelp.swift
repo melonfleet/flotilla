@@ -30,7 +30,7 @@ final class SSHKeyState {
 
     private static func copyKey(_ host: String, _ user: String?) -> String { "\(user ?? "")@\(host)" }
 
-    /// Blocking: runs `ssh-add -L` (bounded at five seconds) and checks five file names.
+    /// Blocking: runs `ssh-add -L` (bounded at five seconds) and checks eleven file names.
     nonisolated private static func read() -> SSHKeySetup.Status {
         let directory = sshDirectory
         return SSHKeySetup.status(sshDirectory: directory, agent: agent()) {
@@ -63,9 +63,11 @@ final class SSHKeyState {
 /// Key…" — the three visible steps that make one, put it on the host, and try it.
 ///
 /// Each step is a button with a sentence saying what it will run, and runs it in the SSH tab's own
-/// terminal, where the user answers its prompts. Flotilla never reads, stores or logs a password,
-/// a private key or a passphrase (Q20): ssh-keygen asks for the passphrase and ssh-copy-id asks
-/// for the host's password in the PTY, and the keystrokes go to them alone.
+/// terminal, where the user answers its prompts. Flotilla never stores or logs a password or a
+/// passphrase and never reads a private key (Q20): ssh-keygen asks for the passphrase and
+/// ssh-copy-id for the host's password in the PTY, and the keystrokes pass through Flotilla's
+/// terminal view on the way — which is what the card says, rather than "never sees" (Kyle, 18
+/// October).
 struct SSHKeyCard: View {
     let keys: SSHKeyState
     let hostName: String
@@ -120,22 +122,31 @@ struct SSHKeyCard: View {
     private var steps: some View {
         VStack(alignment: .leading, spacing: 12) {
             step(1, "Make a key") {
-                if let name = status?.keyToCopy {
+                if status?.pathIsSafe == false {
+                    Label(SSHKeySetup.unsafePathExplanation, systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(Theme.warning).lineLimit(4)
+                } else if let name = status?.keyToCopy {
                     Label("You have one: ~/.ssh/\(name)", systemImage: "checkmark.circle.fill")
                         .font(.callout).foregroundStyle(Theme.online)
+                } else if let name = status?.privateKeyWithoutPublic {
+                    // Never offer to make a key over one that exists (Kyle, 18 October).
+                    Text("You have a private key, ~/.ssh/\(name), but not its public half, \(name).pub, so there\u{2019}s nothing to copy. Flotilla won\u{2019}t make a new key beside it. To recreate the public half, run ssh-keygen -y -f ~/.ssh/\(name) > ~/.ssh/\(name).pub in Terminal.")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(5).textSelection(.enabled)
                 } else if status?.hasKey == true {
                     Text("Your keys are in the SSH agent only, not in ~/.ssh, so Flotilla can\u{2019}t choose one to copy. Copy one by hand, below, or make a new one here.")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(4)
-                    makeKeyButton
-                } else {
+                    if status?.canMakeKey == true { makeKeyButton }
+                } else if status?.canMakeKey == true {
                     makeKeyButton
                 }
             }
             step(2, "Put it on \(hostName)") {
-                if let name = status?.keyToCopy, let host {
+                if status?.pathIsSafe == false {
+                    Text("Not from Flotilla, for the reason above.").font(.caption).foregroundStyle(.secondary)
+                } else if let name = status?.keyToCopy, let host {
                     let destination = user.map { "\($0)@\(host)" } ?? host
-                    Text("Runs ssh-copy-id in this tab. ssh asks for \(who) password on \(hostName) once, and adds your public key to that account\u{2019}s ~/.ssh/authorized_keys. Your private key stays on this Mac.")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                    Text("Runs ssh-copy-id in this tab. ssh asks for \(who) password on \(hostName) once, and adds your public key to that account\u{2019}s ~/.ssh/authorized_keys. Your private key stays on this Mac. Your passphrase and password go to ssh through this terminal; Flotilla doesn\u{2019}t store or log them.")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(5)
                     SessionCommandLine(text: "ssh-copy-id -i ~/.ssh/\(name) \(destination)")
                     Button("Copy Key to \(hostName)") { copyKey(name) }
                 } else {
@@ -156,9 +167,10 @@ struct SSHKeyCard: View {
 
     private var makeKeyButton: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Runs ssh-keygen in this tab. It asks where to save the key — press Return for the usual place — and for a passphrase, which protects the key on this Mac. Flotilla never sees either.")
-                .font(.caption).foregroundStyle(.secondary).lineLimit(4)
-            SessionCommandLine(text: "ssh-keygen " + SSHKeySetup.keygenArguments.joined(separator: " "))
+            Text("Runs ssh-keygen in this tab and saves the key as ~/.ssh/\(SSHKeySetup.keygenKeyName). It asks for a passphrase, which protects the key on this Mac. Your passphrase and password go to ssh through this terminal; Flotilla doesn\u{2019}t store or log them.")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(5)
+            SessionCommandLine(text: (["ssh-keygen"] + SSHKeySetup.keygenType
+                                      + ["-f", "~/.ssh/" + SSHKeySetup.keygenKeyName]).joined(separator: " "))
             Button("Make a Key", action: makeKey)
         }
     }

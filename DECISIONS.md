@@ -2084,12 +2084,16 @@ its `PageTabs` pill, after a divider. This Mac's page has none of them: it does 
   only, under `Blocking.run`. "Signed in with your SSH key" is said only when Flotilla saw its own
   `ssh-copy-id` succeed for that host and user: anything else would mean signing in to find out.
   **Set Up SSH Key…** shows three steps, each a button with a sentence saying what it runs, each run
-  in the SSH tab's PTY: `ssh-keygen -t ed25519` (offered only with no key; ssh-keygen asks before it
-  would overwrite one), `ssh-copy-id -i ~/.ssh/<key>.pub [user@]host` (the host and user through
+  in the SSH tab's PTY: `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519` (offered only while no default
+  identity file exists, private or public — amended 18 October after Kyle's review, because ssh-keygen
+  overwrites on a `y`), `ssh-copy-id -i ~/.ssh/<key>.pub [user@]host` (the host and user through
   `RemoteAccess`'s validators, the key one of OpenSSH's five default names, built by
-  `SSHKeySetup.copyIDArguments`), then **Try It**. No shell, no option a value could choose, and
-  Flotilla never reads, stores or logs a password, a private key or a passphrase (Q20): the prompts
-  are the tools' own, in the PTY. The page also says how to do it by hand and links OpenSSH's
+  `SSHKeySetup.copyIDArguments`), then **Try It**. No option a value could choose, and neither command
+  is given a path outside letters, digits and `/._-` (`SSHKeySetup.isShellInert`): `ssh-copy-id` is a
+  shell script that evaluates its `-i` path, so a `$(…)` in a home folder's name ran locally (Kyle,
+  18 October). Flotilla never stores or logs a password or a passphrase and never reads a private key
+  (Q20): the prompts are the tools' own, in the PTY, and the keystrokes pass through Flotilla's
+  SwiftTerm view on the way, which is what the card now says instead of "never sees". The page also says how to do it by hand and links OpenSSH's
   `ssh-keygen(1)` and `ssh(1)` manual pages — Apple has no current guide to SSH keys.
 
 ## Q45 — Hosts: built-in tags, a status dot, and groups by category (settled 2026-10-09)

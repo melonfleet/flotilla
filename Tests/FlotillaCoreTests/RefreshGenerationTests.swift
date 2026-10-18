@@ -39,3 +39,54 @@ import Testing
     #expect(value == nil)
     #expect(Date().timeIntervalSince(started) < 10)
 }
+
+/// Kyle, 18 October: a reply that never comes, behind a `Deadline`. The wait must end when the
+/// deadline cancels it — releasing the task — and `onCancel` (which invalidates the XPC
+/// connection) must run. Without the cancellation handler the operation is still suspended when
+/// this test ends, and `finished` stays false.
+@Test func aCancelledReplyEndsTheWaitAndReleasesTheConnection() async {
+    let invalidated = Flag()
+    let finished = Flag()
+    let value: Int? = await Deadline.value(within: .milliseconds(100)) {
+        let answer: Int? = await CancellableReply.value(cancelled: nil, onCancel: { invalidated.set() }) { _ in
+            // Never resumes: a helper that doesn't reply.
+        }
+        finished.set()
+        return answer
+    }
+    #expect(value == nil)
+    let started = Date()
+    while !finished.value, Date().timeIntervalSince(started) < 10 { try? await Task.sleep(for: .milliseconds(10)) }
+    #expect(finished.value, "the probe's task ended after the deadline")
+    #expect(invalidated.value)
+}
+
+/// The reply and the error handler both calling back resume once, with the first; a cancellation
+/// before or after the request starts ends the wait with the cancelled value.
+@Test func aCancellableReplyResumesOnceWithTheFirstAnswer() async {
+    let first = await CancellableReply.value(cancelled: 0, onCancel: {}) { resume in
+        resume(1); resume(2)
+    }
+    #expect(first == 1)
+    let task = Task {
+        await CancellableReply.value(cancelled: -1, onCancel: {}) { _ in }
+    }
+    task.cancel()
+    #expect(await task.value == -1)
+    let early = Task {
+        withUnsafeCurrentTask { $0?.cancel() }
+        let started = Flag()
+        let answer = await CancellableReply.value(cancelled: -1, onCancel: {}) { _ in started.set() }
+        return (answer, started.value)
+    }
+    let (answer, started) = await early.value
+    #expect(answer == -1)
+    #expect(!started, "a task already cancelled never sends the request")
+}
+
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var raised = false
+    func set() { lock.withLock { raised = true } }
+    var value: Bool { lock.withLock { raised } }
+}

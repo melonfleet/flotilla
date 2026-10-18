@@ -6,8 +6,9 @@ import Foundation
 ///
 /// **None of this is a Flotilla transport.** Flotilla's own link to a host is still
 /// Network.framework and mTLS only. The SSH tab runs the user's own `/usr/bin/ssh` with the user's
-/// own keys, agent and `~/.ssh/config`; it carries no Flotilla command, and Flotilla never sees,
-/// asks for or stores a credential of any kind (Q20). What it does decide is the argv, and that is
+/// own keys, agent and `~/.ssh/config`; it carries no Flotilla command, and Flotilla never asks for,
+/// stores or logs a credential of any kind (Q20) — what is typed into the terminal passes through
+/// Flotilla's terminal view to ssh's PTY and is kept nowhere. What it does decide is the argv, and that is
 /// why the argv is built here, from two validated strings and nothing else.
 public enum RemoteAccess {
 

@@ -108,14 +108,53 @@ import Testing
                 try SSHKeySetup.copyIDArguments(sshDirectory: "/home/u/.ssh", publicKey: key, host: "mini.internal", user: "u")
             }
         }
-        #expect(throws: SSHKeySetup.CopyProblem.key) {
+        #expect(throws: SSHKeySetup.CopyProblem.unsafePath) {
             try SSHKeySetup.copyIDArguments(sshDirectory: "relative/.ssh", publicKey: "id_ed25519.pub", host: "mini.internal", user: "u")
         }
     }
 
-    @Test func keygenNeverChoosesAFileOrAPassphrase() {
-        #expect(SSHKeySetup.keygenArguments == ["-t", "ed25519"])
-        #expect(!SSHKeySetup.keygenArguments.contains { ["-f", "-N", "-P", "-y", "-q"].contains($0) })
+    /// Kyle, 18 October: `ssh-copy-id` evaluates the `-i` path, so a `$(…)` in the home folder's
+    /// name ran locally. Neither command is given a path a shell could act on.
+    @Test func aHomePathAShellCouldReadIsRefused() {
+        let hostile = ["/Users/$(touch /tmp/pwned)/.ssh", "/Users/`id`/.ssh", "/Users/a;rm -rf x/.ssh",
+                       "/Users/Jane Doe/.ssh", "/Users/o'brien/.ssh", "/Users/a\"b/.ssh", "/Users/a|b/.ssh",
+                       "/Users/a&b/.ssh", "/Users/a\nb/.ssh", "/Users/${HOME}/.ssh", "/Users/a*/.ssh",
+                       "/Users/../etc/.ssh", "/Users/caf\u{E9}/.ssh"]
+        for directory in hostile {
+            #expect(!SSHKeySetup.isSSHDirectory(directory), "\(directory)")
+            #expect(throws: SSHKeySetup.CopyProblem.unsafePath) {
+                try SSHKeySetup.copyIDArguments(sshDirectory: directory, publicKey: "id_ed25519.pub", host: "mini.internal", user: "u")
+            }
+            #expect(throws: SSHKeySetup.CopyProblem.unsafePath) { try SSHKeySetup.keygenArguments(sshDirectory: directory) }
+            let status = SSHKeySetup.status(sshDirectory: directory, agent: .empty) { $0.hasSuffix("id_ed25519.pub") }
+            #expect(!status.pathIsSafe)
+            #expect(status.keyToCopy == nil, "no Copy Key offered")
+            #expect(!status.canMakeKey, "no Make a Key offered")
+        }
+        for directory in ["/Users/kamal/.ssh", "/Users/first.last/.ssh", "/home/u_2-x/.ssh"] {
+            #expect(SSHKeySetup.isSSHDirectory(directory), "\(directory)")
+        }
+        #expect(!SSHKeySetup.isSSHDirectory("/Users/kamal/ssh"))
+    }
+
+    /// A private key with or without its public half means no Make a Key: ssh-keygen would
+    /// overwrite on a `y`, and asking first is not the same as never.
+    @Test func anyExistingKeyFileMeansNoMakeAKey() {
+        for name in SSHKeySetup.privateKeyNames + SSHKeySetup.publicKeyNames {
+            let status = SSHKeySetup.status(sshDirectory: "/home/u/.ssh", agent: .empty) { $0 == "/home/u/.ssh/" + name }
+            #expect(!status.canMakeKey, "\(name)")
+        }
+        let orphan = SSHKeySetup.status(sshDirectory: "/home/u/.ssh", agent: .empty) { $0 == "/home/u/.ssh/id_rsa" }
+        #expect(orphan.privateKeys == ["id_rsa"])
+        #expect(orphan.privateKeyWithoutPublic == "id_rsa")
+        #expect(orphan.keyToCopy == nil)
+        let none = SSHKeySetup.status(sshDirectory: "/home/u/.ssh", agent: .keys(["ssh-ed25519"])) { _ in false }
+        #expect(none.canMakeKey, "keys only in the agent leave the files free")
+    }
+
+    @Test func keygenNamesItsFileAndNeverAPassphrase() throws {
+        #expect(try SSHKeySetup.keygenArguments(sshDirectory: "/home/u/.ssh") == ["-t", "ed25519", "-f", "/home/u/.ssh/id_ed25519"])
+        #expect(try !SSHKeySetup.keygenArguments(sshDirectory: "/home/u/.ssh").contains { ["-N", "-P", "-y", "-q"].contains($0) })
         #expect(SSHKeySetup.agentArguments == ["-L"])
     }
 }

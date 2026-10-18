@@ -8,7 +8,8 @@ import FlotillaCore
 ///
 /// None of them is Flotilla's: the SSH tab is this Mac's `/usr/bin/ssh`, Screen Sharing is macOS's
 /// app at `vnc://`, Files is Finder at `smb://`. Each signs in with the user's own keys or password,
-/// in the tool that asks for it; Flotilla never sees, asks for or keeps a credential (Q20).
+/// in the tool that asks for it; Flotilla never asks for, stores or logs a credential (Q20). A
+/// password typed in the SSH tab passes through Flotilla's terminal view on its way to ssh.
 
 extension RemoteAccess.Service {
     /// The name System Settings gives its switch.
@@ -40,7 +41,7 @@ extension RemoteAccess.Service {
     func purpose(_ host: String) -> String {
         switch self {
         case .ssh:
-            "Remote Login lets you open a shell on \(host) over SSH. This tab runs this Mac\u{2019}s own ssh, with your own keys, agent and ~/.ssh/config; Flotilla never sees or keeps a password."
+            "Remote Login lets you open a shell on \(host) over SSH. This tab runs this Mac\u{2019}s own ssh, with your own keys, agent and ~/.ssh/config; a password you type goes to ssh through this tab\u{2019}s terminal, and Flotilla doesn\u{2019}t store or log it."
         case .screenSharing:
             "Screen Sharing shows \(host)\u{2019}s screen in macOS\u{2019}s Screen Sharing app, and lets you control it. Remote Management, for Apple Remote Desktop, includes it."
         case .fileSharing:
@@ -234,8 +235,8 @@ struct RemoteAccessPage: View {
 /// the Connect as user, refuses anything that could be an option, a second destination or a shell
 /// fragment, and returns `-l <user> <host>`. It runs with no shell between, and nothing else is
 /// added. **No credential passes through Flotilla:** ssh asks for a password, if it wants one,
-/// inside the terminal, where the keystrokes go to ssh's own PTY and nowhere else; keys and the
-/// agent are the user's. Flotilla's transport is not involved, and this session carries no
+/// inside the terminal — Flotilla's SwiftTerm view, which writes the keystrokes to ssh's PTY and
+/// keeps them nowhere (`TerminalSessionStore`); keys and the agent are the user's. Flotilla's transport is not involved, and this session carries no
 /// Flotilla command (DECISIONS #2, amended 17 October).
 struct HostSSHTab: View {
     let model: AppModel
@@ -301,7 +302,7 @@ struct HostSSHTab: View {
                 switch argv {
                 case .success(let arguments)?:
                     SessionCommandLine(text: ([RemoteAccess.sshExecutable] + arguments).joined(separator: " "))
-                    Text("Uses this Mac\u{2019}s ssh with your own keys, agent and ~/.ssh/config. If \(hostName) asks for a password, you type it to ssh in the terminal; Flotilla never sees or keeps it.")
+                    Text("Uses this Mac\u{2019}s ssh with your own keys, agent and ~/.ssh/config. If \(hostName) asks for a password, it goes to ssh through this terminal; Flotilla doesn\u{2019}t store or log it.")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(3)
                     Button("Start SSH Session", action: openSession).buttonStyle(.borderedProminent)
                         .accessibilityLabel("Start SSH Session to \(hostName)")
@@ -373,12 +374,28 @@ struct HostSSHTab: View {
         }
     }
 
-    /// `ssh-keygen -t ed25519` in this tab's terminal, where it asks for a place and a passphrase.
-    /// Offered only with no key in `~/.ssh`; ssh-keygen asks again before it would overwrite one.
+    /// `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519` in this tab's terminal, where it asks for a
+    /// passphrase. Only while no default identity exists in `~/.ssh`, private or public — checked
+    /// again here rather than trusting a status read before the click.
     private func makeKey() {
         outcome = nil
+        let directory = SSHKeyState.sshDirectory
+        let status = SSHKeySetup.status(sshDirectory: directory, agent: .unavailable) {
+            FileManager.default.fileExists(atPath: $0)
+        }
+        guard status.canMakeKey else {
+            show(.problem(status.pathIsSafe ? "There\u{2019}s already a key in ~/.ssh, so Flotilla won\u{2019}t make another."
+                                            : SSHKeySetup.unsafePathExplanation), keySetup: true)
+            Task { await model.sshKeys.refresh() }
+            return
+        }
+        let arguments: [String]
+        do { arguments = try SSHKeySetup.keygenArguments(sshDirectory: directory) } catch {
+            show(.problem(error.description), keySetup: true)
+            return
+        }
         let session = store.open(containerID: key, executable: SSHKeySetup.keygenExecutable,
-                                 argv: SSHKeySetup.keygenArguments, environment: environment) { code, lastLines in
+                                 argv: arguments, environment: environment) { code, lastLines in
             Task {
                 await model.sshKeys.refresh()
                 if code == 0, model.sshKeys.status?.keyToCopy != nil {

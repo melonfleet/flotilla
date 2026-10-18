@@ -134,7 +134,13 @@ final class TerminalSessionStore {
     }
 
     /// Drops our references without terminating; used when the process is already gone.
+    ///
+    /// The scrollback goes first: a full reset (RIS, then "erase saved lines") empties SwiftTerm's
+    /// buffers before the view is released, so what was typed or printed — a passphrase someone
+    /// typed at the wrong prompt, say — does not sit in memory for as long as anything still
+    /// holds the view (Kyle, 18 October).
     private func forget(_ session: TerminalSession, in containerID: String) {
+        views[session.id]?.feed(text: "\u{1B}c\u{1B}[3J")
         views[session.id]?.removeFromSuperview()
         views[session.id] = nil
         delegates[session.id] = nil
@@ -153,6 +159,12 @@ final class TerminalSessionStore {
         private let onEnd: (Int32?, String) -> Void
         init(onEnd: @escaping (Int32?, String) -> Void) { self.onEnd = onEnd }
 
+        /// The last four non-empty lines go to `onEnd`, for the page to show beside how the session
+        /// ended — in memory only, in a `SessionOutcome` the next action replaces. **Nothing here
+        /// writes terminal output to disk or to a log**: not the error log, not a support bundle,
+        /// not `os_log`. Keep it that way — a terminal is where passwords and passphrases are typed
+        /// (Q20). The view's scrollback is in memory too, and is reset when the session is
+        /// forgotten, just after this.
         nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
             MainActor.assumeIsolated {
                 let text = String(decoding: source.getBufferAsData(kind: .normal), as: UTF8.self)

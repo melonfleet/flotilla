@@ -16,7 +16,9 @@ import FlotillaCore
 ///   the window shows it through `AppModel.appearancePreview`;
 /// - a **host** role is saved on the Prepare step, when Local Network is asked for, because saving
 ///   it starts the listener, and the listener is what makes macOS ask. Saving it on the first step
-///   would put the system alert up two steps before the explanation of why.
+///   would put the system alert up two steps before the explanation of why. Every departure from
+///   Prepare saves it, and Finish saves whichever role is chosen, so after any Back and forward the
+///   last choice is the one kept (`SetupContext.roleSaved(leaving:)`).
 ///
 /// Nothing here installs or asks for anything without a button: `container` goes through
 /// `installContainerInteractively` (Apple's Installer asks for the password), the helper through
@@ -56,7 +58,10 @@ struct SetupAssistantView: View {
         // Checked for a host-to-be (Iris); a re-run on a host shows what it has.
         _launchAtLogin = State(initialValue: store[SettingsKeys.mode] == .host ? store[SettingsKeys.launchAtLogin] : true)
         _appearance = State(initialValue: store.effectiveAppearance)
-        _turnOnGreta = State(initialValue: store.needsAppearanceOnboarding || store[SettingsKeys.gretaEnabled])
+        // `store[...]` is the effective value: the locked one when a profile locks it.
+        _turnOnGreta = State(initialValue: SetupContext.gretaPreselection(
+            firstRun: store.needsAppearanceOnboarding, saved: store[SettingsKeys.gretaEnabled],
+            locked: store.isLocked(SettingsKeys.gretaEnabled)))
         _onlineChecks = State(initialValue: Dictionary(uniqueKeysWithValues: SetupOnlineCheck.allCases.map { check in
             (check, store.effectiveValues()[check.settingName] == .bool(true))
         }))
@@ -359,7 +364,7 @@ struct SetupAssistantView: View {
             .accessibilityElement(children: .contain)
 
             Toggle(greta.isAvailable ? "Turn on Greta" : "Turn on Greta, so she's ready when Apple's model is",
-                   isOn: $turnOnGreta)
+                   isOn: gretaChoice)
                 .toggleStyle(.checkbox)
                 .disabled(store.isLocked(SettingsKeys.gretaEnabled))
         }
@@ -675,7 +680,7 @@ struct SetupAssistantView: View {
         case .welcome:
             // Admin is saved now: it stops a listener a re-run might find running. Host waits for
             // Prepare, where Local Network is explained before macOS asks.
-            if role == .client { saveRole(.client) }
+            if let mode = context.roleSaved(leaving: .welcome) { saveRole(mode) }
             if role == .host, !store.isLocked(SettingsKeys.launchAtLogin) {
                 try? store.set(launchAtLogin, for: SettingsKeys.launchAtLogin)
             }
@@ -713,6 +718,12 @@ struct SetupAssistantView: View {
         }
     }
 
+    /// The box, showing the enforced value while a profile locks it.
+    private var gretaChoice: Binding<Bool> {
+        Binding(get: { store.isLocked(SettingsKeys.gretaEnabled) ? store[SettingsKeys.gretaEnabled] : turnOnGreta },
+                set: { turnOnGreta = $0 })
+    }
+
     private func saveGreta(_ on: Bool) {
         guard !store.isLocked(SettingsKeys.gretaEnabled) else { return }
         try? store.set(on, for: SettingsKeys.gretaEnabled)
@@ -721,8 +732,11 @@ struct SetupAssistantView: View {
     /// Leaving Prepare: a host is saved as a host whichever button was pressed; the rest happens only
     /// on Continue with its box ticked.
     private func prepareThisMac(installing: Bool) {
+        // Saved whatever Local Network's state: after Back, admin and forward as a host again it is
+        // no longer `.notAsked`, and keying the save on it left the admin role saved.
+        if let mode = context.roleSaved(leaving: .prepare) { saveRole(mode) }
         if role == .host {
-            if localNetwork.state == .notAsked { requestLocalNetwork() }
+            if localNetwork.state == .notAsked { localNetwork.start() }
             guard installing, turnOnHelper, helper == .notInstalled else { return }
             do { try PrivilegedHelper.install() } catch {
                 // Registration that waits for approval throws and still registers (measured 7
@@ -741,6 +755,7 @@ struct SetupAssistantView: View {
     /// Saves the appearance — which is what marks setup complete — and hands over to Overview, whose
     /// Get started card is now the checklist for this role.
     private func finish() {
+        if let mode = context.roleSaved(leaving: .finish) { saveRole(mode) }
         if !appearanceLocked { model.chooseAppearance(appearance) }
         model.appearancePreview = nil
         UserDefaults.standard.set(false, forKey: OverviewView.getStartedDismissedKey)

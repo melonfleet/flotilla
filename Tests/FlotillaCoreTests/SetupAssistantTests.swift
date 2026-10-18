@@ -53,6 +53,50 @@ import Testing
         #expect(noGreta.offersNotNow(on: .greta))
     }
 
+    /// Kyle's sequence: host to Prepare (saved), Back, admin onward (saved), Back to Welcome, host
+    /// again to Prepare and on to Finish. Walked through the real `SetupFlow`, with every step's
+    /// departure saving what `roleSaved` says; the last choice must be what is saved.
+    @Test func theRoleChosenLastIsTheOneSavedWhateverTheBackAndForward() {
+        var flow = SetupFlow()
+        var role = RunMode.host
+        var saved = RunMode.client
+        func leave() {
+            let context = SetupContext(role: role, needsContainer: false, gretaAvailable: true, helperOn: true)
+            if let mode = context.roleSaved(leaving: flow.step) { saved = mode }
+            flow.advance()
+        }
+        while flow.step != .prepare { leave() }
+        leave()
+        #expect(saved == .host)
+        while flow.step != .welcome { flow.goBack() }
+        role = .client
+        while flow.step != .onlineChecks { leave() }
+        #expect(saved == .client)
+        while flow.step != .welcome { flow.goBack() }
+        role = .host
+        while flow.step != .finish { leave() }
+        #expect(saved == .host, "Prepare saves the host even though Local Network was asked already")
+        let context = SetupContext(role: role, needsContainer: false, gretaAvailable: true, helperOn: true)
+        #expect(context.roleSaved(leaving: .finish) == .host)
+    }
+
+    @Test func aHostIsNotSavedBeforePrepareExplainsLocalNetwork() {
+        let host = SetupContext(role: .host, needsContainer: false, gretaAvailable: true, helperOn: true)
+        for step in [SetupStep.welcome, .appearance, .greta] { #expect(host.roleSaved(leaving: step) == nil) }
+        let admin = SetupContext(role: .client, needsContainer: false, gretaAvailable: true, helperOn: true)
+        #expect(admin.roleSaved(leaving: .welcome) == .client)
+        #expect(admin.roleSaved(leaving: .prepare) == nil)
+    }
+
+    /// A disabled box shows what is enforced: a profile that locks Greta off is never shown ticked.
+    @Test func gretaShowsTheLockedValueWhenLocked() {
+        #expect(!SetupContext.gretaPreselection(firstRun: true, saved: false, locked: true))
+        #expect(SetupContext.gretaPreselection(firstRun: true, saved: true, locked: true))
+        #expect(SetupContext.gretaPreselection(firstRun: true, saved: false, locked: false), "the first-run recommendation")
+        #expect(!SetupContext.gretaPreselection(firstRun: false, saved: false, locked: false))
+        #expect(SetupContext.gretaPreselection(firstRun: false, saved: true, locked: false))
+    }
+
     @Test func aHostMaySkipTheHelperButNotBeingAHost() {
         let host = SetupContext(role: .host, needsContainer: true, gretaAvailable: true, helperOn: false)
         #expect(host.offersNotNow(on: .prepare))

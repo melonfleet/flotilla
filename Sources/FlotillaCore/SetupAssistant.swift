@@ -90,6 +90,28 @@ public struct SetupContext: Sendable, Equatable {
         }
     }
 
+    /// The role leaving `step` saves, if any. An admin Mac is saved on Welcome (it stops a listener
+    /// a re-run might find running); a host on Prepare, where Local Network is explained before
+    /// saving it starts the listener and macOS asks. **Every** departure from Prepare as a host
+    /// saves it — Continue, Request Access or Not now, and whether Local Network was asked already —
+    /// because the flow can go Back: host, Back, admin (saved), forward, host again must end a host
+    /// (Kyle, 18 October). Finish saves the role as well, so the last choice is the one kept.
+    public func roleSaved(leaving step: SetupStep) -> RunMode? {
+        switch step {
+        case .welcome: role == .client ? .client : nil
+        case .prepare: role == .host ? .host : nil
+        case .finish: role
+        case .appearance, .greta, .onlineChecks: nil
+        }
+    }
+
+    /// What Greta's checkbox shows when the window opens. Locked, it is the locked value, since the
+    /// box is disabled and must show what is enforced (Kyle, 18 October); on a first run otherwise
+    /// it is ticked, the recommendation; on a re-run, what is saved.
+    public static func gretaPreselection(firstRun: Bool, saved: Bool, locked: Bool) -> Bool {
+        locked ? saved : (firstRun || saved)
+    }
+
     /// The online checks this role is asked about. A host is updated by its admin (Q38), so it has
     /// no Sparkle check to agree to.
     public var onlineChecks: [SetupOnlineCheck] {

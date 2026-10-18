@@ -73,28 +73,32 @@ enum PrivilegedHelper {
     static func runningVersion() async -> Int? {
         if let version = await runningVersionOnce() { return version }
         // A helper whose app was replaced under it quits when it is next asked (`OwnBinary` in the
-        // helper), and launchd starts the new copy on the request after — so ask once more.
-        try? await Task.sleep(for: .seconds(1.5))
+        // helper), and launchd starts the new copy on the request after — so ask once more. Not
+        // once the caller has stopped waiting (`Deadline`): that would open a connection nobody reads.
+        do { try await Task.sleep(for: .seconds(1.5)) } catch { return nil }
         return await runningVersionOnce()
     }
 
+    /// Cancellation-aware (Kyle, 18 October): when `Deadline` gives up on a helper that never
+    /// replies, the connection is invalidated and the wait ends with nil, so the task and its
+    /// connection are released rather than piling up one per refresh (`CancellableReply`).
     private static func runningVersionOnce() async -> Int? {
-        guard let team else { return nil }
+        guard let team, !Task.isCancelled else { return nil }
         let connection = NSXPCConnection(machServiceName: HelperInterface.label, options: .privileged)
         connection.remoteObjectInterface = NSXPCInterface(with: HelperProtocol.self)
         connection.setCodeSigningRequirement(
             HelperInterface.requirement(identifier: HelperInterface.label, team: team))
         connection.resume()
         defer { connection.invalidate() }
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
-            let once = VersionOnce(continuation)
+        let link = XPCLink(connection)
+        return await CancellableReply.value(cancelled: nil, onCancel: { link.invalidate() }) { resume in
             // `@Sendable`: XPC calls this on its own queue. Written inside this `@MainActor` type, an
             // unmarked closure is main-actor isolated, and Swift traps the moment XPC calls it off the
             // main thread — which crashed every host whose helper connection reported an error (the
             // mini at launch, Tahoe as its helper exited after installing an update; 9 October).
-            let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable _ in once.resume(nil) } as? HelperProtocol
-            guard let proxy else { once.resume(nil); return }
-            proxy.helperVersion { once.resume($0) }
+            let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable _ in resume(nil) } as? HelperProtocol
+            guard let proxy else { resume(nil); return }
+            proxy.helperVersion { resume($0) }
         }
     }
 
@@ -189,14 +193,12 @@ enum HelperRequest: Sendable {
     case installFlotillaUpdate(path: String)
 }
 
-private final class VersionOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Int?, Never>?
-    init(_ continuation: CheckedContinuation<Int?, Never>) { self.continuation = continuation }
-    func resume(_ value: Int?) {
-        let pending = lock.withLock { () -> CheckedContinuation<Int?, Never>? in defer { continuation = nil }; return continuation }
-        pending?.resume(returning: value)
-    }
+/// A connection handed to a cancellation handler, which may run on any thread. `invalidate()` is
+/// safe to call from any thread and more than once.
+private final class XPCLink: @unchecked Sendable {
+    private let connection: NSXPCConnection
+    init(_ connection: NSXPCConnection) { self.connection = connection }
+    func invalidate() { connection.invalidate() }
 }
 
 /// XPC can call the error handler and the reply both; a continuation must resume exactly once.
