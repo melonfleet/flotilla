@@ -71,9 +71,34 @@ struct ThemePickerRow: View {
     /// honeydew form, and dark's four as one row. Fixed rather than adaptive: an adaptive grid put
     /// five or six on a row in a wide pane, which broke the rows apart; and a sketch scaled down to
     /// fit stops showing the bar's ink.
-    private let columns = Array(repeating: GridItem(.fixed(ThemeSketch.size.width), spacing: 12,
-                                                    alignment: .topLeading),
-                                count: 4)
+    ///
+    /// **Two when the pane is narrower than four** (Kyle's review of 3fbff6a): at the window's 700pt
+    /// minimum the pane is ~423pt against the four-wide grid's 564pt, and the vertical-only scroll
+    /// view clipped it. The cards stay fixed size; only the count per row changes, and light's order
+    /// (four cream, then four honeydew) keeps each row's pair in bar order. Not raised via a wider
+    /// Settings minimum: Settings is a section of the main window, so that would resize the whole
+    /// window on arrival.
+    private func columns(_ count: Int) -> [GridItem] {
+        Array(repeating: GridItem(.fixed(ThemeSketch.size.width), spacing: 12, alignment: .topLeading),
+              count: count)
+    }
+
+    private var grid: some View {
+        ViewThatFits(in: .horizontal) {
+            cards(columns: 4)
+            cards(columns: 2)
+        }
+    }
+
+    private func cards(columns count: Int) -> some View {
+        LazyVGrid(columns: columns(count), alignment: .leading, spacing: 12) {
+            ForEach(options) { option in
+                ThemeCard(title: option.title, palette: option.palette,
+                          isDark: appearance == .dark, isDefault: option.isDefault,
+                          isSelected: option.isSelected, action: option.choose)
+            }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -87,14 +112,8 @@ struct ThemePickerRow: View {
                 }
                 Text(caption).font(.caption).foregroundStyle(.secondary)
             }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                ForEach(options) { option in
-                    ThemeCard(title: option.title, palette: option.palette,
-                              isDark: appearance == .dark, isDefault: option.isDefault,
-                              isSelected: option.isSelected, action: option.choose)
-                }
-            }
-            .disabled(locked)
+            grid
+                .disabled(locked)
         }
         .padding(.vertical, 4)
     }
