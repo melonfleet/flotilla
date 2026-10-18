@@ -47,12 +47,12 @@ extension AppModel {
             command: command,
             work: { progress in
                 let step = progress.begin("Building from \(contextPath)")
-                let result = try await Task.detached {
+                let result = try await Blocking.run {
                     try scoped.buildImage(contextDirectory: contextPath,
                                           dockerfile: dockerfile, tag: tag,
                                           buildArgs: buildArgs, labels: labels,
                                           noCache: noCache, platform: platform, target: target)
-                }.value
+                }
                 // A build is the one operation here with a lot to say, and the whole reason the
                 // panel has an output pane at all.
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }

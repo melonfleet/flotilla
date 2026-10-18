@@ -22,7 +22,7 @@ extension AppModel {
         // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
         if machinesState != .loaded { machinesState = .loading }
         do {
-            let fetched = try await Task.detached { [cli] in try cli.machines() }.value
+            let fetched = try await Blocking.run { [cli] in try cli.machines() }
             // Same equality guard as `containers`: `@Observable` notifies on every write, so an
             // unconditional assignment invalidates every view on each poll even when nothing
             // moved. That was half of the original flicker.
@@ -70,7 +70,7 @@ extension AppModel {
         defer { clearBusy(machine.id, kind: .machine) }
 
         do {
-            let result = try await Task.detached { [cli] in
+            let result = try await Blocking.run { [cli] in
                 switch action {
                 case .start: try cli.startMachine(machine.id)
                 case .stop: try cli.stopMachine(machine.id)
@@ -78,7 +78,7 @@ extension AppModel {
                 case .delete: try cli.deleteMachine(machine.id)
                 case .setDefault: try cli.setDefaultMachine(machine.id)
                 }
-            }.value
+            }
 
             // Shells live inside the machine. Stopping or deleting it kills them whether we
             // tidy up or not, so drop them rather than leaving dead terminals on screen.
@@ -153,10 +153,10 @@ extension AppModel {
                 // Two steps, because a machine create genuinely is two things and the second is
                 // the slow one: the image has to be pulled before the VM record exists.
                 let step = progress.begin("Creating from \(image)")
-                let result = try await Task.detached { [cli] in
+                let result = try await Blocking.run { [cli] in
                     try cli.createMachine(image: image, name: name, cpus: cpus,
                                           memory: memory, homeMount: homeMount)
-                }.value
+                }
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
                 for line in result.stderr.split(separator: "\n") { progress.note(String(line)) }
                 progress.finish(step, detail: name)
@@ -177,9 +177,9 @@ extension AppModel {
     func applyMachineSettings(_ id: String, cpus: Int?, memory: String?,
                               homeMount: String?) async -> Bool {
         do {
-            _ = try await Task.detached { [cli] in
+            _ = try await Blocking.run { [cli] in
                 try cli.setMachine(id, cpus: cpus, memory: memory, homeMount: homeMount)
-            }.value
+            }
             await refreshMachines()
             return true
         } catch {
@@ -200,7 +200,7 @@ extension AppModel {
     /// record, so a failure should quietly leave the thin one in place, not blank the screen.
     func inspectMachine(_ id: String) async -> ContainerMachine? {
         do {
-            return try await Task.detached { [cli] in try cli.inspectMachine(id) }.value
+            return try await Blocking.run { [cli] in try cli.inspectMachine(id) }
         } catch {
             record("Could not inspect machine \(id): \(error)", subsystem: "machines")
             return nil
@@ -208,9 +208,9 @@ extension AppModel {
     }
 
     func machineLogs(for id: String, lines: Int, boot: Bool) async throws -> LogChunk {
-        try await Task.detached { [cli] in
+        try await Blocking.run { [cli] in
             try cli.machineLogs(id, lines: lines, boot: boot)
-        }.value
+        }
     }
 
     /// The CLI's own error text is more useful than Swift's `String(describing:)` on a thrown

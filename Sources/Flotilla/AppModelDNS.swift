@@ -28,7 +28,7 @@ extension AppModel {
             return
         }
         if dnsState != .loaded { setDNSState(.loading) }
-        let (domains, containerDomain) = await Task.detached { [cli] in
+        let (domains, containerDomain) = await Blocking.run { [cli] in
             // Best effort: the files below are the same facts, and a row Flotilla can read from
             // them should not vanish because one process failed.
             let listed = (try? cli.dnsDomainNames()) ?? []
@@ -37,7 +37,7 @@ extension AppModel {
             let containerDomain = config.flatMap(ContainerConfigFile.dnsDomain(in:))
             return (LocalDNS.domains(listed: listed, resolverFiles: files,
                                      containerDomain: containerDomain), containerDomain)
-        }.value
+        }
         setDNS(domains, containerDomain: containerDomain, state: .loaded)
     }
 

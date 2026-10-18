@@ -76,7 +76,7 @@ extension AppModel {
 
     /// Reads the slower facts now, off the main actor.
     func refreshSystemFacts() async {
-        var slow = await Task.detached { Self.readSlowSystemFacts() }.value
+        var slow = await Blocking.run { Self.readSlowSystemFacts() }
         slow.helperVersion = PrivilegedHelper.status == .enabled ? await PrivilegedHelper.runningVersion() : nil
         systemFacts = slow
     }

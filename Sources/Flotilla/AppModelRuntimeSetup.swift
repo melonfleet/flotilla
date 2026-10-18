@@ -85,7 +85,7 @@ extension AppModel {
         try FileManager.default.moveItem(at: temporary, to: destination)
 
         runtimeSetup = RuntimeSetupProgress(version: version, phase: .checking)
-        let problem = await Task.detached { Self.checkPackage(destination, version: version) }.value
+        let problem = await Blocking.run { Self.checkPackage(destination, version: version) }
         if let problem {
             try? FileManager.default.removeItem(at: destination)
             throw SelfUpdate.Failure.refused(problem)
@@ -178,7 +178,7 @@ extension AppModel {
         if !allowStoppingContainers && !settingsStore[SettingsKeys.autoInstallRuntime] { return nil }
         guard runtimeSetup == nil || isSetupFinished else { return "A runtime setup is already under way here." }
         let version = ContainerRuntime.expectedVersion
-        let installed = await Task.detached { Self.installedContainerVersion() }.value
+        let installed = await Blocking.run { Self.installedContainerVersion() }
         let running = containers.filter { $0.state.isRunning }.count
         switch RuntimeSetup.plan(installed: installed, expected: version, runningContainers: running) {
         case .nothing, .newer:
@@ -205,7 +205,7 @@ extension AppModel {
             defer { try? FileManager.default.removeItem(at: package) }
             if installed != nil, runtimeUsable {
                 runtimeSetup = RuntimeSetupProgress(version: version, phase: .installing)
-                try await Task.detached { [cli] in try cli.stopSystem() }.value
+                try await Blocking.run { [cli] in try cli.stopSystem() }
             }
             runtimeSetup = RuntimeSetupProgress(version: version, phase: .installing)
             if let failure = await PrivilegedHelper.send(.installContainer(path: package.path, version: version)) {

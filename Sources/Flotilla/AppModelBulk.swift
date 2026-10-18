@@ -70,7 +70,7 @@ extension AppModel {
             verb: verb,
             kind: .machine,
             operation: { [cli] id in
-                _ = try await Task.detached { () -> CommandResult in
+                _ = try await Blocking.run { () -> CommandResult in
                     switch action {
                     case .start: try cli.startMachine(id)
                     case .stop: try cli.stopMachine(id)
@@ -78,7 +78,7 @@ extension AppModel {
                     case .delete: try cli.deleteMachine(id)
                     case .setDefault: try cli.setDefaultMachine(id)
                     }
-                }.value
+                }
 
                 // A stopped, restarted or deleted VM cannot retain a live shell even when the
                 // command itself succeeded, so stale terminal sessions leave with it.
@@ -104,7 +104,7 @@ extension AppModel {
             kind: .volume,
             operation: { [cli] id in
                 guard let name = names[id] else { throw BulkActionError.resourceDisappeared(id) }
-                _ = try await Task.detached { try cli.removeVolume(name) }.value
+                _ = try await Blocking.run { try cli.removeVolume(name) }
             },
             refresh: { await self.refreshVolumes() }
         )
@@ -117,7 +117,7 @@ extension AppModel {
             verb: "Delete",
             kind: .network,
             operation: { [cli] id in
-                _ = try await Task.detached { try cli.removeNetwork(id) }.value
+                _ = try await Blocking.run { try cli.removeNetwork(id) }
             },
             refresh: { await self.refreshNetworks() }
         )
@@ -132,7 +132,7 @@ extension AppModel {
             kind: .image,
             operation: { [cli] id in
                 guard let reference = references[id] else { throw BulkActionError.resourceDisappeared(id) }
-                _ = try await Task.detached { try cli.removeImage(reference) }.value
+                _ = try await Blocking.run { try cli.removeImage(reference) }
             },
             refresh: { await self.refreshImages() }
         )

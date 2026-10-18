@@ -307,13 +307,13 @@ struct GroupFormView: View {
         let groupID = draft.id
         let names = secretNames
         guard !names.isEmpty else { return }
-        storedSecrets = await Task.detached {
+        storedSecrets = await Blocking.run {
             var found: [String: String] = [:]
             for name in names {
                 if let value = KeychainSecrets.value(group: groupID, secret: name) { found[name] = value }
             }
             return found
-        }.value
+        }
     }
 
     @ViewBuilder

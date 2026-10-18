@@ -15,15 +15,15 @@ extension AppModel {
     func performInstallUpdate(_ archive: URL, isIdle: @escaping @Sendable () -> Bool) async -> Result<String, HostCallFailure> {
         let keepAwake = power.begin("installing a Flotilla update")
         defer { power.end(keepAwake) }
-        let prepared: Result<SelfUpdate.Prepared, Error> = await Task.detached {
+        let prepared: Result<SelfUpdate.Prepared, Error> = await Blocking.run {
             Result { try SelfUpdate.prepare(archive: archive, isIdle: isIdle) }
-        }.value
+        }
         let outcome: Result<String, Error>
         switch prepared {
         case .failure(let error):
             outcome = .failure(error)
         case .success(let update) where SelfUpdate.canReplaceItself:
-            outcome = await Task.detached { Result { try SelfUpdate.swap(update); return update.version } }.value
+            outcome = await Blocking.run { Result { try SelfUpdate.swap(update); return update.version } }
         case .success(let update):
             // Installed by a package, owned by root: the helper swaps it (Q43).
             switch await runPrivileged(.installFlotillaUpdate(path: update.app.path), prompt: "") {
@@ -95,7 +95,7 @@ extension AppModel {
                                                 attributes: [.posixPermissions: 0o700])
         let zip = folder.appendingPathComponent("Flotilla-\(build).zip")
         let app = Bundle.main.bundleURL
-        return try await Task.detached {
+        return try await Blocking.run {
             if !FileManager.default.fileExists(atPath: zip.path) {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
@@ -106,7 +106,7 @@ extension AppModel {
             }
             let (bytes, digest) = try AppModel.measure(zip)
             return (zip, bytes, digest)
-        }.value
+        }
     }
 
     /// Updates one host and waits for it to come back on this Mac's build. `nil` means it did.

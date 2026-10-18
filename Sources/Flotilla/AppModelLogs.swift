@@ -118,12 +118,12 @@ extension AppModel {
                 group.addTask {
                     do {
                         let cli = try connection.get()
-                        let chunk = try await Task.detached {
+                        let chunk = try await Blocking.run {
                             switch kind {
                             case .machine: try cli.machineLogs(name, lines: lines, boot: boot)
                             default:       try cli.logs(name, lines: lines, bootLog: boot)
                             }
-                        }.value
+                        }
                         return AggregatedLogChunk(
                             source: key, kind: kind,
                             lines: chunk.lines.map {

@@ -18,7 +18,7 @@ extension AppModel {
         // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
         if clustersState != .loaded { clustersState = .loading }
         do {
-            let fetched = try await Task.detached { [cli] in try cli.k8sNodes() }.value
+            let fetched = try await Blocking.run { [cli] in try cli.k8sNodes() }
             // The same equality guard the containers and machines polls use: `@Observable`
             // notifies on every write, so an unconditional assignment invalidates every view on
             // each poll even when nothing moved.
@@ -169,7 +169,7 @@ extension AppModel {
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let deleting = progress.begin("Deleting \(name)")
-                _ = try await Task.detached { [cli] in try cli.deleteCluster(name) }.value
+                _ = try await Blocking.run { [cli] in try cli.deleteCluster(name) }
                 progress.finish(deleting, detail: nil)
 
                 let creating = progress.begin("Creating \(name) again")
@@ -230,10 +230,10 @@ extension AppModel {
                 guard let self else { return "" }
                 let step = progress.begin("Creating \(name) on \(hostName) — this takes several minutes")
                 do {
-                    _ = try await Task.detached {
+                    _ = try await Blocking.run {
                         try remote.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: nodeImage,
                                                  autoRemove: autoRemove)
-                    }.value
+                    }
                 } catch { throw ClusterNeedsRosetta(error, on: hostName) ?? error }
                 progress.finish(step, detail: nil)
                 recordActivity(ContainerEvent(date: Date(), from: "absent", to: "running", kind: .cluster,
@@ -261,13 +261,13 @@ extension AppModel {
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let deleting = progress.begin("Deleting \(name) on \(hostName)")
-                _ = try await Task.detached { try remote.deleteCluster(name) }.value
+                _ = try await Blocking.run { try remote.deleteCluster(name) }
                 progress.finish(deleting, detail: nil)
                 let creating = progress.begin("Creating \(name) again — this takes several minutes")
                 do {
-                    _ = try await Task.detached {
+                    _ = try await Blocking.run {
                         try remote.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: nil, autoRemove: false)
-                    }.value
+                    }
                 } catch { throw ClusterNeedsRosetta(error, on: hostName) ?? error }
                 progress.finish(creating, detail: nil)
                 recordActivity(ContainerEvent(date: Date(), from: cluster.state, to: "running", kind: .cluster,
@@ -296,7 +296,7 @@ extension AppModel {
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("Deleting \(name) on \(hostName)")
-                _ = try await Task.detached { try remote.deleteCluster(name) }.value
+                _ = try await Blocking.run { try remote.deleteCluster(name) }
                 progress.finish(step, detail: nil)
                 recordActivity(ContainerEvent(date: Date(), from: cluster.state, to: "deleted", kind: .cluster,
                                               subject: "\(name) on \(hostName)", action: "Deleted"))
@@ -333,9 +333,9 @@ extension AppModel {
                 let step = progress.begin("Writing \(destination.lastPathComponent)")
                 try FileManager.default.createDirectory(
                     at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                _ = try await Task.detached { [cli] in
+                _ = try await Blocking.run { [cli] in
                     try cli.writeKubeconfig(cluster: cluster.node, to: destination.path)
-                }.value
+                }
                 progress.finish(step, detail: nil)
 
                 // Reported here rather than in a second card that opens as this one closes.
@@ -377,7 +377,7 @@ extension AppModel {
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("\(title) \(cluster.node)")
-                _ = try await Task.detached { [cli] in try work(cli) }.value
+                _ = try await Blocking.run { [cli] in try work(cli) }
                 progress.finish(step, detail: nil)
                 if let action {
                     recordActivity(ContainerEvent(date: Date(), from: cluster.state, to: action.lowercased(),

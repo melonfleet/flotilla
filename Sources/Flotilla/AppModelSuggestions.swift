@@ -88,12 +88,12 @@ extension AppModel {
                 for image in stack.images where !images(on: host).contains(where: { $0.reference == image }) {
                     let step = progress.begin("Pulling \(image)")
                     do {
-                        _ = try await Task.detached {
+                        _ = try await Blocking.run {
                             try cli.pull(image) { update in
                                 // The CLI's own progress, so a long pull reads as one.
                                 Task { @MainActor in progress.update(step, detail: Self.pullLine(update)) }
                             }
-                        }.value
+                        }
                     } catch {
                         progress.finish(step, detail: "failed", failed: true)
                         throw StackCreateFailure(step: "Pulling \(image)", made: [],
@@ -128,9 +128,9 @@ extension AppModel {
                     }
                     let networkOptions = options
                     do {
-                        _ = try await Task.detached {
+                        _ = try await Blocking.run {
                             try cli.createNetwork(networkName, options: networkOptions)
-                        }.value
+                        }
                     } catch {
                         progress.finish(step, detail: "failed", failed: true)
                         throw StackCreateFailure(step: "Creating network \(networkName)", made: [],
@@ -164,7 +164,7 @@ extension AppModel {
                 for volume in plan.volumes {
                     let step = progress.begin("Creating volume \(volume)")
                     do {
-                        _ = try await Task.detached { try cli.createVolume(volume) }.value
+                        _ = try await Blocking.run { try cli.createVolume(volume) }
                     } catch {
                         progress.finish(step, detail: "failed", failed: true)
                         throw StackCreateFailure(step: "Creating volume \(volume)", made: createdSoFar,
@@ -181,10 +181,10 @@ extension AppModel {
                     for secret in plan.secrets {
                         let groupID = plan.group.id, name = plan.group.name
                         let value = GroupSecrets.generatePassword()
-                        let saved = await Task.detached {
+                        let saved = await Blocking.run {
                             KeychainSecrets.set(value, group: groupID, secret: secret,
                                                 label: "Flotilla: \(name) — \(secret)")
-                        }.value
+                        }
                         guard saved else {
                             progress.finish(step, detail: "refused", failed: true)
                             throw StackCreateFailure(step: "Saving \(secret) to the Keychain",
@@ -263,9 +263,9 @@ extension AppModel {
             let base = web < 1024 ? 8000 + web : web
             return Array(base..<(base + 20))
         }
-        let busy = await Task.detached {
+        let busy = await Blocking.run {
             Set(candidates.filter { !AppModel.isPortFree($0) })
-        }.value
+        }
         return taken.union(busy)
     }
 }

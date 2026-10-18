@@ -192,10 +192,14 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
         try run(args, timeout: 0)
     }
 
-    /// Blocks until the host answers. It waits on the connection's own queue, never on Swift's
-    /// cooperative pool, so many hosts queried at once cannot starve the pool of threads.
+    /// Blocks the calling thread until the host answers or `timeout` passes — for an unreachable
+    /// host, the whole timeout. The reply arrives on the connection's own queue, but the *caller*
+    /// is parked on a semaphore, so called from a `Task` (detached or not) it holds one of Swift's
+    /// cooperative threads, which never grow: a few unreachable hosts emptied the pool and Flotilla
+    /// could not quit (18 October). Callers must use `Blocking.run`; `Scripts/check-blocking.sh`
+    /// enforces it in the app.
     public func run(_ args: [String], timeout: TimeInterval) throws -> CommandResult {
-        precondition(!Thread.isMainThread, "RemoteHost.run blocks; call it from a detached task")
+        precondition(!Thread.isMainThread, "RemoteHost.run blocks; call it inside Blocking.run")
         let box = ResultBox()
         let semaphore = DispatchSemaphore(value: 0)
         run(args, timeout: timeout > 0 ? timeout : nil) { result in

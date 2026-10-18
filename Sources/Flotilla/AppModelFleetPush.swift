@@ -103,7 +103,7 @@ extension AppModel {
             do {
                 let (detail, run) = try prepare(host)
                 let remote = try cli(for: host)
-                _ = try await Task.detached { try run(remote) }.value
+                _ = try await Blocking.run { try run(remote) }
                 panel.finish(step, detail: detail)
                 done.append(hostName)
                 recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: kind,

@@ -27,7 +27,7 @@ extension AppModel {
         }
         if registriesState != .loaded { setRegistriesState(.loading) }
         do {
-            let logins = try await Task.detached { [cli] in try cli.registryLogins() }.value
+            let logins = try await Blocking.run { [cli] in try cli.registryLogins() }
             setRegistryLogins(logins, state: .loaded)
         } catch {
             setRegistriesState(.failed(String(describing: error)))
@@ -80,10 +80,10 @@ extension AppModel {
     func signIn(registry server: String, username: String, password: String,
                 scheme: String?) async -> String? {
         do {
-            try await Task.detached { [cli] in
+            try await Blocking.run { [cli] in
                 try cli.registryLogin(server: server, username: username,
                                       password: password, scheme: scheme)
-            }.value
+            }
             // Recorded so the activity feed shows that this Mac authenticated somewhere, which
             // is a fact worth a trace. The username is deliberately absent from the entry.
             recordActivity(ContainerEvent(date: Date(), from: "", to: "",
@@ -97,7 +97,7 @@ extension AppModel {
 
     func signOut(registry server: String) async -> String? {
         do {
-            try await Task.detached { [cli] in try cli.registryLogout(server: server) }.value
+            try await Blocking.run { [cli] in try cli.registryLogout(server: server) }
             recordActivity(ContainerEvent(date: Date(), from: "", to: "",
                                           kind: .registry, subject: server,
                                           action: "Signed out"))

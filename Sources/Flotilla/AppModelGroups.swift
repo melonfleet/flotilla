@@ -132,7 +132,7 @@ extension AppModel {
                     do {
                         // On a host, its own Flotilla records the stop as deliberate (Q53).
                         if group.place.isLocal { noteDeliberateStop(member.name) }
-                        _ = try await Task.detached { try cli.stop(member.name) }.value
+                        _ = try await Blocking.run { try cli.stop(member.name) }
                         stopped += 1
                         progress.finish(step, detail: nil)
                     } catch {
@@ -180,7 +180,7 @@ extension AppModel {
                     // A member that will not stop is reported and skipped rather than aborting:
                     // the restart's whole purpose is to get back to a known state.
                     if group.place.isLocal { noteDeliberateStop(member.name) }
-                    _ = try? await Task.detached { try cli.stop(member.name) }.value
+                    _ = try? await Blocking.run { try cli.stop(member.name) }
                     progress.finish(step, detail: nil)
                 }
                 await refreshContainers(on: group.place)
@@ -221,16 +221,16 @@ extension AppModel {
             } else {
                 do {
                     if existingContainerNames(on: host).contains(member.name) {
-                        _ = try await Task.detached { try cli.start(member.name) }.value
+                        _ = try await Blocking.run { try cli.start(member.name) }
                     } else {
                         // Secrets go to a host inside the validated `run` request, over the
                         // admin's mTLS connection — the same path a single container's env takes.
                         let env = try GroupSecrets.resolvedEnv(for: member, values: values)
                         let options = member.runOptions(network: group.network, env: env)
-                        _ = try await Task.detached {
+                        _ = try await Blocking.run {
                             try cli.run(image: member.image, options: options,
                                         command: member.command)
-                        }.value
+                        }
                     }
                 } catch {
                     // Named plainly: which member, and what was already up when it stopped.
@@ -264,9 +264,9 @@ extension AppModel {
         var values: [String: String] = [:]
         for secret in Set(needed) {
             let groupID = group.id
-            guard let value = await Task.detached(operation: {
+            guard let value = await Blocking.run({
                 KeychainSecrets.value(group: groupID, secret: secret)
-            }).value else {
+            }) else {
                 progress.finish(step, detail: "missing", failed: true)
                 throw GroupSecrets.MissingSecret(secret: secret)
             }
@@ -297,7 +297,7 @@ extension AppModel {
                 progress.finish(step, detail: "no address", failed: true)
                 throw GroupReadyFailure(member: member.name, port: port, outcome: .stopped, started: started)
             }
-            probe = { await Task.detached { TCPProbe.accepts(host: address, port: port) }.value }
+            probe = { await Blocking.run { TCPProbe.accepts(host: address, port: port) } }
         case .peer(let fingerprint):
             if let remote = hostMode.remoteHost(for: fingerprint),
                (remote.protocolVersion ?? 0) >= WireProtocol.probePortVersion {
@@ -315,7 +315,7 @@ extension AppModel {
                 let name = hostMode.probeAddress(for: fingerprint)
                 let address = await Self.resolve(name, within: 5)
                 if let address, let published {
-                    probe = { await Task.detached { TCPProbe.accepts(host: address, port: published) }.value }
+                    probe = { await Blocking.run { TCPProbe.accepts(host: address, port: published) } }
                 } else {
                     probe = nil
                 }

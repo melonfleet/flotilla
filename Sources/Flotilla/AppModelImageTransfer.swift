@@ -71,10 +71,10 @@ extension AppModel {
         let saver = ContainerCLI(host: cli.host, mountPolicy: .roots([folder.path]), wirePolicy: .localOwner)
         let size: UInt64, digest: String
         do {
-            (size, digest) = try await Task.detached {
+            (size, digest) = try await Blocking.run {
                 try saver.saveImage(reference, platform: platform, to: archive.path)
                 return try Self.measure(archive)
-            }.value
+            }
             panel.finish(saveStep, detail: ByteCountFormatter.string(fromByteCount: Int64(clamping: size), countStyle: .file))
         } catch {
             panel.finish(saveStep, detail: String(describing: error), failed: true)

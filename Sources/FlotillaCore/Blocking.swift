@@ -10,14 +10,22 @@ import Foundation
 /// host again. `Task.detached` still runs on the cooperative pool, so each blocking call held a pool
 /// thread for its whole timeout; with none left, nothing that needed the pool could run, and the
 /// quit never arrived. GCD grows its threads for blocking work; the pool does not.
+///
+/// `Scripts/check-blocking.sh` fails the build when a blocking CLI call goes back into a
+/// `Task.detached`.
 public enum Blocking {
     private static let queue = DispatchQueue(label: "dev.melonfleet.Flotilla.blocking", qos: .utility,
                                              attributes: .concurrent)
 
-    /// `work` on a GCD thread; the caller suspends without holding a pool thread.
-    public static func run<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
-        await withCheckedContinuation { continuation in
-            queue.async { continuation.resume(returning: work()) }
+    /// `work` on a GCD thread; the caller suspends without holding a pool thread. What `work`
+    /// throws, this throws — a non-throwing `work` makes a non-throwing call.
+    ///
+    /// Like `Task.detached`, the work does not see the caller's cancellation: a blocking call
+    /// cannot be interrupted part-way, so it runs to its own end or its own timeout.
+    public static func run<T: Sendable, E: Error>(_ work: @escaping @Sendable () throws(E) -> T) async throws(E) -> T {
+        let result: Result<T, E> = await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: Result { () throws(E) -> T in try work() }) }
         }
+        return try result.get()
     }
 }

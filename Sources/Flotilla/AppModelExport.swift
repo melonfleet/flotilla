@@ -27,15 +27,15 @@ extension AppModel {
         await refreshDNS()
 
         let references = Set(containers.map(\.imageReference) + groups.book.groups.flatMap { $0.members.map(\.image) })
-        let images = await Task.detached { [cli] in
+        let images = await Blocking.run { [cli] in
             references.sorted().compactMap { try? cli.inspectImage($0) }
-        }.value
+        }
 
         // `machine list` does not say what a machine was built from; `machine inspect` does.
         let listed = machines
-        let inspectedMachines = await Task.detached { [cli] in
+        let inspectedMachines = await Blocking.run { [cli] in
             listed.map { machine in (try? cli.inspectMachine(machine.id)) ?? machine }
-        }.value
+        }
 
         var inputs = ConfigurationExport.Inputs()
         inputs.containers = containers

@@ -64,12 +64,12 @@ extension AppModel {
             var ipv4 = containers.first { $0.id == container }?.ipv4
             if ipv4 == nil {
                 let cli = self.cli
-                ipv4 = await Task.detached { try? cli.listContainers().first { $0.id == container }?.ipv4 }.value ?? nil
+                ipv4 = await Blocking.run { try? cli.listContainers().first { $0.id == container }?.ipv4 } ?? nil
             }
             guard let address = Readiness.address(fromIPv4: ipv4) else {
                 return .failure(HostCallFailure(.refused, "\(hostLabel) has no running container called \(container)."))
             }
-            let open = await Task.detached { TCPProbe.accepts(host: address, port: port) }.value
+            let open = await Blocking.run { TCPProbe.accepts(host: address, port: port) }
             return .success(open ? "open" : "closed")
 
         case .setPolicy(let container, let policy):

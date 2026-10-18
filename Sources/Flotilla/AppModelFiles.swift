@@ -15,37 +15,37 @@ enum FilesViewMode: String, CaseIterable {
 
 extension AppModel {
     func listDirectory(_ path: String, in containerID: String) async throws -> [FileEntry] {
-        try await Task.detached { [cli] in try cli.listDirectory(containerID, path: path) }.value
+        try await Blocking.run { [cli] in try cli.listDirectory(containerID, path: path) }
     }
 
     func searchFiles(_ term: String, directory: String, in containerID: String) async throws -> FileSearchResults {
-        try await Task.detached { [cli] in try cli.searchFiles(containerID, directory: directory, term: term) }.value
+        try await Blocking.run { [cli] in try cli.searchFiles(containerID, directory: directory, term: term) }
     }
 
     func changeFiles(_ command: FileCommand, in containerID: String) async throws {
-        try await Task.detached { [cli] in try cli.performFileCommand(command, in: containerID) }.value
+        try await Blocking.run { [cli] in try cli.performFileCommand(command, in: containerID) }
     }
 
     /// The save/open panel grants only its chosen endpoint for this invocation. Never widen the
     /// shared CLI (or a remote CLI). The copy grammar still checks that endpoint via MountPolicy.
     func download(_ containerPath: String, from containerID: String, to hostURL: URL) async throws {
-        try await Task.detached { [cli] in
+        try await Blocking.run { [cli] in
             guard cli.wirePolicy == .localOwner else { throw ContainerCLIError.unsupported("Remote file transfer is unavailable.") }
             let scoped = ContainerCLI(host: cli.host, mountPolicy: .roots([hostURL.path]),
                                       execPolicy: cli.execPolicy, wirePolicy: cli.wirePolicy)
             try scoped.copy(from: "\(containerID):\(containerPath)", to: hostURL.path)
-        }.value
+        }
     }
 
     func upload(_ hostURL: URL, to containerPath: String, in containerID: String) async throws {
-        try await Task.detached { [cli] in
+        try await Blocking.run { [cli] in
             guard cli.wirePolicy == .localOwner, cli.execPolicy == .interactiveShell else {
                 throw ContainerCLIError.unsupported("Only this Mac's owner can upload files.")
             }
             let scoped = ContainerCLI(host: cli.host, mountPolicy: .roots([hostURL.path]),
                                       execPolicy: cli.execPolicy, wirePolicy: cli.wirePolicy)
             try scoped.copy(from: hostURL.path, to: "\(containerID):\(containerPath)")
-        }.value
+        }
     }
 }
 

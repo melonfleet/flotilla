@@ -88,11 +88,11 @@ extension AppModel {
                     if !images.contains(where: { ConfigurationExport.aliases($0.reference).contains(image.reference) }) {
                         let step = progress.begin("Pulling \(image.reference)")
                         do {
-                            _ = try await Task.detached { [cli] in
+                            _ = try await Blocking.run { [cli] in
                                 try cli.pull(image.reference) { update in
                                     Task { @MainActor in progress.update(step, detail: Self.pullLine(update)) }
                                 }
-                            }.value
+                            }
                             progress.finish(step)
                         } catch {
                             progress.finish(step, detail: "failed", failed: true)
@@ -299,7 +299,7 @@ extension AppModel {
                       _ work: @escaping @Sendable (ContainerCLI) throws -> Void) async throws {
         let id = progress.begin(title)
         do {
-            try await Task.detached { [cli] in try work(cli) }.value
+            try await Blocking.run { [cli] in try work(cli) }
             progress.finish(id)
             built.append(made)
         } catch {
@@ -312,25 +312,25 @@ extension AppModel {
         let name = item.name
         switch item.kind {
         case .container:
-            try await Task.detached { [cli] in _ = try cli.remove(name, force: true) }.value
+            try await Blocking.run { [cli] in _ = try cli.remove(name, force: true) }
         case .group:
             if let group = groups.book.groups.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
                 for member in group.memberNames where existingContainerNames.contains(member) {
-                    try await Task.detached { [cli] in _ = try cli.remove(member, force: true) }.value
+                    try await Blocking.run { [cli] in _ = try cli.remove(member, force: true) }
                 }
                 deleteGroup(group)
             }
         case .network:
-            try await Task.detached { [cli] in try cli.removeNetwork(name) }.value
+            try await Blocking.run { [cli] in try cli.removeNetwork(name) }
         case .volume:
-            try await Task.detached { [cli] in try cli.removeVolume(name) }.value
+            try await Blocking.run { [cli] in try cli.removeVolume(name) }
         case .machine:
-            try await Task.detached { [cli] in
+            try await Blocking.run { [cli] in
                 _ = try? cli.stopMachine(name)
                 try cli.deleteMachine(name)
-            }.value
+            }
         case .cluster:
-            try await Task.detached { [cli] in try cli.deleteCluster(name) }.value
+            try await Blocking.run { [cli] in try cli.deleteCluster(name) }
         case .dnsDomain, .host:
             break
         }

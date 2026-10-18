@@ -672,7 +672,7 @@ final class AppModel {
         // ran `container stats` every ten seconds for nobody (Q44, quiet when idle).
         guard runtimeUsable, Self.hasVisibleWindow else { return }
         do {
-            let samples = try await Task.detached { [cli] in try cli.stats() }.value
+            let samples = try await Blocking.run { [cli] in try cli.stats() }
             let now = Date()
             // Same discipline as `containers`: an unconditional write invalidates every
             // view reading these on each sample, whether or not a single figure moved.
@@ -723,7 +723,7 @@ final class AppModel {
     /// - Parameter autoStartingService: whether a stopped service should be started here.
     ///   False when called *by* `startRuntime`, which would otherwise recurse.
     func runPreflight(autoStartingService: Bool) async {
-        let result = await Task.detached { [cli] in Preflight(cli: cli).run() }.value
+        let result = await Blocking.run { [cli] in Preflight(cli: cli).run() }
         preflight = result
         switch result {
         case .ok, .needsRestart, .needsKernel: noteRuntimeRunning()
@@ -796,7 +796,7 @@ final class AppModel {
         startingRuntime = true
         state = .loading
         do {
-            try await Task.detached { [cli] in try cli.startSystem() }.value
+            try await Blocking.run { [cli] in try cli.startSystem() }
             recordActivity(ContainerEvent(date: Date(), from: "stopped", to: "running",
                                           kind: .runtime, subject: hostLabel,
                                           action: byAdmin ? "Runtime started by its admin" : "Runtime started"))
@@ -831,7 +831,7 @@ final class AppModel {
 
         let expected: String? = if case .needsKernel(_, _, let path) = preflight { path } else { nil }
         do {
-            try await Task.detached { [cli] in
+            try await Blocking.run { [cli] in
                 // `kernel set` assumes `<appRoot>/kernels` exists. If it does not, the CLI
                 // downloads and unpacks the kernel, then fails to move it into place with "The
                 // file “vmlinux-…” doesn't exist" — about the temp file, not the missing folder.
@@ -846,7 +846,7 @@ final class AppModel {
                 try cli.installRecommendedKernel(onLine: { line in
                     Task { @MainActor [weak self] in self?.kernelInstall?.line = line }
                 })
-            }.value
+            }
             kernelInstall = nil
             recordActivity(ContainerEvent(date: Date(), from: "missing", to: "installed",
                                           kind: .runtime, subject: hostLabel,
@@ -881,7 +881,7 @@ final class AppModel {
         startingRuntime = true
         state = .loading
         do {
-            try await Task.detached { [cli] in try cli.stopSystem() }.value
+            try await Blocking.run { [cli] in try cli.stopSystem() }
             recordActivity(ContainerEvent(date: Date(), from: "running", to: "stopped",
                                           kind: .runtime, subject: hostLabel,
                                           action: byAdmin ? "Runtime stopped by its admin" : "Runtime stopped"))
@@ -913,10 +913,10 @@ final class AppModel {
         startingRuntime = true
         state = .loading
         do {
-            try await Task.detached { [cli] in
+            try await Blocking.run { [cli] in
                 try cli.stopSystem()
                 try cli.startSystem()
-            }.value
+            }
             recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
                                           kind: .runtime, subject: hostLabel,
                                           action: byAdmin ? "Runtime restarted by its admin" : "Runtime restarted"))
@@ -1031,7 +1031,7 @@ final class AppModel {
         do {
             // Off the main actor: this shells out to `container` and would otherwise stall
             // the UI on a slow or unreachable runtime.
-            let fetched = try await Task.detached { [cli] in try cli.listContainers() }.value
+            let fetched = try await Blocking.run { [cli] in try cli.listContainers() }
             notifyUnexpectedExits(previous: containers, current: fetched)
             recordTransitions(previous: containers, current: fetched)
 
@@ -1110,7 +1110,7 @@ final class AppModel {
         // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
         if volumesState != .loaded { volumesState = .loading }
         do {
-            let fetched = try await Task.detached { [cli] in try cli.listVolumes() }.value
+            let fetched = try await Blocking.run { [cli] in try cli.listVolumes() }
             // Appearance and disappearance are a volume's only events — see `recordExistence`.
             recordExistence(kind: .volume, previous: volumes.map(\.name),
                             current: fetched.map(\.name))
@@ -1128,9 +1128,9 @@ final class AppModel {
             command: ContainerCLI.createVolumeArguments(name, options: options).joined(separator: " "),
             work: { progress in
                 let step = progress.begin("Creating \(name)")
-                let result = try await Task.detached { [cli] in
+                let result = try await Blocking.run { [cli] in
                     try cli.createVolume(name, options: options)
-                }.value
+                }
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
                 progress.finish(step)
                 return "\(name) created"
@@ -1148,7 +1148,7 @@ final class AppModel {
         busy.mark(volume.id, kind: .volume)
         defer { busy.clear(volume.id, kind: .volume) }
         do {
-            _ = try await Task.detached { [cli] in try cli.removeVolume(volume.name) }.value
+            _ = try await Blocking.run { [cli] in try cli.removeVolume(volume.name) }
         } catch {
             actionError = "Delete volume failed for \(volume.name): \(error)"
         }
@@ -1169,7 +1169,7 @@ final class AppModel {
         // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
         if networksState != .loaded { networksState = .loading }
         do {
-            let fetched = try await Task.detached { [cli] in try cli.listNetworks() }.value
+            let fetched = try await Blocking.run { [cli] in try cli.listNetworks() }
             recordExistence(kind: .network, previous: networks.map(\.id),
                             current: fetched.map(\.id))
             networks = fetched
@@ -1186,9 +1186,9 @@ final class AppModel {
             command: ContainerCLI.createNetworkArguments(name, options: options).joined(separator: " "),
             work: { progress in
                 let step = progress.begin("Creating \(name)")
-                let result = try await Task.detached { [cli] in
+                let result = try await Blocking.run { [cli] in
                     try cli.createNetwork(name, options: options)
-                }.value
+                }
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
                 progress.finish(step)
                 return "\(name) created"
@@ -1206,7 +1206,7 @@ final class AppModel {
         busy.mark(network.id, kind: .network)
         defer { busy.clear(network.id, kind: .network) }
         do {
-            _ = try await Task.detached { [cli] in try cli.removeNetwork(network.id) }.value
+            _ = try await Blocking.run { [cli] in try cli.removeNetwork(network.id) }
         } catch {
             actionError = "Delete network failed for \(network.id): \(error)"
         }
@@ -1237,7 +1237,7 @@ final class AppModel {
         // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
         if imagesState != .loaded { imagesState = .loading }
         do {
-            let fetched = try await Task.detached { [cli] in try cli.listImages() }.value
+            let fetched = try await Blocking.run { [cli] in try cli.listImages() }
             // Keyed on `reference`, not `id`: a retag produces a new reference for the same
             // digest, and "nginx:mine created" is the event you want to see, not silence.
             recordExistence(kind: .image, previous: images.map(\.reference),
@@ -1330,7 +1330,7 @@ final class AppModel {
         activeOperation = panel
         let pullStep = panel.begin("Pulling \(reference)")
         do {
-            _ = try await Task.detached { [cli] in
+            _ = try await Blocking.run { [cli] in
                 try cli.pull(reference, scheme: scheme) { progress in
                     Task { @MainActor in
                         self.notePullProgress(progress, for: reference)
@@ -1342,7 +1342,7 @@ final class AppModel {
                         self.activeOperation?.note(Self.pullLine(progress))
                     }
                 }
-            }.value
+            }
             panel.finish(pullStep)
             // Named explicitly: the existence diff would say "Created", which is true but loses
             // the distinction between an image you pulled and one a build produced.
@@ -1412,7 +1412,7 @@ final class AppModel {
                 let cli = job.cli, isLocal = job.host.isLocal, step = job.step
                 group.addTask {
                     do {
-                        _ = try await Task.detached {
+                        _ = try await Blocking.run {
                             if isLocal {
                                 // This Mac's pull reports as it goes, into its own line and the
                                 // Images list's banner — the hosts' arrive whole, at the end.
@@ -1425,7 +1425,7 @@ final class AppModel {
                             } else {
                                 try cli.pull(reference, scheme: scheme)
                             }
-                        }.value
+                        }
                         return (index, nil)
                     } catch {
                         return (index, error)
@@ -1502,7 +1502,7 @@ final class AppModel {
         busy.mark(image.id, kind: .image)
         defer { busy.clear(image.id, kind: .image) }
         do {
-            _ = try await Task.detached { [cli] in try cli.removeImage(image.reference) }.value
+            _ = try await Blocking.run { [cli] in try cli.removeImage(image.reference) }
         } catch {
             actionError = "Delete image failed for \(image.reference): \(error)"
         }
@@ -1546,7 +1546,7 @@ final class AppModel {
         let where_ = hostMode.hostName(host, local: hostLabel)
         do {
             let cli = try cli(for: host)
-            try await Task.detached { try operation(cli) }.value
+            try await Blocking.run { try operation(cli) }
             recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: kind,
                                           subject: "\(name) on \(where_)", action: "Deleted"))
         } catch {
@@ -1591,7 +1591,7 @@ final class AppModel {
                 guard let self else { return "" }
                 let remote = try self.cli(for: host)
                 let step = progress.begin("Creating \(name) on \(hostName)")
-                let result = try await Task.detached { try operation(remote) }.value
+                let result = try await Blocking.run { try operation(remote) }
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
                 progress.finish(step)
                 // Recorded here: This Mac's creates are noticed by the list refresh, a host's are not.
@@ -1614,7 +1614,7 @@ final class AppModel {
     /// its own loading/error display, rather than the shared `actionError` alert, because
     /// a stale log view failing to reload shouldn't pop a modal over the rest of the app.
     func fetchLogs(for id: String, lines: Int = 200) async throws -> LogChunk {
-        try await Task.detached { [cli] in try cli.logs(id, lines: lines) }.value
+        try await Blocking.run { [cli] in try cli.logs(id, lines: lines) }
     }
 
     /// What we have actually **watched happen** to each container, newest first.
@@ -2198,7 +2198,7 @@ final class AppModel {
             // Off the main actor: each of these spawns `container` and waits on it.
             // Note every one routes through ContainerCLI, which validates against the
             // Allowlist first — the UI never builds an argv itself.
-            try await Task.detached { [cli] () -> Void in
+            try await Blocking.run { [cli] () -> Void in
                 switch action {
                 case .start:   try cli.start(id)
                 case .stop:    try cli.stop(id)
@@ -2216,7 +2216,7 @@ final class AppModel {
                 // be stopped first, so the escalation is stated rather than silent.
                 case .delete:  try cli.remove(id, force: true)
                 }
-            }.value
+            }
             // The poll loop cannot see this one: a restart of a running container ends running,
             // so there is no transition between refreshes. Record it here or it is invisible.
             if action == .restart {
@@ -2256,7 +2256,7 @@ final class AppModel {
             return
         }
         do {
-            try await Task.detached { () -> Void in
+            try await Blocking.run { () -> Void in
                 switch action {
                 case .start:   try remote.start(id)
                 case .stop:    try remote.stop(id)
@@ -2264,7 +2264,7 @@ final class AppModel {
                 case .kill:    try remote.kill(id)
                 case .delete:  try remote.remove(id, force: true)
                 }
-            }.value
+            }
             recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .container,
                                           subject: "\(id) on \(hostName)", action: Self.label(for: action)))
         } catch {
@@ -2290,7 +2290,7 @@ final class AppModel {
             busy.mark(id, kind: .container)
             notePolicyIntent(action, id)
             do {
-                try await Task.detached { [cli] () -> Void in
+                try await Blocking.run { [cli] () -> Void in
                     switch action {
                     case .start:   try cli.start(id)
                     case .stop:    try cli.stop(id)
@@ -2299,7 +2299,7 @@ final class AppModel {
                     // See the single-container path above for why `force`.
                     case .delete:  try cli.remove(id, force: true)
                     }
-                }.value
+                }
                 if action == .restart {
                     recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
                                                   kind: .container, subject: id,
@@ -2359,9 +2359,9 @@ final class AppModel {
                 guard let self else { return "" }
                 let remote = try self.cli(for: host)
                 let step = progress.begin("Starting from \(image) on \(hostName)")
-                let result = try await Task.detached {
+                let result = try await Blocking.run {
                     try remote.run(image: image, options: options, command: command)
-                }.value
+                }
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
                 progress.finish(step, detail: options.name)
                 return options.name.map { "\($0) started on \(hostName)" } ?? "Container started on \(hostName)"
@@ -2381,9 +2381,9 @@ final class AppModel {
             command: Self.runDisplayLine(image: image, options: options, command: command, host: .local),
             work: { progress in
                 let step = progress.begin("Starting from \(image)")
-                let result = try await Task.detached { [cli] in
+                let result = try await Blocking.run { [cli] in
                     try cli.run(image: image, options: options, command: command)
-                }.value
+                }
                 // `container run -d` prints the id it created. Worth surfacing: it is the one
                 // piece of output that tells you *which* row to look for.
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }

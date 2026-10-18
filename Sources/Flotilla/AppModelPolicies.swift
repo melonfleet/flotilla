@@ -93,7 +93,7 @@ extension AppModel {
     private func policyRestart(_ id: String) async {
         let failure: String?
         do {
-            try await Task.detached { [cli] in _ = try cli.start(id) }.value
+            try await Blocking.run { [cli] in _ = try cli.start(id) }
             failure = nil
             recordActivity(ContainerEvent(date: Date(), from: "stopped", to: "running", kind: .container,
                                           subject: id, action: "Restarted by its policy"))
@@ -112,7 +112,7 @@ extension AppModel {
         case .http(let port, let path):
             result = await PolicyProbe.http(port: port, path: path, timeout: timeout)
         case .command(let argv):
-            result = await Task.detached { [cli] () -> (ok: Bool, detail: String) in
+            result = await Blocking.run { [cli] () -> (ok: Bool, detail: String) in
                 do {
                     let run = try cli.healthCommand(id, argv, timeout: timeout)
                     let said = (run.stdout + run.stderr).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -122,7 +122,7 @@ extension AppModel {
                 } catch {
                     return (false, String(describing: error))
                 }
-            }.value
+            }
         }
         let policy = policies.policy(for: id)
         let actions = policies.update { $0.probeFinished(id, ok: result.ok, detail: result.detail, policy: policy, at: Date()) }

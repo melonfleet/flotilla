@@ -17,7 +17,7 @@ extension AppModel {
     /// `AppModel.fetchLogs(for:lines:)` has no `bootLog` parameter, so this is a new
     /// overload (distinct arity) rather than an edit to the original.
     func fetchLogs(for id: String, lines: Int, bootLog: Bool) async throws -> LogChunk {
-        try await Task.detached { [cli] in try cli.logs(id, lines: lines, bootLog: bootLog) }.value
+        try await Blocking.run { [cli] in try cli.logs(id, lines: lines, bootLog: bootLog) }
     }
 
     // MARK: Any Mac (PLAN.md Phase C)
@@ -30,12 +30,12 @@ extension AppModel {
 
     func fetchLogs(for id: String, lines: Int, bootLog: Bool, host: HostRef) async throws -> LogChunk {
         let cli = try cli(for: host)
-        return try await Task.detached { try cli.logs(id, lines: lines, bootLog: bootLog) }.value
+        return try await Blocking.run { try cli.logs(id, lines: lines, bootLog: bootLog) }
     }
 
     func fetchInspectJSON(for id: String, host: HostRef) async throws -> String {
         let cli = try cli(for: host)
-        let raw = try await Task.detached { try cli.rawInspectJSON(id) }.value
+        let raw = try await Blocking.run { try cli.rawInspectJSON(id) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
@@ -43,33 +43,33 @@ extension AppModel {
     /// way the Inspect tabs redact, for its Settings tab.
     func fetchRuntimeProperties(host: HostRef) async throws -> String {
         let cli = try cli(for: host)
-        let raw = try await Task.detached { try cli.rawSystemPropertiesJSON() }.value
+        let raw = try await Blocking.run { try cli.rawSystemPropertiesJSON() }
         return Redactor(excluding: [.fingerprint, .homePath, .temporaryPath, .email])
             .redact(JSONPrettyPrinter.prettyPrint(raw))
     }
 
     func fetchProcesses(for id: String, host: HostRef) async throws -> String {
         let cli = try cli(for: host)
-        return try await Task.detached { try cli.processes(id) }.value
+        return try await Blocking.run { try cli.processes(id) }
     }
 
     func fetchImageInspectJSON(for reference: String, host: HostRef) async throws -> String {
         let cli = try cli(for: host)
-        let raw = try await Task.detached { try cli.rawInspectImageJSON(reference) }.value
+        let raw = try await Blocking.run { try cli.rawInspectImageJSON(reference) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
     func fetchVolumeInspectJSON(for name: String, host: HostRef) async throws -> String {
         guard !host.isLocal else { return try await fetchVolumeInspectJSON(for: name) }
         let cli = try cli(for: host)
-        let raw = try await Task.detached { try cli.rawInspectVolumeJSON(name) }.value
+        let raw = try await Blocking.run { try cli.rawInspectVolumeJSON(name) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
     func fetchNetworkInspectJSON(for id: String, host: HostRef) async throws -> String {
         guard !host.isLocal else { return try await fetchNetworkInspectJSON(for: id) }
         let cli = try cli(for: host)
-        let raw = try await Task.detached { try cli.rawInspectNetworkJSON(id) }.value
+        let raw = try await Blocking.run { try cli.rawInspectNetworkJSON(id) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
@@ -77,7 +77,7 @@ extension AppModel {
     func tagImage(_ source: String, as target: String, host: HostRef) async throws {
         guard case .peer(let fingerprint) = host else { return try await tagImage(source, as: target) }
         let cli = try cli(for: host)
-        _ = try await Task.detached { try cli.tag(source, as: target) }.value
+        _ = try await Blocking.run { try cli.tag(source, as: target) }
         recordActivity(ContainerEvent(date: Date(), from: source, to: target, kind: .image,
                                       subject: "\(target) on \(hostMode.hostName(host, local: hostLabel))",
                                       action: "Tagged from \(source)"))
@@ -91,7 +91,7 @@ extension AppModel {
     /// from 141 to 157 tests, not assumed). This is the CLI's own `inspect` output,
     /// verbatim and pretty-printed, so fields `Container` doesn't model are visible too.
     func fetchInspectJSON(for id: String) async throws -> String {
-        let raw = try await Task.detached { [cli] in try cli.rawInspectJSON(id) }.value
+        let raw = try await Blocking.run { [cli] in try cli.rawInspectJSON(id) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
@@ -103,7 +103,7 @@ extension AppModel {
     /// own loader: it is one edit away from the convention every sibling follows and nothing says
     /// so.
     func fetchMachineInspectJSON(for id: String) async throws -> String {
-        let raw = try await Task.detached { [cli] in try cli.rawMachineInspectJSON(id) }.value
+        let raw = try await Blocking.run { [cli] in try cli.rawMachineInspectJSON(id) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
@@ -119,7 +119,7 @@ extension AppModel {
     /// app settled on 9 August and then kept one exception to. The owner's call, and the right
     /// one — the exception was the thing that looked wrong, not the content.
     func fetchVolumeInspectJSON(for name: String) async throws -> String {
-        let raw = try await Task.detached { [cli] in try cli.rawInspectVolumeJSON(name) }.value
+        let raw = try await Blocking.run { [cli] in try cli.rawInspectVolumeJSON(name) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
@@ -132,12 +132,12 @@ extension AppModel {
     /// method, which is the argument for checking the sections against each other rather than
     /// against their own history.
     func fetchImageInspectJSON(for reference: String) async throws -> String {
-        let raw = try await Task.detached { [cli] in try cli.rawInspectImageJSON(reference) }.value
+        let raw = try await Blocking.run { [cli] in try cli.rawInspectImageJSON(reference) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
     func fetchNetworkInspectJSON(for id: String) async throws -> String {
-        let raw = try await Task.detached { [cli] in try cli.rawInspectNetworkJSON(id) }.value
+        let raw = try await Blocking.run { [cli] in try cli.rawInspectNetworkJSON(id) }
         return JSONPrettyPrinter.prettyPrint(raw)
     }
 
@@ -149,7 +149,7 @@ extension AppModel {
     /// error. The Processes tab relies on `Container.isRunning` to skip the call entirely
     /// rather than trying to reconstruct "stopped" from an empty result after the fact.
     func fetchProcesses(for id: String) async throws -> String {
-        try await Task.detached { [cli] in try cli.processes(id) }.value
+        try await Blocking.run { [cli] in try cli.processes(id) }
     }
 
     // MARK: System — disk usage
@@ -157,7 +157,7 @@ extension AppModel {
     /// Backs `SystemView`'s disk usage section. `systemDiskUsage()` is already typed and
     /// already the real name (`ContainerCLI.swift`) — no guess needed here.
     func fetchSystemDiskUsage() async throws -> SystemDiskUsage {
-        try await Task.detached { [cli] in try cli.systemDiskUsage() }.value
+        try await Blocking.run { [cli] in try cli.systemDiskUsage() }
     }
 
     // MARK: Images — tag & prune-with-preview
@@ -165,7 +165,7 @@ extension AppModel {
     /// `ContainerCLI` names this `tag(_:as:)`, not `tagImage` — confirmed with
     /// `grep "public func" ContainerCLI.swift` as the brief asked, rather than guessed.
     func tagImage(_ source: String, as target: String) async throws {
-        _ = try await Task.detached { [cli] in try cli.tag(source, as: target) }.value
+        _ = try await Blocking.run { [cli] in try cli.tag(source, as: target) }
         // Named rather than left to the existence diff, which would report the new reference as
         // "Created" and say nothing about where it came from.
         recordActivity(ContainerEvent(date: Date(), from: source, to: target,
@@ -191,7 +191,7 @@ extension AppModel {
         var failures: [(reference: String, error: String)] = []
         for reference in references {
             do {
-                _ = try await Task.detached { [cli] in try cli.removeImage(reference) }.value
+                _ = try await Blocking.run { [cli] in try cli.removeImage(reference) }
             } catch {
                 failures.append((reference, String(describing: error)))
             }
