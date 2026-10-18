@@ -2793,3 +2793,39 @@ and `research/FEATURES.md`'s "no hover-only affordances" baseline, which is now 
   button, a ~20pt `⋮` and a 14pt fade cover about 60pt, leaving **about 24**. Before, the kind chip
   (~70pt) and four buttons with a divider (~110pt) left the name and the tags about 40pt between
   them — the "…" Kamal saw.
+
+## Q61 — Greta's microphone button: dictation on this Mac only (settled 2026-10-18)
+
+Kamal approved this on 18 October. A `mic` button beside Send in Greta's message field dictates into
+it, as in Claude Code.
+
+- **Speech never leaves the Mac.** Recognition is `SpeechAnalyzer` with `SpeechTranscriber`
+  (macOS 26), which recognises on the device by design. Volatile results are shown live; finished
+  segments are kept. There is **no** `SFSpeechRecognizer` fallback: it can use a server, and the
+  app cannot see which. A language `SpeechTranscriber` doesn't offer on this Mac disables the button,
+  with a tooltip saying so. It is never swapped for another language.
+- **Why not macOS dictation.** For languages it can't do on the device, system dictation sends audio
+  to Apple, and an app cannot ask which path it took. "Speech never leaves the Mac" has to be a
+  property of the code, not of the user's language.
+- **The one download, and only on a click.** If the transcriber's model isn't installed
+  (`AssetInventory.status`), Greta's panel says, in one line, that macOS needs to download speech
+  recognition for that language from Apple, once, and offers **Download** with its progress. The
+  fetch is `AssetInstallationRequest.downloadAndInstall()`, Apple's system API, and nothing calls it
+  except that button. Nothing else in the feature touches the network.
+- **One new entitlement.** The app is signed with the hardened runtime, which blocks audio capture
+  without `com.apple.security.device.audio-input`. `Scripts/Flotilla.entitlements` holds that key and
+  nothing else; `make-app.sh` passes it to the **main app's** signature only (Developer ID and
+  ad-hoc), never the helper or Sparkle's parts, and fails the build if the app carries any other
+  entitlement or the helper carries one. `Info.plist` gains `NSMicrophoneUsageDescription`. No
+  `NSSpeechRecognitionUsageDescription`: that belongs to `SFSpeechRecognizer`, which isn't used.
+  RELEASING.md's "Entitlements: none" now reads "one".
+- **Behaviour.** What was typed stays; dictated words go at its end and nothing is sent until the user
+  presses Send. Listening stops on a second click, Esc, Send, typing in the field, the window losing
+  key, Greta's panel closing, or 60 seconds without a result. A refused microphone gets one line and
+  a button that opens System Settings ▸ Privacy & Security ▸ Microphone; Flotilla never changes the
+  setting. ⇧⌘D, in the menu as Dictate to Greta / Stop Dictating.
+- **Dictated text is user input.** It goes through exactly what typed text goes through; nothing
+  about it is trusted more.
+- **Where the logic lives.** `DictationMachine` (idle / needs model / downloading / listening /
+  denied / unsupported) and `DictationText` (how words join the typed text) are in FlotillaCore,
+  Foundation-only and tested. The audio and framework calls are `GretaDictation` in the app.

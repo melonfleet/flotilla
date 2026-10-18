@@ -32,6 +32,9 @@ final class Greta {
     private(set) var working = false
     /// The ⌘G floating chat, over whatever page is showing.
     var overlayShown = false
+    /// The microphone button's state. One for the app: there is one microphone, and the ⇧⌘D command
+    /// and whichever composer is on screen drive the same one (Q61).
+    let dictation = GretaDictation()
 
     static let keptConversations = 50
     static let keptMessages = 80

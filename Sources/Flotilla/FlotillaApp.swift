@@ -342,6 +342,14 @@ private struct FlotillaCommands: Commands {
             }
             .keyboardShortcut("g", modifiers: .command)
             .disabled(!model.gretaEnabled)
+
+            // The microphone button's shortcut, here so it is findable in the menus (Q61). Enabled
+            // only while a Greta message field is on screen to take the words.
+            Button(model.greta.dictation.isListening ? "Stop Dictating" : "Dictate to Greta") {
+                model.greta.dictation.toggle()
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+            .disabled(!model.gretaEnabled || !model.greta.dictation.canToggle)
         }
 
         CommandGroup(before: .help) {

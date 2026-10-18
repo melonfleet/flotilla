@@ -214,6 +214,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <!-- Local Network (macOS asks the first time Flotilla browses or listens). NSBonjourServices
          must name every service type browsed or advertised: only _flotilla._tcp is. -->
     <key>NSLocalNetworkUsageDescription</key> <string>Flotilla finds and talks to the Macs it manages on your network, and your containers' published ports use the local network.</string>
+    <!-- Greta's microphone button (Q61). Recognition is SpeechAnalyzer, on this Mac; it needs no
+         NSSpeechRecognitionUsageDescription, which belongs to the server-capable SFSpeechRecognizer. -->
+    <key>NSMicrophoneUsageDescription</key> <string>Greta listens only while the microphone button is on, and speech is recognised on this Mac. Nothing is sent anywhere.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_flotilla._tcp</string>
@@ -289,6 +292,10 @@ sign_sparkle() {
     done
 }
 
+# The main app's entitlements: the microphone and nothing else (Q61). Passed to the app's own
+# signature only — not the helper, not Sparkle's parts.
+APP_ENTITLEMENTS="$ROOT/Scripts/Flotilla.entitlements"
+
 if [ -n "${FLOTILLA_SIGN_IDENTITY:-}" ]; then
     echo "▸ signing (Developer ID, hardened runtime)…"
     # No `--deep`: Apple's guidance is to sign inside-out. The one nested binary is the Flotilla Helper,
@@ -298,7 +305,7 @@ if [ -n "${FLOTILLA_SIGN_IDENTITY:-}" ]; then
              --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$HELPER_ID" \
              "$APP/Contents/MacOS/FlotillaHelper" 2>&1 | sed 's/^/   /'
     sign_sparkle "$FLOTILLA_SIGN_IDENTITY" --timestamp
-    codesign --force --options runtime --timestamp \
+    codesign --force --options runtime --timestamp --entitlements "$APP_ENTITLEMENTS" \
              --sign "$FLOTILLA_SIGN_IDENTITY" --identifier "$BUNDLE_ID" "$APP" 2>&1 | sed 's/^/   /'
     SIGN_MODE="Developer ID"
 else
@@ -306,7 +313,7 @@ else
     codesign --force --sign - --identifier "$HELPER_ID" --timestamp=none \
              "$APP/Contents/MacOS/FlotillaHelper" 2>&1 | sed 's/^/   /'
     sign_sparkle - --timestamp=none
-    codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>&1 | sed 's/^/   /'
+    codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none --entitlements "$APP_ENTITLEMENTS" "$APP" 2>&1 | sed 's/^/   /'
     SIGN_MODE="ad-hoc"
 fi
 
@@ -314,6 +321,13 @@ echo "▸ verifying…"
 # `--strict` and `--deep` on *verification* (unlike signing): they check what is actually in the
 # bundle rather than what we believe is in it.
 codesign --verify --deep --strict --verbose=1 "$APP" 2>&1 | sed 's/^/   /'
+# The app carries exactly one entitlement and the helper none (Q61): a signing change that quietly
+# widened either would otherwise ship unseen.
+APP_ENT="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -convert json -o - - 2>/dev/null || true)"
+[ "$APP_ENT" = '{"com.apple.security.device.audio-input":true}' ] \
+    || { echo "✗ app entitlements are not exactly audio-input: ${APP_ENT:-none}" >&2; exit 1; }
+HELPER_ENT="$(codesign -d --entitlements - --xml "$APP/Contents/MacOS/FlotillaHelper" 2>/dev/null | wc -c | tr -d ' ')"
+[ "${HELPER_ENT:-0}" -le 1 ] || { echo "✗ the helper carries entitlements" >&2; exit 1; }
 /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist" | sed 's/^/   bundle id: /'
 echo "   version:   $SHORT_VERSION ($BUILD_NUMBER) — $DESCRIBE"
 

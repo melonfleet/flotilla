@@ -221,8 +221,11 @@ struct GretaChatView: View {
     @State private var text = ""
     @State private var composerPaneWidth: CGFloat = 360
     @FocusState private var focused: Bool
+    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var greta: Greta { model.greta }
+    private var dictation: GretaDictation { model.greta.dictation }
     private var avatar: GretaAvatar { model.gretaAvatar }
 
     var body: some View {
@@ -267,7 +270,14 @@ struct GretaChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { composerPaneWidth = $0 }
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            dictation.attach(.init(read: { text }, write: { text = $0 }))
+        }
+        .onDisappear { dictation.detach() }
+        .onChange(of: text) { _, new in dictation.textChanged(to: new) }
+        // The microphone is only on while this window is the one being used.
+        .onChange(of: activeState) { _, new in if new != .key { dictation.stop(finalize: false) } }
     }
 
     /// Tips by example (the owner, 12 October): one box, and these show what to put in it.
@@ -298,6 +308,13 @@ struct GretaChatView: View {
     }
 
     private var composer: some View {
+        VStack(spacing: 6) {
+            dictationNotice
+            composerField
+        }
+    }
+
+    private var composerField: some View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Ask Greta…", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -306,6 +323,7 @@ struct GretaChatView: View {
                 .accessibilityLabel("Message to Greta")
                 .onSubmit(send)
                 .padding(.vertical, 5)
+            micButton
             Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
                 .buttonStyle(.borderless)
                 .disabled(greta.working || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -315,10 +333,81 @@ struct GretaChatView: View {
         .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 5)
         .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Theme.hairline))
+        // Esc stops listening (and only that: with the mic off it goes on to whatever it did before).
+        .onKeyPress(.escape) {
+            guard dictation.isListening else { return .ignored }
+            dictation.stop(finalize: true)
+            return .handled
+        }
+    }
+
+    /// Messages-style: beside Send. Listening is `mic.fill` in the accent colour, pulsing unless
+    /// Reduce Motion is on. Unavailable (the language isn't offered on-device) it is disabled and
+    /// says so.
+    private var micButton: some View {
+        let listening = dictation.isListening
+        let unsupported = dictation.state == .unsupported
+        let busy: Bool = { if case .downloading = dictation.state { return true } else { return false } }()
+        return Button { dictation.toggle() } label: {
+            Image(systemName: listening ? "mic.fill" : "mic")
+                .font(.title3)
+                .foregroundStyle(listening ? Color.accentColor : Color.secondary)
+                .symbolEffect(.pulse, isActive: listening && !reduceMotion)
+                .frame(width: 24, height: 26)
+        }
+        .buttonStyle(.borderless)
+        .disabled(unsupported || busy)
+        .help(unsupported
+              ? "Dictation isn't available in \(dictation.languageName) on this Mac. Speech is only recognised on this Mac."
+              : listening ? "Stop dictating (⇧⌘D)" : "Dictate (⇧⌘D). Speech is recognised on this Mac.")
+        .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
+    }
+
+    /// One line above the field for whatever dictation needs said or asked: the model download,
+    /// a refused microphone, or why it stopped.
+    @ViewBuilder
+    private var dictationNotice: some View {
+        switch dictation.state {
+        case .needsModel:
+            noticeRow("macOS needs to download speech recognition for \(dictation.languageName) from Apple, once. Your speech stays on this Mac.",
+                      systemImage: "arrow.down.circle") {
+                Button("Not Now") { dictation.dismissModelPrompt() }.controlSize(.small)
+                Button("Download") { dictation.download() }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+            }
+        case .downloading(let fraction):
+            noticeRow("Downloading speech recognition for \(dictation.languageName)…", systemImage: "arrow.down.circle") {
+                if let fraction { ProgressView(value: fraction).frame(width: 80) } else { ProgressView().controlSize(.small) }
+            }
+        case .denied:
+            noticeRow("Flotilla can't use the microphone. Allow it in System Settings ▸ Privacy & Security ▸ Microphone.",
+                      systemImage: "mic.slash") {
+                Button("Open Microphone Settings") { NSWorkspace.shared.open(GretaDictation.microphoneSettingsURL) }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+            }
+        default:
+            if let note = dictation.message {
+                noticeRow(note, systemImage: "info.circle") {
+                    Button("Dismiss") { dictation.dismissMessage() }.controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private func noticeRow<Actions: View>(_ text: String, systemImage: String,
+                                          @ViewBuilder actions: () -> Actions) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: systemImage).foregroundStyle(.secondary)
+            Text(text).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+            actions()
+        }
+        .padding(.horizontal, 6)
     }
 
     private func send() {
         let question = text
+        dictation.stop(finalize: false)        // Send ends dictation; nothing lands in the cleared field
         text = ""
         Task { await greta.send(question, model: model) }
     }

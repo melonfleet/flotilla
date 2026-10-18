@@ -114,15 +114,19 @@ internet" confirmation. If they see more than that, the fault is the build and n
 They will still need Apple's `container` CLI installed, and Flotilla says so on its own when it is
 missing. Notarising Flotilla does nothing for that dependency.
 
-## Entitlements: none, deliberately
+## Entitlements: one, deliberately
 
-There is no entitlements file, and that is the correct configuration rather than an omission.
+The main app carries exactly one entitlement, `com.apple.security.device.audio-input`
+(`Scripts/Flotilla.entitlements`), for Greta's microphone button (`DECISIONS.md` Q61): the hardened
+runtime blocks audio capture without it. The helper and Sparkle's parts carry none, and
+`make-app.sh` fails the build if the app's set is anything else or the helper has any.
+
 Flotilla is not sandboxed (`DECISIONS.md` — it drives a CLI that manages VMs), and the hardened
-runtime with **no** entitlements is the strictest posture available to a non-sandboxed app: nothing
-disabled, no exceptions claimed. Spawning `container` needs no entitlement; loading no third-party
-libraries means library validation costs nothing.
+runtime with this one exception is still the strictest posture available to a non-sandboxed app.
+Spawning `container` needs no entitlement; loading no third-party libraries means library validation
+costs nothing.
 
-Add one only in response to a specific, observed failure, and never these two by reflex:
+Add another only in response to a specific, observed failure, and never these two by reflex:
 `com.apple.security.cs.disable-library-validation` (we load no external libraries — claiming it
 weakens the runtime for nothing) and `com.apple.security.get-task-allow` (a debugging entitlement
 that **must not** ship; notarisation rejects it).
