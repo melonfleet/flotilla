@@ -129,6 +129,8 @@ final class AppModel {
         // or a user who removed Flotilla in System Settings ▸ Login Items since last time.
         syncLoginItem()
         hostMode.recordActivity = { [weak self] event in self?.recordActivity(event) }
+        // A closed SSH key step whose child outlives SIGKILL still holds the key lock; say so.
+        sshTerminals.overdue = { [weak self] message in self?.record(message, subsystem: "terminal") }
         updater.apply(isAdmin: hostMode.isAdmin)
         startHostRuntimeWatch()
         Task { await PrivilegedHelper.moveFromLegacyName() }

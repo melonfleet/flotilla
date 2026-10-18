@@ -127,15 +127,20 @@ public enum RemoteAccess {
     /// named, so ssh uses the user's `~/.ssh/config` or, without one, this Mac's user name.
     ///
     /// No shell is involved — these become `execve`'s argv directly — and nothing else is added:
-    /// no `-o` options, no command, no `-t` (the PTY already makes the session interactive). The
-    /// user is passed with `-l` rather than as `user@host`, so it can never be parsed as part of
-    /// the destination. `--` is not needed because the host cannot start with `-`; validation, not
-    /// position, is what keeps it out of the option parser.
-    public static func sshArguments(host: String, user: String?) throws(ArgumentProblem) -> [String] {
+    /// no command, no `-t` (the PTY already makes the session interactive). The user is passed with
+    /// `-l` rather than as `user@host`, so it can never be parsed as part of the destination. `--`
+    /// is not needed because the host cannot start with `-`; validation, not position, is what keeps
+    /// it out of the option parser.
+    ///
+    /// With Flotilla's own key (`SSHKeySetup.Identity`, only while it exists), its four fixed
+    /// options go first: `-i ~/.ssh/flotilla_ed25519 -o IdentitiesOnly=yes`. Without it, none.
+    public static func sshArguments(host: String, user: String?,
+                                    identity: SSHKeySetup.Identity? = nil) throws(ArgumentProblem) -> [String] {
         guard isValidHost(host) else { throw .host }
-        guard let user, !user.isEmpty else { return [host] }
+        let key = identity?.arguments ?? []
+        guard let user, !user.isEmpty else { return key + [host] }
         guard isValidUser(user) else { throw .user }
-        return ["-l", user, host]
+        return key + ["-l", user, host]
     }
 
     /// What the SSH tab's process inherits from Flotilla's own environment, on top of the

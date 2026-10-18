@@ -48,6 +48,9 @@ final class TerminalSessionStore {
 
     @ObservationIgnored private var views: [UUID: ContainerTerminalView] = [:]
     @ObservationIgnored private var delegates: [UUID: SessionDelegate] = [:]
+    /// Closed sessions whose child has not exited yet. The view owns the `LocalProcess` and the
+    /// delegate is held weakly by it, so both are kept until the exit arrives.
+    @ObservationIgnored private var closing: [UUID: (view: ContainerTerminalView, delegate: SessionDelegate)] = [:]
 
     func sessions(for containerID: String) -> [TerminalSession] { sessions[containerID] ?? [] }
     func view(for session: TerminalSession) -> ContainerTerminalView? { views[session.id] }
@@ -86,13 +89,19 @@ final class TerminalSessionStore {
     /// The same, with the process's environment chosen by the caller (nil is SwiftTerm's own), and
     /// told how it ended: the exit code and the last lines it printed, since the view that showed
     /// them goes with it. ssh's "Permission denied" would otherwise vanish as it appeared.
+    ///
+    /// `onClose` runs instead of `onEnd` when the session was closed on purpose — its chip, its
+    /// host being forgotten, or the app quitting — and only once its child has **exited**
+    /// (`SSHKeySetup.ExitBarrier`, Kyle, 18 October). The SSH tab's key steps release the app-wide
+    /// key lock there, so no key step can start beside a child that is still stopping.
     @discardableResult
     func open(containerID: String, executable: String, argv: [String], environment: [String]?,
+              onClose: (() -> Void)? = nil,
               onEnd: @escaping (_ exitCode: Int32?, _ lastLines: String) -> Void) -> TerminalSession {
         let session = TerminalSession(id: UUID(), ordinal: nextOrdinal(for: containerID), name: nil)
 
         let view = ContainerTerminalView(frame: .zero)
-        let delegate = SessionDelegate { [weak self] code, lastLines in
+        let delegate = SessionDelegate(onClose: onClose) { [weak self] code, lastLines in
             // The shell ended by itself — `exit`, or it could not start. Drop it so the strip
             // stops offering a dead black rectangle.
             self?.forget(session, in: containerID)
@@ -109,10 +118,41 @@ final class TerminalSessionStore {
         return session
     }
 
-    /// Ends one shell deliberately.
+    /// Ends one shell deliberately. It leaves the strip now; its view and delegate are kept in
+    /// `closing` until the child has exited — SwiftTerm's `processTerminated`, after the reap — since
+    /// `terminate()` only sends SIGTERM. A child still there after `terminateGrace` gets SIGKILL.
     func close(_ session: TerminalSession, in containerID: String) {
-        views[session.id]?.terminate()
+        guard let view = views[session.id], let delegate = delegates[session.id] else { return }
+        closing[session.id] = (view, delegate)
         forget(session, in: containerID)
+        delegate.closed { [weak self] in self?.closing[session.id] = nil }
+        guard delegate.step({ $0.close() }) == .terminate else { return }
+        view.terminate()
+        Task { [weak self] in
+            try? await Task.sleep(for: SSHKeySetup.ExitBarrier.terminateGrace)
+            guard delegate.step({ $0.deadlinePassed() }) == .kill else { return }
+            Self.sigkill(view)
+            try? await Task.sleep(for: SSHKeySetup.ExitBarrier.killGrace)
+            if delegate.step({ $0.deadlinePassed() }) == .overdue {
+                self?.overdue?("A closed terminal\u{2019}s process hasn\u{2019}t exited after SIGKILL")
+            }
+        }
+    }
+
+    /// Said when a closed session's child outlives SIGKILL — its `onClose`, and so the key lock, is
+    /// still waiting for it.
+    @ObservationIgnored var overdue: ((String) -> Void)?
+
+    /// SIGKILL to a closed session's child — only while it is still this process's child, unreaped:
+    /// `waitid(WNOHANG | WNOWAIT)` fails for a pid that has been reaped or reused by anything else.
+    /// SwiftTerm's reaper keeps the pid reserved as a zombie until it reaps, so the remaining window
+    /// is that reap and a reuse of the pid landing between two system calls.
+    private static func sigkill(_ view: ContainerTerminalView) {
+        let pid = view.process.shellPid
+        var info = siginfo_t()
+        guard pid > 0, view.process.running,
+              waitid(P_PID, id_t(pid), &info, WEXITED | WNOHANG | WNOWAIT) == 0 else { return }
+        Darwin.kill(pid, SIGKILL)
     }
 
     /// Ends every shell in a container — when it stops, or is deleted.
@@ -157,7 +197,34 @@ final class TerminalSessionStore {
     @MainActor
     private final class SessionDelegate: NSObject, LocalProcessTerminalViewDelegate {
         private let onEnd: (Int32?, String) -> Void
-        init(onEnd: @escaping (Int32?, String) -> Void) { self.onEnd = onEnd }
+        private var onClose: (() -> Void)?
+        private var exitBarrier = SSHKeySetup.ExitBarrier()
+
+        init(onClose: (() -> Void)?, onEnd: @escaping (Int32?, String) -> Void) {
+            self.onClose = onClose
+            self.onEnd = onEnd
+        }
+
+        /// The session was closed: once its child exits, `release` runs and then the caller's
+        /// `onClose`, instead of `onEnd`.
+        func closed(release: @escaping () -> Void) {
+            let onClose = self.onClose
+            self.onClose = { release(); onClose?() }
+        }
+
+        func step(_ body: (inout SSHKeySetup.ExitBarrier) -> SSHKeySetup.ExitBarrier.Action) -> SSHKeySetup.ExitBarrier.Action {
+            body(&exitBarrier)
+        }
+
+        /// The child has exited (or never started): `onEnd` if it ended by itself, `onClose` if it
+        /// was closed — never before this.
+        private func exited(_ exitCode: Int32?, lastLines: () -> String) {
+            switch exitBarrier.exited() {
+            case .ended: onEnd(exitCode, lastLines())
+            case .released: onClose?()
+            default: break
+            }
+        }
 
         /// The last four non-empty lines go to `onEnd`, for the page to show beside how the session
         /// ended — in memory only, in a `SessionOutcome` the next action replaces. **Nothing here
@@ -167,10 +234,18 @@ final class TerminalSessionStore {
         /// forgotten, just after this.
         nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
             MainActor.assumeIsolated {
-                let text = String(decoding: source.getBufferAsData(kind: .normal), as: UTF8.self)
-                let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                onEnd(exitCode, lines.suffix(4).joined(separator: "\n"))
+                exited(exitCode) {
+                    let text = String(decoding: source.getBufferAsData(kind: .normal), as: UTF8.self)
+                    let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    return lines.suffix(4).joined(separator: "\n")
+                }
             }
+        }
+
+        /// No `processTerminated` follows a launch failure, so it is reported as an end with no
+        /// status — otherwise a key step that never started would hold the key lock for good.
+        nonisolated func processFailedToStart(source: TerminalView, error: LocalProcessError) {
+            MainActor.assumeIsolated { exited(nil) { "" } }
         }
 
         nonisolated func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}

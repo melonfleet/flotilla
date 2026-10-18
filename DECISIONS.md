@@ -2095,6 +2095,67 @@ its `PageTabs` pill, after a divider. This Mac's page has none of them: it does 
   (Q20): the prompts are the tools' own, in the PTY, and the keystrokes pass through Flotilla's
   SwiftTerm view on the way, which is what the card now says instead of "never sees". The page also says how to do it by hand and links OpenSSH's
   `ssh-keygen(1)` and `ssh(1)` manual pages — Apple has no current guide to SSH keys.
+- **Flotilla's own key, with Regenerate and Remove (amended 18 October; Kamal's request, design
+  approved).** Kamal asked for a way to reset the key, and resetting a key the user also uses
+  elsewhere is not Flotilla's to do. So:
+  - **Flotilla uses its own key, `~/.ssh/flotilla_ed25519`, for its hosts only.** Make a Key writes
+    that file (`ssh-keygen -t ed25519 -C flotilla -f …` — the fixed comment keeps this Mac's account
+    and computer name out of every host's `authorized_keys`), offered while neither half exists; the
+    user's own keys don't matter to it. The SSH tab's sessions add
+    `-i ~/.ssh/flotilla_ed25519 -o IdentitiesOnly=yes` **only while that key's private half exists**
+    (`SSHKeySetup.Identity`, checked at the click), and otherwise run exactly as before. Copy Key and
+    Try It use Flotilla's key — first, not alone: a session keeps the user's `~/.ssh/config`, and
+    `IdentitiesOnly` still lets ssh offer an `IdentityFile` named there (Kyle, verified with `ssh -G`). Detection reports the user's own keys (files and agent) and Flotilla's
+    apart, and the user's are never written, renamed, copied or removed.
+  - **Regenerate Key…**, behind an inline confirmation that lists every step: rename — never delete
+    — the pair to `flotilla_ed25519.old-<YYYY-MM-DD>` (`-2`, `-3`… if taken; `renamex_np` with
+    `RENAME_EXCL`, so nothing is ever overwritten); `ssh-keygen` in the tab's PTY (if it ends without
+    a whole pair, any half it left is removed by identity — the device and inode found at that path
+    the moment ssh-keygen exited, absent from a snapshot taken after the rename, moved into a
+    private folder the rollback makes for itself (`mkdtemp` in `~/.ssh`, 0700) and checked and
+    unlinked there through its descriptor, so another writer of `~/.ssh` cannot swap it in between; never by "recent and the user's" (Kyle, 18 October) — and the old
+    pair is renamed back; closing ssh-keygen mid-passphrase removes and restores nothing; when anything cannot be undone the outcome says "Your previous
+    key is at …", found by inode, and no undo error is dropped); `ssh-copy-id -i ~/.ssh/flotilla_ed25519.pub` to this host;
+    and, with a checkbox on by default, the old key's lines out of this host's `authorized_keys`.
+  - **One key step at a time, app-wide** (`SSHKeySetup.OperationGate`, Kyle, 18 October). Make a Key,
+    Regenerate (keygen through removal), Copy Key, Copy to another host and Remove all take one lock
+    naming the host; every other SSH card says "Key setup is running for <host>" and disables its
+    key buttons. It is released by its own token on finish, failure, refusal or the step's session
+    being closed — and a closed session releases it only once its child has **exited**
+    (`SSHKeySetup.ExitBarrier`: SIGTERM, SIGKILL five seconds later, and the release waits for
+    SwiftTerm's exit callback; Kyle, 18 October). It is in memory only, so quitting releases it.
+    That last step signs in with the new key and nothing else — `-F /dev/null -o IdentitiesOnly=yes
+    -i ~/.ssh/flotilla_ed25519 -o IdentityAgent=none -o PreferredAuthentications=publickey`, so no
+    config file's `IdentityFile`, no agent and no password; `known_hosts` still applies — which makes
+    signing in the proof the new key works. Its script refuses to change anything unless the new key
+    is already a record in the file, so it can never leave a host with neither key. The hosts
+    Flotilla knows had the old key — recorded under `sshKeyHosts` by host fingerprint and user, only
+    from an `ssh-copy-id` it saw succeed, against the **SHA-256 of the public key's body**, never the
+    body (non-secret metadata, but it links accounts to hosts) — are then each offered "Copy to <host>
+    too".
+  - **Remove Key from This Host…** takes Flotilla's key off this host's `authorized_keys` by the same
+    method, behind a confirmation, and leaves the local key alone.
+  - **The removal command is one fixed string** (`SSHKeySetup.removalScript`):
+    `/bin/sh -c '<script>' flotilla-remove-key '<old body>' ['<new body>']`. The script has no `'`,
+    so every login shell — zsh, bash, sh, dash, ksh, csh, tcsh, all tried — hands it to `/bin/sh`
+    untouched; nor `!`, which csh and tcsh expand even in single quotes. Each line is read as sshd
+    reads it, one key record — `[options] keytype base64 [comment]`, options with quoted spaces — and
+    goes only when the field after its key type **is** the body (awk string equality, never a
+    pattern); a body in a comment or an option never matches (Kyle found both directions). It
+    refuses a symlinked or non-regular `authorized_keys`; copies the backup into a `mktemp` file and
+    renames it over `authorized_keys.flotilla-bak`; writes the new contents to another `mktemp` file
+    in `~/.ssh`, `chmod 600`, and `mv -f`s it over the original — one atomic rename, so an
+    interruption leaves the old file whole. (Round 1's fixed `.flotilla-tmp` name was followed
+    through a planted symlink and emptied the file, and its `cat >` truncated before writing.) The bodies are the only values in it and must
+    pass `isKeyBody` — `AAAA`, then `[A-Za-z0-9+/]`, at most two trailing `=`, a multiple of four —
+    so a quote, `$`, backtick, `;`, space or newline cannot reach a shell. A test runs it against a
+    real file in every login shell on the machine, including the symlink attack and a SIGKILL
+    mid-write. Exit codes 3–9 and ssh's 255 each have a sentence (`RemovalOutcome`).
+  - The other rules are unchanged: fixed argv and no local shell; every path `isShellInert`; host
+    and user through `RemoteAccess`'s validators; no password or passphrase stored or logged; and
+    nothing runs without a visible button and a sentence saying what it does. Only Flotilla's own
+    `.pub` is ever read, and never a private key. Terminal.app's `ssh://` link (the Hosts menus)
+    can't name a key, so it still uses the user's own.
 
 ## Q45 — Hosts: built-in tags, a status dot, and groups by category (settled 2026-10-09)
 
