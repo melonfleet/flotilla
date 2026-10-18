@@ -210,6 +210,11 @@ require Sources/Flotilla/ContainerDetailView.swift 'model.lastDetailTab[host.row
 # The two new detail screens open on Overview, for the same reason the other two do.
 require Sources/Flotilla/VolumeDetailView.swift 'requestedTab ?? .overview'
 require Sources/Flotilla/NetworkDetailView.swift 'requestedTab ?? .overview'
+# Settings opens on General, as a sidebar of sections beside the pane (18 October; it was a top tab
+# strip). A `section` default of anything else is the scaffold that opens Settings on a pane you
+# did not ask for, and the sidebar line is the one that says the strip has not come back.
+require Sources/Flotilla/SettingsView.swift '@State private var section: Section = .general'
+require Sources/Flotilla/SettingsView.swift 'SettingsSidebar(groups: sidebarGroups, selection: $section)'
 
 # A tab request that opens pre-populated is a scaffold too: it would open its page on a tab. (Until
 # Q58 this was `detailTarget`, which opened the slide-in page itself.)

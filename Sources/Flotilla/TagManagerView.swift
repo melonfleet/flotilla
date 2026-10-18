@@ -15,8 +15,8 @@ import FlotillaCore
 /// one place that adds *only* what a row cannot do: renaming a tag everywhere at once, seeing
 /// what it is on, and getting rid of it.
 ///
-/// Written as `Form` sections because `SettingsView.pane(for:)` wraps every pane in a grouped
-/// `Form`; this is content for that, not a screen of its own.
+/// Written as `SettingsGroup`s because `SettingsView.pane(for:)` wraps every pane in a
+/// `SettingsPane`; this is content for that, not a screen of its own.
 struct TagManagerPane: View {
     let model: AppModel
     let store: TagStore
@@ -26,53 +26,9 @@ struct TagManagerPane: View {
     @State private var cleanUpResult: String?
 
     var body: some View {
-        SwiftUI.Section {
-            if store.allTags.isEmpty {
-                // Reachable: the starter set is ordinary tags, so all seven can be deleted.
-                // It says how to get back rather than just noting the absence.
-                Text("You have no tags. Create one here, or from any container, machine, "
-                     + "volume or network’s Tags menu.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ForEach(store.allTags) { tag in
-                    row(for: tag)
-                }
-            }
-        } header: {
-            Text("Your tags")
-        } footer: {
-            Text("Tags are yours alone: they are stored on this Mac in Flotilla’s own "
-                 + "preferences and are never sent to the container runtime, so tagging "
-                 + "something changes nothing about how it runs.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        SwiftUI.Section {
-            HStack {
-                Button("New Tag…") { showingNewTag = true }
-                Spacer()
-                Button("Clean Up") { cleanUp() }
-                    .disabled(orphanCount == 0)
-                    .help(orphanCount == 0
-                          ? "Every tag is on something that still exists"
-                          : "Forget tags on \(orphanCount) thing"
-                            + (orphanCount == 1 ? "" : "s") + " that no longer exist")
-            }
-            if let cleanUpResult {
-                Text(cleanUpResult).font(.caption).foregroundStyle(.secondary)
-            }
-        } footer: {
-            // Says out loud why the app does not do this by itself.
-            Text("Deleting a container does not delete its tags: the runtime list comes from a "
-                 + "poll that can fail, and a sweep on every refresh would throw your tags away "
-                 + "the first time it did. Clean Up is how you ask for it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 28) {
+            tagsGroup
+            maintenanceGroup
         }
         .sheet(isPresented: $showingNewTag) {
             NewTagSheet(store: store) { showingNewTag = false }
@@ -98,6 +54,48 @@ struct TagManagerPane: View {
                  ? "It isn’t on anything. Nothing else changes."
                  : "It will be removed from \(count) thing\(count == 1 ? "" : "s"). "
                    + "Nothing is deleted except the tag itself.")
+        }
+    }
+
+    private var tagsGroup: some View {
+        SettingsGroup("Your tags") {
+            if store.allTags.isEmpty {
+                // Reachable: the starter set is ordinary tags, so all seven can be deleted.
+                // It says how to get back rather than just noting the absence.
+                Text("You have no tags. Create one here, or from any container, machine, "
+                     + "volume or network’s Tags menu.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(store.allTags) { tag in
+                    row(for: tag)
+                }
+            }
+            SettingsNote("Tags are yours alone: they are stored on this Mac in Flotilla’s own "
+                         + "preferences and are never sent to the container runtime, so tagging "
+                         + "something changes nothing about how it runs.")
+        }
+    }
+
+    private var maintenanceGroup: some View {
+        SettingsGroup("Tidy up") {
+            HStack {
+                Button("New Tag…") { showingNewTag = true }
+                Button("Clean Up") { cleanUp() }
+                    .disabled(orphanCount == 0)
+                    .help(orphanCount == 0
+                          ? "Every tag is on something that still exists"
+                          : "Forget tags on \(orphanCount) thing"
+                            + (orphanCount == 1 ? "" : "s") + " that no longer exist")
+            }
+            if let cleanUpResult {
+                Text(cleanUpResult).font(.caption).foregroundStyle(.secondary)
+            }
+            // Says out loud why the app does not do this by itself.
+            SettingsNote("Deleting a container does not delete its tags: the runtime list comes from a "
+                         + "poll that can fail, and a sweep on every refresh would throw your tags away "
+                         + "the first time it did. Clean Up is how you ask for it.")
         }
     }
 

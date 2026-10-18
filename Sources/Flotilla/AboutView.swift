@@ -47,7 +47,7 @@ struct AboutView: View {
     private var identity: some View {
         VStack(alignment: .leading, spacing: 6) {
             Wordmark(size: 20)
-            Text(versionLine)
+            Text(Self.versionLine)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -59,7 +59,7 @@ struct AboutView: View {
     /// derivation. Running via `swift run` there is no bundle at all (the same tell `Notifier`
     /// uses for `UNUserNotificationCenter`), so this reads as "Development build" rather than
     /// as blank version fields.
-    private var versionLine: String {
+    static var versionLine: String {
         guard Bundle.main.bundleIdentifier != nil,
               let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
               let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
@@ -190,11 +190,16 @@ struct AboutView: View {
     /// Apache-2.0 obliges a distributed work to carry its notices, and an About panel is where a
     /// user looks for them. SwiftTerm is named because it is the one third-party component in the
     /// app and its MIT licence asks for attribution.
+    /// Also what Settings ▸ About lists, so the two cannot disagree.
+    static let licenceLines = [
+        "Flotilla is a personal project, licensed under Apache-2.0.",
+        "Terminal emulation by SwiftTerm (MIT).",
+        "Drives Apple\u{2019}s container CLI, which is not bundled.",
+    ]
+
     private var licence: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Flotilla is a personal project, licensed under Apache-2.0.")
-            Text("Terminal emulation by SwiftTerm (MIT).")
-            Text("Drives Apple\u{2019}s container CLI, which is not bundled.")
+            ForEach(Self.licenceLines, id: \.self) { Text($0) }
         }
         .font(.caption)
         .foregroundStyle(.secondary)

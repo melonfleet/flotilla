@@ -1,24 +1,31 @@
 import SwiftUI
 import FlotillaCore
 
-/// One labelled row bound to a single `SettingsKey`. Handles the two-tier model uniformly:
-/// a locked key shows a padlock, a "Managed by your organization" note, and a disabled
-/// control; everything else — including a `defaults`-seeded value the user may still
-/// change — stays editable. `key.summary` is the registry's own description, so this
-/// never invents wording that could drift from the declared key.
+/// One labelled row bound to a single `SettingsKey`, drawn as "Label: [control]" with the
+/// registry's own explanation under it. Handles the two-tier model uniformly: a locked key shows a
+/// padlock, a "Managed by your organization" note, and a disabled control; everything else —
+/// including a `defaults`-seeded value the user may still change — stays editable. `key.summary`
+/// is the registry's own description, so this never invents wording that could drift from the
+/// declared key.
+///
+/// A checkbox is `SettingToggle`; this is for everything else (pop-ups, steppers, fields).
 struct SettingRow<V: SettingRepresentable, Control: View>: View {
     let store: SettingsStore
     let key: SettingsKey<V>
     let title: String
+    /// Whether the label takes a trailing colon. Off for a label that reads on into its control
+    /// ("Refresh containers every 5 s").
+    let colon: Bool
     let control: (Binding<V>) -> Control
 
     @State private var value: V
 
-    init(store: SettingsStore, key: SettingsKey<V>, title: String,
+    init(store: SettingsStore, key: SettingsKey<V>, title: String, colon: Bool = true,
          @ViewBuilder control: @escaping (Binding<V>) -> Control) {
         self.store = store
         self.key = key
         self.title = title
+        self.colon = colon
         self.control = control
         _value = State(initialValue: store[key])
     }
@@ -31,42 +38,16 @@ struct SettingRow<V: SettingRepresentable, Control: View>: View {
     private var unbuiltReason: String? { key.availability.unbuiltReason }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(title)
-                        .foregroundStyle(unbuiltReason == nil ? .primary : .secondary)
-                    if locked {
-                        Image(systemName: "lock.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .help("Managed by your organization")
-                    }
-                    if unbuiltReason != nil {
-                        Text("Not yet available")
-                            .font(.caption2)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Capsule().fill(.quaternary))
-                    }
-                }
-                // Markdown, so a summary's `container ls` renders as code rather than as
-                // backticks: a `String` reaches `Text` verbatim.
-                Text(LocalizedStringKey(locked ? "Managed by your organization." : key.summary))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let unbuiltReason {
-                    Text(unbuiltReason)
-                        .font(.caption2)
-                        .foregroundStyle(Theme.warning)
-                }
-                // Only meaningful for a setting that takes effect at all.
-                if key.requiresRestart && !locked && unbuiltReason == nil {
-                    Text("Requires a restart to take effect.")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.warning)
-                }
-            }
-            Spacer()
+        SettingInline(label: colon ? title + ":" : title,
+                      help: locked ? "Managed by your organization." : key.summary,
+                      lockNote: locked ? "Managed by your organization" : nil,
+                      unbuiltReason: unbuiltReason,
+                      // Only meaningful for a setting that takes effect at all.
+                      requiresRestart: key.requiresRestart && !locked && unbuiltReason == nil,
+                      // Disabled when it is managed **or** when nothing reads it (`SettingInline`
+                      // adds the second). A live control over an unbuilt feature is the exact
+                      // shape the audit objected to.
+                      disabled: locked) {
             control(Binding(
                 get: { value },
                 set: { newValue in
@@ -74,20 +55,50 @@ struct SettingRow<V: SettingRepresentable, Control: View>: View {
                     try? store.set(newValue, for: key)
                 }
             ))
-            // Disabled when it is managed **or** when nothing reads it. A live control over an
-            // unbuilt feature is the exact shape the audit objected to.
-            .disabled(locked || unbuiltReason != nil)
             // The controls are `Toggle("")`, `Picker("")`: the title beside them is their name.
             .accessibilityLabel(title)
         }
-        .padding(.vertical, 4)
+    }
+}
+
+/// A checkbox setting: the box, the title, the registry's explanation in grey under it. Locking and
+/// availability behave exactly as `SettingRow`'s do.
+struct SettingToggle: View {
+    let store: SettingsStore
+    let key: SettingsKey<Bool>
+    let title: String
+
+    @State private var value: Bool
+
+    init(store: SettingsStore, key: SettingsKey<Bool>, title: String) {
+        self.store = store
+        self.key = key
+        self.title = title
+        _value = State(initialValue: store[key])
+    }
+
+    private var locked: Bool { store.isLocked(key) }
+    private var unbuiltReason: String? { key.availability.unbuiltReason }
+
+    var body: some View {
+        SettingCheck(title: title,
+                     help: locked ? "Managed by your organization." : key.summary,
+                     lockNote: locked ? "Managed by your organization" : nil,
+                     unbuiltReason: unbuiltReason,
+                     requiresRestart: key.requiresRestart && !locked && unbuiltReason == nil,
+                     disabled: locked,
+                     isOn: Binding(get: { value },
+                                   set: { newValue in
+                                       value = newValue
+                                       try? store.set(newValue, for: key)
+                                   }))
     }
 }
 
 /// Launch at login, showing what macOS actually did rather than only what was asked.
 ///
-/// Its own view rather than a `SettingRow` for the same reason `AppearanceRow` is: the caption has
-/// to be live. `SettingRow` prints `key.summary`, a fixed sentence from the registry — fine for a
+/// Its own view rather than a `SettingToggle` for the same reason `AppearanceRow` is: the caption has
+/// to be live. `SettingToggle` prints `key.summary`, a fixed sentence from the registry — fine for a
 /// preference the app fully controls, wrong for one the system can park in
 /// `.requiresApproval` or refuse outright. A toggle that reads "on" while macOS has the
 /// registration switched off in System Settings is the same lie this setting used to tell by
@@ -114,39 +125,24 @@ private struct LaunchAtLoginRow: View {
         return model.loginItemStatus.summary
     }
 
-    private var captionStyle: HierarchicalShapeStyle { .secondary }
-
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text("Launch at login")
-                    if locked {
-                        Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary)
-                            .help("Managed by your organization")
-                    }
-                }
-                Text(caption)
+        SettingCheck(title: "Launch at login",
+                     help: caption,
+                     helpStyle: model.loginItemFailure == nil ? AnyShapeStyle(.secondary)
+                                                              : AnyShapeStyle(Theme.warning),
+                     lockNote: locked ? "Managed by your organization" : nil,
+                     disabled: locked || model.loginItemStatus == .unavailable,
+                     isOn: Binding(get: { enabled },
+                                   set: { newValue in
+                                       enabled = newValue
+                                       try? store.set(newValue, for: SettingsKeys.launchAtLogin)
+                                   })) {
+            if model.loginItemStatus == .awaitingApproval {
+                Text("Open System Settings ▸ General ▸ Login Items to approve it.")
                     .font(.caption)
-                    .foregroundStyle(model.loginItemFailure == nil ? AnyShapeStyle(captionStyle)
-                                                                  : AnyShapeStyle(Theme.warning))
-                if model.loginItemStatus == .awaitingApproval {
-                    Text("Open System Settings ▸ General ▸ Login Items to approve it.")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.warning)
-                }
+                    .foregroundStyle(Theme.warning)
             }
-            Spacer()
-            Toggle("", isOn: Binding(get: { enabled },
-                                     set: { newValue in
-                                         enabled = newValue
-                                         try? store.set(newValue, for: SettingsKeys.launchAtLogin)
-                                     }))
-                .labelsHidden()
-                .accessibilityLabel("Launch at login")
-                .disabled(locked || model.loginItemStatus == .unavailable)
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -166,24 +162,12 @@ private struct AppearanceRow: View {
     private var locked: Bool { store.isLocked(SettingsKeys.appearance) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text("Appearance")
-                    if locked {
-                        Image(systemName: "lock.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .help("Managed by your organization")
-                    }
-                }
-                Text(locked
-                     ? "Managed by your organization."
-                     : "Chosen during first run. Auto follows the system appearance.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+        SettingInline(label: "Appearance:",
+                      help: locked
+                          ? "Managed by your organization."
+                          : "Chosen during first run. Auto follows the system appearance.",
+                      lockNote: locked ? "Managed by your organization" : nil,
+                      disabled: locked) {
             Picker("Appearance", selection: Binding(
                 get: { mode },
                 set: { newMode in
@@ -198,14 +182,14 @@ private struct AppearanceRow: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .disabled(locked)
         }
-        .padding(.vertical, 4)
     }
 }
 
-/// The settings section root view. Renders the whole `SettingsRegistry` grouped by topic,
-/// honouring the two-tier managed model end to end via `SettingRow`/`AppearanceRow`.
+/// The settings section root view: a sidebar of sections and the selected section's pane, drawn in
+/// the style of 1Password's Settings (the owner's reference, 18 October). It renders the whole
+/// `SettingsRegistry`, honouring the two-tier managed model end to end via
+/// `SettingRow`/`SettingToggle`/`AppearanceRow`.
 struct SettingsView: View {
     let model: AppModel
 
@@ -216,51 +200,86 @@ struct SettingsView: View {
     /// What the last settings import did, for its report — `nil` when none is showing.
     @State private var importReport: String?
 
-    /// Which pane is showing.
-    @State private var tab: Tab = .general
+    /// Which section is showing.
+    @State private var section: Section = .general
 
-    private enum Tab: String, CaseIterable, Identifiable, Hashable {
-        // Tags sits between Resources and Updates: it is about the things the app manages,
-        // like Resources, rather than about the app itself.
-        // No `registries`: it is a sidebar section under Images since 5 October.
-        case general, resources, tags, hostMode, updates, advanced
+    /// The sections, in sidebar order. Where each setting went is in `pane(for:)`.
+    ///
+    /// Tags sits between Resources and Notifications: it is about the things the app manages, like
+    /// Resources, rather than about the app itself. No `registries`: it is a sidebar section under
+    /// Images since 5 October. `Advanced` and `About` are the group below the divider.
+    enum Section: String, CaseIterable, Identifiable, Hashable {
+        case general, appearance, updates, hosts, resources, tags, notifications, greta
+        case advanced, about
         var id: Self { self }
+
+        static let main: [Section] = [.general, .appearance, .updates, .hosts, .resources, .tags,
+                                      .notifications, .greta]
+        static let last: [Section] = [.advanced, .about]
 
         var title: String {
             switch self {
             case .general: "General"
+            case .appearance: "Appearance"
+            case .updates: "Updates"
+            case .hosts: "Hosts and Fleet"
             case .resources: "Resources"
             case .tags: "Tags"
-            case .hostMode: "Host Mode"
-            case .updates: "Updates"
+            case .notifications: "Notifications"
+            case .greta: "Greta"
             case .advanced: "Advanced"
+            case .about: "About"
             }
         }
 
         var systemImage: String {
             switch self {
             case .general: "gearshape"
+            case .appearance: "paintpalette"
+            case .updates: "arrow.down.circle"
+            case .hosts: "antenna.radiowaves.left.and.right"
             case .resources: "cpu"
             case .tags: "tag"
-            case .hostMode: "antenna.radiowaves.left.and.right"
-            case .updates: "arrow.down.circle"
+            case .notifications: "bell.badge"
+            case .greta: "sparkles"
             case .advanced: "slider.horizontal.3"
+            case .about: "info.circle"
+            }
+        }
+
+        var tile: SettingsTileStyle {
+            switch self {
+            case .general: .green
+            case .appearance: .pink
+            case .updates: .teal
+            case .hosts: .deepGreen
+            case .resources: .yellow
+            case .tags: .pale
+            case .notifications: .orange
+            case .greta: .pink
+            case .advanced, .about: .grey
             }
         }
     }
 
-    /// Separate panes rather than one scroll, per `research/review/mockups/settings.html`.
-    ///
-    /// The content was already all here; it was stacked into a single `Form` eleven sections
-    /// long, so finding anything meant scrolling past everything. Panes are how macOS's own
-    /// Settings works and how the mockup draws it, and the grouping is the mockup's — the
-    /// value is not the tab bar, it is that "where would I look for this" now has an answer.
-    var body: some View {
-        VStack(spacing: 0) {
-            tabBar
-            Divider()
-            pane(for: tab)
+    private var sidebarGroups: [[SettingsSidebarItem<Section>]] {
+        [Section.main, Section.last].map { group in
+            group.map { SettingsSidebarItem(id: $0, title: $0.title, symbol: $0.systemImage, tile: $0.tile) }
         }
+    }
+
+    /// The sidebar at a fixed width and the pane filling the rest. The pane scrolls; the sidebar is
+    /// short enough not to need to, and a `List` scrolls itself if the window is very short.
+    var body: some View {
+        HStack(spacing: 0) {
+            SettingsSidebar(groups: sidebarGroups, selection: $section)
+                .frame(width: 232)
+            Divider()
+            pane(for: section)
+                // A new section starts at its top, not wherever the last one was scrolled to.
+                .id(section)
+        }
+        .frame(minWidth: 720, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
         .navigationTitle("Settings")
         .sheet(isPresented: Binding(
             get: { model.showingSupportBundle },
@@ -302,173 +321,112 @@ struct SettingsView: View {
         }
     }
 
-    /// The mockup's tab strip, to its own numbers.
-    ///
-    /// Hand-built rather than a `TabView`, and that is not preference. macOS renders a
-    /// `TabView`'s top bar as titles ONLY — it drops the icon whether you pass `systemImage:`
-    /// or supply a `Label` yourself, both of which were tried. So the way to get the mockup's
-    /// strip is to draw it.
-    ///
-    /// Transcribed from `.settings-tabs` in `assets/mac.css` rather than eyeballed, because
-    /// eyeballing the wordmark is how it came out wrong: the icon sits **above** the label
-    /// (`flex-direction: column`), each chip is a fixed 74pt wide so the strip does not
-    /// re-space itself as titles change length, and the whole strip is centred
-    /// (`margin: 0 auto`) rather than left-aligned.
-    ///
-    /// Keyboard access is kept: these are real `Button`s, so Tab and VoiceOver reach every
-    /// pane. The tab bar is the only thing custom here — each pane is still a stock grouped
-    /// `Form`.
-    private var tabBar: some View {
-        HStack(spacing: 2) {
-            Spacer(minLength: 0)
-            ForEach(Tab.allCases) { candidate in
-                let selected = candidate == tab
-                Button {
-                    tab = candidate
-                } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: candidate.systemImage)
-                            .font(.system(size: 16))
-                            .frame(height: 19)
-                        Text(candidate.title)
-                            .font(.system(size: 10.5, weight: selected ? .semibold : .regular))
-                    }
-                    .frame(width: 74)
-                    .padding(.top, 4)
-                    .padding(.bottom, 3)
-                    .foregroundStyle(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
-                    .background(selected ? Theme.accentTint : .clear,
-                                in: RoundedRectangle(cornerRadius: 7))
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? [.isSelected] : [])
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Settings sections")
-    }
-
     @ViewBuilder
-    private func pane(for tab: Tab) -> some View {
-        Form {
-            switch tab {
+    private func pane(for section: Section) -> some View {
+        SettingsPane(title: section.title) {
+            switch section {
             case .general: generalPane
+            case .appearance: appearancePane
+            case .updates: updatesPane
+            case .hosts: HostModePane(model: model)
             case .resources: resourcesPane
             case .tags: TagManagerPane(model: model, store: model.tags)
-            case .hostMode: HostModePane(model: model)
-            case .updates: updatesPane
+            case .notifications: notificationsPane
+            case .greta: gretaPane
             case .advanced: advancedPane
+            case .about: SettingsAboutPane(model: model)
             }
         }
-        .formStyle(.grouped)
-        // Lets the app's own content wash through. A grouped `Form` paints an opaque background
-        // of its own, so Settings was the one screen in the app that did not sit on the honeydew
-        // every other section sits on — white page, grey cards, against honeydew page and white
-        // cards everywhere else.
-        //
-        // The cards themselves stay SwiftUI's: `.listRowBackground(Theme.raisedSurface)` was
-        // tried and **measured to do nothing** on a macOS grouped `Form` — the sampled card
-        // colour was identical with and without it — so it is not left in as a modifier that
-        // looks like it is doing something. The rows read very slightly recessed against the
-        // page rather than raised, which is SwiftUI's relationship and not one this can change
-        // from here.
-        .scrollContentBackground(.hidden)
     }
 
     // MARK: General
 
     @ViewBuilder
     private var generalPane: some View {
-            SwiftUI.Section("Startup & Behaviour") {
-                LaunchAtLoginRow(store: store, model: model)
-                SettingRow(store: store, key: SettingsKeys.showDockIcon, title: "Show Dock icon") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                SettingRow(store: store, key: SettingsKeys.confirmDestructiveActions, title: "Confirm destructive actions") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                SettingRow(store: store, key: SettingsKeys.keepAwakeWhileContainersRun,
-                           title: "Keep this Mac awake while containers run") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-            }
+        SettingsGroup {
+            LaunchAtLoginRow(store: store, model: model)
+            SettingToggle(store: store, key: SettingsKeys.showDockIcon, title: "Show Dock icon")
+            SettingToggle(store: store, key: SettingsKeys.confirmDestructiveActions,
+                          title: "Confirm destructive actions")
+            SettingToggle(store: store, key: SettingsKeys.keepAwakeWhileContainersRun,
+                          title: "Keep this Mac awake while containers run")
+        }
 
-            // Everything about how the app looks, together: the mode, then the pair of themes the
-            // mode switches between. `design/THEMES.md`.
-            SwiftUI.Section("Appearance") {
-                AppearanceRow(store: store)
-                ThemePickerRow(appearance: .light, model: model)
-                ThemePickerRow(appearance: .dark, model: model)
-                // Greta's face sits with the themes, where the owner looks for how things look.
-                SettingRow(store: store, key: SettingsKeys.gretaAvatar, title: "Greta's look") { binding in
-                    HStack(spacing: 6) {
-                        ForEach(GretaAvatar.allCases, id: \.self) { style in
-                            Button { binding.wrappedValue = style } label: {
-                                GretaAvatarView(style: style, size: 30)
-                                    .padding(3)
-                                    .background(RoundedRectangle(cornerRadius: 8)
-                                        .strokeBorder(binding.wrappedValue == style ? Color.accentColor : .clear, lineWidth: 2))
-                            }
-                            .buttonStyle(.plain)
-                            .help(style.title)
-                            .accessibilityLabel(style.title)
-                            .accessibilityAddTraits(binding.wrappedValue == style ? .isSelected : [])
+        SettingsGroup("Refreshing") {
+            SettingRow(store: store, key: SettingsKeys.pollIntervalSeconds,
+                       title: "Refresh containers every", colon: false) { binding in
+                Stepper(value: binding, in: 0...300) { Text("\(binding.wrappedValue) s") }
+            }
+            SettingRow(store: store, key: SettingsKeys.statsPollIntervalSeconds,
+                       title: "Refresh stats every", colon: false) { binding in
+                Stepper(value: binding, in: 0...300) { Text("\(binding.wrappedValue) s") }
+            }
+        }
+    }
+
+    // MARK: Appearance
+
+    /// Everything about how the app looks, together: the mode, then the pair of themes the
+    /// mode switches between. `design/THEMES.md`.
+    @ViewBuilder
+    private var appearancePane: some View {
+        SettingsGroup {
+            AppearanceRow(store: store)
+        }
+        SettingsGroup("Themes") {
+            ThemePickerRow(appearance: .light, model: model)
+            ThemePickerRow(appearance: .dark, model: model)
+        }
+    }
+
+    // MARK: Greta
+
+    /// Greta's face used to sit with the themes, "where the owner looks for how things look", when
+    /// she had no page of her own. She has one now, so it is here.
+    @ViewBuilder
+    private var gretaPane: some View {
+        SettingsGroup {
+            SettingToggle(store: store, key: SettingsKeys.gretaEnabled, title: "Turn on Greta")
+            SettingsNote(verbatim: model.greta.unavailableReason.map { "Not available here: \($0)" }
+                 ?? "Uses Apple's on-device model. Nothing leaves this Mac. She reads and drafts; she never runs or changes anything.")
+        }
+        SettingsGroup("Look") {
+            SettingRow(store: store, key: SettingsKeys.gretaAvatar, title: "Greta's look") { binding in
+                HStack(spacing: 6) {
+                    ForEach(GretaAvatar.allCases, id: \.self) { style in
+                        Button { binding.wrappedValue = style } label: {
+                            GretaAvatarView(style: style, size: 30)
+                                .padding(3)
+                                .background(RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(binding.wrappedValue == style ? Color.accentColor : .clear, lineWidth: 2))
                         }
+                        .buttonStyle(.plain)
+                        .help(style.title)
+                        .accessibilityLabel(style.title)
+                        .accessibilityAddTraits(binding.wrappedValue == style ? .isSelected : [])
                     }
                 }
             }
+        }
+    }
 
-            SwiftUI.Section("Greta") {
-                SettingRow(store: store, key: SettingsKeys.gretaEnabled, title: "Turn on Greta") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                Text(model.greta.unavailableReason.map { "Not available here: \($0)" }
-                     ?? "Uses Apple's on-device model. Nothing leaves this Mac. She reads and drafts; she never runs or changes anything.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+    // MARK: Notifications
 
-            SwiftUI.Section("Refreshing") {
-                SettingRow(store: store, key: SettingsKeys.pollIntervalSeconds, title: "Refresh containers every") { binding in
-                    Stepper(value: binding, in: 0...300) { Text("\(binding.wrappedValue) s") }
-                }
-                SettingRow(store: store, key: SettingsKeys.statsPollIntervalSeconds, title: "Refresh stats every") { binding in
-                    Stepper(value: binding, in: 0...300) { Text("\(binding.wrappedValue) s") }
-                }
-            }
-
-            SwiftUI.Section("Notifications") {
-                ForEach(NotificationCategory.allCases) { category in
-                    if category.isMandatory {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    Text(category.title)
-                                    Image(systemName: "lock.fill")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .help("Always on")
-                                }
-                                Text(LocalizedStringKey("Always on — " + category.summary))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Toggle("", isOn: .constant(true)).labelsHidden().disabled(true)
-                                .accessibilityLabel(category.title)
-                        }
-                        .padding(.vertical, 4)
-                    } else {
-                        SettingRow(store: store, key: SettingsKeys.notification(category), title: category.title) { binding in
-                            Toggle("", isOn: binding).labelsHidden()
-                        }
-                    }
+    @ViewBuilder
+    private var notificationsPane: some View {
+        SettingsGroup {
+            ForEach(NotificationCategory.allCases) { category in
+                if category.isMandatory {
+                    SettingCheck(title: category.title,
+                                 help: "Always on — " + category.summary,
+                                 lockNote: "Always on",
+                                 disabled: true,
+                                 isOn: .constant(true))
+                } else {
+                    SettingToggle(store: store, key: SettingsKeys.notification(category), title: category.title)
                 }
             }
-
+        }
     }
 
     // MARK: Advanced
@@ -478,42 +436,36 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var advancedPane: some View {
-            SwiftUI.Section("The container CLI") {
-                SettingRow(store: store, key: SettingsKeys.containerBinaryPath, title: "Binary path") { binding in
-                    // `prompt:`, not the title argument. `TextField("Detect automatically", …)`
-                    // reads like a placeholder and is not one: the first argument is the field's
-                    // **title**, which a grouped `Form` draws as a visible label. So the row said
-                    // "Binary path … Detect automatically [empty box]" — a stray label that looked
-                    // like a second setting, beside a field with no hint in it at all. The
-                    // neighbouring registry field sidesteps this with an empty title and loses the
-                    // hint instead; `prompt:` is the one that puts the words where they belong.
-                    TextField("", text: binding, prompt: Text("Detect automatically"))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder).frame(minWidth: 220)
-                }
-                // Says which path is actually in force. An override that silently fell back to
-                // detection would look accepted, which is the failure mode this whole wave is about.
-                HStack {
-                    Text(model.containerExecutableExplanation)
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                }
-                SettingRow(store: store, key: SettingsKeys.autoStartContainerService, title: "Start container by itself") { binding in
-                    Picker("", selection: binding) {
-                        ForEach(Array(ServiceAutostartPolicy.allCases), id: \.rawValue) { policy in
-                            Text(policy.title).tag(policy)
-                        }
-                    }
-                    .pickerStyle(.menu)
+        SettingsGroup("The container CLI") {
+            SettingRow(store: store, key: SettingsKeys.containerBinaryPath, title: "Binary path") { binding in
+                // `prompt:`, not the title argument. `TextField("Detect automatically", …)`
+                // reads like a placeholder and is not one: the first argument is the field's
+                // **title**, which a form draws as a visible label. `prompt:` is the one that puts
+                // the words where they belong.
+                TextField("", text: binding, prompt: Text("Detect automatically"))
                     .labelsHidden()
-                }
+                    .textFieldStyle(.roundedBorder).frame(minWidth: 220)
             }
+            // Says which path is actually in force. An override that silently fell back to
+            // detection would look accepted, which is the failure mode this whole wave is about.
+            SettingsNote(verbatim: model.containerExecutableExplanation)
+            SettingRow(store: store, key: SettingsKeys.autoStartContainerService, title: "Start container by itself") { binding in
+                Picker("", selection: binding) {
+                    ForEach(Array(ServiceAutostartPolicy.allCases), id: \.rawValue) { policy in
+                        Text(policy.title).tag(policy)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
 
-            HelperSettingsSection()
-            logsSection
-            diagnosticsSection
-            settingsFileSection
-            resetSection
+        HelperSettingsSection()
+        logsSection
+        diagnosticsSection
+        settingsFileSection
+        resetSection
     }
 
     // MARK: Settings file (DECISIONS.md Q34)
@@ -523,20 +475,16 @@ struct SettingsView: View {
     /// defaults is written, and never a sensitive key; an import applies what this version knows
     /// and says what it did not.
     private var settingsFileSection: some View {
-        SwiftUI.Section("Settings file") {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Copy these settings to another Mac")
-                    Text("Writes only what you have changed from the defaults. Nothing secret and no "
-                         + "host trust is ever included.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+        SettingsGroup("Settings file") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Copy these settings to another Mac")
+                SettingsNote("Writes only what you have changed from the defaults. Nothing secret and no "
+                             + "host trust is ever included.")
+                HStack {
+                    Button("Export Settings\u{2026}", action: exportSettings)
+                    Button("Import Settings\u{2026}", action: importSettings)
                 }
-                Spacer()
-                Button("Export Settings\u{2026}", action: exportSettings)
-                Button("Import Settings\u{2026}", action: importSettings)
             }
-            .padding(.vertical, 2)
         }
         .alert("Settings imported", isPresented: Binding(get: { importReport != nil },
                                                           set: { if !$0 { importReport = nil } })) {
@@ -603,107 +551,83 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var resourcesPane: some View {
-            SwiftUI.Section("Defaults for new containers") {
-                SettingRow(store: store, key: SettingsKeys.defaultContainerCPUs, title: "CPUs") { binding in
-                    Stepper(value: binding, in: 1...32) { Text("\(binding.wrappedValue)") }
-                }
-                SettingRow(store: store, key: SettingsKeys.defaultContainerMemoryMB, title: "Memory") { binding in
-                    Stepper(value: binding, in: 128...131_072, step: 128) { Text("\(binding.wrappedValue) MB") }
-                }
-                // "Default registry" used to live here as a free-text field, then on a Settings ▸
-                // Registries pane. It is set from the Registries section's table now (Set as
-                // Default), beside the list of registries it can name.
+        SettingsGroup("Defaults for new containers") {
+            SettingRow(store: store, key: SettingsKeys.defaultContainerCPUs, title: "CPUs") { binding in
+                Stepper(value: binding, in: 1...32) { Text("\(binding.wrappedValue)") }
             }
-
+            SettingRow(store: store, key: SettingsKeys.defaultContainerMemoryMB, title: "Memory") { binding in
+                Stepper(value: binding, in: 128...131_072, step: 128) { Text("\(binding.wrappedValue) MB") }
+            }
+            // "Default registry" used to live here as a free-text field, then on a Settings ▸
+            // Registries pane. It is set from the Registries section's table now (Set as
+            // Default), beside the list of registries it can name.
+        }
     }
 
     @ViewBuilder
     private var logsSection: some View {
-            SwiftUI.Section("Logs") {
-                SettingRow(store: store, key: SettingsKeys.logTailLines, title: "Lines requested when opening logs") { binding in
-                    Stepper(value: binding, in: 0...5_000, step: 50) { Text("\(binding.wrappedValue)") }
-                }
-                SettingRow(store: store, key: SettingsKeys.logBufferLineCap, title: "Log buffer cap per container") { binding in
-                    Stepper(value: binding, in: 100...50_000, step: 100) { Text("\(binding.wrappedValue)") }
-                }
-                SettingRow(store: store, key: SettingsKeys.logShowTimestamps, title: "Show timestamps") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
+        SettingsGroup("Logs") {
+            SettingRow(store: store, key: SettingsKeys.logTailLines, title: "Lines requested when opening logs") { binding in
+                Stepper(value: binding, in: 0...5_000, step: 50) { Text("\(binding.wrappedValue)") }
             }
-
+            SettingRow(store: store, key: SettingsKeys.logBufferLineCap, title: "Log buffer cap per container") { binding in
+                Stepper(value: binding, in: 100...50_000, step: 100) { Text("\(binding.wrappedValue)") }
+            }
+            SettingToggle(store: store, key: SettingsKeys.logShowTimestamps, title: "Show timestamps")
+        }
     }
 
     // MARK: Updates
 
     @ViewBuilder
     private var updatesPane: some View {
-            SwiftUI.Section("Updates") {
-                SettingRow(store: store, key: SettingsKeys.automaticUpdateChecks, title: "Automatically check for updates") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                SettingRow(store: store, key: SettingsKeys.automaticallyDownloadUpdates, title: "Automatically download updates") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                SettingRow(store: store, key: SettingsKeys.suggestionLibraryUpdates, title: "Check for new suggestions daily") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                HStack {
-                    Text("Library \(model.suggestionLibrary.version), \(model.suggestionLibrary.entries.count) suggestions. \(model.libraryUpdater.status)")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Check Now") { Task { await model.checkSuggestionLibrary() } }
-                        .disabled(model.libraryUpdater.checking)
-                }
-                SettingRow(store: store, key: SettingsKeys.updateCheckIntervalSeconds, title: "Check every") { binding in
-                    Stepper(value: binding, in: 3_600...604_800, step: 3_600) { Text("\(binding.wrappedValue / 3_600) h") }
-                }
-                SettingRow(store: store, key: SettingsKeys.updateChannel, title: "Update channel") { binding in
-                    Picker("", selection: binding) {
-                        ForEach(Array(UpdateChannel.allCases), id: \.rawValue) { channel in
-                            Text(Self.title(for: channel)).tag(channel)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                }
+        SettingsGroup {
+            SettingToggle(store: store, key: SettingsKeys.automaticUpdateChecks, title: "Automatically check for updates")
+            SettingToggle(store: store, key: SettingsKeys.automaticallyDownloadUpdates, title: "Automatically download updates")
+            SettingRow(store: store, key: SettingsKeys.updateCheckIntervalSeconds, title: "Check every", colon: false) { binding in
+                Stepper(value: binding, in: 3_600...604_800, step: 3_600) { Text("\(binding.wrappedValue / 3_600) h") }
             }
+            SettingRow(store: store, key: SettingsKeys.updateChannel, title: "Update channel") { binding in
+                Picker("", selection: binding) {
+                    ForEach(Array(UpdateChannel.allCases), id: \.rawValue) { channel in
+                        Text(Self.title(for: channel)).tag(channel)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
 
+        SettingsGroup("Suggestions library") {
+            SettingToggle(store: store, key: SettingsKeys.suggestionLibraryUpdates, title: "Check for new suggestions daily")
+            HStack(alignment: .firstTextBaseline) {
+                SettingsNote(verbatim: "Library \(model.suggestionLibrary.version), \(model.suggestionLibrary.entries.count) suggestions. \(model.libraryUpdater.status)")
+                Spacer()
+                Button("Check Now") { Task { await model.checkSuggestionLibrary() } }
+                    .disabled(model.libraryUpdater.checking)
+            }
+        }
     }
 
     @ViewBuilder
     private var diagnosticsSection: some View {
-            SwiftUI.Section("Diagnostics") {
-                SettingRow(store: store, key: SettingsKeys.diagnosticsEnabled, title: "Keep a local error log") { binding in
-                    Toggle("", isOn: binding).labelsHidden()
-                }
-                SettingRow(store: store, key: SettingsKeys.diagnosticsErrorLogCap, title: "Error log cap") { binding in
-                    Stepper(value: binding, in: 10...5_000, step: 10) { Text("\(binding.wrappedValue)") }
-                }
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Support bundle")
-                        Text("Assemble a redacted diagnostic bundle. You see every file before "
-                             + "it is saved, and nothing is uploaded.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    // The Help menu and this button share model-owned presentation state, so
-                    // both routes open the same audited preview-and-save flow.
-                    Button("Create…") { model.requestSupportBundle() }
-                }
-                .padding(.vertical, 2)
-
-                HStack {
-                    Text("About Flotilla")
-                    Spacer()
-                    Button("Show") { model.showingAbout = true }
-                }
+        SettingsGroup("Diagnostics") {
+            SettingToggle(store: store, key: SettingsKeys.diagnosticsEnabled, title: "Keep a local error log")
+            SettingRow(store: store, key: SettingsKeys.diagnosticsErrorLogCap, title: "Error log cap") { binding in
+                Stepper(value: binding, in: 10...5_000, step: 10) { Text("\(binding.wrappedValue)") }
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Support bundle")
+                SettingsNote("Assemble a redacted diagnostic bundle. You see every file before "
+                             + "it is saved, and nothing is uploaded.")
+                // The Help menu and this button share model-owned presentation state, so
+                // both routes open the same audited preview-and-save flow.
+                Button("Create…") { model.requestSupportBundle() }
+            }
+            // "About Flotilla ▸ Show" lived here; About is its own section now.
+        }
     }
 
     /// Preferences, host trust and window layout reset independently.
@@ -718,21 +642,14 @@ struct SettingsView: View {
     /// below states the thing that matters most: none of these can delete a container, an
     /// image or a volume. `FEATURES.md` is explicit that a settings reset must never offer to.
     private var resetSection: some View {
-        SwiftUI.Section("Reset") {
+        SettingsGroup("Reset") {
             ForEach(ResetAction.allCases) { action in
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(action.title)
-                        Text(action.summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(action.title)
+                    SettingsNote(action.summary)
                     Button("Reset") { pendingReset = action }
                         .disabled(!action.isAvailable(model))
                 }
-                .padding(.vertical, 2)
             }
 
             Label(
@@ -740,7 +657,7 @@ struct SettingsView: View {
                     + "those belong to the `container` runtime, not to Flotilla."),
                 systemImage: "info.circle"
             )
-            .font(.caption)
+            .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -824,6 +741,46 @@ struct SettingsView: View {
         switch channel {
         case .stable: "Stable"
         case .prerelease: "Prerelease"
+        }
+    }
+}
+
+/// Settings ▸ About: what version this is, where it lives, and whose work it carries.
+///
+/// The long page — every network destination, what is stored locally — stays the `ModalCard` About
+/// (CLAUDE.md: it is a dialog you acknowledge, not a form you fill in), and is one button away. What
+/// is here is what the page can state without growing a second copy of it.
+private struct SettingsAboutPane: View {
+    let model: AppModel
+
+    var body: some View {
+        SettingsGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                Wordmark(size: 28)
+                Text(AboutView.versionLine)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+
+        SettingsGroup("Links") {
+            Link("Flotilla on GitHub", destination: ExternalLinks.flotilla)
+            Link("Flotilla releases", destination: ExternalLinks.flotillaReleases)
+            Link("Apple\u{2019}s container", destination: ExternalLinks.appleContainer)
+            Link("melonfleet.dev", destination: ExternalLinks.melonfleet)
+        }
+
+        SettingsGroup("Privacy") {
+            SettingsNote("No analytics, no account, no licence check. Every place Flotilla can reach "
+                         + "on the network is listed on the privacy page.")
+            Button("Network Destinations and Storage\u{2026}") { model.showingAbout = true }
+        }
+
+        SettingsGroup("Licences") {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(AboutView.licenceLines, id: \.self) { SettingsNote(verbatim: $0) }
+            }
         }
     }
 }

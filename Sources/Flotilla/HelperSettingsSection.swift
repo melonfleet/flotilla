@@ -11,16 +11,14 @@ struct HelperSettingsSection: View {
     @State private var problem: String?
 
     var body: some View {
-        SwiftUI.Section("Flotilla Helper") {
+        SettingsGroup("Flotilla Helper") {
             HStack(alignment: .firstTextBaseline) {
                 Label(title, systemImage: symbol)
                     .foregroundStyle(tint)
                 Spacer()
                 actions
             }
-            Text(explanation)
-                .font(.caption).foregroundStyle(.secondary)
-                .lineLimit(4)
+            SettingsNote(verbatim: explanation)
             if let problem {
                 Text(problem).font(.caption).foregroundStyle(Theme.danger).lineLimit(3)
             }
