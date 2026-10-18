@@ -76,9 +76,16 @@ extension AppModel {
 
     /// Reads the slower facts now, off the main actor.
     func refreshSystemFacts() async {
+        // On GCD, not `Task.detached`: five child processes block a thread, and a starved cooperative
+        // pool (see `Blocking`) would leave this unread — and so every sharing dot on the admin grey.
         var slow = await Blocking.run { Self.readSlowSystemFacts() }
-        slow.helperVersion = PrivilegedHelper.status == .enabled ? await PrivilegedHelper.runningVersion() : nil
+        // Published before the helper is asked: the probe is an XPC round trip with no deadline, and
+        // a helper that never answers must not hold back the facts that do not depend on it.
+        slow.helperVersion = systemFacts?.helperVersion
         systemFacts = slow
+        guard PrivilegedHelper.status == .enabled else { systemFacts?.helperVersion = nil; return }
+        let version = await PrivilegedHelper.runningVersion()
+        systemFacts?.helperVersion = version
     }
 
     func startSystemFactsWatch() {

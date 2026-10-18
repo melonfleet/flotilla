@@ -197,8 +197,6 @@ struct FilesColumnView<MenuContent: View>: View {
         let groups = grouping.groups(sort.sorted(cache[Array(path.utf8)] ?? [], ascending: ascending))
         let visible = groups.flatMap(\.entries)
         return VStack(alignment: .leading, spacing: 0) {
-            Text(path == "/" ? "/" : (path as NSString).lastPathComponent).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(8)
-            Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(groups, id: \.name) { group in

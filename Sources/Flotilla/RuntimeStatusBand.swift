@@ -37,9 +37,14 @@ struct RuntimeStatusBand: View {
     var body: some View {
         Group {
             if compact {
-                menu
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 23)
+                // The dot sits beside the menu, not in its label: a borderless macOS `Menu` draws
+                // its label's text and drops the shapes around it, so the dot never showed.
+                HStack(spacing: 2) {
+                    indicator
+                    menu
+                }
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .frame(height: 23)
             } else {
                 VStack(spacing: 0) {
                     Divider()
@@ -111,12 +116,9 @@ struct RuntimeStatusBand: View {
             runtimeActions()
         } label: {
             if compact {
-                HStack(spacing: 6) {
-                    indicator
-                    Text(status.title)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                Text(status.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 .font(.system(size: 11))
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .frame(height: 23)
