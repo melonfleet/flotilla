@@ -281,6 +281,35 @@ import Testing
         #expect(checked.entries.count == library.entries.count)
     }
 
+    /// Schema 2 is the one that may carry `volumeOwner`; this build still reads 1 (the caches made
+    /// before it), and nothing newer.
+    @Test func schemaTwoIsWrittenAndOneStillRead() throws {
+        #expect(SuggestionLibrary.currentSchema == 2)
+        #expect(SuggestionLibrary.readableSchemas == 1...2)
+        #expect(!SuggestionLibrary.readableSchemas.contains(0))
+        #expect(!SuggestionLibrary.readableSchemas.contains(3))
+        let json = #"""
+        {"schema": 2, "version": "2026.10.18.2", "entries": [{"id": "grafana", "title": "Grafana",
+         "summary": "", "categories": ["Data & Analytics"], "kind": "container",
+         "tested": {"date": "2026-10-18", "macs": 1},
+         "container": {"image": "docker.io/grafana/grafana:13.2.3", "name": "grafana", "ports": ["3000:3000"],
+          "env": [], "secretEnv": ["GF_SECURITY_ADMIN_PASSWORD"], "command": [],
+          "volumes": [{"suffix": "data", "path": "/var/lib/grafana", "volumeOwner": {"uid": 472, "gid": 0}}]}}]}
+        """#
+        let library = try JSONDecoder().decode(SuggestionLibrary.self, from: Data(json.utf8))
+        let (checked, dropped) = library.checked()
+        #expect(dropped.isEmpty, "\(dropped)")
+        #expect(checked.schema == 2)
+        #expect(checked.entries.first?.container?.volumes.first?.volumeOwner == VolumeOwner(uid: 472, gid: 0))
+        // A schema-1 file decodes as before, without owners.
+        let old = try JSONDecoder().decode(SuggestionLibrary.self, from: Data(json
+            .replacingOccurrences(of: #""schema": 2"#, with: #""schema": 1"#)
+            .replacingOccurrences(of: #", "volumeOwner": {"uid": 472, "gid": 0}"#, with: "").utf8))
+        #expect(old.schema == 1)
+        #expect(old.checked().dropped.isEmpty)
+        #expect(old.entries.first?.container?.volumes.first?.volumeOwner == nil)
+    }
+
     @Test func aLibraryRoundTripsThroughJSON() throws {
         let data = try JSONEncoder().encode(SuggestionLibrary.builtIn)
         #expect(try JSONDecoder().decode(SuggestionLibrary.self, from: data) == SuggestionLibrary.builtIn)

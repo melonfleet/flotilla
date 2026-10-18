@@ -2829,3 +2829,32 @@ it, as in Claude Code.
 - **Where the logic lives.** `DictationMachine` (idle / needs model / downloading / listening /
   denied / unsupported) and `DictationText` (how words join the typed text) are in FlotillaCore,
   Foundation-only and tested. The audio and framework calls are `GretaDictation` in the app.
+
+## Q62 — Vulnerability reports for library images, scanned daily in the cloud (settled 2026-10-18)
+
+Kamal approved this on 18 October. It answers the decision left open by Iris's research
+(`research/VULNERABILITY-SCANNING.md`, 12 October), and it **reverses** FEATURES.md's "scanning:
+not planned" for the suggestions library's images only.
+
+- **Where the scan runs.** A scheduled GitHub Actions workflow in `melonfleet/flotilla-library` runs
+  once a day. The repository is public, so its minutes are free. The workflow scans every image the
+  library's recipes pull, by digest, with a pinned, checksum-verified scanner (Grype by default).
+  Nothing runs on a user's Mac or host, and the app bundles no scanner and no vulnerability database.
+- **What is published.** The workflow publishes a small report beside `library.json` on the
+  `published` branch. For each image digest it lists the scanner and database dates, and the critical
+  and high findings with their fixed versions. It holds nothing about any user.
+- **What the app does.** Flotilla downloads the report the way it downloads the library: the same file
+  for everyone, with an ephemeral session, carrying nothing about the Mac. It matches the report
+  against local images and containers by digest, **on the Mac**, and shows the findings there.
+  No image, name or digest is ever sent anywhere, so no-phone-home holds.
+- **Signing: a second key, for reports only (option a).** The library key stays in Kamal's login
+  Keychain, and no workflow may sign with it. That is unchanged. Reports are signed with a
+  **separate Ed25519 key** held as a GitHub Actions secret. The app carries its public half and
+  accepts it **only** for reports, never for `library.json`. If that key leaked, the worst case is a
+  false or missing warning, never a changed recipe. The app treats reports as advisory: a finding
+  never stops, pulls, rebuilds or restarts anything (Q53 health stays separate).
+- **Our side.** The same report shows when a recipe's pinned tag has a fixed release, so recipes can
+  be bumped and retested.
+- **Not covered.** Images the user built or pulled from elsewhere. Scanning them in the cloud would
+  mean sending them, or naming them, so that stays a possible later local Stage 1 (Syft + Grype on
+  the Mac, on request), still to be decided.

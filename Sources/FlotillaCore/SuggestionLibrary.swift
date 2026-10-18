@@ -12,7 +12,11 @@ import Foundation
 
 public struct SuggestionLibrary: Sendable, Codable, Equatable {
     /// The format; a newer one this build can't read is refused, and the built-in copy is used.
-    public static let currentSchema = 1
+    /// 2 added `volumeOwner` (18 October): builds that read only 1 would ignore it and install
+    /// recipes that can't write their volumes, so a library using it says 2.
+    public static let currentSchema = 2
+    /// Every format this build reads. The built-in copy and caches from before 2 are still 1.
+    public static let readableSchemas = 1...currentSchema
     /// The categories an entry may name, in browsing order (the Gemini research brief).
     public static let categories = [
         "Education", "Business & Office", "Finance & Accounting", "E-commerce", "Software Development",

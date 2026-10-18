@@ -80,8 +80,10 @@ final class LibraryUpdater {
         return library
     }
 
-    /// The library in `data`, if `signature` verifies and it is a schema this build reads.
-    nonisolated static func verified(_ data: Data, signature: Data) throws -> SuggestionLibrary {
+    /// The library in `data`, if `signature` verifies and it is a schema this build reads (1 or 2;
+    /// a build before 2 refuses a library that uses `volumeOwner`). Only tests pass another key.
+    nonisolated static func verified(_ data: Data, signature: Data,
+                                     publicKey: String = LibraryUpdater.publicKey) throws -> SuggestionLibrary {
         guard data.count <= maxBytes else { throw Failure("The library is larger than Flotilla accepts.") }
         guard let keyData = Data(base64Encoded: publicKey),
               let key = try? Curve25519.Signing.PublicKey(rawRepresentation: keyData),
@@ -92,7 +94,7 @@ final class LibraryUpdater {
         guard let library = try? JSONDecoder().decode(SuggestionLibrary.self, from: data) else {
             throw Failure("The library couldn't be read.")
         }
-        guard library.schema == SuggestionLibrary.currentSchema else {
+        guard SuggestionLibrary.readableSchemas.contains(library.schema) else {
             throw Failure("The library needs a newer Flotilla (format \(library.schema)).")
         }
         return library.checked().library
