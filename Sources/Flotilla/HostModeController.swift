@@ -980,7 +980,8 @@ final class HostModeController {
         let status = live[fingerprint] ?? LiveStatus(state: .checking, checkedAt: Date())
         live[fingerprint] = status
         let cli = ContainerCLI(host: remote, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
-        let (outcome, stopped) = await Task.detached { () -> (Result<(String?, [Container], Int), Error>, Bool) in
+        // On GCD, not `Task.detached`: these block for a host's whole timeout (see `Blocking`).
+        let (outcome, stopped) = await Blocking.run { () -> (Result<(String?, [Container], Int), Error>, Bool) in
             let outcome = Result {
                 let version = try cli.versions().first { $0.appName.lowercased().contains("container") }?.version
                 return (version, try cli.listContainers(), try cli.machines().count)
@@ -988,14 +989,14 @@ final class HostModeController {
             // A failure from a host that answered may be its service, stopped: ask it, read-only.
             guard case .failure = outcome, let status = try? cli.systemStatus() else { return (outcome, false) }
             return (outcome, !status.isRunning)
-        }.value
+        }
         guard generation == trustGeneration else { return }
         // The other lists, each on its own: one failing does not blank the others.
         if case .success = outcome {
-            let (images, volumes, networks, clusters) = await Task.detached {
+            let (images, volumes, networks, clusters) = await Blocking.run {
                 (Result { try cli.listImages() }, Result { try cli.listVolumes() }, Result { try cli.listNetworks() },
                  Result { try cli.k8sNodes() })
-            }.value
+            }
             guard generation == trustGeneration else { return }
             let at = Date()
             switch clusters {
