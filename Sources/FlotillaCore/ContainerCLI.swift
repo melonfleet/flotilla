@@ -690,6 +690,14 @@ public struct ContainerCLI: Sendable {
         try execute(Self.runArguments(image: image, options: options, command: command))
     }
 
+    /// App-owned helper profile; VolumeSetupStore supplies creation provenance before calling.
+    /// The separator is input to the Allowlist only and is stripped before local/wire execution.
+    @discardableResult
+    func setupVolume(_ volume: String, owner: VolumeOwner, digest: String) throws -> CommandResult {
+        let args = try VolumeSetupStore.helperArguments(volume: volume, owner: owner, digest: digest)
+        return try execute(Array(args.prefix(5)) + ["--"] + args.suffix(3))
+    }
+
     // MARK: Images
 
     /// How to reach the registry.

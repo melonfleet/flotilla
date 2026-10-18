@@ -164,7 +164,18 @@ extension AppModel {
                 for volume in plan.volumes {
                     let step = progress.begin("Creating volume \(volume)")
                     do {
-                        _ = try await Blocking.run { try cli.createVolume(volume) }
+                        let declared = stack.services.flatMap { service in
+                            service.volumes.map { (service, $0) }
+                        }.first { service, mount in
+                            StackPlanner.volumeName(choices.name, service.role, mount) == volume
+                        }
+                        if let (service, mount) = declared, let owner = mount.volumeOwner {
+                            let spec = "\(volume):\(mount.path)"
+                            try await prepareVolumeOwnership(cli: cli, host: host, image: service.image,
+                                mounts: [spec], owners: [spec: owner], requireNewVolumes: true, createOnly: true, progress: progress)
+                        } else {
+                            _ = try await Blocking.run { try cli.createVolume(volume) }
+                        }
                     } catch {
                         progress.finish(step, detail: "failed", failed: true)
                         throw StackCreateFailure(step: "Creating volume \(volume)", made: createdSoFar,

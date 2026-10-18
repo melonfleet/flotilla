@@ -79,6 +79,9 @@ final class AppModel {
     /// Saved groups of containers that start and stop together. Data rather than view state, for
     /// the reason `tags` gives; `GroupStore` says why it is not in `SettingsStore`.
     let groups = GroupStore()
+    let volumeSetups = VolumeSetupStore(file: FileManager.default.urls(for: .applicationSupportDirectory,
+        in: .userDomainMask)[0].appendingPathComponent(SettingsPersistence.domain)
+        .appendingPathComponent("volume-setup.json"))
 
     /// Retained for as long as the app runs. `SettingsPersistence` writes on every change
     /// through this token, and dropping it would stop persistence silently — which looks
@@ -2376,9 +2379,9 @@ final class AppModel {
     /// `runContainer` on a paired host (PLAN.md Phase C): the same command, validated as a remote
     /// peer would be — host paths refused — run on that Mac, and the host asked again afterwards.
     func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = [],
-                      host: HostRef) async {
+                      host: HostRef, volumeOwners: [String: VolumeOwner] = [:]) async {
         guard case .peer(let fingerprint) = host else {
-            return await runContainer(image: image, options: options, command: command)
+            return await runContainer(image: image, options: options, command: command, volumeOwners: volumeOwners)
         }
         let hostName = hostMode.hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "the host"
         await withProgress(
@@ -2387,6 +2390,8 @@ final class AppModel {
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let remote = try self.cli(for: host)
+                try await prepareVolumeOwnership(cli: remote, host: host, image: image,
+                    mounts: options.volumes, owners: volumeOwners, progress: progress)
                 let step = progress.begin("Starting from \(image) on \(hostName)")
                 let result = try await Blocking.run {
                     try remote.run(image: image, options: options, command: command)
@@ -2404,11 +2409,14 @@ final class AppModel {
         )
     }
 
-    func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = []) async {
+    func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = [],
+                      volumeOwners: [String: VolumeOwner] = [:]) async {
         await withProgress(
             title: "Run a container",
             command: Self.runDisplayLine(image: image, options: options, command: command, host: .local),
             work: { progress in
+                try await self.prepareVolumeOwnership(cli: self.cli, host: .local, image: image,
+                    mounts: options.volumes, owners: volumeOwners, progress: progress)
                 let step = progress.begin("Starting from \(image)")
                 let result = try await Blocking.run { [cli] in
                     try cli.run(image: image, options: options, command: command)

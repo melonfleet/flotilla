@@ -191,7 +191,7 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
             services: stack.services.map { service in
                 StackService(role: service.role, title: service.title, image: service.image, env: service.env,
                              secretEnv: service.secretEnv.map { SecretEnv(name: $0.name, secret: $0.secret) },
-                             volumes: service.volumes.map { StackVolume(suffix: $0.suffix, path: $0.path) },
+                             volumes: service.volumes.map { StackVolume(suffix: $0.suffix, path: $0.path, volumeOwner: $0.volumeOwner) },
                              webPort: service.webPort, wiredPort: service.wiredPort,
                              readyPort: service.readyPort, command: service.command)
             },
@@ -238,9 +238,14 @@ public struct LibraryIcon: Sendable, Codable, Equatable {
 public struct LibraryVolume: Sendable, Codable, Equatable {
     public var suffix: String
     public var path: String
-    public init(suffix: String = "data", path: String) { self.suffix = suffix; self.path = path }
+    /// Root-directory ownership setup, only for a volume created by this Suggestions run.
+    public var volumeOwner: VolumeOwner?
+    public init(suffix: String = "data", path: String, volumeOwner: VolumeOwner? = nil) {
+        self.suffix = suffix; self.path = path; self.volumeOwner = volumeOwner
+    }
 
     func problem() -> String? {
+        if let volumeOwner, !volumeOwner.isValid { return "A volume owner must use UID and GID from 0 to 2147483647." }
         guard suffix.utf8.count <= 32, Allowlist.accepts(suffix, as: .identifier) else {
             return "A volume's name isn't a plain name."
         }
@@ -585,7 +590,7 @@ extension SuggestionLibrary {
                     services: stack.services.map { service in
                         .init(role: service.role, title: service.title, image: service.image, env: service.env,
                               secretEnv: service.secretEnv.map { .init(name: $0.name, secret: $0.secret) },
-                              volumes: service.volumes.map { .init(suffix: $0.suffix, path: $0.path) },
+                              volumes: service.volumes.map { .init(suffix: $0.suffix, path: $0.path, volumeOwner: $0.volumeOwner) },
                               webPort: service.webPort, wiredPort: service.wiredPort,
                               readyPort: service.readyPort, command: service.command)
                     },
@@ -602,7 +607,9 @@ extension SuggestionLibrary {
                 tested: .init(date: "2026-10-12", macs: 1),
                 container: LibraryContainer(
                     image: recipe.image, name: recipe.name, ports: recipe.ports, env: plain, secretEnv: secrets,
-                    volumes: recipe.volumes.compactMap { mount in
+                    volumes: StackSuggestion.catalogue.flatMap(\.services).first(where: { $0.image == recipe.image })?
+                        .volumes.map { LibraryVolume(suffix: $0.suffix, path: $0.path, volumeOwner: $0.volumeOwner) }
+                        ?? recipe.volumes.compactMap { mount in
                         let parts = mount.split(separator: ":", maxSplits: 1)
                         guard parts.count == 2 else { return nil }
                         let suffix = parts[0].hasPrefix("\(recipe.name)-") ? String(parts[0].dropFirst(recipe.name.count + 1)) : "data"

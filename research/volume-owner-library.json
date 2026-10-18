@@ -1,0 +1,114 @@
+[
+  {
+    "id": "grafana",
+    "volumes": [
+      {
+        "suffix": "data",
+        "path": "/var/lib/grafana",
+        "volumeOwner": {
+          "uid": 472,
+          "gid": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "prometheus",
+    "volumes": [
+      {
+        "suffix": "data",
+        "path": "/prometheus",
+        "volumeOwner": {
+          "uid": 65534,
+          "gid": 65534
+        }
+      }
+    ]
+  },
+  {
+    "id": "loki",
+    "volumes": [
+      {
+        "suffix": "data",
+        "path": "/loki",
+        "volumeOwner": {
+          "uid": 10001,
+          "gid": 10001
+        }
+      }
+    ]
+  },
+  {
+    "id": "filebrowser",
+    "volumes": [
+      {
+        "suffix": "files",
+        "path": "/srv",
+        "volumeOwner": {
+          "uid": 1000,
+          "gid": 1000
+        }
+      },
+      {
+        "suffix": "database",
+        "path": "/database",
+        "volumeOwner": {
+          "uid": 1000,
+          "gid": 1000
+        }
+      }
+    ]
+  },
+  {
+    "id": "pgadmin4",
+    "volumes": [
+      {
+        "suffix": "data",
+        "path": "/var/lib/pgadmin",
+        "volumeOwner": {
+          "uid": 5050,
+          "gid": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "vault",
+    "volumes": [
+      {
+        "suffix": "data",
+        "path": "/vault/file",
+        "volumeOwner": {
+          "uid": 100,
+          "gid": 1000
+        }
+      }
+    ]
+  },
+  {
+    "id": "jupyter-datascience-notebook",
+    "volumes": [
+      {
+        "suffix": "data",
+        "path": "/home/jovyan/work",
+        "volumeOwner": {
+          "uid": 1000,
+          "gid": 100
+        }
+      }
+    ]
+  },
+  {
+    "id": "jupyter-tensorflow-notebook",
+    "volumes": [
+      {
+        "suffix": "data",
+        "path": "/home/jovyan/work",
+        "volumeOwner": {
+          "uid": 1000,
+          "gid": 100
+        }
+      }
+    ]
+  }
+]

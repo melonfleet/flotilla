@@ -352,7 +352,8 @@ public enum GretaRouter {
             if let wired = service.wiredPort, wired != service.webPort { ports.append("\(wired):\(wired)") }
             return GretaRecipe(id: id, title: title, words: words, image: service.image, name: id,
                                ports: ports, env: env,
-                               volumes: service.volumes.map { "\(id)-\($0.suffix):\($0.path)" }, note: note,
+                               // Greta drafts have no ownership setup metadata; keep their existing storage policy.
+                               volumes: service.volumes.filter { $0.volumeOwner == nil }.map { "\(id)-\($0.suffix):\($0.path)" }, note: note,
                                olderData: olderData.map { (before: $0.0, path: $0.1) })
         }
         return nil

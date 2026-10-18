@@ -220,6 +220,8 @@ extension AppModel {
                 progress.finish(step, detail: "already running")
             } else {
                 do {
+                    try await prepareVolumeOwnership(cli: cli, host: host, image: member.image,
+                        mounts: member.volumes, progress: progress)
                     if existingContainerNames(on: host).contains(member.name) {
                         _ = try await Blocking.run { try cli.start(member.name) }
                     } else {

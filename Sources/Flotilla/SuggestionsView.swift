@@ -388,7 +388,10 @@ struct SuggestionsView: View {
         return RunPrefill(
             draftImage: container.image, name: name, ports: ports, env: env,
             volumes: container.volumes.map { "\(name)-\($0.suffix):\($0.path)" },
-            command: container.command, source: .library)
+            command: container.command, source: .library,
+            volumeOwners: Dictionary(uniqueKeysWithValues: container.volumes.compactMap { volume in
+                volume.volumeOwner.map { ("\(name)-\(volume.suffix):\(volume.path)", $0) }
+            }))
     }
 
     /// `docker.io/library/postgres:18.6` → `postgres:18.6`.

@@ -594,6 +594,11 @@ extension AllowlistError: CustomStringConvertible {
 // MARK: - Allowlist
 
 public enum Allowlist {
+    /// The volume-setup helper, `docker.io/library/busybox:1.37`, pinned to its image-index digest as
+    /// pulled and inspected on the admin Mac (18 October): the library can't swap it, and an empty value
+    /// fails closed. Change it only from a real pull and inspect, never to a tag.
+    public static let volumeSetupBusyboxDigest = "bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+
     /// Structural limits applied before anything is parsed. A remote peer must not be
     /// able to make us spend time (or memory) on a pathological argv.
     public struct Limits: Sendable, Equatable {
@@ -816,6 +821,10 @@ public enum Allowlist {
             // Real `container prune` takes no operands and no flags beyond `--debug`
             // (which Flotilla does not expose) — it removes every stopped container.
             CommandSpec(["prune"], mutates: true, timeoutHint: 120),
+            // VolumeSetupStore uses exactly run --rm -v NAME:/mnt <pinned busybox>
+            // chown UID:GID /mnt. No new flags, shell or wire command.
+            // The app-owned pin is Allowlist.volumeSetupBusyboxDigest;
+            // library input can never select the helper image.
             CommandSpec(["run"], mutates: true, timeoutHint: 600,
                         flags: [FlagSpec(long: "detach", short: "d"),
                                 FlagSpec(long: "rm"),

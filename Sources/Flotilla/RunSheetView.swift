@@ -45,6 +45,7 @@ struct RunPrefill: Equatable {
     /// Environment and named volumes — carried by a Greta draft (Q52), not by a duplicate.
     var env: [String] = []
     var volumes: [String] = []
+    var volumeOwners: [String: VolumeOwner] = [:]
     /// The command after the image, as an argv — a library entry's, as it was tested.
     var command: [String] = []
     /// Where a draft came from: the form says so, and the user reviews it before Run.
@@ -54,11 +55,12 @@ struct RunPrefill: Equatable {
 
     /// A draft (Q52, Q54): what Greta or a library entry proposed, nothing carried from anywhere else.
     init(draftImage image: String, name: String, ports: [String], env: [String], volumes: [String],
-         command: [String] = [], source: Source = .greta) {
+         command: [String] = [], source: Source = .greta, volumeOwners: [String: VolumeOwner] = [:]) {
         self.image = image; self.name = name; self.ports = ports
         self.cpus = nil; self.memoryMB = nil
         self.mayHaveUncarriedSettings = false; self.portsInUse = []
         self.env = env; self.volumes = volumes; self.command = command; self.source = source
+        self.volumeOwners = volumeOwners
     }
 
     /// Built from an inspected container. `name` gets a suffix because the original still exists —
@@ -126,6 +128,8 @@ struct RunSheetView: View {
     /// Opened from a Greta draft: said at the top, so nobody runs it unread.
     private let draftedByGreta: Bool
     private let fromLibrary: Bool
+    private let suggestedImage: String?
+    private let suggestedVolumeOwners: [String: VolumeOwner]
 
     /// Host ports the source published that were deliberately not carried, because something
     /// already holds them. Named in the notice rather than silently missing.
@@ -135,6 +139,8 @@ struct RunSheetView: View {
          progressLabel: String? = nil, onSkip: (() -> Void)? = nil, onRan: ((Set<Int>) -> Void)? = nil,
          dismiss: @escaping () -> Void) {
         self.model = model
+        self.suggestedImage = prefill?.image
+        self.suggestedVolumeOwners = prefill?.volumeOwners ?? [:]
         _host = State(initialValue: initialHost)
         self.dismiss = dismiss
         self.progressLabel = progressLabel
@@ -599,6 +605,9 @@ struct RunSheetView: View {
                 let ranCommand = command
                 let ranHost = host
                 let ranPolicy = policy
+                // Edits must never transfer recipe ownership policy to another image or mount.
+                let ranOwners = ranImage == suggestedImage
+                    ? suggestedVolumeOwners.filter { ranOptions.volumes.contains($0.key) } : [:]
                 let hostPorts = Set(publishedHostPorts)
                 if let onRan {
                     onRan(hostPorts)
@@ -606,7 +615,7 @@ struct RunSheetView: View {
                     dismiss()
                 }
                 Task {
-                    await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost)
+                    await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost, volumeOwners: ranOwners)
                     // Kept once it exists, so a policy never watches a container that failed to start.
                     // On a host, the host refuses a policy for a container it doesn't have.
                     if !ranPolicy.isEmpty, let name = ranOptions.name,

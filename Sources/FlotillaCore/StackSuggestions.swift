@@ -65,10 +65,12 @@ public struct StackVolume: Sendable, Equatable {
     /// Appended to the container's name: `shop-db` + `data` → `shop-db-data`.
     public let suffix: String
     public let path: String
+    public let volumeOwner: VolumeOwner?
 
-    public init(suffix: String = "data", path: String) {
+    public init(suffix: String = "data", path: String, volumeOwner: VolumeOwner? = nil) {
         self.suffix = suffix
         self.path = path
+        self.volumeOwner = volumeOwner
     }
 }
 
@@ -144,11 +146,8 @@ extension StackSuggestion {
     /// on 6 October before shipping; Prometheus publishes only full versions, so it is `v3.13.4`
     /// where the research said `v3.13`.
     ///
-    /// Volumes only where the image fixes its own ownership: a fresh named volume mounts
-    /// `root:root 755` with a `lost+found` in it (measured 14 September and 6 October), and
-    /// pgAdmin, Grafana, Prometheus, RedisInsight — and Redis, whose entrypoint refuses to chown
-    /// a directory holding `lost+found` — run as their own users and cannot write to one. Their state lives in the container, which
-    /// survives Stop and Start but not Delete — the notes say so.
+    /// Explicit volumeOwner values below are Dave's live-tested pairs (18 October).
+    /// Other images retain their existing storage policy; no seeding or recursive repair.
     public static let catalogue: [StackSuggestion] = [
         StackSuggestion(
             id: "postgres",
@@ -174,6 +173,7 @@ extension StackSuggestion {
                              env: ["PGADMIN_DEFAULT_EMAIL={{option:email}}"],
                              secretEnv: [SecretEnv(name: "PGADMIN_DEFAULT_PASSWORD",
                                                    secret: "pgadmin-password")],
+                             volumes: [StackVolume(path: "/var/lib/pgadmin", volumeOwner: .init(uid: 5050, gid: 0))],
                              webPort: 80),
             ],
             notes: [
@@ -273,18 +273,19 @@ extension StackSuggestion {
             services: [
                 StackService(role: "prometheus", title: "Prometheus",
                              image: "docker.io/prom/prometheus:v3.13.4",
+                             volumes: [StackVolume(path: "/prometheus", volumeOwner: .init(uid: 65534, gid: 65534))],
                              webPort: 9090, wiredPort: 9090),
                 StackService(role: "grafana", title: "Grafana", image: "docker.io/grafana/grafana:13.2",
                              env: ["GF_SECURITY_ADMIN_USER={{option:user}}"],
                              secretEnv: [SecretEnv(name: "GF_SECURITY_ADMIN_PASSWORD",
                                                    secret: "admin-password")],
+                             volumes: [StackVolume(path: "/var/lib/grafana", volumeOwner: .init(uid: 472, gid: 0))],
                              webPort: 3000),
             ],
             notes: [
                 "Sign in to Grafana as {{option:user}} with the admin-password.",
                 "Add a Prometheus data source at http://{{host:prometheus}}:{{port:prometheus}}.",
-                "Prometheus and Grafana keep their data inside their containers: it survives Stop "
-                    + "and Start, not Delete.",
+                "Prometheus and Grafana keep their data in named volumes.",
             ],
             opens: "grafana"),
     ]
