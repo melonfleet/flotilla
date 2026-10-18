@@ -122,7 +122,16 @@ final class GretaDictation {
         // 2. The speech model. Missing means the user is asked; nothing is fetched here.
         guard let locale = await resolveLocale(), session == mine else { return }
         let transcriber = makeTranscriber(locale)
-        switch await AssetInventory.status(forModules: [transcriber]) {
+        var model = await AssetInventory.status(forModules: [transcriber])
+        if model == .supported {
+            // Often the model is already on this Mac (macOS's own dictation put it there) and only
+            // this app's reservation is missing, which is local bookkeeping and fetches nothing.
+            // Reserve, then ask again, so the Download prompt appears only for a real download.
+            _ = try? await AssetInventory.reserve(locale: locale)
+            model = await AssetInventory.status(forModules: [transcriber])
+        }
+        guard session == mine else { return }
+        switch model {
         case .installed: break
         case .unsupported: apply(.modelChecked(.unsupported)); return
         case .supported, .downloading: apply(.modelChecked(.needsDownload)); return
@@ -297,6 +306,7 @@ final class GretaDictation {
             do {
                 guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) else {
                     self?.apply(.downloadFinished)      // nothing to fetch: already installed
+                    self?.begin()
                     return
                 }
                 let progress = request.progress
@@ -311,6 +321,8 @@ final class GretaDictation {
                 try await request.downloadAndInstall()
                 _ = try? await AssetInventory.reserve(locale: locale)
                 self?.apply(.downloadFinished)
+                // The click on the mic was a request to dictate: carry it on, with the chime.
+                self?.begin()
             } catch {
                 self?.message = "The download didn't finish: \(error.localizedDescription)"
                 self?.apply(.downloadFailed)
