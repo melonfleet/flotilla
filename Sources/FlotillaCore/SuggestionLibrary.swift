@@ -128,6 +128,27 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
     }
 
     /// The images it pulls.
+    /// Everything a search looks through (Kamal, 18 October: typing "database" must find the
+    /// Databases category, and the licence must be searchable too). Plain words for the licence
+    /// side, in both spellings, so "licence", "license", "open source" and "copyleft" all work.
+    public var searchText: [String] {
+        var words = [title, summary, kind.rawValue] + categories + images
+        if let note = licenceNote {
+            words += [note, "licence", "license"]
+        } else {
+            words += ["open source", "permissive"]
+        }
+        return words
+    }
+
+    /// True when every word of `query` appears somewhere in `searchText`, ignoring case and accents.
+    public func matches(_ query: String) -> Bool {
+        let haystack = searchText
+        return query.split(whereSeparator: \.isWhitespace).allSatisfy { word in
+            haystack.contains { $0.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        }
+    }
+
     public var images: [String] {
         switch kind {
         case .container: container.map { [$0.image] } ?? []

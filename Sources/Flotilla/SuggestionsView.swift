@@ -23,13 +23,8 @@ struct SuggestionsView: View {
     private var library: SuggestionLibrary { model.suggestionLibrary }
 
     private var shown: [LibraryEntry] {
-        let words = query.lowercased().split(separator: " ").map(String.init)
-        return library.entries.filter { entry in
-            (category == nil || entry.categories.contains(category!))
-                && words.allSatisfy { word in
-                    ([entry.title, entry.summary] + entry.categories + entry.images)
-                        .contains { $0.lowercased().contains(word) }
-                }
+        library.entries.filter { entry in
+            (category == nil || entry.categories.contains(category!)) && entry.matches(query)
         }
     }
 
