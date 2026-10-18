@@ -96,6 +96,10 @@ final class HostModeController {
     private(set) var volumeSnapshots: [PeerFingerprint: FleetSnapshot<ContainerVolume>] = [:]
     private(set) var networkSnapshots: [PeerFingerprint: FleetSnapshot<ContainerNetwork>] = [:]
     @ObservationIgnored private var backoff: [PeerFingerprint: HostBackoff] = [:]
+    // Unreachable hosts hold GCD threads for their timeouts; keep fleet refreshes to four at once.
+    private static let maxConcurrentHostChecks = 4
+    @ObservationIgnored private let hostChecks = KeyedCoalescer<PeerFingerprint>(
+        maxConcurrent: HostModeController.maxConcurrentHostChecks)
     /// Shown as fresh for this long; older, or after a failed ask, the rows say how old they are.
     static let freshFor: TimeInterval = 75
     @ObservationIgnored private var remotes: [PeerFingerprint: RemoteHost] = [:]
@@ -908,7 +912,7 @@ final class HostModeController {
         }
         await withTaskGroup(of: Void.self) { group in
             for peer in due {
-                group.addTask { await self.refreshLiveStatus(peer.fingerprint) }
+                group.addTask { await self.coalescedRefresh(peer.fingerprint, force: force) }
             }
         }
         if !due.isEmpty, generation == trustGeneration { onRefreshed?() }
@@ -960,7 +964,14 @@ final class HostModeController {
     func refreshHost(_ fingerprint: PeerFingerprint) async {
         guard isTrustedHost(fingerprint) else { return }
         backoff[fingerprint, default: HostBackoff()].forceDue()
-        await refreshLiveStatus(fingerprint)
+        await coalescedRefresh(fingerprint, force: true)
+    }
+
+    private func coalescedRefresh(_ fingerprint: PeerFingerprint, force: Bool) async {
+        let check = await hostChecks.request(fingerprint, force: force) { [self] in
+            await self.refreshLiveStatus(fingerprint)
+        }
+        await check.wait()
     }
 
     /// Every write after an `await` here is behind a check of `generation`: a reset may have come
