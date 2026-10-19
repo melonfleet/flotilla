@@ -1875,12 +1875,19 @@ final class AppModel {
         return cached
     }()
     @ObservationIgnored lazy var libraryUpdater = LibraryUpdater(activity: updateActivity)
+    /// The library's daily vulnerability report (Q62): advisory, signed by its own key, and off
+    /// until that key is set (`ReportUpdater.reportPublicKey`).
+    @ObservationIgnored lazy var reportUpdater = ReportUpdater(activity: updateActivity)
+    /// The verified report, or nil — reports off, none published yet, or none cached.
+    var vulnerabilityReport: VulnerabilityReport? { reportUpdater.report }
 
     /// Checks GitHub for a newer library now. The daily setting gates only the automatic check; a
     /// click on Check Now is the owner's own request, as Sparkle's Check for Updates is.
     func checkSuggestionLibrary(explicit: Bool = false) async {
         guard explicit || settingsStore[SettingsKeys.suggestionLibraryUpdates] else { return }
         if let newer = await libraryUpdater.check(current: suggestionLibrary) { suggestionLibrary = newer }
+        // The same daily check, and the same Check Now (a no-op while reports are off).
+        await reportUpdater.check()
     }
 
     /// Once a day while the setting is on (DECISIONS Q54): checked hourly, fetched when due.

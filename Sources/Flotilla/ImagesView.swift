@@ -408,6 +408,10 @@ struct ImagesView: View {
                     ResourceChip(text: "in use")
                         .help("Used by " + users.joined(separator: ", "))
                 }
+                if let critical = model.vulnerabilityReport?.image(forAnyOf: row.image.reportDigests)?.counts.critical,
+                   critical > 0 {
+                    CriticalChip(count: critical)
+                }
                 if !row.host.isLocal {
                     HostCell(name: row.hostName, staleSince: row.staleSince)
                         .chipStyle()

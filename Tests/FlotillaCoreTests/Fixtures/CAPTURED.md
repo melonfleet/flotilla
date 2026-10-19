@@ -25,3 +25,12 @@ on macOS 27.0.1:
 - `pkgutil-check-signature-other-team.txt` — the same package signed with a Developer ID Installer
   certificate that is not Apple's; the signer's name, team and fingerprint are replaced with
   placeholders (personal identity stays out of tracked files).
+
+## vulnerability-report.json (2026-10-18)
+
+`report.json` as built by `flotilla-library/tools/build_report.py` from two **real** Grype 0.120.1 runs
+(`grype registry:docker.io/library/nats:2.15.0 --platform linux/arm64 -o json`, and the same for
+`registry:3.1.2`). Its index digest for nats was checked against the registry's own manifest
+(`sha256` of the index body matched). It has two of the library's 32 images because only those two
+were scanned for this fixture; it is unsigned, as the signature is checked separately. Used by
+`VulnerabilityReportTests`.

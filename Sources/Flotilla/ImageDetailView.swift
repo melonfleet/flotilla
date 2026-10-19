@@ -123,6 +123,8 @@ struct ImageDetailView: View {
                     }
                 }
 
+                VulnerabilityCard(model: model, digests: image.reportDigests)
+
                 DetailCard(title: "Recent events", minHeight: nil) {
                     // Keyed on `reference`, which is what the feed records images by —
                     // `ContainerImage.id` is the digest, and matching on it would find nothing.
