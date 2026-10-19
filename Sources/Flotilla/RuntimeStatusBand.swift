@@ -25,9 +25,8 @@ struct RuntimeStatusBand: View {
     @State private var showingConfirmation = false
 
     var body: some View {
-        // The dot alone (Kamal, 19 October): clicking it opens the menu, whose first line states the
-        // status. The words moved to the tooltip and the accessibility label, so nothing is lost to
-        // VoiceOver or to a hover.
+        // A dot and "Container" (Kamal, 19 October): clicking opens the menu, whose first line states
+        // the status. The full status sentence is in the tooltip and the accessibility label.
         statusMenu
             .frame(height: 23)
             .confirmationDialog(confirming.question,
@@ -56,14 +55,22 @@ struct RuntimeStatusBand: View {
         Menu {
             runtimeActions()
         } label: {
-            Group {
-                if model.startingRuntime || settingUp {
-                    ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 8, height: 8)
-                } else {
-                    Circle().fill(status.tint).frame(width: 7, height: 7)
+            // The dot and the word "Container", like the Helper item beside it: two dots side by side
+            // can't say which is which (Kamal, 19 October). The status itself is the menu's first line.
+            HStack(spacing: 4) {
+                Group {
+                    if model.startingRuntime || settingUp {
+                        ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 8, height: 8)
+                    } else {
+                        Circle().fill(status.tint).frame(width: 7, height: 7)
+                    }
                 }
+                .frame(width: 10, height: 23)
+                Text("Container")
+                    .font(.system(size: 11))
+                    .lineLimit(1)
             }
-            .frame(width: 18, height: 23)
+            .frame(height: 23)
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
