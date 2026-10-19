@@ -190,6 +190,7 @@ public struct GroupBook: Sendable, Equatable {
         case emptyImage
         case invalidImage(String)
         case invalidReadyPort(Int)
+        case invalidPort(String, member: String)
         case invalidSecretEnv(String)
 
         public var description: String {
@@ -212,6 +213,8 @@ public struct GroupBook: Sendable, Equatable {
                 "“\(image)” is not a valid image reference. \(ValueShape.imageReference.rule)"
             case .invalidReadyPort(let port):
                 "\(port) is not a port. Use a number from 1 to 65535."
+            case .invalidPort(let spec, let member):
+                "\(member)'s port “\(spec)” can't be published: no free host port was found for it, or it isn't a port mapping. Edit \(member) and choose a host port. \(ValueShape.portMapping.rule)"
             case .invalidSecretEnv(let name):
                 "“\(name)” can't be a Keychain-held variable: use a variable name and a secret name made of letters, numbers, dots, dashes or underscores, and don't set it in Environment as well."
             }
@@ -458,6 +461,12 @@ public struct GroupBook: Sendable, Equatable {
         else { throw GroupError.invalidImage(member.image) }
         if let port = member.readyPort, !(1...65535).contains(port) {
             throw GroupError.invalidReadyPort(port)
+        }
+        // A pick with no free host port carries `127.0.0.1::80` on purpose, so Run can't drop it
+        // silently (Dave, 19 October); here is where that becomes a refusal rather than a Start that
+        // fails halfway through the group.
+        for spec in member.ports where !Allowlist.accepts(spec, as: .portMapping) {
+            throw GroupError.invalidPort(spec, member: member.name)
         }
         if let bad = GroupSecrets.problem(with: member) { throw GroupError.invalidSecretEnv(bad) }
     }

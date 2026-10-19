@@ -25,6 +25,7 @@ struct GroupFormView: View {
     @State private var memberIsNew = false
     /// The "where does the service come from" screen, ahead of the service form.
     @State private var choosingService = false
+    @State private var addingServices = false
     @State private var edits = FormEditTracker()
     /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
@@ -472,6 +473,11 @@ struct GroupFormView: View {
     /// containers and volumes, and the ports already taken. One opens its form to review; several
     /// are added to the list as they are.
     private func addServices(from picks: [GroupMembers.Pick]) async {
+        // A second ▶ or Return while the first is still probing ports would read the same members
+        // and add everything twice.
+        guard !addingServices else { return }
+        addingServices = true
+        defer { addingServices = false }
         let place = draft.place
         await model.prepareSuggestions(on: place)
         let taken = model.stackTaken(on: place)
@@ -489,6 +495,11 @@ struct GroupFormView: View {
         } else {
             generateMissingSecrets(for: made)
             draft.members.append(contentsOf: made)
+            // Said now, not first at Save: which services still need a host port chosen.
+            let unplaced = made.filter { $0.ports.contains { !Allowlist.accepts($0, as: .portMapping) } }.map(\.name)
+            if !unplaced.isEmpty {
+                saveError = "No free host port was found for \(unplaced.joined(separator: ", ")). Edit \(unplaced.count == 1 ? "it" : "them") to choose one before saving."
+            }
         }
     }
 
@@ -503,10 +514,12 @@ struct GroupFormView: View {
     private func save() {
         var committed = draft
         committed.name = draft.name.trimmingCharacters(in: .whitespaces)
+        // Only passwords a member still uses: a picked service removed before Save leaves none behind.
+        let used = Set(committed.members.flatMap(\.secretEnv).map(\.secret))
         do {
             try model.groups.commit(committed)
-            for (secret, value) in pendingSecrets
-            where !KeychainSecrets.set(value, group: committed.id, secret: secret,
+            for (secret, value) in pendingSecrets where used.contains(secret)
+            && !KeychainSecrets.set(value, group: committed.id, secret: secret,
                                        label: "Flotilla: \(committed.name) — \(secret)") {
                 saveError = "The group was saved, but the Keychain refused the password “\(secret)”."
                 return
@@ -624,6 +637,7 @@ struct GroupMemberFormView: View {
                           "Published to this Mac, one per line.",
                           detail: "Other services in the group don't need a published port. With a domain in use for containers (the DNS section), they reach this one by its name; without one, at the network's gateway and this host port.",
                           example: "5432:5432\n127.0.0.1:8080:80"),
+                      problem: portsProblem,
                       optional: true) {
                 linesEditor($ports, placeholder: "5432:5432")
             }
@@ -744,7 +758,14 @@ struct GroupMemberFormView: View {
         let made = built
         return !made.name.isEmpty && !made.image.isEmpty
             && problem(made.name) == nil && imageProblem(made.image) == nil
-            && readyPortProblem == nil && commandSplitError == nil
+            && readyPortProblem == nil && commandSplitError == nil && portsProblem == nil
+    }
+
+    /// The first line that isn't a port mapping — including a pick's `127.0.0.1::80`, where no free
+    /// host port was found.
+    private var portsProblem: String? {
+        guard let bad = Self.lines(ports).first(where: { !Allowlist.accepts($0, as: .portMapping) }) else { return nil }
+        return "“\(bad)” needs a host port. \(ValueShape.portMapping.rule)"
     }
 
     private var commandSplitError: ShellWords.SplitError? {

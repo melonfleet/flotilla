@@ -301,7 +301,9 @@ private struct TaskRowView: View {
                 .help("Stopping \(made.id)…")
                 .accessibilityLabel("Stopping \(made.id)")
         } else {
-            TaskIconButton(systemImage: "stop.fill", label: "Stop \(made.id)", help: "Stop \(made.id)") {
+            let what = made.host.isLocal ? made.id
+                : "\(made.id) on \(model.hostMode.hostName(made.host, local: model.hostLabel))"
+            TaskIconButton(systemImage: "stop.fill", label: "Stop \(what)", help: "Stop \(what)") {
                 Task { await model.perform(.stop, on: container, host: made.host) }
             }
         }

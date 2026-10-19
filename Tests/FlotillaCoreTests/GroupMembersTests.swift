@@ -126,4 +126,18 @@ struct GroupMembersTests {
         #expect(GroupMembers.Pick(entry: stack) == nil)
         #expect(GroupMembers.defaultName(forImage: "@@@") == "service")
     }
+
+    /// Dave's review, 19 October: a pick with no free host port carries `127.0.0.1::80`, and the
+    /// group used to save it and fail at Start, after its earlier members were already running.
+    @Test func aServiceWithNoHostPortChosenIsRefusedAtSave() throws {
+        var book = GroupBook()
+        let group = try book.createGroup(name: "shop")
+        #expect(throws: GroupBook.GroupError.invalidPort("127.0.0.1::80", member: "web")) {
+            try book.addMember(GroupMember(name: "web", image: "nginx:1.29", ports: ["127.0.0.1::80"]),
+                               to: group.id)
+        }
+        let added = try book.addMember(GroupMember(name: "web", image: "nginx:1.29",
+                                                   ports: ["127.0.0.1:8080:80", "5432:5432"]), to: group.id)
+        #expect(added.ports.count == 2)
+    }
 }
