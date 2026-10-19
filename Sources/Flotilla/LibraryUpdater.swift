@@ -31,6 +31,7 @@ final class LibraryUpdater {
 
     private let defaults: UserDefaults
     private let activity: UpdateActivityCenter
+    private let cacheDirectory: URL?
     /// Tests only: stands in for the network. Receives the file name and the byte cap.
     @ObservationIgnored var fetchOverride: ((String, Int) async throws -> Data)?
     private static let lastCheckedKey = "suggestionLibraryLastChecked"
@@ -38,9 +39,12 @@ final class LibraryUpdater {
     /// signed — so an old file can't be replayed in (Kyle, 13 October).
     nonisolated static let highestVersionKey = "suggestionLibraryHighestVersion"
 
-    init(activity: UpdateActivityCenter = UpdateActivityCenter(), defaults: UserDefaults = .standard) {
+    init(activity: UpdateActivityCenter = UpdateActivityCenter(),
+         defaults: UserDefaults = .standard,
+         cacheDirectory: URL? = LibraryUpdater.cacheFolder) {
         self.activity = activity
         self.defaults = defaults
+        self.cacheDirectory = cacheDirectory
         lastChecked = defaults.object(forKey: Self.lastCheckedKey) as? Date
         // Saying "Not checked yet." after a relaunch, hours after the daily check ran, was untrue.
         if let lastChecked { status = Self.lastCheckedText(lastChecked) }
@@ -179,11 +183,18 @@ final class LibraryUpdater {
 
     /// Cache loading is local, even with updates disabled. Recheck hashes and PNGs on launch.
     func loadIcons(for library: SuggestionLibrary) async {
-        icons = await Blocking.run { Self.cachedIcons(library) }
+        let folder = cacheDirectory
+        icons = await Blocking.run { Self.cachedIcons(library, in: folder) }
     }
 
-    nonisolated static func iconURL(_ icon: LibraryIcon) -> URL? {
-        cacheFolder?.appendingPathComponent("icon-" + icon.sha256 + ".png")
+    nonisolated static func iconURL(_ icon: LibraryIcon, in folder: URL? = cacheFolder) -> URL? {
+        folder?.appendingPathComponent("icon-" + icon.sha256 + ".png")
+    }
+
+    /// Entry and artwork icons, in declaration order. Both share the byte cap, per-icon checks and
+    /// cache directory.
+    nonisolated private static func allIcons(in library: SuggestionLibrary) -> [LibraryIcon] {
+        library.entries.compactMap(\.icon) + (library.artwork ?? []).map(\.icon)
     }
 
     /// Exact signed length and hash, a real PNG, bounded dimensions, and successful pixel decode.
@@ -204,19 +215,20 @@ final class LibraryUpdater {
         return true
     }
 
-    nonisolated private static func readIcon(_ icon: LibraryIcon) -> Data? {
-        guard icon.problem() == nil, let url = iconURL(icon),
+    nonisolated private static func readIcon(_ icon: LibraryIcon, in folder: URL? = cacheFolder) -> Data? {
+        guard icon.problem() == nil, let url = iconURL(icon, in: folder),
               let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size == icon.bytes, let data = try? Data(contentsOf: url), validIcon(data, metadata: icon)
         else { return nil }
         return data
     }
 
-    nonisolated private static func cachedIcons(_ library: SuggestionLibrary) -> [String: Data] {
+    nonisolated static func cachedIcons(_ library: SuggestionLibrary,
+                                        in folder: URL? = cacheFolder) -> [String: Data] {
         var found: [String: Data] = [:]
         var remaining = maxIconTotalBytes
-        for icon in library.entries.compactMap(\.icon) where found[icon.sha256] == nil {
-            guard icon.bytes <= remaining, let data = readIcon(icon) else { continue }
+        for icon in allIcons(in: library) where found[icon.sha256] == nil {
+            guard icon.bytes <= remaining, let data = readIcon(icon, in: folder) else { continue }
             remaining -= data.count
             found[icon.sha256] = data
         }
@@ -224,14 +236,16 @@ final class LibraryUpdater {
     }
 
     /// Only called as part of a library check. Failure of any icon leaves its fallback tile.
-    private func updateIcons(_ library: SuggestionLibrary, session: URLSession) async {
+    func updateIcons(_ library: SuggestionLibrary, session: URLSession = .shared) async {
+        let folder = cacheDirectory
+        let libraryIcons = Self.allIcons(in: library)
         var found: [String: Data] = [:]
         var seen = Set<String>()
         var remaining = Self.maxIconTotalBytes
-        let total = Set(library.entries.compactMap(\.icon).filter { $0.problem() == nil }.map(\.sha256)).count
-        for icon in library.entries.compactMap(\.icon) {
+        let total = Set(libraryIcons.filter { $0.problem() == nil }.map(\.sha256)).count
+        for icon in libraryIcons {
             guard icon.problem() == nil, seen.insert(icon.sha256).inserted else { continue }
-            if let cached = await Blocking.run({ Self.readIcon(icon) }) {
+            if let cached = await Blocking.run({ Self.readIcon(icon, in: folder) }) {
                 if cached.count <= remaining {
                     found[icon.sha256] = cached
                     remaining -= cached.count
@@ -247,16 +261,16 @@ final class LibraryUpdater {
                 let data = try await fetch(icon.file, session, cap: LibraryIcon.maxBytes)
                 let valid = await Blocking.run {
                     guard Self.validIcon(data, metadata: icon) else { return false }
-                    if let url = Self.iconURL(icon) { try? data.write(to: url, options: .atomic) }
+                    if let url = Self.iconURL(icon, in: folder) { try? data.write(to: url, options: .atomic) }
                     return true
                 }
                 if valid { found[icon.sha256] = data }
             } catch { /* Decoration is optional; the library remains accepted. */ }
         }
         icons = found
-        let referenced = Set(library.entries.compactMap { $0.icon.map { "icon-" + $0.sha256 + ".png" } })
+        let referenced = Set(libraryIcons.map { "icon-" + $0.sha256 + ".png" })
         await Blocking.run {
-            guard let folder = Self.cacheFolder,
+            guard let folder,
                   let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
             else { return }
             for file in files where file.lastPathComponent.hasPrefix("icon-") && file.pathExtension == "png"

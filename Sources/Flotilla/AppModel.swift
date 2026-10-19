@@ -140,8 +140,10 @@ final class AppModel {
         // The first load, from here rather than only from the main window: a launch with no window
         // (at login, or with the window closed) left preflight unrun, so the menu bar said
         // "Checking…" until the window was opened — found 8 October, once the menu bar had a
-        // status line and a badge to show it.
-        Task { await reloadUnlessLoading() }
+        // status line and a badge to show it. Scripted hosts in tests drive their own refreshes.
+        if cli.host is LocalHost {
+            Task { await reloadUnlessLoading() }
+        }
         startFleetWatch()
         startNoticeWatch()
         startPolicyWatch()
@@ -1758,6 +1760,14 @@ final class AppModel {
     // internal property is redundant and the compiler says so.
     var machines: [ContainerMachine] = []
     var machinesState: LoadState = .idle
+    nonisolated static let maxConcurrentMachineInspections = 2
+    /// A machine's image is immutable; cache it per machine id and drop it when the machine goes away.
+    @ObservationIgnored var machineImages: [String: ContainerMachine.MachineImage] = [:]
+    @ObservationIgnored var machineImageBackoff: [String: HostBackoff] = [:]
+    @ObservationIgnored let machineImageChecks = KeyedCoalescer<String>(
+        maxConcurrent: AppModel.maxConcurrentMachineInspections)
+    @ObservationIgnored var machineImageTask: Task<Void, Never>?
+    @ObservationIgnored var machineImageNow: () -> Date = Date.init
 
     /// Local Kubernetes clusters. One row per cluster — see `AppModelClusters` for why there is
     /// no node hierarchy to model.
