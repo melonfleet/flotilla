@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The responsive list row that replaces the table (Q56), written for Containers first and shaped
@@ -367,13 +368,17 @@ struct RowTypeMark<Badge: View>: View {
     /// The kind, for the tooltip: "Group".
     let kind: String
     var logo: Data? = nil
+    /// System artwork drawn as it is, with no tile — a Mac model's icon on a host's row.
+    var artwork: NSImage? = nil
     var size: CGFloat = 16
     var symbolSize: CGFloat = 12
     @ViewBuilder var badge: Badge
 
     var body: some View {
         Group {
-            if let logo {
+            if let artwork {
+                Image(nsImage: artwork).resizable().scaledToFit()
+            } else if let logo {
                 SuggestionLogo(data: logo, category: nil, size: size)
             } else {
                 Image(systemName: systemImage)

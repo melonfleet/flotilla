@@ -113,8 +113,10 @@ for s in Containers Hosts; do
 done
 # Containers reserve a 20pt artwork slot after the disclosure gutter, in both row layouts.
 require Sources/Flotilla/ContainersView.swift 'RowGroupMark(markWidth: 20) {'
-require Sources/Flotilla/HostsView.swift 'RowGroupMark {'
-require Sources/Flotilla/HostsView.swift 'RowTypeMark(systemImage: groupSymbol, kind: groupNoun) {'
+# Hosts use the same 20pt slot, for a heading and for a Mac, so names line up (model artwork).
+require Sources/Flotilla/HostsView.swift 'RowGroupMark(markWidth: 20) {'
+require Sources/Flotilla/HostsView.swift 'RowTypeMark(systemImage: groupSymbol, kind: groupNoun, size: 20, symbolSize: 16) {'
+require Sources/Flotilla/HostsView.swift 'artwork: artwork?.image, size: 20, symbolSize: 16) {'
 require Sources/Flotilla/HostsView.swift 'indent: grouping == .none ? 0 : 28,'
 require Sources/Flotilla/HostsView.swift 'if row.header != nil { headerRow(row) } else { hostRow(row) }'
 # Q58 (17 October): every row section is a split — the list on the left, the selected row's page on

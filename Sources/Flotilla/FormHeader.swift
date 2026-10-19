@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Back, icon, title — the top bar of an embedded form screen.
@@ -37,6 +38,8 @@ struct FormHeader<Trailing: View>: View {
     let onBack: () -> Void
     /// A small pill after the title — "This Mac" on this Mac's own page.
     var titleBadge: String? = nil
+    /// System artwork drawn at 32pt in place of the symbol — a host page's Mac model.
+    var leadingImage: NSImage? = nil
     /// Pass the form's own token when its Cancel button must ask about the same registration
     /// (`FormCancelButton`); a form with no Cancel leaves it nil.
     var token: UUID? = nil
@@ -62,9 +65,15 @@ struct FormHeader<Trailing: View>: View {
                     if let formGuard { formGuard.confirmLeaving(form: token ?? ownToken, onBack) } else { onBack() }
                 }
             }
-            Image(systemName: systemImage)
-                .font(.system(size: 17))
-                .foregroundStyle(.secondary)
+            if let leadingImage {
+                Image(nsImage: leadingImage).resizable().scaledToFit()
+                    .frame(width: 32, height: 32)
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 17))
+                    .foregroundStyle(.secondary)
+            }
             Text(title).font(.system(size: 15, weight: .semibold))
             if titleBadge != nil { ThisMacPill() }
             Spacer()

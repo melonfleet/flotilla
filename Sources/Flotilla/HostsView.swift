@@ -410,7 +410,8 @@ struct HostsView: View {
             FormHeader(title: row.name,
                        systemImage: Section.hosts.systemImage,
                        hasUnsavedChanges: false, onBack: { selection = [] },
-                       titleBadge: row.isThisMac ? "This Mac" : nil) {
+                       titleBadge: row.isThisMac ? "This Mac" : nil,
+                       leadingImage: MacModelArtwork.artwork(for: row.modelIdentifier)?.image) {
                 // Ask this Mac again now rather than waiting for the next look (the owner, 9 October).
                 ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh \(row.name)") {
                     Task {
@@ -765,10 +766,10 @@ struct HostsView: View {
             check: RowCheck(row.id, in: $selection, unavailable: "A heading — select the hosts under it"),
             summary: "\(row.name), group, \(parts.joined(separator: ", ")), \(open ? "expanded" : "collapsed")",
             leading: {
-                RowGroupMark {
+                RowGroupMark(markWidth: 20) {
                     caret(row)
                 } mark: {
-                    RowTypeMark(systemImage: groupSymbol, kind: groupNoun) {
+                    RowTypeMark(systemImage: groupSymbol, kind: groupNoun, size: 20, symbolSize: 16) {
                         if let header = row.header { HostGroupDot(header: header) }
                     }
                 }
@@ -792,10 +793,12 @@ struct HostsView: View {
             indent: grouping == .none ? 0 : 28,
             summary: rowSummary(row, facts: facts),
             leading: {
-                RowGroupMark {
+                let artwork = MacModelArtwork.artwork(for: row.modelIdentifier)
+                RowGroupMark(markWidth: 20) {
                     Color.clear
                 } mark: {
-                    RowTypeMark(systemImage: "desktopcomputer", kind: "Host") {
+                    RowTypeMark(systemImage: "desktopcomputer", kind: artwork?.name ?? "Host",
+                                artwork: artwork?.image, size: 20, symbolSize: 16) {
                         HostStatusDot(model: model, row: row)
                     }
                 }
