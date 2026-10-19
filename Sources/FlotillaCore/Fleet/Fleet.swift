@@ -77,7 +77,7 @@ public struct HostBackoff: Sendable, Equatable {
     public private(set) var failures = 0
     public private(set) var nextAttempt: Date?
 
-    public init(base: TimeInterval = 30, ceiling: TimeInterval = 300) {
+    public init(base: TimeInterval = 30, ceiling: TimeInterval = 120) {
         self.base = base
         self.ceiling = ceiling
     }
@@ -101,4 +101,11 @@ public struct HostBackoff: Sendable, Equatable {
 
     /// Ask now, whatever the schedule says — the owner pressed Refresh.
     public mutating func forceDue() { nextAttempt = nil }
+
+    /// The network under the host changed — an interface, a VPN, Tailscale. What was learned about
+    /// the old path says nothing about the new one, so forget the failures as well as the wait.
+    public mutating func reset() {
+        failures = 0
+        nextAttempt = nil
+    }
 }

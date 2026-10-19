@@ -174,7 +174,8 @@ struct MenuBarView: View {
                 } label: {
                     Text(peer.displayName)
                     switch model.hostMode.live[peer.fingerprint]?.state {
-                    case .failed?: Text(model.hostRuntimeStopped(peer.fingerprint) ? "container stopped" : "Not answering")
+                    case .failed?: Text(model.hostRuntimeStopped(peer.fingerprint) ? "container stopped"
+                            : model.hostIsBusy(peer.fingerprint) ? "Busy" : "Not answering")
                     case .checking?, nil: Text("Checking…")
                     case .connected?: EmptyView()
                     }

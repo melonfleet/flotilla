@@ -264,6 +264,11 @@ extension AppModel {
     /// A host that answers but has no `container` — waiting for it, not unreachable: amber and
     /// "container isn't installed", never "not answering" in red (the owner, 10 October).
     /// Answering, with its `container` service stopped.
+    /// Connected and answering its pings, but a command is late — Busy, not Not answering.
+    func hostIsBusy(_ fingerprint: PeerFingerprint) -> Bool {
+        hostMode.live[fingerprint]?.busy == true
+    }
+
     func hostRuntimeStopped(_ fingerprint: PeerFingerprint) -> Bool {
         hostMode.live[fingerprint]?.runtimeStopped == true
     }

@@ -70,6 +70,10 @@ extension AppModel {
                     items.append(AttentionItem("container is stopped on \(peer.displayName): its containers can\u{2019}t run " + until,
                                                .hosts, key: "host-runtime-stopped:\(fingerprint.hex)", host: .peer(fingerprint),
                                                fix: start))
+                } else if hostIsBusy(peer.fingerprint) {
+                    items.append(AttentionItem("\(peer.displayName) is busy: it\u{2019}s still connected, but a command is taking "
+                                               + "longer than usual.", .hosts,
+                                               key: "host-busy:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
                 } else {
                     items.append(AttentionItem("\(peer.displayName) isn\u{2019}t answering: \(reason)", .hosts,
                                                key: "host-unreachable:\(peer.fingerprint.hex)", host: .peer(peer.fingerprint)))
@@ -86,6 +90,12 @@ extension AppModel {
             if let skew = appSkew(host), skew.level != .same,
                let theirs = fleet.live[peer.fingerprint]?.appVersion {
                 switch updateState(peer.fingerprint) {
+                case .waiting:
+                    // Sent, and not heard back yet: a warning that goes by itself once the host reports
+                    // the new build, never the non-dismissible failure (13 October).
+                    items.append(AttentionItem("Flotilla update sent to \(peer.displayName): waiting to hear from it "
+                                               + "to confirm it\u{2019}s on the new build.", .hosts,
+                                               key: "update-waiting:\(peer.fingerprint.hex)", host: host))
                 case .available, .updating:
                     // An update waiting or under way is new work, not a fault: Overview's Updates
                     // block (Iris, 8 October). Left here, every routine rollout turned the
@@ -158,6 +168,7 @@ extension AppModel {
     /// when it is due — every 30 seconds while it answers, less often while it doesn't — so this
     /// and an open Hosts screen never ask the same host twice in a window.
     func startFleetWatch() {
+        hostMode.startNetworkWatch()
         Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }

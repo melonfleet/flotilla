@@ -69,10 +69,14 @@ extension AppModel {
         /// Behind, but on a Flotilla too old to take updates from here.
         case manualOnly
         case updating
+        /// Sent and installed as far as anyone can tell; the host has not yet said it is on the new
+        /// build. Not a failure (`UpdateWatch`).
+        case waiting
         case failed(String)
     }
 
     func updateState(_ fingerprint: PeerFingerprint) -> HostUpdateState {
+        if hostMode.awaitingUpdate.contains(fingerprint) { return .waiting }
         if hostMode.updating.contains(fingerprint) { return .updating }
         switch FleetUpdate.standing(host: hostBuild(fingerprint), admin: ownBuild) {
         case .current: return .current
@@ -130,23 +134,53 @@ extension AppModel {
             _ = result
         } catch {
             guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
-            return failUpdate(fingerprint, name: name, target: target, HostModeController.describe(error))
+            // The host answers once it has installed, then relaunches a moment later, so a connection
+            // that closes or runs out of time here may belong to an update that went ahead (13 October:
+            // "The connection closed", at a host that was already on the new build). Only the host's
+            // own build can say; a refusal or a failed upload is a failure now.
+            switch error as? RemoteHostError {
+            case .closed?, .timedOut?: break
+            default: return failUpdate(fingerprint, name: name, target: target, HostModeController.describe(error))
+            }
         }
-        // It relaunches: wait for it to answer again, on the new build.
-        let deadline = Date().addingTimeInterval(240)
-        while Date() < deadline {
-            try? await Task.sleep(for: .seconds(4))
+        // It relaunches, and for a while cannot be heard: wait for it to answer on the new build.
+        // Silence is not failure — `UpdateWatch` fails it only on an answer from the old build, or
+        // on silence far longer than any relaunch.
+        hostMode.awaitingUpdate.insert(fingerprint)
+        defer { if hostMode.trustGeneration == generation { hostMode.awaitingUpdate.remove(fingerprint) } }
+        var watch = UpdateWatch(target: target, startedAt: Date())
+        var looks = 0
+        while true {
+            // Often while it is likely to be back, then gently: a host off the network for an hour
+            // is not asked every four seconds.
+            try? await Task.sleep(for: .seconds(looks < 30 ? 4 : 20))
+            looks += 1
             guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
+            let askedAt = Date()
             await hostMode.refreshHost(fingerprint)
             guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
-            if hostBuild(fingerprint) == target {
+            // Its Flotilla answered if this look reached it, whatever its `container` said.
+            let answered = hostMode.live[fingerprint].map { $0.checkedAt >= askedAt && $0.appVersion != nil } ?? false
+            switch watch.observe(answered: answered, build: answered ? hostBuild(fingerprint) : nil, at: Date()) {
+            case .confirmed:
                 hostMode.updateFailures.removeValue(forKey: fingerprint)
                 recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .host, subject: name,
                                               action: "Updated Flotilla to build \(target)"))
                 return nil
+            case .waiting:
+                continue
+            case .failed(let why):
+                return failUpdate(fingerprint, name: name, target: target, why)
             }
         }
-        return failUpdate(fingerprint, name: name, target: target, "It installed the update but didn't come back on build \(target) within four minutes.")
+    }
+
+    /// A failure recorded for a build the host now reports is over: forgotten, so a Retry offer or a
+    /// notice raised while the host could not be heard does not outlive the host's own answer.
+    func clearConfirmedUpdateFailures() {
+        for (fingerprint, failure) in hostMode.updateFailures where (hostBuild(fingerprint) ?? 0) >= failure.build {
+            hostMode.updateFailures.removeValue(forKey: fingerprint)
+        }
     }
 
     private func failUpdate(_ fingerprint: PeerFingerprint, name: String, target: Int, _ raw: String) -> String {

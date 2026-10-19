@@ -28,6 +28,21 @@ public enum RemoteHostError: Error, Equatable, Sendable, CustomStringConvertible
         case .pairingFailed(let why): why
         }
     }
+
+    /// Whether this is a host that is alive but late, rather than one that cannot be heard.
+    ///
+    /// A host that *said* a command timed out or that it is busy plainly answered. A local
+    /// deadline (`.timedOut`) says only that no reply came, so it counts as late when the
+    /// connection was still being heard from (`connectionAlive`): the pings come back on a link
+    /// that is up, and a silent connection is a dead one. Everything else — unreachable, closed,
+    /// refused — is not about load.
+    public func isLate(connectionAlive: Bool) -> Bool {
+        switch self {
+        case .failed(let failure): failure.code == .timedOut || failure.code == .busy
+        case .timedOut: connectionAlive
+        default: false
+        }
+    }
 }
 
 /// The admin Mac's connection to one host (PLAN.md Phase B, B3): TLS with this Mac's identity, the
@@ -49,7 +64,13 @@ public final class AdminConnection: @unchecked Sendable {
     /// Requests over the agreed concurrency wait here for a slot rather than failing: the limit
     /// protects the host, and the caller should not have to know it exists.
     private var waiting: [(arguments: [String], timeout: TimeInterval?,
-                           completion: @Sendable (Result<CommandResult, Error>) -> Void)] = []
+                           completion: @Sendable (Result<CommandResult, Error>) -> Void, token: UInt64)] = []
+    /// A request waiting for a slot is on its deadline from the moment it was asked, not from when a
+    /// slot frees: behind four long commands it would otherwise wait with no end (see `run`).
+    private var waitingDeadlines: [UInt64: DispatchSourceTimer] = [:]
+    private var nextToken: UInt64 = 0
+    /// When the host last said anything, pongs included — on this connection's queue.
+    private var lastHeard = Date()
     private var deadlines: [UInt32: DispatchSourceTimer] = [:]
     /// Follows being read (D2): where each one's output and end go.
     private var follows: [UInt32: (data: @Sendable (WireMessage.StreamChannel, Data) -> Void,
@@ -93,6 +114,13 @@ public final class AdminConnection: @unchecked Sendable {
 
     /// Whether this connection has ended — a closed one is never reused.
     public var isClosed: Bool { connection.queue.sync { closedReason != nil } }
+
+    /// Whether the host has been heard from within `seconds` and this connection is still open.
+    /// Pings go out every 20 seconds of quiet, so a link that is up always has.
+    /// Not for use on this connection's own queue.
+    public func heard(within seconds: TimeInterval) -> Bool {
+        connection.queue.sync { closedReason == nil && Date().timeIntervalSince(lastHeard) <= seconds }
+    }
 
     /// The host's fingerprint, once connected.
     public var hostFingerprint: PeerFingerprint? { connection.peerFingerprint }
@@ -159,9 +187,22 @@ public final class AdminConnection: @unchecked Sendable {
             if let reason = closedReason { return completion(.failure(RemoteHostError.closed(reason))) }
             if case .ready = session.state, session.inFlight.count >= session.limits.maxConcurrentRequests {
                 // A command the Allowlist refuses still fails at once; only a full pipe waits.
-                do { _ = try Allowlist.validated(arguments, wirePolicy: .remotePeer) }
+                let hint: TimeInterval
+                do { hint = try Allowlist.validated(arguments, wirePolicy: .remotePeer).timeoutHint }
                 catch { return completion(.failure(error)) }
-                waiting.append((arguments, timeout, completion))
+                nextToken += 1
+                let token = nextToken
+                waiting.append((arguments, timeout, completion, token))
+                // The same rule `WireClientSession.request` applies once a slot is free.
+                let own: TimeInterval = if let timeout, timeout > 0 { hint > 0 ? min(hint, timeout) : timeout } else { hint }
+                if own > 0 {
+                    waitingDeadlines[token] = self.timer(after: own + session.limits.deadlineGrace) { [weak self] in
+                        guard let self else { return }
+                        self.waitingDeadlines.removeValue(forKey: token)
+                        guard let index = self.waiting.firstIndex(where: { $0.token == token }) else { return }
+                        self.waiting.remove(at: index).completion(.failure(RemoteHostError.timedOut))
+                    }
+                }
                 return
             }
             do {
@@ -367,6 +408,7 @@ public final class AdminConnection: @unchecked Sendable {
     // MARK: Internals
 
     private func received(_ message: WireMessage) {
+        lastHeard = Date()
         do {
             for event in try session.receive(message) {
                 switch event {
@@ -411,6 +453,7 @@ public final class AdminConnection: @unchecked Sendable {
         // A slot is free: send the next waiting request.
         if closedReason == nil, !waiting.isEmpty {
             let next = waiting.removeFirst()
+            waitingDeadlines.removeValue(forKey: next.token)?.cancel()
             run(next.arguments, timeout: next.timeout, completion: next.completion)
         }
     }
@@ -427,6 +470,8 @@ public final class AdminConnection: @unchecked Sendable {
         for (id, entry) in open { entry.end(.init(id: id, reason: reason ?? "The connection closed.")) }
         let stranded = waiting
         waiting.removeAll()
+        waitingDeadlines.values.forEach { $0.cancel() }
+        waitingDeadlines.removeAll()
         for request in stranded { request.completion(.failure(RemoteHostError.closed(reason))) }
         if let handler = pairingHandler {
             pairingHandler = nil

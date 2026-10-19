@@ -807,6 +807,7 @@ struct HostDetailView: View {
         case .failed?:
             if let fingerprint, model.hostMissingContainer(fingerprint) { return "container isn't installed" }
             if let fingerprint, model.hostRuntimeStopped(fingerprint) { return "container is stopped" }
+            if let fingerprint, model.hostIsBusy(fingerprint) { return "Busy" }
             return "Not answering"
         case .checking?, nil: return "Checking…"
         }
@@ -823,7 +824,8 @@ struct HostDetailView: View {
         switch live?.state {
         case .connected?: return Theme.online
         case .failed?:
-            if let fingerprint, model.hostMissingContainer(fingerprint) || model.hostRuntimeStopped(fingerprint) {
+            if let fingerprint, model.hostMissingContainer(fingerprint) || model.hostRuntimeStopped(fingerprint)
+                || model.hostIsBusy(fingerprint) {
                 return Theme.warning
             }
             return Theme.danger
@@ -877,6 +879,7 @@ struct HostDetailView: View {
         case .available: "An update is available"
         case .manualOnly: "Too old to update from here — install by hand"
         case .updating: "Updating…"
+        case .waiting: "Update sent — waiting to hear from it"
         case .failed(let why): "Failed: \(why)"
         }
     }

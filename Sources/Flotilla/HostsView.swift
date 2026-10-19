@@ -122,13 +122,17 @@ extension AppModel {
             let live = peer.isTrusted ? hostMode.live[peer.fingerprint] : nil
             // While Flotilla updates there, the connection drops on purpose for the relaunch: said
             // so, rather than shown as a fault (measured 8 October, Tahoe read "The connection closed").
-            let status: String = if hostMode.updating.contains(peer.fingerprint) && live?.state != .connected {
+            let status: String = if hostMode.awaitingUpdate.contains(peer.fingerprint) && live?.state != .connected {
+                "Update sent, waiting to hear from it…"
+            } else if hostMode.updating.contains(peer.fingerprint) && live?.state != .connected {
                 "Updating Flotilla…"
             } else {
                 switch live?.state {
                 case .connected: "Connected"
                 case .checking: "Checking…"
-                case .failed(let why): hostMissingContainer(peer.fingerprint) ? "container isn't installed" : why
+                case .failed(let why):
+                    hostMissingContainer(peer.fingerprint) ? "container isn't installed"
+                        : live?.busy == true ? "Busy: a command is taking longer than usual" : why
                 case nil: HostRow.statusText(peer.status)
                 }
             }
@@ -620,6 +624,7 @@ struct HostsView: View {
                                         return !hostMode.updating.contains(peer.fingerprint)
                                             && !model.hostMissingContainer(peer.fingerprint)
                                             && !model.hostRuntimeStopped(peer.fingerprint)
+                                            && !model.hostIsBusy(peer.fingerprint)
                                     }.count), members)
         }
     }
@@ -908,6 +913,10 @@ struct HostsView: View {
                     .disabled(hostMode.rollingOut)
                     .help("Update \(row.name) to This Mac’s Flotilla, build \(model.ownBuild.map(String.init) ?? "?"). "
                           + "Running containers are not touched.")
+            case .waiting:
+                noticeChip("Waiting to hear", systemImage: "clock.fill", tint: Theme.warning)
+                    .help("The update was sent and installed as far as this Mac can tell. \(row.name) is relaunching or out of "
+                          + "reach; this Mac will confirm the new build when it answers.")
             case .updating:
                 ProgressView().controlSize(.mini)
                     .help("Updating — \(row.name) relaunches Flotilla when it is idle; containers keep running.")
@@ -1212,7 +1221,7 @@ struct HostStatusDot: View {
             case .checking: return .secondary
             case .failed:
                 return model.hostMissingContainer(peer.fingerprint) || model.hostRuntimeStopped(peer.fingerprint)
-                    ? Theme.warning : Theme.danger
+                    || model.hostIsBusy(peer.fingerprint) ? Theme.warning : Theme.danger
             }
         }
         switch row.peer?.status {

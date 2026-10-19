@@ -76,6 +76,10 @@ final class HostModeController {
         /// Answering, but its `container` service is stopped, as its `system status` said. The CLI's
         /// own error ("XPC connection error: Connection invalid") is a symptom; this is the reason.
         var runtimeStopped = false
+        /// Its connection is alive and answering pings, but a command came back late — a host busy
+        /// with a stack coming up, say. `state` is `.failed` with the reason so the old readers
+        /// still see "not fine", and everything that says "not answering" checks this first.
+        var busy = false
     }
     private(set) var live: [PeerFingerprint: LiveStatus] = [:]
     /// Each paired host's containers, as last fetched — kept through failures, with their age
@@ -231,6 +235,9 @@ final class HostModeController {
 
     /// Hosts being sent or installing an update now.
     var updating: Set<PeerFingerprint> = []
+    /// The part of `updating` that has sent the update and is waiting to hear the new build back —
+    /// installed as far as anyone knows, not confirmed (`UpdateWatch`).
+    var awaitingUpdate: Set<PeerFingerprint> = []
     /// Hosts installing or upgrading `container` now (Q39).
     var settingUpRuntime: Set<PeerFingerprint> = []
     /// The admin build a host last failed to update to, and why — not retried automatically.
@@ -697,6 +704,7 @@ final class HostModeController {
         fleetNamesResults.removeAll()
         updateFailures.removeAll()
         updating.removeAll()
+        awaitingUpdate.removeAll()
         settingUpRuntime.removeAll()
         autoEnrolAttempts.removeAll()
         // This Mac stops answering names for the fleet it has left. The /etc/resolver files stay:
@@ -960,6 +968,49 @@ final class HostModeController {
         }
     }
 
+    // MARK: Network changes
+
+    @ObservationIgnored private var pathMonitor: NWPathMonitor?
+    @ObservationIgnored private var pathFilter = NetworkChangeFilter()
+    @ObservationIgnored private var pathDebounce: Task<Void, Never>?
+
+    /// Watches the network path for as long as Flotilla runs. When it changes — an interface, a VPN,
+    /// Tailscale coming up — every host is asked again at once (13 October: the mini stayed
+    /// "not answering" for a retry wait that belonged to the old network).
+    func startNetworkWatch() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let satisfied = path.status == .satisfied
+            let signature = path.availableInterfaces.map(\.name) + path.gateways.map { "\($0)" }
+            Task { @MainActor [weak self] in self?.networkPathUpdated(satisfied: satisfied, signature: signature) }
+        }
+        monitor.start(queue: DispatchQueue(label: "dev.melonfleet.Flotilla.network-path"))
+        pathMonitor = monitor
+    }
+
+    private func networkPathUpdated(satisfied: Bool, signature: [String]) {
+        guard pathFilter.observe(satisfied: satisfied, signature: signature) else { return }
+        // A change arrives as several updates in a row (interface up, then address, then route).
+        pathDebounce?.cancel()
+        pathDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.reconnectAllHosts()
+        }
+    }
+
+    /// Forgets how every host failed on the old network and asks each once, through the coalescer.
+    /// The cached connections go too: one made on the old path can sit open, or half-open, for a
+    /// minute before it is noticed.
+    func reconnectAllHosts() async {
+        for peer in trustedHosts {
+            backoff[peer.fingerprint, default: HostBackoff()].reset()
+            remotes.removeValue(forKey: peer.fingerprint)?.close()
+        }
+        await refreshLiveStatus(force: true)
+    }
+
     /// After an action on a host: ask it again now, not at the next tick.
     func refreshHost(_ fingerprint: PeerFingerprint) async {
         guard isTrustedHost(fingerprint) else { return }
@@ -992,14 +1043,21 @@ final class HostModeController {
         live[fingerprint] = status
         let cli = ContainerCLI(host: remote, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
         // On GCD, not `Task.detached`: these block for a host's whole timeout (see `Blocking`).
-        let (outcome, stopped) = await Blocking.run { () -> (Result<(String?, [Container], Int), Error>, Bool) in
+        let (outcome, stopped, busy) = await Blocking.run { () -> (Result<(String?, [Container], Int), Error>, Bool, Bool) in
             let outcome = Result {
                 let version = try cli.versions().first { $0.appName.lowercased().contains("container") }?.version
                 return (version, try cli.listContainers(), try cli.machines().count)
             }
+            guard case .failure(let error) = outcome else { return (outcome, false, false) }
+            // A command that came back late on a connection still answering its pings is a busy host.
+            // Not asked again: the status read would wait out a second deadline on the same stall.
+            if let remoteError = error as? RemoteHostError,
+               remoteError.isLate(connectionAlive: remote.isAlive()) {
+                return (outcome, false, true)
+            }
             // A failure from a host that answered may be its service, stopped: ask it, read-only.
-            guard case .failure = outcome, let status = try? cli.systemStatus() else { return (outcome, false) }
-            return (outcome, !status.isRunning)
+            guard let status = try? cli.systemStatus() else { return (outcome, false, false) }
+            return (outcome, !status.isRunning, false)
         }
         guard generation == trustGeneration else { return }
         // The other lists, each on its own: one failing does not blank the others.
@@ -1059,23 +1117,33 @@ final class HostModeController {
             }
             save()
         case .failure(let error):
-            containerSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
-            imageSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
-            volumeSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
-            clusterSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
-            networkSnapshots[fingerprint, default: FleetSnapshot()].failed(Self.describe(error), at: now)
-            // A stopped service is a host that answers: asked at the usual pace, so starting it again
-            // shows within one interval rather than after a backoff of up to five minutes.
-            if stopped {
+            // Busy says so; the rest keep the error's own words.
+            let reason = busy ? Self.busyReason : Self.describe(error)
+            containerSnapshots[fingerprint, default: FleetSnapshot()].failed(reason, at: now)
+            imageSnapshots[fingerprint, default: FleetSnapshot()].failed(reason, at: now)
+            volumeSnapshots[fingerprint, default: FleetSnapshot()].failed(reason, at: now)
+            clusterSnapshots[fingerprint, default: FleetSnapshot()].failed(reason, at: now)
+            networkSnapshots[fingerprint, default: FleetSnapshot()].failed(reason, at: now)
+            // A stopped service, or a busy host, is a host that answers: asked at the usual pace, so
+            // the recovery shows within one interval rather than after a backoff.
+            if stopped || busy {
                 backoff[fingerprint, default: HostBackoff()].succeeded(at: now)
             } else {
                 backoff[fingerprint, default: HostBackoff()].failed(at: now)
             }
             // Its Flotilla still answered: keep its version, so a host without `container` is still
             // seen as behind and can be updated (measured 8 October, Tahoe showed "—" and was skipped).
-            live[fingerprint] = LiveStatus(state: .failed(stopped ? "container is stopped" : Self.describe(error)),
-                                           appVersion: remote.hostInfo?.appVersion, checkedAt: Date(),
-                                           runtimeStopped: stopped)
+            var status = LiveStatus(state: .failed(stopped ? "container is stopped" : reason),
+                                    appVersion: remote.hostInfo?.appVersion, checkedAt: Date(),
+                                    runtimeStopped: stopped, busy: busy)
+            if busy, let before = live[fingerprint] {
+                // What it last said about itself is still the best there is; only the state is new.
+                status.containersRunning = before.containersRunning
+                status.containersTotal = before.containersTotal
+                status.machines = before.machines
+                status.containerVersion = before.containerVersion
+            }
+            live[fingerprint] = status
             // Connected but a command failed — a host without `container` — still says who it is.
             // Measured 7 October: a renamed VM kept its old name because only success refreshed it.
             if let info = remote.hostInfo,
@@ -1085,6 +1153,9 @@ final class HostModeController {
             }
         }
     }
+
+    /// What a busy host's rows say in place of an error.
+    nonisolated static let busyReason = "Busy: it's still connected, but a command is taking longer than usual. Showing what it last reported."
 
     /// A host's DNS (D3). A host whose Flotilla predates host calls says so in its rows' place.
     /// Behind the same two checks as `refreshLiveStatus`, which matters most here: `dnsCall` hands

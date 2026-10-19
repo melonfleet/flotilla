@@ -94,6 +94,7 @@ struct OverviewView: View {
             case .connected?: ("connected", Theme.online, true)
             case .failed?: model.hostMissingContainer(peer.fingerprint)
                 ? ("container isn't installed", Theme.warning, false)
+                : status?.busy == true ? ("busy", Theme.warning, false)
                 : ("not answering", Theme.danger, false)
             case .checking?, nil: ("checking…", Color.secondary, false)
             }

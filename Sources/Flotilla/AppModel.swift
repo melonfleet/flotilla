@@ -159,6 +159,7 @@ final class AppModel {
         startSystemFactsWatch()
         startPowerPolicy()
         hostMode.onRefreshed = { [weak self] in
+            self?.clearConfirmedUpdateFailures()
             Task {
                 await self?.updateFleetNames()
                 await self?.rollOutUpdates()

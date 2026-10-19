@@ -67,6 +67,14 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
 
     public var isClosed: Bool { lock.withLock { closed } }
 
+    /// Whether the open connection has been heard from within `seconds`. A host whose command is
+    /// late but whose connection answers its pings is busy, not gone. Blocks briefly on the
+    /// connection's queue, so call it inside `Blocking.run`.
+    public func isAlive(within seconds: TimeInterval = 45) -> Bool {
+        let open = lock.withLock { connection }
+        return open?.heard(within: seconds) ?? false
+    }
+
     static let closedError = RemoteHostError.closed("Flotilla closed its connection to this host")
 
     // MARK: Running
