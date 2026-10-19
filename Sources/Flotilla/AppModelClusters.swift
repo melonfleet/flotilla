@@ -220,10 +220,20 @@ extension AppModel {
         hostMode.clusterSnapshots[fingerprint]?.items.contains { $0.node == name && (!running || $0.isRunning) } ?? false
     }
 
+    /// Why a create on `host` would be refused before any task starts, or nil. The form asks first
+    /// (Kyle, 19 October), so it stays open with the user's entries rather than closing onto an alert
+    /// with no task behind it.
+    func clusterHostProblem(_ host: HostRef) -> String? {
+        guard case .peer(let fingerprint) = host, remoteCLI(fingerprint) == nil else { return nil }
+        return Self.unreachableClusterHost
+    }
+
+    private static let unreachableClusterHost = "That host can't be reached."
+
     private func createRemoteCluster(name: String, cpus: Int?, memory: String?, nodeImage: String?,
                                      autoRemove: Bool, on fingerprint: PeerFingerprint) async -> Bool {
         guard let (remote, hostName) = remoteCLI(fingerprint) else {
-            actionError = "That host can't be reached."
+            actionError = Self.unreachableClusterHost
             return false
         }
         return await withProgress(

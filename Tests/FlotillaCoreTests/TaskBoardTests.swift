@@ -513,4 +513,37 @@ import Testing
         board.minimise()
         #expect(!board.shouldAutoMinimise(after: id))          // already down
     }
+
+    /// Kyle, 19 October: A fails, then B succeeds — B's success must not sink A's failure.
+    @Test func aSuccessAfterAnotherFailureKeepsTheDrawerUp() {
+        var board = TaskBoard()
+        let a = UUID(), b = UUID()
+        board.start(a, title: "Pull a typo", at: t0)
+        board.start(b, title: "Pull nginx", at: t0)
+        board.fail(a, reason: "not found", at: at(3))
+        board.succeed(b, at: at(5))
+        #expect(!board.shouldAutoMinimise(after: b))
+        board.clear(a)                                          // dealt with: the next finish sinks it
+        #expect(board.shouldAutoMinimise(after: b))
+    }
+
+    @Test func aRetriedOrPutAwayFailureNoLongerHoldsTheDrawer() {
+        var board = TaskBoard()
+        let a = UUID(), b = UUID()
+        board.start(a, title: "Pull a typo", kind: .pullImage, hasRetryAction: true, at: t0)
+        board.fail(a, reason: "not found", at: at(3))
+        board.retry(a)
+        board.start(b, title: "Pull a typo", at: at(4))
+        board.succeed(b, at: at(6))
+        #expect(board.shouldAutoMinimise(after: b))             // the retry dealt with it
+
+        var put = TaskBoard()
+        let c = UUID(), d = UUID()
+        put.start(c, title: "Pull a typo", at: t0)
+        put.fail(c, reason: "not found", at: at(3))
+        put.minimise()                                          // seen and put away by hand
+        put.start(d, title: "Pull nginx", at: at(4))
+        put.succeed(d, at: at(6))
+        #expect(put.shouldAutoMinimise(after: d))
+    }
 }

@@ -20,6 +20,8 @@ struct NewClusterView: View {
     @State private var nodeImage = ""
     @State private var autoRemove = false
     @State private var host: HostRef = .local
+    /// Why Save was refused before a task could start — the host went away meanwhile.
+    @State private var refusal: String?
     @State private var edits = FormEditTracker()
     /// Shared by the header and the Cancel button, so both ask about this form alone.
     @State private var formToken = UUID()
@@ -36,12 +38,19 @@ struct NewClusterView: View {
                 actions
             }
             Divider()
+            if let refusal {
+                FormBand {
+                    Label(refusal, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(Theme.danger)
+                }
+            }
             FormScaffold {
                 form
             } preview: {
                 railPreview
             }
         }
+        .onChange(of: host) { refusal = nil }
         .onAppear {
             host = initialHost
             if let prefill {
@@ -249,10 +258,15 @@ struct NewClusterView: View {
     }
 
     /// A task from here (Kamal, 19 October): the form returns to the list and Tasks reports the
-    /// pull and the boot.
+    /// pull and the boot — but only once a task can start. A host that can't be reached is refused
+    /// here, with the form and its entries still on screen (Kyle, 19 October).
     private func create() async {
         let name = trimmedName, cpus = chosenCPUs, memory = chosenMemory
         let image = chosenNodeImage, remove = autoRemove, place = host
+        if let problem = model.clusterHostProblem(place) {
+            refusal = problem
+            return
+        }
         Task {
             _ = await model.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: image,
                                           autoRemove: remove, on: place)

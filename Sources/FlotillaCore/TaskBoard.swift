@@ -134,6 +134,9 @@ public struct TaskBoard: Equatable, Sendable {
     public private(set) var drawer: Drawer = .hidden
     /// Failures nobody has seen yet: they arrived while the drawer was down.
     public private(set) var unseenFailures: Set<UUID> = []
+    /// Failures that arrived while the drawer was up. Until it goes down, or they are retried or
+    /// cleared, it stays up: a later success elsewhere must not sink a failure nobody has dealt with.
+    public private(set) var failuresInView: Set<UUID> = []
     /// Rows opened in the list. Kept here, not in the view: the drawer is rebuilt when it is
     /// minimised and raised, and an open row must stay open while lines arrive and after.
     public private(set) var expanded: Set<UUID> = []
@@ -231,7 +234,7 @@ public struct TaskBoard: Equatable, Sendable {
         entries[index].cancelRequested = false
         // Collapsed rows stay collapsed (the caret is the only way in); a failure flags its row, which
         // carries the reason as its secondary line. With the drawer down, the status item is flagged.
-        if drawer == .hidden { unseenFailures.insert(id) }
+        if drawer == .hidden { unseenFailures.insert(id) } else { failuresInView.insert(id) }
         return trim()
     }
 
@@ -283,12 +286,16 @@ public struct TaskBoard: Equatable, Sendable {
     public mutating func clearReveal() { revealed = nil }
 
     /// Whether the drawer should sink by itself now that a job has ended (Kamal, 19 October): it is
-    /// up, nothing is still running, the job that ended didn't fail (a failure is the one thing to
-    /// see, so it stays up), and no row is open (someone is reading its output).
+    /// up, nothing is still running, the job that ended didn't fail, no failure since it rose is
+    /// still waiting (a failure is the one thing to see, so it stays up — however many jobs succeed
+    /// after it), and no row is open (someone is reading its output).
     public func shouldAutoMinimise(after ended: UUID) -> Bool {
         guard drawer != .hidden, runningCount == 0, expanded.isEmpty,
               let entry = entry(ended), entry.state.isFinished, !entry.state.isFailure else { return false }
-        return true
+        let waiting = failuresInView.contains { id in
+            self.entry(id).map { $0.state.isFailure && !$0.retried } ?? false
+        }
+        return !waiting
     }
 
     /// How long a finished drawer stays up before it sinks, so the finish is seen.
@@ -298,6 +305,7 @@ public struct TaskBoard: Equatable, Sendable {
     public mutating func minimise() {
         drawer = .hidden
         openedByUser = false
+        failuresInView = []   // put away by hand: seen
     }
 
     /// Opens or folds the "N finished" line.
@@ -486,6 +494,7 @@ public struct TaskBoard: Equatable, Sendable {
         if !hasFinished { finishedExpanded = false }
         for id in ids {
             unseenFailures.remove(id)
+            failuresInView.remove(id)
             expanded.remove(id)
             if revealed == id { revealed = nil }
             if highlighted == id { highlighted = nil }
