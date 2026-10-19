@@ -17,7 +17,7 @@ import Testing
         #expect(throws: AllowlistError.self) {
             try Allowlist.validated(args, execPolicy: .interactiveShell, wirePolicy: .remotePeer)
         }
-        let neighbours = [
+        let neighbours: [[String]] = [
             args + ["extra"],
             Array(args.dropLast()),
             ["machine", "run", "--"] + operation.command,
