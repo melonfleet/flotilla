@@ -31,4 +31,18 @@ import Testing
         let old = #"{"restart":"never","restartWhenUnhealthy":false}"#
         #expect(try JSONDecoder().decode(ContainerPolicy.self, from: Data(old.utf8)).setByAdmin == nil)
     }
+
+    @Test func onlyLoopbackTCPMappingsCount() {
+        typealias Port = Container.Configuration.PublishedPort
+        let ports = ContainerPolicy.loopbackTCPPorts([
+            Port(containerPort: 80, hostPort: 8080, hostAddress: "0.0.0.0", proto: "tcp"),
+            Port(containerPort: 80, hostPort: 631, hostAddress: "0.0.0.0", proto: "udp"),     // UDP: no
+            Port(containerPort: 80, hostPort: 632, hostAddress: "192.168.1.5", proto: "tcp"), // another interface: no
+            Port(containerPort: 80, hostPort: 9000, hostAddress: "127.0.0.1"),                // proto absent = TCP
+            Port(containerPort: 80, hostPort: 7000, hostAddress: "[::]", proto: "TCP", count: 3),
+        ])
+        #expect(ports == [8080, 9000, 7000, 7001, 7002])
+        let check = ContainerPolicy(health: HealthCheck(probe: .http(port: 631, path: "/admin")))
+        #expect(check.portProblem(published: ports) != nil)
+    }
 }

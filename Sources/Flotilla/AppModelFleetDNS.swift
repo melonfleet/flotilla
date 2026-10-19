@@ -81,7 +81,7 @@ extension AppModel {
             if let problem = policy.remoteProblem ?? policy.problem {
                 return .failure(HostCallFailure(.refused, problem))
             }
-            if let ports = containers.first(where: { $0.id == container }).map({ Set($0.publishedPorts.map(\.hostPort)) }),
+            if let ports = containers.first(where: { $0.id == container }).map({ ContainerPolicy.loopbackTCPPorts($0.publishedPorts) }),
                let problem = policy.portProblem(published: ports) {
                 return .failure(HostCallFailure(.refused, problem))
             }
@@ -386,7 +386,7 @@ extension AppModel {
     /// (version 12, Q53), which then runs it itself. Returns why not, or nil.
     func setPolicy(_ policy: ContainerPolicy, for container: String, on host: HostRef) async -> String? {
         guard case .peer(let fingerprint) = host else {
-            if let ports = containers.first(where: { $0.id == container }).map({ Set($0.publishedPorts.map(\.hostPort)) }),
+            if let ports = containers.first(where: { $0.id == container }).map({ ContainerPolicy.loopbackTCPPorts($0.publishedPorts) }),
                let problem = policy.portProblem(published: ports) {
                 return problem
             }

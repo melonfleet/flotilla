@@ -62,9 +62,25 @@ public struct ContainerPolicy: Codable, Sendable, Equatable {
     /// Why this policy's check may not run for a container publishing `published` host ports, or
     /// nil. HTTP and port checks dial 127.0.0.1, so they must stay on the container's own published
     /// port, or a check for `web` could probe any other service on the Mac (Q53; Kyle, 19 October).
+    /// The host ports a check on 127.0.0.1 may dial for these mappings: TCP only (`proto` absent
+    /// means TCP, as `container` defaults), on an address that includes loopback (unbound, any, or
+    /// loopback itself), with a range expanded by its `count` (Kyle, 19 October).
+    public static func loopbackTCPPorts(_ mappings: [Container.Configuration.PublishedPort]) -> Set<Int> {
+        var ports: Set<Int> = []
+        for mapping in mappings {
+            let proto = (mapping.proto ?? "tcp").lowercased()
+            let address = (mapping.hostAddress ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            guard proto == "tcp",
+                  ["", "0.0.0.0", "127.0.0.1", "::", "::1", "localhost"].contains(address.lowercased()) else { continue }
+            let count = min(max(mapping.count ?? 1, 1), 65535)
+            for offset in 0..<count where mapping.hostPort + offset <= 65535 { ports.insert(mapping.hostPort + offset) }
+        }
+        return ports
+    }
+
     public func portProblem(published: Set<Int>) -> String? {
         guard let port = health?.probe.dialledPort, !published.contains(port) else { return nil }
-        return "Port \(port) isn't one this container publishes."
+        return "Port \(port) isn't a TCP port this container publishes on this Mac's loopback."
     }
 }
 

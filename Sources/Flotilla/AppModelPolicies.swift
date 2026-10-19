@@ -110,7 +110,7 @@ extension AppModel {
         // Held to the rules at every run, not only when saved: an admin's command check is never
         // run (whatever a dev build stored), and a dialled port must still be this container's own,
         // since its published ports can change after the policy was set (Kyle, 19 October).
-        let published = containers.first { $0.id == id }.map { Set($0.publishedPorts.map(\.hostPort)) } ?? []
+        let published = containers.first { $0.id == id }.map { ContainerPolicy.loopbackTCPPorts($0.publishedPorts) } ?? []
         if stored.setByAdmin == true, let refusal = stored.remoteProblem {
             result = (false, refusal)
         } else if probe.dialledPort != nil, let refusal = stored.portProblem(published: published) {
