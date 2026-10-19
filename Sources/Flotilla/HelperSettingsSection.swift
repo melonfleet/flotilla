@@ -22,12 +22,13 @@ struct HelperSettingsSection: View {
                         .help(action.help ?? "")
                 }
             }
-            SettingsNote(verbatim: health.explanation)
+            // What it is, then one line on where it stands (Kamal: the two notes read as one repeated).
             SettingsNote(verbatim: "Flotilla's background service for jobs that need administrator rights: "
                          + "DNS domains and names across Macs, installing Apple's container, and installing "
-                         + "Flotilla updates on a host. A signed copy of Flotilla installs it by itself; "
-                         + "macOS asks you to approve it once in Login Items. Remove it and Flotilla leaves "
-                         + "it removed. Reinstall may ask for that approval again.")
+                         + "Flotilla updates on a host. A signed copy of Flotilla installs it by itself, and "
+                         + "macOS asks you to approve it once in Login Items. Remove it and Flotilla leaves it "
+                         + "removed; Reinstall may ask for that approval again. "
+                         + health.explanation)
             if let problem = monitor.problem {
                 Text(problem).font(.caption).foregroundStyle(Theme.danger).lineLimit(3)
             }

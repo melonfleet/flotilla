@@ -75,9 +75,7 @@ public enum HelperHealth: Sendable, Equatable {
             "Only a signed copy of Flotilla can use the background service. Creating or deleting a DNS "
                 + "domain asks for an administrator password instead."
         case .notInstalled:
-            "Flotilla's background service for jobs that need administrator rights: DNS domains and names "
-                + "across Macs, installing Apple's container, and installing Flotilla updates on a host. "
-                + "Install it and approve it once in Login Items."
+            "It isn't installed. Install it, then approve it once in Login Items."
         case .needsApproval:
             "Switch on Flotilla in System Settings ▸ General ▸ Login Items & Extensions. Until then, DNS "
                 + "changes ask for an administrator password and a host can't do these jobs."
@@ -89,7 +87,7 @@ public enum HelperHealth: Sendable, Equatable {
             "The running copy is version \(running); this Flotilla needs \(current). Restart it to start the "
                 + "new one."
         case .running:
-            "It runs the jobs that need administrator rights. Flotilla still asks you to confirm each change."
+            "Flotilla still asks you to confirm each change it makes."
         }
     }
 
