@@ -129,21 +129,14 @@ fi
 # Matched positively against the shapes that ARE versions, rather than negatively against
 # characters that are not. The old negative test accepted `5135510` — an all-digit commit hash is
 # still a hash, and stamping one as the version is the exact bug that already shipped once.
-# Four components as well as three: Flotilla's version is `<container version>.<revision>`
-# (DECISIONS.md, 2026-09-12), so `1.4.1.2` is a real version and must not be rejected into
-# `0.0.0`. `CFBundleShortVersionString` is a display string and takes it; `CFBundleVersion`,
-# which LaunchServices actually compares, is the commit count below and is unaffected.
-case "$SHORT_VERSION" in
-    [0-9]*.[0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*.[0-9]*-rc.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*-rc.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*) : ;;               # X.Y.Z[.R], optionally pre-release
-    *) SHORT_VERSION="0.0.0" ;;
-esac
+# Matched with an exact regular expression, not `case` globs: in a glob, `[0-9]*` is one digit and
+# then *anything*, so the old patterns accepted far more than versions (Antigravity's research, 19
+# October). Flotilla's version is its own `X.Y.Z` since 19 October (DECISIONS.md, the versioning
+# decision's amendment), optionally `-alpha.N`/`-beta.N`/`-rc.N`, and `+N` for a build past its tag.
+# A fourth component is still accepted only so a dev build descending from a tag of the retired
+# `<container version>.<revision>` scheme (v1.5.0.0-beta.4) keeps a real version until the next tag.
+VERSION_SHAPE='^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(-(alpha|beta|rc)\.[0-9]+)?(\+[0-9]+)?$'
+[[ "$SHORT_VERSION" =~ $VERSION_SHAPE ]] || SHORT_VERSION="0.0.0"
 
 # Commit count: monotonic, integer, and meaningful without tags.
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 0)"

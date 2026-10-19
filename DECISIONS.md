@@ -561,6 +561,33 @@ version); `Scripts/make-app.sh`'s positive shape guard accepts `X.Y.Z.R` with th
 pre-release suffixes; `Scripts/release.sh` names the shape in its error. `CFBundleVersion` is
 untouched — it is the commit count, which is what LaunchServices compares.
 
+**Amended 2026-10-19 (Kamal): Flotilla versions itself.** The `<container version>.<revision>`
+scheme is retired before 1.5 final, on two independent research reports
+(`research/VERSIONING-IRIS.md`, GPT-6-Astra; `research/VERSIONING-ANTIGRAVITY.md`, Gemini 4 Argon),
+which reached the same verdict:
+
+- **Flotilla's version is its own three-part `X.Y.Z`**, continuing at **1.5.0**: beta 5 is
+  `v1.5.0-beta.5`, then `1.5.0-rc.N`, then `1.5.0`. Later numbers are Flotilla's milestones (the
+  roadmap's 1.5 and 2.0 already meant that), not Apple's. Kamal kept 1.5 rather than restarting at
+  0.5 or 1.0: four public betas, the wiki and the roadmap already say 1.5, and tools that sort by the
+  label would show a lower number as older.
+- **The tested runtime is stated, not encoded:** About reads "Tested with container 1.5.0"
+  (`ContainerRuntime.expectedVersion`), and release notes name it. The review ritual below for every
+  `container` release is unchanged; only the copying of Apple's number into Flotilla's ends.
+- **Why:** a product version that tracks another product can't say what Flotilla changed; Apple's
+  `CFBundleShortVersionString` is documented as one to three integers and ignores a fourth; and the
+  prior art (Docker Desktop, Podman Desktop, Rancher Desktop, OrbStack, CrossOver, and Apple's own
+  `container` 1.5.0 over `containerization` 0.52.0) versions the wrapper independently.
+- **Nothing breaks for beta testers:** Sparkle, `installer` and host updates order by
+  `CFBundleVersion`, the commit count, never by the label. Even the label comparator sorts
+  `1.5.0.0-beta.4 < 1.5.0-beta.5 < 1.5.0`.
+- **Changed now:** `release.sh` and `make-pkg.sh` accept only `X.Y.Z[-alpha|beta|rc.N]`, by an exact
+  regular expression (the old `case` globs accepted anything after the digits); `make-app.sh` also
+  accepts the legacy four-part tag and a `+N` past-tag suffix for dev builds.
+- **Deferred until after 1.5:** a separate display key so `CFBundleShortVersionString` can be purely
+  numeric; one version parser instead of three (`SemanticVersion`, `SoftwareVersion`,
+  `VersionTriple`); and a shared build-number allocator before any parallel maintenance branch.
+
 ### Every `container` release gets a review, not a version bump
 
 The ritual, in order, because doing it out of order is how a release claims more than it verified:

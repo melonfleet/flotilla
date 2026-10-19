@@ -32,7 +32,9 @@ enum AboutView {
         else {
             return "Development build"
         }
-        return "Version \(short) (\(build))"
+        // The runtime it was tested with is stated beside the version, not inside it (the versioning
+        // decision's amendment, 19 October).
+        return "Version \(short) (\(build)) · Tested with container \(ContainerRuntime.expectedVersion)"
     }
 
     // MARK: - Licence

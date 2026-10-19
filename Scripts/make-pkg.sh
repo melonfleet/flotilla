@@ -63,13 +63,9 @@ done
 fail() { echo "✗ $1" >&2; exit 1; }
 
 [ -n "$VERSION" ] || fail "pass --version (there is no release tag to infer one from)."
-case "$VERSION" in
-    [0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*-rc.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*) : ;;
-    *) fail "version '$VERSION' is not X.Y.Z.R or X.Y.Z.R-{alpha,beta,rc}.N — see the header." ;;
-esac
+# The same exact shape as `release.sh`: Flotilla's own X.Y.Z, optionally a pre-release.
+RELEASE_SHAPE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
+[[ "$VERSION" =~ $RELEASE_SHAPE ]] || fail "version '$VERSION' is not X.Y.Z or X.Y.Z-{alpha,beta,rc}.N — see the header."
 
 # What the installer compares. Monotonic by construction; see the header for why the label cannot
 # serve as this.

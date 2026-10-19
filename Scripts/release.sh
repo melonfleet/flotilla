@@ -83,12 +83,11 @@ fi
 # The same shapes `make-pkg.sh` takes. A pre-release used to be refused here, which left betas
 # without the zip Sparkle installs, while `publish-release.sh` already sends a `-beta` to Sparkle's
 # beta channel (8 October).
-case "$VERSION" in
-    [0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*-beta.[0-9]*|\
-    [0-9]*.[0-9]*.[0-9]*-rc.[0-9]*) : ;;
-    *[!0-9.]*|"") fail "version '$VERSION' is not X.Y.Z.R or X.Y.Z.R-{alpha,beta,rc}.N — <container version>.<revision>, see DECISIONS.md." ;;
-esac
+# Exact, and three components only: a release is Flotilla's own `X.Y.Z`, optionally a pre-release
+# (DECISIONS.md, the versioning decision's amendment of 19 October). The retired four-part form is
+# refused so no new release can be cut under it.
+RELEASE_SHAPE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
+[[ "$VERSION" =~ $RELEASE_SHAPE ]] || fail "version '$VERSION' is not X.Y.Z or X.Y.Z-{alpha,beta,rc}.N — Flotilla's own version, see DECISIONS.md."
 
 # 3. A signing identity. Auto-detected only when the choice is unambiguous — picking one of several
 #    on the user's behalf is how you ship something signed by the wrong team.
