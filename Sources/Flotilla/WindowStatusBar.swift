@@ -7,6 +7,8 @@ struct WindowStatusBar: View {
     @ObservedObject private var updater: AppUpdater
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var confirmingContainerUpgrade = false
+    @State private var upgradeFailures: [String] = []
 
     init(model: AppModel) {
         self.model = model
@@ -36,6 +38,25 @@ struct WindowStatusBar: View {
         .frame(height: 23)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
+        .confirmationDialog(FleetUpdateText.containerUpgradeQuestion(model.hostsWithContainerUpgrades),
+                            isPresented: $confirmingContainerUpgrade, titleVisibility: .visible) {
+            let hosts = model.hostsWithContainerUpgrades
+            Button(model.runningContainers(on: hosts) > 0 ? "Stop Containers and Upgrade" : "Upgrade") {
+                Task {
+                    let failures = await model.upgradeContainer(on: hosts)
+                    if !failures.isEmpty { upgradeFailures = failures }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(FleetUpdateText.containerUpgradeMessage(model.hostsWithContainerUpgrades, model: model))
+        }
+        .alert("container wasn't upgraded everywhere",
+               isPresented: Binding(get: { !upgradeFailures.isEmpty }, set: { if !$0 { upgradeFailures = [] } })) {
+            Button("OK") { upgradeFailures = [] }
+        } message: {
+            Text(upgradeFailures.joined(separator: "\n"))
+        }
     }
 
     private var versionMenu: some View {
@@ -57,6 +78,7 @@ struct WindowStatusBar: View {
                         .disabled(true)
                 }
             }
+            FleetUpdateMenuSection(model: model, confirmingContainerUpgrade: $confirmingContainerUpgrade)
             SwiftUI.Section("Suggestions library") {
                 Text("Version \(model.suggestionLibrary.version)").disabled(true)
                 Text(lastChecked(model.libraryUpdater.lastChecked)).disabled(true)

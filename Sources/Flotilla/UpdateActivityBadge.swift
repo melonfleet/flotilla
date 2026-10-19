@@ -36,10 +36,18 @@ struct UpdateBadgeContent: Equatable {
     static func current(_ model: AppModel) -> UpdateBadgeContent? {
         if let entry = model.updateActivity.activity.headline { return UpdateBadgeContent(entry) }
         let updating = model.hostMode.updating
-        guard !updating.isEmpty else { return nil }
-        let text = updating.count == 1
-            ? "Updating \(model.hostMode.book[updating.first!]?.displayName ?? "a Mac")…"
-            : "Updating \(updating.count) Macs…"
+        if !updating.isEmpty {
+            let text = updating.count == 1
+                ? "Updating \(model.hostMode.book[updating.first!]?.displayName ?? "a Mac")…"
+                : "Updating \(updating.count) Macs…"
+            return UpdateBadgeContent(text: text, kind: .working)
+        }
+        // `container` upgrades too, now that Overview's card no longer shows them.
+        let upgrading = model.hostMode.settingUpRuntime
+        guard !upgrading.isEmpty else { return nil }
+        let text = upgrading.count == 1
+            ? "Upgrading container on \(model.hostMode.book[upgrading.first!]?.displayName ?? "a Mac")…"
+            : "Upgrading container on \(upgrading.count) Macs…"
         return UpdateBadgeContent(text: text, kind: .working)
     }
 }
