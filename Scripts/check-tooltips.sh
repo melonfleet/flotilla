@@ -194,7 +194,9 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
         hit = "help" in chain(m, end)
         for j in range(ln, min(ln + 6, len(lines))):
             row = masked[j]
-            if ".help(" in row and len(row) - len(row.lstrip()) <= indent:
+            # Strictly shallower: an ancestor's modifiers sit left of the picker; a sibling's
+            # `.help` at the picker's own indent is that sibling's (Dave, 19 October).
+            if ".help(" in row and len(row) - len(row.lstrip()) < indent:
                 hit = True
         if hit:
             FAIL.append(f"{path}:{ln}: .help on or around a segmented picker "

@@ -43,7 +43,11 @@ final class GroupStore {
 
     init(defaults: UserDefaults? = TagStore.standardDefaults()) {
         self.defaults = defaults
-        book = defaults.map(Self.read(from:)) ?? GroupBook()
+        var repaired: [String] = []
+        book = defaults.map { Self.read(from: $0, repaired: &repaired) } ?? GroupBook()
+        if !repaired.isEmpty {
+            lastError = "A port that can't be published was removed from \(repaired.joined(separator: ", ")). Edit \(repaired.count == 1 ? "it" : "them") to choose a host port."
+        }
     }
 
     // MARK: Reading
@@ -175,7 +179,10 @@ final class GroupStore {
     /// Rebuilt through `GroupBook`'s own mutators rather than by assigning the array directly, so
     /// a hand-edited plist that gives two groups the same `db` is refused on read by the rule
     /// that would have refused it in the form.
-    private static func read(from defaults: UserDefaults) -> GroupBook {
+    /// - Parameter repaired: members kept without a port that isn't a port mapping. One saved before
+    ///   the check existed (Dave, 19 October) could never start, but it is the user's service: it is
+    ///   kept, the port is dropped, and they are told — not removed at load and erased at the next save.
+    private static func read(from defaults: UserDefaults, repaired: inout [String]) -> GroupBook {
         let rows = defaults.array(forKey: groupsKey) as? [[String: Any]] ?? []
         var book = GroupBook()
         for row in rows {
@@ -213,7 +220,13 @@ final class GroupStore {
                         guard let name = entry["name"], let secret = entry["secret"] else { return nil }
                         return SecretEnv(name: name, secret: secret)
                     })
-                try? book.addMember(member, to: group.id)
+                do {
+                    try book.addMember(member, to: group.id)
+                } catch GroupBook.GroupError.invalidPort {
+                    var kept = member
+                    kept.ports = member.ports.filter { Allowlist.accepts($0, as: .portMapping) }
+                    if (try? book.addMember(kept, to: group.id)) != nil { repaired.append(memberName) }
+                } catch {}
             }
             book.setNotes(row["notes"] as? [String] ?? [], on: group.id)
         }
