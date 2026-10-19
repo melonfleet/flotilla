@@ -71,12 +71,6 @@ struct GroupServicePickerView: View {
                         .tag(Source.images)
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
-                switch source {
-                case .suggestions:
-                    SelectAllCheckbox(selection: $suggestionSelection, ids: suggestions.map(\.id), noun: "suggestions")
-                case .images:
-                    SelectAllCheckbox(selection: $imageSelection, ids: images, noun: "images")
-                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
@@ -95,7 +89,12 @@ struct GroupServicePickerView: View {
     }
 
     private var suggestionList: some View {
-        List(suggestions, selection: $suggestionSelection) { entry in
+        List(selection: $suggestionSelection) {
+            if !suggestions.isEmpty {
+                selectAllRow(SelectAllCheckbox(selection: $suggestionSelection, ids: suggestions.map(\.id),
+                                               noun: "suggestions"), count: suggestions.count, noun: "suggestions")
+            }
+            ForEach(suggestions) { entry in
             ResourceRow(
                 title: entry.title,
                 detail: entry.summary,
@@ -111,13 +110,19 @@ struct GroupServicePickerView: View {
                 actions: {})
             .tag(entry.id)
             .listRowInsets(EdgeInsets())
+            }
         }
         .listStyle(.inset)
         .overlay { if suggestions.isEmpty { ContentUnavailableView.search(text: query) } }
     }
 
     private var imageList: some View {
-        List(images, id: \.self, selection: $imageSelection) { reference in
+        List(selection: $imageSelection) {
+            if !images.isEmpty {
+                selectAllRow(SelectAllCheckbox(selection: $imageSelection, ids: images, noun: "images"),
+                             count: images.count, noun: "images")
+            }
+            ForEach(images, id: \.self) { reference in
             let match = library.entry(forImage: reference).flatMap { $0.kind == .container ? $0 : nil }
             ResourceRow(
                 title: SuggestionsView.shortImage(reference),
@@ -132,6 +137,7 @@ struct GroupServicePickerView: View {
                 actions: {})
             .tag(reference)
             .listRowInsets(EdgeInsets())
+            }
         }
         .listStyle(.inset)
         .overlay {
@@ -144,6 +150,20 @@ struct GroupServicePickerView: View {
                 }
             }
         }
+    }
+
+    /// Select all, as the list's first row: in the rows' own inset and padding (`ResourceRow`'s 12),
+    /// so its box sits in the column of the boxes it ticks (Kamal, 19 October). Untagged, so the
+    /// List can't select it.
+    private func selectAllRow(_ box: some View, count: Int, noun: String) -> some View {
+        HStack(spacing: 10) {
+            box
+            Text("Select all \(count) \(noun)").font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .listRowInsets(EdgeInsets())
+        .selectionDisabled()
     }
 
     private func add() {
