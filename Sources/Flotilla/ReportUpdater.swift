@@ -19,9 +19,10 @@ import FlotillaCore
 @MainActor
 @Observable
 final class ReportUpdater {
-    /// The report key's public half, base64. `nil` until the owner has run `tools/make-report-key.sh`
-    /// in the library repo and pasted its output here; with `nil`, nothing is fetched or shown.
-    nonisolated static let reportPublicKey: String? = nil
+    /// The report key's public half, base64, made by `tools/make-report-key.sh` in the library repo
+    /// (Kamal, 19 October 2026). Its private half is only the `REPORT_SIGNING_KEY` Actions secret.
+    /// With `nil`, nothing is fetched or shown.
+    nonisolated static let reportPublicKey: String? = "Ba3fTp8gd2Et4bk7f++o17+p00gMiqr/DBBMGI1GFrs="
 
     /// The key to use, or nil if reports are off. A report key equal to the library key is refused:
     /// that would let the library key sign reports (and a report-key leak be a library-key leak's twin).
