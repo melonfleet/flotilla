@@ -73,9 +73,9 @@ final class HostModeController {
         /// The host's Flotilla, as its welcome said.
         var appVersion: String? = nil
         var checkedAt: Date
-        /// When the host last actually said something to this ask — a result or a failure it sent,
-        /// or pongs on a connection with a command running late. `appVersion` comes from the
-        /// welcome and may be cached, so a half-open connection keeps it while hearing nothing.
+        /// When a frame last arrived from the host (`RemoteHost.lastReceivedAt`), never "now": it may
+        /// predate this ask, so "heard since asking" is `heardAt >= askedAt`. `appVersion` comes from
+        /// the welcome and may be cached, so a half-open connection keeps it while hearing nothing.
         var heardAt: Date? = nil
         /// Answering, but its `container` service is stopped, as its `system status` said. The CLI's
         /// own error ("XPC connection error: Connection invalid") is a symptom; this is the reason.
@@ -1076,22 +1076,21 @@ final class HostModeController {
         live[fingerprint] = status
         let cli = ContainerCLI(host: remote, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
         // On GCD, not `Task.detached`: these block for a host's whole timeout (see `Blocking`).
-        let (outcome, stopped, busy, heard) = await Blocking.run { () -> (Result<(String?, [Container], Int), Error>, Bool, Bool, Bool) in
+        let (outcome, stopped, busy) = await Blocking.run { () -> (Result<(String?, [Container], Int), Error>, Bool, Bool) in
             let outcome = Result {
                 let version = try cli.versions().first { $0.appName.lowercased().contains("container") }?.version
                 return (version, try cli.listContainers(), try cli.machines().count)
             }
-            guard case .failure(let error) = outcome else { return (outcome, false, false, true) }
+            guard case .failure(let error) = outcome else { return (outcome, false, false) }
             // A command that came back late on a connection still answering its pings is a busy host.
             // Not asked again: the status read would wait out a second deadline on the same stall.
             let alive = remote.isAlive()
-            let heard = RemoteHostError.heardFrom(error, connectionAlive: alive)
             if let remoteError = error as? RemoteHostError, remoteError.isLate(connectionAlive: alive) {
-                return (outcome, false, true, heard)
+                return (outcome, false, true)
             }
             // A failure from a host that answered may be its service, stopped: ask it, read-only.
-            guard let status = try? cli.systemStatus() else { return (outcome, false, false, heard) }
-            return (outcome, !status.isRunning, false, true)
+            guard let status = try? cli.systemStatus() else { return (outcome, false, false) }
+            return (outcome, !status.isRunning, false)
         }
         guard generation == trustGeneration else { return }
         // The other lists, each on its own: one failing does not blank the others.
@@ -1142,7 +1141,7 @@ final class HostModeController {
                                            containersRunning: containers.filter { $0.state.isRunning }.count,
                                            containersTotal: containers.count, machines: machines,
                                            containerVersion: version, appVersion: remote.hostInfo?.appVersion,
-                                           checkedAt: Date(), heardAt: Date())
+                                           checkedAt: Date(), heardAt: remote.lastReceivedAt)
             book.markSeen(fingerprint, at: Date())
             // Whatever it calls itself now — a renamed host shows its new name here.
             if let info = remote.hostInfo,
@@ -1169,7 +1168,7 @@ final class HostModeController {
             // seen as behind and can be updated (measured 8 October, Tahoe showed "—" and was skipped).
             var status = LiveStatus(state: .failed(stopped ? "container is stopped" : reason),
                                     appVersion: remote.hostInfo?.appVersion, checkedAt: Date(),
-                                    heardAt: heard ? Date() : nil, runtimeStopped: stopped, busy: busy)
+                                    heardAt: remote.lastReceivedAt, runtimeStopped: stopped, busy: busy)
             if busy, let before = live[fingerprint] {
                 // What it last said about itself is still the best there is; only the state is new.
                 status.containersRunning = before.containersRunning

@@ -36,18 +36,6 @@ public enum RemoteHostError: Error, Equatable, Sendable, CustomStringConvertible
     /// connection was still being heard from (`connectionAlive`): the pings come back on a link
     /// that is up, and a silent connection is a dead one. Everything else — unreachable, closed,
     /// refused — is not about load.
-    /// Whether the host itself said something, as opposed to this Mac giving up on silence. A result
-    /// (`error` nil) or a failure the host sent is its word; a local timeout is only if the
-    /// connection was still being heard from. A cached welcome is never evidence.
-    public static func heardFrom(_ error: Error?, connectionAlive: Bool) -> Bool {
-        guard let error else { return true }
-        switch error as? RemoteHostError {
-        case .failed?: return true
-        case .timedOut?: return connectionAlive
-        default: return false
-        }
-    }
-
     public func isLate(connectionAlive: Bool) -> Bool {
         switch self {
         case .failed(let failure): failure.code == .timedOut || failure.code == .busy
@@ -84,6 +72,10 @@ public final class AdminConnection: @unchecked Sendable {
     private var nextToken: UInt64 = 0
     /// When the host last said anything, pongs included — on this connection's queue.
     private var lastHeard = Date()
+    /// The moment the last frame of any kind arrived — nil before the first. Under its own lock rather
+    /// than the queue's, so `RemoteHost` can read it while holding its own without a lock-order risk.
+    private let receivedLock = NSLock()
+    private var receivedAt: Date?
     private var deadlines: [UInt32: DispatchSourceTimer] = [:]
     /// Follows being read (D2): where each one's output and end go.
     private var follows: [UInt32: (data: @Sendable (WireMessage.StreamChannel, Data) -> Void,
@@ -134,6 +126,10 @@ public final class AdminConnection: @unchecked Sendable {
     public func heard(within seconds: TimeInterval) -> Bool {
         connection.queue.sync { closedReason == nil && Date().timeIntervalSince(lastHeard) <= seconds }
     }
+
+    /// When any frame last arrived from the host — a result, a failure, a late reply, a pong. The one
+    /// record of having heard from it: compare with when you asked, never with "now".
+    public var lastReceivedAt: Date? { receivedLock.withLock { receivedAt } }
 
     /// The host's fingerprint, once connected.
     public var hostFingerprint: PeerFingerprint? { connection.peerFingerprint }
@@ -428,7 +424,9 @@ public final class AdminConnection: @unchecked Sendable {
     // MARK: Internals
 
     private func received(_ message: WireMessage) {
-        lastHeard = Date()
+        let now = Date()
+        lastHeard = now
+        receivedLock.withLock { receivedAt = now }
         do {
             for event in try session.receive(message) {
                 switch event {

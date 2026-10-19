@@ -57,6 +57,7 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     public func close() {
         let (open, attempt, waiting) = lock.withLock {
             closed = true
+            retireConnection()
             defer { connection = nil; welcome = nil; opening = nil; waiters.removeAll() }
             return (connection, opening, waiters)
         }
@@ -73,6 +74,25 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     public func isAlive(within seconds: TimeInterval = 45) -> Bool {
         let open = lock.withLock { connection }
         return open?.heard(within: seconds) ?? false
+    }
+
+    /// When any frame last arrived from this host, across every connection this object has had. This —
+    /// not a probe's outcome — is what "we heard from it since asking" is measured with: a nonzero
+    /// exit, a failure the host sent and a late reply all moved it, because the host sent bytes; a
+    /// probe that timed out on a half-open link did not. Nil if nothing has ever arrived.
+    public var lastReceivedAt: Date? {
+        lock.withLock { [retiredReceivedAt, connection] in
+            [retiredReceivedAt, connection?.lastReceivedAt].compactMap { $0 }.max()
+        }
+    }
+
+    /// Frames' last arrival on connections since dropped, so replacing one never loses the record.
+    private var retiredReceivedAt: Date?
+
+    /// Call with `lock` held, before letting go of `connection`.
+    private func retireConnection() {
+        guard let received = connection?.lastReceivedAt else { return }
+        retiredReceivedAt = max(retiredReceivedAt ?? received, received)
     }
 
     static let closedError = RemoteHostError.closed("Flotilla closed its connection to this host")
@@ -122,6 +142,7 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
             if closed { return { completion(.failure(Self.closedError)) } }
             // A connection that has closed underneath us is dropped here, whatever any caller saw.
             if let open = connection, !open.isClosed { return { completion(.success(open)) } }
+            retireConnection()
             connection = nil
             welcome = nil
             waiters.append(completion)
@@ -191,7 +212,7 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
     }
 
     private func forget(_ stale: AdminConnection) {
-        lock.withLock { if connection === stale { connection = nil; welcome = nil } }
+        lock.withLock { if connection === stale { retireConnection(); connection = nil; welcome = nil } }
     }
 
     // MARK: ContainerHost

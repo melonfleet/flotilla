@@ -119,14 +119,57 @@ struct HostHealthNetTests {
         for holder in holders { _ = try? await holder.value }
     }
 
-    @Test func onlyWhatTheHostSaidCountsAsHearingFromIt() {
-        #expect(RemoteHostError.heardFrom(nil, connectionAlive: false))
-        #expect(RemoteHostError.heardFrom(RemoteHostError.failed(.init(id: 1, code: .internalError, message: "no")),
-                                          connectionAlive: false))
-        // A local timeout is the host's word only while the connection is still being heard from.
-        #expect(RemoteHostError.heardFrom(RemoteHostError.timedOut, connectionAlive: true))
-        #expect(!RemoteHostError.heardFrom(RemoteHostError.timedOut, connectionAlive: false))
-        #expect(!RemoteHostError.heardFrom(RemoteHostError.closed("gone"), connectionAlive: true))
-        #expect(!RemoteHostError.heardFrom(RemoteHostError.unreachable("x"), connectionAlive: true))
+    @Test func aFailureTheHostSentCountsAsHeardFrom() async throws {
+        let rig = try await loopback.rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let host = loopback.remote(rig)
+        defer { host.close() }
+        _ = try await host.call(.hostFacts)
+        let askedAt = Date()
+        try await Task.sleep(for: .milliseconds(50))
+        // Not on the allowlist: the host (or this Mac) refuses it. Whatever the outcome, bytes
+        // arrived or the call never left — only the former may move the timestamp.
+        _ = try? await host.run(["ls"], timeout: 5)
+        let received = try #require(host.lastReceivedAt)
+        #expect(received >= askedAt, "a reply that arrived during the ask must count, whatever its outcome")
+    }
+
+    @Test func aReplyFromBeforeTheAskDoesNotCount() async throws {
+        let rig = try await loopback.rig()
+        defer { rig.tearDown() }
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let host = loopback.remote(rig)
+        defer { host.close() }
+        _ = try await host.call(.hostFacts)
+        try await Task.sleep(for: .milliseconds(100))
+        let askedAt = Date()
+        let received = try #require(host.lastReceivedAt)
+        #expect(received < askedAt)
+        // `isAlive` is true here — within 45 seconds — and is exactly what used to pass for hearing.
+        #expect(host.isAlive())
+    }
+
+    @Test func aHalfOpenConnectionThatTimesOutDoesNotCount() async throws {
+        let rig = try await loopback.rig()
+        defer { rig.tearDown() }
+        // Every reply is slower than the ask, so nothing arrives before the local deadline.
+        rig.host.delay = 30
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let admin = AdminConnection(endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: rig.port)!),
+                                    identity: rig.adminIdentity, info: WirePeerInfo(name: "admin", appVersion: "test"),
+                                    limits: WireLimits(deadlineGrace: 0.2))
+        defer { admin.close() }
+        _ = try await admin.connect()
+        try await Task.sleep(for: .milliseconds(100))
+        let askedAt = Date()
+        do {
+            _ = try await admin.run(["ls"], timeout: 0.3)
+            Issue.record("a thirty-second command answered inside half a second")
+        } catch let error as RemoteHostError {
+            #expect(error == .timedOut, "\(error)")
+        }
+        let received = try #require(admin.lastReceivedAt)
+        #expect(received < askedAt, "a local timeout is not the host's word")
     }
 }
