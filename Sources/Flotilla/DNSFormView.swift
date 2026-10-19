@@ -47,7 +47,7 @@ struct DNSFormView: View {
     @State private var host: HostRef = .local
 
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     /// Apple's own example in the `container` documentation, offered when the field is empty: an
@@ -127,9 +127,7 @@ struct DNSFormView: View {
             FormHeader(title: managed?.name ?? (isAdd ? "New Domain" : "Domain"),
                        systemImage: Section.dns.systemImage,
                        hasUnsavedChanges: isAdd && edits.isDirty(editSignature),
-                       onBack: dismiss, token: formToken) {
-                actions
-            }
+                       onBack: dismiss, token: formToken, actions: actions)
             Divider()
             FormScaffold {
                 VStack(alignment: .leading, spacing: 20) {
@@ -383,21 +381,17 @@ struct DNSFormView: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
+    /// Adding: ✓ creates. Looking at one: nothing to commit, so ✕ alone, and Delete… in ⋯.
+    private var actions: FormActions {
+        var more: [FormActions.Extra] = []
         if !isAdd, managed?.resolverInstalled == true {
-            Button("Delete…", role: .destructive) { confirmingDelete = true }
-                .disabled(working || model.dnsChangeProblem(on: mac) != nil)
+            more.append(.init("Delete…", role: .destructive,
+                              isDisabled: working || model.dnsChangeProblem(on: mac) != nil) { confirmingDelete = true })
         }
-        if working { ProgressView().controlSize(.small) }
-        if isAdd {
-            FormCancelButton(token: formToken, action: dismiss)
-            // "…" when something follows — the password prompt, or the restart warning.
-            FormPrimaryButton(noPrompt && !(kind == .containers && useForContainers)
-                              ? "Create" : "Create…", isDisabled: !canCreate, action: submit)
-        } else {
-            FormPrimaryButton("Done", action: dismiss)
-        }
+        // "…" when something follows — the password prompt, or the restart warning.
+        let create = FormActions.Commit.keepsChanges(noPrompt && !(kind == .containers && useForContainers)
+                                                     ? "Create" : "Create…", isDisabled: !canCreate, action: submit)
+        return FormActions(isAdd ? create : nil, more: more, isWorking: working)
     }
 
     // MARK: Actions

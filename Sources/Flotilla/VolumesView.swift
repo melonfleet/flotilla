@@ -48,7 +48,7 @@ struct VolumesView: View {
     /// never appears, because the menu is gone by the time the state changes.
     @State private var tagSheet: TagSheetTarget?
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var editSignature: String {
@@ -785,9 +785,8 @@ struct VolumesView: View {
         VStack(spacing: 0) {
             FormHeader(title: "New Volume", systemImage: "externaldrive.badge.plus",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: { showingCreate = false }, token: formToken) {
-                createActions
-            }
+                       onBack: { showingCreate = false }, token: formToken,
+                       actions: createActions)
             Divider()
             if let unclaimedProblem {
                 FormBand {
@@ -936,16 +935,14 @@ struct VolumesView: View {
         }
     }
 
-    @ViewBuilder
-    private var createActions: some View {
-        FormCancelButton(token: formToken) { showingCreate = false }
-        FormPrimaryButton("Create", isDisabled: trimmedName.isEmpty || anyProblem != nil) {
+    private var createActions: FormActions {
+        FormActions(.startsJob("Create", isDisabled: trimmedName.isEmpty || anyProblem != nil) {
             let name = trimmedName
             let opts = options
             let host = newHost
             showingCreate = false
             Task { await model.createVolume(name, options: opts, host: host) }
-        }
+        })
     }
 
     /// Repeatable `key=value` flags, capped at the `Allowlist`'s own maximum of 8 — shown

@@ -15,7 +15,7 @@ struct DNSZonesView: View {
     @State private var chosen: Set<HostRef> = []
     @State private var seeded = false
     @State private var confirming = false
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
     @State private var fleetDomain = ""
     @State private var namesAcross = false
@@ -40,9 +40,7 @@ struct DNSZonesView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Set Up Zones", systemImage: Section.dns.systemImage,
-                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
-                actions
-            }
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken, actions: actions)
             Divider()
             FormScaffold {
                 form
@@ -229,11 +227,9 @@ struct DNSZonesView: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton(targets.count == 1 ? "Set Up 1 Mac…" : "Set Up \(targets.count) Macs…",
-                          isDisabled: targets.isEmpty || domainProblem != nil) { confirming = true }
+    private var actions: FormActions {
+        FormActions(.startsJob(targets.count == 1 ? "Set Up 1 Mac…" : "Set Up \(targets.count) Macs…",
+                               isDisabled: targets.isEmpty || domainProblem != nil) { confirming = true })
     }
 
     private func start() {

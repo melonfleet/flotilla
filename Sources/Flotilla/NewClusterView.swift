@@ -4,7 +4,7 @@ import FlotillaCore
 
 /// Creating a local Kubernetes cluster.
 ///
-/// Embedded, with `FormHeader` and Save at its top right (Q64), like every other form since 9 August.
+/// Embedded, with `FormHeader` and its ▶ at the top right (Q65), like every other form since 9 August.
 struct NewClusterView: View {
     let model: AppModel
     let dismiss: () -> Void
@@ -23,7 +23,7 @@ struct NewClusterView: View {
     /// Why Save was refused before a task could start — the host went away meanwhile.
     @State private var refusal: String?
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var editSignature: String {
@@ -34,9 +34,8 @@ struct NewClusterView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Cluster", systemImage: "circle.hexagongrid",
-                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken) {
-                actions
-            }
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken,
+                       actions: actions)
             Divider()
             if let refusal {
                 FormBand {
@@ -251,10 +250,8 @@ struct NewClusterView: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton("Save", isDisabled: !canSubmit) { Task { await create() } }
+    private var actions: FormActions {
+        FormActions(.startsJob("Save", isDisabled: !canSubmit) { Task { await create() } })
     }
 
     /// A task from here (Kamal, 19 October): the form returns to the list and Tasks reports the
@@ -279,7 +276,7 @@ struct NewClusterView: View {
 ///
 /// **An embedded screen, not a dialog.** It began as a `ModalCard` and that was simply the wrong
 /// shape: `CLAUDE.md`'s 9 August rule is that anything you fill in and save is a screen with
-/// `FormHeader` and Save at its top right (Q64), and `ModalCard` is for things you acknowledge — About,
+/// `FormHeader` and its ▶ at the top right (Q65), and `ModalCard` is for things you acknowledge — About,
 /// the support bundle, a progress panel. A form in a dialog is the surface you leave a different
 /// way from every other form in the app, which is the cost that rule was written to stop paying.
 ///
@@ -299,15 +296,14 @@ struct LoadImageView: View {
 
     @State private var reference = ""
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Load an Image", systemImage: "square.and.arrow.down.on.square",
-                       hasUnsavedChanges: edits.isDirty(reference), onBack: dismiss, token: formToken) {
-                actions
-            }
+                       hasUnsavedChanges: edits.isDirty(reference), onBack: dismiss, token: formToken,
+                       actions: actions)
             Divider()
             FormScaffold {
                 form
@@ -420,17 +416,15 @@ struct LoadImageView: View {
         !trimmed.isEmpty && problem == nil && !model.isBusy(cluster.node, kind: .cluster)
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
+    private var actions: FormActions {
         // "Load", not "Save", following `NewImageView`'s "Build"/"Pull": a form whose button
         // names what it does is easier to be sure about before pressing it.
         // A task from here (Kamal, 19 October): the form returns to the cluster at once and the
         // copy is reported in Tasks, not under this button.
-        FormPrimaryButton("Load", isDisabled: !canLoad) {
+        FormActions(.startsJob("Load", isDisabled: !canLoad) {
             let reference = trimmed, cluster = cluster
             Task { await model.loadImage(reference, into: cluster) }
             dismiss()
-        }
+        })
     }
 }

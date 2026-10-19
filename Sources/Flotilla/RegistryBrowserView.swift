@@ -30,7 +30,7 @@ struct RegistryBrowserView: View {
     @State private var tagsLoading = false
     @State private var tagsProblem: String?
     @State private var selectedTag: DockerHub.Tag.ID?
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var selected: DockerHub.Repository? { results.first { $0.id == selectedID } }
@@ -44,9 +44,7 @@ struct RegistryBrowserView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Browse Docker Hub", systemImage: "magnifyingglass",
-                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
-                actions
-            }
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken, actions: actions)
             Divider()
             FormBand {
                 Text("Searches go to hub.docker.com only when you open this page or type, and carry only "
@@ -233,12 +231,10 @@ struct RegistryBrowserView: View {
         return "\(repository.reference):\(tag.name)"
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton(pullReference.map { "Pull \($0)…" } ?? "Pull…", isDisabled: pullReference == nil) {
+    private var actions: FormActions {
+        FormActions(.startsJob(pullReference.map { "Pull \($0)…" } ?? "Pull…", isDisabled: pullReference == nil) {
             if let reference = pullReference { onPull(reference) }
-        }
+        })
     }
 
     // MARK: Loading

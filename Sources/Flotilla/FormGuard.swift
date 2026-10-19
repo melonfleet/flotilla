@@ -74,7 +74,7 @@ final class FormGuard {
                 askAgain: { [weak self] in self?.confirmLeaving(onKeepEditing: onKeepEditing, leave) })
     }
 
-    /// The same, for leaving **one** form — Back or Cancel — which loses only that form's edits.
+    /// The same, for leaving **one** form — Back or ✕ — which loses only that form's edits.
     ///
     /// Add Service inside New Group is the case that needs it: the group's draft stays on screen,
     /// so the question names the service alone and a clean service leaves at once even while the
@@ -145,8 +145,8 @@ extension View {
     /// directly only where a form's state outlives its header — `GroupFormView`, whose draft stays
     /// while a service editor replaces the group's screen.
     ///
-    /// Pass `token` when something else on the form — its Cancel button — must ask about this same
-    /// registration (`FormCancelButton`); otherwise the registration keeps a token of its own.
+    /// Pass `token` when something else on the form — a Skip in its ⋯ menu — must ask about this
+    /// same registration; otherwise the registration keeps a token of its own.
     func guardsUnsavedChanges(title: String, isDirty: Bool, token: UUID? = nil) -> some View {
         modifier(UnsavedChangesRegistration(title: title, isDirty: isDirty, suppliedToken: token))
     }
@@ -173,26 +173,5 @@ private struct UnsavedChangesRegistration: ViewModifier {
 
     private func sync() {
         formGuard?.mark(token, title: title, isDirty: isDirty)
-    }
-}
-
-/// A form's **Cancel**: asks the same question as Back, and only when that form has changes.
-///
-/// Cancel used to close a changed form without a word while Back beside it asked. Give the form's
-/// `FormHeader` the same `token` (`@State private var formToken = UUID()` on the form) and the two
-/// answer for one registration. The button is also the form's Escape (`.cancelAction`), so every form
-/// cancels the same way and a changed one asks first; callers must not add the shortcut again.
-struct FormCancelButton: View {
-    let token: UUID
-    var title = "Cancel"
-    let action: () -> Void
-
-    @Environment(FormGuard.self) private var formGuard: FormGuard?
-
-    var body: some View {
-        Button(title) {
-            if let formGuard { formGuard.confirmLeaving(form: token, action) } else { action() }
-        }
-        .keyboardShortcut(.cancelAction)
     }
 }

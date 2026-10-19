@@ -20,7 +20,7 @@ struct PushDefinitionView: View {
 
     @State private var chosen: Set<HostRef> = []
     @State private var seeded = false
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var name: String {
@@ -52,9 +52,7 @@ struct PushDefinitionView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Push \u{201C}\(name)\u{201D} to Hosts", systemImage: "square.and.arrow.up.on.square",
-                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
-                actions
-            }
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken, actions: actions)
             Divider()
             FormScaffold {
                 form
@@ -177,11 +175,9 @@ struct PushDefinitionView: View {
         return (["container"] + argv).joined(separator: " ")
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton(targets.count == 1 ? "Push to 1 Host" : "Push to \(targets.count) Hosts",
-                          isDisabled: targets.isEmpty) {
+    private var actions: FormActions {
+        FormActions(.startsJob(targets.count == 1 ? "Push to 1 Host" : "Push to \(targets.count) Hosts",
+                               isDisabled: targets.isEmpty) {
             let hosts = targets
             let subject = subject
             dismiss()
@@ -191,6 +187,6 @@ struct PushDefinitionView: View {
                 case .volume(let volume): await model.pushVolume(FleetPush.definition(of: volume), to: hosts)
                 }
             }
-        }
+        })
     }
 }

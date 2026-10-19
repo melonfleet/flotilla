@@ -3072,3 +3072,45 @@ the drawer to find Pull.
 - Rejected: insetting the content by the drawer's height (the page jumps as jobs come and go, and a
   tall drawer leaves a form a sliver), and a floating action bar above the drawer (a second place
   for the same buttons).
+
+## Q65 — One action cluster on every form (settled 2026-10-19)
+
+Kamal's call, the same day as Q64. Q64 put every form's actions in its header, but they were still
+words, and the words changed from form to form: Cancel, Done, Skip, Run, Save, Create, Pull, Build,
+Tag, Load, Add, Pair, Sign In, Switch Account, Delete…, Send to N Hosts, Push to N Hosts, Set Up N
+Macs…, Import, Export…, Select All, Clear All, Use…. Twenty-odd kinds of button in one place is a
+place you have to read every time.
+
+- **One component.** `FormHeader(actions:)` takes a `FormActions` value — data, not a view — and
+  draws it as one small cluster of icon buttons on the glass every header action already sits on
+  (`ActionCluster`: `GlassEffectContainer(spacing: 6)`, `.glassEffect` on an 8pt rounded rect),
+  at `IconActionButton`'s sizes, help and labels. Because the slot is not a view builder, no form can
+  draw a button of its own in its header.
+- **A fixed order, left to right:** ⋯ (`ellipsis`, present only when a form has extras), ✕
+  (`xmark`, close), then the commit. Back stays on the left.
+- **✕ replaces both Cancel and Done.** Escape is ✕. With unsaved changes it asks through
+  `FormGuard`, exactly as Back does, and it leaves the way Back does: every form's Cancel already
+  did the same thing as its Back.
+- **The commit is always rightmost, filled with the accent, and is Return.** It is one of two
+  glyphs, picked by what the form does: ▶ (`play.fill`) for a form that **starts a job** which then
+  shows in Tasks — Run, New Machine, New Volume, New Network, New Image (Pull and Build), New Cluster,
+  Load an Image, Send to Hosts, Push to Hosts, Set Up Zones, Import, Export, Docker Hub's Pull,
+  Suggestions' Use and the suggestion stack's Create; ✓ (`checkmark`) for a form that **keeps
+  changes** — a group, a service, a registry (Add, Sign In, Switch Account), a new DNS domain, Tag
+  Image, Add Host / Pair.
+- **Nothing about what it does is lost.** The old button's exact words — "Push to 3 Hosts", "Sign
+  In and Add", "Create…" — are the commit's tooltip and VoiceOver label. It is disabled exactly when
+  the old button was, and does exactly what it did: the confirmations behind Push, Set Up, Import
+  replacing and Create… stay as they were.
+- **Where they went.** ⋯ holds DNS domain's Delete…, Group's Save to File…, and Skip on Run and the
+  stack form inside a run of suggestions. Export's Select All / Clear All became one mixed-state
+  select-all checkbox at the top of its list. A form with nothing to commit shows ✕ alone: a DNS
+  domain being looked at, a registry that cannot sign in. A form's spinner sits in the cluster.
+- **Pinned** by `Scripts/check-form-bounds.sh`: `FormPrimaryButton` and `FormCancelButton` are
+  gone and may not come back; no `Button`, `Menu`, `Toggle` or icon button sits inside a
+  `FormHeader(…)` call; `FormHeader` has no view slot; and `PageHeader` (the same layout with a free
+  right-hand side) is for a host's page only, which is not a form. Checked against a reintroduced
+  raw text button, a reintroduced old component and a reintroduced view slot; each fails it.
+- Why: fewer kinds of button, in a fixed place, with one glyph for "this starts a job" and one for
+  "this keeps my changes" — and the exact action still named, in the label, for anyone who needs
+  the words.

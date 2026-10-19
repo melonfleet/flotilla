@@ -49,6 +49,9 @@ final class OperationProgress: Identifiable {
     private(set) var outcome: Outcome? { didSet { onChange?() } }
     /// How far along, 0...1, for a job that knows (an image pull). Nil otherwise.
     private(set) var fraction: Double?
+    /// The container a Run made, once it has said which — for the finished row's Stop. Set before
+    /// the job succeeds, so the board has it by the time the row is finished.
+    var container: TaskBoard.TaskContainer?
 
     /// Set by `TaskCenter`, so the status bar's line and the task's state follow this object by
     /// identity. Before the Tasks drawer (Q63) the model reached a running job only through a

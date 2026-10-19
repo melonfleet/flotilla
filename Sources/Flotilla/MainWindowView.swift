@@ -363,7 +363,7 @@ struct MainWindowView: View {
                         // job outlives the screen that started it. An overlay, not a sheet: the window
                         // stays usable while it is up.
                         if model.tasks.board.drawer != .hidden {
-                            TaskDrawer(tasks: model.tasks, bounds: detailSize,
+                            TaskDrawer(tasks: model.tasks, model: model, bounds: detailSize,
                                        reservedAbove: gretaFloats ? GretaOverlay.minimumFootprint : 0)
                                 .padding(.trailing, 10)
                                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { drawerHeight = $0 }

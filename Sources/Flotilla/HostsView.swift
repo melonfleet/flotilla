@@ -410,12 +410,13 @@ struct HostsView: View {
     private func hostPage(_ row: HostRow) -> some View {
         VStack(spacing: 0) {
             // The page header every host page has had; in the split it carries the stepper and
-            // the expand button where Back was.
-            FormHeader(title: row.name,
+            // the expand button where Back was. A page, not a form: `PageHeader`, whose right-hand
+            // side is the page's own, rather than `FormHeader`, whose is ✕ and a commit (Q65).
+            PageHeader(title: row.name,
                        systemImage: Section.hosts.systemImage,
-                       hasUnsavedChanges: false, onBack: { selection = [] },
                        titleBadge: row.isThisMac ? "This Mac" : nil,
-                       leadingImage: MacModelArtwork.artwork(for: row.modelIdentifier)?.image) {
+                       leadingImage: MacModelArtwork.artwork(for: row.modelIdentifier)?.image,
+                       onBack: { selection = [] }) {
                 // Ask this Mac again now rather than waiting for the next look (the owner, 9 October).
                 ToolbarIconButton(systemImage: "arrow.clockwise", label: "Refresh \(row.name)") {
                     Task {

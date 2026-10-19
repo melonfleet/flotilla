@@ -7,7 +7,7 @@ import FlotillaCore
 /// the owner's direction on 9 August, and the newer argument is better: once Machines grew an
 /// embedded detail with a Back button and a tab strip, a floating card with its own close
 /// button was the odd one out. Every other full-screen surface in the app is reached and left
-/// the same way, so this is too — Back at the top left, Save at the top right (Q64).
+/// the same way, so this is too — Back at the top left, the cluster at the top right (Q65).
 ///
 /// It also disposes of a real complaint. The modal was a fixed 560×660, chosen by hand, which
 /// meant copy had to be trimmed to fit rather than the container adapting to the content.
@@ -34,7 +34,7 @@ struct MachineFormView: View {
     @State private var memoryGB: Int
     @State private var homeMount = "rw"
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     /// Everything a Back would throw away. Captured on appear rather than compared to defaults,
@@ -274,23 +274,20 @@ struct MachineFormView: View {
     /// Back, then the title — the same header shape as the machine and container detail
     /// screens, so leaving a form works exactly like leaving a detail.
     ///
-    /// It used to carry an "Import Flotillafile…" button in `FormHeader`'s trailing slot. That is
+    /// It used to carry an "Import Flotillafile…" button beside its actions. That is
     /// **withheld from this release** at the owner's direction: the format is not settled enough
     /// to put in front of testers, and a half-ready import is worse than none. The parser and its
     /// 35 tests stay in `FlotillaCore` untouched, so restoring this is a UI change and nothing
     /// more.
     private var header: some View {
         FormHeader(title: "New Machine", systemImage: "plus.rectangle.on.folder",
-                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken) {
-            actions
-        }
+                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken,
+                   actions: actions)
     }
 
-    /// Save lives at the top right of the header (Q64), always on screen.
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton("Save", isDisabled: !previewIsValid) { Task { await create() } }
+    /// ▶ at the top right of the header (Q65), always on screen: the machine is created in Tasks.
+    private var actions: FormActions {
+        FormActions(.startsJob("Save", isDisabled: !previewIsValid) { Task { await create() } })
     }
 
     // MARK: Preview

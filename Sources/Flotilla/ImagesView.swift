@@ -793,9 +793,8 @@ struct ImagesView: View {
         VStack(spacing: 0) {
             FormHeader(title: "Tag Image", systemImage: "tag",
                        hasUnsavedChanges: !trimmedTag.isEmpty,
-                       onBack: { taggingImage = nil }, token: formToken) {
-                tagActions(for: image)
-            }
+                       onBack: { taggingImage = nil }, token: formToken,
+                       actions: tagActions(for: image))
             Divider()
             FormScaffold {
                 tagForm(for: image)
@@ -844,10 +843,8 @@ struct ImagesView: View {
         }
     }
 
-    @ViewBuilder
-    private func tagActions(for row: HostedImage) -> some View {
-        FormCancelButton(token: formToken) { taggingImage = nil }
-        FormPrimaryButton("Tag", isDisabled: trimmedTag.isEmpty || tagProblem != nil) {
+    private func tagActions(for row: HostedImage) -> FormActions {
+        FormActions(.keepsChanges("Tag", isDisabled: trimmedTag.isEmpty || tagProblem != nil) {
             let target = trimmedTag
             let source = row.reference
             let host = row.host
@@ -863,7 +860,7 @@ struct ImagesView: View {
                         + (host.isLocal ? "\(error)" : HostModeController.describe(error))
                 }
             }
-        }
+        })
     }
 
     /// Every image not referenced by any known container — client-side, since the CLI has

@@ -68,7 +68,7 @@ struct RegistryFormView: View {
     @State private var confirmingSignOut = false
 
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var store: RegistryStore { model.registries }
@@ -179,9 +179,7 @@ struct RegistryFormView: View {
                        systemImage: Section.registries.systemImage,
                        logo: isAdd ? nil : model.registryLogo(for: target.id),
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: dismiss, token: formToken) {
-                actions
-            }
+                       onBack: dismiss, token: formToken, actions: actions)
             Divider()
             // Why the button is off, when no field has said so — in a band under the header, two
             // lines at most. In the old footer, marked to grow vertically beside a Spacer, it was
@@ -542,13 +540,10 @@ struct RegistryFormView: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        if working { ProgressView().controlSize(.small) }
-        FormCancelButton(token: formToken, title: isAdd ? "Cancel" : "Done", action: dismiss)
-        if canSignIn || isAdd {
-            FormPrimaryButton(buttonTitle, isDisabled: !canSubmit, action: submit)
-        }
+    /// ✓ adds or signs in; a registry that cannot sign in has nothing to commit, and shows ✕ alone.
+    private var actions: FormActions {
+        FormActions(canSignIn || isAdd ? .keepsChanges(buttonTitle, isDisabled: !canSubmit, action: submit) : nil,
+                    isWorking: working)
     }
 
     private var disabledReason: String? {

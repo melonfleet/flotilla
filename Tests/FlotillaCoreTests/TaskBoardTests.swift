@@ -546,4 +546,70 @@ import Testing
         put.succeed(d, at: at(6))
         #expect(put.shouldAutoMinimise(after: d))
     }
+
+    // MARK: Stop on a finished Run (Kamal, 19 October)
+
+    private typealias Made = TaskBoard.TaskContainer
+
+    @Test func aFinishedRunOffersStopOnlyWhileItsContainerRuns() {
+        var board = TaskBoard()
+        let id = UUID()
+        board.start(id, title: "Run web", kind: .runContainer, at: t0)
+        board.setContainer(Made(id: "web", host: .local), for: id)
+        var running: Set<Made> = [Made(id: "web", host: .local)]
+        func target() -> Made? { board.rows(at: at(9)).first!.stopTarget { running.contains($0) } }
+
+        #expect(target() == nil)                                // still running as a task: no Stop yet
+        board.succeed(id, at: at(5))
+        #expect(target() == Made(id: "web", host: .local))
+        running = []                                            // stopped elsewhere, or exited
+        #expect(target() == nil)
+        running = [Made(id: "web", host: .local)]               // started again: Stop is back
+        #expect(target() == Made(id: "web", host: .local))
+    }
+
+    @Test func stopIsOnlyForARunThatSucceededAndSaidWhichContainer() {
+        let web = Made(id: "web", host: .local)
+        func target(kind: TaskKind, container: Made?, end: (inout TaskBoard, UUID) -> Void) -> Made? {
+            var board = TaskBoard()
+            let id = UUID()
+            board.start(id, title: "t", kind: kind, at: t0)
+            board.setContainer(container, for: id)
+            end(&board, id)
+            return board.rows(at: at(9)).first!.stopTarget { _ in true }
+        }
+        #expect(target(kind: .runContainer, container: web) { $0.succeed($1, at: at(1)) } == web)
+        #expect(target(kind: .runContainer, container: web) { $0.fail($1, reason: "no", at: at(1)) } == nil)
+        #expect(target(kind: .runContainer, container: nil) { $0.succeed($1, at: at(1)) } == nil)
+        #expect(target(kind: .createStack, container: web) { $0.succeed($1, at: at(1)) } == nil)
+        #expect(target(kind: .groupAction, container: web) { $0.succeed($1, at: at(1)) } == nil)
+    }
+
+    @Test func theStopAsksAboutTheContainerOnItsOwnHost() {
+        let mini = HostRef.peer(PeerFingerprint(bytes: Array(repeating: 7, count: 32))!)
+        var board = TaskBoard()
+        let id = UUID()
+        board.start(id, title: "Run web on mini", kind: .runContainer, at: t0)
+        board.setContainer(Made(id: "web", host: mini), for: id)
+        board.succeed(id, at: at(2))
+        let row = board.rows(at: at(3)).first!
+        // `web` on this Mac is a different container (`HostRef.rowID`).
+        #expect(row.stopTarget { $0 == Made(id: "web", host: .local) } == nil)
+        #expect(row.stopTarget { $0 == Made(id: "web", host: mini) } == Made(id: "web", host: mini))
+    }
+
+    @Test func aRunNamesItsContainerByNameOrByThePrintedID() {
+        #expect(Made.ran(name: "web", output: "web\n", on: .local) == Made(id: "web", host: .local))
+        #expect(Made.ran(name: nil, output: "\n  3f2a9c1b  \n", on: .local) == Made(id: "3f2a9c1b", host: .local))
+        #expect(Made.ran(name: "  ", output: "3f2a", on: .local) == Made(id: "3f2a", host: .local))
+        #expect(Made.ran(name: nil, output: " \n", on: .local) == nil)
+
+        var board = TaskBoard()
+        let id = UUID()
+        board.start(id, title: "Run", kind: .runContainer, at: t0)
+        board.setContainer(Made(id: "web", host: .local), for: id)
+        board.setContainer(nil, for: id)                        // nil leaves what is known
+        board.setContainer(Made(id: " ", host: .local), for: id) // and a blank name is not one
+        #expect(board.entry(id)?.container == Made(id: "web", host: .local))
+    }
 }

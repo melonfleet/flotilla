@@ -20,7 +20,7 @@ struct AddHostView: View {
     @State private var code = ""
     @State private var working = false
     @State private var outcome: HostModeController.AddHostOutcome?
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var hostMode: HostModeController { model.hostMode }
@@ -28,12 +28,11 @@ struct AddHostView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: importing.map { "Pair \($0.name)" } ?? "Add Host", systemImage: "plus",
-                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
-                if working { ProgressView().controlSize(.small) }
-                FormCancelButton(token: formToken, action: dismiss)
-                FormPrimaryButton(importing == nil ? "Add Host" : "Pair",
-                                  isDisabled: endpoint == nil || working || (code.isEmpty && hostMode.adminKey == nil)) { add() }
-            }
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken,
+                       actions: FormActions(
+                           .keepsChanges(importing == nil ? "Add Host" : "Pair",
+                                         isDisabled: endpoint == nil || working || (code.isEmpty && hostMode.adminKey == nil)) { add() },
+                           isWorking: working, workingHelp: "Connecting…"))
             Divider()
             if working {
                 FormBand {

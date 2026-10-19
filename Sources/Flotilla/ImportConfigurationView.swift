@@ -23,7 +23,7 @@ struct ImportConfigurationView: View {
     @State private var useDefaultRegistry = false
     @State private var useContainerDomain = false
     @State private var confirmingReplace = false
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var problems: [String: String] {
@@ -50,9 +50,7 @@ struct ImportConfigurationView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Import “\(url.lastPathComponent)”", systemImage: "square.and.arrow.down",
-                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
-                actions
-            }
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken, actions: actions)
             Divider()
             if let loadError {
                 ContentUnavailableView("This file can't be imported", systemImage: "doc.badge.ellipsis",
@@ -279,12 +277,10 @@ struct ImportConfigurationView: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton(replacing.isEmpty ? "Import" : "Import…", isDisabled: !canImport) {
+    private var actions: FormActions {
+        FormActions(.startsJob(replacing.isEmpty ? "Import" : "Import…", isDisabled: !canImport) {
             if replacing.isEmpty { start() } else { confirmingReplace = true }
-        }
+        })
     }
 
     // MARK: Actions

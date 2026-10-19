@@ -14,9 +14,11 @@ import FlotillaCore
 /// output). Finished jobs fold into one "N finished" line that opens onto them, so the drawer stays
 /// as short as what is running. Its height follows the rows, to half the content area (less when
 /// Greta is above it), and then the list scrolls. It is an overlay: nothing beneath it moves, which
-/// is why every form's commit is in its header (Q64).
+/// is why every form's commit is in its header (Q64, Q65).
 struct TaskDrawer: View {
     let tasks: TaskCenter
+    /// For a finished Run's Stop: the container lists it reads and the Stop it calls.
+    let model: AppModel
     /// The content area the drawer sits in (right of the sidebar, below the window bar).
     let bounds: CGSize
     /// Height already spoken for above the drawer — Greta's overlay, when she is open — so the two
@@ -104,13 +106,13 @@ struct TaskDrawer: View {
                     TimelineView(.periodic(from: .now, by: 1)) { timeline in
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(tasks.board.runningRows(at: timeline.date)) { row in
-                                TaskRowView(tasks: tasks, row: row).id(row.id)
+                                TaskRowView(tasks: tasks, model: model, row: row).id(row.id)
                             }
                             if tasks.board.hasFinished {
                                 FinishedFold(tasks: tasks)
                                 if tasks.board.finishedExpanded {
                                     ForEach(tasks.board.finishedRows(at: timeline.date)) { row in
-                                        TaskRowView(tasks: tasks, row: row).id(row.id)
+                                        TaskRowView(tasks: tasks, model: model, row: row).id(row.id)
                                     }
                                 }
                             }
@@ -177,6 +179,7 @@ private struct FinishedFold: View {
 /// One job, one line: opened by its caret alone.
 private struct TaskRowView: View {
     let tasks: TaskCenter
+    let model: AppModel
     let row: TaskBoard.Row
 
     var body: some View {
@@ -272,6 +275,10 @@ private struct TaskRowView: View {
                     .help("Stopping…")
                     .accessibilityLabel("Stopping \(row.title)")
             }
+            if let made = row.stopTarget(isRunning: { model.container($0).map(AppModel.isRunning) ?? false }),
+               let container = model.container(made) {
+                containerStop(made, container)
+            }
             if row.offersRetry, tasks.canRetry(row.id) {
                 TaskIconButton(systemImage: "arrow.clockwise", label: "Retry \(row.title)",
                                help: "Run it again as a new task") { tasks.retry(row.id) }
@@ -279,6 +286,23 @@ private struct TaskRowView: View {
             if row.state.isFinished {
                 TaskIconButton(systemImage: "xmark", label: "Clear \(row.title)",
                                help: "Clear from the list") { tasks.clear(row.id) }
+            }
+        }
+    }
+
+    /// A finished Run whose container is running: the container's own Stop (Kamal, 19 October) —
+    /// the call and busy guard the Containers row uses, on the container's host. `stop.fill`, the
+    /// Containers list's glyph, so it cannot be mistaken for the task's Cancel (`stop.circle`).
+    @ViewBuilder
+    private func containerStop(_ made: TaskBoard.TaskContainer, _ container: Container) -> some View {
+        if model.isBusy(made.host.rowID(made.id), kind: .container) {
+            ProgressView().controlSize(.small).scaleEffect(0.5)
+                .frame(width: 22, height: 22)
+                .help("Stopping \(made.id)…")
+                .accessibilityLabel("Stopping \(made.id)")
+        } else {
+            TaskIconButton(systemImage: "stop.fill", label: "Stop \(made.id)", help: "Stop \(made.id)") {
+                Task { await model.perform(.stop, on: container, host: made.host) }
             }
         }
     }

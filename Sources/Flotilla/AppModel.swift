@@ -2374,6 +2374,15 @@ final class AppModel {
         await hostMode.refreshHost(fingerprint)
     }
 
+    /// The container a Run task made, from its own host's list — this Mac's, or the peer's last
+    /// snapshot — or nil when that list no longer has it. What a finished Run row's Stop reads.
+    func container(_ made: TaskBoard.TaskContainer) -> Container? {
+        switch made.host {
+        case .local: containers.first { $0.id == made.id }
+        case .peer(let fingerprint): hostMode.containerSnapshots[fingerprint]?.items.first { $0.id == made.id }
+        }
+    }
+
     /// Bulk counterpart to `perform(_:on:)`, for the containers table's multi-selection
     /// action bar. Runs every id through the same allowlisted `ContainerCLI` calls and
     /// refreshes once at the end rather than once per id — `perform(_:on:)` itself is left
@@ -2467,6 +2476,7 @@ final class AppModel {
                     try remote.run(image: image, options: options, command: command)
                 }
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                progress.container = .ran(name: options.name, output: result.stdout, on: host)
                 progress.finish(step, detail: options.name)
                 return options.name.map { "\($0) started on \(hostName)" } ?? "Container started on \(hostName)"
             },
@@ -2495,6 +2505,8 @@ final class AppModel {
                 // `container run -d` prints the id it created. Worth surfacing: it is the one
                 // piece of output that tells you *which* row to look for.
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
+                // Which container the finished row's Stop acts on (the name, or the printed id).
+                progress.container = .ran(name: options.name, output: result.stdout, on: .local)
                 progress.finish(step, detail: options.name)
                 return options.name.map { "\($0) started" } ?? "Container started"
             },

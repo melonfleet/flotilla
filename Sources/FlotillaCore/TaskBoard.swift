@@ -45,6 +45,9 @@ public struct TaskBoard: Equatable, Sendable {
         public var cancelRequested = false
         /// Retry has been used: a new task took this one's place.
         public var retried = false
+        /// The container a Run made, once the run has said which: its name, or the id `container
+        /// run -d` printed. What a finished Run row's Stop acts on (`stopTarget`).
+        public var container: TaskContainer?
 
         public init(id: UUID, title: String, kind: TaskKind = .unclassified, origin: String = "",
                     hasRetryAction: Bool = false, hasCancelAction: Bool = false, startedAt: Date) {
@@ -95,6 +98,39 @@ public struct TaskBoard: Equatable, Sendable {
         public let offersCancel: Bool
         public let isCancelling: Bool
         public let offersRetry: Bool
+        /// The container a Run made, if it has said which.
+        public let container: TaskContainer?
+
+        /// What this row's Stop stops, or nil when it offers none: a **finished** Run whose
+        /// container exists and is running now. `isRunning` answers from the live list of the
+        /// container's own host — this Mac's, or the peer's last snapshot — so the button comes and
+        /// goes with the container, not with the task. Not the task's Cancel: the run is over, and
+        /// this is the container's own Stop.
+        public func stopTarget(isRunning: (TaskContainer) -> Bool) -> TaskContainer? {
+            guard kind == .runContainer, state == .succeeded, let container, isRunning(container) else { return nil }
+            return container
+        }
+    }
+
+    /// The container a Run task made, and the Mac it is on.
+    public struct TaskContainer: Equatable, Hashable, Sendable {
+        public let id: String
+        public let host: HostRef
+
+        public init(id: String, host: HostRef) {
+            self.id = id
+            self.host = host
+        }
+
+        /// What a finished `container run -d` made: the name it was given, or else the id it
+        /// printed — its first non-empty line of output. Nil when it said neither.
+        public static func ran(name: String?, output: String, on host: HostRef) -> TaskContainer? {
+            let given = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let given, !given.isEmpty { return TaskContainer(id: given, host: host) }
+            guard let printed = output.split(whereSeparator: \.isNewline)
+                .map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { !$0.isEmpty }) else { return nil }
+            return TaskContainer(id: printed, host: host)
+        }
     }
 
     /// Where the drawer is: down in the status bar, or up showing the list. One list, always —
@@ -192,6 +228,14 @@ public struct TaskBoard: Equatable, Sendable {
     }
 
     public mutating func clearHighlight(_ id: UUID) { if highlighted == id { highlighted = nil } }
+
+    /// Records which container a Run made. Nil leaves what is known standing; a name that is only
+    /// whitespace is not a container.
+    public mutating func setContainer(_ container: TaskContainer?, for id: UUID) {
+        guard let container, !container.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].container = container
+    }
 
     /// Clamped to 0...1; nil leaves the last figure standing, since a pull's lines without a
     /// percentage are not a step backwards.
@@ -371,7 +415,8 @@ public struct TaskBoard: Equatable, Sendable {
                    stateText: Self.stateText(entry), elapsedText: Self.elapsedText(entry.elapsed(at: now)),
                    fraction: entry.state == .running ? entry.fraction : nil,
                    isHighlighted: highlighted == entry.id, step: step, isExpanded: expanded.contains(entry.id), offersCancel: entry.offersCancel,
-                   isCancelling: entry.cancelRequested && entry.state == .running, offersRetry: entry.offersRetry)
+                   isCancelling: entry.cancelRequested && entry.state == .running, offersRetry: entry.offersRetry,
+                   container: entry.container)
     }
 
     public static func stateText(_ entry: Entry) -> String {

@@ -110,6 +110,7 @@ final class TaskCenter {
         board.setLine(progress.latestLine, for: id)
         board.setStep(progress.currentStep, for: id)
         board.setFraction(progress.fraction, for: id)
+        board.setContainer(progress.container, for: id)
         guard board.entry(id)?.state == .running, let outcome = progress.outcome else { return }
         now = Date()
         switch outcome {

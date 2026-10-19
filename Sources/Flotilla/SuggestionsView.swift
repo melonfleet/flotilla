@@ -3,7 +3,7 @@ import FlotillaCore
 
 /// Suggestions for Containers: the suggestions library (DECISIONS Q28, Q54) — ready-made stacks and
 /// single containers, browsed like Images ▸ Browse Docker Hub (the owner, 12 October): search and a
-/// category on the left, the chosen entry on the right, Use… at the header's top right (Q64).
+/// category on the left, the chosen entry on the right, its ▶ Use… at the header's top right (Q65).
 ///
 /// Reached from the "+" menu and from the empty Containers list. A stack opens its form and is
 /// created as a group; a container opens the Run form filled in. Either way the form validates it
@@ -28,7 +28,7 @@ struct SuggestionsView: View {
     @State private var batch: SuggestionBatch?
     /// Prefill for a container step inside a batch (Run lives here so the walk can continue).
     @State private var batchRunPrefill: RunPrefill?
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var library: SuggestionLibrary { model.suggestionLibrary }
@@ -59,9 +59,7 @@ struct SuggestionsView: View {
         } else {
             VStack(spacing: 0) {
                 FormHeader(title: "Suggestions", systemImage: "sparkles",
-                           hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
-                    actions
-                }
+                           hasUnsavedChanges: false, onBack: dismiss, token: formToken, actions: actions)
                 Divider()
                 FormBand {
                     Text(selection.count >= 2
@@ -344,14 +342,11 @@ struct SuggestionsView: View {
 
     // MARK: Actions
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
+    private var actions: FormActions {
         if selection.count >= 2 {
-            FormPrimaryButton("Use \(selection.count) Suggestions…") { startBatch() }
-        } else {
-            FormPrimaryButton("Use…", isDisabled: selected == nil) { use() }
+            return FormActions(.startsJob("Use \(selection.count) Suggestions…") { startBatch() })
         }
+        return FormActions(.startsJob("Use…", isDisabled: selected == nil) { use() })
     }
 
     private func use() {
@@ -421,7 +416,7 @@ struct StackFormView: View {
     @State private var usedPorts: Set<Int> = []
     @State private var prepared = false
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
     @Environment(FormGuard.self) private var formGuard: FormGuard?
     /// Which Mac the stack is created on (the owner, 12 October).
@@ -508,12 +503,7 @@ struct StackFormView: View {
         VStack(spacing: 0) {
             FormHeader(title: stack.title, systemImage: Section.groupSymbol,
                        hasUnsavedChanges: prepared && edits.isDirty(editSignature),
-                       onBack: back, token: formToken) {
-                if let progressLabel {
-                    Text(progressLabel).font(.subheadline).foregroundStyle(.secondary)
-                }
-                actions
-            }
+                       onBack: back, progress: progressLabel, token: formToken, actions: actions)
             Divider()
             FormScaffold {
                 VStack(alignment: .leading, spacing: 20) { fields }
@@ -697,16 +687,16 @@ struct StackFormView: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
+    /// ▶ Create; Skip, inside a run of suggestions, in ⋯; the spinner while it prepares.
+    private var actions: FormActions {
+        var more: [FormActions.Extra] = []
         if let onSkip {
-            Button("Skip") {
+            more.append(.init("Skip") {
                 if let formGuard { formGuard.confirmLeaving(form: formToken, onSkip) } else { onSkip() }
-            }
+            })
         }
-        if !prepared { ProgressView().controlSize(.small).help("Preparing suggestions…") }
-        FormCancelButton(token: formToken, action: back)
-        FormPrimaryButton("Create", isDisabled: !canCreate) { create() }
+        return FormActions(.startsJob("Create", isDisabled: !canCreate) { create() }, more: more,
+                           isWorking: !prepared, workingHelp: "Preparing suggestions…")
     }
 
     // MARK: Actions

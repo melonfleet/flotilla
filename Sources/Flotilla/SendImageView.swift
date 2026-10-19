@@ -14,7 +14,7 @@ struct SendImageView: View {
 
     @State private var chosen: Set<HostRef> = []
     @State private var seeded = false
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var platform: String? { ImageTransfer.platform(for: image) }
@@ -28,9 +28,7 @@ struct SendImageView: View {
         VStack(spacing: 0) {
             FormHeader(title: "Send \u{201C}\(ContainerImage.shortReference(image.reference))\u{201D} to Hosts",
                        systemImage: "paperplane", hasUnsavedChanges: false, onBack: dismiss,
-                       token: formToken) {
-                actions
-            }
+                       token: formToken, actions: actions)
             Divider()
             FormScaffold {
                 form
@@ -119,15 +117,13 @@ struct SendImageView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton(targets.count == 1 ? "Send to 1 Host" : "Send to \(targets.count) Hosts",
-                          isDisabled: targets.isEmpty || platform == nil) {
+    private var actions: FormActions {
+        FormActions(.startsJob(targets.count == 1 ? "Send to 1 Host" : "Send to \(targets.count) Hosts",
+                               isDisabled: targets.isEmpty || platform == nil) {
             let hosts = targets
             let image = image
             dismiss()
             Task { await model.sendImage(image, to: hosts) }
-        }
+        })
     }
 }

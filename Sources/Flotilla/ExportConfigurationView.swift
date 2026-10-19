@@ -4,7 +4,7 @@ import FlotillaCore
 /// File ▸ Export Configuration… — the checklist (DECISIONS Q29).
 ///
 /// Embedded with Back, like every form since 9 August. **Nothing starts ticked** (the owner, 6
-/// October), with Select All and Clear All at the top. The rail says what the file
+/// October), with one select-all box at the top of the list. The rail says what the file
 /// will hold and, before anything is written, **everything that will be left out** — a file that
 /// quietly builds something different on the other Mac is the failure this screen exists to avoid.
 struct ExportConfigurationView: View {
@@ -14,7 +14,7 @@ struct ExportConfigurationView: View {
     @State private var inputs: ConfigurationExport.Inputs?
     @State private var selection = ConfigurationExport.Selection()
     @State private var saveError: String?
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var result: ConfigurationExport.Result? {
@@ -24,16 +24,8 @@ struct ExportConfigurationView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Export Configuration", systemImage: "square.and.arrow.up",
-                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
-                // The owner's layout (6 October): nothing ticked to start, and these two at the
-                // top rather than an All/None on every section.
-                Button("Select All") { selection = everything }
-                    .disabled(inputs == nil || selection == everything)
-                Button("Clear All") { selection = ConfigurationExport.Selection() }
-                    .disabled(selection == ConfigurationExport.Selection())
-                FormCancelButton(token: formToken, action: dismiss)
-                FormPrimaryButton("Export…", isDisabled: result?.file.isEmpty ?? true) { export() }
-            }
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken,
+                       actions: FormActions(.startsJob("Export…", isDisabled: result?.file.isEmpty ?? true) { export() }))
             Divider()
             if let saveError {
                 FormBand {
@@ -72,6 +64,8 @@ struct ExportConfigurationView: View {
              + "things, empty. It holds no passwords, no volume data and no image layers.")
             .font(.callout).foregroundStyle(.secondary)
 
+        selectAll
+
         kind("Groups", ids: inputs.groups.map(\.id), titles: Dictionary(uniqueKeysWithValues: inputs.groups.map { ($0.id, $0.name) }),
              detail: { id in inputs.groups.first { $0.id == id }.map { "\($0.members.count) services" } },
              set: \.groups)
@@ -101,6 +95,28 @@ struct ExportConfigurationView: View {
             Toggle("DNS domains — recreating them needs an administrator, or the Flotilla Helper",
                    isOn: $selection.dns).toggleStyle(.checkbox)
         }
+    }
+
+    /// One box over the whole list (Q65): it was Select All and Clear All in the header, and the
+    /// header holds only the form's actions now. The owner's layout stands (6 October) — nothing
+    /// ticked to start, and one control at the top rather than an All/None on every section. Mixed
+    /// while some are ticked, as a list's select-all box is (`SelectAllCheckbox`).
+    private var selectAll: some View {
+        let none = ConfigurationExport.Selection()
+        let all = everything
+        // Two sources so the box can be mixed: "anything ticked" and "everything ticked". Ticking
+        // the box sets both, which is everything; unticking clears both, which is nothing.
+        let sources = [
+            Binding(get: { selection != none }, set: { selection = $0 ? all : none }),
+            Binding(get: { selection == all }, set: { selection = $0 ? all : none }),
+        ]
+        return Toggle(sources: sources, isOn: \.self) {
+            Text("Select all").font(.system(size: 13, weight: .medium))
+        }
+        .toggleStyle(.checkbox)
+        .disabled(all == none)
+        .help(selection == all ? "Deselect everything" : "Select everything this Mac can export")
+        .accessibilityLabel("Select all")
     }
 
     @ViewBuilder

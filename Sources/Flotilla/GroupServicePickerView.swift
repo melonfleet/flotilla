@@ -50,11 +50,10 @@ struct GroupServicePickerView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Add Services", systemImage: "shippingbox",
-                       hasUnsavedChanges: false, onBack: onCancel, token: formToken) {
-                FormCancelButton(token: formToken, action: onCancel)
-                FormPrimaryButton(total >= 2 ? "Add \(total) Services" : total == 1 ? "Review Service" : "Add",
-                                  isDisabled: total == 0) { add() }
-            }
+                       hasUnsavedChanges: false, onBack: onCancel, token: formToken,
+                       actions: FormActions(.keepsChanges(
+                           total >= 2 ? "Add \(total) Services" : total == 1 ? "Review Service" : "Add",
+                           isDisabled: total == 0) { add() }))
             Divider()
             FormBand {
                 Text(total >= 2

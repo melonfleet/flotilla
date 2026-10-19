@@ -63,7 +63,7 @@ struct NewImageView: View {
     @State private var noCache = false
 
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     /// A reference to pull, from Browse Docker Hub — seeded with Docker Hub as its registry.
@@ -107,9 +107,7 @@ struct NewImageView: View {
         VStack(spacing: 0) {
             FormHeader(title: "New Image", systemImage: "plus",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: dismiss, token: formToken) {
-                actions
-            }
+                       onBack: dismiss, token: formToken, actions: actions)
             Divider()
             FormScaffold {
                 form
@@ -432,12 +430,10 @@ struct NewImageView: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
+    private var actions: FormActions {
         // Named for what it does rather than a generic Create: the two halves of this form
-        // do genuinely different things and the button is the last chance to say which.
-        FormPrimaryButton(mode.rawValue, isDisabled: !canSubmit, action: submit)
+        // do genuinely different things and the label is the last chance to say which.
+        FormActions(.startsJob(mode.rawValue, isDisabled: !canSubmit, action: submit))
     }
 
     // MARK: Validation and actions

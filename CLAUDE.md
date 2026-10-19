@@ -74,9 +74,14 @@ questions.
   argument is better: once Machines grew an embedded detail with Back and a tab strip, a
   floating card with a red × was the only surface in the app you left a different way.
   Run, New Machine, New Volume, New Network, Pull Image and Tag Image are all screens with
-  `FormHeader` (Back, icon, title, and the form's actions — Cancel, then the named commit — at its
-  **top right**; Q64, 19 October, because the Tasks drawer covered a bottom-right Save, so there is no
-  bottom button row in any form, and `check-form-bounds.sh` pins it). It also killed a real cost —
+  `FormHeader` (Back, icon, title, and the form's actions at its **top right** — Q64, 19 October,
+  because the Tasks drawer covered a bottom-right Save, so there is no bottom button row in any form).
+  **The actions are one icon cluster on glass, the same on every form** (Q65, 19 October, Kamal):
+  ⋯ for rare extras (Delete…, Save to File…, Skip), ✕ for close (Escape; asks through `FormGuard`
+  like Back), and the commit rightmost in the accent — ▶ when it starts a job that shows in Tasks,
+  ✓ when it keeps changes — with the old button's exact words as its tooltip and VoiceOver label.
+  A form passes a `FormActions` *value*, never views, so it cannot draw a button of its own there;
+  `check-form-bounds.sh` pins that too. A host's page is not a form and uses `PageHeader`. It also killed a real cost —
   every modal carried a hand-picked frame (560×680, 560×660, 440 wide) that copy had to be
   *trimmed to fit*, which is backwards.
   `ModalCard` survives for **About** and **Support Bundle** only: those are dialogs you

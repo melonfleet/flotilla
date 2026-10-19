@@ -768,7 +768,7 @@ struct NewNetworkView: View {
     @State private var newOptions: [String] = []
     @State private var newPlugin = ""
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     private var editSignature: String {
@@ -793,9 +793,8 @@ struct NewNetworkView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Network", systemImage: "network.badge.shield.half.filled",
-                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken) {
-                actions
-            }
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken,
+                       actions: actions)
             Divider()
             // Says why, when nothing else does. A disabled button with no explanation anywhere
             // on the screen is what this form shipped with.
@@ -979,16 +978,14 @@ struct NewNetworkView: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton("Create", isDisabled: trimmedName.isEmpty || anyProblem != nil) {
+    private var actions: FormActions {
+        FormActions(.startsJob("Create", isDisabled: trimmedName.isEmpty || anyProblem != nil) {
             let name = trimmedName
             let opts = options
             let target = host
             dismiss()
             Task { await model.createNetwork(name, options: opts, host: target) }
-        }
+        })
     }
 
     enum AddressFamily: String, CaseIterable, Identifiable {

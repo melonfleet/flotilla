@@ -26,7 +26,7 @@ struct GroupFormView: View {
     /// The "where does the service come from" screen, ahead of the service form.
     @State private var choosingService = false
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
     @State private var saveError: String?
     /// The group's Keychain-held values as read on open, by secret name.
@@ -103,20 +103,24 @@ struct GroupFormView: View {
 
     // MARK: The group itself
 
+    /// ✓ saves; Save to File… is in ⋯.
+    private var groupActions: FormActions {
+        var more: [FormActions.Extra] = []
+        // The saved group, not the draft: a file should describe what exists.
+        if !isNew, let saved = model.groups.group(draft.id) {
+            more.append(.init("Save to File…", help: "Save this group as a .flotilla file to share or rebuild elsewhere") {
+                Task { await model.saveGroupToFile(saved) }
+            })
+        }
+        return FormActions(.keepsChanges("Save", isDisabled: !canSave) { save() }, more: more)
+    }
+
     private var groupScreen: some View {
         VStack(spacing: 0) {
             FormHeader(title: isNew ? "New Group" : "Edit Group",
                        systemImage: "rectangle.3.group",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: dismiss, token: formToken) {
-                // The saved group, not the draft: a file should describe what exists.
-                if !isNew, let saved = model.groups.group(draft.id) {
-                    Button("Save to File…") { Task { await model.saveGroupToFile(saved) } }
-                        .help("Save this group as a .flotilla file to share or rebuild elsewhere")
-                }
-                FormCancelButton(token: formToken, action: dismiss)
-                FormPrimaryButton("Save", isDisabled: !canSave) { save() }
-            }
+                       onBack: dismiss, token: formToken, actions: groupActions)
             Divider()
             if let saveError {
                 FormBand {
@@ -540,7 +544,7 @@ struct GroupMemberFormView: View {
     /// the window's guard like any form; Save and Back both take the screen away, and its
     /// registration with it, leaving the group's own to say whether the group has changed.
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
 
     init(model: AppModel, member: GroupMember, isNew: Bool,
@@ -572,10 +576,8 @@ struct GroupMemberFormView: View {
             FormHeader(title: isNew ? "Add Service" : "Edit Service",
                        systemImage: "shippingbox",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: onCancel, token: formToken) {
-                FormCancelButton(token: formToken, action: onCancel)
-                FormPrimaryButton(isNew ? "Add" : "Save", isDisabled: !canSave) { onSave(built) }
-            }
+                       onBack: onCancel, token: formToken,
+                       actions: FormActions(.keepsChanges(isNew ? "Add" : "Save", isDisabled: !canSave) { onSave(built) }))
             Divider()
             FormScaffold {
                 form

@@ -176,7 +176,7 @@ struct RunSheetView: View {
     @State private var network = ""
 
     @State private var edits = FormEditTracker()
-    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
     @Environment(FormGuard.self) private var formGuard: FormGuard?
 
@@ -263,12 +263,8 @@ struct RunSheetView: View {
     /// content had to fit the window rather than the other way round.
     private var header: some View {
         FormHeader(title: "Run Container", systemImage: "shippingbox",
-                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken) {
-            if let progressLabel {
-                Text(progressLabel).font(.subheadline).foregroundStyle(.secondary)
-            }
-            actions
-        }
+                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss,
+                   progress: progressLabel, token: formToken, actions: actions)
     }
 
     private var content: some View {
@@ -589,18 +585,18 @@ struct RunSheetView: View {
         }
     }
 
-    /// Skip, Cancel and Run, at the top right of the header (Q64).
-    @ViewBuilder
-    private var actions: some View {
+    /// ▶ Run at the top right of the header (Q65); Skip, inside a run of suggestions, in ⋯.
+    private var actions: FormActions {
+        var more: [FormActions.Extra] = []
         if let onSkip {
-            Button("Skip") {
+            more.append(.init("Skip") {
                 if let formGuard { formGuard.confirmLeaving(form: formToken, onSkip) } else { onSkip() }
-            }
+            })
         }
-        FormCancelButton(token: formToken, action: dismiss)
-        FormPrimaryButton("Run",
-                          isDisabled: previewError != nil || commandSplitError != nil || policyProblem != nil,
-                          help: policyProblem, action: run)
+        return FormActions(.startsJob("Run",
+                                      isDisabled: previewError != nil || commandSplitError != nil || policyProblem != nil,
+                                      reason: policyProblem, action: run),
+                           more: more)
     }
 
     private func run() {
