@@ -84,7 +84,7 @@ struct RuntimeBanner: View {
                     if needsContainer, model.hostMode.mode == .host {
                         Text(model.hostRuntimeNote
                              ?? (model.helperEnabled ? "This Mac installs it by itself through its Flotilla Helper."
-                                 : "Switch on the Flotilla Helper in Settings ▸ Advanced and this Mac installs it by itself, or install it now."))
+                                 : "Approve the Flotilla Helper in Settings ▸ Advanced and this Mac installs it by itself, or install it now."))
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }

@@ -17,6 +17,9 @@ import FlotillaNet
 @Observable
 final class AppModel {
 
+    /// The Flotilla Helper's registration and whether it answers, for Settings and the status bar.
+    let helperMonitor = HelperMonitor()
+
     enum LoadState: Equatable {
         case idle
         case loading
@@ -136,7 +139,13 @@ final class AppModel {
         sshTerminals.overdue = { [weak self] message in self?.record(message, subsystem: "terminal") }
         updater.apply(isAdmin: hostMode.isAdmin)
         startHostRuntimeWatch()
-        Task { await PrivilegedHelper.moveFromLegacyName() }
+        // Move an old registration first, then register for a signed build with none (unless the owner
+        // removed it); the monitor reads the result.
+        Task {
+            await PrivilegedHelper.moveFromLegacyName()
+            PrivilegedHelper.registerAtLaunchIfNeeded()
+            helperMonitor.refresh()
+        }
         // The first load, from here rather than only from the main window: a launch with no window
         // (at login, or with the window closed) left preflight unrun, so the menu bar said
         // "Checking…" until the window was opened — found 8 October, once the menu bar had a
@@ -2187,6 +2196,16 @@ final class AppModel {
         present {
             self.pendingSection = .settings
             self.pendingSettingsAbout = true
+        }
+    }
+
+    /// Settings ▸ Advanced, for the status bar's Helper menu. Read and cleared like `pendingSettingsAbout`.
+    var pendingSettingsAdvanced = false
+
+    func requestHelperSettings() {
+        present {
+            self.pendingSection = .settings
+            self.pendingSettingsAdvanced = true
         }
     }
 

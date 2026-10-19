@@ -3,24 +3,19 @@ import ServiceManagement
 import FlotillaCore
 import FlotillaPrivileged
 
-/// The app's side of the Flotilla Helper (decision 19, amended 7 October; Q41): installing and removing it,
-/// asking whether it is approved, and sending it requests.
+/// The app's side of the Flotilla Helper (decision 19, amended 7 October; Q41) — Flotilla's background
+/// service for jobs that need administrator rights: installing and removing it, asking whether it is
+/// approved and running, and sending it requests.
 ///
-/// Installing registers an `SMAppService` daemon; macOS then lists it in System Settings ▸ Login
-/// Items, and nothing runs as root until the owner switches it on there. Until then — and on any
-/// build that is not Developer ID signed — DNS changes go through the password prompt exactly as
-/// before (`AdminCommandRunner`). `AppModel.runPrivileged` makes that choice in one place.
+/// Registering adds an `SMAppService` daemon; macOS then lists it in System Settings ▸ Login
+/// Items, and nothing runs as root until the owner switches it on there. A Developer ID signed
+/// build registers it by itself at launch (`registerAtLaunchIfNeeded`) unless the owner removed it;
+/// the approval cannot be skipped. Until it is given — and on any build that is not Developer ID
+/// signed — DNS changes go through the password prompt exactly as before (`AdminCommandRunner`).
+/// `AppModel.runPrivileged` makes that choice in one place.
 @MainActor
 enum PrivilegedHelper {
-    enum Status: Equatable {
-        /// This build cannot use a helper: it is not Developer ID signed, so the helper would refuse
-        /// it and it would refuse the helper.
-        case unavailable
-        case notInstalled
-        /// Registered, waiting for the owner to switch it on in Login Items.
-        case awaitingApproval
-        case enabled
-    }
+    typealias Status = HelperRegistration
 
     private static var service: SMAppService { .daemon(plistName: HelperInterface.plistName) }
     private static var legacyService: SMAppService { .daemon(plistName: HelperInterface.legacyPlistName) }
@@ -37,14 +32,61 @@ enum PrivilegedHelper {
         }
     }
 
-    /// Registers the daemon. macOS shows its own notification and lists it in Login Items; the
-    /// helper runs only once the owner switches it on there.
+    /// Set when the owner presses Remove, so a launch does not quietly undo it. Plist-native in the
+    /// app's own preference domain, like the tags and groups, and not a setting: an admin has no
+    /// reason to seed or lock it.
+    static let removedByOwnerKey = "helperRemovedByOwner"
+    private static var defaults: UserDefaults? { TagStore.standardDefaults() }
+    static var removedByOwner: Bool { defaults?.bool(forKey: removedByOwnerKey) ?? false }
+
+    /// Registers the daemon, on the owner's say-so: clears a deliberate Remove. macOS shows its own
+    /// notification and lists it in Login Items; the helper runs only once the owner switches it on.
     static func install() throws {
+        defaults?.removeObject(forKey: removedByOwnerKey)
         try service.register()
     }
 
+    /// Unregisters it and remembers that the owner asked, so the next launch leaves it removed.
     static func remove() async throws {
         try await service.unregister()
+        defaults?.set(true, forKey: removedByOwnerKey)
+    }
+
+    /// At launch: a signed build with no helper registers one, unless the owner removed it. Errors are
+    /// not reported — registering while approval is pending throws "Operation not permitted" and still
+    /// registers (measured 7 October), and the status says what happened. Nothing opens Login Items:
+    /// the footer and Settings guide the owner there.
+    static func registerAtLaunchIfNeeded() {
+        guard HelperAutoRegister.shouldRegister(registration: status, removedByOwner: removedByOwner) else { return }
+        try? service.register()
+    }
+
+    /// Unregister, then register: for a helper macOS has switched on that does not answer. macOS may
+    /// ask for approval again. Not a Remove — the flag is left alone.
+    static func reinstall() async throws {
+        do { try await service.unregister() } catch {
+            // Already gone is fine; anything else is reported by the register below not moving the status.
+        }
+        try? service.register()
+        if status == .notInstalled { throw HelperError.notRegistered }
+    }
+
+    enum HelperError: LocalizedError {
+        case notRegistered
+        var errorDescription: String? { "macOS didn't register the background service." }
+    }
+
+    /// Restarts the running helper: it replies and exits, and launchd starts it again on the next
+    /// request. A helper older than version 5 does not know `quit`, so it is reinstalled instead.
+    /// Not confirmed by a version probe first, unlike `send`: quitting twice is harmless, and a helper
+    /// that does not answer is exactly the one this is for.
+    static func restart(knownVersion: Int?) async -> String? {
+        if let knownVersion, knownVersion < HelperInterface.quitVersion {
+            do { try await reinstall() } catch { return error.localizedDescription }
+            return nil
+        }
+        guard team != nil else { return "This copy of Flotilla isn't signed, so it can't use the background service." }
+        return await transmit(.restart)
     }
 
     /// Q41: the helper was `dev.melonfleet.Flotilla.dns-helper` until it took on more than DNS. A
@@ -115,34 +157,41 @@ enum PrivilegedHelper {
             return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
         }
         guard let version = await runningVersion() else {
-            return "Flotilla couldn't confirm its Flotilla Helper, so nothing was changed. Switch the helper "
-                + "off and on in Settings ▸ Advanced, or restart this Mac, and try again."
+            return "Flotilla couldn't confirm its Flotilla Helper, so nothing was changed. Restart or reinstall "
+                + "the background service in Settings ▸ Advanced, or restart this Mac, and try again."
         }
         return await sendOnce(request, helperVersion: version)
     }
 
     private static func sendOnce(_ request: HelperRequest, helperVersion version: Int) async -> String? {
-        guard let team else {
-            return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
-        }
         switch request {
         case .installFlotillaUpdate:
             if version < 4 {
                 return "This Mac's Flotilla Helper is from an older Flotilla and can't install updates. "
                     + "Install this update with the package once; after that the helper installs them."
             }
+        case .restart:
+            if version < HelperInterface.quitVersion { return "This Mac's Flotilla Helper is from an older Flotilla. Reinstall it in Settings ▸ Advanced." }
         case .installContainer:
             if version < 3 {
-                return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
+                return "The Flotilla Helper is from an older Flotilla. Restart or reinstall it in "
                     + "Settings ▸ Advanced to update it."
             }
         case .syncFleetResolvers, .removeFleetResolvers:
             // Added in version 2: an older helper would not know the request at all.
             if version < 2 {
-                return "The Flotilla Helper is from an older Flotilla. Switch it off and on again in "
+                return "The Flotilla Helper is from an older Flotilla. Restart or reinstall it in "
                     + "Settings ▸ Advanced to update it."
             }
         default: break
+        }
+        return await transmit(request)
+    }
+
+    /// One request down a fresh connection, with no version check of its own.
+    private static func transmit(_ request: HelperRequest) async -> String? {
+        guard let team else {
+            return "This copy of Flotilla isn't signed, so it can't use the Flotilla Helper."
         }
         let connection = NSXPCConnection(machServiceName: HelperInterface.label, options: .privileged)
         connection.remoteObjectInterface = NSXPCInterface(with: HelperProtocol.self)
@@ -175,6 +224,8 @@ enum PrivilegedHelper {
                 proxy.installContainer(packageAt: path, version: version) { once.resume($0) }
             case .installFlotillaUpdate(let path):
                 proxy.installFlotillaUpdate(appAt: path) { once.resume($0) }
+            case .restart:
+                proxy.quit { once.resume($0) }
             }
         }
     }
@@ -191,6 +242,9 @@ enum HelperRequest: Sendable {
     case installContainer(path: String, version: String)
     /// Q43: a Flotilla update over a root-owned app, checked by the helper as root. Helper only.
     case installFlotillaUpdate(path: String)
+    /// Version 5: the helper replies and exits; launchd starts it again on the next request. Takes
+    /// nothing and does nothing else. Helper only.
+    case restart
 }
 
 /// A connection handed to a cancellation handler, which may run on any thread. `invalidate()` is
@@ -233,12 +287,14 @@ extension AppModel {
         var commands: [ValidatedCommand] = []
         switch request {
         case .syncFleetResolvers, .removeFleetResolvers:
-            return .failed("Names across Macs need the Flotilla Helper switched on. Turn it on in Settings ▸ Advanced.")
+            return .failed("Names across Macs need the Flotilla Helper, Flotilla's background service for administrator jobs. Install and approve it in Settings ▸ Advanced.")
+        case .restart:
+            return .failed("The Flotilla Helper isn't switched on.")
         case .installContainer:
-            return .failed("Installing container without a person here needs the Flotilla Helper switched on.")
+            return .failed("Installing container without a person here needs the Flotilla Helper, Flotilla's background service for administrator jobs.")
         case .installFlotillaUpdate:
             return .failed("Flotilla here was installed by a package, so only its Flotilla Helper can update it. "
-                           + "Switch the helper on in Settings ▸ Advanced, or install the update with the package.")
+                           + "Install and approve the Flotilla Helper in Settings ▸ Advanced, or install the update with the package.")
         case .create(let domain, let localhost):
             switch ContainerCLI.dnsCreateCommand(domain: domain, localhost: localhost) {
             case .success(let command): commands = [command]

@@ -272,6 +272,10 @@ struct SettingsView: View {
     /// The sidebar at a fixed width and the pane filling the rest. The pane scrolls; the sidebar is
     /// short enough not to need to, and a `List` scrolls itself if the window is very short.
     private func takeAboutRequest() {
+        if model.pendingSettingsAdvanced {
+            model.pendingSettingsAdvanced = false
+            section = .advanced
+        }
         guard model.pendingSettingsAbout else { return }
         model.pendingSettingsAbout = false
         section = .about
@@ -291,6 +295,7 @@ struct SettingsView: View {
         // "About Flotilla" from either menu lands on this pane.
         .onAppear(perform: takeAboutRequest)
         .onChange(of: model.pendingSettingsAbout) { _, _ in takeAboutRequest() }
+        .onChange(of: model.pendingSettingsAdvanced) { _, _ in takeAboutRequest() }
         .sheet(isPresented: Binding(
             get: { model.showingSupportBundle },
             set: { model.showingSupportBundle = $0 }
@@ -465,7 +470,7 @@ struct SettingsView: View {
             }
         }
 
-        HelperSettingsSection()
+        HelperSettingsSection(monitor: model.helperMonitor)
         logsSection
         diagnosticsSection
         settingsFileSection

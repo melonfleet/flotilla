@@ -9,11 +9,17 @@ struct WindowStatusBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmingContainerUpgrade = false
     @State private var upgradeFailures: [String] = []
+    /// The bar's width, so the Helper item can drop its word first when the bar is narrow.
+    @State private var barWidth: CGFloat = .infinity
 
     init(model: AppModel) {
         self.model = model
         self.updater = model.updater
     }
+
+    /// Below this the Helper item is a dot alone. Well above where the runtime's words start to
+    /// truncate, so the Helper's word is always the first thing the bar gives up.
+    private static let helperWordMinimumWidth: CGFloat = 520
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -23,6 +29,7 @@ struct WindowStatusBar: View {
         HStack(spacing: 12) {
             RuntimeStatusBand(model: model)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            HelperStatusItem(model: model, showsWord: barWidth >= Self.helperWordMinimumWidth)
             if let content = UpdateBadgeContent.current(model) {
                 UpdateActivityBadge(content: content)
                     .transition(.opacity)
@@ -34,6 +41,7 @@ struct WindowStatusBar: View {
         .onChange(of: UpdateBadgeContent.current(model)) { _, new in
             if let new, new.announces { AccessibilityNotification.Announcement(new.text).post() }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { barWidth = $0 }
         .padding(.horizontal, 10)
         .frame(height: 23)
         .background(.bar)
@@ -124,4 +132,57 @@ struct WindowStatusBar: View {
     }
 
     private func lastChecked(_ date: Date?) -> String { UpdateText.lastChecked(date) }
+}
+
+/// The Flotilla Helper in the status bar (Q41, amended 19 October): a dot and the word "Helper",
+/// opening its status and the few things to do about it. Shown on a host-only Mac too — hosts need the
+/// helper most — and hidden on a build that cannot use it.
+private struct HelperStatusItem: View {
+    let model: AppModel
+    let showsWord: Bool
+
+    var body: some View {
+        let monitor = model.helperMonitor
+        let health = monitor.health
+        if health != .unavailable {
+            Menu {
+                Text(health.title).disabled(true)
+                Divider()
+                ForEach(health.actions.filter { $0 != .openLoginItems }, id: \.self) { action in
+                    Button(action.title) { monitor.perform(action) }
+                        .disabled(monitor.busy)
+                        .help(action.help ?? "")
+                }
+                Button(HelperHealth.Action.openLoginItems.title) { monitor.openLoginItems() }
+                Divider()
+                Button("Helper Settings…") { model.requestHelperSettings() }
+            } label: {
+                // Room for the dot, which is drawn over the menu: a borderless macOS `Menu` draws its
+                // label's text and drops the shapes around it (see `RuntimeStatusBand`).
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: 18, height: 23)
+                    if showsWord { Text("Helper").font(.system(size: 11)).lineLimit(1) }
+                }
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .overlay(alignment: .leading) {
+                Group {
+                    if monitor.busy {
+                        ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 8, height: 8)
+                    } else {
+                        Circle().fill(health.tint).frame(width: 7, height: 7)
+                    }
+                }
+                .frame(width: 18, height: 23)
+                .allowsHitTesting(false)
+            }
+            .help("Flotilla Helper — \(health.title)")
+            .accessibilityLabel("Flotilla Helper: \(health.title)")
+            .accessibilityHint("Opens the helper menu")
+            .onAppear { monitor.refresh() }
+        }
+    }
 }

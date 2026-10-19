@@ -5,8 +5,8 @@ import FlotillaPrivileged
 
 /// The Flotilla Helper: Flotilla's one root daemon, for the few jobs that need root — creating and
 /// deleting `container`'s local DNS domains, keeping the fleet resolver files, and installing Apple's
-/// `container` package — so none of them asks for the administrator password every time (decision
-/// 19, amended 7 October; one helper, Q41). See `HelperInterface` for the contract.
+/// `container` package, and installing Flotilla updates — so none of them asks for the administrator
+/// password every time (decision 19, amended 7 October; one helper, Q41). See `HelperInterface` for the contract.
 ///
 /// Everything the app's password path checks, this checks again, here, as root — the app is the
 /// caller, not the authority:
@@ -38,6 +38,15 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol, @unc
 
     func helperVersion(reply: @escaping @Sendable (Int) -> Void) {
         reply(HelperInterface.version)
+    }
+
+    /// Restart (version 5). Waits for a request under way, so a change is never cut off, then replies
+    /// and exits; the lock is not released, so nothing begins in the process that is about to go.
+    /// launchd starts a fresh copy on the next request. No argument, no other effect.
+    func quit(reply: @escaping @Sendable (String?) -> Void) {
+        lock.lock()
+        reply(nil)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { exit(0) }
     }
 
     func createDomain(_ domain: String, localhost: String?, reply: @escaping @Sendable (String?) -> Void) {

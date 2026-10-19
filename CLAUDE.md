@@ -666,6 +666,9 @@ must preserve all of the following:
     unregister it; Login Items approval is per app, so the move keeps the helper on.
     **Amended 2026-10-09 (Q43):** and `installFlotillaUpdate` — over the app the helper is inside,
     only a newer build signed by its own team, checked as root on a root-owned copy.
+    **Amended 2026-10-19 (Q41):** and `quit()` (version 5, no argument: reply, then exit; launchd starts
+    it again on demand) so the app can restart it. A signed build registers the helper at launch unless
+    the owner pressed Remove (`helperRemovedByOwner`); Login Items approval still cannot be skipped.
 
 The canonical preference domain, Keychain/launchd/package namespace, and Jamf
 payload domain all derive from `dev.melonfleet.Flotilla`.

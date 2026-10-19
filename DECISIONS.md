@@ -1964,6 +1964,32 @@ stay a single helper for every privileged job, as Jamf does with its one managem
   Flotilla's background items as one switch per app, not per label. The old
   plist stays in the bundle as a stub with no Mach service or RunAtLoad, only so it can be
   unregistered.
+- **Amended 2026-10-19 (Kamal): the helper is Flotilla's background service, and it installs itself.**
+  - *Wording.* It is described as Flotilla's background service for jobs that need administrator
+    rights — DNS domains and names across Macs, installing Apple's `container`, installing Flotilla
+    updates on a host — not as a DNS helper. The name stays the Flotilla Helper.
+  - *Installed automatically.* At launch a Developer ID-signed build whose helper is `.notInstalled`
+    calls `SMAppService.register`. macOS's Login Items approval cannot be skipped, so Settings and the
+    footer say "Needs your approval" and offer Open Login Items; nothing opens it unasked. An unsigned
+    build never registers (no team, so the helper would refuse it).
+  - *A deliberate Remove is respected.* Remove sets `helperRemovedByOwner` (plist-native, in the app's
+    preference domain, not `SettingsStore`); while set, launch does not register. Install clears it.
+    Reinstall (unregister, then register) leaves it alone and may ask for approval again.
+  - *A real status* (`HelperHealth`, pure, in `FlotillaCore`): Running (version N); Out of date (running
+    older than `HelperInterface.version`); Approved but not answering; Needs your approval; Not
+    installed; Not available in this build. "Running" comes from `runningVersion()`, probed when
+    Settings or the footer menu appears and when the app becomes active, from a 30-second cache,
+    never on a timer — a probe starts the on-demand daemon — and bounded by a `Deadline`.
+  - *One new typed operation: `quit()`* (interface version 5). No argument; it takes the helper's request
+    lock (so a change under way finishes), replies, and exits after 0.3 s; launchd starts it again on
+    the next request because the plist has no KeepAlive or RunAtLoad (a test holds that line). It is
+    covered by the listener's code-signing requirement like every other call, so only the signed app of
+    the helper's own team can reach it. The app does not confirm a version before sending it (quitting
+    twice is harmless), and a running helper older than version 5, which does not know the call, is
+    reinstalled instead. No other privileged job was added.
+  - *The footer* has a Helper item (dot, and the word while the bar is wide): status line, Restart,
+    Reinstall or Install, Open Login Items, Helper Settings…. Shown on a host-only Mac, hidden on an
+    unsigned build.
 
 ## Q42 — The registry browser searches Docker Hub (settled 2026-10-08)
 

@@ -196,7 +196,7 @@ extension AppModel {
             break
         }
         guard helperEnabled else {
-            return "\(hostLabel) needs its Flotilla Helper switched on to install container by itself."
+            return "\(hostLabel) needs its Flotilla Helper installed and approved to install container by itself."
         }
         let keepAwake = power.begin("installing container")
         defer { power.end(keepAwake) }

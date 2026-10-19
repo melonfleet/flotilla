@@ -28,7 +28,10 @@ public enum HelperInterface {
     /// 2 (8 October, Q37): adds the fleet resolver files.
     /// 3 (8 October, Q39): adds installing Apple's `container` package.
     /// 4 (9 October, Q43): adds installing a Flotilla update over a root-owned app.
-    public static let version = 4
+    /// 5 (19 October, Q41 amended): adds `quit()`, so the app can restart a helper that is stale or stuck.
+    public static let version = 5
+    /// The first version that knows `quit()`; an older helper is reinstalled instead of asked.
+    public static let quitVersion = 5
 
     /// A code requirement for `identifier`, signed by Apple-issued Developer ID under `team`.
     /// Both ends use it: the helper on the app, and the app on the helper.
@@ -71,4 +74,9 @@ public enum HelperInterface {
     /// build. The destination is never given: it is the app the helper is inside. For a Mac where a
     /// package installed Flotilla owned by root, so the app cannot replace itself (Q43). Version 4.
     func installFlotillaUpdate(appAt path: String, reply: @escaping @Sendable (String?) -> Void)
+    /// Replies, then exits cleanly. launchd starts the helper again on the next request — it is
+    /// on-demand, with no KeepAlive — so this is "Restart", and it takes no argument and does nothing
+    /// else. It is reachable only by the signed app of the helper's own team, like every call here:
+    /// the listener's code-signing requirement is checked before any method can run. Version 5.
+    func quit(reply: @escaping @Sendable (String?) -> Void)
 }

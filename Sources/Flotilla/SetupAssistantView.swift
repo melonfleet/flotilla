@@ -446,7 +446,7 @@ struct SetupAssistantView: View {
         switch helper {
         case .enabled:
             setupTask("Flotilla Helper", done: true) {
-                Text("On. It installs and updates container on this host, and keeps its DNS names.")
+                Text("Running. It installs container and Flotilla updates on this host, and keeps its DNS names.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         case .awaitingApproval:
@@ -457,16 +457,16 @@ struct SetupAssistantView: View {
             }
         case .notInstalled:
             setupTask("Flotilla Helper", done: false) {
-                Toggle("Turn on the Flotilla Helper when I continue", isOn: $turnOnHelper)
+                Toggle("Install the Flotilla Helper when I continue", isOn: $turnOnHelper)
                     .toggleStyle(.checkbox)
-                Text("Flotilla's one helper for the jobs that need an administrator: installing Apple's container, DNS "
-                     + "domains and names across Macs. macOS asks you to approve it in Login Items; Flotilla still asks "
-                     + "you to confirm every change.")
+                Text("Flotilla's background service for jobs that need administrator rights: DNS domains and names "
+                     + "across Macs, installing Apple's container, and installing Flotilla updates. macOS asks you to "
+                     + "approve it once in Login Items.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         case .unavailable:
             setupTask("Flotilla Helper", done: false) {
-                Text("Only a signed copy of Flotilla can use the helper, so this build can't install container by itself.")
+                Text("Only a signed copy of Flotilla can use the background service, so this build can't install container by itself.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -616,7 +616,7 @@ struct SetupAssistantView: View {
 
     private var helperSummary: (text: String, ok: Bool?) {
         switch helper {
-        case .enabled: ("On", true)
+        case .enabled: ("Installed and approved", true)
         case .awaitingApproval: ("Waiting for your approval in Login Items", false)
         case .notInstalled: ("Off — Settings ▸ Advanced", nil)
         case .unavailable: ("Not available in this build", nil)
