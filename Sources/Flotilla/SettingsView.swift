@@ -793,5 +793,13 @@ private struct SettingsAboutPane: View {
                 ForEach(AboutView.licenceLines, id: \.self) { SettingsNote(verbatim: $0) }
             }
         }
+
+        SettingsGroup("Logos") {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(AboutView.logoLines(for: model.suggestionLibrary), id: \.self) {
+                    SettingsNote(verbatim: $0)
+                }
+            }
+        }
     }
 }

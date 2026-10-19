@@ -35,6 +35,10 @@ struct AboutView: View {
                 SwiftUI.Section("Licence") {
                     licence
                 }
+
+                SwiftUI.Section("Logos") {
+                    logos
+                }
             }
             .formStyle(.grouped)
             .textSelection(.enabled)
@@ -200,6 +204,30 @@ struct AboutView: View {
     private var licence: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Self.licenceLines, id: \.self) { Text($0) }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 4)
+    }
+
+    // MARK: - Logos
+
+    static let logoNotice = "Logos are trademarks of their owners and identify the software they name."
+
+    static func logoLines(for library: SuggestionLibrary) -> [String] {
+        var lines = [logoNotice]
+        var seen: Set<String> = [logoNotice]
+        for attribution in (library.artwork ?? []).compactMap(\.attribution) where !attribution.isEmpty {
+            if seen.insert(attribution).inserted {
+                lines.append(attribution)
+            }
+        }
+        return lines
+    }
+
+    private var logos: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Self.logoLines(for: model.suggestionLibrary), id: \.self) { Text($0) }
         }
         .font(.caption)
         .foregroundStyle(.secondary)

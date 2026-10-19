@@ -31,11 +31,22 @@ public struct SuggestionLibrary: Sendable, Codable, Equatable {
     /// Newer replaces older: `2026.10.12.1`, compared number by number.
     public var version: String
     public var entries: [LibraryEntry]
+    public var artwork: [LibraryArtwork]?
 
-    public init(schema: Int = Self.currentSchema, version: String, entries: [LibraryEntry]) {
+    public init(schema: Int = Self.currentSchema, version: String, entries: [LibraryEntry],
+                artwork: [LibraryArtwork]? = nil) {
         self.schema = schema
         self.version = version
         self.entries = entries
+        self.artwork = artwork
+    }
+
+    public func artwork(id: String) -> LibraryArtwork? {
+        artwork?.first { $0.id == id }
+    }
+
+    public func artwork(for id: String) -> LibraryArtwork? {
+        artwork(id: id)
     }
 
     /// Only the entries that pass every check, with reasons for dropped entries or icons. A library whose
@@ -58,7 +69,28 @@ public struct SuggestionLibrary: Sendable, Codable, Equatable {
             kept.append(entry)
         }
         if entries.count > Self.maxEntries { dropped.append(("…", "More than \(Self.maxEntries) entries; the rest were ignored.")) }
-        return (SuggestionLibrary(schema: schema, version: version, entries: kept), dropped)
+
+        var keptArtwork: [LibraryArtwork]?
+        if let artwork {
+            var valid: [LibraryArtwork] = []
+            var seenArtwork = Set<String>()
+            for item in artwork.prefix(Self.maxEntries) {
+                if let problem = item.problem() {
+                    dropped.append((item.id.isEmpty ? "artwork" : item.id, "Artwork ignored: " + problem))
+                    continue
+                }
+                guard seenArtwork.insert(item.id).inserted else {
+                    dropped.append((item.id, "Artwork ignored: Its id is used twice."))
+                    continue
+                }
+                valid.append(item)
+            }
+            if artwork.count > Self.maxEntries {
+                dropped.append(("…", "More than \(Self.maxEntries) artwork items; the rest were ignored."))
+            }
+            keptArtwork = valid
+        }
+        return (SuggestionLibrary(schema: schema, version: version, entries: kept, artwork: keptArtwork), dropped)
     }
 
     /// Exactly four unsigned decimal numbers, each 0 to 9999 with no leading zero: `2026.10.12.0`.
@@ -234,6 +266,42 @@ public struct LibraryIcon: Sendable, Codable, Equatable {
             return "Its SHA-256 isn't 64 lowercase hexadecimal digits."
         }
         guard (1...Self.maxBytes).contains(bytes) else { return "Its size isn't between 1 and 65536 bytes." }
+        return nil
+    }
+}
+
+/// Distribution and registry logos shipped beside the signed library.
+public struct LibraryArtwork: Sendable, Codable, Equatable, Identifiable {
+    public static let maxAttributionLength = 300
+    public var id: String
+    public var icon: LibraryIcon
+    public var attribution: String?
+
+    public init(id: String, icon: LibraryIcon, attribution: String? = nil) {
+        self.id = id; self.icon = icon; self.attribution = attribution
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, icon, attribution }
+
+    // Malformed artwork fields must not stop the surrounding library decoding.
+    public init(from decoder: Decoder) throws {
+        let values = try? decoder.container(keyedBy: CodingKeys.self)
+        id = (try? values?.decode(String.self, forKey: .id)) ?? ""
+        icon = (try? values?.decode(LibraryIcon.self, forKey: .icon))
+            ?? LibraryIcon(file: "", sha256: "", bytes: 0)
+        attribution = try? values?.decodeIfPresent(String.self, forKey: .attribution)
+    }
+
+    public func problem() -> String? {
+        guard id.utf8.count <= 64, !id.contains(".."),
+              id.range(of: #"\A(distro|registry)(\.[a-z0-9]+(-[a-z0-9]+)*)+\z"#,
+                       options: .regularExpression) != nil else {
+            return "Its id isn't a distro or registry artwork id."
+        }
+        if let problem = icon.problem() { return problem }
+        if let attribution, !Library.isPlainText(attribution, upTo: Self.maxAttributionLength, required: true) {
+            return "Its attribution is empty, too long, or has characters that aren't plain text."
+        }
         return nil
     }
 }

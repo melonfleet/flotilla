@@ -22,7 +22,28 @@ extension AppModel {
         // Already showing data: refresh quietly. A spinner here replaced the list on every section switch.
         if machinesState != .loaded { machinesState = .loading }
         do {
-            let fetched = try await Blocking.run { [cli] in try cli.machines() }
+            // `machine list` omits `image`; publish the list at once with any cached images, and
+            // fill in missing ones in the background so a slow or failing `machine inspect` never
+            // holds up the list or the poll loop (Kyle, 19 October).
+            let listed = try await Blocking.run { [cli] in try cli.machines() }
+            let present = Set(listed.map(\.id))
+            machineGenerations = machineGenerations.filter { present.contains($0.key) }
+            for machine in listed {
+                if machineGenerations[machine.id] == nil {
+                    machineGeneration &+= 1
+                    machineGenerations[machine.id] = machineGeneration
+                }
+                if let image = machine.image { machineImages[machine.id] = image }
+            }
+            machineImages = machineImages.filter { present.contains($0.key) }
+            machineImageBackoff = machineImageBackoff.filter { present.contains($0.key) }
+
+            let fetched = listed.map { machine -> ContainerMachine in
+                guard machine.image == nil, let image = machineImages[machine.id] else { return machine }
+                var copy = machine
+                copy.image = image
+                return copy
+            }
             // Same equality guard as `containers`: `@Observable` notifies on every write, so an
             // unconditional assignment invalidates every view on each poll even when nothing
             // moved. That was half of the original flicker.
@@ -32,10 +53,74 @@ extension AppModel {
             }
             machinesState = .loaded
             machinesLastRefresh = Date()
+
+            let now = machineImageNow()
+            let due = fetched.compactMap { machine -> String? in
+                guard machine.image == nil else { return nil }
+                return machineImageBackoff[machine.id, default: HostBackoff()].isDue(at: now) ? machine.id : nil
+            }
+            if !due.isEmpty {
+                scheduleMachineImages(for: due)
+            }
         } catch {
             machines = []
             machinesState = .failed(describe(error))
             record("Could not list machines: \(error)", subsystem: "machines")
+        }
+    }
+
+    private func scheduleMachineImages(for ids: [String]) {
+        machineImageTask = Task { [weak self] in
+            await self?.fillMachineImages(for: ids)
+        }
+    }
+
+    func fillMachineImages(for ids: [String]) async {
+        var completions: [KeyedCoalescer<String>.Completion] = []
+        let now = machineImageNow()
+        for id in ids {
+            guard machineImages[id] == nil,
+                  machineImageBackoff[id, default: HostBackoff()].isDue(at: now) else { continue }
+            let completion = await machineImageChecks.request(id) { [weak self] in
+                await self?.loadMachineImage(for: id)
+            }
+            completions.append(completion)
+        }
+        for completion in completions {
+            await completion.wait()
+        }
+    }
+
+    private func loadMachineImage(for id: String) async {
+        while let generation = machineGenerations[id],
+              machines.contains(where: { $0.id == id }),
+              machineImages[id] == nil,
+              machineImageBackoff[id, default: HostBackoff()].isDue(at: machineImageNow()) {
+            do {
+                let inspected = try await Blocking.run { [cli] in try cli.inspectMachine(id) }
+                guard machineGenerations[id] == generation,
+                      machines.contains(where: { $0.id == id }) else { continue }
+                guard let image = inspected.image else {
+                    machineImageBackoff[id, default: HostBackoff()].failed(at: machineImageNow())
+                    return
+                }
+                recordMachineImage(image, for: id)
+                return
+            } catch {
+                guard machineGenerations[id] == generation,
+                      machines.contains(where: { $0.id == id }) else { continue }
+                machineImageBackoff[id, default: HostBackoff()].failed(at: machineImageNow())
+                record("Could not inspect machine \(id): \(error)", subsystem: "machines")
+                return
+            }
+        }
+    }
+
+    func recordMachineImage(_ image: ContainerMachine.MachineImage, for id: String) {
+        machineImages[id] = image
+        machineImageBackoff.removeValue(forKey: id)
+        if let index = machines.firstIndex(where: { $0.id == id }), machines[index].image != image {
+            machines[index].image = image
         }
     }
 

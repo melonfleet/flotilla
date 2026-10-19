@@ -677,6 +677,11 @@ public struct ContainerMachine: Codable, Identifiable, Sendable, Equatable {
     public struct MachineImage: Codable, Sendable, Equatable {
         public var reference: String
         public var descriptor: Descriptor?
+
+        public init(reference: String, descriptor: Descriptor? = nil) {
+            self.reference = reference
+            self.descriptor = descriptor
+        }
     }
 
     /// The host user whose account booted this machine.

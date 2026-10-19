@@ -53,4 +53,41 @@ extension AppModel {
     func libraryLogo(for group: ContainerGroup) -> Data? {
         suggestionLibrary.entry(forGroup: group)?.icon.flatMap { libraryUpdater.icons[$0.sha256] }
     }
+
+    func distributionLogo(for machine: ContainerMachine) -> Data? {
+        Self.distributionLogo(for: machine, in: suggestionLibrary, icons: libraryUpdater.icons)
+    }
+
+    func registryLogo(for registry: RegistryRow) -> Data? {
+        registryLogo(for: registry.id)
+    }
+
+    func registryLogo(for registry: KnownRegistry) -> Data? {
+        registryLogo(for: registry.id)
+    }
+
+    func registryLogo(for host: String) -> Data? {
+        Self.registryLogo(for: host, in: suggestionLibrary, icons: libraryUpdater.icons)
+    }
+
+    nonisolated static func distributionLogo(for machine: ContainerMachine,
+                                             in library: SuggestionLibrary,
+                                             icons: [String: Data]) -> Data? {
+        if let distro = machine.distribution,
+           let icon = library.artwork(for: distro.id)?.icon,
+           let data = icons[icon.sha256] {
+            return data
+        }
+        return library.artwork(for: LinuxDistribution.fallbackArtworkID)
+            .flatMap { icons[$0.icon.sha256] }
+    }
+
+    nonisolated static func registryLogo(for host: String,
+                                         in library: SuggestionLibrary,
+                                         icons: [String: Data]) -> Data? {
+        let normalised = host.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !normalised.isEmpty else { return nil }
+        return library.artwork(for: "registry.\(normalised)")
+            .flatMap { icons[$0.icon.sha256] }
+    }
 }

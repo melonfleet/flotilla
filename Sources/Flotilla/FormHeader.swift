@@ -25,6 +25,7 @@ import SwiftUI
 struct FormHeader<Trailing: View>: View {
     let title: String
     let systemImage: String
+    var logo: Data? = nil
     /// Whether leaving now would lose something.
     ///
     /// Required rather than defaulted to `false`: a form that forgets to say would lose the guard
@@ -69,6 +70,8 @@ struct FormHeader<Trailing: View>: View {
                 Image(nsImage: leadingImage).resizable().scaledToFit()
                     .frame(width: 32, height: 32)
                     .accessibilityHidden(true)
+            } else if let logo {
+                SuggestionLogo(data: logo, category: nil, size: 32)
             } else {
                 Image(systemName: systemImage)
                     .font(.system(size: 17))
@@ -111,9 +114,10 @@ struct FormEditTracker {
 }
 
 extension FormHeader where Trailing == EmptyView {
-    init(title: String, systemImage: String, hasUnsavedChanges: Bool,
+    init(title: String, systemImage: String, logo: Data? = nil, hasUnsavedChanges: Bool,
          onBack: @escaping () -> Void, token: UUID? = nil) {
-        self.init(title: title, systemImage: systemImage, hasUnsavedChanges: hasUnsavedChanges,
+        self.init(title: title, systemImage: systemImage, logo: logo,
+                  hasUnsavedChanges: hasUnsavedChanges,
                   onBack: onBack, token: token, trailing: { EmptyView() })
     }
 }

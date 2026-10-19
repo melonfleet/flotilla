@@ -526,10 +526,12 @@ struct MachinesView: View {
             summary: rowSummary(machine),
             leading: {
                 RowLeadingMark {
-                    Circle()
-                        .fill(Self.stateColor(machine))
-                        .frame(width: 8, height: 8)
-                        .help(machine.status.capitalized)
+                    RowTypeMark(systemImage: "server.rack", kind: "Machine",
+                                logo: model.distributionLogo(for: machine), size: 20, symbolSize: 16) {
+                        Circle()
+                            .fill(Self.stateColor(machine))
+                            .help(machine.status.capitalized)
+                    }
                 }
             },
             chips: {
@@ -726,8 +728,12 @@ struct MachinesView: View {
     /// Identity, the row's actions, the stepper and the expand button — no Back: the list is beside it.
     private func detailHeader(for machine: ContainerMachine) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "server.rack")
-                .font(.system(size: 19)).foregroundStyle(.secondary)
+            if let logo = model.distributionLogo(for: machine) {
+                SuggestionLogo(data: logo, category: nil, size: 32)
+            } else {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 19)).foregroundStyle(.secondary)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(machine.id).font(.headline).lineLimit(1).truncationMode(.middle)
