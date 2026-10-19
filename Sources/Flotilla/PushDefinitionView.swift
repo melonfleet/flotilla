@@ -20,6 +20,8 @@ struct PushDefinitionView: View {
 
     @State private var chosen: Set<HostRef> = []
     @State private var seeded = false
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var name: String {
         switch subject {
@@ -50,15 +52,15 @@ struct PushDefinitionView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Push \u{201C}\(name)\u{201D} to Hosts", systemImage: "square.and.arrow.up.on.square",
-                       hasUnsavedChanges: false, onBack: dismiss)
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
             FormScaffold {
                 form
             } preview: {
                 rail
             }
-            Divider()
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task {
@@ -132,7 +134,7 @@ struct PushDefinitionView: View {
         }
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail and actions
 
     /// The command every chosen host runs — once, not once per host, which at thirty Mac minis
     /// would be thirty copies of one line. A network's subnet differs per Mac, so it is shown as a
@@ -175,26 +177,20 @@ struct PushDefinitionView: View {
         return (["container"] + argv).joined(separator: " ")
     }
 
-    private var footer: some View {
-        HStack {
-            Spacer()
-            Button("Cancel", action: dismiss)
-                .keyboardShortcut(.cancelAction)
-            Button(targets.count == 1 ? "Push to 1 Host" : "Push to \(targets.count) Hosts") {
-                let hosts = targets
-                let subject = subject
-                dismiss()
-                Task {
-                    switch subject {
-                    case .network(let network): await model.pushNetwork(FleetPush.definition(of: network), to: hosts)
-                    case .volume(let volume): await model.pushVolume(FleetPush.definition(of: volume), to: hosts)
-                    }
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton(targets.count == 1 ? "Push to 1 Host" : "Push to \(targets.count) Hosts",
+                          isDisabled: targets.isEmpty) {
+            let hosts = targets
+            let subject = subject
+            dismiss()
+            Task {
+                switch subject {
+                case .network(let network): await model.pushNetwork(FleetPush.definition(of: network), to: hosts)
+                case .volume(let volume): await model.pushVolume(FleetPush.definition(of: volume), to: hosts)
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(targets.isEmpty)
         }
-        .padding(12)
     }
 }

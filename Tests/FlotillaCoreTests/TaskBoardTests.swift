@@ -422,4 +422,95 @@ import Testing
         #expect(TaskBoard.drawerWidth(in: 380, minimum: 420) == 380, "a narrow window gets the full width")
         #expect(TaskBoard.drawerWidth(in: 0, minimum: 420) == 420)
     }
+
+    // MARK: - Round 3
+
+    @Test func onlyAnOpeningTheUserAskedForCountsAsExplicit() {
+        var board = TaskBoard()
+        let id = UUID()
+        board.start(id, title: "Pull an image", at: t0)
+        #expect(!board.openedByUser, "a job rising the drawer must not take the form's focus")
+        // Kyle: minimise and reopen during the new row's highlight. Still a reopen.
+        board.minimise()
+        #expect(board.highlighted == id)
+        board.toggleList()
+        #expect(board.openedByUser)
+        // A second job arriving while it is up leaves it asked-for.
+        board.start(UUID(), title: "Build", at: at(1))
+        #expect(board.openedByUser)
+        board.minimise()
+        #expect(!board.openedByUser)
+        board.start(UUID(), title: "Send", at: at(2))
+        #expect(!board.openedByUser, "rising from down because of a job is not asking")
+        board.minimise()
+        board.reveal(id)
+        #expect(board.openedByUser, "a notice's button is asking")
+    }
+
+    @Test func finishedJobsFoldIntoOneLineAndRevealOpensIt() {
+        var board = TaskBoard()
+        let running = UUID(), done = UUID(), failed = UUID()
+        board.start(running, title: "Pull", at: t0)
+        board.start(done, title: "Build", at: t0)
+        board.start(failed, title: "Send", at: t0)
+        board.succeed(done, at: at(1))
+        board.fail(failed, reason: "no route", at: at(2))
+        #expect(board.runningRows(at: at(3)).map(\.id) == [running])
+        #expect(board.finishedRows(at: at(3)).map(\.id) == [failed, done])
+        #expect(board.finishedCount == 2)
+        #expect(board.failedCount == 1)
+        #expect(!board.finishedExpanded, "folded by default")
+        board.toggleFinished()
+        #expect(board.finishedExpanded)
+        board.toggleFinished()
+        board.reveal(failed)
+        #expect(board.finishedExpanded, "revealing a finished job opens the fold onto it")
+        board.clearFinished()
+        #expect(!board.finishedExpanded, "with nothing finished there is nothing to hold open")
+    }
+
+    @Test func theStatusFigureIsTheNewestJobsPercentageOrElapsedTime() {
+        var board = TaskBoard()
+        #expect(board.leadingFigure(at: t0) == nil)
+        let older = UUID(), newer = UUID()
+        board.start(older, title: "Pull", at: t0)
+        board.setFraction(0.5, for: older)
+        #expect(board.leadingFigure(at: at(5)) == "50%")
+        board.start(newer, title: "Build", at: at(10))
+        #expect(board.leadingFigure(at: at(52)) == "42s", "a build reports no fraction")
+        board.setFraction(0.314, for: newer)
+        #expect(board.leadingFigure(at: at(52)) == "31%")
+        board.succeed(newer, at: at(60))
+        #expect(board.leadingFigure(at: at(61)) == "50%")
+    }
+
+    @Test func rowsCarryTheirKind() {
+        var board = TaskBoard()
+        let id = UUID()
+        board.start(id, title: "Build", kind: .buildImage, at: t0)
+        #expect(board.rows(at: t0).first?.kind == .buildImage)
+    }
+
+    @Test func theDrawerSinksWhenTheLastJobEndsWellAndNobodyIsReading() {
+        var board = TaskBoard()
+        let a = UUID(), b = UUID()
+        board.start(a, title: "Pull one", at: t0)
+        board.start(b, title: "Pull two", at: t0)
+        board.succeed(a, at: at(5))
+        #expect(!board.shouldAutoMinimise(after: a))          // another is still running
+        board.succeed(b, at: at(6))
+        #expect(board.shouldAutoMinimise(after: b))
+        board.toggleExpanded(b)
+        #expect(!board.shouldAutoMinimise(after: b))          // a row is open: someone is reading
+    }
+
+    @Test func aFailureKeepsTheDrawerUp() {
+        var board = TaskBoard()
+        let id = UUID()
+        board.start(id, title: "Pull a typo", at: t0)
+        board.fail(id, reason: "not found", at: at(3))
+        #expect(!board.shouldAutoMinimise(after: id))
+        board.minimise()
+        #expect(!board.shouldAutoMinimise(after: id))          // already down
+    }
 }

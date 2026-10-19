@@ -61,7 +61,6 @@ struct NewImageView: View {
     /// Dockerfile with an `ARG` could only ever be built with its defaults from inside Flotilla.
     @State private var buildArgs: [String] = []
     @State private var noCache = false
-    @State private var building = false
 
     @State private var edits = FormEditTracker()
     /// Shared by the header and the Cancel button, so both ask about this form alone.
@@ -107,27 +106,15 @@ struct NewImageView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Image", systemImage: "plus",
-                       hasUnsavedChanges: edits.isDirty(editSignature) && model.activePull == nil,
-                       onBack: dismiss, token: formToken)
+                       hasUnsavedChanges: edits.isDirty(editSignature),
+                       onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
-            if let pull = model.activePull {
-                // The form *is* the progress screen while its pull runs. Dismissing on submit —
-                // which this did once — reported a forty-second network operation by showing
-                // nothing at all and then growing a row.
-                ScrollView {
-                    ImagePullStatus(pull: pull, compact: false)
-                        .padding(20)
-                        .frame(maxWidth: 640, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            } else {
-                FormScaffold {
-                    form
-                } preview: {
-                    railPreview
-                }
-                Divider()
-                footer
+            FormScaffold {
+                form
+            } preview: {
+                railPreview
             }
         }
         .onAppear {
@@ -421,7 +408,7 @@ struct NewImageView: View {
         }
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail and actions
 
     /// Kept beside the active field because it is the answer to what the button will run, not
     /// another field to discover at the end of the form.
@@ -445,23 +432,12 @@ struct NewImageView: View {
         }
     }
 
-    private var footer: some View {
-        HStack(spacing: 8) {
-            if building {
-                ProgressView().controlSize(.small)
-                Text("Building… this can take minutes and pulls the base image.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            FormCancelButton(token: formToken, action: dismiss)
-            // Named for what it does rather than a generic Create: the two halves of this form
-            // do genuinely different things and the button is the last chance to say which.
-            Button(mode.rawValue, action: submit)
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canSubmit || building)
-        }
-        .padding(12)
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        // Named for what it does rather than a generic Create: the two halves of this form
+        // do genuinely different things and the button is the last chance to say which.
+        FormPrimaryButton(mode.rawValue, isDisabled: !canSubmit, action: submit)
     }
 
     // MARK: Validation and actions
@@ -516,7 +492,7 @@ struct NewImageView: View {
     private var canSubmit: Bool {
         switch mode {
         case .pull:
-            return !trimmedReference.isEmpty && referenceProblem == nil && model.activePull == nil
+            return !trimmedReference.isEmpty && referenceProblem == nil
                 && !pullTargets.isEmpty
         case .build:
             if case .success = buildPreview { return true }
@@ -561,35 +537,30 @@ struct NewImageView: View {
     }
 
     private func submit() {
-        guard canSubmit, !building else { return }
+        guard canSubmit else { return }
         switch mode {
         case .pull:
-            // Returns to the list only on success, and only after `pullImage` has refreshed it,
-            // so the image that was just pulled is present the moment the list appears. On
-            // failure the form stays put with the reference intact: the likeliest cause is a
-            // typo in it.
+            // The job lives in Tasks from here (Kamal, 19 October): the form returns to the list
+            // at once, and a failure is a row there with Retry rather than a form held open with
+            // its own bar. The reference is in the task's title and its Retry.
             let wanted = effectiveReference
             let using = scheme
             let hosts = pullTargets
-            Task {
-                if await model.pullImage(wanted, to: hosts, scheme: using) { dismiss() }
-            }
+            Task { _ = await model.pullImage(wanted, to: hosts, scheme: using) }
+            dismiss()
         case .build:
             guard let context else { return }
-            Task { await build(context: context) }
+            let dockerfile = trimmedDockerfile.isEmpty ? nil : trimmedDockerfile
+            let tag = trimmedTag.isEmpty ? nil : trimmedTag
+            let args = trimmedBuildArgs, cache = noCache
+            let platform = platform.trimmingCharacters(in: .whitespaces)
+            let target = target.trimmingCharacters(in: .whitespaces)
+            Task {
+                _ = await model.buildImage(context: context, dockerfile: dockerfile, tag: tag,
+                                           buildArgs: args, labels: [], noCache: cache,
+                                           platform: platform, target: target)
+            }
+            dismiss()
         }
-    }
-
-    private func build(context: URL) async {
-        building = true
-        defer { building = false }
-        let succeeded = await model.buildImage(
-            context: context,
-            dockerfile: trimmedDockerfile.isEmpty ? nil : trimmedDockerfile,
-            tag: trimmedTag.isEmpty ? nil : trimmedTag,
-            buildArgs: trimmedBuildArgs, labels: [], noCache: noCache,
-            platform: platform.trimmingCharacters(in: .whitespaces),
-            target: target.trimmingCharacters(in: .whitespaces))
-        if succeeded { dismiss() }
     }
 }

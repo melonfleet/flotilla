@@ -27,6 +27,7 @@ fail=0
 offenders=()
 
 for file in $(git ls-files 'Sources/Flotilla/*.swift'); do
+    [ -f "$file" ] || continue          # tracked but deleted in the working tree
     grep -q "FormHeader(" "$file" || continue
     # FormHeader.swift itself defines the component; it is not a screen.
     case "$file" in */FormHeader.swift) continue ;; esac
@@ -50,4 +51,31 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 
+# ## Every form commits from its header (Q64, Kamal, 19 October)
+#
+# Forms used to commit from a bottom-right row. The Tasks drawer rises over the bottom of the page,
+# so starting a second pull meant minimising the drawer to find Pull. The commit is now a
+# `FormPrimaryButton` and the Cancel a `FormCancelButton`, both in the `FormHeader`'s trailing slot —
+# so a screen with a FormHeader declares no default or cancel shortcut of its own (those come only
+# from the two components) and no footer to put one in. A confirmation dialog's `role: .cancel`
+# carries no shortcut and is not matched.
+placement=()
+for file in $(git ls-files 'Sources/Flotilla/*.swift'); do
+    [ -f "$file" ] || continue
+    grep -q "FormHeader(" "$file" || continue
+    case "$file" in */FormHeader.swift) continue ;; esac
+    hits=$(grep -nE 'keyboardShortcut\(\.(defaultAction|cancelAction)\)|var [A-Za-z]*[Ff]ooter\b' "$file")
+    [ -n "$hits" ] || continue
+    while IFS= read -r line; do placement+=("$file:$line"); done <<< "$hits"
+done
+
+if [ "${#placement[@]}" -ne 0 ]; then
+    echo "✗ a form's actions are not in its header:"
+    for p in "${placement[@]}"; do echo "    $p"; done
+    echo "  Put Cancel (FormCancelButton) and the commit (FormPrimaryButton) in the FormHeader's"
+    echo "  trailing slot, and drop the bottom row — it is under the Tasks drawer (Q64)."
+    exit 1
+fi
+
 echo "  form bounds OK"
+echo "  form actions in the header OK"

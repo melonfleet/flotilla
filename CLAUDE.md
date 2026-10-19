@@ -74,7 +74,9 @@ questions.
   argument is better: once Machines grew an embedded detail with Back and a tab strip, a
   floating card with a red × was the only surface in the app you left a different way.
   Run, New Machine, New Volume, New Network, Pull Image and Tag Image are all screens with
-  `FormHeader` (Back, icon, title) and Save bottom-right. It also killed a real cost —
+  `FormHeader` (Back, icon, title, and the form's actions — Cancel, then the named commit — at its
+  **top right**; Q64, 19 October, because the Tasks drawer covered a bottom-right Save, so there is no
+  bottom button row in any form, and `check-form-bounds.sh` pins it). It also killed a real cost —
   every modal carried a hand-picked frame (560×680, 560×660, 440 wide) that copy had to be
   *trimmed to fit*, which is backwards.
   `ModalCard` survives for **About** and **Support Bundle** only: those are dialogs you

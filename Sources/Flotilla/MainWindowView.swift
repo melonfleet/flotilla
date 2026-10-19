@@ -68,6 +68,8 @@ struct MainWindowView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     /// The content area right of the sidebar, which the Tasks drawer is sized against.
     @State private var detailSize: CGSize = .zero
+    /// The Tasks drawer's drawn height, zero while it is down — what Greta has to leave room for.
+    @State private var drawerHeight: CGFloat = 0
 
     /// Wide enough for an 18pt symbol inside the row's selection capsule, and fixed: `min`,
     /// `ideal` and `max` are all this in rail mode, because a rail you can drag out to 180pt is
@@ -300,6 +302,12 @@ struct MainWindowView: View {
         }
     }
 
+    /// Whether Greta floats over the page: never over her own page, which is the same chat at full
+    /// size (the owner).
+    private var gretaFloats: Bool {
+        model.gretaEnabled && model.greta.overlayShown && selection != .greta
+    }
+
     var body: some View {
         // Read here, in the body, so a change to it re-renders the overlay below. The overlay's
         // closure is not relied on to register the read itself.
@@ -339,18 +347,27 @@ struct MainWindowView: View {
                 // corner when the drawer is minimised.
                 .overlay(alignment: .bottomTrailing) {
                     VStack(alignment: .trailing, spacing: 0) {
-                        // Never over her own page, which is the same chat at full size (the owner).
-                        if model.gretaEnabled, model.greta.overlayShown, selection != .greta {
-                            GretaOverlay(model: model) { navigate(to: $0) }
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        // **Their heights are budgeted together** (Kyle, round 3): Greta's 552pt
+                        // above a drawer that can take half the content area overflowed even the
+                        // default window, pushing her header and close button off the top. The
+                        // drawer leaves Greta her minimum, and Greta takes what the drawer leaves.
+                        if gretaFloats {
+                            GretaOverlay(model: model,
+                                         height: GretaOverlay.height(in: detailSize.height, below: drawerHeight)) {
+                                navigate(to: $0)
+                            }
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
                         // The Tasks drawer (Q63): on the right of the content area, above the status
                         // bar's Tasks item that it sinks into. Here rather than on a section, because a
                         // job outlives the screen that started it. An overlay, not a sheet: the window
                         // stays usable while it is up.
                         if model.tasks.board.drawer != .hidden {
-                            TaskDrawer(tasks: model.tasks, bounds: detailSize)
+                            TaskDrawer(tasks: model.tasks, bounds: detailSize,
+                                       reservedAbove: gretaFloats ? GretaOverlay.minimumFootprint : 0)
                                 .padding(.trailing, 10)
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { drawerHeight = $0 }
+                                .onDisappear { drawerHeight = 0 }
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }

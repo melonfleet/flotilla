@@ -34,6 +34,10 @@ final class OperationProgress: Identifiable {
     /// Runs the same job again, with what it was asked to do when it started: the same `AppModel`
     /// call and arguments, captured by the call site. Nil where the job cannot be repeated safely.
     let retryAction: (@MainActor () async -> Void)?
+    /// Whether the call that Retry would make can start right now — false while the original call
+    /// still holds a guard (a busy mark, a refresh after the job). Retry is offered only when this
+    /// is true, because a retry that hits the guard returns without starting anything.
+    let retryReady: (@MainActor () -> Bool)?
     /// Ends the job's process, for a kind that can be stopped part-way. The call site hands this to
     /// the command; nil for a job with nothing to stop.
     let cancellation: Cancellation?
@@ -80,12 +84,13 @@ final class OperationProgress: Identifiable {
     }
 
     init(title: String, command: String, kind: TaskKind = .unclassified, origin: String? = nil,
-         retry: (@MainActor () async -> Void)? = nil) {
+         retry: (@MainActor () async -> Void)? = nil, retryReady: (@MainActor () -> Bool)? = nil) {
         self.title = title
         self.command = command
         self.kind = kind
         self.origin = origin ?? kind.section
         self.retryAction = kind.canRetry ? retry : nil
+        self.retryReady = retryReady
         self.cancellation = kind.canCancel ? Cancellation() : nil
     }
 
@@ -95,9 +100,14 @@ final class OperationProgress: Identifiable {
         return step.detail.map { "\(step.title) — \($0)" } ?? step.title
     }
 
-    /// True once Cancel has ended the child: the error that followed is the cancellation, not a
-    /// fault, and the call site records it with `cancelled()` instead of `fail(_:)`.
-    var wasCancelled: Bool { cancellation?.isCancelled ?? false }
+    /// Whether `error` is the child ending because it was cancelled — the runner's own
+    /// `ContainerCLIError.cancelled`, not merely "Cancel was pressed". A Cancel that lost the race
+    /// to a child's own non-zero exit leaves that exit as the error, and it must still report as the
+    /// failure it is.
+    static func isCancellation(_ error: any Error) -> Bool {
+        if case .cancelled? = error as? ContainerCLIError { return true }
+        return false
+    }
 
     func cancelled() {
         if let index = steps.lastIndex(where: { $0.state == .running }) { steps[index].state = .failed }

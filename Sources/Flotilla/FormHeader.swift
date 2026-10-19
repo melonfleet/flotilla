@@ -1,7 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Back, icon, title — the top bar of an embedded form screen.
+/// Back, icon, title, and the form's actions — the top bar of an embedded form screen.
+///
+/// **The actions are here, top right** (Q64, Kamal, 19 October): secondary buttons, Cancel
+/// (`FormCancelButton`), then the commit (`FormPrimaryButton`), in `trailing`. There is no bottom
+/// row: the Tasks drawer rises over the bottom of the page and covered it.
 ///
 /// Forms stopped being modals on 9 August (the owner's call). `CLAUDE.md` used to record the
 /// opposite rule — "a form is a question you answer and dismiss, a place is navigable" — and
@@ -44,8 +48,8 @@ struct FormHeader<Trailing: View>: View {
     /// Pass the form's own token when its Cancel button must ask about the same registration
     /// (`FormCancelButton`); a form with no Cancel leaves it nil.
     var token: UUID? = nil
-    /// Controls that belong to the whole form rather than to a field — the machine form's
-    /// "Import Flotillafile…" is the only one so far.
+    /// Controls that belong to the whole form rather than to a field: its actions (Cancel and the
+    /// commit, Q64) and anything beside them, such as Group's "Save to File…".
     ///
     /// This slot is why the type is generic. Without it `MachineFormView` and `RunSheetView` each
     /// hand-rolled a header that was *nearly* this one, which is how the vertical padding came to
@@ -119,5 +123,55 @@ extension FormHeader where Trailing == EmptyView {
         self.init(title: title, systemImage: systemImage, logo: logo,
                   hasUnsavedChanges: hasUnsavedChanges,
                   onBack: onBack, token: token, trailing: { EmptyView() })
+    }
+}
+
+/// A form's commit — Save, Pull, Build, Run, Create — at the top right of its `FormHeader`, after
+/// Cancel (Q64, Kamal, 19 October).
+///
+/// Forms committed from a bottom-right row until the Tasks drawer rose over it: starting a second
+/// pull meant minimising the drawer to find the button. In the header it is always on screen,
+/// whatever overlays the bottom of the page, and every form commits from the same place.
+/// `Scripts/check-form-bounds.sh` holds the line: a screen with a `FormHeader` declares no
+/// `.defaultAction` of its own and no footer.
+struct FormPrimaryButton: View {
+    let title: String
+    var isDisabled = false
+    var help: String? = nil
+    let action: () -> Void
+
+    init(_ title: String, isDisabled: Bool = false, help: String? = nil, action: @escaping () -> Void) {
+        self.title = title
+        self.isDisabled = isDisabled
+        self.help = help
+        self.action = action
+    }
+
+    var body: some View {
+        Button(title, action: action)
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(isDisabled)
+            .help(help ?? "")
+    }
+}
+
+/// A line under a form's header — why its commit is disabled, an error from the last attempt, what
+/// the commit will do — shown only while there is something to say (Q64). These sat beside the
+/// buttons in the bottom row; with the buttons in the header, the words come directly under it,
+/// still next to what they explain, and the header keeps to controls.
+struct FormBand<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack {
+            content
+            Spacer(minLength: 0)
+        }
+        .font(.caption)
+        .lineLimit(2)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        Divider()
     }
 }

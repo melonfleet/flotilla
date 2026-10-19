@@ -267,6 +267,7 @@ struct RunSheetView: View {
             if let progressLabel {
                 Text(progressLabel).font(.subheadline).foregroundStyle(.secondary)
             }
+            actions
         }
     }
 
@@ -285,8 +286,6 @@ struct RunSheetView: View {
             } preview: {
                 railPreview
             }
-            Divider()
-            footer
         }
     }
 
@@ -590,48 +589,46 @@ struct RunSheetView: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Spacer()
-            FormCancelButton(token: formToken, action: dismiss)
-            if let onSkip {
-                Button("Skip") {
-                    if let formGuard { formGuard.confirmLeaving(form: formToken, onSkip) } else { onSkip() }
-                }
+    /// Skip, Cancel and Run, at the top right of the header (Q64).
+    @ViewBuilder
+    private var actions: some View {
+        if let onSkip {
+            Button("Skip") {
+                if let formGuard { formGuard.confirmLeaving(form: formToken, onSkip) } else { onSkip() }
             }
-            Button("Run") {
-                let ranImage = trimmedImage
-                let ranOptions = options
-                let ranCommand = command
-                let ranHost = host
-                let ranPolicy = policy
-                // Edits must never transfer recipe ownership policy to another image or mount.
-                let ranOwners = ranImage == suggestedImage
-                    ? suggestedVolumeOwners.filter { ranOptions.volumes.contains($0.key) } : [:]
-                let hostPorts = Set(publishedHostPorts)
-                if let onRan {
-                    onRan(hostPorts)
-                } else {
-                    dismiss()
-                }
-                Task {
-                    await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost, volumeOwners: ranOwners)
-                    // Kept once it exists, so a policy never watches a container that failed to start.
-                    // On a host, the host refuses a policy for a container it doesn't have.
-                    if !ranPolicy.isEmpty, let name = ranOptions.name,
-                       !ranHost.isLocal || model.containers.contains(where: { $0.id == name }) {
-                        if let failure = await model.setPolicy(ranPolicy, for: name, on: ranHost) {
-                            model.actionError = "\(name) is running, but its restart and health policy wasn't kept: \(failure)"
-                        }
-                    }
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(previewError != nil || commandSplitError != nil || policyProblem != nil)
-            .help(policyProblem ?? "")
         }
-        .padding(12)
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton("Run",
+                          isDisabled: previewError != nil || commandSplitError != nil || policyProblem != nil,
+                          help: policyProblem, action: run)
+    }
+
+    private func run() {
+        let ranImage = trimmedImage
+        let ranOptions = options
+        let ranCommand = command
+        let ranHost = host
+        let ranPolicy = policy
+        // Edits must never transfer recipe ownership policy to another image or mount.
+        let ranOwners = ranImage == suggestedImage
+            ? suggestedVolumeOwners.filter { ranOptions.volumes.contains($0.key) } : [:]
+        let hostPorts = Set(publishedHostPorts)
+        if let onRan {
+            onRan(hostPorts)
+        } else {
+            dismiss()
+        }
+        Task {
+            await model.runContainer(image: ranImage, options: ranOptions, command: ranCommand, host: ranHost, volumeOwners: ranOwners)
+            // Kept once it exists, so a policy never watches a container that failed to start.
+            // On a host, the host refuses a policy for a container it doesn't have.
+            if !ranPolicy.isEmpty, let name = ranOptions.name,
+               !ranHost.isLocal || model.containers.contains(where: { $0.id == name }) {
+                if let failure = await model.setPolicy(ranPolicy, for: name, on: ranHost) {
+                    model.actionError = "\(name) is running, but its restart and health policy wasn't kept: \(failure)"
+                }
+            }
+        }
     }
 
     // MARK: Fields

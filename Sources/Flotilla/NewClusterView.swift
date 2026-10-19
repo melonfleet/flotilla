@@ -4,7 +4,7 @@ import FlotillaCore
 
 /// Creating a local Kubernetes cluster.
 ///
-/// Embedded, with `FormHeader` and Save bottom-right, like every other form since 9 August.
+/// Embedded, with `FormHeader` and Save at its top right (Q64), like every other form since 9 August.
 struct NewClusterView: View {
     let model: AppModel
     let dismiss: () -> Void
@@ -19,7 +19,6 @@ struct NewClusterView: View {
     @State private var memory = "4G"
     @State private var nodeImage = ""
     @State private var autoRemove = false
-    @State private var creating = false
     @State private var host: HostRef = .local
     @State private var edits = FormEditTracker()
     /// Shared by the header and the Cancel button, so both ask about this form alone.
@@ -33,15 +32,15 @@ struct NewClusterView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Cluster", systemImage: "circle.hexagongrid",
-                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken)
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
             FormScaffold {
                 form
             } preview: {
                 railPreview
             }
-            Divider()
-            footer
         }
         .onAppear {
             host = initialHost
@@ -209,7 +208,7 @@ struct NewClusterView: View {
 
     private var canSubmit: Bool {
         guard !trimmedName.isEmpty, nameProblem == nil, cpusProblem == nil,
-              memoryProblem == nil, nodeImageProblem == nil, !creating
+              memoryProblem == nil, nodeImageProblem == nil
         else { return false }
         if case .success = validation { return true }
         return false
@@ -243,31 +242,22 @@ struct NewClusterView: View {
         }
     }
 
-    private var footer: some View {
-        HStack(spacing: 8) {
-            if creating {
-                ProgressView().controlSize(.small)
-                Text("Creating… this pulls the node image and boots a VM.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            FormCancelButton(token: formToken, action: dismiss)
-            Button("Save") { Task { await create() } }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canSubmit)
-        }
-        .padding(12)
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton("Save", isDisabled: !canSubmit) { Task { await create() } }
     }
 
+    /// A task from here (Kamal, 19 October): the form returns to the list and Tasks reports the
+    /// pull and the boot.
     private func create() async {
-        creating = true
-        defer { creating = false }
-        let succeeded = await model.createCluster(name: trimmedName, cpus: chosenCPUs,
-                                                  memory: chosenMemory,
-                                                  nodeImage: chosenNodeImage,
-                                                  autoRemove: autoRemove, on: host)
-        if succeeded { dismiss() }
+        let name = trimmedName, cpus = chosenCPUs, memory = chosenMemory
+        let image = chosenNodeImage, remove = autoRemove, place = host
+        Task {
+            _ = await model.createCluster(name: name, cpus: cpus, memory: memory, nodeImage: image,
+                                          autoRemove: remove, on: place)
+        }
+        dismiss()
     }
 }
 
@@ -275,7 +265,7 @@ struct NewClusterView: View {
 ///
 /// **An embedded screen, not a dialog.** It began as a `ModalCard` and that was simply the wrong
 /// shape: `CLAUDE.md`'s 9 August rule is that anything you fill in and save is a screen with
-/// `FormHeader` and Save bottom-right, and `ModalCard` is for things you acknowledge — About,
+/// `FormHeader` and Save at its top right (Q64), and `ModalCard` is for things you acknowledge — About,
 /// the support bundle, a progress panel. A form in a dialog is the surface you leave a different
 /// way from every other form in the app, which is the cost that rule was written to stop paying.
 ///
@@ -294,7 +284,6 @@ struct LoadImageView: View {
     let dismiss: () -> Void
 
     @State private var reference = ""
-    @State private var loading = false
     @State private var edits = FormEditTracker()
     /// Shared by the header and the Cancel button, so both ask about this form alone.
     @State private var formToken = UUID()
@@ -302,15 +291,15 @@ struct LoadImageView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Load an Image", systemImage: "square.and.arrow.down.on.square",
-                       hasUnsavedChanges: edits.isDirty(reference), onBack: dismiss, token: formToken)
+                       hasUnsavedChanges: edits.isDirty(reference), onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
             FormScaffold {
                 form
             } preview: {
                 railPreview
             }
-            Divider()
-            footer
         }
         .onAppear { edits.open(reference) }
     }
@@ -411,32 +400,23 @@ struct LoadImageView: View {
         }
     }
 
-    private var canLoad: Bool { !trimmed.isEmpty && problem == nil && !loading }
+    /// Not while another action holds the cluster: the load would return at that guard, and with the
+    /// form already gone nothing would say so.
+    private var canLoad: Bool {
+        !trimmed.isEmpty && problem == nil && !model.isBusy(cluster.node, kind: .cluster)
+    }
 
-    private var footer: some View {
-        HStack(spacing: 8) {
-            if loading {
-                ProgressView().controlSize(.small)
-                Text("Copying into the cluster…")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            FormCancelButton(token: formToken, action: dismiss)
-            // "Load", not "Save", following `NewImageView`'s "Build"/"Pull": the convention is
-            // that the commit sits bottom-right, not that it is always called Save, and a form
-            // whose button names what it does is easier to be sure about before pressing it.
-            Button("Load") {
-                Task {
-                    loading = true
-                    await model.loadImage(trimmed, into: cluster)
-                    loading = false
-                    dismiss()
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(!canLoad)
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        // "Load", not "Save", following `NewImageView`'s "Build"/"Pull": a form whose button
+        // names what it does is easier to be sure about before pressing it.
+        // A task from here (Kamal, 19 October): the form returns to the cluster at once and the
+        // copy is reported in Tasks, not under this button.
+        FormPrimaryButton("Load", isDisabled: !canLoad) {
+            let reference = trimmed, cluster = cluster
+            Task { await model.loadImage(reference, into: cluster) }
+            dismiss()
         }
-        .padding(12)
     }
 }

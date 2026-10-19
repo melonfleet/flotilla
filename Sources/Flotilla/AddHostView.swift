@@ -20,14 +20,26 @@ struct AddHostView: View {
     @State private var code = ""
     @State private var working = false
     @State private var outcome: HostModeController.AddHostOutcome?
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var hostMode: HostModeController { model.hostMode }
 
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: importing.map { "Pair \($0.name)" } ?? "Add Host", systemImage: "plus",
-                       hasUnsavedChanges: false, onBack: dismiss)
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
+                if working { ProgressView().controlSize(.small) }
+                FormCancelButton(token: formToken, action: dismiss)
+                FormPrimaryButton(importing == nil ? "Add Host" : "Pair",
+                                  isDisabled: endpoint == nil || working || (code.isEmpty && hostMode.adminKey == nil)) { add() }
+            }
             Divider()
+            if working {
+                FormBand {
+                    Text("Connecting…").foregroundStyle(.secondary)
+                }
+            }
             FormScaffold {
                 VStack(alignment: .leading, spacing: 20) {
                     if let importing {
@@ -47,18 +59,6 @@ struct AddHostView: View {
             } preview: {
                 railPreview
             }
-            Divider()
-            HStack {
-                if working { ProgressView().controlSize(.small); Text("Connecting…").foregroundStyle(.secondary) }
-                Spacer()
-                Button("Cancel", action: dismiss).keyboardShortcut(.cancelAction)
-                Button(importing == nil ? "Add Host" : "Pair") { add() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(endpoint == nil || working || (code.isEmpty && hostMode.adminKey == nil))
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Something chosen from the start: the first Mac found, or the address field when none is.

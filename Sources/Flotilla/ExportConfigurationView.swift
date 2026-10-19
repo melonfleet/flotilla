@@ -14,6 +14,8 @@ struct ExportConfigurationView: View {
     @State private var inputs: ConfigurationExport.Inputs?
     @State private var selection = ConfigurationExport.Selection()
     @State private var saveError: String?
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var result: ConfigurationExport.Result? {
         inputs.map { ConfigurationExport.build($0, selection: selection) }
@@ -22,15 +24,22 @@ struct ExportConfigurationView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Export Configuration", systemImage: "square.and.arrow.up",
-                       hasUnsavedChanges: false, onBack: dismiss) {
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
                 // The owner's layout (6 October): nothing ticked to start, and these two at the
                 // top rather than an All/None on every section.
                 Button("Select All") { selection = everything }
                     .disabled(inputs == nil || selection == everything)
                 Button("Clear All") { selection = ConfigurationExport.Selection() }
                     .disabled(selection == ConfigurationExport.Selection())
+                FormCancelButton(token: formToken, action: dismiss)
+                FormPrimaryButton("Export…", isDisabled: result?.file.isEmpty ?? true) { export() }
             }
             Divider()
+            if let saveError {
+                FormBand {
+                    Text(saveError).foregroundStyle(Theme.danger)
+                }
+            }
             if let inputs {
                 FormScaffold {
                     VStack(alignment: .leading, spacing: 22) { checklist(inputs) }
@@ -41,8 +50,6 @@ struct ExportConfigurationView: View {
                 ProgressView("Reading this Mac's configuration…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Divider()
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await load() }
@@ -122,7 +129,7 @@ struct ExportConfigurationView: View {
         }
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail
 
     private var rail: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -165,23 +172,6 @@ struct ExportConfigurationView: View {
         add(file.hosts.count, "host")
         if let categories = file.hostCategories { add(categories.count, "host category", "host categories") }
         return lines.isEmpty ? "Nothing yet — tick something." : lines.joined(separator: "\n")
-    }
-
-    private var footer: some View {
-        HStack {
-            if let saveError {
-                Text(saveError).font(.caption).foregroundStyle(Theme.danger).lineLimit(2)
-            }
-            Spacer()
-            Button("Cancel", action: dismiss)
-                .keyboardShortcut(.cancelAction)
-            Button("Export…") { export() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(result?.file.isEmpty ?? true)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
     // MARK: Actions

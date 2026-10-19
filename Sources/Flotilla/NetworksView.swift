@@ -793,15 +793,23 @@ struct NewNetworkView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "New Network", systemImage: "network.badge.shield.half.filled",
-                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken)
+                       hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
+            // Says why, when nothing else does. A disabled button with no explanation anywhere
+            // on the screen is what this form shipped with.
+            if let unclaimedProblem {
+                FormBand {
+                    Label(unclaimedProblem, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(Theme.danger)
+                }
+            }
             FormScaffold {
                 form
             } preview: {
                 railPreview
             }
-            Divider()
-            footer
         }
         .onAppear {
             host = initialHost
@@ -971,30 +979,16 @@ struct NewNetworkView: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            // Says why, when nothing else does. A disabled button with no explanation anywhere
-            // on the screen is what this form shipped with.
-            if let unclaimedProblem {
-                Label(unclaimedProblem, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.danger)
-                    .lineLimit(2)
-            }
-            Spacer()
-            FormCancelButton(token: formToken, action: dismiss)
-            Button("Create") {
-                let name = trimmedName
-                let opts = options
-                let target = host
-                dismiss()
-                Task { await model.createNetwork(name, options: opts, host: target) }
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(trimmedName.isEmpty || anyProblem != nil)
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton("Create", isDisabled: trimmedName.isEmpty || anyProblem != nil) {
+            let name = trimmedName
+            let opts = options
+            let target = host
+            dismiss()
+            Task { await model.createNetwork(name, options: opts, host: target) }
         }
-        .padding(12)
     }
 
     enum AddressFamily: String, CaseIterable, Identifiable {

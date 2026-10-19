@@ -7,7 +7,7 @@ import FlotillaCore
 /// the owner's direction on 9 August, and the newer argument is better: once Machines grew an
 /// embedded detail with a Back button and a tab strip, a floating card with its own close
 /// button was the odd one out. Every other full-screen surface in the app is reached and left
-/// the same way, so this is too — Back at the top left, Save at the bottom right.
+/// the same way, so this is too — Back at the top left, Save at the top right (Q64).
 ///
 /// It also disposes of a real complaint. The modal was a fixed 560×660, chosen by hand, which
 /// meant copy had to be trimmed to fit rather than the container adapting to the content.
@@ -33,7 +33,6 @@ struct MachineFormView: View {
     @State private var cpus: Int
     @State private var memoryGB: Int
     @State private var homeMount = "rw"
-    @State private var creating = false
     @State private var edits = FormEditTracker()
     /// Shared by the header and the Cancel button, so both ask about this form alone.
     @State private var formToken = UUID()
@@ -111,9 +110,6 @@ struct MachineFormView: View {
             } preview: {
                 railPreview
             }
-
-            Divider()
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { edits.open(editSignature) }
@@ -285,25 +281,16 @@ struct MachineFormView: View {
     /// more.
     private var header: some View {
         FormHeader(title: "New Machine", systemImage: "plus.rectangle.on.folder",
-                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken)
+                   hasUnsavedChanges: edits.isDirty(editSignature), onBack: dismiss, token: formToken) {
+            actions
+        }
     }
 
-    /// Save lives bottom-right, where a form's commit belongs on macOS.
-    private var footer: some View {
-        HStack(spacing: 8) {
-            if creating {
-                ProgressView().controlSize(.small)
-                Text("Creating… this pulls the image and boots the VM.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            FormCancelButton(token: formToken, action: dismiss)
-            Button("Save") { Task { await create() } }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!previewIsValid || creating)
-        }
-        .padding(12)
+    /// Save lives at the top right of the header (Q64), always on screen.
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton("Save", isDisabled: !previewIsValid) { Task { await create() } }
     }
 
     // MARK: Preview
@@ -355,17 +342,16 @@ struct MachineFormView: View {
         }
     }
 
+    /// The machine is made as a task (Kamal, 19 October): the form returns to the list at once and
+    /// the pull and boot are reported in Tasks, with the failure, if there is one, on its row.
     private func create() async {
-        creating = true
-        defer { creating = false }
-        let succeeded = await model.createMachine(
-            image: trimmedImage,
-            name: trimmedName.isEmpty ? nil : trimmedName,
-            cpus: cpus,
-            memory: "\(memoryGB)G",
-            homeMount: homeMount
-        )
-        if succeeded { dismiss() }
+        let image = trimmedImage
+        let name = trimmedName.isEmpty ? nil : trimmedName
+        let cpus = cpus
+        let memory = "\(memoryGB)G"
+        let homeMount = homeMount
+        Task { _ = await model.createMachine(image: image, name: name, cpus: cpus, memory: memory, homeMount: homeMount) }
+        dismiss()
     }
 
     private static func hostMemoryGB() -> Int {

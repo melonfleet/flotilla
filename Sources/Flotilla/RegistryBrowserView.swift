@@ -4,8 +4,8 @@ import FlotillaCore
 /// Images ▸ Browse Docker Hub (PLAN.md ▸ Registry browser): search Docker Hub, look at an image's
 /// tags, and pull one — as Docker Desktop's Hub search does, inside the app.
 ///
-/// A page of its own, like the forms (the same header and footer), with results on the left and
-/// the chosen image on the right. Opening it lists the Docker Official Images; typing searches.
+/// A page of its own, like the forms (the same header, with Cancel and Pull at its top right),
+/// with results on the left and the chosen image on the right. Opening it lists the Docker Official Images; typing searches.
 /// Those are the only two moments Flotilla asks Docker Hub anything (`AppModel.dockerHub`).
 ///
 /// It never pulls. Pull opens the Pull form with the reference filled in, and the form validates
@@ -30,6 +30,8 @@ struct RegistryBrowserView: View {
     @State private var tagsLoading = false
     @State private var tagsProblem: String?
     @State private var selectedTag: DockerHub.Tag.ID?
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var selected: DockerHub.Repository? { results.first { $0.id == selectedID } }
 
@@ -42,11 +44,16 @@ struct RegistryBrowserView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Browse Docker Hub", systemImage: "magnifyingglass",
-                       hasUnsavedChanges: false, onBack: dismiss)
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
+            FormBand {
+                Text("Searches go to hub.docker.com only when you open this page or type, and carry only "
+                     + "what you typed.")
+                    .foregroundStyle(.secondary)
+            }
             SplitPanes("dockerHub", item: selectedID, clearing: { selectedID = nil }) { resultsPane } detail: { detailPane }
-            Divider()
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .searchesFromToolbar(prompt: "Search Docker Hub",
@@ -218,7 +225,7 @@ struct RegistryBrowserView: View {
         .padding(.vertical, 2)
     }
 
-    // MARK: Footer
+    // MARK: Actions
 
     private var pullReference: String? {
         guard let repository = selected, repository.isPullable,
@@ -226,22 +233,12 @@ struct RegistryBrowserView: View {
         return "\(repository.reference):\(tag.name)"
     }
 
-    private var footer: some View {
-        HStack {
-            Text("Searches go to hub.docker.com only when you open this page or type, and carry only "
-                 + "what you typed.")
-                .font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button("Cancel", action: dismiss)
-                .keyboardShortcut(.cancelAction)
-            Button(pullReference.map { "Pull \($0)…" } ?? "Pull…") {
-                if let reference = pullReference { onPull(reference) }
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(pullReference == nil)
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton(pullReference.map { "Pull \($0)…" } ?? "Pull…", isDisabled: pullReference == nil) {
+            if let reference = pullReference { onPull(reference) }
         }
-        .padding(12)
     }
 
     // MARK: Loading

@@ -3,7 +3,7 @@ import FlotillaCore
 
 /// Suggestions for Containers: the suggestions library (DECISIONS Q28, Q54) — ready-made stacks and
 /// single containers, browsed like Images ▸ Browse Docker Hub (the owner, 12 October): search and a
-/// category on the left, the chosen entry on the right, Use… in the footer.
+/// category on the left, the chosen entry on the right, Use… at the header's top right (Q64).
 ///
 /// Reached from the "+" menu and from the empty Containers list. A stack opens its form and is
 /// created as a group; a container opens the Run form filled in. Either way the form validates it
@@ -28,6 +28,8 @@ struct SuggestionsView: View {
     @State private var batch: SuggestionBatch?
     /// Prefill for a container step inside a batch (Run lives here so the walk can continue).
     @State private var batchRunPrefill: RunPrefill?
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var library: SuggestionLibrary { model.suggestionLibrary }
 
@@ -57,11 +59,17 @@ struct SuggestionsView: View {
         } else {
             VStack(spacing: 0) {
                 FormHeader(title: "Suggestions", systemImage: "sparkles",
-                           hasUnsavedChanges: false, onBack: dismiss)
+                           hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
+                    actions
+                }
                 Divider()
+                FormBand {
+                    Text(selection.count >= 2
+                         ? "Each opens its form in turn. Save runs it; Skip goes on; Cancel stops the rest."
+                         : "A stack is created as a group, left ready to start. A container opens in the Run form.")
+                        .foregroundStyle(.secondary)
+                }
                 SplitPanes("suggestions", item: selected?.id, clearing: { selection = [] }) { listPane } detail: { detailPane }
-                Divider()
-                footer
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .searchesFromToolbar(prompt: "Search suggestions",
@@ -334,29 +342,16 @@ struct SuggestionsView: View {
         }
     }
 
-    // MARK: Footer
+    // MARK: Actions
 
-    private var footer: some View {
-        HStack {
-            Text(selection.count >= 2
-                 ? "Each opens its form in turn. Save runs it; Skip goes on; Cancel stops the rest."
-                 : "A stack is created as a group, left ready to start. A container opens in the Run form.")
-                .font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button("Cancel", action: dismiss).keyboardShortcut(.cancelAction)
-            if selection.count >= 2 {
-                Button("Use \(selection.count) Suggestions…") { startBatch() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-            } else {
-                Button("Use…") { use() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(selected == nil)
-            }
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        if selection.count >= 2 {
+            FormPrimaryButton("Use \(selection.count) Suggestions…") { startBatch() }
+        } else {
+            FormPrimaryButton("Use…", isDisabled: selected == nil) { use() }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
     private func use() {
@@ -517,6 +512,7 @@ struct StackFormView: View {
                 if let progressLabel {
                     Text(progressLabel).font(.subheadline).foregroundStyle(.secondary)
                 }
+                actions
             }
             Divider()
             FormScaffold {
@@ -524,8 +520,6 @@ struct StackFormView: View {
             } preview: {
                 railPreview
             }
-            Divider()
-            footer
         }
         .task { await prepare() }
     }
@@ -671,7 +665,7 @@ struct StackFormView: View {
         }
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail and header actions
 
     private var railPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -703,23 +697,16 @@ struct StackFormView: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            if !prepared { ProgressView().controlSize(.small).help("Preparing suggestions…") }
-            Spacer()
-            FormCancelButton(token: formToken, action: back)
-            if let onSkip {
-                Button("Skip") {
-                    if let formGuard { formGuard.confirmLeaving(form: formToken, onSkip) } else { onSkip() }
-                }
+    @ViewBuilder
+    private var actions: some View {
+        if let onSkip {
+            Button("Skip") {
+                if let formGuard { formGuard.confirmLeaving(form: formToken, onSkip) } else { onSkip() }
             }
-            Button("Create") { create() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canCreate)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        if !prepared { ProgressView().controlSize(.small).help("Preparing suggestions…") }
+        FormCancelButton(token: formToken, action: back)
+        FormPrimaryButton("Create", isDisabled: !canCreate) { create() }
     }
 
     // MARK: Actions

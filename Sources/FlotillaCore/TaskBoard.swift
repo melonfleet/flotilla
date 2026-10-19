@@ -80,6 +80,7 @@ public struct TaskBoard: Equatable, Sendable {
     public struct Row: Equatable, Sendable, Identifiable {
         public let id: UUID
         public let title: String
+        public let kind: TaskKind
         public let origin: String
         public let state: State
         public let stateText: String
@@ -140,6 +141,14 @@ public struct TaskBoard: Equatable, Sendable {
     public private(set) var revealed: UUID?
     /// The job that just started, lit for a moment so the eye finds its row; the owner clears it.
     public private(set) var highlighted: UUID?
+    /// Whether the drawer is up because the user asked for it (the status item, ⌥⌘T, a notice's
+    /// button) rather than because a job started. Only the first takes keyboard focus, so Esc
+    /// reaches the drawer when it was asked for and a form the user is typing in keeps its focus
+    /// when a job merely starts. Kept here, not inferred from the highlight: a reopen during the
+    /// highlight is still a reopen.
+    public private(set) var openedByUser = false
+    /// Whether the folded "N finished" line is open onto the finished rows.
+    public private(set) var finishedExpanded = false
 
     public init() {}
 
@@ -155,6 +164,16 @@ public struct TaskBoard: Equatable, Sendable {
 
     public var runningCount: Int { entries.filter { !$0.state.isFinished }.count }
     public var hasFinished: Bool { entries.contains { $0.state.isFinished } }
+    public var finishedCount: Int { entries.filter(\.state.isFinished).count }
+    public var failedCount: Int { entries.filter(\.state.isFailure).count }
+
+    public func runningRows(at now: Date) -> [Row] {
+        ordered.filter { !$0.state.isFinished }.map { row($0, at: now) }
+    }
+
+    public func finishedRows(at now: Date) -> [Row] {
+        ordered.filter(\.state.isFinished).map { row($0, at: now) }
+    }
 
     // MARK: - Changes
 
@@ -164,6 +183,7 @@ public struct TaskBoard: Equatable, Sendable {
         guard entry(id) == nil else { return }
         entries.append(Entry(id: id, title: title, kind: kind, origin: origin,
                              hasRetryAction: hasRetryAction, hasCancelAction: hasCancelAction, startedAt: now))
+        if drawer == .hidden { openedByUser = false }
         drawer = .list
         highlighted = id
     }
@@ -251,8 +271,10 @@ public struct TaskBoard: Equatable, Sendable {
 
     /// Opens the list on one task, expanded and scrolled to — where a failure notice's button goes.
     public mutating func reveal(_ id: UUID) {
-        guard entry(id) != nil else { return }
+        guard let target = entry(id) else { return }
+        openedByUser = true
         drawer = .list
+        if target.state.isFinished { finishedExpanded = true }
         expanded.insert(id)
         revealed = id
         unseenFailures.remove(id)
@@ -260,22 +282,42 @@ public struct TaskBoard: Equatable, Sendable {
 
     public mutating func clearReveal() { revealed = nil }
 
+    /// Whether the drawer should sink by itself now that a job has ended (Kamal, 19 October): it is
+    /// up, nothing is still running, the job that ended didn't fail (a failure is the one thing to
+    /// see, so it stays up), and no row is open (someone is reading its output).
+    public func shouldAutoMinimise(after ended: UUID) -> Bool {
+        guard drawer != .hidden, runningCount == 0, expanded.isEmpty,
+              let entry = entry(ended), entry.state.isFinished, !entry.state.isFailure else { return false }
+        return true
+    }
+
+    /// How long a finished drawer stays up before it sinks, so the finish is seen.
+    public static let autoMinimiseDelay: TimeInterval = 2
+
     /// Sinks the drawer into the status item. Nothing is cancelled.
-    public mutating func minimise() { drawer = .hidden }
+    public mutating func minimise() {
+        drawer = .hidden
+        openedByUser = false
+    }
+
+    /// Opens or folds the "N finished" line.
+    public mutating func toggleFinished() { finishedExpanded.toggle() }
 
     /// The status item's click: the list if the drawer is down or on one task, down if it is the
     /// list already. Opening it is seeing every failure in it.
     public mutating func toggleList() {
         if drawer == .list {
-            drawer = .hidden
+            minimise()
         } else {
             drawer = .list
+            openedByUser = true
             unseenFailures = []
         }
     }
 
     public mutating func showList() {
         drawer = .list
+        openedByUser = true
         unseenFailures = []
     }
 
@@ -317,7 +359,7 @@ public struct TaskBoard: Equatable, Sendable {
         case .failed(let reason): Self.firstLine(reason) ?? entry.currentStep
         default: entry.currentStep
         }
-        return Row(id: entry.id, title: entry.title, origin: entry.origin, state: entry.state,
+        return Row(id: entry.id, title: entry.title, kind: entry.kind, origin: entry.origin, state: entry.state,
                    stateText: Self.stateText(entry), elapsedText: Self.elapsedText(entry.elapsed(at: now)),
                    fraction: entry.state == .running ? entry.fraction : nil,
                    isHighlighted: highlighted == entry.id, step: step, isExpanded: expanded.contains(entry.id), offersCancel: entry.offersCancel,
@@ -406,6 +448,15 @@ public struct TaskBoard: Equatable, Sendable {
         return .quiet
     }
 
+    /// The figure the compact status item shows beside the count: the percentage of the newest
+    /// running job when it reports one, otherwise how long it has been going.
+    public func leadingFigure(at now: Date) -> String? {
+        guard let newest = entries.filter({ !$0.state.isFinished }).max(by: { $0.startedAt < $1.startedAt })
+        else { return nil }
+        if let fraction = newest.fraction { return "\(Int((fraction * 100).rounded()))%" }
+        return Self.elapsedText(newest.elapsed(at: now))
+    }
+
     /// When the "finished" flash ends, if one is showing — so the owner knows when to look again.
     public func flashEnds(at now: Date) -> Date? {
         flashing(at: now).flatMap(\.finishedAt).map { $0.addingTimeInterval(Self.finishedFlash) }
@@ -432,6 +483,7 @@ public struct TaskBoard: Equatable, Sendable {
     }
 
     private mutating func forget(_ ids: [UUID]) {
+        if !hasFinished { finishedExpanded = false }
         for id in ids {
             unseenFailures.remove(id)
             expanded.remove(id)

@@ -1308,15 +1308,26 @@ final class AppModel {
     ///     (`TaskKind`). A call site that says nothing offers neither.
     ///   - origin: where it was started, when that is a Mac rather than the section.
     ///   - retry: the same call again, with the arguments this one had.
+    ///   - retryGuard: the busy mark the caller holds around this job. Retry is offered only once it
+    ///     is released, since the retried call opens with the same guard and would do nothing.
     @discardableResult
     func withProgress(title: String,
                       command: String,
                       kind: TaskKind = .unclassified,
                       origin: String? = nil,
                       retry: (@MainActor () async -> Void)? = nil,
+                      retryGuard: (id: String, kind: ActivityKind)? = nil,
                       work: @MainActor (OperationProgress) async throws -> String,
                       confirm: (@MainActor () async -> Bool)? = nil) async -> Bool {
-        let progress = OperationProgress(title: title, command: command, kind: kind, origin: origin, retry: retry)
+        var ready: (@MainActor () -> Bool)?
+        if let guarded = retryGuard {
+            ready = { [weak self] in
+                guard let self else { return true }
+                return !self.isBusy(guarded.id, kind: guarded.kind)
+            }
+        }
+        let progress = OperationProgress(title: title, command: command, kind: kind, origin: origin,
+                                         retry: retry, retryReady: ready)
         tasks.start(progress)
         do {
             let summary = try await work(progress)
@@ -1337,32 +1348,19 @@ final class AppModel {
             return true
         } catch {
             // Cancel ended the child: that is the user's choice, not a fault, and raises no notice.
-            if progress.wasCancelled { progress.cancelled() } else { progress.fail(String(describing: error)) }
+            if OperationProgress.isCancellation(error) { progress.cancelled() } else { progress.fail(String(describing: error)) }
             return false
         }
     }
 
-    var activePull: ImagePull?
-
-    struct ImagePull: Sendable, Equatable {
-        let reference: String
-        let startedAt: Date
-        var progress: ImagePullProgress?
-    }
-
-    /// - Returns: whether the pull succeeded, so the form can return to the list on success and
-    ///   stay put — reference intact, ready to correct — on failure. Same contract as
-    ///   `buildImage`.
+    /// - Returns: whether the pull succeeded. The form has already returned to the list: the job
+    ///   is a task, and a failure there offers Retry.
     @discardableResult
     func pullImage(_ reference: String,
                    scheme: ContainerCLI.RegistryScheme = .default) async -> Bool {
-        activePull = ImagePull(reference: reference, startedAt: Date())
-        defer { activePull = nil }
         let keepAwake = power.begin("pulling an image")
         defer { power.end(keepAwake) }
-        // The panel and `activePull` are not duplicates: the panel is the report you watch, and
-        // `activePull` is what the Images list shows after you dismiss it, so pressing Back
-        // during a forty-second pull still does not look like a cancelled pull.
+        // The report is the task, so two pulls may run side by side, each its own row.
         // Retry pulls again (a pull re-does only what is missing); Cancel ends the `container pull`
         // child, which leaves the layers already fetched in place.
         let panel = OperationProgress(
@@ -1377,7 +1375,6 @@ final class AppModel {
             _ = try await Blocking.run { [cli] in
                 try cli.pull(reference, scheme: scheme, cancellation: cancellation) { progress in
                     Task { @MainActor in
-                        self.notePullProgress(progress, for: reference)
                         if let fraction = progress.fraction { panel.setFraction(fraction) }
                         panel.update(pullStep, detail: Self.pullLine(progress))
                         // The panel itself, by identity: it is main-actor isolated, so this hop is
@@ -1411,7 +1408,7 @@ final class AppModel {
             Task { [notifier] in await notifier.post(.imagePullFinished, title: "Image pulled", body: "\(reference) is ready.") }
             return true
         } catch {
-            if panel.wasCancelled {
+            if OperationProgress.isCancellation(error) {
                 panel.cancelled()
             } else {
                 panel.fail(String(describing: error))
@@ -1430,12 +1427,10 @@ final class AppModel {
     /// success with a footnote. A host pulls with whatever registry sign-in its own owner made
     /// there; Flotilla sends none (Q20, Phase B).
     ///
-    /// - Returns: whether every Mac pulled it, so the form stays open for a retry otherwise.
+    /// - Returns: whether every Mac pulled it. The form has already returned; Retry is on the task.
     func pullImage(_ reference: String, to hosts: [HostRef],
                    scheme: ContainerCLI.RegistryScheme = .default) async -> Bool {
         guard hosts != [.local] else { return await pullImage(reference, scheme: scheme) }
-        activePull = ImagePull(reference: reference, startedAt: Date())
-        defer { activePull = nil }
         let keepAwake = power.begin("pulling an image")
         defer { power.end(keepAwake) }
         let panel = OperationProgress(
@@ -1467,11 +1462,10 @@ final class AppModel {
                     do {
                         _ = try await Blocking.run {
                             if isLocal {
-                                // This Mac's pull reports as it goes, into its own line and the
-                                // Images list's banner — the hosts' arrive whole, at the end.
+                                // This Mac's pull reports as it goes, into its own step line;
+                                // the hosts' arrive whole, at the end.
                                 try cli.pull(reference, scheme: scheme) { progress in
                                     Task { @MainActor in
-                                        self.notePullProgress(progress, for: reference)
                                         panel.update(step, detail: Self.pullLine(progress))
                                     }
                                 }
@@ -1538,16 +1532,6 @@ final class AppModel {
         if let fraction = progress.fraction { parts.append(String(format: "%.0f%%", fraction * 100)) }
         if let detail = progress.detail { parts.append(detail) }
         return parts.joined(separator: " ")
-    }
-
-    /// Progress arrives on the runner's drain thread, one line at a time, and hops here.
-    ///
-    /// Guarded on the reference rather than trusting arrival order: the drain thread can still
-    /// deliver a line after the pull it belongs to has ended, and an unguarded write would
-    /// reattach it to whichever pull started next.
-    private func notePullProgress(_ progress: ImagePullProgress, for reference: String) {
-        guard activePull?.reference == reference else { return }
-        activePull?.progress = progress
     }
 
     func removeImage(_ image: ContainerImage) async {

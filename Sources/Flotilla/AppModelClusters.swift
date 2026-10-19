@@ -304,6 +304,7 @@ extension AppModel {
             kind: .clusterAction,
             origin: hostName,
             retry: { [weak self] in await self?.deleteRemoteCluster(cluster, on: fingerprint) },
+            retryGuard: (key, .cluster),
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("Deleting \(name) on \(hostName)")
@@ -389,6 +390,7 @@ extension AppModel {
             command: "container k8s …",
             kind: .clusterAction,
             retry: { [weak self] in await self?.perform(on: cluster, title: title, action: action, work: work) },
+            retryGuard: (cluster.node, .cluster),
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("\(title) \(cluster.node)")

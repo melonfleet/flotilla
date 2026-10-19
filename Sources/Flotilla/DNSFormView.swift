@@ -127,7 +127,9 @@ struct DNSFormView: View {
             FormHeader(title: managed?.name ?? (isAdd ? "New Domain" : "Domain"),
                        systemImage: Section.dns.systemImage,
                        hasUnsavedChanges: isAdd && edits.isDirty(editSignature),
-                       onBack: dismiss, token: formToken)
+                       onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
             FormScaffold {
                 VStack(alignment: .leading, spacing: 20) {
@@ -136,8 +138,6 @@ struct DNSFormView: View {
             } preview: {
                 railPreview
             }
-            Divider()
-            footer
         }
         .onAppear {
             // Suggested, not imposed: with no domain in use, the first one is almost certainly
@@ -336,7 +336,7 @@ struct DNSFormView: View {
         }
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail and actions
 
     private var railPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -383,29 +383,21 @@ struct DNSFormView: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            if working { ProgressView().controlSize(.small) }
-            Spacer()
-            if isAdd {
-                FormCancelButton(token: formToken, action: dismiss)
-                // "…" when something follows — the password prompt, or the restart warning.
-                Button(noPrompt && !(kind == .containers && useForContainers)
-                       ? "Create" : "Create…", action: submit)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canCreate)
-            } else {
-                if managed?.resolverInstalled == true {
-                    Button("Delete…", role: .destructive) { confirmingDelete = true }
-                        .disabled(working || model.dnsChangeProblem(on: mac) != nil)
-                }
-                Button("Done", action: dismiss)
-                    .keyboardShortcut(.defaultAction)
-            }
+    @ViewBuilder
+    private var actions: some View {
+        if !isAdd, managed?.resolverInstalled == true {
+            Button("Delete…", role: .destructive) { confirmingDelete = true }
+                .disabled(working || model.dnsChangeProblem(on: mac) != nil)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        if working { ProgressView().controlSize(.small) }
+        if isAdd {
+            FormCancelButton(token: formToken, action: dismiss)
+            // "…" when something follows — the password prompt, or the restart warning.
+            FormPrimaryButton(noPrompt && !(kind == .containers && useForContainers)
+                              ? "Create" : "Create…", isDisabled: !canCreate, action: submit)
+        } else {
+            FormPrimaryButton("Done", action: dismiss)
+        }
     }
 
     // MARK: Actions

@@ -179,8 +179,20 @@ struct RegistryFormView: View {
                        systemImage: Section.registries.systemImage,
                        logo: isAdd ? nil : model.registryLogo(for: target.id),
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: dismiss, token: formToken)
+                       onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
+            // Why the button is off, when no field has said so — in a band under the header, two
+            // lines at most. In the old footer, marked to grow vertically beside a Spacer, it was
+            // squeezed to a word per line and pushed the window's bar off the top (seen choosing
+            // Red Hat Registry, 5 October).
+            if let reason = disabledReason {
+                FormBand {
+                    Text(reason)
+                        .foregroundStyle(hostProblem != nil ? Theme.danger : .secondary)
+                }
+            }
             FormScaffold {
                 VStack(alignment: .leading, spacing: 20) {
                     if isAdd { addFields } else { manageFields }
@@ -188,8 +200,6 @@ struct RegistryFormView: View {
             } preview: {
                 railPreview
             }
-            Divider()
-            footer
         }
         .onAppear { edits.open(editSignature) }
         .confirmationDialog("Sign out of “\(managed?.name ?? server)”?",
@@ -470,7 +480,7 @@ struct RegistryFormView: View {
         .textSelection(.enabled)
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail and actions
 
     /// **Not a command preview** — adding a registry runs nothing until you sign in. The rail
     /// shows the row you are about to create, or the one you are looking at.
@@ -532,31 +542,13 @@ struct RegistryFormView: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            if working { ProgressView().controlSize(.small) }
-            // Why the button is off, when no field has said so. Given the footer's width and two
-            // lines at most: marked to grow vertically beside a Spacer, it was squeezed to a
-            // word per line and grew the footer until the window's bar went off the top (seen
-            // choosing Red Hat Registry, 5 October).
-            if let reason = disabledReason {
-                Text(reason).font(.caption)
-                    .foregroundStyle(hostProblem != nil ? Theme.danger : .secondary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Spacer()
-            }
-            FormCancelButton(token: formToken, title: isAdd ? "Cancel" : "Done", action: dismiss)
-            if canSignIn || isAdd {
-                Button(buttonTitle, action: submit)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canSubmit)
-            }
+    @ViewBuilder
+    private var actions: some View {
+        if working { ProgressView().controlSize(.small) }
+        FormCancelButton(token: formToken, title: isAdd ? "Cancel" : "Done", action: dismiss)
+        if canSignIn || isAdd {
+            FormPrimaryButton(buttonTitle, isDisabled: !canSubmit, action: submit)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
     private var disabledReason: String? {

@@ -103,15 +103,6 @@ struct ImagesView: View {
                         toolbar
                         bulkActionBar
                         Divider()
-                        // A pull outlives its form, so the list has to be able to say so. Without
-                        // this, pressing Back during a 40-second pull looks exactly like the pull
-                        // having been cancelled.
-                        if let pull = model.activePull {
-                            ImagePullStatus(pull: pull, compact: true)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                            Divider()
-                        }
                         content
                     }
                     // Fill the pane, with the toolbar at the top, whatever `content` is. An empty or
@@ -794,7 +785,7 @@ struct ImagesView: View {
     /// It was the last one that was not. This screen had no information rail, a hard
     /// `.frame(width: 440)` and a `Save` button inline in the body — so it sat as a narrow
     /// centred column while Run, New Machine, New Volume, New Network and New Image are all
-    /// left-aligned against a rail with the action in a footer. That is exactly the complaint
+    /// left-aligned against a rail with the action in the header. That is exactly the complaint
     /// the owner made about the pull form: *"it doesn't look like any of the other forms… it
     /// needs to be to the left aligned and also has the information rail to the right."* Pull
     /// was fixed and this one was never looked at, because nothing pointed at it.
@@ -802,15 +793,15 @@ struct ImagesView: View {
         VStack(spacing: 0) {
             FormHeader(title: "Tag Image", systemImage: "tag",
                        hasUnsavedChanges: !trimmedTag.isEmpty,
-                       onBack: { taggingImage = nil }, token: formToken)
+                       onBack: { taggingImage = nil }, token: formToken) {
+                tagActions(for: image)
+            }
             Divider()
             FormScaffold {
                 tagForm(for: image)
             } preview: {
                 tagRail(for: image)
             }
-            Divider()
-            tagFooter(for: image)
         }
     }
 
@@ -853,32 +844,26 @@ struct ImagesView: View {
         }
     }
 
-    private func tagFooter(for row: HostedImage) -> some View {
-        HStack(spacing: 8) {
-            Spacer()
-            FormCancelButton(token: formToken) { taggingImage = nil }
-            Button("Tag") {
-                let target = trimmedTag
-                let source = row.reference
-                let host = row.host
-                let where_ = onHost(row)
-                taggingImage = nil
-                guard !target.isEmpty else { return }
-                Task {
-                    do {
-                        try await model.tagImage(source, as: target, host: host)
-                        if host.isLocal { await model.refreshImages() }
-                    } catch {
-                        tagError = "Tag failed for \(source) \u{2192} \(target)\(where_): "
-                            + (host.isLocal ? "\(error)" : HostModeController.describe(error))
-                    }
+    @ViewBuilder
+    private func tagActions(for row: HostedImage) -> some View {
+        FormCancelButton(token: formToken) { taggingImage = nil }
+        FormPrimaryButton("Tag", isDisabled: trimmedTag.isEmpty || tagProblem != nil) {
+            let target = trimmedTag
+            let source = row.reference
+            let host = row.host
+            let where_ = onHost(row)
+            taggingImage = nil
+            guard !target.isEmpty else { return }
+            Task {
+                do {
+                    try await model.tagImage(source, as: target, host: host)
+                    if host.isLocal { await model.refreshImages() }
+                } catch {
+                    tagError = "Tag failed for \(source) \u{2192} \(target)\(where_): "
+                        + (host.isLocal ? "\(error)" : HostModeController.describe(error))
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(trimmedTag.isEmpty || tagProblem != nil)
         }
-        .padding(12)
     }
 
     /// Every image not referenced by any known container — client-side, since the CLI has

@@ -105,15 +105,21 @@ struct GroupFormView: View {
                     Button("Save to File…") { Task { await model.saveGroupToFile(saved) } }
                         .help("Save this group as a .flotilla file to share or rebuild elsewhere")
                 }
+                FormCancelButton(token: formToken, action: dismiss)
+                FormPrimaryButton("Save", isDisabled: !canSave) { save() }
             }
             Divider()
+            if let saveError {
+                FormBand {
+                    Label(saveError, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(Theme.danger)
+                }
+            }
             FormScaffold {
                 form
             } preview: {
                 railPreview
             }
-            Divider()
-            footer
         }
     }
 
@@ -450,24 +456,6 @@ struct GroupFormView: View {
         }
     }
 
-    private var footer: some View {
-        HStack(spacing: 8) {
-            if let saveError {
-                Label(saveError, systemImage: "exclamationmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.danger)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-            FormCancelButton(token: formToken, action: dismiss)
-            Button("Save") { save() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canSave)
-        }
-        .padding(12)
-    }
-
     private func save() {
         var committed = draft
         committed.name = draft.name.trimmingCharacters(in: .whitespaces)
@@ -544,15 +532,16 @@ struct GroupMemberFormView: View {
             FormHeader(title: isNew ? "Add Service" : "Edit Service",
                        systemImage: "shippingbox",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: onCancel, token: formToken)
+                       onBack: onCancel, token: formToken) {
+                FormCancelButton(token: formToken, action: onCancel)
+                FormPrimaryButton(isNew ? "Add" : "Save", isDisabled: !canSave) { onSave(built) }
+            }
             Divider()
             FormScaffold {
                 form
             } preview: {
                 preview
             }
-            Divider()
-            footer
         }
         .onAppear { edits.open(editSignature) }
     }
@@ -749,17 +738,5 @@ struct GroupMemberFormView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var footer: some View {
-        HStack(spacing: 8) {
-            Spacer()
-            FormCancelButton(token: formToken, action: onCancel)
-            Button(isNew ? "Add" : "Save") { onSave(built) }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canSave)
-        }
-        .padding(12)
     }
 }

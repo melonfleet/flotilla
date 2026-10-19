@@ -785,15 +785,21 @@ struct VolumesView: View {
         VStack(spacing: 0) {
             FormHeader(title: "New Volume", systemImage: "externaldrive.badge.plus",
                        hasUnsavedChanges: edits.isDirty(editSignature),
-                       onBack: { showingCreate = false }, token: formToken)
+                       onBack: { showingCreate = false }, token: formToken) {
+                createActions
+            }
             Divider()
+            if let unclaimedProblem {
+                FormBand {
+                    Label(unclaimedProblem, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(Theme.danger)
+                }
+            }
             FormScaffold {
                 createForm
             } preview: {
                 railPreview
             }
-            Divider()
-            createFooter
         }
         .onAppear { edits.open(editSignature) }
     }
@@ -930,28 +936,16 @@ struct VolumesView: View {
         }
     }
 
-    private var createFooter: some View {
-        HStack {
-            if let unclaimedProblem {
-                Label(unclaimedProblem, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(Theme.danger)
-                    .lineLimit(2)
-            }
-            Spacer()
-            FormCancelButton(token: formToken) { showingCreate = false }
-            Button("Create") {
-                let name = trimmedName
-                let opts = options
-                let host = newHost
-                showingCreate = false
-                Task { await model.createVolume(name, options: opts, host: host) }
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(trimmedName.isEmpty || anyProblem != nil)
+    @ViewBuilder
+    private var createActions: some View {
+        FormCancelButton(token: formToken) { showingCreate = false }
+        FormPrimaryButton("Create", isDisabled: trimmedName.isEmpty || anyProblem != nil) {
+            let name = trimmedName
+            let opts = options
+            let host = newHost
+            showingCreate = false
+            Task { await model.createVolume(name, options: opts, host: host) }
         }
-        .padding(12)
     }
 
     /// Repeatable `key=value` flags, capped at the `Allowlist`'s own maximum of 8 — shown

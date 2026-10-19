@@ -14,6 +14,8 @@ struct SendImageView: View {
 
     @State private var chosen: Set<HostRef> = []
     @State private var seeded = false
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var platform: String? { ImageTransfer.platform(for: image) }
 
@@ -25,15 +27,16 @@ struct SendImageView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Send \u{201C}\(ContainerImage.shortReference(image.reference))\u{201D} to Hosts",
-                       systemImage: "paperplane", hasUnsavedChanges: false, onBack: dismiss)
+                       systemImage: "paperplane", hasUnsavedChanges: false, onBack: dismiss,
+                       token: formToken) {
+                actions
+            }
             Divider()
             FormScaffold {
                 form
             } preview: {
                 rail
             }
-            Divider()
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task {
@@ -86,7 +89,7 @@ struct SendImageView: View {
         }
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail and actions
 
     /// What runs where — This Mac's save once, then each host's load, which the host builds itself
     /// for a file of its own choosing. Built by the same function that runs the save.
@@ -116,21 +119,15 @@ struct SendImageView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var footer: some View {
-        HStack {
-            Spacer()
-            Button("Cancel", action: dismiss)
-                .keyboardShortcut(.cancelAction)
-            Button(targets.count == 1 ? "Send to 1 Host" : "Send to \(targets.count) Hosts") {
-                let hosts = targets
-                let image = image
-                dismiss()
-                Task { await model.sendImage(image, to: hosts) }
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(targets.isEmpty || platform == nil)
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton(targets.count == 1 ? "Send to 1 Host" : "Send to \(targets.count) Hosts",
+                          isDisabled: targets.isEmpty || platform == nil) {
+            let hosts = targets
+            let image = image
+            dismiss()
+            Task { await model.sendImage(image, to: hosts) }
         }
-        .padding(12)
     }
 }

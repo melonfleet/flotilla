@@ -23,6 +23,8 @@ struct ImportConfigurationView: View {
     @State private var useDefaultRegistry = false
     @State private var useContainerDomain = false
     @State private var confirmingReplace = false
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
 
     private var problems: [String: String] {
         ConfigurationImport.problems(items, resolutions: resolutions, existing: existing)
@@ -48,7 +50,9 @@ struct ImportConfigurationView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Import “\(url.lastPathComponent)”", systemImage: "square.and.arrow.down",
-                       hasUnsavedChanges: false, onBack: dismiss)
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
             if let loadError {
                 ContentUnavailableView("This file can't be imported", systemImage: "doc.badge.ellipsis",
@@ -64,8 +68,6 @@ struct ImportConfigurationView: View {
                 ProgressView("Reading the file…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Divider()
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await load() }
@@ -244,7 +246,7 @@ struct ImportConfigurationView: View {
         }
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail and actions
 
     private var rail: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -277,20 +279,12 @@ struct ImportConfigurationView: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Spacer()
-            Button("Cancel", action: dismiss)
-                .keyboardShortcut(.cancelAction)
-            Button(replacing.isEmpty ? "Import" : "Import…") {
-                if replacing.isEmpty { start() } else { confirmingReplace = true }
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(!canImport)
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton(replacing.isEmpty ? "Import" : "Import…", isDisabled: !canImport) {
+            if replacing.isEmpty { start() } else { confirmingReplace = true }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
     // MARK: Actions

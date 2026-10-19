@@ -17,17 +17,37 @@ final class TaskCenter {
     /// The clock the headline is read at; moved on when a "finished" flash ends.
     private(set) var now = Date()
     @ObservationIgnored private var live: [UUID: OperationProgress] = [:]
+    /// The task whose Retry has been launched and has not yet started its replacement. Retry is
+    /// claimed when the new task starts, not when the button is pressed: a retried call can return
+    /// at a guard without starting anything, and that must leave the failure, its notice and its
+    /// Retry exactly as they were. Observed, so the drawer hides every Retry while one is in flight.
+    private var retrying: UUID?
     @ObservationIgnored private var flashEnd: Task<Void, Never>?
     @ObservationIgnored private var highlightEnd: Task<Void, Never>?
+    @ObservationIgnored private var autoMinimise: Task<Void, Never>?
 
     var headline: TaskBoard.Headline { board.headline(at: now) }
 
     func progress(_ id: UUID) -> OperationProgress? { live[id] }
 
+    /// Whether Retry may be offered on this row now: the board allows it and the original call has
+    /// let go of its guards. Read by the drawer, so it follows the busy state.
+    func canRetry(_ id: UUID) -> Bool {
+        guard retrying == nil, board.entry(id)?.offersRetry == true, let progress = live[id] else { return false }
+        return progress.retryReady?() ?? true
+    }
+
     /// Starts showing a job. The drawer rises on it; the window stays usable.
     func start(_ progress: OperationProgress) {
+        autoMinimise?.cancel()   // a new job keeps the drawer up
         live[progress.id] = progress
         now = Date()
+        // Claimed by the job it relaunched, which carries the same title — not by whatever else
+        // happens to start while the retried call is on its way to `start`.
+        if let original = retrying, board.entry(original)?.title == progress.title {
+            retrying = nil
+            board.retry(original)
+        }
         board.start(progress.id, title: progress.title, kind: progress.kind, origin: progress.origin,
                     hasRetryAction: progress.retryAction != nil, hasCancelAction: progress.cancellation != nil,
                     at: now)
@@ -59,17 +79,24 @@ final class TaskCenter {
         live[id]?.cancellation?.cancel()
     }
 
-    /// Runs the same job again as a new task. The old row stays, marked as retried, so there is
-    /// one running job and one record of the failure — never two attempts claiming one row.
+    /// Runs the same job again as a new task. The old row stays, marked as retried once the new task
+    /// has actually started, so there is one running job and one record of the failure — never two
+    /// attempts claiming one row, and no retry spent on a call that did nothing.
     func retry(_ id: UUID) {
-        guard board.entry(id)?.offersRetry == true, let action = live[id]?.retryAction, board.retry(id) else { return }
-        Task { await action() }
+        guard canRetry(id), let action = live[id]?.retryAction else { return }
+        retrying = id
+        Task {
+            await action()
+            // It returned at a guard without starting a task: nothing was consumed.
+            if retrying == id { retrying = nil }
+        }
     }
 
     func minimise() { board.minimise() }
     func toggleList() { board.toggleList() }
     func showList() { board.showList() }
     func toggleExpanded(_ id: UUID) { board.toggleExpanded(id) }
+    func toggleFinished() { board.toggleFinished() }
     func clearReveal() { board.clearReveal() }
 
     func clear(_ id: UUID) {
@@ -91,12 +118,27 @@ final class TaskCenter {
             // Finish and fail are read out; every line would be noise.
             AccessibilityNotification.Announcement("\(progress.title) finished").post()
             scheduleFlashEnd()
+            scheduleAutoMinimise(after: id)
         case .failed(let reason):
             release(board.fail(id, reason: reason, at: now))
             AccessibilityNotification.Announcement("\(progress.title) failed").post()
         case .cancelled:
             release(board.cancel(id, at: now))
             AccessibilityNotification.Announcement("\(progress.title) cancelled").post()
+            scheduleAutoMinimise(after: id)
+        }
+    }
+
+    /// The last running job has ended and nothing needs looking at: the drawer sinks into the status
+    /// item after a moment (Kamal, 19 October). Re-checked when the moment is up, so a job that
+    /// started, a failure, or a row opened meanwhile keeps it where it is.
+    private func scheduleAutoMinimise(after id: UUID) {
+        autoMinimise?.cancel()
+        guard board.shouldAutoMinimise(after: id) else { return }
+        autoMinimise = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(TaskBoard.autoMinimiseDelay))
+            guard !Task.isCancelled, let self, self.board.shouldAutoMinimise(after: id) else { return }
+            self.board.minimise()
         }
     }
 

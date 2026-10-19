@@ -489,7 +489,26 @@ struct GretaChatView: View {
 /// Her face at the top opens the full page, with this chat and the rest of the history.
 struct GretaOverlay: View {
     let model: AppModel
+    /// The card's own height; `height(in:below:)` works it out against the Tasks drawer.
+    var height: CGFloat = GretaOverlay.preferredHeight
     let go: (Section) -> Void
+
+    static let preferredHeight: CGFloat = 520
+    /// Her header, a couple of messages and the input: below this the chat is not usable.
+    static let minimumHeight: CGFloat = 260
+    /// The padding around the card, top and bottom.
+    static let margin: CGFloat = 16
+    /// What the Tasks drawer must leave above itself while she is open.
+    static let minimumFootprint: CGFloat = minimumHeight + 2 * margin
+
+    /// Her height in a content area `available` tall, above a drawer `drawerHeight` tall: as tall as
+    /// she likes when there is room, shorter when there is not, and never so tall that the two
+    /// together push her header out of the window.
+    static func height(in available: CGFloat, below drawerHeight: CGFloat) -> CGFloat {
+        guard available > 0 else { return preferredHeight }
+        let room = available - drawerHeight - 2 * margin
+        return max(minimumHeight, min(preferredHeight, room))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -522,10 +541,10 @@ struct GretaOverlay: View {
                 GretaChatView(model: model, go: go, compact: true) { model.greta.overlayShown = false }
             }
         }
-        .frame(width: 400, height: 520)
+        .frame(width: 400, height: height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.hairline))
         .shadow(color: .black.opacity(0.2), radius: 18, y: 6)
-        .padding(16)
+        .padding(Self.margin)
     }
 }

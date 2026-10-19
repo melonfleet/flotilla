@@ -15,6 +15,8 @@ struct DNSZonesView: View {
     @State private var chosen: Set<HostRef> = []
     @State private var seeded = false
     @State private var confirming = false
+    /// Shared by the header and the Cancel button, so both ask about this form alone.
+    @State private var formToken = UUID()
     @State private var fleetDomain = ""
     @State private var namesAcross = false
 
@@ -38,15 +40,15 @@ struct DNSZonesView: View {
     var body: some View {
         VStack(spacing: 0) {
             FormHeader(title: "Set Up Zones", systemImage: Section.dns.systemImage,
-                       hasUnsavedChanges: false, onBack: dismiss)
+                       hasUnsavedChanges: false, onBack: dismiss, token: formToken) {
+                actions
+            }
             Divider()
             FormScaffold {
                 form
             } preview: {
                 rail
             }
-            Divider()
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task {
@@ -206,7 +208,7 @@ struct DNSZonesView: View {
         try? model.settingsStore.set(trimmed, for: SettingsKeys.fleetDNSDomain)
     }
 
-    // MARK: Rail and footer
+    // MARK: Rail and actions
 
     private var rail: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -227,17 +229,11 @@ struct DNSZonesView: View {
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Spacer()
-            Button("Cancel", action: dismiss)
-                .keyboardShortcut(.cancelAction)
-            Button(targets.count == 1 ? "Set Up 1 Mac…" : "Set Up \(targets.count) Macs…") { confirming = true }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(targets.isEmpty || domainProblem != nil)
-        }
-        .padding(12)
+    @ViewBuilder
+    private var actions: some View {
+        FormCancelButton(token: formToken, action: dismiss)
+        FormPrimaryButton(targets.count == 1 ? "Set Up 1 Mac…" : "Set Up \(targets.count) Macs…",
+                          isDisabled: targets.isEmpty || domainProblem != nil) { confirming = true }
     }
 
     private func start() {

@@ -3012,3 +3012,63 @@ This supersedes round 1 above where they differ: the Tasks item moved to the rig
   categories and read by `isEnabled`). It announces on a non-admin Mac too, which the fleet notices do
   not: the job is that Mac's user's own. **Successes do not notify**; the status item's "finished" is
   enough.
+
+### Q63, round 3 (Kamal, 19 October): compact rows, a short status item, and the forms let go
+
+Supersedes rounds 1 and 2 where they differ.
+
+- **Rows, like Claude Code's background tasks.** One line per job: caret, **the kind's symbol**
+  (`TaskKind.systemImage` in the app: pull, build, send, push, run, stack, cluster, machine, import,
+  group, DNS; its outcome as a small badge once it is over), the title truncated at the tail, the
+  percentage or elapsed time, and icon buttons. A failure adds one red line with the reason. Where it
+  started, its state and its step are the row's tooltip and the first line of its detail.
+- **Icons, not words.** Stop (`stop.circle`, only where the kind can be cancelled), Retry
+  (`arrow.clockwise`), Clear (`xmark`), and Clear finished (`xmark.circle`) in the header. Each has a
+  tooltip and an accessibility label naming the task. No text buttons in the drawer.
+- **"N finished".** Finished jobs fold into one line that opens onto them (`TaskBoard.finishedExpanded`);
+  a failure among them is named on it in red ("· 1 failed"), so folding never hides one, and a
+  failure notice's Show Task opens the fold on its row.
+- **Status item.** "Tasks · 2 · 31%": spinner, count, and the newest running job's percentage or
+  elapsed time (`TaskBoard.leadingFigure`). "Tasks · Failed" until looked at, "Tasks · Done" for the
+  flash. The full line is the tooltip and the drawer row's.
+- **A job started from a form returns the form to its list** (`FormGuard`-safe: the form is clean
+  once submitted) and lives only in Tasks. Pull and Build (New Image), Load an Image (cluster), New
+  Machine and New Cluster no longer wait on the job with their own bar or "Creating…" line; Run, Send,
+  Push, volume and network creates, stacks, imports and DNS setup already returned. The Images list's
+  pull banner (`ImagePullStatus`) and the single-pull lock (`activePull`) are gone: two pulls are two
+  rows.
+- **Kyle's findings.** Cancelled is classified from the error the job ended with
+  (`ContainerCLIError.cancelled`), not from Cancel having been pressed, so a child's own non-zero exit
+  after a late Cancel is still a failure with its notice. Retry is offered only once the job's busy
+  guard is released (`withProgress(retryGuard:)`, cluster actions here and on hosts), and is claimed
+  only when the retried job actually starts — a retry that returns at a guard leaves the failure, its
+  notice and its Retry as they were. Focus follows `TaskBoard.openedByUser` (the status item, ⌥⌘T, a
+  notice), not the highlight, so a reopen during a new row's highlight takes focus and Esc works.
+- **Greta and the drawer share a height budget.** The drawer leaves Greta her minimum (260pt plus
+  margins) while she is open; she takes what is left, up to her 520pt (`GretaOverlay.height`). By
+  construction the two never outgrow a content area of 400pt or more, the drawer at its tallest
+  included.
+- **The drawer stays an overlay**, with no content inset: nothing under it moves. That is why Q64
+  moved every form's actions out from under it.
+
+## Q64 — A form's actions are in its header, top right (settled 2026-10-19)
+
+Kamal's call, preferred to the drawer pushing content up. Forms committed from a bottom-right row
+(the macOS sheet convention, kept when forms became embedded screens on 9 August). The Tasks drawer
+rises over the bottom of the page, so it covered Save, and starting a second pull meant minimising
+the drawer to find Pull.
+
+- **Every form's actions are in its `FormHeader`'s trailing slot**, always on screen: secondary
+  buttons (Skip, Delete…, Save to File…) first, a spinner while it works, then Cancel
+  (`FormCancelButton`, `.cancelAction`, asks through `FormGuard`), then the commit
+  (`FormPrimaryButton`: `.borderedProminent`, `.defaultAction`, disabled by the same validation as
+  before). The commit keeps its own name — Pull, Build, Run, Create, Add Host, Send to 3 Hosts.
+- **There is no bottom row**, in any form, including those the drawer never covered: every form reads
+  the same. Words that sat beside the buttons — why the commit is disabled, a save error, what the
+  commit will do — are a `FormBand` directly under the header, only while there is something to say.
+- **Pinned** by `Scripts/check-form-bounds.sh`: a screen with a `FormHeader` declares no
+  `.defaultAction` or `.cancelAction` of its own and no footer. Checked against a reintroduced raw
+  Cancel and a reintroduced footer; both fail it.
+- Rejected: insetting the content by the drawer's height (the page jumps as jobs come and go, and a
+  tall drawer leaves a form a sliver), and a floating action bar above the drawer (a second place
+  for the same buttons).
