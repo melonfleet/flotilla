@@ -298,4 +298,58 @@ private final class ScriptedMachineHost: ContainerHost, @unchecked Sendable {
         #expect(model.machines.map(\.id) == ["m2", "m3"])
         #expect(model.machineImages.keys.sorted() == ["m2", "m3"])
     }
+
+    @Test(.timeLimit(.minutes(1))) func staleInspectionDoesNotPopulateOrBackOffReplacementMachine() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let entered = DispatchSemaphore(value: 0)
+        let host = ScriptedMachineHost(
+            listedIDs: ["replaced-vm", "retried-vm"],
+            inspectOutcomes: [
+                "replaced-vm": [
+                    .success("docker.io/library/alpine:3.22"),
+                    .success("docker.io/library/debian:12"),
+                ],
+                "retried-vm": [
+                    .failure(.commandFailed(command: "machine inspect retried-vm", exitCode: 1, message: "deleted")),
+                    .success("registry.fedoraproject.org/fedora:41"),
+                ],
+            ]
+        )
+        host.inspectGate = gate
+        host.inspectEntered = entered
+
+        let model = AppModel(cli: ContainerCLI(host: host, wirePolicy: .localOwner),
+                             settingsStore: SettingsStore())
+        await model.refreshMachines()
+        await Blocking.run {
+            entered.wait()
+            entered.wait()
+        }
+
+        // Remove both machines while their first inspections are still in flight, then recreate
+        // them under the same IDs.
+        host.listedIDs = []
+        await model.refreshMachines()
+        #expect(model.machines.isEmpty)
+
+        host.listedIDs = ["replaced-vm", "retried-vm"]
+        await model.refreshMachines()
+        #expect(model.machines.map(\.id) == ["replaced-vm", "retried-vm"])
+        #expect(model.machines.allSatisfy { $0.image == nil })
+
+        // Let the stale inspections finish; the replacement machines must reject the old results
+        // (both success and failure) and be inspected afresh without backoff.
+        host.inspectGate = nil
+        host.inspectEntered = nil
+        await Blocking.run {
+            gate.signal()
+            gate.signal()
+        }
+        await model.machineImageTask?.value
+
+        #expect(host.inspectCounts == ["replaced-vm": 2, "retried-vm": 2])
+        #expect(model.machines.first { $0.id == "replaced-vm" }?.distribution == .debian)
+        #expect(model.machines.first { $0.id == "retried-vm" }?.distribution == .fedora)
+        #expect(model.machineImageBackoff.isEmpty)
+    }
 }

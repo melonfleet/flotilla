@@ -1764,6 +1764,8 @@ final class AppModel {
     /// A machine's image is immutable; cache it per machine id and drop it when the machine goes away.
     @ObservationIgnored var machineImages: [String: ContainerMachine.MachineImage] = [:]
     @ObservationIgnored var machineImageBackoff: [String: HostBackoff] = [:]
+    @ObservationIgnored var machineGeneration = 0
+    @ObservationIgnored var machineGenerations: [String: Int] = [:]
     @ObservationIgnored let machineImageChecks = KeyedCoalescer<String>(
         maxConcurrent: AppModel.maxConcurrentMachineInspections)
     @ObservationIgnored var machineImageTask: Task<Void, Never>?

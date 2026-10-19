@@ -27,7 +27,12 @@ extension AppModel {
             // holds up the list or the poll loop (Kyle, 19 October).
             let listed = try await Blocking.run { [cli] in try cli.machines() }
             let present = Set(listed.map(\.id))
+            machineGenerations = machineGenerations.filter { present.contains($0.key) }
             for machine in listed {
+                if machineGenerations[machine.id] == nil {
+                    machineGeneration &+= 1
+                    machineGenerations[machine.id] = machineGeneration
+                }
                 if let image = machine.image { machineImages[machine.id] = image }
             }
             machineImages = machineImages.filter { present.contains($0.key) }
@@ -87,22 +92,27 @@ extension AppModel {
     }
 
     private func loadMachineImage(for id: String) async {
-        guard machines.contains(where: { $0.id == id }),
+        while let generation = machineGenerations[id],
+              machines.contains(where: { $0.id == id }),
               machineImages[id] == nil,
-              machineImageBackoff[id, default: HostBackoff()].isDue(at: machineImageNow())
-        else { return }
-        do {
-            let inspected = try await Blocking.run { [cli] in try cli.inspectMachine(id) }
-            guard machines.contains(where: { $0.id == id }) else { return }
-            guard let image = inspected.image else {
+              machineImageBackoff[id, default: HostBackoff()].isDue(at: machineImageNow()) {
+            do {
+                let inspected = try await Blocking.run { [cli] in try cli.inspectMachine(id) }
+                guard machineGenerations[id] == generation,
+                      machines.contains(where: { $0.id == id }) else { continue }
+                guard let image = inspected.image else {
+                    machineImageBackoff[id, default: HostBackoff()].failed(at: machineImageNow())
+                    return
+                }
+                recordMachineImage(image, for: id)
+                return
+            } catch {
+                guard machineGenerations[id] == generation,
+                      machines.contains(where: { $0.id == id }) else { continue }
                 machineImageBackoff[id, default: HostBackoff()].failed(at: machineImageNow())
+                record("Could not inspect machine \(id): \(error)", subsystem: "machines")
                 return
             }
-            recordMachineImage(image, for: id)
-        } catch {
-            guard machines.contains(where: { $0.id == id }) else { return }
-            machineImageBackoff[id, default: HostBackoff()].failed(at: machineImageNow())
-            record("Could not inspect machine \(id): \(error)", subsystem: "machines")
         }
     }
 
