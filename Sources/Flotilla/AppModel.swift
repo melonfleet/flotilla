@@ -2168,13 +2168,14 @@ final class AppModel {
         }
     }
 
-    /// About is a sheet in Settings, opened from there or from the menu-bar menu.
-    var showingAbout = false
+    /// About is Settings ▸ About (Kamal, 19 October 2026); both menus' "About Flotilla" open it.
+    /// Settings reads and clears this when it appears or when it changes.
+    var pendingSettingsAbout = false
 
     func requestAbout() {
         present {
             self.pendingSection = .settings
-            self.showingAbout = true
+            self.pendingSettingsAbout = true
         }
     }
 

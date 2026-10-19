@@ -271,6 +271,12 @@ struct SettingsView: View {
 
     /// The sidebar at a fixed width and the pane filling the rest. The pane scrolls; the sidebar is
     /// short enough not to need to, and a `List` scrolls itself if the window is very short.
+    private func takeAboutRequest() {
+        guard model.pendingSettingsAbout else { return }
+        model.pendingSettingsAbout = false
+        section = .about
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             SettingsSidebar(groups: sidebarGroups, selection: $section)
@@ -282,17 +288,14 @@ struct SettingsView: View {
         }
         .frame(minWidth: 720, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
         .navigationTitle("Settings")
+        // "About Flotilla" from either menu lands on this pane.
+        .onAppear(perform: takeAboutRequest)
+        .onChange(of: model.pendingSettingsAbout) { _, _ in takeAboutRequest() }
         .sheet(isPresented: Binding(
             get: { model.showingSupportBundle },
             set: { model.showingSupportBundle = $0 }
         )) {
             SupportBundleView(model: model) { model.showingSupportBundle = false }
-        }
-        .sheet(isPresented: Binding(
-            get: { model.showingAbout },
-            set: { model.showingAbout = $0 }
-        )) {
-            AboutView(model: model) { model.showingAbout = false }
         }
         .confirmationDialog(
             pendingReset?.title ?? "",
@@ -782,10 +785,14 @@ private struct SettingsAboutPane: View {
             Link("melonfleet.dev", destination: ExternalLinks.melonfleet)
         }
 
-        SettingsGroup("Privacy") {
+        SettingsGroup("Network destinations") {
             SettingsNote("No analytics, no account, no licence check. Every place Flotilla can reach "
-                         + "on the network is listed on the privacy page.")
-            Button("Network Destinations and Storage\u{2026}") { model.showingAbout = true }
+                         + "on the network is listed here, with when.")
+            AboutNetworkDestinations(model: model)
+        }
+
+        SettingsGroup("Stored locally") {
+            AboutStorage()
         }
 
         SettingsGroup("Licences") {

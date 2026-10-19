@@ -13,57 +13,12 @@ import FlotillaCore
 /// Everything below is written to be exactly as true as the code it describes, and no more
 /// confident. If a future phase adds a destination, this view must be updated in the same
 /// change — a stale privacy page is worse than none.
-struct AboutView: View {
-    let model: AppModel
-    let dismiss: () -> Void
-
-    var body: some View {
-        ModalCard(title: "About Flotilla", onClose: dismiss) {
-            Form {
-                SwiftUI.Section {
-                    identity
-                }
-
-                SwiftUI.Section("Network destinations") {
-                    networkDestinations
-                }
-
-                SwiftUI.Section("Stored locally") {
-                    storage
-                }
-
-                SwiftUI.Section("Licence") {
-                    licence
-                }
-
-                SwiftUI.Section("Logos") {
-                    logos
-                }
-            }
-            .formStyle(.grouped)
-            .textSelection(.enabled)
-
-            HStack {
-                Spacer()
-                Button("Done", action: dismiss).keyboardShortcut(.defaultAction)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-        }
-        .frame(minWidth: 480, minHeight: 420)
-    }
-
+///
+/// It lives in Settings ▸ About now (Kamal, 19 October 2026): the separate About window is gone,
+/// and "About Flotilla" in both menus opens that pane. `AboutView` keeps the shared text;
+/// `AboutNetworkDestinations` and `AboutStorage` are the pane's two longer groups.
+enum AboutView {
     // MARK: - Identity
-
-    private var identity: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Wordmark(size: 20)
-            Text(Self.versionLine)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 4)
-    }
 
     /// `CFBundleShortVersionString`/`CFBundleVersion` only exist once `Scripts/make-app.sh` has
     /// assembled a real bundle and stamped `git describe` into it — see that script's `VERSION`
@@ -80,13 +35,45 @@ struct AboutView: View {
         return "Version \(short) (\(build))"
     }
 
-    // MARK: - Network destinations
+    // MARK: - Licence
+
+    /// Apache-2.0 obliges a distributed work to carry its notices, and an About panel is where a
+    /// user looks for them. SwiftTerm is named because it is the one third-party component in the
+    /// app and its MIT licence asks for attribution.
+    /// Also what Settings ▸ About lists, so the two cannot disagree.
+    static let licenceLines = [
+        "Flotilla is a personal project, licensed under Apache-2.0.",
+        "Terminal emulation by SwiftTerm (MIT).",
+        "Drives Apple\u{2019}s container CLI, which is not bundled.",
+    ]
+
+    // MARK: - Logos
+
+    static let logoNotice = "Logos are trademarks of their owners and identify the software they name."
+
+    static func logoLines(for library: SuggestionLibrary) -> [String] {
+        var lines = [logoNotice]
+        var seen: Set<String> = [logoNotice]
+        for attribution in (library.artwork ?? []).compactMap(\.attribution) where !attribution.isEmpty {
+            if seen.insert(attribution).inserted {
+                lines.append(attribution)
+            }
+        }
+        return lines
+    }
+}
+
+/// Every place Flotilla can reach on the network, and when. Shown in Settings ▸ About. If a change
+/// adds a destination, this list changes with it: a stale privacy page is worse than none.
+struct AboutNetworkDestinations: View {
+    let model: AppModel
+
 
     private var registryDomain: String {
         model.settingsStore[SettingsKeys.defaultRegistryDomain]
     }
 
-    private var networkDestinations: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             destinationRow(
                 status: .noConnection,
@@ -120,6 +107,30 @@ struct AboutView: View {
                     + "\(registryDomain), your configured default registry (Settings → "
                     + "Defaults for new containers). That is the container runtime acting on "
                     + "your instruction, not Flotilla phoning home."
+            )
+            destinationRow(
+                status: model.settingsStore[SettingsKeys.suggestionLibraryUpdates] ? .active : .onRequest,
+                title: "Suggestions library, logos and vulnerability reports",
+                body: "Reads raw.githubusercontent.com/melonfleet/flotilla-library for a newer signed "
+                    + "library, its logos and the daily vulnerability report for library images, "
+                    + "each checked against a key built into Flotilla. Nothing about this Mac is "
+                    + "sent, and reports are matched to your images here. "
+                    + (model.settingsStore[SettingsKeys.suggestionLibraryUpdates]
+                       ? "Daily; turn it off in Settings → Updates."
+                       : "Only when you choose Check Now.")
+            )
+            destinationRow(
+                status: .onRequest,
+                title: "Greta's speech recognition",
+                body: "If macOS needs speech recognition for your language, Greta offers to download "
+                    + "it from Apple, once, and only when you click Download. Speech itself is "
+                    + "recognised on this Mac and never sent anywhere."
+            )
+            destinationRow(
+                status: .onRequest,
+                title: "SSH, Screen Sharing and Files on your hosts",
+                body: "A host's SSH, Screen Sharing and Files pages connect to that Mac with macOS's "
+                    + "own tools and your own credentials, only when you open them."
             )
             destinationRow(
                 status: model.hostMode.trustedHosts.isEmpty ? .noConnection : .active,
@@ -174,10 +185,12 @@ struct AboutView: View {
                 .foregroundStyle(.secondary)
         }
     }
+}
 
-    // MARK: - Storage
+/// Where Flotilla keeps things on this Mac. Shown in Settings ▸ About.
+struct AboutStorage: View {
 
-    private var storage: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             // `LocalizedStringKey`, so the backticks render as code: a `+`-joined literal is a
             // plain `String`, which `Text` shows verbatim (the same rule `FieldHelp` follows).
@@ -193,51 +206,6 @@ struct AboutView: View {
                 .foregroundStyle(.secondary)
         }
         .font(.caption)
-        .padding(.vertical, 4)
-    }
-
-    // MARK: - Licence
-
-    /// Apache-2.0 obliges a distributed work to carry its notices, and an About panel is where a
-    /// user looks for them. SwiftTerm is named because it is the one third-party component in the
-    /// app and its MIT licence asks for attribution.
-    /// Also what Settings ▸ About lists, so the two cannot disagree.
-    static let licenceLines = [
-        "Flotilla is a personal project, licensed under Apache-2.0.",
-        "Terminal emulation by SwiftTerm (MIT).",
-        "Drives Apple\u{2019}s container CLI, which is not bundled.",
-    ]
-
-    private var licence: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Self.licenceLines, id: \.self) { Text($0) }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.vertical, 4)
-    }
-
-    // MARK: - Logos
-
-    static let logoNotice = "Logos are trademarks of their owners and identify the software they name."
-
-    static func logoLines(for library: SuggestionLibrary) -> [String] {
-        var lines = [logoNotice]
-        var seen: Set<String> = [logoNotice]
-        for attribution in (library.artwork ?? []).compactMap(\.attribution) where !attribution.isEmpty {
-            if seen.insert(attribution).inserted {
-                lines.append(attribution)
-            }
-        }
-        return lines
-    }
-
-    private var logos: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Self.logoLines(for: model.suggestionLibrary), id: \.self) { Text($0) }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
         .padding(.vertical, 4)
     }
 }

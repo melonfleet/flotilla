@@ -194,6 +194,12 @@ private struct FlotillaCommands: Commands {
     var body: some Commands {
         // Sparkle (Q40): an explicit check is the owner's request. On a host-only Mac its admin
         // updates it (Q38), and a development build has no feed; the item says which.
+        // About is Settings ▸ About, which carries the version, licences, logos and the privacy
+        // list; the standard panel would show less, in a second place.
+        CommandGroup(replacing: .appInfo) {
+            Button("About Flotilla") { present { model.requestAbout() } }
+        }
+
         CommandGroup(after: .appInfo) {
             Button(model.hostMode.isAdmin || !AppUpdater.isConfigured ? "Check for Updates…"
                                                                     : "Updated by Your Admin Mac") {
