@@ -831,6 +831,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
     case containerExited
     case imagePullFinished
     case buildFinished
+    case taskFailed
 
     public var id: String { rawValue }
 
@@ -840,7 +841,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
 
     public var defaultEnabled: Bool {
         switch self {
-        case .error, .hostOffline, .runtimeStopped, .networkDisconnected, .approvalWaiting, .containerUnhealthy: true
+        case .error, .hostOffline, .runtimeStopped, .networkDisconnected, .approvalWaiting, .containerUnhealthy, .taskFailed: true
         case .hostOnline, .containerExited, .imagePullFinished, .buildFinished: false
         }
     }
@@ -857,6 +858,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         case .containerExited: "Container exited unexpectedly"
         case .imagePullFinished: "Image pull finished"
         case .buildFinished: "Build finished"
+        case .taskFailed: "A job you started failed"
         }
     }
 
@@ -872,6 +874,7 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         case .containerExited: "Notify when a container on this Mac stops without being asked to."
         case .imagePullFinished: "Notify when an image pull completes, if Flotilla isn't in front."
         case .buildFinished: "Notify when a build completes, if Flotilla isn't in front."
+        case .taskFailed: "Notify when a pull, build, send or create you started fails, if Flotilla isn't in front."
         }
     }
 
@@ -887,6 +890,8 @@ public enum NotificationCategory: String, Codable, Sendable, CaseIterable, Ident
         case "approval-waiting": .approvalWaiting
         case "container-unhealthy": .containerUnhealthy
         case "container-gave-up": .error
+        // A job the user started failed (Q63, round 2): its own switch, on by default.
+        case TaskBoard.noticeKeyPrefix: .taskFailed
         default: nil
         }
     }

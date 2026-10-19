@@ -63,11 +63,12 @@ final class NoticeStore {
     @ObservationIgnored private var recentAlerts: [Date] = []
 
     /// Sends whatever is due: one each, or several as one when more than three a minute are.
-    func announce(hostName: (NoticeBook.Notice) -> String?, fix: (NoticeBook.Notice) -> String?) {
+    func announce(only: Set<NotificationCategory>? = nil,
+                  hostName: (NoticeBook.Notice) -> String?, fix: (NoticeBook.Notice) -> String?) {
         guard let notifier else { return }
         let now = Date()
         recentAlerts.removeAll { now.timeIntervalSince($0) >= NoticeAlerts.window }
-        let due = NoticeAlerts.due(book, at: now, enabled: notifier.isEnabled)
+        let due = NoticeAlerts.due(book, at: now, only: only, enabled: notifier.isEnabled)
         let plan = NoticeAlerts.plan(due, recent: recentAlerts, at: now)
         guard !plan.isEmpty else { return }
         book.markAnnounced(Set(plan.flatMap(\.notices).map(\.id)), at: now)
@@ -145,6 +146,11 @@ extension AppModel {
                 if self.hostMode.isAdmin {
                     self.notices.announceBack(resolved, hostName: self.noticeHostName)
                     self.notices.announce(hostName: self.noticeHostName, fix: { self.fix(for: $0)?.title })
+                } else {
+                    // Not an admin: nothing about the fleet, but a job this Mac's user started that
+                    // failed is theirs to hear about (Q63).
+                    self.notices.announce(only: [.taskFailed], hostName: self.noticeHostName,
+                                          fix: { self.fix(for: $0)?.title })
                 }
                 try? await Task.sleep(for: .seconds(5))
             }

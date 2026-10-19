@@ -26,11 +26,16 @@ public enum NoticeAlerts {
     }
 
     /// The notices due an announcement now, oldest first.
+    ///
+    /// - Parameter only: restricts it to these categories. A Mac that is not the admin's announces
+    ///   nothing about the fleet, but still tells its own user that a job they started failed.
     public static func due(_ book: NoticeBook, at now: Date,
+                           only: Set<NotificationCategory>? = nil,
                            enabled: (NotificationCategory) -> Bool) -> [NoticeBook.Notice] {
         book.notices.filter { notice in
             guard notice.isActive, notice.dismissed == nil, notice.announced == nil,
-                  let category = NotificationCategory.forNotice(key: notice.key), enabled(category)
+                  let category = NotificationCategory.forNotice(key: notice.key), enabled(category),
+                  only?.contains(category) ?? true
             else { return false }
             let grace = category == .hostOffline ? offlineGrace : 0
             return now.timeIntervalSince(notice.started) >= grace

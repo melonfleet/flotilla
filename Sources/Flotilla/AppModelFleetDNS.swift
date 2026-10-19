@@ -315,7 +315,10 @@ extension AppModel {
     @discardableResult
     func setUpZones(on hosts: [HostRef]) async -> Bool {
         let panel = OperationProgress(title: "Set up DNS zones on \(hosts.count) Mac\(hosts.count == 1 ? "" : "s")",
-                                      command: "container system dns create <zone>; [dns] domain = \"<zone>\"")
+                                      command: "container system dns create <zone>; [dns] domain = \"<zone>\"",
+                                      // No Retry: it can restart a Mac's runtime, which the owner
+                                      // confirmed once; asking again is the screen's job.
+                                      kind: .dnsSetup)
         tasks.start(panel)
         let zones = fleetZones
         // One task per Mac, all on the main actor: each spends its time waiting on its Mac.

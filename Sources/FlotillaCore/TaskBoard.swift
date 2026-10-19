@@ -13,6 +13,9 @@ public struct TaskBoard: Equatable, Sendable {
         case running
         case succeeded
         case failed(String)
+        /// Stopped by the user. Its own state, not a failure: nothing went wrong, so it raises no
+        /// notice and does not flag the status item.
+        case cancelled
 
         public var isFinished: Bool { self != .running }
         public var isFailure: Bool { if case .failed = self { true } else { false } }
@@ -21,23 +24,82 @@ public struct TaskBoard: Equatable, Sendable {
     public struct Entry: Equatable, Sendable, Identifiable {
         public let id: UUID
         public var title: String
+        public let kind: TaskKind
+        /// Where it was started: the section, or the Mac it runs on.
+        public var origin: String
         public var state: State = .running
         public let startedAt: Date
         public var finishedAt: Date?
         /// The newest thing the task said: an output line, or a running step's detail.
         public var latestLine: String?
+        /// The step it is on, for the row's secondary line.
+        public var currentStep: String?
+        /// How far along, 0...1, for a job that reports it (an image pull does). Not monotonic:
+        /// a pull discovers its blob count as it goes. Nil for a job that cannot say.
+        public var fraction: Double?
+        /// Whether the app holds what Retry would run and what Cancel would stop. The kind says
+        /// whether either is *allowed*; this says the call site supplied it.
+        public let hasRetryAction: Bool
+        public let hasCancelAction: Bool
+        /// Cancel was pressed and the child has not ended yet.
+        public var cancelRequested = false
+        /// Retry has been used: a new task took this one's place.
+        public var retried = false
 
-        public init(id: UUID, title: String, startedAt: Date) {
+        public init(id: UUID, title: String, kind: TaskKind = .unclassified, origin: String = "",
+                    hasRetryAction: Bool = false, hasCancelAction: Bool = false, startedAt: Date) {
             self.id = id
             self.title = title
+            self.kind = kind
+            self.origin = origin
+            self.hasRetryAction = hasRetryAction
+            self.hasCancelAction = hasCancelAction
             self.startedAt = startedAt
+        }
+
+        /// Cancel is offered while it runs, if its kind allows it, and not twice.
+        public var offersCancel: Bool {
+            state == .running && kind.canCancel && hasCancelAction && !cancelRequested
+        }
+
+        /// Retry is offered on a failed or cancelled job whose kind is safe to repeat, once.
+        public var offersRetry: Bool {
+            guard kind.canRetry, hasRetryAction, !retried else { return false }
+            switch state {
+            case .failed, .cancelled: return true
+            case .running, .succeeded: return false
+            }
+        }
+
+        public func elapsed(at now: Date) -> TimeInterval {
+            max(0, (finishedAt ?? now).timeIntervalSince(startedAt))
         }
     }
 
-    /// Where the drawer is. `.task` shows one task's steps and output; `.list` every task.
+    /// One collapsed row of the drawer's list, as the view draws it.
+    public struct Row: Equatable, Sendable, Identifiable {
+        public let id: UUID
+        public let title: String
+        public let origin: String
+        public let state: State
+        public let stateText: String
+        public let elapsedText: String
+        /// 0...1 while it runs, when the job reports one.
+        public let fraction: Double?
+        /// Whether this row is the one that just started and is lit for a moment.
+        public let isHighlighted: Bool
+        /// The short secondary line: the current step, or why it failed.
+        public let step: String?
+        public let isExpanded: Bool
+        public let offersCancel: Bool
+        public let isCancelling: Bool
+        public let offersRetry: Bool
+    }
+
+    /// Where the drawer is: down in the status bar, or up showing the list. One list, always —
+    /// a job's steps and output are its row opened, not a different screen.
     public enum Drawer: Equatable, Sendable {
         case hidden
-        case task(UUID)
         case list
     }
 
@@ -71,6 +133,13 @@ public struct TaskBoard: Equatable, Sendable {
     public private(set) var drawer: Drawer = .hidden
     /// Failures nobody has seen yet: they arrived while the drawer was down.
     public private(set) var unseenFailures: Set<UUID> = []
+    /// Rows opened in the list. Kept here, not in the view: the drawer is rebuilt when it is
+    /// minimised and raised, and an open row must stay open while lines arrive and after.
+    public private(set) var expanded: Set<UUID> = []
+    /// A row the list should scroll to; the view clears it once it has.
+    public private(set) var revealed: UUID?
+    /// The job that just started, lit for a moment so the eye finds its row; the owner clears it.
+    public private(set) var highlighted: UUID?
 
     public init() {}
 
@@ -89,11 +158,29 @@ public struct TaskBoard: Equatable, Sendable {
 
     // MARK: - Changes
 
-    /// A new job: it goes in the list and the drawer rises on it.
-    public mutating func start(_ id: UUID, title: String, at now: Date) {
+    /// A new job: it goes in the list, collapsed, and the drawer rises on it.
+    public mutating func start(_ id: UUID, title: String, kind: TaskKind = .unclassified, origin: String = "",
+                               hasRetryAction: Bool = false, hasCancelAction: Bool = false, at now: Date) {
         guard entry(id) == nil else { return }
-        entries.append(Entry(id: id, title: title, startedAt: now))
-        drawer = .task(id)
+        entries.append(Entry(id: id, title: title, kind: kind, origin: origin,
+                             hasRetryAction: hasRetryAction, hasCancelAction: hasCancelAction, startedAt: now))
+        drawer = .list
+        highlighted = id
+    }
+
+    public mutating func clearHighlight(_ id: UUID) { if highlighted == id { highlighted = nil } }
+
+    /// Clamped to 0...1; nil leaves the last figure standing, since a pull's lines without a
+    /// percentage are not a step backwards.
+    public mutating func setFraction(_ fraction: Double?, for id: UUID) {
+        guard let fraction, let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].fraction = min(1, max(0, fraction))
+    }
+
+    public mutating func setStep(_ step: String?, for id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = step?.trimmingCharacters(in: .whitespacesAndNewlines)
+        entries[index].currentStep = (trimmed?.isEmpty ?? true) ? nil : trimmed
     }
 
     public mutating func setLine(_ line: String?, for id: UUID) {
@@ -121,13 +208,57 @@ public struct TaskBoard: Equatable, Sendable {
         else { return [] }
         entries[index].state = .failed(reason)
         entries[index].finishedAt = now
-        if drawer == .hidden {
-            unseenFailures.insert(id)
-        } else {
-            drawer = .task(id)
-        }
+        entries[index].cancelRequested = false
+        // Collapsed rows stay collapsed (the caret is the only way in); a failure flags its row, which
+        // carries the reason as its secondary line. With the drawer down, the status item is flagged.
+        if drawer == .hidden { unseenFailures.insert(id) }
         return trim()
     }
+
+    /// Asks to stop a task. Nothing changes state yet: the child has to end first, and then
+    /// `cancel` records it.
+    /// - Returns: whether Cancel was allowed — the caller stops the process only if so.
+    @discardableResult
+    public mutating func requestCancel(_ id: UUID) -> Bool {
+        guard let index = entries.firstIndex(where: { $0.id == id }), entries[index].offersCancel else { return false }
+        entries[index].cancelRequested = true
+        return true
+    }
+
+    /// Marks a task cancelled: it ended because it was stopped. Not a failure.
+    @discardableResult
+    public mutating func cancel(_ id: UUID, at now: Date) -> [UUID] {
+        guard let index = entries.firstIndex(where: { $0.id == id }), !entries[index].state.isFinished
+        else { return [] }
+        entries[index].state = .cancelled
+        entries[index].finishedAt = now
+        entries[index].cancelRequested = false
+        return trim()
+    }
+
+    /// Claims Retry for `id`: it is not offered again and the failure notice goes.
+    /// - Returns: whether Retry was offered, so a double click starts one job, not two.
+    @discardableResult
+    public mutating func retry(_ id: UUID) -> Bool {
+        guard let index = entries.firstIndex(where: { $0.id == id }), entries[index].offersRetry else { return false }
+        entries[index].retried = true
+        return true
+    }
+
+    public mutating func toggleExpanded(_ id: UUID) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    /// Opens the list on one task, expanded and scrolled to — where a failure notice's button goes.
+    public mutating func reveal(_ id: UUID) {
+        guard entry(id) != nil else { return }
+        drawer = .list
+        expanded.insert(id)
+        revealed = id
+        unseenFailures.remove(id)
+    }
+
+    public mutating func clearReveal() { revealed = nil }
 
     /// Sinks the drawer into the status item. Nothing is cancelled.
     public mutating func minimise() { drawer = .hidden }
@@ -148,12 +279,6 @@ public struct TaskBoard: Equatable, Sendable {
         unseenFailures = []
     }
 
-    public mutating func show(_ id: UUID) {
-        guard entry(id) != nil else { return }
-        drawer = .task(id)
-        unseenFailures.remove(id)
-    }
-
     /// Removes a finished task. A running one cannot be cleared: it is still doing something.
     /// - Returns: whether it was removed.
     @discardableResult
@@ -172,6 +297,98 @@ public struct TaskBoard: Equatable, Sendable {
         entries.removeAll { $0.state.isFinished }
         forget(gone)
         return gone
+    }
+
+    // MARK: - Layout
+
+    /// The drawer's width: half the content area, never narrower than a row needs, and never wider
+    /// than the area itself — in a narrow window it takes the whole of it.
+    public static func drawerWidth(in available: Double, minimum: Double) -> Double {
+        guard available > 0 else { return minimum }
+        return min(available, max(minimum, (available / 2).rounded()))
+    }
+
+    // MARK: - Rows
+
+    public func rows(at now: Date) -> [Row] { ordered.map { row($0, at: now) } }
+
+    public func row(_ entry: Entry, at now: Date) -> Row {
+        let step: String? = switch entry.state {
+        case .failed(let reason): Self.firstLine(reason) ?? entry.currentStep
+        default: entry.currentStep
+        }
+        return Row(id: entry.id, title: entry.title, origin: entry.origin, state: entry.state,
+                   stateText: Self.stateText(entry), elapsedText: Self.elapsedText(entry.elapsed(at: now)),
+                   fraction: entry.state == .running ? entry.fraction : nil,
+                   isHighlighted: highlighted == entry.id, step: step, isExpanded: expanded.contains(entry.id), offersCancel: entry.offersCancel,
+                   isCancelling: entry.cancelRequested && entry.state == .running, offersRetry: entry.offersRetry)
+    }
+
+    public static func stateText(_ entry: Entry) -> String {
+        switch entry.state {
+        case .running: entry.cancelRequested ? "Cancelling" : "Running"
+        case .succeeded: "Done"
+        case .failed: "Failed"
+        case .cancelled: "Cancelled"
+        }
+    }
+
+    /// `12s`, `3m 05s`, `1h 02m` — short enough for a row.
+    public static func elapsedText(_ seconds: TimeInterval) -> String {
+        let total = Int(max(0, seconds))
+        if total < 60 { return "\(total)s" }
+        if total < 3600 { return "\(total / 60)m " + String(format: "%02d", total % 60) + "s" }
+        return "\(total / 3600)h " + String(format: "%02d", (total % 3600) / 60) + "m"
+    }
+
+    /// The first non-empty line, cut to a length a row can hold.
+    public static func firstLine(_ text: String, limit: Int = 140) -> String? {
+        guard let line = text.split(whereSeparator: \.isNewline)
+            .map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { !$0.isEmpty }) else { return nil }
+        return line.count > limit ? String(line.prefix(limit - 1)) + "\u{2026}" : line
+    }
+
+    // MARK: - Failure notices
+
+    /// A failed job as a notice (`NoticeBook`): the key stays the same for that task and no other.
+    public struct FailureNotice: Equatable, Sendable {
+        public let task: UUID
+        public let key: String
+        public let level: NoticeBook.Level
+        public let text: String
+    }
+
+    public static let noticeKeyPrefix = "task-failed"
+
+    public static func noticeKey(for id: UUID) -> String { "\(noticeKeyPrefix):\(id.uuidString)" }
+
+    public static func task(fromNoticeKey key: String) -> UUID? {
+        guard key.hasPrefix(noticeKeyPrefix + ":") else { return nil }
+        return UUID(uuidString: String(key.dropFirst(noticeKeyPrefix.count + 1)))
+    }
+
+    /// A job that cannot be repeated may have half-applied, so it is an error; one that can is a
+    /// warning — Retry is the fix.
+    public static func noticeLevel(for kind: TaskKind) -> NoticeBook.Level {
+        kind.canRetry ? .warning : .error
+    }
+
+    /// "Pull grafana/grafana:13 failed: <why>". The text before the first ": " is what the banner
+    /// and Notification Centre lead with; the reason, one line of it, is the detail.
+    public static func noticeText(title: String, reason: String) -> String {
+        guard let why = firstLine(reason) else { return "\(title) failed" }
+        return "\(title) failed: \(why)"
+    }
+
+    /// One notice per task that failed and has not been retried or cleared. Retrying or clearing
+    /// takes it out of this list, which is what ends the notice.
+    public var failureNotices: [FailureNotice] {
+        entries.compactMap { entry in
+            guard case .failed(let reason) = entry.state, !entry.retried else { return nil }
+            return FailureNotice(task: entry.id, key: Self.noticeKey(for: entry.id),
+                                 level: Self.noticeLevel(for: entry.kind),
+                                 text: Self.noticeText(title: entry.title, reason: reason))
+        }
     }
 
     // MARK: - The status item
@@ -217,7 +434,9 @@ public struct TaskBoard: Equatable, Sendable {
     private mutating func forget(_ ids: [UUID]) {
         for id in ids {
             unseenFailures.remove(id)
-            if drawer == .task(id) { drawer = entries.isEmpty ? .hidden : .list }
+            expanded.remove(id)
+            if revealed == id { revealed = nil }
+            if highlighted == id { highlighted = nil }
         }
     }
 }

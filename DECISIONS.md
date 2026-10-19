@@ -2927,3 +2927,61 @@ A second job took the first one's slot the same way.
 - **`ModalCard`** is now for acknowledgements only: About and Support Bundle. Two small forms still
   use it — New Tag (`TagPill`) and the host category sheets (`HostGroupViews`) — and are left as
   they are; moving them is a separate call.
+
+### Q63, round 2 (Kamal, 19 October): layout, collapsed rows, Cancel and Retry, failure notices
+
+This supersedes round 1 above where they differ: the Tasks item moved to the right edge, and the drawer is the right of the content area, a list of collapsed rows, rather than a full-width sheet that turns to a failing task.
+
+- **Status bar.** Left, in order: the `container` status as **a dot alone** (its menu's first line
+  states "Running", "Stopped"…; the full words are the tooltip and accessibility label), the Helper
+  (dot and word, "Running (version 5)" in its menu), the Flotilla version menu; thin dividers between.
+  Right: **Tasks alone**, text against the window edge; the update badge sits just left of it and
+  still waits while Tasks has something to say. The dot is a `Menu` with `.menuStyle(.button)` and
+  `.buttonStyle(.plain)` — a borderless `Menu` drops a shape label (checked by rendering both).
+- **Drawer.** On the right of the content area (right of the sidebar), **half its width**, never
+  under 420pt, the whole width where the area is narrower than that (`TaskBoard.drawerWidth`).
+  Height follows the rows, to half the content height, then the list scrolls. It shares one overlay
+  with Greta's floating chat, which sits just above it, so they never overlap.
+- **One list, rows collapsed, always.** A new job opens the drawer on the list with its row
+  collapsed and lit for 2.5 seconds. A row: caret, state mark, title, **progress in place** (bar and
+  percentage when the job reports one — image pulls do, from `ImagePullProgress.fraction`; otherwise
+  the elapsed time), and a line "where · state · [elapsed] · current step" (for a failure, the first
+  line of the reason). The caret is the only way into steps and output; expansion lives in
+  `TaskBoard.expanded`, so it survives new lines and the drawer being minimised. A failure flags its
+  row and does not open it; the drawer opens expanded on one row only from a failure notice.
+- **Cancel and Retry are declared by the job's `TaskKind`** (`FlotillaCore/TaskKind.swift`); a job
+  that says nothing is `.unclassified` and offers neither. A button needs the kind to allow it **and**
+  the call site to have supplied what it runs (`OperationProgress.retryAction` / `cancellation`).
+  No Pause: `container` cannot pause a pull, build or install, so it would be cancel-then-restart.
+
+  | Kind | Retry | Cancel | Why |
+  |---|---|---|---|
+  | Pull an image (this Mac) | yes | **yes** | re-does only what is missing; ends the `container pull` child, fetched layers stay |
+  | Build an image | yes | **yes** | same context and flags as captured; ends the `container build` child, leaves cache |
+  | Pull to several Macs | yes | no | each host pulls over its own wire |
+  | Send an image to hosts | yes | no | save plus several loads; no single process to stop |
+  | Create volume / network (here or on a host) | yes | no | a refused create made nothing; instant |
+  | Cluster delete / write kubeconfig / load image | yes | no | idempotent |
+  | Group Start / Stop / Restart | yes | no | Start skips running members; the others converge |
+  | Run a container | no | no | may have changed a volume's owner or made the container |
+  | Create a stack | no | no | networks, volumes, a group, containers: half-applied |
+  | Create / recreate a cluster | no | no | recreate deletes first; a create leaves a node VM |
+  | Create a machine | no | no | the record can exist after a failed boot |
+  | Import a configuration | no | no | removes what it replaces and builds in steps |
+  | Push a network / volume to Macs | no | no | Macs that took it would refuse a second create |
+  | DNS zone setup | no | no | can restart a Mac's runtime, confirmed once |
+
+  **Never cancellable, whatever the kind:** anything through the privileged helper mid-change, a
+  `container` install or upgrade, a host update in flight. None of those is a task today; any that
+  becomes one is declared `false`. Retry **runs the call again as a new row** and the old row stays,
+  marked retried (offered once, so a double click starts one job). **Cancelled** is its own state:
+  it never fails, flags the status item or raises a notice.
+- **Failure notices.** A failed job becomes an `AttentionItem` (`TaskBoard.failureNotices`; key
+  `task-failed:<task id>`), dismissible, level **warning** where Retry is the fix and **error** where
+  the job cannot be repeated, text "<title> failed: <first line of the reason>". Its fix, "Show Task",
+  opens the drawer on that row, expanded. Retry or Clear on the task ends the notice. It goes to macOS
+  Notification Centre when Flotilla is not the front app, through `NoticeAlerts`, under a new category
+  **`taskFailed`** ("A job you started failed", on by default; its setting is generated with the other
+  categories and read by `isEnabled`). It announces on a non-admin Mac too, which the fleet notices do
+  not: the job is that Mac's user's own. **Successes do not notify**; the status item's "finished" is
+  enough.

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import FlotillaCore
 
@@ -125,6 +126,7 @@ extension AppModel {
         }
         items += policyAttentionItems
         items += hostPolicyAttentionItems
+        items += taskFailureItems
         // For looking at a long list without breaking anything: launched with
         // FLOTILLA_FAKE_ATTENTION=12, Flotilla adds that many made-up items. Nothing sets it.
         if let fake = ProcessInfo.processInfo.environment["FLOTILLA_FAKE_ATTENTION"].flatMap(Int.init), fake > 0 {
@@ -175,6 +177,45 @@ extension AppModel {
                 await self.hostMode.refreshLiveStatus()
                 try? await Task.sleep(for: .seconds(30))
             }
+        }
+    }
+}
+
+extension AppModel {
+    /// A job the user started that failed (Q63, round 2): one dismissible notice per failed task, from
+    /// `TaskBoard.failureNotices` (the key, level and text are its, with the tests). Its fix opens the
+    /// Tasks drawer on that one task, expanded. Retry or Clear on the task takes it out of that list,
+    /// which ends the notice. A cancelled job is not here: stopping it was the user's choice.
+    var taskFailureItems: [AttentionItem] {
+        tasks.board.failureNotices.map { failure in
+            let id = failure.task
+            var item = AttentionItem(failure.text, Section.forTask(tasks.board.entry(id)?.kind ?? .unclassified),
+                                     key: failure.key, level: failure.level, dismissible: true,
+                                     fix: ("Show Task", { [weak self] in
+                                         self?.tasks.reveal(id)
+                                         // From a macOS notification Flotilla may be behind other apps.
+                                         NSApp.activate(ignoringOtherApps: true)
+                                         self?.openMainWindow?()
+                                     }))
+            item.host = .local
+            return item
+        }
+    }
+}
+
+extension Section {
+    /// The page a failed task's notice belongs to.
+    static func forTask(_ kind: TaskKind) -> Section {
+        switch kind {
+        case .pullImage, .pullImageToHosts, .buildImage, .sendImage: .images
+        case .createVolume: .volumes
+        case .createNetwork: .networks
+        case .pushDefinition: .hosts
+        case .runContainer, .groupAction, .createStack: .containers
+        case .createCluster, .recreateCluster, .clusterAction: .clusters
+        case .createMachine: .machines
+        case .dnsSetup: .dns
+        case .importConfiguration, .unclassified: .overview
         }
     }
 }

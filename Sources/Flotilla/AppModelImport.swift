@@ -65,6 +65,9 @@ extension AppModel {
         await withProgress(
             title: "Import “\(source)”",
             command: importPreview(file),
+            // No Retry: it can remove what it replaces and build in several steps; a second run would
+            // meet the half-done first.
+            kind: .importConfiguration,
             work: { [weak self] progress in
                 guard let self else { return "" }
                 var notes: [String] = []

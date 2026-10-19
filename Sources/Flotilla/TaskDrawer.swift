@@ -1,32 +1,44 @@
 import SwiftUI
 import FlotillaCore
 
-/// The Tasks drawer (Q63, Kamal, 19 October): rises from the bottom of the window, just above the
-/// status bar, when a job starts, and sinks into the status bar's Tasks item when minimised.
+/// The Tasks drawer (Q63, Kamal, 19 October): rises on the right of the content area, above the
+/// status bar's Tasks item, when a job starts, and sinks into that item when minimised.
 ///
 /// It replaced a centred sheet. That sheet was modal, so watching a forty-second pull meant not
 /// using the window for forty seconds, and its Hide orphaned the job's output. The drawer is not
-/// modal: the page above it stays live, and minimising it changes nothing about the job.
+/// modal: the page beside it stays live, and minimising it changes nothing about the job.
+///
+/// **One list, collapsed rows.** Every job is a row — caret, title, progress, and a line saying where
+/// it started, its state and its current step. The caret is the only way into the detail (steps and
+/// live output). The drawer's height follows its rows, to half the content area, and then the list
+/// scrolls.
 struct TaskDrawer: View {
     let tasks: TaskCenter
-    @State private var expanded: Set<UUID> = []
+    /// The content area the drawer sits in (right of the sidebar, below the window bar).
+    let bounds: CGSize
     @FocusState private var focused: Bool
+    @State private var listHeight: CGFloat = 0
 
-    static let height: CGFloat = 280
+    /// Rows must stay readable; below this the drawer takes the whole content width instead.
+    static let minimumWidth: CGFloat = 420
+    private static let headerHeight: CGFloat = 38
+
+    /// Half the content area's width, never narrower than a row needs, never wider than the area.
+    var width: CGFloat { TaskBoard.drawerWidth(in: bounds.width, minimum: Self.minimumWidth) }
+    /// About half the window's height, then the list scrolls.
+    private var maxListHeight: CGFloat { max(120, bounds.height * 0.5 - Self.headerHeight) }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            list
         }
-        .frame(height: Self.height)
+        .frame(width: width)
         .background(Theme.raisedSurface, in: shape)
         .overlay(shape.strokeBorder(Theme.hairline))
         .clipShape(shape)
         .shadow(color: .black.opacity(0.18), radius: 10, y: -2)
-        .padding(.horizontal, 12)
         // A click anywhere in it gives it focus, so Esc minimises without hunting for the button.
         .focusable()
         .focusEffectDisabled()
@@ -34,8 +46,7 @@ struct TaskDrawer: View {
         .onExitCommand { tasks.minimise() }
         // Asked for — the status item, ⌥⌘T — it takes focus, so Esc puts it away again. Risen
         // because a job started, it does not: the user may be typing in the form that started it.
-        .onAppear { if tasks.board.drawer == .list { focused = true } }
-        .onChange(of: tasks.board.drawer) { _, drawer in if drawer == .list { focused = true } }
+        .onAppear { if tasks.board.highlighted == nil { focused = true } }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tasks")
         .accessibilityHint("Press Escape to minimise into the status bar")
@@ -49,28 +60,11 @@ struct TaskDrawer: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            switch tasks.board.drawer {
-            case .task(let id):
-                Button {
-                    tasks.showList()
-                } label: {
-                    Label("All Tasks", systemImage: "list.bullet")
-                        .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.borderless)
-                .help("All tasks")
-                .accessibilityLabel("Show all tasks")
-                Text(tasks.board.entry(id)?.title ?? "Task")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
-            default:
-                Text("Tasks")
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
-            }
+            Text("Tasks")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
-            if tasks.board.drawer == .list, tasks.board.hasFinished {
+            if tasks.board.hasFinished {
                 Button("Clear Finished") { tasks.clearFinished() }
                     .controlSize(.small)
             }
@@ -84,87 +78,159 @@ struct TaskDrawer: View {
             .accessibilityLabel("Minimise tasks")
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .frame(height: Self.headerHeight)
     }
 
     @ViewBuilder
-    private var content: some View {
-        switch tasks.board.drawer {
-        case .task(let id):
-            if let progress = tasks.progress(id) {
-                TaskDetailView(progress: progress, fillsHeight: true)
-                    .padding(14)
-            }
-        default:
-            let ordered = tasks.board.ordered
-            if ordered.isEmpty {
-                Text("No tasks this session.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+    private var list: some View {
+        if tasks.board.entries.isEmpty {
+            Text("No tasks this session.")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 64)
+        } else {
+            ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(ordered) { entry in
-                            row(entry)
-                            Divider()
+                    // Elapsed times tick once a second while anything runs.
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(tasks.board.rows(at: timeline.date)) { row in
+                                TaskRowView(tasks: tasks, row: row)
+                                    .id(row.id)
+                                Divider()
+                            }
                         }
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+                }
+                // Follows the rows: one task is a short drawer, more make it taller, to the cap.
+                .frame(height: min(max(listHeight, 48), maxListHeight))
+                .onChange(of: tasks.board.revealed) { _, id in
+                    guard let id else { return }
+                    withAnimation { proxy.scrollTo(id, anchor: .center) }
+                    tasks.clearReveal()
+                }
+                .onAppear {
+                    if let id = tasks.board.revealed {
+                        proxy.scrollTo(id, anchor: .center)
+                        tasks.clearReveal()
                     }
                 }
             }
         }
     }
+}
 
-    private func row(_ entry: TaskBoard.Entry) -> some View {
-        let isOpen = expanded.contains(entry.id)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+/// One job: collapsed by default, opened by its caret alone.
+private struct TaskRowView: View {
+    let tasks: TaskCenter
+    let row: TaskBoard.Row
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 Button {
-                    if isOpen { expanded.remove(entry.id) } else { expanded.insert(entry.id) }
+                    tasks.toggleExpanded(row.id)
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "chevron.right")
-                            .rotationEffect(.degrees(isOpen ? 90 : 0))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 10)
-                        TaskStateMark(state: entry.state)
-                        Text(entry.title).lineLimit(1)
-                        Text(Self.stateText(entry.state))
-                            .foregroundStyle(entry.state.isFailure ? Theme.danger : .secondary)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text(entry.finishedAt ?? entry.startedAt, style: .time)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    .contentShape(Rectangle())
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(row.isExpanded ? 90 : 0))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(entry.title), \(Self.stateText(entry.state))")
-                .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+                .accessibilityLabel(row.isExpanded ? "Collapse \(row.title)" : "Expand \(row.title)")
                 .accessibilityHint("Shows the task's steps and output")
-                if entry.state.isFinished {
-                    Button("Clear") { tasks.clear(entry.id) }
-                        .controlSize(.small)
-                        .accessibilityLabel("Clear \(entry.title)")
+
+                TaskStateMark(state: row.state).padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(row.title).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 8)
+                        progress
+                    }
+                    Text(secondary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(row.state.isFailure ? Theme.danger : .secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
+
+                actions
             }
             .font(.system(size: 12))
-            if isOpen, let progress = tasks.progress(entry.id) {
-                TaskDetailView(progress: progress, fillsHeight: false)
-                    .padding(.leading, 18)
+            if row.isExpanded, let progress = tasks.progress(row.id) {
+                TaskDetailView(progress: progress)
+                    .padding(.leading, 40)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
+        .background(background)
+        .animation(.easeOut(duration: 0.4), value: row.isHighlighted)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(row.title), \(row.stateText)\(row.fraction.map { ", \(Int($0 * 100)) percent" } ?? "")")
     }
 
-    static func stateText(_ state: TaskBoard.State) -> String {
-        switch state {
-        case .running: "Running"
-        case .succeeded: "Done"
-        case .failed: "Failed"
+    /// A percentage and a bar where the job reports one, otherwise the time it has been going.
+    @ViewBuilder
+    private var progress: some View {
+        if let fraction = row.fraction {
+            HStack(spacing: 6) {
+                ProgressView(value: fraction).frame(width: 64)
+                Text("\(Int(fraction * 100))%").monospacedDigit().foregroundStyle(.secondary)
+                    .frame(minWidth: 30, alignment: .trailing)
+            }
+        } else {
+            Text(row.elapsedText).monospacedDigit().foregroundStyle(.secondary)
+        }
+    }
+
+    /// "Images · Running · [1/2] Fetching 42%" — where, state, and the step it is on (or, for a
+    /// failure, why).
+    private var secondary: String {
+        var parts = [row.origin, row.stateText]
+        if row.fraction != nil { parts.append(row.elapsedText) }
+        if let step = row.step { parts.append(step) }
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        HStack(spacing: 6) {
+            if row.offersCancel {
+                Button("Cancel") { tasks.cancel(row.id) }
+                    .controlSize(.small)
+                    .help("Stop it. Whatever it has fetched or built so far stays.")
+                    .accessibilityLabel("Cancel \(row.title)")
+            } else if row.isCancelling {
+                Text("Cancelling…").font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            if row.offersRetry {
+                Button("Retry") { tasks.retry(row.id) }
+                    .controlSize(.small)
+                    .help("Run it again as a new task")
+                    .accessibilityLabel("Retry \(row.title)")
+            }
+            if row.state.isFinished {
+                Button("Clear") { tasks.clear(row.id) }
+                    .controlSize(.small)
+                    .accessibilityLabel("Clear \(row.title)")
+            }
+        }
+    }
+
+    /// Lit briefly when it is the job that just started; red-tinted when it failed.
+    @ViewBuilder
+    private var background: some View {
+        if row.isHighlighted {
+            Color.accentColor.opacity(0.14)
+        } else if row.state.isFailure {
+            Theme.danger.opacity(0.07)
+        } else {
+            Color.clear
         }
     }
 }
@@ -174,8 +240,6 @@ struct TaskDrawer: View {
 /// run, and a panel that shows you a command you cannot copy has made you retype it.
 struct TaskDetailView: View {
     let progress: OperationProgress
-    /// In the drawer's single-task view the output takes the room left; in a list row it is fixed.
-    let fillsHeight: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -215,7 +279,7 @@ struct TaskDetailView: View {
                         }
                         .padding(8)
                     }
-                    .frame(minHeight: 60, maxHeight: fillsHeight ? .infinity : 120)
+                    .frame(minHeight: 60, maxHeight: 120)
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline))
                     // Follows the output, for the same reason the live log tail does: a feed that
@@ -225,8 +289,6 @@ struct TaskDetailView: View {
                     }
                     .onAppear { proxy.scrollTo(progress.output.count - 1, anchor: .bottom) }
                 }
-            } else if fillsHeight {
-                Spacer(minLength: 0)
             }
 
             if case .succeeded(let summary) = progress.outcome {
@@ -271,6 +333,7 @@ private struct TaskStateMark: View {
             case .running: ProgressView().controlSize(.small).scaleEffect(0.6)
             case .succeeded: Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.online)
             case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger)
+            case .cancelled: Image(systemName: "minus.circle").foregroundStyle(.secondary)
             }
         }
         .frame(width: 14, height: 14)
@@ -278,7 +341,7 @@ private struct TaskStateMark: View {
     }
 }
 
-/// The status bar's Tasks item: always there, beside the Helper. A spinner, a count and the newest
+/// The status bar's Tasks item: always there, alone at the right edge. A spinner, a count and the newest
 /// line while anything runs; red until looked at after a failure; "<title> finished" briefly after
 /// a success; otherwise just "Tasks". A click opens the drawer on the task list.
 struct TasksStatusItem: View {
@@ -291,6 +354,7 @@ struct TasksStatusItem: View {
             tasks.toggleList()
         } label: {
             HStack(spacing: 4) {
+                Spacer(minLength: 0)
                 symbol(headline)
                     .frame(width: 12, height: 12)
                     .accessibilityHidden(true)
@@ -310,7 +374,7 @@ struct TasksStatusItem: View {
         }
         .buttonStyle(.plain)
         // The line can be anything a command printed; it gives way before the version does.
-        .frame(maxWidth: 320, alignment: .leading)
+        .frame(maxWidth: 320, alignment: .trailing)
         .fixedSize(horizontal: false, vertical: true)
         .help(help(headline))
         .accessibilityLabel(label(headline))

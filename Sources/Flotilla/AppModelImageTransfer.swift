@@ -41,10 +41,14 @@ extension AppModel {
         let keepAwake = power.begin("sending an image")
         defer { power.end(keepAwake) }
         let reference = image.reference
-        let panel = OperationProgress(title: "Send an image to \(hosts.count) host\(hosts.count == 1 ? "" : "s")",
+        // Retry sends it again (the host loads the same archive; the replace was confirmed the first
+        // time). No Cancel: the save and the loads run through several hosts' wires.
+        let panel = OperationProgress(title: "Send \(ContainerImage.shortReference(reference)) to \(hosts.count) host\(hosts.count == 1 ? "" : "s")",
                                       command: (["container"] + ContainerCLI.saveImageArguments(
                                           reference, platform: ImageTransfer.platform(for: image) ?? "linux/arm64",
-                                          archive: "<archive>")).joined(separator: " "))
+                                          archive: "<archive>")).joined(separator: " "),
+                                      kind: .sendImage,
+                                      retry: { [weak self] in _ = await self?.sendImage(image, to: hosts) })
         tasks.start(panel)
 
         guard let platform = ImageTransfer.platform(for: image) else {

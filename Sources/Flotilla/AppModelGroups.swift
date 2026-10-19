@@ -83,6 +83,9 @@ extension AppModel {
         await withProgress(
             title: title("Start", group),
             command: groupCommandPreview(group, starting: true),
+            // Retry: Start skips members already running, so a second run picks up where it stopped.
+            kind: .groupAction,
+            retry: { [weak self] in await self?.startGroup(group) },
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let started = try await startMembers(of: group, progress: progress,
@@ -120,6 +123,8 @@ extension AppModel {
         await withProgress(
             title: title("Stop", group),
             command: groupCommandPreview(group, starting: false),
+            kind: .groupAction,
+            retry: { [weak self] in await self?.stopGroup(group) },
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let cli = try self.cli(for: group.place)
@@ -171,6 +176,8 @@ extension AppModel {
             title: title("Restart", group),
             command: groupCommandPreview(group, starting: false) + "\n"
                 + groupCommandPreview(group, starting: true),
+            kind: .groupAction,
+            retry: { [weak self] in await self?.restartGroup(group) },
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let cli = try self.cli(for: group.place)

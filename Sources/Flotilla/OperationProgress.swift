@@ -26,12 +26,25 @@ final class OperationProgress: Identifiable {
     /// something the user can reproduce and paste to someone else.
     let command: String
     let startedAt = Date()
+    /// What sort of job it is: the one thing that decides whether the drawer may offer Retry or
+    /// Cancel on it (`TaskKind`).
+    let kind: TaskKind
+    /// Where it was started — a section, or the Mac it runs on.
+    let origin: String
+    /// Runs the same job again, with what it was asked to do when it started: the same `AppModel`
+    /// call and arguments, captured by the call site. Nil where the job cannot be repeated safely.
+    let retryAction: (@MainActor () async -> Void)?
+    /// Ends the job's process, for a kind that can be stopped part-way. The call site hands this to
+    /// the command; nil for a job with nothing to stop.
+    let cancellation: Cancellation?
 
     private(set) var steps: [Step] = []
     /// Whatever the command actually said. Empty for commands that say nothing, which is most of
     /// them when they succeed.
     private(set) var output: [String] = []
     private(set) var outcome: Outcome? { didSet { onChange?() } }
+    /// How far along, 0...1, for a job that knows (an image pull). Nil otherwise.
+    private(set) var fraction: Double?
 
     /// Set by `TaskCenter`, so the status bar's line and the task's state follow this object by
     /// identity. Before the Tasks drawer (Q63) the model reached a running job only through a
@@ -50,6 +63,8 @@ final class OperationProgress: Identifiable {
     enum Outcome: Equatable {
         case succeeded(String)
         case failed(String)
+        /// Stopped by the user; not a failure.
+        case cancelled
 
         var isFailure: Bool { if case .failed = self { return true }; return false }
     }
@@ -64,9 +79,29 @@ final class OperationProgress: Identifiable {
         enum State { case running, done, failed }
     }
 
-    init(title: String, command: String) {
+    init(title: String, command: String, kind: TaskKind = .unclassified, origin: String? = nil,
+         retry: (@MainActor () async -> Void)? = nil) {
         self.title = title
         self.command = command
+        self.kind = kind
+        self.origin = origin ?? kind.section
+        self.retryAction = kind.canRetry ? retry : nil
+        self.cancellation = kind.canCancel ? Cancellation() : nil
+    }
+
+    /// The step the job is on, for the drawer's one-line summary.
+    var currentStep: String? {
+        guard let step = steps.last(where: { $0.state == .running }) else { return nil }
+        return step.detail.map { "\(step.title) — \($0)" } ?? step.title
+    }
+
+    /// True once Cancel has ended the child: the error that followed is the cancellation, not a
+    /// fault, and the call site records it with `cancelled()` instead of `fail(_:)`.
+    var wasCancelled: Bool { cancellation?.isCancelled ?? false }
+
+    func cancelled() {
+        if let index = steps.lastIndex(where: { $0.state == .running }) { steps[index].state = .failed }
+        outcome = .cancelled
     }
 
     /// Begins a step and returns its id, so the caller can finish exactly the one it started
@@ -95,6 +130,11 @@ final class OperationProgress: Identifiable {
     func update(_ id: UUID, detail: String) {
         guard let index = steps.firstIndex(where: { $0.id == id }) else { return }
         steps[index].detail = detail
+        onChange?()
+    }
+
+    func setFraction(_ value: Double) {
+        fraction = min(1, max(0, value))
         onChange?()
     }
 

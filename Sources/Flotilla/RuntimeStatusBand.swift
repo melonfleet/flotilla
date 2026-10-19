@@ -25,58 +25,54 @@ struct RuntimeStatusBand: View {
     @State private var showingConfirmation = false
 
     var body: some View {
-        // The dot sits beside the menu, not in its label: a borderless macOS `Menu` draws
-        // its label's text and drops the shapes around it, so the dot never showed.
-        HStack(spacing: 2) {
-            indicator
-            menu
-        }
-        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        .frame(height: 23)
-        .confirmationDialog(confirming.question,
-                            isPresented: $showingConfirmation,
-                            titleVisibility: .visible) {
-            Button(confirming.verb, role: .destructive) { perform(confirming) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(confirming.consequence)
-        }
+        // The dot alone (Kamal, 19 October): clicking it opens the menu, whose first line states the
+        // status. The words moved to the tooltip and the accessibility label, so nothing is lost to
+        // VoiceOver or to a hover.
+        statusMenu
+            .frame(height: 23)
+            .confirmationDialog(confirming.question,
+                                isPresented: $showingConfirmation,
+                                titleVisibility: .visible) {
+                Button(confirming.verb, role: .destructive) { perform(confirming) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(confirming.consequence)
+            }
+    }
+
+    private var fullStatus: String {
+        status.detail.map { "\(status.title) — \($0)" } ?? status.title
+    }
+
+    /// The first line of the menu: "Running", "Stopped" — the short word for the one verdict.
+    private var shortStatus: String {
+        if let setup = model.runtimeSetup { return RuntimeBanner.setupTitle(setup) }
+        return RuntimeStatus.short(model.preflight)
     }
 
     /// A spinner while the runtime is being started or restarted — "busy" and "unavailable" are
     /// different states, and a dot that stays amber through a restart says neither.
-    @ViewBuilder
-    private var indicator: some View {
-        if model.startingRuntime || settingUp {
-            ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 8, height: 8)
-        } else {
-            Circle()
-                .fill(status.tint)
-                .frame(width: 7, height: 7)
-                // On the dot itself: in the collapsed sidebar the block's tooltip lost to the menu's
-                // own, so pointing at the dot said nothing (the owner, on Tahoe, 10 October).
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
-                .help(status.detail.map { "\(status.title) — \($0)" } ?? status.title)
-                .accessibilityLabel(status.title)
-        }
-    }
-
-    private var menu: some View {
+    private var statusMenu: some View {
         Menu {
             runtimeActions()
         } label: {
-            Text(status.title)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .font(.system(size: 11))
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                .frame(height: 23)
-                .contentShape(Rectangle())
+            Group {
+                if model.startingRuntime || settingUp {
+                    ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 8, height: 8)
+                } else {
+                    Circle().fill(status.tint).frame(width: 7, height: 7)
+                }
+            }
+            .frame(width: 18, height: 23)
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .help("Container runtime options")
+        .fixedSize()
+        // On the dot itself: in the collapsed sidebar the block's tooltip lost to the menu's own, so
+        // pointing at the dot said nothing (the owner, on Tahoe, 10 October).
+        .help(fullStatus)
         .accessibilityLabel("Container runtime: \(status.title)")
         .accessibilityHint("Opens the runtime menu")
         .disabled(model.startingRuntime)
@@ -85,6 +81,9 @@ struct RuntimeStatusBand: View {
     /// The one builder for the menu, including enablement and confirmations.
     @ViewBuilder
     private func runtimeActions() -> some View {
+        // The first line states the status, now that the bar shows only a dot (Kamal, 19 October).
+        Text(shortStatus).disabled(true)
+        Divider()
         // All three lifecycle items, always, with the ones that do not apply greyed out
         // rather than absent — the owner's call, and the right one: a menu whose items move
         // around teaches nothing, while a disabled Stop says plainly that the system is
@@ -186,6 +185,21 @@ enum RuntimeStatus {
         case .serviceStopped:         (start: true, stopRestart: false)
         case .unusable:               (start: true, stopRestart: true)
         case .missing, .tooOld, nil:  (start: false, stopRestart: false)
+        }
+    }
+
+    /// One word for the menu's first line (Kamal, 19 October): the status bar shows only a dot, and
+    /// the menu it opens begins with this. Read from the same verdict as `describe`.
+    static func short(_ preflight: PreflightResult?) -> String {
+        switch preflight {
+        case .ok: "Running"
+        case .serviceStopped: "Stopped"
+        case .needsRestart: "Restart needed"
+        case .needsKernel: "No kernel installed"
+        case .tooOld: "Too old"
+        case .missing: "Not installed"
+        case .unusable: "Not usable"
+        case nil: "Checking…"
         }
     }
 

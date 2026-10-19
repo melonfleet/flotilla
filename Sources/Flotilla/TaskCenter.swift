@@ -18,6 +18,7 @@ final class TaskCenter {
     private(set) var now = Date()
     @ObservationIgnored private var live: [UUID: OperationProgress] = [:]
     @ObservationIgnored private var flashEnd: Task<Void, Never>?
+    @ObservationIgnored private var highlightEnd: Task<Void, Never>?
 
     var headline: TaskBoard.Headline { board.headline(at: now) }
 
@@ -27,18 +28,49 @@ final class TaskCenter {
     func start(_ progress: OperationProgress) {
         live[progress.id] = progress
         now = Date()
-        board.start(progress.id, title: progress.title, at: now)
+        board.start(progress.id, title: progress.title, kind: progress.kind, origin: progress.origin,
+                    hasRetryAction: progress.retryAction != nil, hasCancelAction: progress.cancellation != nil,
+                    at: now)
         progress.onChange = { [weak self, weak progress] in
             guard let self, let progress else { return }
             self.changed(progress)
         }
         changed(progress)
+        lightNewRow(progress.id)
+    }
+
+    /// The new job's row is lit for a moment, so the eye finds it in a list that may be long.
+    private func lightNewRow(_ id: UUID) {
+        highlightEnd?.cancel()
+        highlightEnd = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            self?.board.clearHighlight(id)
+        }
+    }
+
+    /// Opens the list on one task, expanded — where a failure notice's button goes.
+    func reveal(_ id: UUID) { board.reveal(id) }
+
+    /// Stops a job, if its kind can be stopped: the process is ended and the call site, seeing the
+    /// cancellation, records the task as cancelled. Nothing happens for a job that cannot be.
+    func cancel(_ id: UUID) {
+        guard board.requestCancel(id) else { return }
+        live[id]?.cancellation?.cancel()
+    }
+
+    /// Runs the same job again as a new task. The old row stays, marked as retried, so there is
+    /// one running job and one record of the failure — never two attempts claiming one row.
+    func retry(_ id: UUID) {
+        guard board.entry(id)?.offersRetry == true, let action = live[id]?.retryAction, board.retry(id) else { return }
+        Task { await action() }
     }
 
     func minimise() { board.minimise() }
     func toggleList() { board.toggleList() }
     func showList() { board.showList() }
-    func show(_ id: UUID) { board.show(id) }
+    func toggleExpanded(_ id: UUID) { board.toggleExpanded(id) }
+    func clearReveal() { board.clearReveal() }
 
     func clear(_ id: UUID) {
         if board.clear(id) { release([id]) }
@@ -49,6 +81,8 @@ final class TaskCenter {
     private func changed(_ progress: OperationProgress) {
         let id = progress.id
         board.setLine(progress.latestLine, for: id)
+        board.setStep(progress.currentStep, for: id)
+        board.setFraction(progress.fraction, for: id)
         guard board.entry(id)?.state == .running, let outcome = progress.outcome else { return }
         now = Date()
         switch outcome {
@@ -60,6 +94,9 @@ final class TaskCenter {
         case .failed(let reason):
             release(board.fail(id, reason: reason, at: now))
             AccessibilityNotification.Announcement("\(progress.title) failed").post()
+        case .cancelled:
+            release(board.cancel(id, at: now))
+            AccessibilityNotification.Announcement("\(progress.title) cancelled").post()
         }
     }
 

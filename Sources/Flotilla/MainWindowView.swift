@@ -66,6 +66,8 @@ struct MainWindowView: View {
     /// column put straight back, so all three routes agree and there is no way to end up with
     /// no navigation at all.
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    /// The content area right of the sidebar, which the Tasks drawer is sized against.
+    @State private var detailSize: CGSize = .zero
 
     /// Wide enough for an 18pt symbol inside the row's selection capsule, and fixed: `min`,
     /// `ideal` and `max` are all this in rail mode, because a rail you can drag out to 180pt is
@@ -330,25 +332,30 @@ struct MainWindowView: View {
                 // the status bar's hairline lining up with the bottom of the dashboard's content.
                 .padding(.top, -sidebarCardLift)
                 // ⌘G: Greta floating over whichever page is showing (Q52). Escape or ⌘G closes it.
+                //
+                // **One overlay for Greta and the Tasks drawer (Q63).** Both rise from the bottom-right
+                // corner; as separate overlays they drew on top of each other and Greta's chat box was
+                // under the drawer. Stacked, Greta sits just above the drawer and drops back to the
+                // corner when the drawer is minimised.
                 .overlay(alignment: .bottomTrailing) {
-                    // Never over her own page, which is the same chat at full size (the owner).
-                    if model.gretaEnabled, model.greta.overlayShown, selection != .greta {
-                        GretaOverlay(model: model) { navigate(to: $0) }
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    VStack(alignment: .trailing, spacing: 0) {
+                        // Never over her own page, which is the same chat at full size (the owner).
+                        if model.gretaEnabled, model.greta.overlayShown, selection != .greta {
+                            GretaOverlay(model: model) { navigate(to: $0) }
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
+                        // The Tasks drawer (Q63): on the right of the content area, above the status
+                        // bar's Tasks item that it sinks into. Here rather than on a section, because a
+                        // job outlives the screen that started it. An overlay, not a sheet: the window
+                        // stays usable while it is up.
+                        if model.tasks.board.drawer != .hidden {
+                            TaskDrawer(tasks: model.tasks, bounds: detailSize)
+                                .padding(.trailing, 10)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
                     }
                 }
                 .animation(.easeOut(duration: 0.18), value: model.greta.overlayShown)
-                // The Tasks drawer (Q63), over the split's bottom edge, which is the status bar's
-                // top — so it rises from the bar it minimises into. Here rather than on a section,
-                // because a job outlives the screen that started it. An overlay, not a sheet: the
-                // window stays usable while it is up. It draws its own surface, which `ModalCard`
-                // does not, so it does not have the old problem of text straight on the window.
-                .overlay(alignment: .bottom) {
-                    if model.tasks.board.drawer != .hidden {
-                        TaskDrawer(tasks: model.tasks)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.tasks.board.drawer == .hidden)
                 .onChange(of: selection, initial: true) { _, section in
                     model.currentSection = section
@@ -487,6 +494,8 @@ struct MainWindowView: View {
         } detail: {
             detailContent
                 .padding(.top, contentTopInset)
+                // The drawer is half of this, not half of the window.
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { detailSize = $0 }
         }
         // The sidebar toggle moved into `WindowBar`: with `.hiddenTitleBar` there is no title
         // bar to hang a `ToolbarItem` on, and the control belongs beside the logo anyway — which

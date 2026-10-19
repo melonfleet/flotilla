@@ -87,6 +87,11 @@ public protocol ContainerHost: Sendable {
     /// killed if it ignores that, and the run throws `ContainerCLIError.cancelled`.
     func run(_ args: [String], timeout: TimeInterval, cancellation: Cancellation) throws -> CommandResult
 
+    /// Both of the above: observed line by line, and stoppable. For a pull or a build the user can
+    /// cancel from the Tasks drawer.
+    func run(_ args: [String], timeout: TimeInterval, onLine: (@Sendable (String) -> Void)?,
+             cancellation: Cancellation) throws -> CommandResult
+
     /// Run with a deadline, writing `input` to the child's **stdin** and closing it.
     ///
     /// This exists for exactly one caller — `container registry login --password-stdin` — and
@@ -228,6 +233,12 @@ public extension ContainerHost {
         try run(args, timeout: timeout)
     }
 
+    /// Default: a host with no process to end runs to the end, as `run(_:timeout:cancellation:)`.
+    func run(_ args: [String], timeout: TimeInterval, onLine: (@Sendable (String) -> Void)?,
+             cancellation: Cancellation) throws -> CommandResult {
+        try run(args, timeout: timeout, onLine: onLine)
+    }
+
     /// Default: drop the observer. A double that implements only `run(_:)` keeps working and
     /// simply reports no progress, which is the honest degradation — a scripted host that
     /// returns instantly has none to report.
@@ -367,6 +378,11 @@ public struct LocalHost: ContainerHost {
 
     public func run(_ args: [String], timeout: TimeInterval, cancellation: Cancellation) throws -> CommandResult {
         try run(args, timeout: timeout, onLine: nil, input: nil, cancellation: cancellation)
+    }
+
+    public func run(_ args: [String], timeout: TimeInterval, onLine: (@Sendable (String) -> Void)?,
+                    cancellation: Cancellation) throws -> CommandResult {
+        try run(args, timeout: timeout, onLine: onLine, input: nil, cancellation: cancellation)
     }
 
     private func run(_ args: [String], timeout: TimeInterval,

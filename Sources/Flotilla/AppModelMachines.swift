@@ -231,10 +231,13 @@ extension AppModel {
     func createMachine(image: String, name: String?, cpus: Int?, memory: String?,
                        homeMount: String?) async -> Bool {
         return await withProgress(
-            title: "Create a machine",
+            title: "Create machine\(name.map { " \($0)" } ?? "")",
             command: ContainerCLI.createMachineArguments(image: image, name: name, cpus: cpus,
                                                          memory: memory, homeMount: homeMount)
                 .joined(separator: " "),
+            // No Retry: the machine's record can exist after a failed boot, and a second create
+            // would collide with it.
+            kind: .createMachine,
             work: { progress in
                 // Two steps, because a machine create genuinely is two things and the second is
                 // the slow one: the image has to be pulled before the VM record exists.

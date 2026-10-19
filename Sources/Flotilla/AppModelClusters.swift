@@ -71,6 +71,8 @@ extension AppModel {
             title: "Create the cluster “\(name)”",
             command: Self.createClusterPreview(name: name, cpus: cpus, memory: memory,
                                                nodeImage: nodeImage, autoRemove: autoRemove),
+            // No Retry: a create that failed late leaves a node VM behind that a second create trips on.
+            kind: .createCluster,
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("Creating \(name)")
@@ -166,6 +168,8 @@ extension AppModel {
             command: "container k8s delete --name \(name)  then  "
                 + Self.createClusterPreview(name: name, cpus: cpus, memory: memory,
                                             nodeImage: nil, autoRemove: false),
+            // No Retry: it deletes first, so a second attempt could delete a half-built replacement.
+            kind: .recreateCluster,
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let deleting = progress.begin("Deleting \(name)")
@@ -226,6 +230,8 @@ extension AppModel {
             title: "Create the cluster “\(name)” on \(hostName)",
             command: Self.createClusterPreview(name: name, cpus: cpus, memory: memory,
                                                nodeImage: nodeImage, autoRemove: autoRemove),
+            kind: .createCluster,
+            origin: hostName,
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("Creating \(name) on \(hostName) — this takes several minutes")
@@ -258,6 +264,8 @@ extension AppModel {
             title: "Recreate the cluster “\(name)” on \(hostName)",
             command: "container k8s delete --name \(name)  then  "
                 + Self.createClusterPreview(name: name, cpus: cpus, memory: memory, nodeImage: nil, autoRemove: false),
+            kind: .recreateCluster,
+            origin: hostName,
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let deleting = progress.begin("Deleting \(name) on \(hostName)")
@@ -293,6 +301,9 @@ extension AppModel {
         await withProgress(
             title: "Delete “\(name)” on \(hostName)",
             command: "container k8s delete --name \(name)",
+            kind: .clusterAction,
+            origin: hostName,
+            retry: { [weak self] in await self?.deleteRemoteCluster(cluster, on: fingerprint) },
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("Deleting \(name) on \(hostName)")
@@ -328,6 +339,8 @@ extension AppModel {
         let succeeded = await withProgress(
             title: "Write a kubeconfig for “\(cluster.node)”",
             command: "container k8s write-config --name \(cluster.node) --kubeconfig \(destination.path)",
+            kind: .clusterAction,
+            retry: { [weak self] in _ = await self?.writeKubeconfig(for: cluster) },
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("Writing \(destination.lastPathComponent)")
@@ -374,6 +387,8 @@ extension AppModel {
         await withProgress(
             title: "\(title) “\(cluster.node)”",
             command: "container k8s …",
+            kind: .clusterAction,
+            retry: { [weak self] in await self?.perform(on: cluster, title: title, action: action, work: work) },
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let step = progress.begin("\(title) \(cluster.node)")

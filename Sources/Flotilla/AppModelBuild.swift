@@ -43,15 +43,24 @@ extension AppModel {
             ?? "container build \(contextPath)"
 
         return await withProgress(
-            title: "Build an image",
+            title: tag.map { "Build \($0)" } ?? "Build an image",
             command: command,
+            // Retry builds again with the same context, flags and tag. Cancel ends the `container
+            // build` child; what it leaves is build cache.
+            kind: .buildImage,
+            retry: { [weak self] in
+                _ = await self?.buildImage(context: context, dockerfile: dockerfile, tag: tag,
+                                           buildArgs: buildArgs, labels: labels, noCache: noCache,
+                                           platform: platform, target: target)
+            },
             work: { progress in
                 let step = progress.begin("Building from \(contextPath)")
                 let result = try await Blocking.run {
                     try scoped.buildImage(contextDirectory: contextPath,
                                           dockerfile: dockerfile, tag: tag,
                                           buildArgs: buildArgs, labels: labels,
-                                          noCache: noCache, platform: platform, target: target)
+                                          noCache: noCache, platform: platform, target: target,
+                                          cancellation: progress.cancellation)
                 }
                 // A build is the one operation here with a lot to say, and the whole reason the
                 // panel has an output pane at all.

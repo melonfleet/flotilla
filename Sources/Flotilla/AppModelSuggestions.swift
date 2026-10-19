@@ -64,6 +64,10 @@ extension AppModel {
             title: host.isLocal ? "Create “\(choices.name)” from \(stack.title)"
                                 : "Create “\(choices.name)” from \(stack.title) on \(hostName)",
             command: stackCommandPreview(stack, choices: choices, on: host),
+            // No Retry: a stack makes networks, volumes, a group and containers; a failure part-way
+            // leaves some of them, and a second run would meet them.
+            kind: .createStack,
+            origin: host.isLocal ? nil : hostName,
             work: { [weak self] progress in
                 guard let self else { return "" }
                 // The host's own CLI, held to `.remotePeer` like every other host action.

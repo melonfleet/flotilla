@@ -21,21 +21,21 @@ struct WindowStatusBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // Left (Kamal, 19 October): the container dot, the helper, the Flotilla version, a thin
+            // line between each.
             RuntimeStatusBand(model: model)
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            HelperStatusItem(model: model)
-            // Kamal: a line between each item on the right.
+            HelperStatusItem(model: model)     // draws its own leading line, so a hidden one leaves none
             Divider().frame(height: 12)
-            // Always present (Q63). It is the one home for progress, so while it has something to
-            // say — a running job, an unseen failure, a moment of "finished" — the update badge
-            // waits; it comes back, still accurate, once the item is quiet.
-            TasksStatusItem(tasks: model.tasks)
-            Divider().frame(height: 12)
+            versionMenu
+            Spacer(minLength: 12)
+            // Right: Tasks alone, its text against the window edge. The update badge, when there is
+            // one, sits just left of it — and still waits while Tasks has something to say, as in
+            // round 1: it is the one home for progress, and the badge comes back once it is quiet.
             if let content = UpdateBadgeContent.current(model), model.tasks.headline == .quiet {
                 UpdateActivityBadge(content: content)
                     .transition(.opacity)
             }
-            versionMenu
+            TasksStatusItem(tasks: model.tasks)
                 .layoutPriority(1)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: UpdateBadgeContent.current(model))
@@ -146,6 +146,7 @@ private struct HelperStatusItem: View {
         if health != .unavailable {
             // The dot beside the menu, as `RuntimeStatusBand` does: a borderless `Menu` keeps only its
             // label's text, so a spacer inside it was dropped and the word slid under the dot.
+            Divider().frame(height: 12)
             HStack(spacing: 4) {
                 Group {
                     if monitor.busy {

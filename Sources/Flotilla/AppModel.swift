@@ -1154,8 +1154,10 @@ final class AppModel {
 
     func createVolume(_ name: String, options: ContainerCLI.VolumeOptions = .init()) async {
         await withProgress(
-            title: "Create a volume",
+            title: "Create volume \(name)",
             command: ContainerCLI.createVolumeArguments(name, options: options).joined(separator: " "),
+            kind: .createVolume,
+            retry: { [weak self] in await self?.createVolume(name, options: options) },
             work: { progress in
                 let step = progress.begin("Creating \(name)")
                 let result = try await Blocking.run { [cli] in
@@ -1212,8 +1214,10 @@ final class AppModel {
 
     func createNetwork(_ name: String, options: ContainerCLI.NetworkOptions) async {
         await withProgress(
-            title: "Create a network",
+            title: "Create network \(name)",
             command: ContainerCLI.createNetworkArguments(name, options: options).joined(separator: " "),
+            kind: .createNetwork,
+            retry: { [weak self] in await self?.createNetwork(name, options: options) },
             work: { progress in
                 let step = progress.begin("Creating \(name)")
                 let result = try await Blocking.run { [cli] in
@@ -1300,12 +1304,19 @@ final class AppModel {
     /// - Parameters:
     ///   - confirm: called after the refresh; return true once the new item is visible. A
     ///     progress panel that closes before the list agrees with it has not solved anything.
+    ///   - kind: what sort of job it is, which decides whether the drawer offers Retry and Cancel
+    ///     (`TaskKind`). A call site that says nothing offers neither.
+    ///   - origin: where it was started, when that is a Mac rather than the section.
+    ///   - retry: the same call again, with the arguments this one had.
     @discardableResult
     func withProgress(title: String,
                       command: String,
+                      kind: TaskKind = .unclassified,
+                      origin: String? = nil,
+                      retry: (@MainActor () async -> Void)? = nil,
                       work: @MainActor (OperationProgress) async throws -> String,
                       confirm: (@MainActor () async -> Bool)? = nil) async -> Bool {
-        let progress = OperationProgress(title: title, command: command)
+        let progress = OperationProgress(title: title, command: command, kind: kind, origin: origin, retry: retry)
         tasks.start(progress)
         do {
             let summary = try await work(progress)
@@ -1325,7 +1336,8 @@ final class AppModel {
             progress.succeed(summary)
             return true
         } catch {
-            progress.fail(String(describing: error))
+            // Cancel ended the child: that is the user's choice, not a fault, and raises no notice.
+            if progress.wasCancelled { progress.cancelled() } else { progress.fail(String(describing: error)) }
             return false
         }
     }
@@ -1351,16 +1363,23 @@ final class AppModel {
         // The panel and `activePull` are not duplicates: the panel is the report you watch, and
         // `activePull` is what the Images list shows after you dismiss it, so pressing Back
         // during a forty-second pull still does not look like a cancelled pull.
+        // Retry pulls again (a pull re-does only what is missing); Cancel ends the `container pull`
+        // child, which leaves the layers already fetched in place.
         let panel = OperationProgress(
-            title: "Pull an image",
-            command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
+            title: "Pull \(reference)",
+            command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "),
+            kind: .pullImage,
+            retry: { [weak self] in await self?.pullImage(reference, scheme: scheme) })
         tasks.start(panel)
         let pullStep = panel.begin("Pulling \(reference)")
+        let cancellation = panel.cancellation
         do {
             _ = try await Blocking.run { [cli] in
-                try cli.pull(reference, scheme: scheme) { progress in
+                try cli.pull(reference, scheme: scheme, cancellation: cancellation) { progress in
                     Task { @MainActor in
                         self.notePullProgress(progress, for: reference)
+                        if let fraction = progress.fraction { panel.setFraction(fraction) }
+                        panel.update(pullStep, detail: Self.pullLine(progress))
                         // The panel itself, by identity: it is main-actor isolated, so this hop is
                         // what makes capturing it safe. Through a single "active" slot, as this
                         // used to be, a hidden panel or a second job sent the lines nowhere.
@@ -1392,8 +1411,12 @@ final class AppModel {
             Task { [notifier] in await notifier.post(.imagePullFinished, title: "Image pulled", body: "\(reference) is ready.") }
             return true
         } catch {
-            panel.fail(String(describing: error))
-            actionError = "Pull failed for \(reference): \(error)"
+            if panel.wasCancelled {
+                panel.cancelled()
+            } else {
+                panel.fail(String(describing: error))
+                actionError = "Pull failed for \(reference): \(error)"
+            }
             await refreshImages()
             return false
         }
@@ -1416,8 +1439,10 @@ final class AppModel {
         let keepAwake = power.begin("pulling an image")
         defer { power.end(keepAwake) }
         let panel = OperationProgress(
-            title: "Pull an image to \(hosts.count) Mac\(hosts.count == 1 ? "" : "s")",
-            command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
+            title: "Pull \(reference) to \(hosts.count) Mac\(hosts.count == 1 ? "" : "s")",
+            command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "),
+            kind: .pullImageToHosts,
+            retry: { [weak self] in await self?.pullImage(reference, to: hosts, scheme: scheme) })
         tasks.start(panel)
 
         struct Job { let host: HostRef; let name: String; let step: UUID; let cli: ContainerCLI }
@@ -1615,6 +1640,12 @@ final class AppModel {
         await withProgress(
             title: "\(title) on \(hostName)",
             command: command.joined(separator: " "),
+            kind: kind == .volume ? .createVolume : .createNetwork,
+            origin: hostName,
+            retry: { [weak self] in
+                await self?.createOnHost(fingerprint, kind: kind, title: title, name: name,
+                                         command: command, exists: exists, operation)
+            },
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let remote = try self.cli(for: host)
@@ -2437,8 +2468,11 @@ final class AppModel {
         }
         let hostName = hostMode.hosts.first { $0.fingerprint == fingerprint }?.displayName ?? "the host"
         await withProgress(
-            title: "Run a container on \(hostName)",
+            title: "Run \(options.name ?? image) on \(hostName)",
             command: Self.runDisplayLine(image: image, options: options, command: command, host: host),
+            // No Retry: a run may already have made the container or changed a volume's owner.
+            kind: .runContainer,
+            origin: hostName,
             work: { [weak self] progress in
                 guard let self else { return "" }
                 let remote = try self.cli(for: host)
@@ -2464,8 +2498,9 @@ final class AppModel {
     func runContainer(image: String, options: ContainerCLI.RunOptions, command: [String] = [],
                       volumeOwners: [String: VolumeOwner] = [:]) async {
         await withProgress(
-            title: "Run a container",
+            title: "Run \(options.name ?? image)",
             command: Self.runDisplayLine(image: image, options: options, command: command, host: .local),
+            kind: .runContainer,
             work: { progress in
                 try await self.prepareVolumeOwnership(cli: self.cli, host: .local, image: image,
                     mounts: options.volumes, owners: volumeOwners, progress: progress)

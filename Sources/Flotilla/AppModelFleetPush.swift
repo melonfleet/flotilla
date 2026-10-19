@@ -93,8 +93,10 @@ extension AppModel {
     private func push(title: String, kind: ActivityKind, name: String, hosts: [HostRef],
                       prepare: (HostRef) throws -> (detail: String, run: @Sendable (ContainerCLI) throws -> CommandResult))
         async {
+        // No Retry: Macs that already took it would refuse a second create, and the report would
+        // fail again for them.
         let panel = OperationProgress(title: title, command: hosts.count == 1
-                                      ? "1 host" : "\(hosts.count) hosts")
+                                      ? "1 host" : "\(hosts.count) hosts", kind: .pushDefinition)
         tasks.start(panel)
         var done: [String] = [], failed: [String] = []
         for host in hosts {

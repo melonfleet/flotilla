@@ -330,13 +330,15 @@ public struct ContainerCLI: Sendable {
     ///   commands whose progress is worth showing. Passing it changes what the caller *sees*,
     ///   never what runs: validation happens first and identically either way.
     private func execute(_ args: [String],
-                         onLine: (@Sendable (String) -> Void)? = nil) throws -> CommandResult {
+                         onLine: (@Sendable (String) -> Void)? = nil,
+                         cancellation: Cancellation? = nil) throws -> CommandResult {
         let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
                                                 execPolicy: execPolicy, wirePolicy: wirePolicy)
         // The deadline finally reaches the process. `timeoutHint` sat on the spec unused for
         // weeks — DECISIONS.md Q14 admitted it "enforces nothing today" — which meant a wedged
         // child held its pipes for the life of the app.
-        return try succeeding(validated.arguments, timeout: validated.timeoutHint, onLine: onLine)
+        return try succeeding(validated.arguments, timeout: validated.timeoutHint, onLine: onLine,
+                              cancellation: cancellation)
     }
 
     /// `execute`'s counterpart for a command that does not end: same validation, no deadline,
@@ -391,8 +393,13 @@ public struct ContainerCLI: Sendable {
     /// throwing *before* execution, which is why validation errors surfaced and real CLI
     /// errors did not.
     private func succeeding(_ args: [String], timeout: TimeInterval = 0,
-                            onLine: (@Sendable (String) -> Void)? = nil) throws -> CommandResult {
-        let result = try host.run(args, timeout: timeout, onLine: onLine)
+                            onLine: (@Sendable (String) -> Void)? = nil,
+                            cancellation: Cancellation? = nil) throws -> CommandResult {
+        let result = if let cancellation {
+            try host.run(args, timeout: timeout, onLine: onLine, cancellation: cancellation)
+        } else {
+            try host.run(args, timeout: timeout, onLine: onLine)
+        }
         guard result.ok else {
             throw ContainerCLIError.commandFailed(
                 // The subcommand only, never the argv: `run --env NAME=…` carries a group's
@@ -735,10 +742,11 @@ public struct ContainerCLI: Sendable {
     @discardableResult
     public func pull(_ reference: String,
                      scheme: RegistryScheme = .default,
+                     cancellation: Cancellation? = nil,
                      onProgress: @escaping @Sendable (ImagePullProgress) -> Void) throws -> CommandResult {
-        try execute(Self.pullArguments(reference, scheme: scheme)) { line in
+        try execute(Self.pullArguments(reference, scheme: scheme), onLine: { line in
             if let progress = ImagePullProgress(line: line) { onProgress(progress) }
-        }
+        }, cancellation: cancellation)
     }
 
     /// The argv a pull will run, for the command preview in the rail as well as for the pull
@@ -848,7 +856,8 @@ public struct ContainerCLI: Sendable {
     @discardableResult
     public func buildImage(contextDirectory: String?, dockerfile: String?, tag: String?,
                            buildArgs: [String], labels: [String], noCache: Bool,
-                           platform: String?, target: String?) throws -> CommandResult {
+                           platform: String?, target: String?,
+                           cancellation: Cancellation? = nil) throws -> CommandResult {
         var args = ["build"]
         if let dockerfile, !dockerfile.isEmpty { args += ["--file", dockerfile] }
         if let tag, !tag.isEmpty { args += ["--tag", tag] }
@@ -858,7 +867,7 @@ public struct ContainerCLI: Sendable {
         if let platform, !platform.isEmpty { args += ["--platform", platform] }
         if let target, !target.isEmpty { args += ["--target", target] }
         if let contextDirectory, !contextDirectory.isEmpty { args.append(contextDirectory) }
-        return try execute(args)
+        return try execute(args, cancellation: cancellation)
     }
 
     // MARK: Volumes — mutate
