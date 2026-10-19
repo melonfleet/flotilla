@@ -198,6 +198,13 @@ public final class RemoteHost: ContainerHost, @unchecked Sendable {
             let waiting: [@Sendable (Result<AdminConnection, Error>) -> Void]? = self.lock.withLock {
                 if self.opening === fresh { self.opening = nil }
                 self.connecting = false
+                // A refusal from the Mac we expected (not trusted yet, a protocol it won't speak) is
+                // still an answer: keep when it arrived, or the host looks silent (Kyle, 19 October).
+                // Only from the expected key: a different Mac at the address is not this host.
+                if case .failure = outcome, fresh.hostFingerprint == expected,
+                   let received = fresh.lastReceivedAt {
+                    self.retiredReceivedAt = max(self.retiredReceivedAt ?? received, received)
+                }
                 if self.closed { return nil }
                 if case .success = outcome, case .success(let welcome) = result {
                     self.connection = fresh

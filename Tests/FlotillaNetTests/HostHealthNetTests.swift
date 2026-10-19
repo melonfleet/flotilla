@@ -172,4 +172,19 @@ struct HostHealthNetTests {
         let received = try #require(admin.lastReceivedAt)
         #expect(received < askedAt, "a local timeout is not the host's word")
     }
+
+    @Test func aRefusalFromTheExpectedHostStillCountsAsHearingFromIt() async throws {
+        let rig = try await loopback.rig()
+        defer { rig.tearDown() }
+        // Not trusted on the host: it answers the handshake with trusted == false.
+        let host = loopback.remote(rig)
+        defer { host.close() }
+        let asked = Date()
+        do {
+            _ = try await host.call(.hostFacts)
+            Issue.record("an untrusted admin was served")
+        } catch {}
+        let heard = try #require(host.lastReceivedAt, "the host's refusal arrived, so it was heard")
+        #expect(heard >= asked)
+    }
 }
