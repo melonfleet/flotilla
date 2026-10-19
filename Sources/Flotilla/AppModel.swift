@@ -728,6 +728,9 @@ final class AppModel {
 
     /// Result of the last preflight, so the UI can explain *why* nothing is listed.
     private(set) var preflight: PreflightResult?
+    /// The release of the kernel `container` boots, from the last preflight that found it working
+    /// (`Preflight.inspect`); nil until then, or for a kernel of a name Flotilla can't read.
+    private(set) var installedKernelRelease: String?
 
     /// Check the runtime before listing anything. Without this the app cannot tell
     /// "no containers" from "no `container` installed", which are very different and
@@ -739,8 +742,9 @@ final class AppModel {
     /// - Parameter autoStartingService: whether a stopped service should be started here.
     ///   False when called *by* `startRuntime`, which would otherwise recurse.
     func runPreflight(autoStartingService: Bool) async {
-        let result = await Blocking.run { [cli] in Preflight(cli: cli).run() }
+        let (result, kernel) = await Blocking.run { [cli] in Preflight(cli: cli).inspect() }
         preflight = result
+        installedKernelRelease = kernel
         switch result {
         case .ok, .needsRestart, .needsKernel: noteRuntimeRunning()
         default: break
@@ -1760,6 +1764,7 @@ final class AppModel {
     // internal property is redundant and the compiler says so.
     var machines: [ContainerMachine] = []
     var machinesState: LoadState = .idle
+    var machineUpdateChecks: [String: MachineUpdateCheckState] = [:]
     nonisolated static let maxConcurrentMachineInspections = 2
     /// A machine's image is immutable; cache it per machine id and drop it when the machine goes away.
     @ObservationIgnored var machineImages: [String: ContainerMachine.MachineImage] = [:]
@@ -1999,14 +2004,20 @@ final class AppModel {
     /// These exist so a menu command drives the *same* state the toolbar button sets, rather
     /// than presenting a second copy of the form from the app scene — two code paths to one
     /// screen is how they drift apart.
-    func requestPullForm() {
+    func requestPullForm() { requestPullForm(reference: nil) }
+
+    /// The same, with the repository filled in. Nothing is pulled until the user chooses a tag.
+    func requestPullForm(reference: String?) {
         present {
             self.pendingSection = .images
+            self.pendingPullReference = reference
             self.pendingPullForm = true
         }
     }
 
     var pendingPullForm = false
+    /// A repository the pull form opens with, set alongside `pendingPullForm` and consumed with it.
+    var pendingPullReference: String?
 
     /// Ask the Images section to open its build form.
     func requestBuildForm() {

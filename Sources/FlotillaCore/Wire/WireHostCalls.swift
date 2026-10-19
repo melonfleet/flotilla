@@ -240,6 +240,10 @@ public struct HostFacts: Sendable, Equatable, Codable {
     public var acceptsAdminUpdates: Bool?
     public var installsContainerItself: Bool?
     public var kernelInstalled: Bool?
+    /// The release of the kernel `container` boots there, `6.18.35`, read from the name of the file
+    /// its default-kernel link points at (`Preflight.installedKernelRelease`). Matched on the admin
+    /// Mac against the report's kernel table; nil from an older host or a kernel of another name.
+    public var kernelRelease: String?
     /// When it starts a stopped `container` service by itself, and whether a profile fixes that.
     public var autoStartRuntime: ServiceAutostartPolicy?
     public var autoStartRuntimeLocked: Bool?

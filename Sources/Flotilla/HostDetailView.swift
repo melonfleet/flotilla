@@ -510,6 +510,8 @@ struct HostDetailView: View {
                 row("Kernel", facts?.kernelInstalled.map { $0 ? "Installed" : "Not installed" } ?? "—")
                 runtimeAction
             }
+            macOSAdvisoryCard
+            kernelAdvisoryCard
         }
         .confirmationDialog("Upgrade container on \(name) to \(ContainerRuntime.expectedVersion)?",
                             isPresented: $confirmingRuntime, titleVisibility: .visible) {
@@ -523,6 +525,95 @@ struct HostDetailView: View {
             Text("\(name) downloads Apple's container installer, and its Flotilla Helper installs it after checking it is Apple's. "
                  + (running > 0 ? "container restarts there, which stops the \(running) running container\(running == 1 ? "" : "s")." : "Nothing is running there."))
         }
+    }
+
+    // MARK: Advisories (follow-ups 2 and 5)
+
+    /// The macOS this Mac runs, as This Mac reads it or the host last said.
+    private var hostMacOS: String? {
+        host.isLocal ? AppModel.macOSVersion : (facts?.macOSVersion ?? peer?.details.macOSVersion)
+    }
+
+    /// The report's platform section, matched here against this Mac's version and kernel. Nothing
+    /// about the host is sent anywhere for it, and nothing acts on it.
+    private var platform: VulnerabilityReport.Platform? { model.vulnerabilityReport?.platform }
+
+    /// Why there is nothing to show, when there isn't.
+    private var advisoryAbsence: String {
+        if !model.reportUpdater.isOn { return "Security advisories come with the daily vulnerability report, which is off in this build." }
+        if model.vulnerabilityReport == nil { return "The daily vulnerability report hasn't been downloaded yet." }
+        return "Today's report doesn't include this."
+    }
+
+    @ViewBuilder
+    private var macOSAdvisoryCard: some View {
+        card("macOS security") {
+            row("Installed", hostMacOS ?? "—")
+            if let installed = hostMacOS, let advice = platform?.macOSAdvice(for: installed) {
+                advisoryLine(advice.summary, warning: advice.newer == nil ? false : advice.fixes > 0 ? true : nil)
+                if let next = advice.nextMajor { row("Newest macOS", next) }
+                advisoryNote("From Apple's security release notes" + (advice.asOf.map { ", as of \($0.formatted(date: .abbreviated, time: .omitted))" } ?? "") + ".")
+            } else if hostMacOS != nil, platform?.macOS != nil {
+                advisoryNote("The report covers macOS 26 and later.")
+            } else if hostMacOS != nil {
+                advisoryNote(advisoryAbsence)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var kernelAdvisoryCard: some View {
+        let release = facts?.kernelRelease.flatMap { VulnerabilityReport.Platform.isKernelRelease($0) ? $0 : nil }
+        card("Container kernel") {
+            row("Installed", release ?? "—")
+            if let release, let advice = platform?.kernelAdvice(forRelease: release) {
+                switch advice {
+                case .recommended:
+                    advisoryLine(advice.summary, warning: false)
+                case .older(let kernel, _):
+                    advisoryLine(advice.summary, warning: kernel.serious > 0)
+                    ForEach(kernel.top, id: \.id) { issue in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(issue.id).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                            Text(issue.score.formatted(.number.precision(.fractionLength(1))))
+                                .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                            Text(issue.summary).font(.system(size: 11)).foregroundStyle(.secondary)
+                                .lineLimit(1).truncationMode(.tail).help(issue.summary)
+                        }
+                    }
+                    if kernel.unscored > 0 {
+                        advisoryNote("It also fixes \(kernel.unscored) \(kernel.unscored == 1 ? "issue" : "issues") with no severity score yet.")
+                    }
+                    advisoryNote(VulnerabilityReport.Platform.kernelCountsCaveat)
+                case .notCovered:
+                    advisoryLine(advice.summary, warning: nil)
+                }
+                advisoryNote(VulnerabilityReport.Platform.kernelScope)
+            } else if release != nil {
+                advisoryNote(advisoryAbsence)
+            } else if !host.isLocal, facts != nil, facts?.kernelRelease == nil {
+                advisoryNote("\(name) didn't say which kernel it has. An older Flotilla there doesn't report it.")
+            }
+        }
+    }
+
+    /// `warning`: true for fixes waiting, false for nothing waiting, nil for not known.
+    private func advisoryLine(_ text: String, warning: Bool?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Group {
+                switch warning {
+                case true?: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
+                case false?: Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.online)
+                case nil: Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
+                }
+            }
+            .font(.system(size: 11)).accessibilityHidden(true)
+            Text(text).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func advisoryNote(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder

@@ -1213,6 +1213,19 @@ public enum Allowlist {
 
     private static func substituting(_ policy: ExecPolicy, into spec: CommandSpec,
                                      args: [String]) -> CommandSpec {
+        // Separate exact specs for package checks; the boot and login-shell grammars stay intact.
+        // Only the local owner's production policy can select these commands.
+        if policy == .interactiveShell, spec.path == ["machine", "run"],
+           let separator = args.firstIndex(of: "--"),
+           let operation = MachineUpdateCommand.allCases.first(where: {
+               Array(args.suffix(from: separator + 1)) == $0.command
+           }) {
+            return CommandSpec(["machine", "run"], mutates: true, timeoutHint: 120,
+                               flags: [FlagSpec(long: "name", value: .identifier)],
+                               trailing: .exact(operation.command),
+                               exposure: .localOnly(reason: "package checks run inside a named local machine"),
+                               requiredFlags: ["name"])
+        }
         guard policy == .interactiveShell else { return spec }
         switch spec.path {
         case ["exec"]: return interactiveExec

@@ -26,72 +26,81 @@ public struct Preflight: Sendable {
     /// Whether a file exists at a path, following symlinks. Injected for the same reason as
     /// `locate`: the kernel check must be testable on a machine with no `container`, and on Linux.
     private let fileExists: @Sendable (String) -> Bool
+    /// A symlink's target, or `nil` if the path is not one. Injected like `fileExists`.
+    private let readLink: @Sendable (String) -> String?
 
     public init(cli: ContainerCLI,
                 minimumVersion: VersionTriple = Preflight.defaultMinimumVersion,
                 locate: @escaping @Sendable (String) -> String? = { Preflight.locateBinary($0) },
-                fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) {
+                fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+                readLink: @escaping @Sendable (String) -> String? = { try? FileManager.default.destinationOfSymbolicLink(atPath: $0) }) {
         self.cli = cli
         self.minimumVersion = minimumVersion
         self.locate = locate
         self.fileExists = fileExists
+        self.readLink = readLink
     }
 
     /// Runs the checklist once. Synchronous and side-effect-free beyond the `container`
     /// invocations `cli` itself makes — safe to call from onboarding, a settings pane's
     /// "Re-run" button, or the diagnostics snapshot alike.
-    public func run() -> PreflightResult {
-        guard let path = locate("container") else { return .missing }
+    public func run() -> PreflightResult { inspect().result }
+
+    /// `run()`, and the release of the kernel `container` boots (`installedKernelRelease`) when the
+    /// answer is `.ok` — read from the same `system status`, so it costs no extra process.
+    public func inspect() -> (result: PreflightResult, kernelRelease: String?) {
+        guard let path = locate("container") else { return (.missing, nil) }
 
         let versions: [VersionComponent]
         do {
             versions = try cli.versions()
         } catch {
-            return .unusable(reason: "could not read container system version: \(error)")
+            return (.unusable(reason: "could not read container system version: \(error)"), nil)
         }
         guard let component = versions.first(where: { $0.appName == "container" }) else {
-            return .unusable(reason: "container system version did not report a container component")
+            return (.unusable(reason: "container system version did not report a container component"), nil)
         }
         guard let found = VersionTriple(parsing: component.version) else {
-            return .unusable(reason: "could not parse version '\(component.version)'")
+            return (.unusable(reason: "could not parse version '\(component.version)'"), nil)
         }
         // A prerelease of the minimum's own version does not satisfy it — only a
         // strictly newer core, or an exact release-grade match, does.
         let meetsMinimum = found > minimumVersion || (found == minimumVersion && !found.isPrerelease)
         guard meetsMinimum else {
-            return .tooOld(found: component.version, required: minimumVersion.description)
+            return (.tooOld(found: component.version, required: minimumVersion.description), nil)
         }
 
         let status: SystemStatus
         do {
             status = try cli.systemStatus()
         } catch {
-            return .unusable(reason: "could not read container system status: \(error)")
+            return (.unusable(reason: "could not read container system status: \(error)"), nil)
         }
         // **Its own case, not `.unusable`.** "Installed but the service is stopped" is the
         // single commonest state after a reboot, it is one command from working, and the app can
         // fix it without the user typing anything — so the UI has to be able to tell it apart
         // from "unusable" rather than parse it out of an English sentence.
         guard status.isRunning else {
-            return .serviceStopped(version: component.version, path: path, status: status.status)
+            return (.serviceStopped(version: component.version, path: path, status: status.status), nil)
         }
         // Running, and running the *wrong build*. See `SystemStatus.hasVersionSkew` — this is
         // what a `container` upgrade leaves behind until the service is restarted, and in that
         // state no container can start even though everything here says it should.
         if status.hasVersionSkew, let server = status.server {
-            return .needsRestart(cli: component.version,
-                                 service: SystemStatus.shortVersion(server.version),
-                                 path: path)
+            return (.needsRestart(cli: component.version,
+                                  service: SystemStatus.shortVersion(server.version),
+                                  path: path), nil)
         }
 
         // Running, the right build, and nothing to run containers *with*. Checked after the skew
         // because a restart is the cheaper repair and a skewed service may not answer for its
         // kernel honestly; once restarted, the next preflight gets here.
         if let expected = Self.kernelPath(for: status), !fileExists(expected) {
-            return .needsKernel(version: component.version, path: path, expected: expected)
+            return (.needsKernel(version: component.version, path: path, expected: expected), nil)
         }
 
-        return .ok(version: component.version, path: path)
+        return (.ok(version: component.version, path: path),
+                Self.kernelPath(for: status).flatMap { Self.installedKernelRelease(at: $0, readLink: readLink) })
     }
 
     /// Where `container` keeps the kernel it boots containers and machines with, or `nil` when the
@@ -110,6 +119,20 @@ public struct Preflight: Sendable {
               let arch = status.host?.architecture, !arch.isEmpty else { return nil }
         let base = root.hasSuffix("/") ? root : root + "/"
         return base + "kernels/default.kernel-" + arch
+    }
+
+    /// The kernel release (`uname -r` in the guest) of the kernel at `kernelPath`: the file the link
+    /// points at is named by Kata, `vmlinux-6.18.35-197-debug`, and that is `6.18.35`
+    /// (`VulnerabilityReport.Platform.kernelRelease(fromBinary:)`). Measured on 1.5.0, 5 October:
+    /// `system kernel set --recommended` installs the file beside the link and points the link at it.
+    ///
+    /// `nil` — not judged — for anything else: no link, a kernel set from a file of another name, or
+    /// a name of another shape. Nothing here opens the kernel; only the link is read.
+    public static func installedKernelRelease(at kernelPath: String,
+                                              readLink: (String) -> String?) -> String? {
+        guard let target = readLink(kernelPath), !target.isEmpty else { return nil }
+        let name = target.split(separator: "/").last.map(String.init) ?? target
+        return VulnerabilityReport.Platform.kernelRelease(fromBinary: name)
     }
 
     /// Where `container` is installed, searched after `PATH`.

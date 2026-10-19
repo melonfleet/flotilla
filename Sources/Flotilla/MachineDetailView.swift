@@ -117,6 +117,60 @@ struct MachineDetailView: View {
 
     // MARK: Overview
 
+    private var packageUpdatesCard: some View {
+        let state = model.machineUpdateChecks[machine.id] ?? MachineUpdateCheckState()
+        let upgrade = detail.distribution?.machineUpgradeCommand
+        return card("Package updates") {
+            HStack(spacing: 8) {
+                Button("Check for Updates") {
+                    Task { await model.checkMachineUpdates(machine.id) }
+                }
+                .disabled(!machine.isRunning || upgrade == nil || model.isBusy(machine.id, kind: .machine))
+                if state.checking {
+                    ProgressView().controlSize(.small)
+                    Text("Checking for updates…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if !machine.isRunning {
+                Text("Start this machine to check for updates.").font(.caption).foregroundStyle(.secondary)
+            } else if upgrade == nil {
+                Text("Package checks support Alpine and AlmaLinux.").font(.caption).foregroundStyle(.secondary)
+            }
+            if let report = state.report {
+                if report.updates.isEmpty {
+                    Text("Up to date")
+                } else {
+                    DisclosureGroup("\(report.updates.count) updates available") {
+                        ForEach(Array(report.updates.enumerated()), id: \.offset) { _, update in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: update.package).fontWeight(.medium)
+                                Text(verbatim: "\(update.installed) → \(update.available)")
+                                    .font(.caption.monospaced()).foregroundStyle(.secondary)
+                            }
+                            .lineLimit(3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+            }
+            if let error = state.error {
+                Text(verbatim: error).font(.caption).foregroundStyle(Theme.danger).lineLimit(4)
+            }
+            if let date = state.lastAttempt {
+                HStack(spacing: 4) {
+                    Text(state.error == nil ? "Last checked" : "Last check failed")
+                    Text(date, format: .dateTime.year().month().day().hour().minute())
+                }
+                .font(.caption).foregroundStyle(.secondary)
+            }
+            if let upgrade {
+                Text(verbatim: "Open the Shell tab and run `\(upgrade)`")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Nothing is installed by Flotilla.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
     private var overview: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -186,6 +240,7 @@ struct MachineDetailView: View {
                 // Machines record activity exactly as containers do, so this card was simply never
                 // added: the two detail screens are built to the same shapes and this was the one
                 // shape only one of them had.
+                packageUpdatesCard
                 eventsCard
             }
             .padding(12)

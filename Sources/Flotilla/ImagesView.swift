@@ -21,6 +21,14 @@ struct ImagesView: View {
     /// Browse Docker Hub, and the reference it handed the Pull form.
     @State private var browsing = false
     @State private var pullFromBrowse: String?
+
+    /// Opens the pull form for a pending request, seeded with the repository it named, if any.
+    private func openPullForm() {
+        pullFromBrowse = model.pendingPullReference
+        model.pendingPullReference = nil
+        newImageMode = .pull
+        model.pendingPullForm = false
+    }
     @State private var pendingDelete: HostedImage?
     /// Set from the row menu's Run — presents the run sheet with this reference already in
     /// place, on the image's own Mac. Nothing is launched from here; the sheet's validated
@@ -134,10 +142,10 @@ struct ImagesView: View {
         }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingPullForm) { _, requested in
-            if requested { newImageMode = .pull; model.pendingPullForm = false }
+            if requested { openPullForm() }
         }
         .onAppear {
-            if model.pendingPullForm { newImageMode = .pull; model.pendingPullForm = false }
+            if model.pendingPullForm { openPullForm() }
         }
         // Menu-bar command. One-shot: consumed and cleared, so a rebuild does not reopen it.
         .onChange(of: model.pendingBuildForm) { _, requested in

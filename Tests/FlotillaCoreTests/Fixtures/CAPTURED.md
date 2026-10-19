@@ -34,3 +34,14 @@ on macOS 27.0.1:
 (`sha256` of the index body matched). It has two of the library's 32 images because only those two
 were scanned for this fixture; it is unsigned, as the signature is checked separately. Used by
 `VulnerabilityReportTests`.
+
+## vulnerability-report-platform.json (2026-10-19)
+
+`vulnerability-report.json` above with the `platform` section `build_report.py platform` made on
+19 October 2026 from the **real** sources, fetched by the scan workflow's own fetch step:
+https://gdmf.apple.com/v2/pmv (pinned Apple Root CA), https://support.apple.com/en-us/100100 and the
+14 macOS 26 and 27 notes it links, apple/container's release tags 1.0.0 to 1.5.0 (their
+`ContainerSystemConfig.swift`, and https://github.com/apple/container/releases/latest), and
+https://osv-vulnerabilities.storage.googleapis.com/Linux/all.zip (33,014 records). The raw sources
+are captured in the library repo's `tools/fixtures/platform/` (see its `CAPTURED.md`); this file is
+what the builder made of them, checked by `platform_section`. Used by `PlatformAdvisoryTests`.

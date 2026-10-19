@@ -1038,6 +1038,56 @@ public struct ContainerCLI: Sendable {
         return machine
     }
 
+    /// Explicit, local-owner-only check. Re-inspect before every command because `machine run`
+    /// would boot a stopped VM. A stop by another client between inspect and run remains a CLI race.
+    /// All stages share one 120-second budget; no package installation is offered here.
+    public func checkMachineUpdates(_ id: String) throws -> MachineUpdateReport {
+        let deadline = Date().addingTimeInterval(120)
+        var distribution: LinuxDistribution?
+        func run(_ args: [String], accepted: Set<Int32> = [0]) throws -> CommandResult {
+            let validated = try Allowlist.validated(args, mountPolicy: mountPolicy,
+                                                    execPolicy: execPolicy, wirePolicy: wirePolicy)
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { throw ContainerCLIError.unsupported("Package update check timed out.") }
+            let result = try host.run(validated.arguments, timeout: min(remaining, validated.timeoutHint))
+            guard accepted.contains(result.exitCode) else {
+                // Package-manager text is untrusted; never interpolate it into an alert.
+                throw ContainerCLIError.unsupported("Package update check failed (exit \(result.exitCode)). Open the Shell tab to check manually.")
+            }
+            guard !result.stdoutTruncated, !result.stderrTruncated else {
+                throw ContainerCLIError.unsupported("Package update output was truncated. Check manually in the Shell tab.")
+            }
+            return result
+        }
+        func requireRunning() throws {
+            let result = try run(["machine", "inspect", id])
+            let records = try JSONDecoder.flotilla.decode([ContainerMachine].self, from: Data(result.stdout.utf8))
+            guard let machine = records.first, machine.id == id, machine.isRunning else {
+                throw ContainerCLIError.unsupported("Start this machine before checking for updates.")
+            }
+            if let distribution, machine.distribution != distribution {
+                throw ContainerCLIError.unsupported("The machine changed during the update check. Try again.")
+            }
+            distribution = machine.distribution
+        }
+        try requireRunning()
+        guard let distribution, let commands = MachineUpdateCommand.commands(for: distribution) else {
+            throw ContainerCLIError.unsupported("Package update checks support Alpine and AlmaLinux machines.")
+        }
+        var output: [MachineUpdateCommand: String] = [:]
+        var checkExit: Int32 = 0
+        for command in commands {
+            try requireRunning()
+            let result = try run(command.arguments(machine: id),
+                                 accepted: command == .dnfCheck ? [0, 100] : [0])
+            output[command] = result.stdout
+            if command == .dnfCheck { checkExit = result.exitCode }
+        }
+        let updates = try MachineUpdateParser.parse(distribution: distribution, output: output,
+                                                    checkExit: checkExit)
+        return MachineUpdateReport(updates: updates, checkedAt: Date(), distribution: distribution)
+    }
+
     /// `container machine create <image> [--name] [--cpus] [--memory] [--home-mount]`.
     ///
     /// Unlike `container volume`/`network create`, `create` takes sizing and the home-mount

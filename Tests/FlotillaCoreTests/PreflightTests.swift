@@ -199,7 +199,8 @@ private func capturedStatus() throws -> String {
     return try String(contentsOf: url, encoding: .utf8)
 }
 
-private func kernelPreflight(status: String, existing: Set<String>) -> Preflight {
+private func kernelPreflight(status: String, existing: Set<String>,
+                             links: [String: String] = [:]) -> Preflight {
     let host = ScriptedHost { args in
         if args.starts(with: ["system", "version"]) {
             return CommandResult(stdout: versionJSON("1.5.0"), stderr: "", exitCode: 0)
@@ -211,7 +212,8 @@ private func kernelPreflight(status: String, existing: Set<String>) -> Preflight
     }
     return Preflight(cli: ContainerCLI(host: host, wirePolicy: .localOwner),
                      locate: { _ in "/usr/local/bin/container" },
-                     fileExists: { existing.contains($0) })
+                     fileExists: { existing.contains($0) },
+                     readLink: { links[$0] })
 }
 
 private let expectedKernel =
@@ -233,6 +235,24 @@ private let expectedKernel =
 @Test func anInstalledKernelIsOK() throws {
     let result = kernelPreflight(status: try capturedStatus(), existing: [expectedKernel]).run()
     #expect(result == .ok(version: "1.5.0", path: "/usr/local/bin/container"))
+}
+
+@Test func anInstalledKernelsReleaseIsReadFromTheNameItsLinkPointsAt() throws {
+    // `system kernel set --recommended` leaves the link pointing at the file beside it (measured on
+    // 1.5.0, 5 October); a link written absolute reads the same.
+    let folder = (expectedKernel as NSString).deletingLastPathComponent
+    for target in ["vmlinux-6.18.35-197-debug", folder + "/vmlinux-6.18.35-197-debug"] {
+        let (result, release) = kernelPreflight(status: try capturedStatus(), existing: [expectedKernel],
+                                                links: [expectedKernel: target]).inspect()
+        #expect(result.isOK)
+        #expect(release == "6.18.35")
+    }
+    // Not a link, a kernel of another name, and a missing kernel: not judged.
+    for links in [[:], [expectedKernel: "my-kernel"], [expectedKernel: "vmlinux-6.18.35\n"]] {
+        #expect(kernelPreflight(status: try capturedStatus(), existing: [expectedKernel], links: links).inspect().kernelRelease == nil)
+    }
+    #expect(kernelPreflight(status: try capturedStatus(), existing: [],
+                            links: [expectedKernel: "vmlinux-6.18.35-197-debug"]).inspect().kernelRelease == nil)
 }
 
 @Test func aStatusThatDoesNotSayWhereTheKernelLivesIsNotJudged() {

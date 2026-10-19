@@ -51,6 +51,7 @@ extension AppModel {
         facts.launchesAtLogin = loginItemStatus == .registered
         facts.keepAwakeUntil = power.leaseUntil
         facts.kernelInstalled = preflight.map { if case .needsKernel = $0 { false } else { true } }
+        facts.kernelRelease = installedKernelRelease
         if let slow = systemFacts {
             facts.serialNumber = slow.serialNumber
             facts.power = slow.power

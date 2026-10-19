@@ -142,7 +142,8 @@ struct ContainerDetailView: View {
                 // Restart and health (DECISIONS Q53): This Mac's own policies for now; a host's
                 // follow when hosts run them.
                 ContainerPolicyCard(model: model, container: container, host: host)
-                VulnerabilityCard(model: model, digests: container.imageReportDigests)
+                VulnerabilityCard(model: model, digests: container.imageReportDigests,
+                                  subject: .container(imageReference: container.configuration.image.reference))
                 // Full width beneath the grid, as in the mockup — a timeline reads badly in a
                 // narrow column.
                 eventsCard

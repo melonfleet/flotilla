@@ -28,6 +28,7 @@ extension AppModel {
             let listed = try await Blocking.run { [cli] in try cli.machines() }
             let present = Set(listed.map(\.id))
             machineGenerations = machineGenerations.filter { present.contains($0.key) }
+            machineUpdateChecks = machineUpdateChecks.filter { present.contains($0.key) }
             for machine in listed {
                 if machineGenerations[machine.id] == nil {
                     machineGeneration &+= 1

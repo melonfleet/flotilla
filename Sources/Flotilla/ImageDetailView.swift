@@ -123,7 +123,7 @@ struct ImageDetailView: View {
                     }
                 }
 
-                VulnerabilityCard(model: model, digests: image.reportDigests)
+                VulnerabilityCard(model: model, digests: image.reportDigests, subject: .image(reference: image.reference))
 
                 DetailCard(title: "Recent events", minHeight: nil) {
                     // Keyed on `reference`, which is what the feed records images by —
