@@ -39,6 +39,29 @@ public enum HelperInterface {
         "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"\(team)\""
     }
 
+    /// Apple's marker for a "Developer ID Application" leaf certificate (OID 1.2.840.113635.100.6.1.13).
+    /// An Apple Development certificate carries a team identifier too, so the team alone proves nothing.
+    public static let developerIDApplicationRequirement =
+        "anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+
+    /// Whether this process is signed with a Developer ID Application certificate, read from its
+    /// signature (`SecCodeCopySigningInformation` for the leaf, and the requirement above for its class).
+    public static func isOwnSignatureDeveloperID() -> Bool {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return false }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return false }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation),
+                                            &info) == errSecSuccess,
+              let certificates = (info as? [String: Any])?[kSecCodeInfoCertificates as String] as? [SecCertificate],
+              !certificates.isEmpty else { return false }
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(developerIDApplicationRequirement as CFString, [], &requirement) == errSecSuccess,
+              let requirement else { return false }
+        return SecStaticCodeCheckValidity(staticCode, [], requirement) == errSecSuccess
+    }
+
     /// The team this process is signed under, or `nil` when it is ad-hoc signed or unsigned. Each
     /// side requires the *other* to share its own team, so nothing is hardcoded and an ad-hoc dev
     /// build can never pass — it has no team to match.

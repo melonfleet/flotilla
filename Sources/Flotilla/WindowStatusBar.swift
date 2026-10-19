@@ -183,6 +183,11 @@ private struct HelperStatusItem: View {
             .accessibilityLabel("Flotilla Helper: \(health.title)")
             .accessibilityHint("Opens the helper menu")
             .onAppear { monitor.refresh() }
+            // `onAppear` belongs to the persistent Menu control and fires once, so a popup opened after
+            // the cache expired showed stale health. AppKit posts this each time a menu opens.
+            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+                monitor.refresh()
+            }
         }
     }
 }

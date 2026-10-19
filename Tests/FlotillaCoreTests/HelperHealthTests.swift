@@ -62,12 +62,18 @@ struct HelperHealthTests {
     }
 
     @Test func autoRegisterRespectsADeliberateRemove() {
-        #expect(HelperAutoRegister.shouldRegister(registration: .notInstalled, removedByOwner: false))
-        #expect(!HelperAutoRegister.shouldRegister(registration: .notInstalled, removedByOwner: true))
-        #expect(!HelperAutoRegister.shouldRegister(registration: .unavailable, removedByOwner: false),
+        #expect(HelperAutoRegister.shouldRegister(registration: .notInstalled, removedByOwner: false, developerIDSigned: true))
+        #expect(!HelperAutoRegister.shouldRegister(registration: .notInstalled, removedByOwner: true, developerIDSigned: true))
+        #expect(!HelperAutoRegister.shouldRegister(registration: .unavailable, removedByOwner: false, developerIDSigned: true),
                 "an unsigned build never registers")
-        #expect(!HelperAutoRegister.shouldRegister(registration: .awaitingApproval, removedByOwner: false))
-        #expect(!HelperAutoRegister.shouldRegister(registration: .enabled, removedByOwner: false))
+        #expect(!HelperAutoRegister.shouldRegister(registration: .awaitingApproval, removedByOwner: false, developerIDSigned: true))
+        #expect(!HelperAutoRegister.shouldRegister(registration: .enabled, removedByOwner: false, developerIDSigned: true))
+    }
+
+    @Test func aTeamIdentifierWithoutDeveloperIDNeverAutoRegisters() {
+        #expect(!HelperAutoRegister.shouldRegister(registration: .notInstalled, removedByOwner: false,
+                                                   developerIDSigned: false),
+                "an Apple Development build has a team identifier but is not Developer ID")
     }
 
     @Test func aProbeIsTrustedForThirtySeconds() {

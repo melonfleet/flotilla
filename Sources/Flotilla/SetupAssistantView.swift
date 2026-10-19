@@ -446,7 +446,7 @@ struct SetupAssistantView: View {
         switch helper {
         case .enabled:
             setupTask("Flotilla Helper", done: true) {
-                Text("Running. It installs container and Flotilla updates on this host, and keeps its DNS names.")
+                Text("Installed and approved. It installs container and Flotilla updates on this host, and keeps its DNS names.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         case .awaitingApproval:

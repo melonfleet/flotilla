@@ -22,6 +22,8 @@ enum PrivilegedHelper {
     /// Read once: a running process's signature does not change, and the screens ask often.
     private static let team = HelperInterface.ownTeamIdentifier()
 
+    private static let developerID = HelperInterface.isOwnSignatureDeveloperID()
+
     static var status: Status {
         guard team != nil else { return .unavailable }
         switch service.status {
@@ -57,7 +59,8 @@ enum PrivilegedHelper {
     /// registers (measured 7 October), and the status says what happened. Nothing opens Login Items:
     /// the footer and Settings guide the owner there.
     static func registerAtLaunchIfNeeded() {
-        guard HelperAutoRegister.shouldRegister(registration: status, removedByOwner: removedByOwner) else { return }
+        guard HelperAutoRegister.shouldRegister(registration: status, removedByOwner: removedByOwner,
+                                                developerIDSigned: developerID) else { return }
         try? service.register()
     }
 
@@ -201,31 +204,34 @@ enum PrivilegedHelper {
         connection.resume()
         defer { connection.invalidate() }
 
-        return await withCheckedContinuation { continuation in
-            let once = ResumeOnce(continuation)
+        let link = XPCLink(connection)
+        // Cancellation ends the wait and invalidates the connection (`CancellableReply`), so a caller
+        // that bounds this with a `Deadline` is not left holding a reply that never comes.
+        return await CancellableReply.value(cancelled: "Flotilla's Flotilla Helper didn't answer.",
+                                            onCancel: { link.invalidate() }) { resume in
             // `@Sendable` for the same reason as in `runningVersion`.
             let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable error in
-                once.resume("Flotilla couldn't reach its Flotilla Helper: \(error.localizedDescription)")
+                resume("Flotilla couldn't reach its Flotilla Helper: \(error.localizedDescription)")
             } as? HelperProtocol
             guard let proxy else {
-                once.resume("Flotilla couldn't reach its Flotilla Helper.")
+                resume("Flotilla couldn't reach its Flotilla Helper.")
                 return
             }
             switch request {
             case .create(let domain, let localhost):
-                proxy.createDomain(domain, localhost: localhost) { once.resume($0) }
+                proxy.createDomain(domain, localhost: localhost) { resume($0) }
             case .delete(let domains):
-                proxy.deleteDomains(domains) { once.resume($0) }
+                proxy.deleteDomains(domains) { resume($0) }
             case .syncFleetResolvers(let fleetDomain, let zones):
-                proxy.syncFleetResolvers(fleetDomain: fleetDomain, zones: zones) { once.resume($0) }
+                proxy.syncFleetResolvers(fleetDomain: fleetDomain, zones: zones) { resume($0) }
             case .removeFleetResolvers:
-                proxy.removeFleetResolvers { once.resume($0) }
+                proxy.removeFleetResolvers { resume($0) }
             case .installContainer(let path, let version):
-                proxy.installContainer(packageAt: path, version: version) { once.resume($0) }
+                proxy.installContainer(packageAt: path, version: version) { resume($0) }
             case .installFlotillaUpdate(let path):
-                proxy.installFlotillaUpdate(appAt: path) { once.resume($0) }
+                proxy.installFlotillaUpdate(appAt: path) { resume($0) }
             case .restart:
-                proxy.quit { once.resume($0) }
+                proxy.quit { resume($0) }
             }
         }
     }
@@ -253,22 +259,6 @@ private final class XPCLink: @unchecked Sendable {
     private let connection: NSXPCConnection
     init(_ connection: NSXPCConnection) { self.connection = connection }
     func invalidate() { connection.invalidate() }
-}
-
-/// XPC can call the error handler and the reply both; a continuation must resume exactly once.
-private final class ResumeOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<String?, Never>?
-
-    init(_ continuation: CheckedContinuation<String?, Never>) { self.continuation = continuation }
-
-    func resume(_ value: String?) {
-        lock.lock()
-        let pending = continuation
-        continuation = nil
-        lock.unlock()
-        pending?.resume(returning: value)
-    }
 }
 
 extension AppModel {

@@ -90,8 +90,16 @@ final class HelperMonitor {
         problem = nil
         let known: Int? = if case .answered(let version) = probe { version } else { nil }
         Task {
-            if let failure = await PrivilegedHelper.restart(knownVersion: known) {
-                problem = "Couldn't restart the background service: \(failure)"
+            // Bounded: a helper that stays connected and never replies must not hold `busy`, which
+            // disables Reinstall and Remove. At the limit the wait is cancelled and the connection
+            // invalidated (`CancellableReply`); "" stands for success, since `nil` means timed out.
+            let outcome = await Deadline.value(within: .seconds(10)) {
+                await PrivilegedHelper.restart(knownVersion: known) ?? ""
+            }
+            switch outcome {
+            case nil: problem = "Couldn't restart the background service: it didn't answer."
+            case let failure? where !failure.isEmpty: problem = "Couldn't restart the background service: \(failure)"
+            default: break
             }
             // It exits a moment after replying; the probe below starts the new copy.
             try? await Task.sleep(for: .seconds(1))

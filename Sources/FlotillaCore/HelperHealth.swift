@@ -123,9 +123,12 @@ public enum HelperHealth: Sendable, Equatable {
 /// The two small policies around installing it by itself.
 public enum HelperAutoRegister {
     /// A signed build whose helper is not installed registers it at launch — unless the owner pressed
-    /// Remove, which stays removed until they press Install.
-    public static func shouldRegister(registration: HelperRegistration, removedByOwner: Bool) -> Bool {
-        registration == .notInstalled && !removedByOwner
+    /// Remove, which stays removed until they press Install. "Signed" means a Developer ID Application
+    /// certificate, not merely a team identifier: an Apple Development build has one too, and must
+    /// not register a root daemon by itself (Kyle, 19 October).
+    public static func shouldRegister(registration: HelperRegistration, removedByOwner: Bool,
+                                      developerIDSigned: Bool) -> Bool {
+        developerIDSigned && registration == .notInstalled && !removedByOwner
     }
 }
 
