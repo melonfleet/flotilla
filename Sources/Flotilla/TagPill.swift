@@ -147,7 +147,7 @@ struct NewTagSheet: View {
     }
 
     var body: some View {
-        ModalCard(title: "New Tag", onClose: dismiss) {
+        ModalCard(title: "New Tag", onClose: dismiss, closesOnEscape: false) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Name").font(.system(size: 12)).foregroundStyle(.secondary)

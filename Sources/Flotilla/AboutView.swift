@@ -42,6 +42,13 @@ struct AboutView: View {
             }
             .formStyle(.grouped)
             .textSelection(.enabled)
+
+            HStack {
+                Spacer()
+                Button("Done", action: dismiss).keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
         .frame(minWidth: 480, minHeight: 420)
     }

@@ -120,9 +120,9 @@ struct OperationProgressView: View {
     let dismiss: () -> Void
 
     var body: some View {
-        // `onClose` is wired even while running, because a modal with no way out is a trap if
-        // something hangs — but the panel does not pretend the work stopped: dismissing hides the
-        // report, and the operation it describes carries on in its own task.
+        // There is a way out even while running (Hide, and Esc), because a modal with no way out
+        // is a trap if something hangs — but the panel does not pretend the work stopped:
+        // dismissing hides the report, and the operation it describes carries on in its own task.
         ModalCard(title: progress.title, onClose: dismiss) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(progress.command)
@@ -180,6 +180,10 @@ struct OperationProgressView: View {
                     Spacer()
                     if progress.outcome == nil {
                         ProgressView().controlSize(.small)
+                        // The only way out while it runs: hides the report, and the operation
+                        // carries on in its own task.
+                        Button("Hide", action: dismiss)
+                            .help("Hide this panel. The operation keeps running.")
                     } else {
                         Button(progress.outcome?.isFailure == true ? "Close" : "Done",
                                action: dismiss)

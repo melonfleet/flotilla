@@ -28,7 +28,17 @@ struct SupportBundleView: View {
 
     var body: some View {
         ModalCard(title: "Support Bundle", onClose: dismiss) {
-            content.padding(20)
+            VStack(spacing: 0) {
+                content.padding(20)
+                if bundle == nil {
+                    // Assembling or withheld: Close is the only button there is.
+                    HStack {
+                        Spacer()
+                        Button("Close", action: dismiss)
+                    }
+                    .padding([.horizontal, .bottom], 20)
+                }
+            }
         }
         .frame(width: 620, height: 560)
         .task { generate() }
@@ -72,6 +82,7 @@ struct SupportBundleView: View {
                         .controlSize(.small)
                     }
                     Spacer()
+                    Button("Close", action: dismiss)
                     Button("Save…") { save(bundle) }
                         .buttonStyle(.borderedProminent)
                 }

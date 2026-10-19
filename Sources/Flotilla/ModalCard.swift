@@ -1,60 +1,20 @@
 import SwiftUI
 
-/// The house shape for a modal form: a red circular close button, top-leading, and nothing
-/// else in the way.
-///
-/// This is the resolution of a genuine conflict. The owner wanted the web-modal behaviour — the
-/// interface behind greys out and stops responding — *and* macOS's own red close button.
-/// Those cannot coexist: traffic lights only exist on a real title bar, a native sheet has no
-/// title bar, and a plain window is not modal. Having tried the window route, the sheet is the
-/// better trade: real modality from the system, with a drawn close control instead of a
-/// borrowed one.
-///
-/// The button is deliberately **not** a traffic-light imitation sitting where a title bar
-/// would be. It is a close control that happens to be red and carries the × everyone already
-/// reads as close — which was the point all along: an icon travels further than the word
-/// "Close".
-struct ModalCloseButton: View {
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(Theme.danger)
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-                    // The glyph appears on hover, as macOS's own close button does; the red
-                    // circle alone already means close.
-                    .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.55))
-            }
-            .frame(width: 16, height: 16)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        // Icon-only controls need naming: a red circle is obvious to sighted users and silent
-        // to everyone else.
-        .accessibilityLabel("Close")
-        .help("Close")
-        // Escape closes a sheet natively, but only if something does not swallow the key
-        // first; binding it here makes it explicit rather than incidental.
-        .keyboardShortcut(.cancelAction)
-    }
-}
-
-/// Wraps a form's content with the close button and consistent padding, so every modal in the
-/// app opens the same way and closes the same way.
+/// The house shape for a dialog you acknowledge: a title, a divider, the content, and the
+/// dialog's own buttons (Done, Close, Cancel, Hide). There is no drawn close control: the red
+/// circle it used to carry duplicated the dialog's own button and looked out of place
+/// (Kamal, 19 October 2026). Esc still closes it, through `closesOnEscape`, unless the dialog's
+/// own Cancel button already answers Esc.
 struct ModalCard<Content: View>: View {
     let title: String
     let onClose: () -> Void
+    /// Off when the content has its own `.cancelAction` button, so Esc has exactly one owner.
+    var closesOnEscape = true
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                ModalCloseButton(action: onClose)
                 Text(title).font(.headline)
                 Spacer()
             }
@@ -65,6 +25,16 @@ struct ModalCard<Content: View>: View {
             Divider()
 
             content
+        }
+        .background {
+            // Esc, without a visible control: the dialog's own buttons are the way out.
+            if closesOnEscape {
+                Button("Close", action: onClose)
+                    .keyboardShortcut(.cancelAction)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+            }
         }
     }
 }

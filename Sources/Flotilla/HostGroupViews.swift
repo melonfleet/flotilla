@@ -107,7 +107,7 @@ struct HostValueSheet: View {
     @State private var value = ""
 
     var body: some View {
-        ModalCard(title: "New \(category.name)", onClose: dismiss) {
+        ModalCard(title: "New \(category.name)", onClose: dismiss, closesOnEscape: false) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(hosts.count == 1 ? "For this host." : "For the \(hosts.count) selected hosts.")
                     .font(.caption).foregroundStyle(.secondary)
