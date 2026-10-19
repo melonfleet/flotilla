@@ -23,6 +23,8 @@ struct GroupFormView: View {
     /// Whether `editingMember` is new, so Back from a half-typed service does not leave one
     /// behind and Save knows to append rather than replace.
     @State private var memberIsNew = false
+    /// The "where does the service come from" screen, ahead of the service form.
+    @State private var choosingService = false
     @State private var edits = FormEditTracker()
     /// Shared by the header and the Cancel button, so both ask about this form alone.
     @State private var formToken = UUID()
@@ -64,6 +66,7 @@ struct GroupFormView: View {
                     imageProblem: { model.groups.problem(withImage: $0) },
                     onCancel: { editingMember = nil },
                     onSave: { saved in
+                        if memberIsNew { generateMissingSecrets(for: [saved]) }
                         if let slot = draft.members.firstIndex(where: { $0.id == saved.id }) {
                             draft.members[slot] = saved
                         } else {
@@ -74,6 +77,12 @@ struct GroupFormView: View {
                     // A form on its own screen, full width with its Back (Q58), even when the group
                     // it belongs to is a page beside the Containers list.
                     .outsideSplitPane()
+            } else if choosingService {
+                GroupServicePickerView(
+                    model: model, place: draft.place,
+                    onBlank: { choosingService = false; memberIsNew = true; editingMember = GroupMember(name: "", image: "") },
+                    onCancel: { choosingService = false },
+                    onAdd: { picks in Task { await addServices(from: picks) } })
             } else {
                 groupScreen
             }
@@ -337,8 +346,7 @@ struct GroupFormView: View {
                 serviceRow(member, at: index)
             }
             Button {
-                memberIsNew = true
-                editingMember = GroupMember(name: "", image: "")
+                choosingService = true
             } label: {
                 Label("Add Service", systemImage: "plus")
             }
@@ -453,6 +461,38 @@ struct GroupFormView: View {
                                    command: member.command) {
         case .success(let validated): redacted ? validated.auditDescription : validated.localPreview
         case .failure(let error): "\(member.name): \(error)"
+        }
+    }
+
+    /// Picked services become members through `GroupMembers`, clear of this group, this Mac's
+    /// containers and volumes, and the ports already taken. One opens its form to review; several
+    /// are added to the list as they are.
+    private func addServices(from picks: [GroupMembers.Pick]) async {
+        let place = draft.place
+        await model.prepareSuggestions(on: place)
+        let taken = model.stackTaken(on: place)
+        let existing = draft.members
+        let probe = place.isLocal
+        let made = await Blocking.run {
+            GroupMembers.members(for: picks, existing: existing, takenNames: taken.containerNames,
+                                 takenVolumes: taken.volumes, usedHostPorts: taken.hostPorts,
+                                 isPortFree: { probe ? AppModel.isPortFree($0) : true })
+        }
+        choosingService = false
+        if made.count == 1 {
+            memberIsNew = true
+            editingMember = made[0]
+        } else {
+            generateMissingSecrets(for: made)
+            draft.members.append(contentsOf: made)
+        }
+    }
+
+    /// A picked database should be ready to start: its passwords are generated now, shown in the
+    /// group's Passwords section, and written to the Keychain on Save like any other new one.
+    private func generateMissingSecrets(for members: [GroupMember]) {
+        for secret in members.flatMap(\.secretEnv).map(\.secret) where secretValue(secret) == nil {
+            pendingSecrets[secret] = GroupSecrets.generatePassword()
         }
     }
 

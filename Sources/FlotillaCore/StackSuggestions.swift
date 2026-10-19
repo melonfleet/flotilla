@@ -549,15 +549,12 @@ public enum StackPlanner {
                 // on its LAN address (measured 14 September).
                 published.append("\(gateway):\(port):\(wired)")
             }
-            let mounts = service.volumes.map { volume -> String in
-                let volumeName = volumeName(name, service.role, volume)
-                volumes.append(volumeName)
-                return "\(volumeName):\(volume.path)"
-            }
-            members.append(GroupMember(name: containerName(name, service.role), image: service.image,
-                                       ports: published, env: service.env.map(fill),
-                                       volumes: mounts, command: service.command,
-                                       readyPort: service.readyPort, secretEnv: service.secretEnv))
+            let built = GroupMembers.member(
+                named: containerName(name, service.role), image: service.image, ports: published,
+                env: service.env.map(fill), secretEnv: service.secretEnv, volumes: service.volumes,
+                command: service.command, readyPort: service.readyPort)
+            volumes.append(contentsOf: built.volumeNames)
+            members.append(built.member)
         }
 
         let group = ContainerGroup(name: name, network: network, members: members,
