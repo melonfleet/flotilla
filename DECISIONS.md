@@ -2425,6 +2425,16 @@ So Flotilla can't tell a crash from a clean exit. The owner's answers:
 6. **Order: This Mac first** (the engine, This Mac, the UI), then hosts over the wire, where the
    host keeps running the policy while the admin is away, then the notification polish.
 
+**Amended 2026-10-19 (Kamal, on Kyle's beta 5 audit).** An admin sets **HTTP and port checks only**
+on a host's containers; a **command** check can be set only on the Mac itself, by its owner. A
+command check runs in the container with the host's local-owner permissions, and the wire never
+runs a command remotely, so accepting one from an admin was a way around that rule. The host
+refuses one on receipt, records which policies its admin set (`ContainerPolicy.setByAdmin`), and
+re-checks at every run, so nothing stored earlier can slip through. HTTP and port checks dial
+127.0.0.1, so they must use **one of that container's own published ports**, checked when saved
+and again before every probe, since a container's ports can change: otherwise a check for `web`
+could probe any other service on the Mac.
+
 ## Q54 — The suggestions library: many tested recipes, updated from GitHub (settled 2026-10-12)
 
 The owner asked for a large library of ready-made containers and stacks, browsed by category in

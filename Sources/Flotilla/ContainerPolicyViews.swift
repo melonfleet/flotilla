@@ -7,6 +7,9 @@ struct ContainerPolicyEditor: View {
     @Binding var policy: ContainerPolicy
     /// The container's ports published on this Mac — what a port or HTTP check can reach.
     let publishedPorts: [Int]
+    /// Off for a container on a host: its admin sets HTTP and port checks only, and a command check
+    /// is the host owner's to set on that Mac (`ContainerPolicy.remoteProblem`).
+    var allowsCommand = true
 
     private enum Kind: String, CaseIterable, Identifiable {
         case port = "Port answers", http = "HTTP returns OK", command = "Command succeeds"
@@ -57,10 +60,16 @@ struct ContainerPolicyEditor: View {
             }
             setProbe(probe)
         })) {
-            ForEach(Kind.allCases) { Text($0.rawValue).tag($0) }
+            ForEach(Kind.allCases.filter { allowsCommand || $0 != .command || kind == .command }) {
+                Text($0.rawValue).tag($0)
+            }
         }
         .pickerStyle(.segmented)
         .fixedSize()
+        if !allowsCommand {
+            note("A command check can only be set on the Mac itself, so it never runs a command sent from "
+                 + "another Mac. From here, use a port or HTTP check.")
+        }
 
         switch health.probe {
         case .port(let port):
@@ -157,7 +166,8 @@ struct ContainerPolicyCard: View {
                 Text("\(model.hostMode.hostName(host, local: model.hostLabel)) needs a newer Flotilla to keep a restart or health policy.")
                     .font(.caption).foregroundStyle(.secondary)
             } else if editing {
-                ContainerPolicyEditor(policy: $draft, publishedPorts: container.publishedPorts.map(\.hostPort))
+                ContainerPolicyEditor(policy: $draft, publishedPorts: container.publishedPorts.map(\.hostPort),
+                                      allowsCommand: host.isLocal)
                 if let failure {
                     Label(failure, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Theme.warning)
                 }

@@ -72,11 +72,20 @@ extension AppModel {
             let open = await Blocking.run { TCPProbe.accepts(host: address, port: port) }
             return .success(open ? "open" : "closed")
 
-        case .setPolicy(let container, let policy):
+        case .setPolicy(let container, var policy):
             // Only for a container that is here: a policy for nothing would watch nothing.
             guard policy.isEmpty || containers.contains(where: { $0.id == container }) else {
                 return .failure(HostCallFailure(.refused, "\(hostLabel) has no container called \(container)."))
             }
+            // An admin sets HTTP and port checks only, on the container's own published ports.
+            if let problem = policy.remoteProblem ?? policy.problem {
+                return .failure(HostCallFailure(.refused, problem))
+            }
+            if let ports = containers.first(where: { $0.id == container }).map({ Set($0.publishedPorts.map(\.hostPort)) }),
+               let problem = policy.portProblem(published: ports) {
+                return .failure(HostCallFailure(.refused, problem))
+            }
+            policy.setByAdmin = true
             policies.set(policy, for: container)
             observePolicies(containers)
             return .success("")
@@ -377,10 +386,17 @@ extension AppModel {
     /// (version 12, Q53), which then runs it itself. Returns why not, or nil.
     func setPolicy(_ policy: ContainerPolicy, for container: String, on host: HostRef) async -> String? {
         guard case .peer(let fingerprint) = host else {
+            if let ports = containers.first(where: { $0.id == container }).map({ Set($0.publishedPorts.map(\.hostPort)) }),
+               let problem = policy.portProblem(published: ports) {
+                return problem
+            }
+            var policy = policy
+            policy.setByAdmin = nil
             policies.set(policy, for: container)
             observePolicies(containers)
             return nil
         }
+        if let problem = policy.remoteProblem { return problem }
         guard let remote = hostMode.remoteHost(for: fingerprint) else { return "That host isn't connected." }
         guard (remote.protocolVersion ?? 0) >= WireProtocol.policiesVersion else {
             return "\(hostMode.hostName(host, local: hostLabel)) needs a newer Flotilla to keep a restart or health policy."

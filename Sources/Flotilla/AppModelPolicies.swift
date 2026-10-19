@@ -106,6 +106,16 @@ extension AppModel {
 
     private func policyProbe(_ id: String, _ probe: HealthCheck.Probe, timeout: Int) async {
         let result: (ok: Bool, detail: String)
+        let stored = policies.policy(for: id)
+        // Held to the rules at every run, not only when saved: an admin's command check is never
+        // run (whatever a dev build stored), and a dialled port must still be this container's own,
+        // since its published ports can change after the policy was set (Kyle, 19 October).
+        let published = containers.first { $0.id == id }.map { Set($0.publishedPorts.map(\.hostPort)) } ?? []
+        if stored.setByAdmin == true, let refusal = stored.remoteProblem {
+            result = (false, refusal)
+        } else if probe.dialledPort != nil, let refusal = stored.portProblem(published: published) {
+            result = (false, refusal)
+        } else {
         switch probe {
         case .port(let port):
             result = await PolicyProbe.port(port, timeout: timeout)
@@ -123,6 +133,7 @@ extension AppModel {
                     return (false, String(describing: error))
                 }
             }
+        }
         }
         let policy = policies.policy(for: id)
         let actions = policies.update { $0.probeFinished(id, ok: result.ok, detail: result.detail, policy: policy, at: Date()) }

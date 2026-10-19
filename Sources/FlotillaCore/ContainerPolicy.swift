@@ -31,6 +31,10 @@ public struct ContainerPolicy: Codable, Sendable, Equatable {
     public var health: HealthCheck?
     /// Restart when the health check says unhealthy. Off by default: unhealthy is a notice first.
     public var restartWhenUnhealthy: Bool
+    /// Set by this Mac's admin over the wire, rather than by its owner here. Kept with the policy, so
+    /// a check is held to the remote rules every time it runs, not only when it was saved. Optional
+    /// for Codable: a policy saved before this field (beta 4 had only local policies) was set here.
+    public var setByAdmin: Bool?
 
     public init(restart: Restart = .never, health: HealthCheck? = nil, restartWhenUnhealthy: Bool = false) {
         self.restart = restart
@@ -43,6 +47,25 @@ public struct ContainerPolicy: Codable, Sendable, Equatable {
 
     /// Why this policy can't be kept, or nil.
     public var problem: String? { health?.problem }
+
+    /// Why an admin may not set this policy on a host, or nil (Kyle, 19 October; Kamal's call).
+    /// A command check runs inside the container with the host's own, local-owner permissions, and
+    /// the wire never runs a command remotely, so a host takes HTTP and port checks only. Its owner
+    /// can still set a command check on the Mac itself.
+    public var remoteProblem: String? {
+        if case .command? = health?.probe {
+            return "A command health check can only be set on the Mac itself. Use an HTTP or port check from here."
+        }
+        return nil
+    }
+
+    /// Why this policy's check may not run for a container publishing `published` host ports, or
+    /// nil. HTTP and port checks dial 127.0.0.1, so they must stay on the container's own published
+    /// port, or a check for `web` could probe any other service on the Mac (Q53; Kyle, 19 October).
+    public func portProblem(published: Set<Int>) -> String? {
+        guard let port = health?.probe.dialledPort, !published.contains(port) else { return nil }
+        return "Port \(port) isn't one this container publishes."
+    }
 }
 
 /// How Flotilla checks a container is doing its job.
@@ -56,6 +79,15 @@ public struct HealthCheck: Codable, Sendable, Equatable {
         /// This argv, run in the container through the allowlisted `exec`, exits 0. Never a shell
         /// string: `sh -c …` must be written as such, and is then the owner's own choice.
         case command([String])
+
+        /// The host port an HTTP or port check dials, or nil for a command check.
+        public var dialledPort: Int? {
+            switch self {
+            case .port(let port): port
+            case .http(let port, _): port
+            case .command: nil
+            }
+        }
 
         public var title: String {
             switch self {

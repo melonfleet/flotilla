@@ -569,7 +569,7 @@ struct RunSheetView: View {
                           help: FieldHelp(
                               "Whether Flotilla starts it again if it stops, and how it checks it is working.",
                               detail: "Apple's container has neither, so Flotilla runs them on the Mac the container runs on. A policy needs the container to have a name.")) {
-                    ContainerPolicyEditor(policy: $policy, publishedPorts: publishedHostPorts)
+                    ContainerPolicyEditor(policy: $policy, publishedPorts: publishedHostPorts, allowsCommand: host.isLocal)
                 }
             }
         }
