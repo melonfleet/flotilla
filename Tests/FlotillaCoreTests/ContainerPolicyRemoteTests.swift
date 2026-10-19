@@ -39,7 +39,9 @@ import Testing
             Port(containerPort: 80, hostPort: 631, hostAddress: "0.0.0.0", proto: "udp"),     // UDP: no
             Port(containerPort: 80, hostPort: 632, hostAddress: "192.168.1.5", proto: "tcp"), // another interface: no
             Port(containerPort: 80, hostPort: 9000, hostAddress: "127.0.0.1"),                // proto absent = TCP
-            Port(containerPort: 80, hostPort: 7000, hostAddress: "[::]", proto: "TCP", count: 3),
+            Port(containerPort: 80, hostPort: 7000, hostAddress: "0.0.0.0", proto: "TCP", count: 3),
+            Port(containerPort: 80, hostPort: 7100, hostAddress: "::1", proto: "tcp"),       // IPv6 loopback: no
+            Port(containerPort: 80, hostPort: 7200, hostAddress: "[::]", proto: "tcp"),      // IPv6 any: no
         ])
         #expect(ports == [8080, 9000, 7000, 7001, 7002])
         let check = ContainerPolicy(health: HealthCheck(probe: .http(port: 631, path: "/admin")))
