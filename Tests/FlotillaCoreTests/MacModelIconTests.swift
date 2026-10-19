@@ -39,4 +39,21 @@ import Testing
         func bump() { lock.lock(); n += 1; lock.unlock() }
         var value: Int { lock.lock(); defer { lock.unlock() }; return n }
     }
+
+    @Test func hostileModelsAreUnknownAndTheCacheStaysBounded() {
+        #expect(MacModelKind(String(repeating: "Mac", count: 20)) == .unknown)
+        #expect(MacModelKind("Mac14,3/../../etc") == .unknown)
+        #expect(MacModelKind("Mac14,3\u{202E}") == .unknown)
+        #expect(MacModelKind("MacBookPro18,1") == .hardware("MacBookPro18,1"))
+        var asked = 0
+        let cache = ModelIconCache<Int>(capacity: 4) { _ in asked += 1; return nil }
+        for n in 0..<1000 { _ = cache.value(for: "Mac\(n),1") }
+        #expect(cache.count == 4)
+        #expect(asked == 1000)
+        // The newest are kept; an evicted miss is simply asked about again.
+        _ = cache.value(for: "Mac999,1")
+        #expect(asked == 1000)
+        _ = cache.value(for: "Mac0,1")
+        #expect(asked == 1001)
+    }
 }

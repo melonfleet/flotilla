@@ -12,9 +12,17 @@ public enum MacModelKind: Equatable, Sendable {
     /// Nothing reported: an old host that predates the field, an imported claim, or a blank.
     case unknown
 
+    /// Real identifiers are short and plain (`MacBookPro18,1`, `Mac16,10`). A host's model arrives
+    /// over the wire, so anything longer or stranger is treated as unknown rather than looked up
+    /// (Kyle, 19 October).
+    public static let maxIdentifierLength = 32
+
     public init(_ identifier: String?) {
         let trimmed = identifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if trimmed.isEmpty {
+        let plain = trimmed.unicodeScalars.allSatisfy { scalar in
+            scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || scalar == ",")
+        }
+        if trimmed.isEmpty || trimmed.count > Self.maxIdentifierLength || !plain {
             self = .unknown
         } else if trimmed.range(of: "VirtualMac", options: [.anchored, .caseInsensitive]) != nil {
             self = .virtual
@@ -25,13 +33,20 @@ public enum MacModelKind: Equatable, Sendable {
 }
 
 /// A per-key memo that remembers a miss as well as a hit, so a model the system does not know is
-/// asked about once rather than on every redraw of every row.
+/// asked about once rather than on every redraw of every row. Bounded: keys come from hosts, and a
+/// hostile one could invent a new model on every check-in, so the oldest entry goes once
+/// `capacity` is reached (Kyle, 19 October).
 public final class ModelIconCache<Value>: @unchecked Sendable {
     private let lock = NSLock()
     private var entries: [String: Value?] = [:]
+    private var order: [String] = []
     private let make: (String) -> Value?
+    public let capacity: Int
 
-    public init(make: @escaping (String) -> Value?) { self.make = make }
+    public init(capacity: Int = 64, make: @escaping (String) -> Value?) {
+        self.capacity = max(1, capacity)
+        self.make = make
+    }
 
     public func value(for key: String) -> Value? {
         lock.lock()
@@ -41,6 +56,10 @@ public final class ModelIconCache<Value>: @unchecked Sendable {
         // last write wins, which is harmless for a pure lookup.
         let built = make(key)
         lock.lock()
+        if entries[key] == nil {
+            order.append(key)
+            while order.count > capacity { entries[order.removeFirst()] = nil }
+        }
         entries[key] = .some(built)
         lock.unlock()
         return built
