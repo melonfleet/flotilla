@@ -73,6 +73,10 @@ final class HostModeController {
         /// The host's Flotilla, as its welcome said.
         var appVersion: String? = nil
         var checkedAt: Date
+        /// When the host last actually said something to this ask — a result or a failure it sent,
+        /// or pongs on a connection with a command running late. `appVersion` comes from the
+        /// welcome and may be cached, so a half-open connection keeps it while hearing nothing.
+        var heardAt: Date? = nil
         /// Answering, but its `container` service is stopped, as its `system status` said. The CLI's
         /// own error ("XPC connection error: Connection invalid") is a symptom; this is the reason.
         var runtimeStopped = false
@@ -983,10 +987,39 @@ final class HostModeController {
         monitor.pathUpdateHandler = { [weak self] path in
             let satisfied = path.status == .satisfied
             let signature = path.availableInterfaces.map(\.name) + path.gateways.map { "\($0)" }
+                + Self.localAddressTokens()
             Task { @MainActor [weak self] in self?.networkPathUpdated(satisfied: satisfied, signature: signature) }
         }
         monitor.start(queue: DispatchQueue(label: "dev.melonfleet.Flotilla.network-path"))
         pathMonitor = monitor
+    }
+
+    /// This Mac's addresses on its up interfaces, from `getifaddrs` — what changes when `en0` moves
+    /// from one Wi-Fi network to another behind a gateway with the same address.
+    nonisolated static func localAddressTokens() -> [String] {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return [] }
+        defer { freeifaddrs(list) }
+        var tokens: [String] = []
+        for entry in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            let flags = Int32(entry.pointee.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0, let address = entry.pointee.ifa_addr else { continue }
+            let name = String(cString: entry.pointee.ifa_name)
+            let bytes: [UInt8]
+            switch Int32(address.pointee.sa_family) {
+            case AF_INET:
+                bytes = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                    withUnsafeBytes(of: $0.pointee.sin_addr) { Array($0) }
+                }
+            case AF_INET6:
+                bytes = address.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) {
+                    withUnsafeBytes(of: $0.pointee.sin6_addr) { Array($0) }
+                }
+            default: continue
+            }
+            if let token = NetworkChangeFilter.addressToken(interface: name, bytes: bytes) { tokens.append(token) }
+        }
+        return tokens
     }
 
     private func networkPathUpdated(satisfied: Bool, signature: [String]) {
@@ -1043,21 +1076,22 @@ final class HostModeController {
         live[fingerprint] = status
         let cli = ContainerCLI(host: remote, mountPolicy: .denyHostPaths, wirePolicy: .remotePeer)
         // On GCD, not `Task.detached`: these block for a host's whole timeout (see `Blocking`).
-        let (outcome, stopped, busy) = await Blocking.run { () -> (Result<(String?, [Container], Int), Error>, Bool, Bool) in
+        let (outcome, stopped, busy, heard) = await Blocking.run { () -> (Result<(String?, [Container], Int), Error>, Bool, Bool, Bool) in
             let outcome = Result {
                 let version = try cli.versions().first { $0.appName.lowercased().contains("container") }?.version
                 return (version, try cli.listContainers(), try cli.machines().count)
             }
-            guard case .failure(let error) = outcome else { return (outcome, false, false) }
+            guard case .failure(let error) = outcome else { return (outcome, false, false, true) }
             // A command that came back late on a connection still answering its pings is a busy host.
             // Not asked again: the status read would wait out a second deadline on the same stall.
-            if let remoteError = error as? RemoteHostError,
-               remoteError.isLate(connectionAlive: remote.isAlive()) {
-                return (outcome, false, true)
+            let alive = remote.isAlive()
+            let heard = RemoteHostError.heardFrom(error, connectionAlive: alive)
+            if let remoteError = error as? RemoteHostError, remoteError.isLate(connectionAlive: alive) {
+                return (outcome, false, true, heard)
             }
             // A failure from a host that answered may be its service, stopped: ask it, read-only.
-            guard let status = try? cli.systemStatus() else { return (outcome, false, false) }
-            return (outcome, !status.isRunning, false)
+            guard let status = try? cli.systemStatus() else { return (outcome, false, false, heard) }
+            return (outcome, !status.isRunning, false, true)
         }
         guard generation == trustGeneration else { return }
         // The other lists, each on its own: one failing does not blank the others.
@@ -1108,7 +1142,7 @@ final class HostModeController {
                                            containersRunning: containers.filter { $0.state.isRunning }.count,
                                            containersTotal: containers.count, machines: machines,
                                            containerVersion: version, appVersion: remote.hostInfo?.appVersion,
-                                           checkedAt: Date())
+                                           checkedAt: Date(), heardAt: Date())
             book.markSeen(fingerprint, at: Date())
             // Whatever it calls itself now — a renamed host shows its new name here.
             if let info = remote.hostInfo,
@@ -1135,7 +1169,7 @@ final class HostModeController {
             // seen as behind and can be updated (measured 8 October, Tahoe showed "—" and was skipped).
             var status = LiveStatus(state: .failed(stopped ? "container is stopped" : reason),
                                     appVersion: remote.hostInfo?.appVersion, checkedAt: Date(),
-                                    runtimeStopped: stopped, busy: busy)
+                                    heardAt: heard ? Date() : nil, runtimeStopped: stopped, busy: busy)
             if busy, let before = live[fingerprint] {
                 // What it last said about itself is still the best there is; only the state is new.
                 status.containersRunning = before.containersRunning

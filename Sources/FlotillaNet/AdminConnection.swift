@@ -36,6 +36,18 @@ public enum RemoteHostError: Error, Equatable, Sendable, CustomStringConvertible
     /// connection was still being heard from (`connectionAlive`): the pings come back on a link
     /// that is up, and a silent connection is a dead one. Everything else — unreachable, closed,
     /// refused — is not about load.
+    /// Whether the host itself said something, as opposed to this Mac giving up on silence. A result
+    /// (`error` nil) or a failure the host sent is its word; a local timeout is only if the
+    /// connection was still being heard from. A cached welcome is never evidence.
+    public static func heardFrom(_ error: Error?, connectionAlive: Bool) -> Bool {
+        guard let error else { return true }
+        switch error as? RemoteHostError {
+        case .failed?: return true
+        case .timedOut?: return connectionAlive
+        default: return false
+        }
+    }
+
     public func isLate(connectionAlive: Bool) -> Bool {
         switch self {
         case .failed(let failure): failure.code == .timedOut || failure.code == .busy
@@ -64,7 +76,8 @@ public final class AdminConnection: @unchecked Sendable {
     /// Requests over the agreed concurrency wait here for a slot rather than failing: the limit
     /// protects the host, and the caller should not have to know it exists.
     private var waiting: [(arguments: [String], timeout: TimeInterval?,
-                           completion: @Sendable (Result<CommandResult, Error>) -> Void, token: UInt64)] = []
+                           completion: @Sendable (Result<CommandResult, Error>) -> Void, token: UInt64,
+                           deadline: DispatchTime?)] = []
     /// A request waiting for a slot is on its deadline from the moment it was asked, not from when a
     /// slot frees: behind four long commands it would otherwise wait with no end (see `run`).
     private var waitingDeadlines: [UInt64: DispatchSourceTimer] = [:]
@@ -183,41 +196,48 @@ public final class AdminConnection: @unchecked Sendable {
     /// The same, calling back on this connection's queue.
     public func run(_ arguments: [String], timeout: TimeInterval?,
                     completion: @escaping @Sendable (Result<CommandResult, Error>) -> Void) {
-        connection.queue.async { [self] in
-            if let reason = closedReason { return completion(.failure(RemoteHostError.closed(reason))) }
-            if case .ready = session.state, session.inFlight.count >= session.limits.maxConcurrentRequests {
-                // A command the Allowlist refuses still fails at once; only a full pipe waits.
-                let hint: TimeInterval
-                do { hint = try Allowlist.validated(arguments, wirePolicy: .remotePeer).timeoutHint }
-                catch { return completion(.failure(error)) }
-                nextToken += 1
-                let token = nextToken
-                waiting.append((arguments, timeout, completion, token))
-                // The same rule `WireClientSession.request` applies once a slot is free.
-                let own: TimeInterval = if let timeout, timeout > 0 { hint > 0 ? min(hint, timeout) : timeout } else { hint }
-                if own > 0 {
-                    waitingDeadlines[token] = self.timer(after: own + session.limits.deadlineGrace) { [weak self] in
-                        guard let self else { return }
-                        self.waitingDeadlines.removeValue(forKey: token)
-                        guard let index = self.waiting.firstIndex(where: { $0.token == token }) else { return }
-                        self.waiting.remove(at: index).completion(.failure(RemoteHostError.timedOut))
-                    }
+        connection.queue.async { [self] in run(arguments, timeout: timeout, by: nil, completion: completion) }
+    }
+
+    /// `by` is the absolute deadline a request carried while it waited for a slot; it is kept, never
+    /// restarted, so a request admitted just before it expires gets only what is left.
+    private func run(_ arguments: [String], timeout: TimeInterval?, by absolute: DispatchTime?,
+                     completion: @escaping @Sendable (Result<CommandResult, Error>) -> Void) {
+        if let reason = closedReason { return completion(.failure(RemoteHostError.closed(reason))) }
+        if case .ready = session.state, session.inFlight.count >= session.limits.maxConcurrentRequests {
+            // A command the Allowlist refuses still fails at once; only a full pipe waits.
+            let hint: TimeInterval
+            do { hint = try Allowlist.validated(arguments, wirePolicy: .remotePeer).timeoutHint }
+            catch { return completion(.failure(error)) }
+            nextToken += 1
+            let token = nextToken
+            // The same rule `WireClientSession.request` applies once a slot is free.
+            let own: TimeInterval = if let timeout, timeout > 0 { hint > 0 ? min(hint, timeout) : timeout } else { hint }
+            let deadline: DispatchTime? = own > 0 ? absolute ?? .now() + (own + session.limits.deadlineGrace) : absolute
+            waiting.append((arguments, timeout, completion, token, deadline))
+            if let deadline {
+                waitingDeadlines[token] = self.timer(at: deadline) { [weak self] in
+                    guard let self else { return }
+                    self.waitingDeadlines.removeValue(forKey: token)
+                    guard let index = self.waiting.firstIndex(where: { $0.token == token }) else { return }
+                    self.waiting.remove(at: index).completion(.failure(RemoteHostError.timedOut))
                 }
-                return
             }
-            do {
-                let outgoing = try session.request(arguments, timeout: timeout)
-                pending[outgoing.id] = completion
-                if outgoing.deadline > 0 {
-                    deadlines[outgoing.id] = timer(after: outgoing.deadline) { [weak self] in
-                        self?.session.abandon(outgoing.id)
-                        self?.settle(outgoing.id, .failure(RemoteHostError.timedOut))
-                    }
+            return
+        }
+        do {
+            let outgoing = try session.request(arguments, timeout: timeout)
+            pending[outgoing.id] = completion
+            let local: DispatchTime? = outgoing.deadline > 0 ? .now() + outgoing.deadline : nil
+            if let due = [local, absolute].compactMap({ $0 }).min() {
+                deadlines[outgoing.id] = timer(at: due) { [weak self] in
+                    self?.session.abandon(outgoing.id)
+                    self?.settle(outgoing.id, .failure(RemoteHostError.timedOut))
                 }
-                connection.send(outgoing.message)
-            } catch {
-                completion(.failure(error))
             }
+            connection.send(outgoing.message)
+        } catch {
+            completion(.failure(error))
         }
     }
 
@@ -454,7 +474,7 @@ public final class AdminConnection: @unchecked Sendable {
         if closedReason == nil, !waiting.isEmpty {
             let next = waiting.removeFirst()
             waitingDeadlines.removeValue(forKey: next.token)?.cancel()
-            run(next.arguments, timeout: next.timeout, completion: next.completion)
+            run(next.arguments, timeout: next.timeout, by: next.deadline, completion: next.completion)
         }
     }
 
@@ -488,6 +508,14 @@ public final class AdminConnection: @unchecked Sendable {
         }
         timer.resume()
         pingTimer = timer
+    }
+
+    private func timer(at deadline: DispatchTime, _ fire: @escaping @Sendable () -> Void) -> DispatchSourceTimer {
+        let timer = DispatchSource.makeTimerSource(queue: connection.queue)
+        timer.schedule(deadline: deadline)
+        timer.setEventHandler(handler: fire)
+        timer.resume()
+        return timer
     }
 
     private func timer(after seconds: TimeInterval, _ fire: @escaping @Sendable () -> Void) -> DispatchSourceTimer {

@@ -12,7 +12,26 @@ public struct NetworkChangeFilter: Sendable, Equatable {
 
     public init() {}
 
-    /// `signature` is whatever identifies the path: interface names and gateways.
+    /// One address of an interface as a signature token, or `nil` for one that says nothing about the
+    /// network: loopback, link-local, unspecified. An IPv4 address is kept whole; an IPv6 one only to its
+    /// /64, because the host part of a privacy address rotates on one network and would look like a
+    /// change. This is what tells two Wi-Fi networks apart when both are `en0` behind the same
+    /// gateway address (`192.168.1.1` is everyone's).
+    public static func addressToken(interface: String, bytes: [UInt8]) -> String? {
+        switch bytes.count {
+        case 4:
+            if bytes[0] == 127 || bytes[0] == 0 || (bytes[0] == 169 && bytes[1] == 254) { return nil }
+            return "\(interface)=\(bytes.map(String.init).joined(separator: "."))"
+        case 16:
+            if bytes.dropLast().allSatisfy({ $0 == 0 }) { return nil }          // :: and ::1
+            if bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80 { return nil }       // fe80::/10
+            return "\(interface)=" + bytes[0..<8].map { String($0, radix: 16) }.joined(separator: ":")
+        default:
+            return nil
+        }
+    }
+
+    /// `signature` is whatever identifies the path: interface names, gateways and local addresses.
     /// Returns whether to reconnect now.
     public mutating func observe(satisfied: Bool, signature: [String]) -> Bool {
         let now = Set(signature)

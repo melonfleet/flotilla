@@ -56,6 +56,33 @@ struct HostHealthTests {
         #expect(result6)
     }
 
+    @Test func anotherWiFiNetworkOnTheSameInterfaceAndGatewayIsAChange() {
+        func signature(_ address: [UInt8]) -> [String] {
+            ["en0", "192.168.1.1", NetworkChangeFilter.addressToken(interface: "en0", bytes: address)!]
+        }
+        var filter = NetworkChangeFilter()
+        _ = filter.observe(satisfied: true, signature: signature([192, 168, 1, 20]))
+        // A lease renewal repeats the path: no storm.
+        let renewed = filter.observe(satisfied: true, signature: signature([192, 168, 1, 20]))
+        #expect(!renewed)
+        // A different network, same interface name, same gateway address.
+        let moved = filter.observe(satisfied: true, signature: signature([192, 168, 1, 77]))
+        #expect(moved)
+    }
+
+    @Test func addressTokensIgnoreWhatSaysNothingAboutTheNetwork() {
+        #expect(NetworkChangeFilter.addressToken(interface: "lo0", bytes: [127, 0, 0, 1]) == nil)
+        #expect(NetworkChangeFilter.addressToken(interface: "en0", bytes: [169, 254, 3, 4]) == nil)
+        var linkLocal = [UInt8](repeating: 0, count: 16); linkLocal[0] = 0xfe; linkLocal[1] = 0x80; linkLocal[15] = 1
+        #expect(NetworkChangeFilter.addressToken(interface: "en0", bytes: linkLocal) == nil)
+        // A privacy address that rotates within one network keeps its token.
+        var a = [UInt8](repeating: 0, count: 16); a[0] = 0x20; a[1] = 0x01; a[7] = 5; a[15] = 1
+        var b = a; b[15] = 9; b[12] = 0xaa
+        #expect(NetworkChangeFilter.addressToken(interface: "en0", bytes: a) == NetworkChangeFilter.addressToken(interface: "en0", bytes: b))
+        var c = a; c[7] = 6
+        #expect(NetworkChangeFilter.addressToken(interface: "en0", bytes: a) != NetworkChangeFilter.addressToken(interface: "en0", bytes: c))
+    }
+
     // MARK: Update confirmation
 
     @Test func silenceWhileTheHostRelaunchesIsNotAFailure() {

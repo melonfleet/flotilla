@@ -91,4 +91,42 @@ struct HostHealthNetTests {
         #expect(admin.heard(within: 45))
         for holder in holders { _ = try? await holder.value }
     }
+
+    @Test func aQueuedRequestKeepsItsOriginalDeadlineWhenAdmitted() async throws {
+        let rig = try await loopback.rig()
+        defer { rig.tearDown() }
+        // Every command takes 1.5s: a slot frees at ~1.5s and the waiter's own run would end at ~3s.
+        rig.host.delay = 1.5
+        rig.delegate.locked { rig.delegate.trusted[rig.adminIdentity.fingerprint] = .pairingCode }
+        let admin = AdminConnection(endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: rig.port)!),
+                                    identity: rig.adminIdentity, info: WirePeerInfo(name: "admin", appVersion: "test"),
+                                    limits: WireLimits(deadlineGrace: 1))
+        defer { admin.close() }
+        let limit = try await admin.connect().limits.maxConcurrentRequests
+        let holders = (0..<limit).map { _ in Task { try await admin.run(["ls"], timeout: 30) } }
+        try await Task.sleep(for: .milliseconds(300))
+        let started = Date()
+        do {
+            // Due 0.5s + 1s of grace after it was asked, i.e. at ~1.8s: admitted at ~1.5s, it has
+            // ~0.3s left, not another 1.5s.
+            _ = try await admin.run(["ls"], timeout: 0.5)
+            Issue.record("a request past its original deadline was answered")
+        } catch let error as RemoteHostError {
+            #expect(error == .timedOut, "\(error)")
+        }
+        let took = Date().timeIntervalSince(started)
+        #expect(took < 2.3, "took \(took)s; a restarted deadline would be ~3s")
+        for holder in holders { _ = try? await holder.value }
+    }
+
+    @Test func onlyWhatTheHostSaidCountsAsHearingFromIt() {
+        #expect(RemoteHostError.heardFrom(nil, connectionAlive: false))
+        #expect(RemoteHostError.heardFrom(RemoteHostError.failed(.init(id: 1, code: .internalError, message: "no")),
+                                          connectionAlive: false))
+        // A local timeout is the host's word only while the connection is still being heard from.
+        #expect(RemoteHostError.heardFrom(RemoteHostError.timedOut, connectionAlive: true))
+        #expect(!RemoteHostError.heardFrom(RemoteHostError.timedOut, connectionAlive: false))
+        #expect(!RemoteHostError.heardFrom(RemoteHostError.closed("gone"), connectionAlive: true))
+        #expect(!RemoteHostError.heardFrom(RemoteHostError.unreachable("x"), connectionAlive: true))
+    }
 }

@@ -159,8 +159,10 @@ extension AppModel {
             let askedAt = Date()
             await hostMode.refreshHost(fingerprint)
             guard hostMode.trustGeneration == generation else { return HostModeController.forgottenMidway }
-            // Its Flotilla answered if this look reached it, whatever its `container` said.
-            let answered = hostMode.live[fingerprint].map { $0.checkedAt >= askedAt && $0.appVersion != nil } ?? false
+            // Its Flotilla answered if this look actually heard from it, whatever its `container` said.
+            // Not `checkedAt` and `appVersion`: a silent, half-open connection finishes its probes
+            // with local timeouts and still carries the old welcome.
+            let answered = hostMode.live[fingerprint].flatMap(\.heardAt).map { $0 >= askedAt } ?? false
             switch watch.observe(answered: answered, build: answered ? hostBuild(fingerprint) : nil, at: Date()) {
             case .confirmed:
                 hostMode.updateFailures.removeValue(forKey: fingerprint)
