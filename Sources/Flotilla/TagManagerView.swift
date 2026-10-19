@@ -86,8 +86,8 @@ struct TagManagerPane: View {
                     .disabled(orphanCount == 0)
                     .help(orphanCount == 0
                           ? "Every tag is on something that still exists"
-                          : "Forget tags on \(orphanCount) thing"
-                            + (orphanCount == 1 ? "" : "s") + " that no longer exist")
+                          : "Forget tags on \(Plural.count(orphanCount, "thing")) that no longer "
+                            + (orphanCount == 1 ? "exists" : "exist"))
             }
             if let cleanUpResult {
                 Text(cleanUpResult).font(.caption).foregroundStyle(.secondary)

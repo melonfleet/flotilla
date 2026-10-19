@@ -82,7 +82,7 @@ struct ResourceCard<Actions: View>: View {
                             .monospacedDigit()
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .help(field.1 ?? "")
+                            .help(ifAny: field.1)
                     }
                 }
             }

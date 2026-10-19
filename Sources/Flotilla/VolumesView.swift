@@ -638,16 +638,9 @@ struct VolumesView: View {
         let busy = model.isBusy(row.id, kind: .volume)
         let name = row.name + onHost(row)
         HStack(spacing: 2) {
-            Menu {
+            RowOverflowMenu(label: "More actions for \(name)") {
                 menu(for: row)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(name)")
-            .accessibilityLabel("More actions for \(name)")
 
             if place == .header {
                 Divider().frame(height: 14)
@@ -867,7 +860,7 @@ struct VolumesView: View {
                           "How large the volume may grow.",
                           detail: "A number with an optional K, M or G suffix.",
                           example: "64M\n2G\n512G",
-                          warning: "Left empty, the driver provisions 512 GiB as a sparse image. It does not consume that — but it is what the Size column reports, which is why an untouched volume looks alarming in the list."),
+                          warning: "Left empty, the driver provisions 512 GiB as a sparse image. It does not consume that — but the list shows it as 512 GB capacity, which is why an untouched volume looks alarming there."),
                       problem: sizeProblem,
                       optional: true) {
                 TextField("64M, 2G, …", text: $newSize)
@@ -973,7 +966,7 @@ struct VolumesView: View {
                     }
                     .buttonStyle(.borderless)
                     .help("Remove this entry")
-                    .accessibilityLabel("Remove")
+                    .accessibilityLabel(Self.removeLabel(list.wrappedValue, at: index))
                 }
             }
             Button { list.wrappedValue.append("") } label: {
@@ -983,6 +976,13 @@ struct VolumesView: View {
             .controlSize(.small)
             .disabled(list.wrappedValue.count >= 8)
         }
+    }
+
+    /// "Remove env=prod", not a bare "Remove" on every row of both lists.
+    private static func removeLabel(_ entries: [String], at index: Int) -> String {
+        let entry = entries.indices.contains(index)
+            ? entries[index].trimmingCharacters(in: .whitespaces) : ""
+        return entry.isEmpty ? "Remove empty entry \(index + 1)" : "Remove \(entry)"
     }
 
     private var options: ContainerCLI.VolumeOptions {

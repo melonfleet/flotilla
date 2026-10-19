@@ -499,16 +499,9 @@ struct ImagesView: View {
                 }
             }
 
-            Menu {
+            RowOverflowMenu(label: "More actions for \(name)") {
                 menu(for: row)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(name)")
-            .accessibilityLabel("More actions for \(name)")
 
             if place == .header {
                 Divider().frame(height: 14)
@@ -645,8 +638,8 @@ struct ImagesView: View {
     /// The bulk bar's controls, and the page's when several are ticked — one builder for both.
     private var bulkActions: some View {
         IconActionButton(systemImage: "trash",
-                         label: "Delete \(actionable.count) images",
-                         help: "Delete \(actionable.count) images",
+                         label: "Delete \(Plural.count(actionable.count, "image"))",
+                         help: "Delete \(Plural.count(actionable.count, "image"))",
                          busy: selectionBusy, destructive: true) {
             confirmingBulkDelete = true
         }

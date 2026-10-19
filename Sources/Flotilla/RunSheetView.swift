@@ -444,7 +444,7 @@ struct RunSheetView: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(model.networks.isEmpty)
-                .help(model.networks.isEmpty ? "No networks yet — create one in Networks" : "")
+                .help(model.networks.isEmpty ? "No networks yet — create one in Networks" : "The network the container joins")
             }
         }
     }

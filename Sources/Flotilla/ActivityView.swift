@@ -250,16 +250,9 @@ struct ActivityView: View {
                 }
             },
             actions: {
-                Menu {
+                RowOverflowMenu(label: "More actions for \(event.headline(hosts: knownHosts))") {
                     menu(for: event)
-                } label: {
-                    RowOverflowLabel()
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("More actions for \(event.headline(hosts: knownHosts))")
-                .accessibilityLabel("More actions for \(event.headline(hosts: knownHosts))")
             })
     }
 

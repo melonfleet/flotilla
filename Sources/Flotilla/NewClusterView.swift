@@ -251,7 +251,7 @@ struct NewClusterView: View {
     }
 
     private var actions: FormActions {
-        FormActions(.startsJob("Save", isDisabled: !canSubmit) { Task { await create() } })
+        FormActions(.startsJob("Create Cluster", isDisabled: !canSubmit) { Task { await create() } })
     }
 
     /// A task from here (Kamal, 19 October): the form returns to the list and Tasks reports the

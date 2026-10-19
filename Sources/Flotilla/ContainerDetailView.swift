@@ -520,7 +520,7 @@ private struct ProcessesTab: View {
                 Label("Reload", systemImage: "arrow.clockwise")
             }
             .disabled(loading || !container.isRunning)
-            .help(container.isRunning ? "" : "Start the container to list its processes")
+            .help(container.isRunning ? "List the processes again" : "Start the container to list its processes")
         }
         .padding(12)
     }

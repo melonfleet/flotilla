@@ -147,7 +147,35 @@ struct IconActionButtonStyle: ButtonStyle {
 }
 
 
-/// The `⋯` label for a row's overflow menu.
+/// A row's `⋮` overflow menu, which cannot be drawn without a label.
+///
+/// Every row's `⋮` used to be a bare `Menu { … } label: { RowOverflowLabel() }` with its
+/// borderless style, hidden indicator, `fixedSize`, `.help` and `.accessibilityLabel` retyped at
+/// each of sixteen call sites. Two forgot the `.help` (Notifications and Suggestions, found in the
+/// 19 October tooltip audit), and the same two also kept the menu's indicator. This is the
+/// `ToolbarIconMenu` contract for rows: the label is a required parameter, so a `⋮` gets a tooltip
+/// and a spoken name by construction. `help` is for the one row (a log line) whose tooltip is
+/// shorter than its spoken label.
+struct RowOverflowMenu<Content: View>: View {
+    let label: String
+    var help: String? = nil
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        Menu {
+            content
+        } label: {
+            RowOverflowGlyph()
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(help ?? label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// The `⋮` glyph a `RowOverflowMenu` draws; private so a menu cannot use it without the label.
 ///
 /// A `Menu` is not a `Button`, so it cannot take `IconActionButtonStyle`; without this it kept
 /// the default foreground and disappeared into the accent fill of a selected row — the same
@@ -172,7 +200,7 @@ struct IconActionButtonStyle: ButtonStyle {
 ///
 /// So: `Text("\u{22EE}")`, the Unicode vertical ellipsis. It is text, it survives, and it is
 /// genuinely three dots stacked — no symbol that does not exist, and no transform to lose.
-struct RowOverflowLabel: View {
+private struct RowOverflowGlyph: View {
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.barInk) private var barInk
     @Environment(\.isEnabled) private var isEnabled

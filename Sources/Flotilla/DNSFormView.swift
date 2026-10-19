@@ -311,7 +311,7 @@ struct DNSFormView: View {
                     } else {
                         Button("Use for Containers…") { pendingChange = .use(managed.name) }
                             .disabled(!managed.resolverInstalled)
-                            .help(managed.resolverInstalled ? "" : "Set this domain up first")
+                            .help(managed.resolverInstalled ? "Name new containers under this domain" : "Set this domain up first")
                     }
                     if !managed.resolverInstalled {
                         Button("Set Up on \(Place)…") {
@@ -372,7 +372,7 @@ struct DNSFormView: View {
                     }
                 }
             } else if let managed {
-                Label("In the table as", systemImage: Section.dns.systemImage)
+                Label("In the list as", systemImage: Section.dns.systemImage)
                     .font(.caption).foregroundStyle(Theme.info)
                 Text(managed.name).font(.system(size: 13, weight: .medium))
                 Text(DNSCopy.statusText(managed, place: place))

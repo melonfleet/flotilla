@@ -11,6 +11,14 @@ enum FilesViewMode: String, CaseIterable {
         case .columns: "rectangle.split.3x1"
         }
     }
+    /// The toolbar button's tooltip and spoken name: what pressing it does, not the mode's name.
+    var help: String {
+        switch self {
+        case .icons: "Show as icons"
+        case .list: "Show as a list"
+        case .columns: "Show in columns"
+        }
+    }
 }
 
 extension AppModel {

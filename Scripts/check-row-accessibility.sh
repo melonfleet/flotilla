@@ -16,7 +16,9 @@
 #   1. `ResourceRow` flattening its children again;
 #   2. a section re-adding a replacement action list beside a `ResourceRow`;
 #   3. a row's `⋮` menu with no accessibility label — it would be read as "vertical ellipsis",
-#      on every row alike.
+#      on every row alike. Since 19 October the label is a required parameter of
+#      `RowOverflowMenu`, so this holds the component to applying it, and holds every row to
+#      using the component rather than a bare `Menu` around the glyph.
 #
 # And the `actions` slot itself must not be hidden from accessibility.
 #
@@ -34,7 +36,8 @@
 # Negative controls — each proved to fail:
 #   (1) change `.accessibilityElement(children: .contain)` in ResourceRow.swift to `.ignore`;
 #   (2) add `.accessibilityActions { }` to the List row in RegistriesView.swift;
-#   (3) delete the `.accessibilityLabel("More actions for …")` under a row's overflow Menu;
+#   (3) delete `.accessibilityLabel(label)` from `RowOverflowMenu` in IconActionButton.swift, or
+#       draw `RowOverflowGlyph()` in a bare `Menu` in a row section (19 October);
 #   (4) add `.accessibilityHidden(true)` after `.allowsHitTesting(showsActions)` in ResourceRow.swift;
 #   (5) delete `actionSlot` from the `if voiceOver {` branch in ResourceRow.swift (17 October).
 set -uo pipefail
@@ -83,13 +86,18 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
     if re.search(r'\.accessibilityActions?\b', text):
         FAIL.append(f"{path}: a ResourceRow section supplies its own accessibility actions — "
                     "VoiceOver gets the ⋮ menu itself, not a second list that can drift from it")
-    # Every overflow Menu is labelled before the next declaration: the glyph alone is "⋮".
-    for m in re.finditer(r'Menu\s*\{[^\n]*\n(?:[^\n]*\n){0,6}?[^\n]*label:\s*\{\s*RowOverflowLabel\(\)\s*\}', text):
-        tail = text[m.end():m.end() + 400]
-        tail = tail.split("\n\n")[0]
-        if '.accessibilityLabel(' not in tail:
-            line = text[:m.start()].count("\n") + 1
-            FAIL.append(f"{path}: the ⋮ menu near line {line} has no .accessibilityLabel")
+    # Every `⋮` goes through `RowOverflowMenu`, whose label is required: the glyph alone is "⋮".
+    for m in re.finditer(r'RowOverflowGlyph\(\)', text):
+        line = text[:m.start()].count("\n") + 1
+        FAIL.append(f"{path}: the ⋮ glyph near line {line} is drawn outside RowOverflowMenu, "
+                    "which is what gives it a spoken label")
+
+# (3) The component applies the label it requires.
+menu = re.search(r'struct RowOverflowMenu<.*?\n\}\n', code(pathlib.Path(
+    "Sources/Flotilla/IconActionButton.swift").read_text()), re.S)
+if not menu or not re.search(r'\.accessibilityLabel\(label\)', menu.group(0)):
+    FAIL.append("Sources/Flotilla/IconActionButton.swift: RowOverflowMenu no longer applies "
+                ".accessibilityLabel(label), so every row's ⋮ is read as \"vertical ellipsis\"")
 
 if FAIL:
     print("Row accessibility can drift from the row's menu:")

@@ -196,6 +196,8 @@ private struct TaskRowView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // Its own, or it shows the line's status from the `.help` on the row below.
+                .help(row.isExpanded ? "Hide steps and output" : "Show steps and output")
                 .accessibilityLabel(row.isExpanded ? "Collapse \(row.title)" : "Expand \(row.title)")
                 .accessibilityHint("Shows the task's steps and output")
 

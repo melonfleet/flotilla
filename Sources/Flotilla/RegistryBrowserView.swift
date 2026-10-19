@@ -4,7 +4,7 @@ import FlotillaCore
 /// Images ▸ Browse Docker Hub (PLAN.md ▸ Registry browser): search Docker Hub, look at an image's
 /// tags, and pull one — as Docker Desktop's Hub search does, inside the app.
 ///
-/// A page of its own, like the forms (the same header, with Cancel and Pull at its top right),
+/// A page of its own, like the forms (the same header, with ✕ and ▶ Pull at its top right),
 /// with results on the left and the chosen image on the right. Opening it lists the Docker Official Images; typing searches.
 /// Those are the only two moments Flotilla asks Docker Hub anything (`AppModel.dockerHub`).
 ///
@@ -232,7 +232,10 @@ struct RegistryBrowserView: View {
     }
 
     private var actions: FormActions {
-        FormActions(.startsJob(pullReference.map { "Pull \($0)…" } ?? "Pull…", isDisabled: pullReference == nil) {
+        // ▶ with its words, by Kamal's call: the ellipsis says another step follows, and the
+        // tooltip says which.
+        FormActions(.startsJob(pullReference.map { "Pull \($0)…" } ?? "Pull…", isDisabled: pullReference == nil,
+                               reason: pullReference == nil ? "Choose a tag to pull" : "Opens the Pull form with this reference") {
             if let reference = pullReference { onPull(reference) }
         })
     }

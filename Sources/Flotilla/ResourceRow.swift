@@ -164,7 +164,7 @@ struct ResourceRow<Leading: View, Chips: View, Actions: View>: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .help(thirdLine ?? "")
+                .help(ifAny: thirdLine)
                 .accessibilityHidden(true)
             Text(trailingText ?? "")
                 .font(.caption2)

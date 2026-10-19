@@ -127,7 +127,7 @@ struct AppearanceToggleButton: View {
 /// Every `systemImage` used to build an `AppLink` below has been checked against
 /// `NSImage(systemSymbolName:accessibilityDescription:) != nil` before shipping: an unknown
 /// name renders nothing at all, with no warning, which is how every overflow menu in this app
-/// silently vanished once — see the note on `RowOverflowLabel` in `IconActionButton.swift`.
+/// silently vanished once — see the note on `RowOverflowGlyph` in `IconActionButton.swift`.
 struct AppLink: Identifiable {
     let name: String
     let url: URL
@@ -185,7 +185,7 @@ struct AppLinksMenu: View {
 /// Hover feedback for a toolbar-level menu glyph.
 ///
 /// `Menu` is not a `Button`, so it cannot take `IconActionButtonStyle` — the same constraint
-/// noted on `RowOverflowLabel` in `IconActionButton.swift`. That label also reads
+/// noted on `RowOverflowGlyph` in `IconActionButton.swift`. That label also reads
 /// `backgroundProminence` because it can sit on a selected table row's accent fill; a window
 /// toolbar item never does, so this only needs the plain hover tint every other toolbar
 /// control uses, matching `IconActionButtonStyle`'s colour and timing rather than inventing a

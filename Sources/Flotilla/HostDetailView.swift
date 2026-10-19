@@ -360,7 +360,7 @@ struct HostDetailView: View {
                                     .controlSize(.small)
                                     .frame(minWidth: 210, alignment: .leading)
                                     .disabled(!reachable)
-                                    .help(reachable ? "" : "No network address for this Mac yet")
+                                    .help(reachable ? kind.help : "No network address for this Mac yet")
                                 guideButton(kind)
                             }
                         }
@@ -697,6 +697,11 @@ struct HostDetailView: View {
                 }
             }
             .font(.system(size: 12))
+            // On the mark, not the row: a `.help` on an ancestor is the one that can take a
+            // control's own tooltip away (see `Scripts/check-tooltips.sh`).
+            .help(item.state == .good ? "Set as recommended"
+                  : item.state == .recommended ? "Changing this is recommended for a Mac that hosts containers"
+                  : "This Mac didn't report this setting.")
             .accessibilityLabel(item.state == .good ? "Set" : item.state == .recommended ? "Recommended" : "Not known")
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title).font(.system(size: 12))
@@ -707,7 +712,6 @@ struct HostDetailView: View {
             Spacer(minLength: 8)
             energyGuideButton(item.guide)
         }
-        .help(item.state == .unknown ? "This Mac didn't report this setting." : "")
     }
 
     private func energyGuideButton(_ guide: EnergyAdvice.Guide) -> some View {

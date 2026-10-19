@@ -290,9 +290,9 @@ struct DNSView: View {
         }
         Divider().frame(height: 14)
         IconActionButton(systemImage: "trash",
-                         label: "Delete \(deletable.count) domains",
+                         label: "Delete \(Plural.count(deletable.count, "domain"))",
                          help: deletable.isEmpty ? "None of these can be deleted from here"
-                                                 : "Delete \(deletable.count)",
+                                                 : "Delete \(Plural.count(deletable.count, "domain"))",
                          disabled: deletable.isEmpty || working, destructive: true) {
             pendingDelete = deletable
         }
@@ -546,16 +546,9 @@ struct DNSView: View {
     @ViewBuilder
     private func rowActions(for row: HostedDNS, place: RowActionPlace = .row) -> some View {
         HStack(spacing: 2) {
-            Menu {
+            RowOverflowMenu(label: "More actions for \(row.name)") {
                 menu(for: row)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(row.name)")
-            .accessibilityLabel("More actions for \(row.name)")
 
             if place == .header {
                 Divider().frame(height: 14)

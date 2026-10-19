@@ -171,7 +171,7 @@ struct MachineDetailView: View {
                 .font(.caption).foregroundStyle(.secondary)
             }
             if let upgrade {
-                Text(verbatim: "Open the Shell tab and run `\(upgrade)`")
+                Text("Open the Terminal tab and run \(Text(upgrade).monospaced())")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Text("Nothing is installed by Flotilla.").font(.caption).foregroundStyle(.secondary)
@@ -512,7 +512,7 @@ private struct MachineSettingsTab: View {
                     Button("Apply and Restart") { request(restart: true) }
                         .buttonStyle(.borderedProminent)
                         .disabled(!changed || !MachinesView.isRunning(machine))
-                        .help(MachinesView.isRunning(machine) ? "" : "The machine isn't running — use Apply")
+                        .help(MachinesView.isRunning(machine) ? "Save these settings and restart the machine" : "The machine isn't running — use Apply")
                     Spacer()
                     if applied {
                         // Names the state the machine is actually in, not just that a write

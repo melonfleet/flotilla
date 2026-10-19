@@ -19,7 +19,7 @@ struct HelperSettingsSection: View {
                 ForEach(health.actions, id: \.self) { action in
                     Button(action.title) { monitor.perform(action) }
                         .disabled(monitor.busy)
-                        .help(action.help ?? "")
+                        .help(ifAny: action.help)
                 }
             }
             // What it is, then one line on where it stands (Kamal: the two notes read as one repeated).

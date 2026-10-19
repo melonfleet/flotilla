@@ -219,7 +219,7 @@ struct GroupFormView: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(networks.isEmpty)
-                .help(networks.isEmpty ? "No networks yet — create one in Networks" : "")
+                .help(networks.isEmpty ? "No networks yet — create one in Networks" : "The network the containers join")
             }
 
             if !draft.notes.isEmpty {
@@ -297,7 +297,7 @@ struct GroupFormView: View {
                     .font(.system(size: 12, design: .monospaced))
                     .textSelection(.enabled)
                     .foregroundStyle(pendingSecrets[secret] != nil ? Theme.info : .secondary)
-                    .help(pendingSecrets[secret] != nil ? "New — saved when you press Save" : "")
+                    .help(ifAny: pendingSecrets[secret] != nil ? "New — kept when you save the group" : nil)
                 IconActionButton(systemImage: revealed.contains(secret) ? "eye.slash" : "eye",
                                  label: revealed.contains(secret) ? "Hide \(secret)" : "Show \(secret)",
                                  help: revealed.contains(secret) ? "Hide the password" : "Show the password") {

@@ -63,24 +63,16 @@ struct InspectPane: View {
                     }
                     Divider().frame(height: 14)
                     IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
-                                     help: "Reload", busy: loading) {
+                                     help: "Reload the inspect output", busy: loading) {
                         Task { await reload() }
                     }
                 }
 
-                Picker("View", selection: $presentation) {
-                    ForEach(InspectPresentation.allCases) {
-                        // The word survives as the accessibility label and the tooltip; only the
-                        // drawing changes.
-                        Label($0.rawValue, systemImage: $0.symbol)
-                            .labelStyle(.iconOnly)
-                            .help($0.rawValue)
-                            .tag($0)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                // The word survives as the accessibility label and the tooltip; only the drawing
+                // changes.
+                IconSegmentedPicker(title: "View", selection: $presentation,
+                                    options: InspectPresentation.allCases,
+                                    label: \.rawValue, systemImage: \.symbol)
 
                 TextField("Filter keys", text: $search)
                     .textFieldStyle(.roundedBorder)

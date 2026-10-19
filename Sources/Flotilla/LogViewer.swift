@@ -207,11 +207,11 @@ struct LogViewer: View {
     }
 
     private var optionsHelp: String {
-        bootLog ? "Showing the boot log" : "What to show"
+        bootLog ? "Log options — boot log" : "Log options"
     }
 
-    /// Checkboxes in a popover, laid out like the lists' Columns popover — same width, same
-    /// spacing, same control — so the two read as the same mechanism in different places.
+    /// Checkboxes in a popover, laid out like the Logs section's display popover — same width,
+    /// same spacing, same control — so the two read as the same mechanism in different places.
     private var optionsPopover: some View {
         VStack(alignment: .leading, spacing: 2) {
             Toggle("Boot Log", isOn: $bootLog)

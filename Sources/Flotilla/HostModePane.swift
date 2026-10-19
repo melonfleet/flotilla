@@ -158,7 +158,7 @@ struct HostModePane: View {
                 Text("Type it on the admin Mac to pair.").font(.caption).foregroundStyle(.secondary)
                 Button("Show Code") { hostMode.showPairingCode() }
                     .disabled(hostMode.listener == .off)
-                    .help(hostMode.listener == .off ? "Turn on listening first" : "")
+                    .help(hostMode.listener == .off ? "Turn on listening first" : "Show the code to type on the admin Mac")
             }
         }
     }

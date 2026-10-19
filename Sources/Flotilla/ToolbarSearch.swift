@@ -374,8 +374,8 @@ struct ToolbarSearchField: View {
         .frame(height: 28)
         .glassEffect(.regular.tint(.white.opacity(0.2)), in: .capsule)
         .environment(\.colorScheme, .light)
-        .help((box.scope?.help.map { $0 + " " } ?? "")
-              + "⌘K or ⌘F to search. Type / or > for commands; type: for scopes, such as volume:.")
+        .help([box.scope?.help, "⌘K or ⌘F to search. Type / or > for commands; type: for scopes, such as volume:."]
+              .compactMap { $0 }.joined(separator: " "))
         .anchorPreference(key: ToolbarSearchAnchor.self, value: .bounds) { $0 }
         .background(GeometryReader { proxy in
             Color.clear

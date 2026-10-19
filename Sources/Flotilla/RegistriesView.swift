@@ -248,17 +248,17 @@ struct RegistriesView: View {
         }
         Divider().frame(height: 14)
         IconActionButton(systemImage: "person.crop.circle.badge.xmark",
-                         label: "Sign out of \(signedIn.count) registries",
+                         label: "Sign out of \(Plural.count(signedIn.count, "registry", "registries"))",
                          help: signedIn.isEmpty ? "None of these is signed in"
                              : !model.runtimeUsable ? "Start the container system to sign out"
-                             : "Sign out of \(signedIn.count)",
+                             : "Sign out of \(Plural.count(signedIn.count, "registry", "registries"))",
                          disabled: signedIn.isEmpty || !model.runtimeUsable) {
             pendingSignOut = signedIn
         }
         IconActionButton(systemImage: "trash",
-                         label: "Remove \(listed.count) registries from the list",
+                         label: "Remove \(Plural.count(listed.count, "registry", "registries")) from the list",
                          help: listed.isEmpty ? "None of these is in your list"
-                                              : "Remove \(listed.count) from the list",
+                                              : "Remove \(Plural.count(listed.count, "registry", "registries")) from the list",
                          disabled: listed.isEmpty, destructive: true) {
             pendingRemove = listed
         }
@@ -512,16 +512,9 @@ struct RegistriesView: View {
                 }
             }
 
-            Menu {
+            RowOverflowMenu(label: "More actions for \(row.name)") {
                 menu(for: row)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(row.name)")
-            .accessibilityLabel("More actions for \(row.name)")
 
             if place == .header {
                 Divider().frame(height: 14)

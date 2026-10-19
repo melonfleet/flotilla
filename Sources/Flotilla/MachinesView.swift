@@ -393,13 +393,13 @@ struct MachinesView: View {
             tagSheet = TagSheetTarget(selectedTagSubjects)
         }
         Divider().frame(height: 14)
-        iconButton("play.fill", "Start \(actionable.count) machines", busy: selectionBusy) {
+        iconButton("play.fill", "Start \(Plural.count(actionable.count, "machine"))", busy: selectionBusy) {
             Task { await model.performMachineBulk(.start, on: actionable) }
         }
-        iconButton("stop.fill", "Stop \(actionable.count) machines", busy: selectionBusy) {
+        iconButton("stop.fill", "Stop \(Plural.count(actionable.count, "machine"))", busy: selectionBusy) {
             Task { await model.performMachineBulk(.stop, on: actionable) }
         }
-        iconButton("trash", "Delete \(actionable.count) machines",
+        iconButton("trash", "Delete \(Plural.count(actionable.count, "machine"))",
                    busy: selectionBusy, destructive: true) {
             confirmingBulkDelete = true
         }
@@ -574,12 +574,12 @@ struct MachinesView: View {
             machineMenu(for: machine)
         } else {
             let busy = model.isAnyBusy(ids, kind: .machine)
-            Button("Start \(ids.count) Machines") { Task { await model.performMachineBulk(.start, on: ids) } }
+            Button("Start \(Plural.count(ids.count, "Machine"))") { Task { await model.performMachineBulk(.start, on: ids) } }
                 .disabled(busy)
-            Button("Stop \(ids.count) Machines") { Task { await model.performMachineBulk(.stop, on: ids) } }
+            Button("Stop \(Plural.count(ids.count, "Machine"))") { Task { await model.performMachineBulk(.stop, on: ids) } }
                 .disabled(busy)
             Divider()
-            Button("Delete \(ids.count) Machines…", role: .destructive) {
+            Button("Delete \(Plural.count(ids.count, "Machine"))…", role: .destructive) {
                 selection = ids            // so the confirmation counts what was right-clicked
                 confirmingBulkDelete = true
             }
@@ -609,16 +609,9 @@ struct MachinesView: View {
                 }
             }
 
-            Menu {
+            RowOverflowMenu(label: "More actions for \(machine.id)") {
                 machineMenu(for: machine)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(machine.id)")
-            .accessibilityLabel("More actions for \(machine.id)")
 
             if place == .header {
                 Divider().frame(height: 14)

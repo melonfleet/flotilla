@@ -432,6 +432,13 @@ struct FlotillaApp: App {
             MenuBarView(model: model)
         } label: {
             // Drawn, not a template: the badge is colour. See `MenuBarIcon`.
+            //
+            // No tooltip, and `.help` here cannot give it one: measured on 19 October with a probe
+            // `MenuBarExtra` whose label carried `.help`, which left `NSStatusBarButton.toolTip`
+            // nil — SwiftUI hands the label to the status item as an image and drops the rest.
+            // VoiceOver has a name from the image's `accessibilityDescription`. A tooltip needs
+            // the status item's button itself, which wants a real `NSStatusItem` (or a reach into
+            // the one SwiftUI made); left for the Xcode project rather than plumbed in here.
             Image(nsImage: MenuBarIcon.image(for: model.menuBarStatus, dark: menuBarAppearance.isDark))
         }
         .menuBarExtraStyle(.menu)
@@ -576,13 +583,10 @@ struct FlotillaApp: App {
         // Not in the Window menu: it is reached from Help, and only while there is something to set up.
         .commandsRemoved()
 
-        // Container detail used to be a `WindowGroup` here. It is now a modal sheet presented
-        // by `ContainersView`, for the reason the owner gave: a real window brought its own traffic
-        // lights back and left the app behind it undimmed, so detail was the one surface that
-        // did not behave like every other pop-up in the app. Consistency won.
-        //
-        // The trade is real and worth naming: detail is no longer resizable, and you can no
-        // longer keep several open beside the table. Both were genuine advantages of a window.
+        // Container detail used to be a `WindowGroup` here, then a modal sheet presented by
+        // `ContainersView`. It is neither now: it is the right pane of the Containers split
+        // (Q58), embedded like every other page, which also gave back the resizing and the
+        // height the sheet had cost.
     }
 }
 

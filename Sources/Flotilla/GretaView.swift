@@ -136,12 +136,9 @@ struct GretaView: View {
     }
 
     private func overflow(for chat: GretaConversation) -> some View {
-        Menu {
+        RowOverflowMenu(label: "More actions for \(chat.title)") {
             menu(for: chat)
-        } label: { RowOverflowLabel() }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .help("More actions for \(chat.title)")
-        .accessibilityLabel("More actions for \(chat.title)")
+        }
     }
 
     @ViewBuilder

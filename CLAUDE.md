@@ -466,6 +466,16 @@ that we *built* the right command; almost nothing checked the command was
   rendering the real window: `cacheDisplay(in:to:)` from an injected dylib needs no Screen
   Recording permission. Hold a binding to write through, and keep the value you display in
   something observed.
+- **A `.help` on or around a segmented picker deletes every segment's tooltip.** Per-segment
+  `.help` on each `Label` works; add one `.help` to the `Picker`, or to any view that contains it,
+  and every segment's tooltip becomes nil, including those that set their own. That includes
+  `.help("")`, so the `cond ? text : ""` idiom near a picker is not harmless. SwiftUI says nothing.
+  Measured, not inferred: a probe rendered pickers in an `NSHostingView` and read
+  `NSSegmentedControl.toolTip(forSegment:)` (tooltip audit, 19 October). No call site tripped it
+  yet, which is the reason to fix it now. Icon pickers go through `IconSegmentedPicker`, and nothing
+  gets a `.help` on it or around it. `check-tooltips.sh` refuses the cases grep can see. Its header
+  lists the ones it can't. Same measurement: `.help` on a `MenuBarExtra` label never reaches
+  `NSStatusBarButton.toolTip`, so the status item has no tooltip until there is AppKit to set one.
 
 ### Branding
 

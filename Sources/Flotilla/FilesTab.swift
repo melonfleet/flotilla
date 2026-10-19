@@ -138,7 +138,7 @@ struct FilesTab: View {
                         tool("chevron.right", "Forward", disabled: historyIndex == history.count - 1) { step(1) }
                         Divider().frame(height: 18)
                         ForEach(FilesViewMode.allCases, id: \.self) { candidate in
-                            tool(candidate.symbol, candidate.rawValue) { model.filesViewModes[container.id] = candidate }
+                            tool(candidate.symbol, candidate.help) { model.filesViewModes[container.id] = candidate }
                                 .background(mode == candidate ? Theme.accent.opacity(0.25) : .clear, in: .capsule)
                                 .accessibilityAddTraits(mode == candidate ? [.isSelected] : [])
                         }
@@ -149,10 +149,11 @@ struct FilesTab: View {
                                     else { Text(option.rawValue) }
                                 }
                                 .disabled(!option.available)
-                                .help(option.available ? "Group by \(option.rawValue.lowercased())" : "A container's files don't record this")
+                                .help(!option.available ? "A container's files don't record this"
+                                      : option == FileGrouping.none ? "Don't group" : "Group by \(option.rawValue.lowercased())")
                             }
                         } label: { Image(systemName: "line.3.horizontal.decrease") }
-                        .menuStyle(.borderlessButton).fixedSize().help("Group By").accessibilityLabel("Group By")
+                        .menuStyle(.borderlessButton).fixedSize().help("Group files by").accessibilityLabel("Group files by")
                         tool("square.and.arrow.up", "Share", disabled: selected.isEmpty || busy) { temporaryAction(.share, items: selected) }
                             .background(FileShareAnchor(view: shareAnchor).allowsHitTesting(false))
                         tool("arrow.down.to.line", "Download to this Mac", disabled: selected.isEmpty || busy) { download(selected) }

@@ -22,6 +22,15 @@ enum HostConnect {
             }
         }
 
+        /// What the button does, for its tooltip: which app opens, and on what.
+        var help: String {
+            switch self {
+            case .ssh: "Open Terminal, signed in to this Mac over SSH"
+            case .vnc: "Open Screen Sharing on this Mac"
+            case .smb: "Open this Mac's shared folders in Finder"
+            }
+        }
+
         var scheme: String {
             switch self {
             case .ssh: "ssh"

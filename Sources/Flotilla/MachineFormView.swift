@@ -287,7 +287,7 @@ struct MachineFormView: View {
 
     /// ▶ at the top right of the header (Q65), always on screen: the machine is created in Tasks.
     private var actions: FormActions {
-        FormActions(.startsJob("Save", isDisabled: !previewIsValid) { Task { await create() } })
+        FormActions(.startsJob("Create Machine", isDisabled: !previewIsValid) { Task { await create() } })
     }
 
     // MARK: Preview

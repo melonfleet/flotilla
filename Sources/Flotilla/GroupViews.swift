@@ -127,7 +127,7 @@ extension GroupState {
     var explanation: String {
         switch self {
         case .empty: "This group has no services in it yet."
-        case .notCreated: "None of these containers exists on this Mac yet. Starting the group creates them."
+        case .notCreated: "None of these containers exists yet. Starting the group creates them."
         case .stopped: "Every container exists and none is running."
         case .partial: "Some of this group is running and some is not."
         case .running: "Every service in this group is running."

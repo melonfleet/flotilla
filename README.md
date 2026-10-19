@@ -184,6 +184,7 @@ one exists because it already went wrong once:
 | `Scripts/check-defaults.sh` | a screenshot scaffold or wrong `@State` default reaching a build |
 | `Scripts/check-test-isolation.sh` | a test that passes only because another test ran first |
 | `Scripts/check-hygiene.sh` | real identity, credentials or key files in tracked files |
+| `Scripts/check-tooltips.sh` | an icon-only button or menu with no tooltip, an empty tooltip, or a `.help` on a segmented picker |
 | `Scripts/check-history.sh` | the same, anywhere in the git history — run before publishing |
 
 ## Documentation

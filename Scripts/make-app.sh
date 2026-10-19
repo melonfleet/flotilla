@@ -68,6 +68,9 @@ echo "▸ checking view defaults…"
 # A row whose `⋯` button and right-click offer different things. Broken twice already,
 # and invisible unless you open both menus on the same row and compare them by eye.
 "$ROOT/Scripts/check-menu-parity.sh"
+# An icon-only control with no tooltip, a tooltip that can be "", or a `.help` that silently
+# deletes a segmented picker's per-segment tooltips. The misses were all hand-rolled controls.
+"$ROOT/Scripts/check-tooltips.sh"
 # A blocking `container` call put back in a `Task` holds one of Swift's few pool threads for its
 # whole timeout; enough unreachable hosts and the app cannot even quit. Looks like correct code.
 "$ROOT/Scripts/check-blocking.sh"

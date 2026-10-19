@@ -502,7 +502,7 @@ struct ClustersView: View {
             title: row.name,
             titleHelp: "kubectl --context \(row.name)" + (row.host.isLocal ? "" : " — on \(row.hostName)"),
             detail: detailParts(row).joined(separator: " · "),
-            detailHelp: "The API server is reachable on this Mac at the host port",
+            detailHelp: "State, size and API address on \(row.hostName)",
             selected: selection.contains(row.id),
             check: RowCheck(row.id, in: $selection),
             summary: rowSummary(row),
@@ -577,16 +577,9 @@ struct ClustersView: View {
                 pendingRecreate = row
             }
 
-            Menu {
+            RowOverflowMenu(label: "More actions for \(cluster.node)") {
                 menu(for: row)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(cluster.node)")
-            .accessibilityLabel("More actions for \(cluster.node)")
 
             if place == .header {
                 Divider().frame(height: 14)
@@ -608,7 +601,9 @@ struct ClustersView: View {
         let cluster = row.cluster
         Button("Load Image…") { loadImageTarget = cluster }
             .disabled(!cluster.isRunning || !row.host.isLocal)
-            .help(row.host.isLocal ? "" : "Images are loaded into a cluster on its own Mac")
+            .help(!row.host.isLocal ? "Images are loaded into a cluster on its own Mac"
+                  : cluster.isRunning ? "Load an image from this Mac into the cluster"
+                  : "Start the cluster to load an image into it")
         Button("Recreate…") { pendingRecreate = row }
             .disabled(cluster.isRunning)
         // No result dialog. What it wrote and how to use it are reported in the progress panel

@@ -415,6 +415,9 @@ struct SettingsView: View {
                         .accessibilityAddTraits(binding.wrappedValue == style ? .isSelected : [])
                     }
                 }
+                // A labelled container, so `SettingRow`'s "Greta's look" names the group and
+                // each picture keeps its own name rather than taking the row's.
+                .accessibilityElement(children: .contain)
             }
         }
     }

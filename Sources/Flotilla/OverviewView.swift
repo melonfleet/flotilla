@@ -353,12 +353,12 @@ struct OverviewView: View {
                         Button { noticeIndex = (index - 1 + notices.count) % notices.count } label: {
                             Image(systemName: "chevron.left").frame(width: 16, height: 16)
                         }
-                        .buttonStyle(.borderless).help("Previous").accessibilityLabel("Previous notification")
+                        .buttonStyle(.borderless).help("Previous notification").accessibilityLabel("Previous notification")
                         Text("\(index + 1) of \(notices.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         Button { noticeIndex = (index + 1) % notices.count } label: {
                             Image(systemName: "chevron.right").frame(width: 16, height: 16)
                         }
-                        .buttonStyle(.borderless).help("Next").accessibilityLabel("Next notification")
+                        .buttonStyle(.borderless).help("Next notification").accessibilityLabel("Next notification")
                     }
                 }
                 Button("All") { go(.notifications) }.buttonStyle(.link).font(.caption)

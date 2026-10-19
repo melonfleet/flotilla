@@ -163,7 +163,7 @@ private struct HelperStatusItem: View {
                 ForEach(health.actions.filter { $0 != .openLoginItems }, id: \.self) { action in
                     Button(action.title) { monitor.perform(action) }
                         .disabled(monitor.busy)
-                        .help(action.help ?? "")
+                        .help(ifAny: action.help)
                 }
                 Button(HelperHealth.Action.openLoginItems.title) { monitor.openLoginItems() }
                 Divider()

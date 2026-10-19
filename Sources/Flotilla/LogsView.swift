@@ -173,18 +173,9 @@ struct LogsView: View {
                       ? "Deselect all"
                       : "Select all \(feed.count) line\(feed.count == 1 ? "" : "s")")
 
-            Picker("Log", selection: Binding(get: { ui.scope }, set: { ui.scope = $0 })) {
-                ForEach(LogsUIState.Scope.allCases) { option in
-                    Label(option.rawValue, systemImage: option.systemImage)
-                        .labelStyle(.iconOnly)
-                        .accessibilityLabel(option.accessibilityLabel)
-                        .help(option.accessibilityLabel)
-                        .tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            IconSegmentedPicker(title: "Log", selection: Binding(get: { ui.scope }, set: { ui.scope = $0 }),
+                                options: LogsUIState.Scope.allCases,
+                                label: \.rawValue, systemImage: \.systemImage, help: \.accessibilityLabel)
 
             // **Order matches every other section: the filter sits closest to the search
             // field.** The owner's rule, and it is the right one — filter and search are the two
@@ -289,12 +280,10 @@ struct LogsView: View {
     private var isFiltered: Bool { ui.sources != .all || !ui.only.isEmpty }
 
     private var sourceFilterHelp: String {
-        if !ui.only.isEmpty {
-            return ui.only.count == 1
-                ? "Showing \(ui.only.first ?? "one source") only"
-                : "Showing \(ui.only.count) sources"
-        }
-        return ui.sources == .all ? "All sources" : "\(ui.sources.rawValue) only"
+        let shown = !ui.only.isEmpty
+            ? (ui.only.count == 1 ? "\(ui.only.first ?? "one source") only" : Plural.count(ui.only.count, "source") + " shown")
+            : ui.sources == .all ? "all shown" : "\(ui.sources.rawValue) only"
+        return "Choose which sources to show — \(shown)"
     }
 
     /// Kinds first, then the individual sources that are actually running — the only ones `logs`
@@ -330,7 +319,7 @@ struct LogsView: View {
     }
 
     private var displayHelp: String {
-        ui.showTimestamps ? "Showing timestamps" : "How the feed is shown"
+        ui.showTimestamps ? "Display options — timestamps on" : "Display options"
     }
 
     private var displayPopover: some View {
@@ -558,7 +547,6 @@ struct LogsView: View {
             titleHelp: line.host.isLocal ? line.name : "\(line.name) on \(line.hostName)",
             trailingText: ui.showTimestamps ? line.receivedAt.map(LogTimestamp.clock) : nil,
             detail: Self.preview(line),
-            detailHelp: "",
             selected: ui.selection.contains(line.id),
             check: RowCheck(line.id, in: selectionBinding),
             summary: Self.summary(line, level: level),
@@ -589,16 +577,9 @@ struct LogsView: View {
                 TagPillRow(tags: model.tags.tags(on: line.kind, line.source), compact: true, limit: 1)
             },
             actions: {
-                Menu {
+                RowOverflowMenu(label: "More actions for this line from \(line.name)", help: "More actions for this line") {
                     menu(for: line)
-                } label: {
-                    RowOverflowLabel()
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("More actions for this line")
-                .accessibilityLabel("More actions for this line from \(line.name)")
             })
     }
 

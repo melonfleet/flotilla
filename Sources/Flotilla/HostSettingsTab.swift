@@ -71,19 +71,15 @@ struct HostSettingsTab: View {
                                        : report.propertyListXML())
                     }
                     Divider().frame(height: 14)
-                    IconActionButton(systemImage: "arrow.clockwise", label: "Reload", help: "Reload", busy: loading) {
+                    IconActionButton(systemImage: "arrow.clockwise", label: "Reload",
+                                     help: source == .flotilla ? "Reload Flotilla's settings" : "Reload the container settings",
+                                     busy: loading) {
                         Task { await reload() }
                     }
                 }
-                Picker("View", selection: $presentation) {
-                    ForEach(Presentation.allCases) {
-                        Label(source == .container && $0 == .plist ? "JSON" : $0.rawValue,
-                              systemImage: source == .container && $0 == .plist ? "curlybraces" : $0.symbol)
-                            .labelStyle(.iconOnly)
-                            .help(source == .container && $0 == .plist ? "JSON" : $0.rawValue).tag($0)
-                    }
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                IconSegmentedPicker(title: "View", selection: $presentation, options: Presentation.allCases,
+                                    label: { source == .container && $0 == .plist ? "JSON" : $0.rawValue },
+                                    systemImage: { source == .container && $0 == .plist ? "curlybraces" : $0.symbol })
                 // The same filter in both views, as on the Inspect tab: rows in the table, lines in
                 // the property list.
                 TextField("Filter settings", text: $search)

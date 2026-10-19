@@ -558,16 +558,9 @@ struct NetworksView: View {
         let busy = model.isBusy(row.id, kind: .network)
         let name = network.id + onHost(row)
         HStack(spacing: 2) {
-            Menu {
+            RowOverflowMenu(label: "More actions for \(name)") {
                 menu(for: row)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(name)")
-            .accessibilityLabel("More actions for \(name)")
 
             if place == .header {
                 Divider().frame(height: 14)
@@ -741,17 +734,14 @@ extension ContainerNetwork {
     var creationSortKey: String { configuration.creationDate ?? "9999" }
 }
 
-/// The New Network form, hosted in its own **window** rather than a sheet.
-///
-/// The owner's rule, stated generally: any window that comes up should carry macOS's own traffic
-/// lights. A sheet has no title bar, so it cannot — which is why this is a `WindowGroup`
-/// (see `FlotillaApp`). Confirmations and error alerts stay as alerts: those are modal
-/// decisions, and traffic lights on a "delete this?" prompt would be wrong.
+/// The New Network form, embedded in the Networks section under a `FormHeader` like every other
+/// form (9 August: everything is embedded, forms included). It was once its own window, and a
+/// sheet before that. Confirmations and error alerts stay as alerts: those are modal decisions.
 struct NewNetworkView: View {
     let model: AppModel
-    /// Supplied by the presenter rather than using `@Environment(\.dismiss)`: the sheet's
-    /// own `isPresented` binding is the single source of truth for whether it is open, and
-    /// two mechanisms for closing one thing is how a sheet gets stuck.
+    /// Supplied by the presenter rather than using `@Environment(\.dismiss)`: the section's own
+    /// `showingCreate` is the single source of truth for whether the form is open, and two
+    /// mechanisms for closing one thing is how a form gets stuck.
     let dismiss: () -> Void
     /// Set when a suggestion opened the form (Q28): its values fill the fields.
     var prefill: NetworkSuggestion?

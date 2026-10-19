@@ -325,7 +325,7 @@ struct ContainersView: View {
         let filtering = ui.filter != .all || ui.kindFilter != .all || ui.hostFilter != nil
         return IconActionButton(systemImage: "line.3.horizontal.decrease",
                                 label: "Filter",
-                                help: filtering ? filterSummary : "Filter by state or kind",
+                                help: filtering ? filterSummary : "Filter by state, kind or host",
                                 active: filtering) {
             showingFilter.toggle()
         }
@@ -601,16 +601,9 @@ struct ContainersView: View {
             // offered different things, and everything in between (Logs, Terminal, Inspect, Run
             // Again, Force Kill, Delete) was reachable only by right-click. Two menus for one row
             // is two menus to keep in step, and they had already drifted.
-            Menu {
+            RowOverflowMenu(label: "More actions for \(container.id)") {
                 actions(for: container)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(container.id)")
-            .accessibilityLabel("More actions for \(container.id)")
 
             if place == .header {
                 Divider().frame(height: 14)
@@ -643,16 +636,9 @@ struct ContainersView: View {
                     Task { await model.perform(.start, on: container, host: host) }
                 }
             }
-            Menu {
+            RowOverflowMenu(label: "More actions for \(container.id) on \(hostName(host))") {
                 remoteActions(for: container, on: host)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(container.id) on \(hostName(host))")
-            .accessibilityLabel("More actions for \(container.id) on \(hostName(host))")
 
             if place == .header {
                 Divider().frame(height: 14)
@@ -892,16 +878,9 @@ struct ContainersView: View {
 
             // The **same** builder the right-click menu uses, which `check-menu-parity.sh` holds
             // every row to.
-            Menu {
+            RowOverflowMenu(label: "More actions for \(group.name)") {
                 groupMenu(for: group)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(group.name)")
-            .accessibilityLabel("More actions for \(group.name)")
 
             if place == .header {
                 Divider().frame(height: 14)
@@ -1360,7 +1339,7 @@ struct ContainersView: View {
         }, trailing: {
             // A menu since groups joined this list (the owner, 5 October): two ways to add to it,
             // under the one glyph that means "add".
-            ToolbarIconMenu(systemImage: "plus", label: "Run a container or create a group") {
+            ToolbarIconMenu(systemImage: "plus", label: "Run a container, create a group or use a suggestion") {
                 addMenuItems
             }
             ToolbarRefreshButton(label: "Refresh now") {
@@ -1885,7 +1864,7 @@ struct ContainersView: View {
             RowGroupDisclosure(
                 open: open,
                 label: open ? "Hide the containers in \(group.name)" : "Show the containers in \(group.name)",
-                help: open ? "Hide containers" : "Show \(group.members.count) containers"
+                help: open ? "Hide containers" : "Show \(Plural.count(group.members.count, "container"))"
             ) {
                 if open { ui.expandedGroupIDs.remove(group.id) } else { ui.expandedGroupIDs.insert(group.id) }
             }

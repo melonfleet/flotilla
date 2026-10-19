@@ -116,7 +116,7 @@ struct FormActions {
         let label: String
         /// The same validation as before: disabled exactly when the old button was.
         var isDisabled = false
-        /// Why it cannot be pressed now, appended to the tooltip.
+        /// Appended to the tooltip: why it cannot be pressed now, or what pressing it leads to.
         var reason: String? = nil
         let action: () -> Void
 
@@ -188,15 +188,15 @@ private struct FormActionCluster: View {
                     .accessibilityLabel(actions.workingHelp)
             }
             if !actions.more.isEmpty {
-                ToolbarIconMenu(systemImage: "ellipsis", label: "More") {
+                ToolbarIconMenu(systemImage: "ellipsis", label: "More actions") {
                     ForEach(Array(actions.more.enumerated()), id: \.offset) { _, extra in
                         Button(extra.title, role: extra.role, action: extra.action)
                             .disabled(extra.isDisabled)
-                            .help(extra.help ?? "")
+                            .help(ifAny: extra.help)
                     }
                 }
             }
-            IconActionButton(systemImage: "xmark", label: "Close", help: "Close", action: close)
+            IconActionButton(systemImage: "xmark", label: "Close", help: "Close (Esc)", action: close)
                 .keyboardShortcut(.cancelAction)
             if let commit = actions.commit {
                 Button(action: commit.action) {

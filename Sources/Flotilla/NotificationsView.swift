@@ -168,9 +168,9 @@ struct NotificationsView: View {
             },
             chips: { EmptyView() },
             actions: {
-                Menu { noticeMenu(notice) } label: { RowOverflowLabel() }
-                    .menuStyle(.borderlessButton).fixedSize()
-                    .accessibilityLabel("More actions for \(notice.title)")
+                RowOverflowMenu(label: "More actions for \(notice.title)") {
+                    noticeMenu(notice)
+                }
             })
         .contextMenu { noticeMenu(notice) }
         .opacity(notice.isActive && notice.dismissed == nil ? 1 : 0.65)

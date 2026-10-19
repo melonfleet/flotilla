@@ -10,8 +10,8 @@ import FlotillaCore
 /// like anything typed — a library entry is a suggestion, not a command.
 ///
 /// Two or more ticked rows offer **Use N Suggestions…**, which walks the same forms one by one
-/// (TODO item 15): Save runs and opens the next, Skip advances without running, Cancel stops the
-/// walk. Single Use… is unchanged.
+/// (TODO item 15): the form's ▶ runs and opens the next, Skip (in its ⋯) advances without running,
+/// ✕ stops the walk. Single Use… is unchanged.
 struct SuggestionsView: View {
     let model: AppModel
     let dismiss: () -> Void
@@ -63,7 +63,7 @@ struct SuggestionsView: View {
                 Divider()
                 FormBand {
                     Text(selection.count >= 2
-                         ? "Each opens its form in turn. Save runs it; Skip goes on; Cancel stops the rest."
+                         ? "Each opens its form in turn. ▶ runs it and opens the next; Skip, under ⋯, goes on; ✕ stops the rest."
                          : "A stack is created as a group, left ready to start. A container opens in the Run form.")
                         .foregroundStyle(.secondary)
                 }
@@ -224,9 +224,9 @@ struct SuggestionsView: View {
                 if entry.licenceNote != nil { badge("Licence") }
             },
             actions: {
-                Menu { suggestionMenu(entry) } label: { RowOverflowLabel() }
-                    .menuStyle(.borderlessButton).fixedSize()
-                    .accessibilityLabel("More actions for \(entry.title)")
+                RowOverflowMenu(label: "More actions for \(entry.title)") {
+                    suggestionMenu(entry)
+                }
             })
         .contextMenu { suggestionMenu(entry) }
     }

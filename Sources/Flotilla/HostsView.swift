@@ -213,7 +213,7 @@ struct HostsView: View {
         var id: String { category.id + hosts.joined() }
     }
 
-    private static let removeHelp = "This Mac is the admin machine — it can’t be removed"
+    private static let removeHelp = "This is the Mac you’re using — it can’t be removed"
     private var hostMode: HostModeController { model.hostMode }
 
     var body: some View {
@@ -1030,16 +1030,9 @@ struct HostsView: View {
     @ViewBuilder
     private func rowActions(for row: HostRow, place: RowActionPlace = .row) -> some View {
         HStack(spacing: 2) {
-            Menu {
+            RowOverflowMenu(label: "More actions for \(row.name)") {
                 menu(for: row)
-            } label: {
-                RowOverflowLabel()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More actions for \(row.name)")
-            .accessibilityLabel("More actions for \(row.name)")
 
             if place == .header {
                 Divider().frame(height: 14)
@@ -1156,7 +1149,7 @@ struct HostsView: View {
         Divider()
         Button("Remove…", role: .destructive) { pendingForget = row }
             .disabled(row.isThisMac)
-            .help(row.isThisMac ? Self.removeHelp : "")
+            .help(row.isThisMac ? Self.removeHelp : "Remove \(row.name)")
     }
 
     /// A paired host or This Mac opens its page; an imported one goes straight to pairing, which

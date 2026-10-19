@@ -9,8 +9,10 @@
 # and `ContainerCard`'s own `⋯` was a third list again, under a comment claiming it was "the same
 # overflow menu as the table row, from the same definition".
 #
-# The rule the check enforces is structural, not textual: the body of the `Menu` labelled
-# `RowOverflowLabel()` must be the *same call* as the body of a `.contextMenu` in the same file.
+# The rule the check enforces is structural, not textual: the body of a row's
+# `RowOverflowMenu(label:) { … }` must be the *same call* as the body of a `.contextMenu` in the
+# same file. (Until 19 October that was a `Menu` labelled `RowOverflowLabel()`; the menu now
+# carries its own label, so the glyph cannot be drawn without one.)
 # Sharing one builder is the only way the two stay in step; comparing two hand-written lists
 # would just be a second place to forget.
 #
@@ -37,7 +39,7 @@ NOT_A_ROW = {"RuntimeStatusBand.swift"}
 
 for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
     text = path.read_text()
-    if "RowOverflowLabel()" not in text:
+    if "RowOverflowMenu(label:" not in text:
         continue
     # Bodies of `.contextMenu { <single expression> }`, in any of its spellings.
     ctx = set(re.findall(r'\.contextMenu\s*\{\s*([^\n{}]+?)\s*\}', text))
@@ -51,9 +53,9 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
         m = re.search(r'func ' + delegate + r'\(.*?\n    \}\n', text, re.S)
         if m:
             ctx |= {c + "(" for c in re.findall(r'\b([A-Za-z_]\w*)\(for:', m.group(0))}
-    # Bodies of `Menu { <single expression> } label: { RowOverflowLabel() }`.
+    # Bodies of `RowOverflowMenu(label: …) { <single expression> }`.
     overflow = re.findall(
-        r'Menu\s*\{\s*([^\n{}]+?)\s*\}\s*label:\s*\{\s*(?://[^\n]*\n\s*)*RowOverflowLabel\(\)',
+        r'RowOverflowMenu\(label:[^\n{]*\)\s*\{\s*([^\n{}]+?)\s*\}',
         text)
     # And the builder an owner hands to a card that takes one.
     passed = set(re.findall(r'menuContent:\s*\{\s*([^\n{}]+?)\s*\}', text))
@@ -62,13 +64,13 @@ for path in sorted(pathlib.Path("Sources/Flotilla").glob("*.swift")):
         continue
 
     if not overflow:
-        FAIL.append(f"{path}: has RowOverflowLabel() but no single-call Menu body to check")
+        FAIL.append(f"{path}: has RowOverflowMenu but no single-call menu body to check")
         continue
 
     # Every `⋯` must be a single shared call. A hand-written body is not extracted above, so a
     # file with one good `⋯` and one hand-written one used to pass on the good one — which is how
     # the Containers negative control below had quietly stopped failing.
-    labels = len(re.findall(r'label:\s*\{\s*(?://[^\n]*\n\s*)*RowOverflowLabel\(\)', text))
+    labels = len(re.findall(r'RowOverflowMenu\(label:', text))
     if labels > len(overflow) and path.name not in NOT_A_ROW:
         FAIL.append(f"{path}: {labels - len(overflow)} `⋯` menu(s) with a hand-written body — "
                     "share the builder the right-click uses")
