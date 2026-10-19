@@ -13,8 +13,13 @@ enum MachineUpdateCommand: CaseIterable, Sendable {
         }
     }
 
+    /// Only `apk update` needs root inside the machine: it rewrites apk's package index, and
+    /// `machine run` otherwise runs as the user matching the Mac's own (Kyle, 19 October). It changes
+    /// nothing else; no package is installed.
+    var runsAsRoot: Bool { self == .apkRefresh }
+
     func arguments(machine: String) -> [String] {
-        ["machine", "run", "--name", machine, "--"] + command
+        ["machine", "run", "--name", machine] + (runsAsRoot ? ["--root"] : []) + ["--"] + command
     }
 
     static func commands(for distribution: LinuxDistribution) -> [Self]? {

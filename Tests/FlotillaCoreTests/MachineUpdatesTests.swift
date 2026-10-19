@@ -7,7 +7,8 @@ import Testing
     for operation in MachineUpdateCommand.allCases {
         let args = operation.arguments(machine: "dev")
         let validated = try Allowlist.validated(args, execPolicy: .interactiveShell)
-        #expect(validated.arguments == ["machine", "run", "--name", "dev"] + operation.command)
+        #expect(validated.arguments == ["machine", "run", "--name", "dev"]
+                + (operation.runsAsRoot ? ["--root"] : []) + operation.command)
         #expect(validated.timeoutHint == 120)
         #expect(!validated.arguments.contains("--"))
         #expect(throws: AllowlistError.self) {
@@ -91,7 +92,7 @@ private final class UpdateGuardHost: ContainerHost, @unchecked Sendable {
     #expect(throws: ContainerCLIError.self) { try cli.checkMachineUpdates("probe-alpine") }
     #expect(host.invocations == [["machine", "inspect", "probe-alpine"],
                                  ["machine", "inspect", "probe-alpine"],
-                                 ["machine", "run", "--name", "probe-alpine", "apk", "update"]])
+                                 ["machine", "run", "--name", "probe-alpine", "--root", "apk", "update"]])
     #expect(host.timeouts.allSatisfy { $0 > 0 && $0 <= 120 })
 }
 
@@ -125,4 +126,21 @@ private final class DNFStatusHost: ContainerHost, @unchecked Sendable {
     #expect(commands == [MachineUpdateCommand.dnfCheck, .rpmInstalled].map {
         ["machine", "run", "--name", "probe-alpine"] + $0.command
     })
+}
+
+@Test func onlyTheAlpineRefreshRunsAsRootAndItMust() throws {
+    let allowlist: (ExecPolicy, [String]) throws -> Void = { policy, args in
+        _ = try Allowlist.validated(args, execPolicy: policy, wirePolicy: .localOwner)
+    }
+    // The refresh needs --root, and nothing else may have it.
+    #expect(throws: (any Error).self) {
+        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--", "apk", "update"])
+    }
+    try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk", "update"])
+    #expect(throws: (any Error).self) {
+        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk", "version", "-l", "<"])
+    }
+    #expect(throws: (any Error).self) {
+        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk", "upgrade"])
+    }
 }

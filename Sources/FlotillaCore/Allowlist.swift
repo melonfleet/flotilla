@@ -1220,11 +1220,14 @@ public enum Allowlist {
            let operation = MachineUpdateCommand.allCases.first(where: {
                Array(args.suffix(from: separator + 1)) == $0.command
            }) {
+            // `--root` belongs to the index refresh alone, and is required there; no other check
+            // may carry it.
             return CommandSpec(["machine", "run"], mutates: true, timeoutHint: 120,
-                               flags: [FlagSpec(long: "name", value: .identifier)],
+                               flags: [FlagSpec(long: "name", value: .identifier)]
+                                   + (operation.runsAsRoot ? [FlagSpec(long: "root")] : []),
                                trailing: .exact(operation.command),
                                exposure: .localOnly(reason: "package checks run inside a named local machine"),
-                               requiredFlags: ["name"])
+                               requiredFlags: operation.runsAsRoot ? ["name", "root"] : ["name"])
         }
         guard policy == .interactiveShell else { return spec }
         switch spec.path {

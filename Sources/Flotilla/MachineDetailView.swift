@@ -133,7 +133,14 @@ struct MachineDetailView: View {
             }
             if !machine.isRunning {
                 Text("Start this machine to check for updates.").font(.caption).foregroundStyle(.secondary)
-            } else if upgrade == nil {
+            } else if upgrade != nil {
+                // `container machine run` boots a stopped machine, and nothing can refuse a stop that
+                // lands between Flotilla's check and the command (Kyle, 19 October; Kamal kept it).
+                Text("Checking runs a command in the machine, which starts it again if it has just stopped. "
+                     + "Nothing is installed.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if machine.isRunning, upgrade == nil {
                 Text("Package checks support Alpine and AlmaLinux.").font(.caption).foregroundStyle(.secondary)
             }
             if let report = state.report {
