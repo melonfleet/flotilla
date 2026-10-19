@@ -28,76 +28,25 @@ struct AddHostView: View {
             FormHeader(title: importing.map { "Pair \($0.name)" } ?? "Add Host", systemImage: "plus",
                        hasUnsavedChanges: false, onBack: dismiss)
             Divider()
-            Form {
-                if let importing {
-                    SwiftUI.Section("From an imported file") {
-                        LabeledContent("Mac", value: importing.name)
-                        LabeledContent("Where", value: Self.describe(importing.endpoint))
-                        LabeledContent("Must present key") {
-                            Text(String(importing.fingerprint.hex.prefix(16)) + "…")
-                                .font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                        }
-                        Text("If the Mac that answers presents a different key, nothing is sent to it and it is not paired.")
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            FormScaffold {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let importing {
+                        importedFields(importing)
+                    } else {
+                        hostFields
                     }
-                } else {
-                SwiftUI.Section("Which Mac") {
-                    if hostMode.discovered.isEmpty {
-                        Text("No host found on this network yet. A Mac appears here once Flotilla on it is set to Host in Settings ▸ Host Mode — or type its address below.")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(4)
+                    FormSectionHeader(title: "Pairing")
+                    FormField("Code", help: codeHelp, optional: hostMode.adminKey != nil) {
+                        TextField("", text: $code, prompt: Text("ABCD-EFGH"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
                     }
-                    Picker("Which Mac", selection: $target) {
-                        ForEach(hostMode.discovered) { host in
-                            HStack(spacing: 8) {
-                                Label(host.name, systemImage: "desktopcomputer")
-                                if !host.distinguishing.isEmpty {
-                                    Text(host.distinguishing).font(.caption).foregroundStyle(.secondary)
-                                }
-                                if let known = hostMode.knownHost(advertising: host) {
-                                    Text("paired as \(known.displayName)").font(.caption).foregroundStyle(Theme.online)
-                                }
-                            }
-                            .tag(Target?.some(.discovered(host.name)))
-                        }
-                        Text("By address").tag(Target?.some(.address))
-                    }
-                    .pickerStyle(.radioGroup)
-                    .labelsHidden()
-                    if target == .address {
-                        // One labelled row: a grouped Form floats a second field's label above it.
-                        LabeledContent("Address") {
-                            HStack(spacing: 8) {
-                                TextField("", text: $address, prompt: Text("mini-1.local or 192.168.1.20"))
-                                    .labelsHidden().textFieldStyle(.roundedBorder)
-                                    .accessibilityLabel("Address")
-                                Text("Port").foregroundStyle(.secondary)
-                                TextField("", text: $port)
-                                    .labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70)
-                                    .accessibilityLabel("Port")
-                            }
-                        }
-                    }
+                    if let outcome { result(outcome) }
                 }
-                }
-
-                SwiftUI.Section("Pairing") {
-                    TextField("Code", text: $code, prompt: Text("ABCD-EFGH"))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                    Text(hostMode.adminKey == nil
-                         ? "On the other Mac, open Settings ▸ Host Mode and click Show Code, then type it here."
-                         : "Type the code the other Mac shows — or leave it empty to enrol it with your fleet enrolment key, if its profile carries that key.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-
-                if let outcome {
-                    SwiftUI.Section { result(outcome) }
-                }
+            } preview: {
+                railPreview
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
             Divider()
             HStack {
                 if working { ProgressView().controlSize(.small); Text("Connecting…").foregroundStyle(.secondary) }
@@ -116,6 +65,136 @@ struct AddHostView: View {
         .onAppear {
             if importing != nil { target = .imported }
             if target == nil { target = hostMode.discovered.first.map { .discovered($0.name) } ?? .address }
+        }
+    }
+
+    @ViewBuilder
+    private var hostFields: some View {
+        FormSectionHeader(title: "Which Mac")
+        FormField("Which Mac",
+                  help: FieldHelp(
+                      "Choose a nearby host, or choose By address to enter one yourself.",
+                      detail: "On the host Mac, open Flotilla’s Settings ▸ Hosts and Fleet and set “Use this Mac as” to Host. "
+                          + "Bonjour lists hosts that advertise on this network; an address is useful "
+                          + "across subnets or over Tailscale.",
+                      example: "By address: mini-1.local",
+                      warning: "Discovery is not trust. Pair only with Macs you own; pairing gives "
+                          + "this admin full control of their containers, settings, environment variables and file paths.")) {
+            if hostMode.discovered.isEmpty {
+                Text("No host found on this network yet. A Mac appears here once Flotilla on it is set to Host in Settings ▸ Hosts and Fleet — or type its address below.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Picker("", selection: $target) {
+                ForEach(hostMode.discovered) { host in
+                    HStack(spacing: 8) {
+                        Label(host.name, systemImage: "desktopcomputer")
+                        if !host.distinguishing.isEmpty {
+                            Text(host.distinguishing).font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let known = hostMode.knownHost(advertising: host) {
+                            Text("paired as \(known.displayName)").font(.caption).foregroundStyle(Theme.online)
+                        }
+                    }
+                    .tag(Target?.some(.discovered(host.name)))
+                }
+                Text("By address").tag(Target?.some(.address))
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+        }
+        if target == .address {
+            FormField("Address",
+                      help: FieldHelp(
+                          "The host’s name, IP address or Tailscale address.",
+                          detail: "Enter the address alone, with the port in the next field. "
+                              + "Manual entry is the norm on routed networks: mDNS discovery does not cross subnets or VLANs.",
+                          example: "mini-1.local\n192.168.1.20\n100.101.102.103 (Tailscale)",
+                          warning: "A .local name relies on mDNS too. Across subnets, use an IP "
+                              + "address or a name this Mac can resolve.")) {
+                TextField("", text: $address, prompt: Text("mini-1.local or 192.168.1.20"))
+                    .labelsHidden().textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Address")
+            }
+            FormField("Port",
+                      help: FieldHelp(
+                          "The port Flotilla is listening on at the host.",
+                          detail: "On the host Mac, Settings ▸ Hosts and Fleet shows its Port and "
+                              + "Listening on port status. Use that number; the default is 7868.",
+                          example: "7868",
+                          warning: "Use Flotilla’s listening port, not the SSH port. A different "
+                              + "port will not reach its pairing listener.")) {
+                TextField("", text: $port)
+                    .labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70)
+                    .accessibilityLabel("Port")
+            }
+        }
+    }
+
+    private func importedFields(_ host: HostModeController.ImportedHost) -> some View {
+        Group {
+            FormSectionHeader(title: "From an imported file")
+            FormField("Mac", help: FieldHelp(
+                "The host named in the imported file.",
+                detail: "The file supplies its name, endpoint and expected key. You still need to pair it here.",
+                example: "mini-1",
+                warning: "An imported host is not yet trusted. Pair only with Macs you own.")) {
+                Text(host.name)
+            }
+            FormField("Where", help: FieldHelp(
+                "Where the imported file says to reach this host.",
+                detail: "This is either a Bonjour service or an address and port, as exported by the other admin Mac.",
+                example: "mini-1 (found by Bonjour)\n192.168.1.20, port 7868",
+                warning: "Bonjour relies on mDNS, which does not cross subnets. An imported endpoint may no longer be reachable.")) {
+                Text(Self.describe(host.endpoint))
+                    .textSelection(.enabled)
+            }
+            FormField("Must present key", help: FieldHelp(
+                "The answering Mac must match the imported key fingerprint.",
+                detail: "The value shown is the start of that fingerprint. Flotilla checks the full "
+                    + "fingerprint before sending any pairing message.",
+                example: "First 16 hexadecimal characters…",
+                warning: "If a different key answers, nothing is sent to it and it is not paired. "
+                    + "Check with the host’s owner; the address may reach another Mac, or the host may have been reinstalled.")) {
+                Text(String(host.fingerprint.hex.prefix(16)) + "…")
+                    .font(.system(.body, design: .monospaced)).textSelection(.enabled)
+            }
+        }
+    }
+
+    private var codeHelp: FieldHelp {
+        FieldHelp(
+            "On the host Mac, open Flotilla’s Settings ▸ Hosts and Fleet and click Show Code beside Pairing code.",
+            detail: "Type that code here. Code pairing then shows four words on both Macs; "
+                + "compare them and confirm on both."
+                + (hostMode.adminKey == nil ? "" : " Or leave this empty to enrol with this admin’s "
+                   + "fleet enrolment key, if the host has the matching key; approve its request in Hosts."),
+            example: "ABCD-EFGH",
+            warning: "The code is single-use and expires after ten minutes. Show a fresh code if "
+                + "it expires. Confirm only if all four words match on both Macs.")
+    }
+
+    private var railPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(importing == nil ? "Add Host" : "Pair", systemImage: "desktopcomputer")
+                .font(.caption).foregroundStyle(Theme.info)
+            if let endpoint {
+                Text(PeerEndpoint(endpoint).map(Self.describe) ?? String(describing: endpoint))
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Choose a host or enter its address and port.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text(code.isEmpty && hostMode.adminKey != nil
+                 ? "Connects with the fleet enrolment key. A new host’s request waits for approval in Hosts."
+                 : "Connects to the host, then asks you to compare and confirm four words on both Macs.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("If already paired on both Macs, this saves the address for reaching the host when it cannot be found nearby.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
