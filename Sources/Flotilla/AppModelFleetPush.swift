@@ -95,7 +95,7 @@ extension AppModel {
         async {
         let panel = OperationProgress(title: title, command: hosts.count == 1
                                       ? "1 host" : "\(hosts.count) hosts")
-        activeOperation = panel
+        tasks.start(panel)
         var done: [String] = [], failed: [String] = []
         for host in hosts {
             let hostName = hostMode.hostName(host, local: hostLabel)

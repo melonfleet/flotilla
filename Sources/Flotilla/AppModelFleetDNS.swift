@@ -316,7 +316,7 @@ extension AppModel {
     func setUpZones(on hosts: [HostRef]) async -> Bool {
         let panel = OperationProgress(title: "Set up DNS zones on \(hosts.count) Mac\(hosts.count == 1 ? "" : "s")",
                                       command: "container system dns create <zone>; [dns] domain = \"<zone>\"")
-        activeOperation = panel
+        tasks.start(panel)
         let zones = fleetZones
         // One task per Mac, all on the main actor: each spends its time waiting on its Mac.
         var tasks: [Task<String?, Never>] = []

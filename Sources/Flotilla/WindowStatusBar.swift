@@ -24,9 +24,14 @@ struct WindowStatusBar: View {
             RuntimeStatusBand(model: model)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             HelperStatusItem(model: model)
-            // Kamal: a line between the Helper item and the version menu, now that two sit side by side.
+            // Kamal: a line between each item on the right.
             Divider().frame(height: 12)
-            if let content = UpdateBadgeContent.current(model) {
+            // Always present (Q63). It is the one home for progress, so while it has something to
+            // say — a running job, an unseen failure, a moment of "finished" — the update badge
+            // waits; it comes back, still accurate, once the item is quiet.
+            TasksStatusItem(tasks: model.tasks)
+            Divider().frame(height: 12)
+            if let content = UpdateBadgeContent.current(model), model.tasks.headline == .quiet {
                 UpdateActivityBadge(content: content)
                     .transition(.opacity)
             }

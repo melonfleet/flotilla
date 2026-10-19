@@ -1286,12 +1286,9 @@ final class AppModel {
     /// form being left or the window being closed. A pull of a multi-platform image is a
     /// 40-second operation on a fast connection — long enough that trapping the user on one
     /// screen to watch it would be its own complaint.
-    /// The operation whose progress panel is on screen, or nil.
-    ///
-    /// One at a time, deliberately: these are all "I just pressed the button" operations, and a
-    /// stack of panels would be a worse answer than a queue. Starting a second while one runs
-    /// replaces the panel, which is the same thing the forms already do with each other.
-    var activeOperation: OperationProgress?
+    /// Every job's progress, and the Tasks drawer and status item that show it (Q63). Several can
+    /// run at once; each is its own task, and hiding the drawer stops none of them.
+    let tasks = TaskCenter()
 
     /// Runs `work` with a progress panel in front of it, and keeps the panel up until the list
     /// the new thing belongs to actually contains it.
@@ -1309,7 +1306,7 @@ final class AppModel {
                       work: @MainActor (OperationProgress) async throws -> String,
                       confirm: (@MainActor () async -> Bool)? = nil) async -> Bool {
         let progress = OperationProgress(title: title, command: command)
-        activeOperation = progress
+        tasks.start(progress)
         do {
             let summary = try await work(progress)
             if let confirm {
@@ -1357,19 +1354,20 @@ final class AppModel {
         let panel = OperationProgress(
             title: "Pull an image",
             command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
-        activeOperation = panel
+        tasks.start(panel)
         let pullStep = panel.begin("Pulling \(reference)")
         do {
             _ = try await Blocking.run { [cli] in
                 try cli.pull(reference, scheme: scheme) { progress in
                     Task { @MainActor in
                         self.notePullProgress(progress, for: reference)
-                        // Reached through the model rather than by capturing the panel: it is
-                        // main-actor isolated and this closure is `@Sendable`, arriving from the
-                        // runner's drain thread. Rebuilt rather than carried, too —
-                        // `ImagePullProgress` is a parsed structure, not the raw line, and the
-                        // panel wants something readable rather than the CLI's redraws.
-                        self.activeOperation?.note(Self.pullLine(progress))
+                        // The panel itself, by identity: it is main-actor isolated, so this hop is
+                        // what makes capturing it safe. Through a single "active" slot, as this
+                        // used to be, a hidden panel or a second job sent the lines nowhere.
+                        // Rebuilt rather than carried — `ImagePullProgress` is a parsed
+                        // structure, not the raw line, and the panel wants something readable
+                        // rather than the CLI's redraws.
+                        panel.note(Self.pullLine(progress))
                     }
                 }
             }
@@ -1420,7 +1418,7 @@ final class AppModel {
         let panel = OperationProgress(
             title: "Pull an image to \(hosts.count) Mac\(hosts.count == 1 ? "" : "s")",
             command: ContainerCLI.pullArguments(reference, scheme: scheme).joined(separator: " "))
-        activeOperation = panel
+        tasks.start(panel)
 
         struct Job { let host: HostRef; let name: String; let step: UUID; let cli: ContainerCLI }
         var jobs: [Job] = []

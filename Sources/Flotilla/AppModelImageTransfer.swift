@@ -45,7 +45,7 @@ extension AppModel {
                                       command: (["container"] + ContainerCLI.saveImageArguments(
                                           reference, platform: ImageTransfer.platform(for: image) ?? "linux/arm64",
                                           archive: "<archive>")).joined(separator: " "))
-        activeOperation = panel
+        tasks.start(panel)
 
         guard let platform = ImageTransfer.platform(for: image) else {
             panel.fail("\(reference) has no linux/arm64 or linux/amd64 variant, so no host could run it.")

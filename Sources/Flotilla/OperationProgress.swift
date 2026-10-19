@@ -31,7 +31,21 @@ final class OperationProgress: Identifiable {
     /// Whatever the command actually said. Empty for commands that say nothing, which is most of
     /// them when they succeed.
     private(set) var output: [String] = []
-    private(set) var outcome: Outcome?
+    private(set) var outcome: Outcome? { didSet { onChange?() } }
+
+    /// Set by `TaskCenter`, so the status bar's line and the task's state follow this object by
+    /// identity. Before the Tasks drawer (Q63) the model reached a running job only through a
+    /// single "active" slot, and hiding the panel emptied the slot: the job ran on, and its
+    /// updates went nowhere.
+    @ObservationIgnored var onChange: (() -> Void)?
+
+    /// The newest thing this task said, for the status bar: its last output line, or else a
+    /// running step and its detail.
+    var latestLine: String? {
+        if let last = output.last { return last }
+        guard let step = steps.last(where: { $0.state == .running }) else { return nil }
+        return step.detail.map { "\(step.title) — \($0)" } ?? step.title
+    }
 
     enum Outcome: Equatable {
         case succeeded(String)
@@ -61,6 +75,7 @@ final class OperationProgress: Identifiable {
     func begin(_ title: String) -> UUID {
         let step = Step(title: title)
         steps.append(step)
+        onChange?()
         return step.id
     }
 
@@ -68,6 +83,7 @@ final class OperationProgress: Identifiable {
         guard let index = steps.firstIndex(where: { $0.id == id }) else { return }
         steps[index].state = failed ? .failed : .done
         steps[index].detail = detail
+        onChange?()
     }
 
     /// Updates a running step's detail, leaving it running.
@@ -79,6 +95,7 @@ final class OperationProgress: Identifiable {
     func update(_ id: UUID, detail: String) {
         guard let index = steps.firstIndex(where: { $0.id == id }) else { return }
         steps[index].detail = detail
+        onChange?()
     }
 
     func note(_ line: String) {
@@ -88,6 +105,7 @@ final class OperationProgress: Identifiable {
         // The panel is a progress report, not a log viewer. A build can emit thousands of lines
         // and the last few are the ones that matter.
         if output.count > 400 { output.removeFirst(output.count - 400) }
+        onChange?()
     }
 
     func succeed(_ summary: String) {
@@ -109,110 +127,3 @@ final class OperationProgress: Identifiable {
     }
 }
 
-/// The progress panel, over the window.
-///
-/// Modal, and deliberately so — this is one of the two shapes `ModalCard` is still for: a dialog
-/// you acknowledge, not a form you fill in. It dismisses itself on success, because the point is
-/// to bridge the gap until the list is correct rather than to add a click; a failure stays up,
-/// because that is the one case with something to read.
-struct OperationProgressView: View {
-    let progress: OperationProgress
-    let dismiss: () -> Void
-
-    var body: some View {
-        // There is a way out even while running (Hide, and Esc), because a modal with no way out
-        // is a trap if something hangs — but the panel does not pretend the work stopped:
-        // dismissing hides the report, and the operation it describes carries on in its own task.
-        ModalCard(title: progress.title, onClose: dismiss) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(progress.command)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(progress.steps) { step in
-                        stepRow(step)
-                    }
-                }
-
-                if !progress.output.isEmpty {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 1) {
-                                ForEach(Array(progress.output.enumerated()), id: \.offset) { index, line in
-                                    Text(line)
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        // Selectable, because this is where a command reports
-                                        // a path or a line to run. Writing a kubeconfig puts
-                                        // both here, and a panel that shows you a command you
-                                        // cannot copy has made you retype it.
-                                        .textSelection(.enabled)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .id(index)
-                                }
-                            }
-                            .padding(8)
-                        }
-                        .frame(height: 120)
-                        .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline))
-                        .textSelection(.enabled)
-                        // Follows the output, for the same reason the live log tail does: a feed
-                        // that arrives below the fold is indistinguishable from one that stopped.
-                        .onChange(of: progress.output.count) { _, count in
-                            proxy.scrollTo(count - 1, anchor: .bottom)
-                        }
-                    }
-                }
-
-                if case .failed(let reason) = progress.outcome {
-                    Text(reason)
-                        .font(.caption)
-                        .foregroundStyle(Theme.danger)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack {
-                    Spacer()
-                    if progress.outcome == nil {
-                        ProgressView().controlSize(.small)
-                        // The only way out while it runs: hides the report, and the operation
-                        // carries on in its own task.
-                        Button("Hide", action: dismiss)
-                            .help("Hide this panel. The operation keeps running.")
-                    } else {
-                        Button(progress.outcome?.isFailure == true ? "Close" : "Done",
-                               action: dismiss)
-                            .keyboardShortcut(.defaultAction)
-                    }
-                }
-            }
-            .frame(width: 460)
-            .padding(16)
-        }
-    }
-
-    private func stepRow(_ step: OperationProgress.Step) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Group {
-                switch step.state {
-                case .running: ProgressView().controlSize(.small).scaleEffect(0.6)
-                case .done: Image(systemName: "checkmark").foregroundStyle(Theme.online)
-                case .failed: Image(systemName: "xmark").foregroundStyle(Theme.danger)
-                }
-            }
-            .font(.system(size: 10, weight: .bold))
-            .frame(width: 14)
-
-            Text(step.title).font(.system(size: 12))
-            if let detail = step.detail {
-                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-}

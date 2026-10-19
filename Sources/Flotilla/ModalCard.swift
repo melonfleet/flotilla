@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The house shape for a dialog you acknowledge: a title, a divider, the content, and the
-/// dialog's own buttons (Done, Close, Cancel, Hide). There is no drawn close control: the red
+/// dialog's own buttons (Done, Close, Cancel). Progress is not one of them any more: jobs report
+/// in the Tasks drawer (Q63). There is no drawn close control: the red
 /// circle it used to carry duplicated the dialog's own button and looked out of place
 /// (Kamal, 19 October 2026). Esc still closes it, through `closesOnEscape`, unless the dialog's
 /// own Cancel button already answers Esc.

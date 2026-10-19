@@ -259,6 +259,12 @@ private struct FlotillaCommands: Commands {
         // is none. ⌥⌘L was unused by this app or the standard menus.
         CommandGroup(after: .toolbar) {
             PaneModeMenuItem()
+            // The Tasks drawer from the keyboard (Q63); Esc inside it minimises it. ⌥⌘T was unused.
+            Button(model.tasks.board.drawer == .hidden ? "Show Tasks" : "Hide Tasks") {
+                model.tasks.toggleList()
+                showWindow()
+            }
+                .keyboardShortcut("t", modifiers: [.command, .option])
         }
 
         // There is one main window, and forms and details are embedded in it. Commands for

@@ -2894,3 +2894,36 @@ not planned" for the suggestions library's images only.
 - **Not covered.** Images the user built or pulled from elsewhere. Scanning them in the cloud would
   mean sending them, or naming them, so that stays a possible later local Stage 1 (Syft + Grype on
   the Mac, on request), still to be decided.
+
+## Q63 — A Tasks drawer and a permanent Tasks item replace the progress dialog (settled 2026-10-19)
+
+Kamal asked for progress to have one home, modelled on Claude Code's background-tasks box. The
+centred progress sheet was modal, so watching a forty-second pull meant not using the window, and
+its Hide set the single `activeOperation` slot to nil: the job ran on and its output went nowhere.
+A second job took the first one's slot the same way.
+
+- **Status bar.** `TasksStatusItem` sits right of the Helper item, with the same dividers, and is
+  always present. While anything runs: a spinner, a count, and the newest line of the most recently
+  started task, truncated. After a failure: red, "<title> failed", until the drawer is opened.
+  After a success: "<title> finished" for four seconds. Otherwise: "Tasks", no count. A click
+  toggles the drawer on the task list; so does View ▸ Show Tasks (⌥⌘T).
+- **Drawer.** `TaskDrawer` rises from the bottom of the content, just above the status bar, when a
+  job starts, on that job's steps and output (selectable, auto-scrolling). It is an overlay, not a
+  sheet: the window stays usable. The chevron, or Esc while it has focus, minimises it into the
+  item; nothing is cancelled. The list shows running tasks first (newest started first), then this
+  session's finished ones (newest finished first, at most 20); each row expands to its output, and
+  finished rows have Clear, with Clear Finished in the header. A failure with the drawer up turns
+  it to that task, reason first; a success leaves the drawer where it was.
+- **Model.** `TaskCenter` (app, `@Observable`, on `AppModel` as `tasks`) wraps `OperationProgress`
+  rather than replacing it: the callers' steps and notes are unchanged, and every place that set
+  `activeOperation` now calls `tasks.start(panel)`. Updates reach their task by identity through
+  `OperationProgress.onChange`. Ordering, the retention cap, the headline and the
+  shown/minimised/failed-unseen state are `TaskBoard`, in `FlotillaCore`, with tests.
+- **Update badge.** It stays for update checks, in its own place left of the version, but only
+  while the Tasks item is quiet: a running task, an unseen failure or a "finished" outranks an
+  update result. The badge's announcements are unchanged.
+- **VoiceOver.** The drawer is a labelled "Tasks" region; the item is a button whose label carries
+  the count and line. Finish and fail are announced, individual lines are not.
+- **`ModalCard`** is now for acknowledgements only: About and Support Bundle. Two small forms still
+  use it — New Tag (`TagPill`) and the host category sheets (`HostGroupViews`) — and are left as
+  they are; moving them is a separate call.

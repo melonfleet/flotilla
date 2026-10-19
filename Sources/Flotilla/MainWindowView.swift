@@ -338,6 +338,18 @@ struct MainWindowView: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.18), value: model.greta.overlayShown)
+                // The Tasks drawer (Q63), over the split's bottom edge, which is the status bar's
+                // top — so it rises from the bar it minimises into. Here rather than on a section,
+                // because a job outlives the screen that started it. An overlay, not a sheet: the
+                // window stays usable while it is up. It draws its own surface, which `ModalCard`
+                // does not, so it does not have the old problem of text straight on the window.
+                .overlay(alignment: .bottom) {
+                    if model.tasks.board.drawer != .hidden {
+                        TaskDrawer(tasks: model.tasks)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.tasks.board.drawer == .hidden)
                 .onChange(of: selection, initial: true) { _, section in
                     model.currentSection = section
                     // Requests and in-page links move `selection` directly; the sidebar follows.
@@ -373,18 +385,6 @@ struct MainWindowView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: model.openFormCount)
-        // The operation panel. Here rather than on each section, because the operations it
-        // reports outlive the screen that started them: a pull begun on the New Image form is
-        // still running after Back, and a panel owned by that form would go with it.
-        //
-        // A **sheet**, like About and the support bundle — the two other things `ModalCard` is
-        // still for. It has to be: `ModalCard` draws a title bar and content and no surface of
-        // its own, because a sheet supplies that. Hand-rolling it as an overlay drew the card's
-        // text straight onto the window with the sidebar showing through it.
-        .sheet(item: Binding(get: { model.activeOperation },
-                             set: { if $0 == nil { model.activeOperation = nil } })) { operation in
-            OperationProgressView(progress: operation) { model.activeOperation = nil }
-        }
         // The search box's dropdown (Q55), hung under the field in the window bar and over the page.
         // Here rather than in `WindowBar`, whose 52pt would clip it. The page stays live under it —
         // the box filters that page as you type — so nothing is disabled; the keys that would
