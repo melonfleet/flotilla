@@ -219,6 +219,15 @@ extension AppModel {
         // group cleanly rather than half way through.
         let host = group.place
         let cli = try self.cli(for: host)
+        // A member whose port was removed at load is not created until the owner answers the flag:
+        // created now, its service would quietly not be published (Kyle, 20 October). Checked
+        // before anything starts, like the secrets. One whose container exists only starts it.
+        let existing = existingContainerNames(on: host)
+        if let (member, ports) = groups.unpublished(in: group).first(where: { !existing.contains($0.member.name) }) {
+            throw GroupRunFailure(member: member.name, started: [],
+                                  underlying: GroupStore.unpublishedSentence(member.name, ports)
+                                      + " Edit the group to choose.")
+        }
         let values = try await secretValues(for: group, progress: progress)
         var started: [String] = []
         for (index, member) in group.members.enumerated() {
@@ -228,7 +237,7 @@ extension AppModel {
             } else {
                 do {
                     try await prepareVolumeOwnership(cli: cli, host: host, image: member.image,
-                        mounts: member.volumes, progress: progress)
+                        mounts: member.volumes, owners: member.requestedVolumeOwners, progress: progress)
                     if existingContainerNames(on: host).contains(member.name) {
                         _ = try await Blocking.run { try cli.start(member.name) }
                     } else {

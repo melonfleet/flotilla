@@ -118,6 +118,53 @@ struct GroupMembersTests {
         #expect(Allowlist.accepts(bare.name, as: .identifier))
     }
 
+    @Test("a tag's major version: numbers only, latest and digests say none")
+    func majorVersions() {
+        #expect(GroupMembers.majorVersion(of: "docker.io/library/postgres:18.6") == 18)
+        #expect(GroupMembers.majorVersion(of: "postgres:17-alpine") == 17)
+        #expect(GroupMembers.majorVersion(of: "docker.io/prom/prometheus:v3.13.4") == 3)
+        #expect(GroupMembers.majorVersion(of: "postgres:17@sha256:abc") == 17)
+        #expect(GroupMembers.majorVersion(of: "localhost:5000/postgres:16") == 16)
+        for none in ["postgres", "postgres:latest", "postgres@sha256:abc", "localhost:5000/postgres",
+                     "postgres:alpine", "postgres:"] {
+            #expect(GroupMembers.majorVersion(of: none) == nil, "\(none)")
+        }
+    }
+
+    /// Kyle and Iris, 20 October: PostgreSQL 18 keeps its data at `/var/lib/postgresql`, 17 at
+    /// `/var/lib/postgresql/data`, and 18's entrypoint refuses the older mount. A recipe crosses
+    /// neither way between majors; the logo still matches by repository.
+    @Test("a local image inherits a recipe only for the same major version")
+    func recipeNeedsTheSameMajor() {
+        let pg18 = entry("postgresql", image: "docker.io/library/postgres:18.6", ports: ["5432:5432"],
+                         secrets: ["POSTGRES_PASSWORD"],
+                         volumes: [LibraryVolume(path: "/var/lib/postgresql")])
+        let pg17 = entry("postgresql", image: "docker.io/library/postgres:17.6", ports: ["5432:5432"],
+                         secrets: ["POSTGRES_PASSWORD"], volumes: [postgres])
+
+        // Local 17 against the 18 recipe, and local 18 against a 17 one: nothing inherited.
+        for (local, recipe) in [("postgres:17", pg18), ("postgres:18.1", pg17)] {
+            let library = SuggestionLibrary(version: "t", entries: [recipe])
+            #expect(library.entry(forImage: local)?.id == "postgresql")   // the logo still matches
+            #expect(library.recipe(forImage: local) == nil)
+            let made = GroupMembers.members(for: [GroupMembers.Pick(localImage: local, in: library)], existing: [])[0]
+            #expect(made.image == local)
+            #expect(made.volumes.isEmpty && made.ports.isEmpty && made.secretEnv.isEmpty)
+        }
+        // The same major does inherit, the volume path included.
+        let same = GroupMembers.members(for: [GroupMembers.Pick(localImage: "postgres:18.1",
+                                                                in: SuggestionLibrary(version: "t", entries: [pg18]))],
+                                        existing: [])[0]
+        #expect(same.volumes == ["postgresql-data:/var/lib/postgresql"])
+        #expect(same.secretEnv.map(\.name) == ["POSTGRES_PASSWORD"])
+        // `latest`, no tag and a bare digest name no version.
+        let library = SuggestionLibrary(version: "t", entries: [pg18])
+        for unversioned in ["postgres:latest", "postgres", "postgres@sha256:abc"] {
+            #expect(library.recipe(forImage: unversioned) == nil, "\(unversioned)")
+            #expect(GroupMembers.Pick(localImage: unversioned, in: library).container == nil)
+        }
+    }
+
     @Test("a stack is not a pick")
     func stackEntry() {
         let stack = LibraryEntry(id: "s", title: "s", summary: "", categories: ["Databases"], kind: .stack,
@@ -139,5 +186,27 @@ struct GroupMembersTests {
         let added = try book.addMember(GroupMember(name: "web", image: "nginx:1.29",
                                                    ports: ["127.0.0.1:8080:80", "5432:5432"]), to: group.id)
         #expect(added.ports.count == 2)
+    }
+}
+
+@Suite("Group form picker requests")
+struct PickRequestsTests {
+    /// Kyle, 20 October: Add, leave the picker, open Blank Service — the late result places nothing.
+    @Test func leavingThePickerWithdrawsItsPendingAdd() throws {
+        var requests = GroupMembers.PickRequests()
+        let begun = requests.begin()
+        let first = try #require(begun)
+        #expect(requests.begin() == nil)            // a second Add while the first prepares
+        requests.withdraw()                          // ✕, Back, or Blank Service
+        #expect(!requests.isCurrent(first))
+
+        // Open the picker again and Add: the old request finishing must not cancel the new one.
+        let again = requests.begin()
+        let second = try #require(again)
+        requests.finish(first)
+        #expect(requests.isCurrent(second))
+        requests.finish(second)
+        #expect(requests.current == nil)
+        #expect(requests.begin() != nil)
     }
 }

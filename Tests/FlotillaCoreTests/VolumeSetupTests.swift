@@ -280,3 +280,41 @@ private func setupCLI(_ host: VolumeSetupHost, remote: Bool = false) -> Containe
         }
     }
 }
+
+/// Kyle, 20 October: a group's "Add Service" turned Grafana's volume into mount text and dropped
+/// its owner, so Start created the volume root-owned. The member now carries the owner to the same
+/// `prepare` a stack and a single Run use — and an edited mount stops asking for one.
+@Test func aPickedServiceCarriesItsVolumeOwnerToStart() throws {
+    let grafana = LibraryEntry(id: "grafana", title: "Grafana", summary: "", categories: ["Monitoring"],
+                               kind: .container, tested: .init(date: "2026-10-18", macs: 1),
+                               container: LibraryContainer(image: "docker.io/grafana/grafana:13.2", name: "grafana",
+                                                           volumes: [LibraryVolume(path: "/var/lib/grafana",
+                                                                                   volumeOwner: setupOwner)]))
+    let pick = try #require(GroupMembers.Pick(entry: grafana))
+    let member = try #require(GroupMembers.members(for: [pick], existing: []).first)
+    #expect(member.volumes == ["grafana-data:/var/lib/grafana"])
+    #expect(member.requestedVolumeOwners == ["grafana-data:/var/lib/grafana": setupOwner])
+
+    let host = VolumeSetupHost()
+    let file = setupFile()
+    defer { try? FileManager.default.removeItem(at: file) }
+    try VolumeSetupStore(file: file, testDigest: setupTestDigest).prepare(cli: setupCLI(host),
+        host: "local", image: member.image, mounts: member.volumes, newOwners: member.requestedVolumeOwners)
+    #expect(host.commands.contains { $0.first == "run" && $0.suffix(2) == ["472", "0"] })
+
+    // Edited in the form, the line is no longer the recipe's mount and asks for no owner.
+    var edited = member
+    edited.volumes = ["grafana-other:/var/lib/grafana"]
+    #expect(edited.requestedVolumeOwners.isEmpty)
+
+    // A stack's members come from the same mapping, so a stack's group asks too.
+    let monitoring = try #require(StackSuggestion.catalogue.first { stack in
+        stack.services.contains { $0.volumes.contains { $0.volumeOwner == setupOwner } } })
+    var ports: [String: Int] = [:]
+    for (offset, service) in monitoring.services.enumerated() where service.webPort != nil {
+        ports[service.role] = 18_080 + offset
+    }
+    let plan = try StackPlanner.plan(monitoring, choices: StackChoices(name: "mon", webPorts: ports),
+                                     wiring: .names(domain: "flotilla"), usedHostPorts: [])
+    #expect(plan.group.members.contains { $0.requestedVolumeOwners.values.contains(setupOwner) })
+}

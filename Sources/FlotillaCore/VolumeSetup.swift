@@ -1,7 +1,7 @@
 import Foundation
 
 /// The recipe's only setup policy: chown the fresh mount root, without recursion or seeding.
-public struct VolumeOwner: Sendable, Codable, Equatable {
+public struct VolumeOwner: Sendable, Codable, Hashable {
     public var uid: Int
     public var gid: Int
     public init(uid: Int, gid: Int) { self.uid = uid; self.gid = gid }

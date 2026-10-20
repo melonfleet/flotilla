@@ -147,3 +147,50 @@ extension GroupState {
         }
     }
 }
+
+/// The Containers list's band for services whose published port was removed at load
+/// (`GroupStore.unpublishedPorts`). It names them, says Start won't create them yet, and opens the
+/// group — whose page and form carry the same flag (Kyle, 20 October).
+struct UnpublishedPortsBanner: View {
+    let model: AppModel
+    let show: (ContainerGroup) -> Void
+
+    var body: some View {
+        let flagged = model.groups.groupsWithUnpublishedPorts
+        if let first = flagged.first {
+            let names = flagged.flatMap { group in
+                model.groups.unpublished(in: group).map { "\($0.member.name) in \(group.name)" }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(Theme.warning)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("A port that can't be published was removed from \(names.joined(separator: ", ")).")
+                        .font(.callout.weight(.medium))
+                    Text("Start won't create \(names.count == 1 ? "it" : "them") until you choose a host port, "
+                         + "or keep \(names.count == 1 ? "it" : "them") without one.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        // A line limit, never `fixedSize(vertical:)`: see `DisconnectedNetworksBanner`.
+                        .lineLimit(3)
+                }
+                Spacer(minLength: 8)
+                Button(flagged.count == 1 ? "Show Group" : "Show \(first.name)") { show(first) }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Theme.warning.opacity(0.08))
+        }
+    }
+}
+
+/// One flagged member, as the group's page and form draw it.
+struct UnpublishedPortsNote: View {
+    let member: String
+    let ports: [String]
+
+    var body: some View {
+        Label(GroupStore.unpublishedSentence(member, ports), systemImage: "exclamationmark.triangle")
+            .font(.caption)
+            .foregroundStyle(Theme.warning)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}

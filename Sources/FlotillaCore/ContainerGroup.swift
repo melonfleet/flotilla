@@ -46,11 +46,19 @@ public struct GroupMember: Codable, Sendable, Equatable, Identifiable, Hashable 
     /// read at Start (`GroupSecrets`). Two members may name the same secret, which is how an app
     /// and its database agree on a password nobody typed.
     public var secretEnv: [SecretEnv]
+    /// Who should own a **fresh** named volume, keyed by the exact mount a library recipe declared
+    /// it with (`grafana-data:/var/lib/grafana` → 472:0). Start hands these to
+    /// `VolumeSetupStore.prepare`, the same step a stack and a single Run take, so Grafana,
+    /// Prometheus or pgAdmin can write to the volume it creates (Kyle, 20 October). Keyed by the
+    /// mount text on purpose: edit the line and it is no longer the recipe's mount, so it no longer
+    /// asks for an owner — the store's own rule. An existing volume is never re-owned.
+    public var volumeOwners: [String: VolumeOwner]
 
     public init(id: String = UUID().uuidString, name: String, image: String,
                 ports: [String] = [], env: [String] = [], volumes: [String] = [],
                 command: [String] = [], cpus: Int? = nil, memory: String? = nil,
-                readyPort: Int? = nil, secretEnv: [SecretEnv] = []) {
+                readyPort: Int? = nil, secretEnv: [SecretEnv] = [],
+                volumeOwners: [String: VolumeOwner] = [:]) {
         self.id = id
         self.name = name
         self.image = image
@@ -62,6 +70,13 @@ public struct GroupMember: Codable, Sendable, Equatable, Identifiable, Hashable 
         self.memory = memory
         self.readyPort = readyPort
         self.secretEnv = secretEnv
+        self.volumeOwners = volumeOwners
+    }
+
+    /// The owners Start asks for: only those of mounts the member still has, unedited, and only
+    /// valid ones.
+    public var requestedVolumeOwners: [String: VolumeOwner] {
+        volumeOwners.filter { volumes.contains($0.key) && $0.value.isValid }
     }
 }
 

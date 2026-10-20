@@ -1063,6 +1063,7 @@ struct ContainersView: View {
                         Divider()
                         // apple/container#2051: a network that has lost its bridge (Q30).
                         DisconnectedNetworksBanner(model: model)
+                        UnpublishedPortsBanner(model: model) { open(ContainerRow.groupRowID($0.id)) }
                         content
                     }
                     .frame(maxHeight: .infinity, alignment: .top)

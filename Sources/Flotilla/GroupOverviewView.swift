@@ -65,6 +65,7 @@ struct GroupOverviewView<Actions: View>: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    unpublishedPorts(group)
                     services(group)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)],
                               alignment: .leading, spacing: 12) {
@@ -90,6 +91,23 @@ struct GroupOverviewView<Actions: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Members whose port was removed at load (`GroupStore.unpublishedPorts`), with the way to answer.
+    @ViewBuilder
+    private func unpublishedPorts(_ group: ContainerGroup) -> some View {
+        let flagged = model.groups.unpublished(in: group)
+        if !flagged.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(flagged.enumerated()), id: \.offset) { _, item in
+                    UnpublishedPortsNote(member: item.member.name, ports: item.ports)
+                }
+                Button("Edit…") { editing = true }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.warning.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        }
     }
 
     private func macName(_ group: ContainerGroup) -> String {

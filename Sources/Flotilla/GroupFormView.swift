@@ -25,7 +25,12 @@ struct GroupFormView: View {
     @State private var memberIsNew = false
     /// The "where does the service come from" screen, ahead of the service form.
     @State private var choosingService = false
-    @State private var addingServices = false
+    /// The picker's pending Add: only the request still current may place what it prepared.
+    /// Leaving the picker, or choosing Blank Service, withdraws it (Kyle, 20 October).
+    @State private var pickRequests = GroupMembers.PickRequests()
+    /// Flagged members (`GroupStore.unpublishedPorts`) the owner chose to keep without the removed
+    /// port; answered at Save, like everything else here.
+    @State private var keptWithoutPorts = Set<String>()
     @State private var edits = FormEditTracker()
     /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
     @State private var formToken = UUID()
@@ -81,9 +86,17 @@ struct GroupFormView: View {
             } else if choosingService {
                 GroupServicePickerView(
                     model: model, place: draft.place,
-                    onBlank: { choosingService = false; memberIsNew = true; editingMember = GroupMember(name: "", image: "") },
-                    onCancel: { choosingService = false },
-                    onAdd: { picks in Task { await addServices(from: picks) } })
+                    onBlank: {
+                        pickRequests.withdraw()
+                        choosingService = false; memberIsNew = true; editingMember = GroupMember(name: "", image: "")
+                    },
+                    onCancel: { pickRequests.withdraw(); choosingService = false },
+                    onAdd: { picks in
+                        // A second ▶ or Return while the first is still probing ports would read
+                        // the same members and add everything twice.
+                        guard let request = pickRequests.begin() else { return }
+                        Task { await addServices(from: picks, request: request) }
+                    })
             } else {
                 groupScreen
             }
@@ -138,7 +151,8 @@ struct GroupFormView: View {
     }
 
     private var editSignature: String {
-        ([draft.name, draft.network ?? "", draft.place.token, pendingSecrets.keys.sorted().joined(separator: ",")]
+        ([draft.name, draft.network ?? "", draft.place.token, pendingSecrets.keys.sorted().joined(separator: ","),
+          keptWithoutPorts.sorted().joined(separator: ",")]
             // Every field of every member: a service saved with only its environment changed must
             // still leave the group with something to lose.
             + draft.members.map { "\($0.id)\u{2}\($0.editSignature)" })
@@ -377,6 +391,14 @@ struct GroupFormView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let removed = unpublishedPorts(of: member) {
+                    UnpublishedPortsNote(member: member.name, ports: removed)
+                    Button("Keep Without It") { keptWithoutPorts.insert(member.id) }
+                        .buttonStyle(.link)
+                        .foregroundStyle(Theme.link)
+                        .font(.caption)
+                        .help("Keep \(member.name) with no published port; Start can create it then")
+                }
             }
             Spacer()
             IconActionButton(systemImage: "chevron.up", label: "Move \(member.name) earlier",
@@ -402,6 +424,16 @@ struct GroupFormView: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// The ports load removed from this member, while that is still the answer: not once its
+    /// ports are edited in this draft, or it is kept without them.
+    private func unpublishedPorts(of member: GroupMember) -> [String]? {
+        guard !keptWithoutPorts.contains(member.id),
+              let removed = model.groups.unpublishedPorts[member.id], !removed.isEmpty,
+              let saved = model.groups.group(draft.id)?.members.first(where: { $0.id == member.id }),
+              saved.ports == member.ports else { return nil }
+        return removed
     }
 
     // MARK: Validation and saving
@@ -472,12 +504,8 @@ struct GroupFormView: View {
     /// Picked services become members through `GroupMembers`, clear of this group, this Mac's
     /// containers and volumes, and the ports already taken. One opens its form to review; several
     /// are added to the list as they are.
-    private func addServices(from picks: [GroupMembers.Pick]) async {
-        // A second ▶ or Return while the first is still probing ports would read the same members
-        // and add everything twice.
-        guard !addingServices else { return }
-        addingServices = true
-        defer { addingServices = false }
+    private func addServices(from picks: [GroupMembers.Pick], request: UUID) async {
+        defer { pickRequests.finish(request) }
         let place = draft.place
         await model.prepareSuggestions(on: place)
         let taken = model.stackTaken(on: place)
@@ -488,6 +516,8 @@ struct GroupFormView: View {
                                  takenVolumes: taken.volumes, usedHostPorts: taken.hostPorts,
                                  isPortFree: { probe ? AppModel.isPortFree($0) : true })
         }
+        // Withdrawn while it was preparing: the picker was left, or Blank Service is open.
+        guard pickRequests.isCurrent(request) else { return }
         choosingService = false
         if made.count == 1 {
             memberIsNew = true
@@ -518,6 +548,7 @@ struct GroupFormView: View {
         let used = Set(committed.members.flatMap(\.secretEnv).map(\.secret))
         do {
             try model.groups.commit(committed)
+            model.groups.keepWithoutUnpublishedPorts(keptWithoutPorts)
             for (secret, value) in pendingSecrets where used.contains(secret)
             && !KeychainSecrets.set(value, group: committed.id, secret: secret,
                                        label: "Flotilla: \(committed.name) — \(secret)") {

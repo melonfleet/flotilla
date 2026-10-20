@@ -123,7 +123,8 @@ struct GroupServicePickerView: View {
                              count: images.count, noun: "images")
             }
             ForEach(images, id: \.self) { reference in
-            let match = library.entry(forImage: reference).flatMap { $0.kind == .container ? $0 : nil }
+            // Only a recipe for the same major version: the row says what `Pick` will do.
+            let match = library.recipe(forImage: reference)
             ResourceRow(
                 title: SuggestionsView.shortImage(reference),
                 detail: match.map { "Starts from \($0.title)’s ports, variables and volumes" } ?? "Just the image",

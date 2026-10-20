@@ -2376,11 +2376,23 @@ final class AppModel {
 
     /// The container a Run task made, from its own host's list — this Mac's, or the peer's last
     /// snapshot — or nil when that list no longer has it. What a finished Run row's Stop reads.
+    /// Matched on name **and** creation time: a `web` deleted and run again is another container,
+    /// and the old task's Stop must not reach it (Kyle, 20 October).
     func container(_ made: TaskBoard.TaskContainer) -> Container? {
-        switch made.host {
-        case .local: containers.first { $0.id == made.id }
-        case .peer(let fingerprint): hostMode.containerSnapshots[fingerprint]?.items.first { $0.id == made.id }
+        let same = { (container: Container) in
+            made.isSame(id: container.id, createdAt: container.configuration.creationDate)
         }
+        return switch made.host {
+        case .local: containers.first(where: same)
+        case .peer(let fingerprint): hostMode.containerSnapshots[fingerprint]?.items.first(where: same)
+        }
+    }
+
+    /// The creation time of the container a run just made, read back with `inspect` — or nil, and
+    /// then the task offers no Stop rather than one that might reach a namesake.
+    nonisolated static func creationDate(of made: TaskBoard.TaskContainer?, cli: ContainerCLI) -> String? {
+        guard let made else { return nil }
+        return (try? cli.inspect(made.id))?.configuration.creationDate
     }
 
     /// Bulk counterpart to `perform(_:on:)`, for the containers table's multi-selection
@@ -2476,7 +2488,8 @@ final class AppModel {
                     try remote.run(image: image, options: options, command: command)
                 }
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
-                progress.container = .ran(name: options.name, output: result.stdout, on: host)
+                let made = TaskBoard.TaskContainer.ran(name: options.name, output: result.stdout, on: host)
+                progress.container = made?.created(await Blocking.run { Self.creationDate(of: made, cli: remote) })
                 progress.finish(step, detail: options.name)
                 return options.name.map { "\($0) started on \(hostName)" } ?? "Container started on \(hostName)"
             },
@@ -2506,7 +2519,8 @@ final class AppModel {
                 // piece of output that tells you *which* row to look for.
                 for line in result.stdout.split(separator: "\n") { progress.note(String(line)) }
                 // Which container the finished row's Stop acts on (the name, or the printed id).
-                progress.container = .ran(name: options.name, output: result.stdout, on: .local)
+                let made = TaskBoard.TaskContainer.ran(name: options.name, output: result.stdout, on: .local)
+                progress.container = made?.created(await Blocking.run { [cli] in Self.creationDate(of: made, cli: cli) })
                 progress.finish(step, detail: options.name)
                 return options.name.map { "\($0) started" } ?? "Container started"
             },

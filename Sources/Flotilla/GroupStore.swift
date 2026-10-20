@@ -43,16 +43,39 @@ final class GroupStore {
 
     init(defaults: UserDefaults? = TagStore.standardDefaults()) {
         self.defaults = defaults
-        var repaired: [String] = []
+        var repaired: [String: [String]] = [:]
         book = defaults.map { Self.read(from: $0, repaired: &repaired) } ?? GroupBook()
-        if !repaired.isEmpty {
-            lastError = "A port that can't be published was removed from \(repaired.joined(separator: ", ")). Edit \(repaired.count == 1 ? "it" : "them") to choose a host port."
-        }
+        unpublishedPorts = repaired
     }
 
     // MARK: Reading
 
     var groups: [ContainerGroup] { book.groups }
+
+    /// Ports removed at load because they aren't port mappings (`127.0.0.1::80`, saved before the
+    /// check existed), by member id, as they were written. Kept — and written back under
+    /// `unpublishedPorts` — until the member's ports are edited or the owner keeps it without
+    /// them, so the flag survives the next save instead of the removal quietly becoming permanent.
+    /// The Containers list, the group's page and its form all show it, and Start won't create the
+    /// member while it stands (Kyle, 20 October: it was a `lastError` nothing read).
+    private(set) var unpublishedPorts: [String: [String]] = [:]
+
+    /// The members of `group` still carrying a removed port, in listed order.
+    func unpublished(in group: ContainerGroup) -> [(member: GroupMember, ports: [String])] {
+        group.members.compactMap { member in
+            unpublishedPorts[member.id].flatMap { $0.isEmpty ? nil : (member, $0) }
+        }
+    }
+
+    /// Every group with such a member, for the Containers list's band.
+    var groupsWithUnpublishedPorts: [ContainerGroup] {
+        groups.filter { !unpublished(in: $0).isEmpty }
+    }
+
+    /// One sentence for a member's flag, the same on every screen that shows it.
+    static func unpublishedSentence(_ member: String, _ ports: [String]) -> String {
+        "\(member)'s port \(ports.joined(separator: ", ")) can't be published and was removed. Choose a host port, or keep it without one."
+    }
     func group(_ id: String) -> ContainerGroup? { book.group(id) }
     func claimedNames(on host: HostRef) -> Set<String> { book.claimedNames(on: host) }
 
@@ -87,7 +110,20 @@ final class GroupStore {
     /// Throws rather than swallowing into `lastError`: the form shows a refusal in its own footer
     /// beside the Save button that caused it, which is where you are looking.
     func commit(_ draft: ContainerGroup) throws {
+        let before = book.group(draft.id)?.members ?? []
         try book.commit(draft)
+        // A member whose ports were edited, or that is gone, has had its flag answered.
+        for old in before where unpublishedPorts[old.id] != nil {
+            let now = draft.members.first { $0.id == old.id }
+            if now == nil || now?.ports != old.ports { unpublishedPorts[old.id] = nil }
+        }
+        persist()
+    }
+
+    /// The owner keeps these members without the removed ports: the flag goes, and so does the text.
+    func keepWithoutUnpublishedPorts(_ memberIDs: Set<String>) {
+        guard memberIDs.contains(where: { unpublishedPorts[$0] != nil }) else { return }
+        for id in memberIDs { unpublishedPorts[id] = nil }
         persist()
     }
 
@@ -100,6 +136,7 @@ final class GroupStore {
     }
 
     func deleteGroup(_ groupID: String) {
+        for member in book.group(groupID)?.members ?? [] { unpublishedPorts[member.id] = nil }
         book.deleteGroup(groupID)
         persist()
     }
@@ -112,12 +149,19 @@ final class GroupStore {
 
     @discardableResult
     func updateMember(_ member: GroupMember, in groupID: String) -> Bool {
-        do { try book.updateMember(member, in: groupID); persist(); return true }
+        let old = book.group(groupID)?.members.first { $0.id == member.id }
+        do {
+            try book.updateMember(member, in: groupID)
+            if old?.ports != member.ports { unpublishedPorts[member.id] = nil }
+            persist()
+            return true
+        }
         catch { lastError = describe(error); return false }
     }
 
     func removeMember(_ memberID: String, from groupID: String) {
         book.removeMember(memberID, from: groupID)
+        unpublishedPorts[memberID] = nil
         persist()
     }
 
@@ -139,14 +183,15 @@ final class GroupStore {
     /// "let the CLI apply its own default", and writing `0` would mean something else.
     private func persist() {
         guard let defaults else { return }
-        defaults.set(book.groups.map(Self.encode(_:)), forKey: Self.groupsKey)
+        let unpublished = unpublishedPorts
+        defaults.set(book.groups.map { Self.encode($0, unpublished: unpublished) }, forKey: Self.groupsKey)
     }
 
-    private static func encode(_ group: ContainerGroup) -> [String: Any] {
+    private static func encode(_ group: ContainerGroup, unpublished: [String: [String]]) -> [String: Any] {
         var row: [String: Any] = [
             "id": group.id,
             "name": group.name,
-            "members": group.members.map(encode(_:)),
+            "members": group.members.map { encode($0, unpublished: unpublished[$0.id] ?? []) },
         ]
         if let network = group.network { row["network"] = network }
         if !group.notes.isEmpty { row["notes"] = group.notes }
@@ -155,7 +200,7 @@ final class GroupStore {
         return row
     }
 
-    private static func encode(_ member: GroupMember) -> [String: Any] {
+    private static func encode(_ member: GroupMember, unpublished: [String]) -> [String: Any] {
         var row: [String: Any] = ["id": member.id, "name": member.name, "image": member.image]
         if !member.ports.isEmpty { row["ports"] = member.ports }
         if !member.env.isEmpty { row["env"] = member.env }
@@ -168,6 +213,13 @@ final class GroupStore {
         if !member.secretEnv.isEmpty {
             row["secretEnv"] = member.secretEnv.map { ["name": $0.name, "secret": $0.secret] }
         }
+        // Mount → owner, for a fresh volume's setup at Start; only the mounts it still has.
+        let owners = member.requestedVolumeOwners
+        if !owners.isEmpty {
+            row["volumeOwners"] = owners.mapValues { ["uid": $0.uid, "gid": $0.gid] }
+        }
+        // What load removed and nobody has answered yet: the flag, and the text it was.
+        if !unpublished.isEmpty { row["unpublishedPorts"] = unpublished }
         return row
     }
 
@@ -179,10 +231,11 @@ final class GroupStore {
     /// Rebuilt through `GroupBook`'s own mutators rather than by assigning the array directly, so
     /// a hand-edited plist that gives two groups the same `db` is refused on read by the rule
     /// that would have refused it in the form.
-    /// - Parameter repaired: members kept without a port that isn't a port mapping. One saved before
-    ///   the check existed (Dave, 19 October) could never start, but it is the user's service: it is
-    ///   kept, the port is dropped, and they are told — not removed at load and erased at the next save.
-    private static func read(from defaults: UserDefaults, repaired: inout [String]) -> GroupBook {
+    /// - Parameter repaired: member id → ports removed because they aren't port mappings. One saved
+    ///   before the check existed (Dave, 19 October) could never start, but it is the user's service:
+    ///   it is kept, the port is dropped, and the removal is flagged until answered — read back from
+    ///   `unpublishedPorts` on later launches, so a save in between doesn't lose it.
+    private static func read(from defaults: UserDefaults, repaired: inout [String: [String]]) -> GroupBook {
         let rows = defaults.array(forKey: groupsKey) as? [[String: Any]] ?? []
         var book = GroupBook()
         for row in rows {
@@ -219,13 +272,21 @@ final class GroupStore {
                     secretEnv: (raw["secretEnv"] as? [[String: String]] ?? []).compactMap { entry in
                         guard let name = entry["name"], let secret = entry["secret"] else { return nil }
                         return SecretEnv(name: name, secret: secret)
+                    },
+                    volumeOwners: (raw["volumeOwners"] as? [String: [String: Int]] ?? [:]).compactMapValues { entry in
+                        guard let uid = entry["uid"], let gid = entry["gid"] else { return nil }
+                        let owner = VolumeOwner(uid: uid, gid: gid)
+                        return owner.isValid ? owner : nil
                     })
+                let flagged = raw["unpublishedPorts"] as? [String] ?? []
                 do {
                     try book.addMember(member, to: group.id)
+                    if !flagged.isEmpty { repaired[memberID] = flagged }
                 } catch GroupBook.GroupError.invalidPort {
                     var kept = member
                     kept.ports = member.ports.filter { Allowlist.accepts($0, as: .portMapping) }
-                    if (try? book.addMember(kept, to: group.id)) != nil { repaired.append(memberName) }
+                    let dropped = member.ports.filter { !Allowlist.accepts($0, as: .portMapping) }
+                    if (try? book.addMember(kept, to: group.id)) != nil { repaired[memberID] = flagged + dropped }
                 } catch {}
             }
             book.setNotes(row["notes"] as? [String] ?? [], on: group.id)

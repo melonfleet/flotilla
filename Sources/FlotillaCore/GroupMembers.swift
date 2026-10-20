@@ -21,9 +21,14 @@ public enum GroupMembers {
                               readyPort: Int?) -> Built {
         let names = volumes.map { "\(name)-\($0.suffix)" }
         let mounts = zip(names, volumes).map { "\($0):\($1.path)" }
+        // The recipe's owners travel with the mount they belong to: the mount text alone would
+        // leave a picked Grafana's fresh volume root-owned and unwritable (Kyle, 20 October).
+        var owners: [String: VolumeOwner] = [:]
+        for (mount, volume) in zip(mounts, volumes) { owners[mount] = volume.volumeOwner }
         return Built(member: GroupMember(name: name, image: image, ports: ports, env: env,
                                          volumes: mounts, command: command,
-                                         readyPort: readyPort, secretEnv: secretEnv),
+                                         readyPort: readyPort, secretEnv: secretEnv,
+                                         volumeOwners: owners),
                      volumeNames: names)
     }
 
@@ -49,13 +54,54 @@ public enum GroupMembers {
             self.init(image: container.image, baseName: container.name, container: container)
         }
 
-        /// An image already on this Mac. A library *container* entry for the same repository
-        /// supplies ports, env and volumes; a stack's service does not (it needs its siblings).
+        /// An image already on this Mac. A library *container* entry for the same repository **and
+        /// the same major version** supplies ports, env and volumes (`SuggestionLibrary.recipe`); a
+        /// stack's service does not (it needs its siblings).
         public init(localImage reference: String, in library: SuggestionLibrary) {
-            let match = library.entry(forImage: reference).flatMap { $0.kind == .container ? $0.container : nil }
+            let match = library.recipe(forImage: reference)?.container
             self.init(image: reference, baseName: match?.name ?? GroupMembers.defaultName(forImage: reference),
                       container: match)
         }
+    }
+
+    /// The major version a reference's tag names: `postgres:18.6` → 18, `postgres:17-alpine` → 17,
+    /// `prom/prometheus:v3.13.4` → 3. Nil for `latest`, no tag, a digest-only reference, or any tag
+    /// that doesn't start with a number — none of those says which release it is.
+    public static func majorVersion(of reference: String) -> Int? {
+        let named = reference.prefix { $0 != "@" }
+        guard let colon = named.lastIndex(of: ":"),
+              named.lastIndex(of: "/").map({ colon > $0 }) ?? true else { return nil }
+        var tag = named[named.index(after: colon)...]
+        if tag.first == "v" || tag.first == "V" { tag = tag.dropFirst() }
+        let digits = tag.prefix { $0.isASCII && $0.isNumber }
+        return digits.isEmpty ? nil : Int(digits.prefix(9))
+    }
+
+    /// The group form's pending "Add Service": picks are prepared asynchronously (port probes, a
+    /// peer's lists), and only the request still current may place the result. Leaving the picker,
+    /// or opening Blank Service, withdraws it — otherwise a slow peer's single pick would replace the
+    /// blank service being typed, and several would be appended after the picker had closed
+    /// (Kyle, 20 October). One at a time: a second Add while the first prepares is ignored.
+    public struct PickRequests: Equatable, Sendable {
+        public private(set) var current: UUID?
+
+        public init() {}
+
+        /// A new request, or nil while one is still preparing.
+        public mutating func begin() -> UUID? {
+            guard current == nil else { return nil }
+            let id = UUID()
+            current = id
+            return id
+        }
+
+        /// The picker was left: whatever is preparing places nothing.
+        public mutating func withdraw() { current = nil }
+
+        public func isCurrent(_ id: UUID) -> Bool { current == id }
+
+        /// The request is done; a later one it no longer owns is left alone.
+        public mutating func finish(_ id: UUID) { if current == id { current = nil } }
     }
 
     /// `docker.io/library/postgres:18.6` → `postgres`; always a valid container name.

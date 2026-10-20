@@ -612,4 +612,24 @@ import Testing
         board.setContainer(Made(id: " ", host: .local), for: id) // and a blank name is not one
         #expect(board.entry(id)?.container == Made(id: "web", host: .local))
     }
+
+    /// Kyle, 20 October: run `web`, delete it, run another `web` — the first task's Stop must not
+    /// reach the second. The identity is `configuration.creationDate`, from the captured list.
+    @Test func aReplacementWithTheSameNameIsNotTheContainerTheRunMade() throws {
+        let url = try #require(Bundle.module.url(forResource: "containers", withExtension: "json",
+                                                 subdirectory: "Fixtures/container-1.5.0"))
+        let listed = try JSONDecoder.flotilla.decode([Container].self, from: Data(contentsOf: url))
+        let solo = try #require(listed.first { $0.id == "fx-solo" })
+        let date = try #require(solo.configuration.creationDate)
+
+        let made = Made(id: "fx-solo", host: .local).created(date)
+        #expect(made.isSame(id: solo.id, createdAt: solo.configuration.creationDate))
+        // The namesake made later, and one whose list carries no creation time.
+        #expect(!made.isSame(id: "fx-solo", createdAt: "2026-10-05T12:00:00Z"))
+        #expect(!made.isSame(id: "fx-solo", createdAt: nil))
+        #expect(!made.isSame(id: "fx-ports", createdAt: date))
+        // A run that couldn't read its time back confirms nothing, so it offers no Stop.
+        #expect(!Made(id: "fx-solo", host: .local).isSame(id: "fx-solo", createdAt: date))
+        #expect(!Made(id: "fx-solo", host: .local, createdAt: "").isSame(id: "fx-solo", createdAt: ""))
+    }
 }

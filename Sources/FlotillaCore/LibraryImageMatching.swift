@@ -34,6 +34,20 @@ extension SuggestionLibrary {
         return matches.count == 1 ? matches.first : nil
     }
 
+    /// The library *container* whose ports, variables and volumes an image on this Mac may start
+    /// from: the repository match `entry(forImage:)` makes for artwork, **and** the same major
+    /// version on both sides (`GroupMembers.majorVersion`). A recipe is operational, not
+    /// decorative: PostgreSQL 18 keeps its data at `/var/lib/postgresql` and 17 at
+    /// `/var/lib/postgresql/data`, and 18's entrypoint refuses the older mount (Kyle and Iris,
+    /// 20 October). `latest`, no tag, or only a digest names no version, so it inherits nothing.
+    /// Logos keep matching by repository alone.
+    public func recipe(forImage image: String) -> LibraryEntry? {
+        guard let entry = entry(forImage: image), entry.kind == .container, let container = entry.container,
+              let mine = GroupMembers.majorVersion(of: image),
+              mine == GroupMembers.majorVersion(of: container.image) else { return nil }
+        return entry
+    }
+
     /// The entry covering the most distinct member repositories; on a tie, the one pulling fewest
     /// images the group doesn't have, so a lone Grafana is Grafana rather than a stack with it.
     /// Library order breaks any remaining tie.

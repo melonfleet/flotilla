@@ -116,10 +116,31 @@ public struct TaskBoard: Equatable, Sendable {
     public struct TaskContainer: Equatable, Hashable, Sendable {
         public let id: String
         public let host: HostRef
+        /// `configuration.creationDate` as the CLI printed it for the container this run made
+        /// (captured in `container ls` and `inspect` output, 1.0 and 1.5). A name is not an
+        /// identity: delete `web` and run another `web`, and only this tells them apart (Kyle,
+        /// 20 October). Nil when the run could not read it back — and then nothing is that
+        /// container, so no Stop is offered.
+        public let createdAt: String?
 
-        public init(id: String, host: HostRef) {
+        public init(id: String, host: HostRef, createdAt: String? = nil) {
             self.id = id
             self.host = host
+            self.createdAt = createdAt
+        }
+
+        /// The same record with the creation time read back after the run.
+        public func created(_ date: String?) -> TaskContainer {
+            TaskContainer(id: id, host: host, createdAt: date)
+        }
+
+        /// Whether a listed container on this record's host is the one this run made: the same id
+        /// **and** the same creation time, compared byte for byte as `VolumeSetupStore` compares
+        /// its identities. Without a recorded time the answer is no — a replacement with the name
+        /// must never inherit the Stop.
+        public func isSame(id other: String, createdAt otherDate: String?) -> Bool {
+            guard other == id, let createdAt, !createdAt.isEmpty, let otherDate else { return false }
+            return otherDate.compare(createdAt, options: .literal) == .orderedSame
         }
 
         /// What a finished `container run -d` made: the name it was given, or else the id it
