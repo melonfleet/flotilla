@@ -240,6 +240,10 @@ extension AppModel {
             if skippingRunning, runningContainerNames(on: host).contains(member.name) {
                 progress.finish(step, detail: "already running")
             } else {
+                // The member as it is saved now, not as it was when the run began: a port repaired
+                // while an earlier member waited must be the one this `run` uses (Kyle, round 3).
+                let group = groups.group(group.id) ?? group
+                let member = group.members.first { $0.id == member.id } ?? member
                 // Decided here, from the list and the flag as they are now, not as they were when
                 // the run began (Kyle, 20 October, round 2).
                 let launch = MemberLaunch.decide(exists: existingContainerNames(on: host).contains(member.name),
