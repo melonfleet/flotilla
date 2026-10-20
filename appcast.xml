@@ -5,6 +5,170 @@
     <link>https://melonfleet.github.io/flotilla/appcast.xml</link>
     <language>en</language>
     <item>
+      <title>Flotilla 1.5.0-beta.5</title>
+      <pubDate>Tue, 20 Oct 2026 09:26:52 +0000</pubDate>
+      <sparkle:version>586</sparkle:version>
+      <sparkle:shortVersionString>1.5.0-beta.5</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:channel>beta</sparkle:channel>
+      <description><![CDATA[<style>
+:root { color-scheme: light dark; }
+body { font: 13px -apple-system, system-ui, sans-serif; line-height: 1.45; margin: 12px 16px; }
+h3 { font-size: 13px; margin: 14px 0 4px; }
+p { margin: 6px 0; }
+ul { margin: 4px 0 8px; padding-left: 18px; }
+li { margin: 2px 0; }
+code { font: 12px ui-monospace, Menlo, monospace; }
+a { color: #2C7A7B; }
+@media (prefers-color-scheme: dark) { a { color: #59B3B0; } }
+.more { margin-top: 14px; font-size: 12px; opacity: 0.8; }
+</style>
+<p>Flotilla is a native Mac app for Apple's <code>container</code>: run and manage Linux containers on this Mac, and on a fleet of Macs from one admin Mac.</p>
+<p><strong>This is a beta</strong>, built and tested against <code>container</code> 1.5.0. Expect rough edges, and please report what you find.</p>
+<h3>Requirements</h3>
+<ul>
+<li>A Mac with Apple silicon, macOS 26 or later.</li>
+<li>Apple's <code>container</code> 1.5.0. Flotilla offers to download and install it on first run, through Apple's own Installer.</li>
+</ul>
+<h3>A new version number</h3>
+<p>Flotilla now has its own version number, in the form X.Y.Z. This is <strong>Flotilla 1.5.0-beta.5, tested with container 1.5.0</strong>. About in Settings says both, and the status bar shows the version. Updates still work as before: Flotilla orders its builds by build number, not by the label.</p>
+<h3>What's new since beta 4</h3>
+<p><strong>One search box, and a new look for lists.</strong></p>
+<ul>
+<li>The search box in the window bar filters the page you're on, jumps to sections and to things by name on any Mac, and runs commands. ⌘K and ⌘F focus it, and ⌘K opens on a list of everything it can do.</li>
+<li>Start with <code>container:</code>, <code>image:</code>, <code>volume:</code>, <code>host:</code> and so on to look only at that kind of thing, from any page. Start with <code>/</code> to run a command by name, such as <code>/run-container</code> or <code>/pull-image</code>. <code>&gt;</code> still means commands only.</li>
+<li>Every list is now two-line rows with a checkbox, one Sort menu and no Cards view. When a row is wide enough it becomes one line, as in Gmail.</li>
+<li>Every list is a split view, like Mail: the list on the left, the selected item's page on the right. Drag the divider and Flotilla remembers it for each section. The arrows ↑ ↓ step through the list, and the expand button widens the page over the list.</li>
+<li>A button in every section switches between two panes and list only. In list only, clicking a row slides its page in, and the ✕ or Esc closes it.</li>
+<li>Tick several rows for a summary with the bulk actions. Row actions show when you hover or select a row, and always while VoiceOver is running.</li>
+<li>Pages with tabs use an icon-only switcher, in the same order everywhere.</li>
+<li>The Recent activity strip at the bottom of pages is gone. The Activity section has everything.</li>
+<li>Logs and Activity are lists with a detail pane. Click a line to read it in full.</li>
+<li>Selecting a group shows a live overview (how many services are running, each service, its network), with Edit.</li>
+</ul>
+<p><strong>Status bar.</strong></p>
+<ul>
+<li>A bar across the bottom of the window. On the left: <strong>● Container</strong>, <strong>● Helper</strong> and the version. On the right: Tasks. Each dot shows the state; click it for a menu.</li>
+<li>The version menu checks for updates, shows the update channel, shows the suggestions library, and updates Flotilla or <code>container</code> on your hosts.</li>
+<li>Update checks show what they're doing: checking, downloading, verifying, installing.</li>
+</ul>
+<p><strong>Tasks.</strong></p>
+<ul>
+<li>Every job you start, such as a pull, build, install or stack, becomes a task. Progress no longer takes over the window.</li>
+<li>Tasks rises as a panel on the right side of the window. Each task is one line: an icon for its kind, its title, and its progress or elapsed time. Hover for where it runs and its current step. Open the caret for its steps and output.</li>
+<li>The status bar shows Tasks on the right: a spinner, a count and the progress while jobs run, "Failed" in red after a failure, and "Done" for a moment after a success. When all is quiet it shows how many jobs finished.</li>
+<li>Finished jobs fold into one line, "N finished". A failure among them is named there.</li>
+<li>The panel puts itself away two seconds after the last job ends well. A failure keeps it up. ⌥⌘T shows or hides it.</li>
+<li>Some tasks have a Stop button (pulling and building an image on this Mac) and Retry. Tasks that can't be safely repeated offer neither. There is no Pause.</li>
+<li>When a container you ran is still running, its task has a Stop button. It stops that container, on the Mac it runs on. It matches the container by name and creation time, so a later container with the same name is never stopped by mistake. If Flotilla can't read the creation time, there is no Stop button.</li>
+<li>A failed task raises a notice with Show Task and, if Flotilla is in the background, a macOS notification. Successes don't notify. Notifications has a switch for these.</li>
+<li>Pulling or building, creating a machine or a cluster, and the other forms now return to their list when you start them. The job lives in Tasks, and two pulls are two tasks.</li>
+<li>The dialogs for About and the Support Bundle no longer have the red dot. Each closes with its own button, or Esc. About is now in Settings.</li>
+</ul>
+<p><strong>Forms.</strong></p>
+<ul>
+<li>Every form has the same buttons at the top right: <strong>⋯</strong> for rare extras (such as Delete or Save to File), <strong>✕</strong> to close, and the main action on the right in the accent colour. The main action is <strong>▶</strong> when it starts a job that shows in Tasks, and <strong>✓</strong> when it keeps your changes. Hover for its exact name.</li>
+<li>There is no button row at the bottom of a form. Messages sit in a band under the header.</li>
+<li>✕ and Esc ask first if you have unsaved changes, as Back does.</li>
+<li>Add Host uses the same layout, with explanations on the right.</li>
+</ul>
+<p><strong>Groups.</strong></p>
+<ul>
+<li>Add Service opens a picker. Choose from the library's single-container suggestions, from the images on this Mac, or start blank. A matching recipe fills in ports, environment and volumes.</li>
+<li>Pick one for a prefilled form. Pick several to add them straight to the group, each with its own name, a free host port and its own password.</li>
+<li>A service needs a host port that is a real port mapping. A pick with no free port is refused with a message saying which services need one, rather than saved and failing at Start.</li>
+<li>A group saved earlier with a bad port isn't lost. Flotilla keeps the service, drops that port and flags it for you to fix.</li>
+<li>The flag shows in the Containers list, on the group's page and in its form. Start won't create that service until you choose a host port, or choose <strong>Keep Without It</strong> to keep it with no published port.</li>
+<li>A recipe fills in a service only for the same major version of the image: PostgreSQL 17 doesn't get PostgreSQL 18's settings. An image with no version tag, such as <code>latest</code>, gets none.</li>
+<li>A picked service keeps its recipe's volume owner, so a fresh volume is set up for images that don't run as root, as it is for a single run.</li>
+<li>Leaving the picker, or choosing Blank Service, cancels an Add that is still preparing, so it can't add anything afterwards.</li>
+</ul>
+<p><strong>Tooltips.</strong></p>
+<ul>
+<li>Every icon button and menu now says what it does when you hover. Some wrong, stale or vague ones were fixed, such as "Create Machine" on a ▶ and "Close (Esc)". Tab icons keep their tooltips. A check in the build fails if an icon is added without one.</li>
+</ul>
+<p><strong>The Flotilla Helper.</strong></p>
+<ul>
+<li>The Helper is the background service for jobs that need administrator rights: DNS names across Macs, installing <code>container</code>, and updating Flotilla on hosts. It registers itself at launch in a signed build, shows its real state in the status bar, and offers Restart, Reinstall and Remove.</li>
+</ul>
+<p><strong>Hosts.</strong></p>
+<ul>
+<li>A host's page can reach it by SSH, Screen Sharing and Files. SSH runs your own <code>ssh</code>, with your keys. Flotilla can make its own key for its hosts, copy it to a host, and later replace or remove it. Your other keys are not touched.</li>
+<li>Screen Sharing and File Sharing open in macOS. Each shows a dot for whether the service is on.</li>
+<li>Hosts show their Mac model's own icon, and group headings match the ones in Containers.</li>
+<li>Host health is steadier. Flotilla reconnects after your network changes, a busy host shows amber, and a host that is waiting on an update says so instead of failing. Switching sections quickly no longer piles up checks on unreachable hosts, and Flotilla now quits when asked.</li>
+<li>The Updates tab of a host lists macOS and kernel security advisories that apply to its version.</li>
+</ul>
+<p><strong>Files.</strong></p>
+<ul>
+<li>A container's Files tab is a small Finder: Icons, List and Columns views, Group By, search, and a path bar. You can create folders, rename, move and delete (Delete always asks). Another Mac's containers stay read-only.</li>
+</ul>
+<p><strong>Suggestions.</strong></p>
+<ul>
+<li>Suggestions is now one section in the sidebar, under Overview, with tabs: <strong>All, Apps, Stacks, Volumes, Networks, Domains, Machines, Clusters</strong>. Each tab shows how many suggestions match your search. Apps and stacks come from the library; volumes, networks, domains, machines and clusters come from the suggestions built into Flotilla. There is no Images or Registries tab.</li>
+<li>The tabs are rows in a split view, like the other lists: the list on the left, the selected suggestion's details on the right.</li>
+<li><strong>Use…</strong> opens the form for that kind (Run, the stack form, New Volume, New Network, New DNS Domain, New Machine or New Cluster), full width and already filled in. The filled-in values don't count as unsaved changes, so leaving without editing asks nothing. Nothing is created until you press the form's main action.</li>
+<li>Close or finish a form, or visit another section, and you come back to the same tab, search, category, selection and Mac.</li>
+<li>The search box finds suggestions of every kind from any page. Choosing one opens Suggestions on its tab with the row selected. It never creates anything. A tab with no match offers <strong>Show all matches</strong>.</li>
+<li>The suggestion galleries inside Containers, Volumes, Networks, DNS, Machines and Clusters are gone. Their <strong>Suggestions…</strong> menu items, the "start from a suggestion" links in empty lists, and File ▸ Suggestions now open the matching tab.</li>
+<li>Machines can be created from a suggestion on This Mac only, as the New Machine form is today.</li>
+<li>The library's logos appear beside each suggestion, and in Containers and Images made from one. Machines and registries show their distribution's or registry's logo when the library has it.</li>
+<li>Search finds suggestions by category, image and licence, as well as name.</li>
+<li>Tick several apps or stacks and use them in turn, one form each, with "1 of N". If two want the same port, the later one gets a free port. Volumes, networks, domains, machines and clusters are used one at a time.</li>
+<li>A fresh volume is set up for images that don't run as root, when a recipe asks, so they can write to it. This happens only on a volume Flotilla has just created, and it refuses a volume that already has data.</li>
+<li>Vulnerability reports: the library is scanned daily in the cloud and Flotilla matches the report against your images on your Mac. Findings show on image and container pages, and as a chip on image rows. They are advisory and never stop anything. Nothing about your Mac is sent.</li>
+</ul>
+<p><strong>Greta.</strong></p>
+<ul>
+<li>A microphone button in Greta's message field dictates into it (also ⇧⌘D). Speech is recognised on this Mac only and nothing is sent until you press Send.</li>
+<li>Conversations are rows with Pin, Rename, Duplicate, Archive and Delete, and the message field is a Messages-style capsule.</li>
+<li>A banner at the top of Greta's panel says she is experimental: her answers can be wrong, so check anything she suggests before you run it.</li>
+</ul>
+<p><strong>Containers and machines.</strong></p>
+<ul>
+<li>Restart policies and health checks run on the Mac that runs the container, and host checks work on hosts too. Checks only reach a TCP port the container publishes on this Mac's loopback. An admin sets HTTP and port checks on a host, not commands.</li>
+<li>A machine's page can check for package updates on Alpine (<code>apk</code>) and AlmaLinux (<code>dnf</code>). Installing stays up to you. The checks now work with <code>container</code> 1.5.0, which runs a machine's command through the machine's own shell; each check is sent as one fixed, quoted command. A check can start a machine that was just stopped, and the page says so.</li>
+<li>Groups and stacks can run on any host.</li>
+</ul>
+<p><strong>First run and Settings.</strong></p>
+<ul>
+<li>First launch opens a setup assistant: role, look, Greta, preparing this Mac (<code>container</code> and Local Network, never silently), and online checks. Run it again from Help ▸ Setup Assistant.</li>
+<li>Settings has a sidebar of sections with icon tiles, like 1Password. About lives in Settings, and lists every network destination Flotilla can contact.</li>
+<li>Dismissing a half-filled form asks first, whichever way you leave it (Back, Cancel, Esc, ⌘K, ⌘Q).</li>
+</ul>
+<h3>What testers must do</h3>
+<ul>
+<li><strong>Approve the Helper once.</strong> After updating, macOS may ask you to allow the Flotilla Helper in System Settings ▸ General ▸ Login Items &amp; Extensions. Approve it. Without it, DNS across Macs, installing <code>container</code> and host updates can't run.</li>
+<li><strong>Greta's microphone.</strong> The first time, macOS asks for microphone access. The speech model for your language then downloads from Apple, once, only when you click Download.</li>
+<li><strong>Hosts.</strong> Update the admin Mac first. It then updates its hosts by itself, one at a time, when each is idle. A host on beta 4 can't do the new health-check and policy actions until it's updated.</li>
+</ul>
+<h3>Downloads</h3>
+<ul>
+<li><code>Flotilla-1.5.0-beta.5.dmg</code>: drag Flotilla to Applications.</li>
+<li><code>Flotilla-1.5.0-beta.5.pkg</code>: for MDM and scripted installs.</li>
+<li><code>Flotilla-1.5.0-beta.5.zip</code> and <code>.tar.gz</code>: the same signed, notarised app.</li>
+</ul>
+<h3>Updating from beta 4</h3>
+<p>Flotilla updates itself through Sparkle. Beta 4 keeps working with the suggestions library it has, and doesn't read the new library format. Beta 5 reads both the old and the new format.</p>
+<h3>Known limits</h3>
+<ul>
+<li>A new host needs one click on macOS's local network prompt; a configuration profile cannot grant it.</li>
+<li>Containers on different Macs reach each other through published ports only.</li>
+<li>A cluster on a host is reached with <code>kubectl</code> on that host.</li>
+<li>Creating a cluster on a host shows no progress until it finishes, which can take several minutes.</li>
+<li>The Docker Hub browser searches Docker Hub only.</li>
+<li>With *Show Flotilla in: Menu bar*, a window still opens at login.</li>
+<li>Vulnerability reports cover the library's images only, not images you built or pulled elsewhere.</li>
+<li>Dictation needs a language Apple's speech recognition offers on the Mac. Otherwise the button is off.</li>
+<li>Files can't change a machine's files, or another Mac's containers.</li>
+<li>A machine's update check can start a machine that was just stopped.</li>
+<li>Machine update checks cover Alpine and AlmaLinux only.</li>
+<li>Tasks can't be paused, and a run, a stack or a machine create can't be cancelled or retried. A run's task can Stop the container it made.</li>
+</ul>
+<p class="more"><a href="https://github.com/melonfleet/flotilla/releases/tag/v1.5.0-beta.5">Full release on GitHub</a></p>]]></description>
+      <enclosure url="https://github.com/melonfleet/flotilla/releases/download/v1.5.0-beta.5/Flotilla-1.5.0-beta.5.zip" type="application/octet-stream" sparkle:edSignature="zmBo65D/EESGSJFED3UEVUxLHQtOZ/dZJpBrjCddhuTXKUwJXOX4IhIsuYyswlseNBCwV5UiHV4G2vV3nKnmAg==" length="17140735"/>
+    </item>
+    <item>
       <title>Flotilla 1.5.0.0-beta.4</title>
       <pubDate>Mon, 12 Oct 2026 09:54:12 +0000</pubDate>
       <sparkle:version>422</sparkle:version>
