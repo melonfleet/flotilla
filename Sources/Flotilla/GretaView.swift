@@ -227,6 +227,13 @@ struct GretaChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Experimental, said on every Greta surface (Kamal, 20 October, for beta 5): her answers
+            // aren't reliable enough yet to be taken on trust.
+            FormBand {
+                Label("Greta is experimental. Her answers can be wrong — check anything she suggests before you run it.",
+                      systemImage: "flask")
+                    .foregroundStyle(Theme.warning)
+            }
             ScrollViewReader { reader in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
