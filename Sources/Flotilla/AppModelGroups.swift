@@ -221,12 +221,17 @@ extension AppModel {
         let cli = try self.cli(for: host)
         // A member whose port was removed at load is not created until the owner answers the flag:
         // created now, its service would quietly not be published (Kyle, 20 October). Checked
-        // before anything starts, like the secrets. One whose container exists only starts it.
+        // before anything starts, like the secrets, so the usual case stops cleanly — and again
+        // before each member's own `run` below (`MemberLaunch`), because a container that exists
+        // now can be deleted while an earlier member waits for readiness. One whose container
+        // exists only starts it.
         let existing = existingContainerNames(on: host)
-        if let (member, ports) = groups.unpublished(in: group).first(where: { !existing.contains($0.member.name) }) {
-            throw GroupRunFailure(member: member.name, started: [],
-                                  underlying: GroupStore.unpublishedSentence(member.name, ports)
-                                      + " Edit the group to choose.")
+        for (member, ports) in groups.unpublished(in: group) {
+            if case .refuse = MemberLaunch.decide(exists: existing.contains(member.name), unpublishedPorts: ports) {
+                throw GroupRunFailure(member: member.name, started: [],
+                                      underlying: GroupStore.unpublishedSentence(member.name, ports)
+                                          + " Edit the group to choose.")
+            }
         }
         let values = try await secretValues(for: group, progress: progress)
         var started: [String] = []
@@ -235,10 +240,20 @@ extension AppModel {
             if skippingRunning, runningContainerNames(on: host).contains(member.name) {
                 progress.finish(step, detail: "already running")
             } else {
+                // Decided here, from the list and the flag as they are now, not as they were when
+                // the run began (Kyle, 20 October, round 2).
+                let launch = MemberLaunch.decide(exists: existingContainerNames(on: host).contains(member.name),
+                                                 unpublishedPorts: unpublishedPorts(of: member, in: group))
+                if case .refuse(let ports) = launch {
+                    progress.finish(step, detail: "port removed", failed: true)
+                    throw GroupRunFailure(member: member.name, started: started,
+                                          underlying: GroupStore.unpublishedSentence(member.name, ports)
+                                              + " Edit the group to choose.")
+                }
                 do {
                     try await prepareVolumeOwnership(cli: cli, host: host, image: member.image,
                         mounts: member.volumes, owners: member.requestedVolumeOwners, progress: progress)
-                    if existingContainerNames(on: host).contains(member.name) {
+                    if launch == .start {
                         _ = try await Blocking.run { try cli.start(member.name) }
                     } else {
                         // Secrets go to a host inside the validated `run` request, over the
@@ -268,6 +283,11 @@ extension AppModel {
             }
         }
         return started
+    }
+
+    /// The member's removed ports as the store holds them now — empty once the owner has answered.
+    private func unpublishedPorts(of member: GroupMember, in group: ContainerGroup) -> [String] {
+        groups.unpublished(in: group).first { $0.member.id == member.id }?.ports ?? []
     }
 
     /// The group's Keychain-held values, by secret name. Only fetched when some member is about

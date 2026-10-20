@@ -88,12 +88,19 @@ struct SuggestionsView: View {
             if ui.selection.count > 1 {
                 BulkActionBar(title: "\(ui.selection.count) selected") { batchAction }
             }
-            SelectionRevealingList(selection: ui.selection) {
+            // Back where it was after a form (Q66): the row that was at the top, or with none
+            // recorded, the first selected one — several selected rows included.
+            SelectionRevealingList(selection: ui.selection,
+                                   restoring: ui.scrollAnchor ?? shownIDs.first(where: ui.selection.contains)) {
                 List(shown, selection: $ui.selection) { item in
                     SuggestionRow(item: item, model: model, selection: $ui.selection) {
                         RowOverflowMenu(label: "More actions for \(item.title)") { suggestionMenu(item) }
                     }
                     .contextMenu { suggestionMenu(item) }
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .scrollView).midY }) {
+                        ui.rowMoved(item.id, middle: $0)
+                    }
+                    .onDisappear { ui.rowGone(item.id) }
                     .tag(item.id)
                     .listRowInsets(EdgeInsets())
                 }

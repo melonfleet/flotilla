@@ -184,6 +184,29 @@ extension ContainerGroup {
     }
 }
 
+/// What Start does with one member, decided **immediately before** it acts on that member — never
+/// once for the whole group. A member's container can be deleted while an earlier member waits for
+/// its `readyPort`, and a member that was only going to be started then has to be created; if its
+/// port was removed at load, created now it would quietly not be published (Kyle, 20 October,
+/// round 2: the check at the top of the run exempted it and nothing looked again).
+public enum MemberLaunch: Equatable, Sendable {
+    /// Its container exists: `start` it, which passes no options and so drops nothing.
+    case start
+    /// Create it with `run`.
+    case run
+    /// It would have to be created, and still carries the ports removed at load.
+    case refuse(unpublishedPorts: [String])
+
+    /// - Parameters:
+    ///   - exists: whether the member's container exists on its host now.
+    ///   - unpublishedPorts: the member's removed ports as the store holds them now; empty once the
+    ///     owner has answered the flag.
+    public static func decide(exists: Bool, unpublishedPorts: [String]) -> MemberLaunch {
+        if exists { return .start }
+        return unpublishedPorts.isEmpty ? .run : .refuse(unpublishedPorts: unpublishedPorts)
+    }
+}
+
 /// Every group the user has, and the rules about what may go in one.
 ///
 /// The same split as `TagBook`: the rules live here, Foundation-only, so the test target pins

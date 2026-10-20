@@ -632,4 +632,77 @@ import Testing
         #expect(!Made(id: "fx-solo", host: .local).isSame(id: "fx-solo", createdAt: date))
         #expect(!Made(id: "fx-solo", host: .local, createdAt: "").isSame(id: "fx-solo", createdAt: ""))
     }
+
+    /// Kyle, round 2: the drawer's list is a poll old, so the Stop reads the container again on its
+    /// host and stops only the one this run made. Scripted host: `inspect` answers with the captured
+    /// payload, its creation time swapped in, and every argv is recorded.
+    @Test func theStopChecksItsContainerAgainOnTheHostBeforeStopping() throws {
+        let url = try #require(Bundle.module.url(forResource: "inspect-container", withExtension: "json",
+                                                 subdirectory: "Fixtures/container-1.5.0"))
+        let captured = try String(contentsOf: url, encoding: .utf8)
+        let ran = "2026-10-05T11:52:04Z"
+        #expect(captured.contains("\"creationDate\" : \"\(ran)\""))
+        let made = Made(id: "fx-k8s", host: .local).created(ran)
+
+        func stop(inspect: CommandResult) -> (Result<Void, Error>, [[String]]) {
+            let host = RecordingHost { args in
+                args.first == "inspect" ? inspect : CommandResult(stdout: "fx-k8s\n", stderr: "", exitCode: 0)
+            }
+            let result = Result { try made.stop(on: ContainerCLI(host: host, wirePolicy: .localOwner)) }
+            return (result, host.calls)
+        }
+
+        // Still the container the run made: inspected, then stopped.
+        let (same, sameCalls) = stop(inspect: CommandResult(stdout: captured, stderr: "", exitCode: 0))
+        #expect((try? same.get()) != nil)
+        #expect(sameCalls.map(\.first) == ["inspect", "stop"])
+
+        // Deleted and run again since the last poll: refused, and no `stop` reaches the host.
+        let newer = captured.replacingOccurrences(of: ran, with: "2026-10-20T09:00:00Z")
+        let (replaced, replacedCalls) = stop(inspect: CommandResult(stdout: newer, stderr: "", exitCode: 0))
+        #expect(throws: TaskBoard.StopWithdrawn.replaced("fx-k8s")) { try replaced.get() }
+        #expect(replacedCalls.map(\.first) == ["inspect"])
+
+        // Gone, with nothing in its place.
+        let (gone, goneCalls) = stop(inspect: CommandResult(stdout: "[]", stderr: "", exitCode: 0))
+        #expect(throws: TaskBoard.StopWithdrawn.gone("fx-k8s")) { try gone.get() }
+        #expect(goneCalls.map(\.first) == ["inspect"])
+
+        // The check itself failing is the CLI's error, not a withdrawal — and still no `stop`.
+        let (failed, failedCalls) = stop(inspect: CommandResult(stdout: "", stderr: "unreachable", exitCode: 1))
+        #expect(throws: ContainerCLIError.self) { try failed.get() }
+        #expect(failedCalls.map(\.first) == ["inspect"])
+    }
+
+    @Test func aWithdrawnStopIsGoneFromEveryRunOfThatContainerAndSaysWhy() {
+        let made = Made(id: "web", host: .local, createdAt: "2026-10-05T11:52:04Z")
+        var board = TaskBoard()
+        let first = UUID(), other = UUID()
+        board.start(first, title: "Run web", kind: .runContainer, at: t0)
+        board.setContainer(made, for: first)
+        board.succeed(first, at: at(1))
+        board.start(other, title: "Run db", kind: .runContainer, at: at(2))
+        board.setContainer(Made(id: "db", host: .local, createdAt: "x"), for: other)
+        board.succeed(other, at: at(3))
+
+        board.withdrawStop(for: made, .replaced("web"))
+        let rows = board.rows(at: at(9))
+        let web = rows.first { $0.id == first }!, db = rows.first { $0.id == other }!
+        #expect(web.stopTarget { _ in true } == nil)
+        #expect(web.step == TaskBoard.StopWithdrawn.replaced("web").reason)
+        #expect(db.stopTarget { _ in true } != nil)
+        #expect(db.step == nil)
+    }
+}
+
+private final class RecordingHost: ContainerHost, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [[String]] = []
+    private let answer: @Sendable ([String]) -> CommandResult
+    init(_ answer: @escaping @Sendable ([String]) -> CommandResult) { self.answer = answer }
+    var calls: [[String]] { lock.withLock { recorded } }
+    func run(_ args: [String]) throws -> CommandResult {
+        lock.withLock { recorded.append(args) }
+        return answer(args)
+    }
 }

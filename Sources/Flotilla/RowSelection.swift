@@ -219,15 +219,32 @@ struct BulkActionBar<Actions: View>: View {
 /// box opening a row further down, or the list coming back after the page was widened over it.
 /// A click selects a row that is already on screen, so revealing it moves nothing. Mail's message
 /// list does the same as you step through it.
+///
+/// `restoring` is for a list rebuilt where the user left it (Suggestions after a form, Q66): the
+/// row to put back at the top when it is drawn again, so several selected rows, or none, come back
+/// where they were too. A single selection is still revealed after it — which moves nothing when it
+/// is in view, and finds it when it was moved while the list was away (measured in a probe: the
+/// two scrolls compose across one `Task.yield()`).
 struct SelectionRevealingList<ID: Hashable, Content: View>: View {
     let selection: Set<ID>
+    var restoring: ID? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
         ScrollViewReader { proxy in
             content
-                // After the rows are laid out: on appear the list has none yet to scroll to.
-                .onAppear { Task { @MainActor in reveal(proxy) } }
+                // After the rows are laid out: on appear the list has none yet to scroll to. The
+                // anchor is read now, before the freshly laid-out top rows can report themselves.
+                .onAppear {
+                    let anchor = restoring
+                    Task { @MainActor in
+                        if let anchor {
+                            proxy.scrollTo(anchor, anchor: .top)
+                            await Task.yield()
+                        }
+                        reveal(proxy)
+                    }
+                }
                 .onChange(of: selection) { _, _ in reveal(proxy) }
         }
     }

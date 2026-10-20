@@ -261,3 +261,19 @@ private let mini = HostRef.peer(PeerFingerprint(bytes: Array(repeating: 7, count
     #expect(StackPlanner.hostPort(fromPublishSpec: "127.0.0.1:5433:5432/tcp") == 5433)
     #expect(StackPlanner.containerPort(fromPublishSpec: "80") == nil)
 }
+
+/// Kyle, 20 October, round 2: a flagged member whose container exists is only started, so the check
+/// at the top of a group Start lets it through. If that container is deleted while an earlier member
+/// waits for readiness, the member has to be created — and the same flag must stop it then. Played
+/// out in the order `startMembers` asks: once for the whole group, then once per member.
+@Test func theRemovedPortGuardIsAskedAgainBeforeEachMembersRun() {
+    let removed = ["127.0.0.1::80"]
+    // At the top of the run `web` exists, so a flagged `web` is no reason to stop.
+    #expect(MemberLaunch.decide(exists: true, unpublishedPorts: removed) == .start)
+    // `db` waits for its port; meanwhile `web` is deleted. Asked again right before acting on `web`:
+    #expect(MemberLaunch.decide(exists: false, unpublishedPorts: removed) == .refuse(unpublishedPorts: removed))
+    // Answered in the form meanwhile (or never flagged): created as usual.
+    #expect(MemberLaunch.decide(exists: false, unpublishedPorts: []) == .run)
+    // Still there: started, which passes no options, so nothing is dropped.
+    #expect(MemberLaunch.decide(exists: true, unpublishedPorts: []) == .start)
+}

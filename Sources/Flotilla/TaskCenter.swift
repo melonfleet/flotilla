@@ -98,6 +98,9 @@ final class TaskCenter {
     func toggleExpanded(_ id: UUID) { board.toggleExpanded(id) }
     func toggleFinished() { board.toggleFinished() }
     func clearReveal() { board.clearReveal() }
+    func withdrawStop(for container: TaskBoard.TaskContainer, _ why: TaskBoard.StopWithdrawn) {
+        board.withdrawStop(for: container, why)
+    }
 
     func clear(_ id: UUID) {
         if board.clear(id) { release([id]) }

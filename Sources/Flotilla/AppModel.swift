@@ -2298,7 +2298,10 @@ final class AppModel {
     /// offered it, so a wedged container could only be deleted.
     enum Action { case start, stop, restart, kill, delete }
 
-    func perform(_ action: Action, on container: Container) async {
+    /// - Parameter made: for a finished Run's Stop, the container that run made. The stop then
+    ///   reads the container's identity again on its host first and stops only if it is still that
+    ///   one (`TaskContainer.stop(on:)`); otherwise the task's Stop is withdrawn and says why.
+    func perform(_ action: Action, on container: Container, made: TaskBoard.TaskContainer? = nil) async {
         let id = container.id
         guard !busy.contains(id, kind: .container) else { return }
         busy.mark(id, kind: .container)
@@ -2315,7 +2318,7 @@ final class AppModel {
             try await Blocking.run { [cli] () -> Void in
                 switch action {
                 case .start:   try cli.start(id)
-                case .stop:    try cli.stop(id)
+                case .stop:    if let made { try made.stop(on: cli) } else { try cli.stop(id) }
                 case .restart: try cli.restart(id)
                 // No explicit signal: the CLI's default for `kill` is SIGKILL, and naming it here
                 // would be this layer deciding a policy the CLI already has.
@@ -2337,6 +2340,9 @@ final class AppModel {
                 recordActivity(ContainerEvent(date: Date(), from: "running", to: "running",
                                               kind: .container, subject: id, action: "Restarted"))
             }
+        } catch let withdrawn as TaskBoard.StopWithdrawn {
+            // Not a failure: nothing was stopped because the name is someone else's now.
+            if let made { tasks.withdrawStop(for: made, withdrawn) }
         } catch {
             let message = "\(Self.label(for: action)) failed for \(id): \(error)"
             actionError = message
@@ -2356,8 +2362,9 @@ final class AppModel {
     /// `perform(_:on:)` for a container on any Mac (PLAN.md Phase C). This Mac's go through the
     /// local path unchanged; a paired host's go over the wire, through a `ContainerCLI` held to
     /// `.remotePeer`, and the host is asked again at once so its row shows the result.
-    func perform(_ action: Action, on container: Container, host: HostRef) async {
-        guard case .peer(let fingerprint) = host else { return await perform(action, on: container) }
+    func perform(_ action: Action, on container: Container, host: HostRef,
+                 made: TaskBoard.TaskContainer? = nil) async {
+        guard case .peer(let fingerprint) = host else { return await perform(action, on: container, made: made) }
         let id = container.id
         // Keyed by host and name: `web` here and `web` on the mini are different containers.
         let busyKey = host.rowID(id)
@@ -2373,7 +2380,7 @@ final class AppModel {
             try await Blocking.run { () -> Void in
                 switch action {
                 case .start:   try remote.start(id)
-                case .stop:    try remote.stop(id)
+                case .stop:    if let made { try made.stop(on: remote) } else { try remote.stop(id) }
                 case .restart: try remote.restart(id)
                 case .kill:    try remote.kill(id)
                 case .delete:  try remote.remove(id, force: true)
@@ -2381,6 +2388,8 @@ final class AppModel {
             }
             recordActivity(ContainerEvent(date: Date(), from: "", to: "", kind: .container,
                                           subject: "\(id) on \(hostName)", action: Self.label(for: action)))
+        } catch let withdrawn as TaskBoard.StopWithdrawn {
+            if let made { tasks.withdrawStop(for: made, withdrawn) }
         } catch {
             let message = "\(Self.label(for: action)) failed for \(id) on \(hostName): \(HostModeController.describe(error))"
             actionError = message
@@ -2390,7 +2399,9 @@ final class AppModel {
     }
 
     /// The container a Run task made, from its own host's list — this Mac's, or the peer's last
-    /// snapshot — or nil when that list no longer has it. What a finished Run row's Stop reads.
+    /// snapshot — or nil when that list no longer has it. What decides whether a finished Run row
+    /// *shows* a Stop; the Stop itself checks again on the host before it acts (`perform(_:on:host:made:)`),
+    /// because this list is up to one poll old.
     /// Matched on name **and** creation time: a `web` deleted and run again is another container,
     /// and the old task's Stop must not reach it (Kyle, 20 October).
     func container(_ made: TaskBoard.TaskContainer) -> Container? {

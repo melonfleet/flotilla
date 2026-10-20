@@ -48,6 +48,9 @@ public struct TaskBoard: Equatable, Sendable {
         /// The container a Run made, once the run has said which: its name, or the id `container
         /// run -d` printed. What a finished Run row's Stop acts on (`stopTarget`).
         public var container: TaskContainer?
+        /// Why the Stop on this Run is gone for good: the check before stopping found its name on
+        /// another container, or on none (`StopWithdrawn`).
+        public var stopWithdrawn: String?
 
         public init(id: UUID, title: String, kind: TaskKind = .unclassified, origin: String = "",
                     hasRetryAction: Bool = false, hasCancelAction: Bool = false, startedAt: Date) {
@@ -100,6 +103,8 @@ public struct TaskBoard: Equatable, Sendable {
         public let offersRetry: Bool
         /// The container a Run made, if it has said which.
         public let container: TaskContainer?
+        /// Set once the Stop has been withdrawn; the row says this instead of offering it.
+        public let stopWithdrawn: String?
 
         /// What this row's Stop stops, or nil when it offers none: a **finished** Run whose
         /// container exists and is running now. `isRunning` answers from the live list of the
@@ -107,7 +112,8 @@ public struct TaskBoard: Equatable, Sendable {
         /// goes with the container, not with the task. Not the task's Cancel: the run is over, and
         /// this is the container's own Stop.
         public func stopTarget(isRunning: (TaskContainer) -> Bool) -> TaskContainer? {
-            guard kind == .runContainer, state == .succeeded, let container, isRunning(container) else { return nil }
+            guard kind == .runContainer, state == .succeeded, stopWithdrawn == nil, let container,
+                  isRunning(container) else { return nil }
             return container
         }
     }
@@ -143,6 +149,27 @@ public struct TaskBoard: Equatable, Sendable {
             return otherDate.compare(createdAt, options: .literal) == .orderedSame
         }
 
+        /// Stops this run's container on `cli` — that container's own host — only if it is still
+        /// the one the run made. The cached list is a poll old, so the identity is read again with
+        /// `inspect` immediately before the `stop` (Kyle, 20 October, round 2): a `web` deleted and
+        /// run again since the last poll must not be stopped by the first run's task.
+        ///
+        /// - Throws: `StopWithdrawn` when the name now belongs to another container, or to none —
+        ///   nothing was stopped, and nothing this task holds can ever be that container again. Any
+        ///   other error is the CLI's, from the check or the stop, and says nothing about identity.
+        public func stop(on cli: ContainerCLI) throws {
+            let now: Container
+            do {
+                now = try cli.inspect(id)
+            } catch ContainerCLIError.emptyInspectResult {
+                throw StopWithdrawn.gone(id)
+            }
+            guard isSame(id: now.id, createdAt: now.configuration.creationDate) else {
+                throw StopWithdrawn.replaced(id)
+            }
+            try cli.stop(id)
+        }
+
         /// What a finished `container run -d` made: the name it was given, or else the id it
         /// printed — its first non-empty line of output. Nil when it said neither.
         public static func ran(name: String?, output: String, on host: HostRef) -> TaskContainer? {
@@ -151,6 +178,22 @@ public struct TaskBoard: Equatable, Sendable {
             guard let printed = output.split(whereSeparator: \.isNewline)
                 .map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { !$0.isEmpty }) else { return nil }
             return TaskContainer(id: printed, host: host)
+        }
+    }
+
+    /// Why a finished Run's Stop was withdrawn instead of stopping anything (`TaskContainer.stop`).
+    public enum StopWithdrawn: Error, Equatable, Sendable {
+        /// Another container has the name now.
+        case replaced(String)
+        /// Nothing has the name now.
+        case gone(String)
+
+        /// The row's secondary line once the Stop is gone.
+        public var reason: String {
+            switch self {
+            case .replaced(let id): "Not stopped: \(id) is now a different container, made after this run."
+            case .gone(let id): "Not stopped: the container this run made, \(id), no longer exists."
+            }
         }
     }
 
@@ -256,6 +299,14 @@ public struct TaskBoard: Equatable, Sendable {
         guard let container, !container.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].container = container
+    }
+
+    /// Takes the Stop away from every Run that made `container`, saying why. Permanent: the
+    /// container those runs made is not the one with the name any more, and cannot become it again.
+    public mutating func withdrawStop(for container: TaskContainer, _ why: StopWithdrawn) {
+        for index in entries.indices where entries[index].container == container {
+            entries[index].stopWithdrawn = why.reason
+        }
     }
 
     /// Clamped to 0...1; nil leaves the last figure standing, since a pull's lines without a
@@ -430,14 +481,14 @@ public struct TaskBoard: Equatable, Sendable {
     public func row(_ entry: Entry, at now: Date) -> Row {
         let step: String? = switch entry.state {
         case .failed(let reason): Self.firstLine(reason) ?? entry.currentStep
-        default: entry.currentStep
+        default: entry.stopWithdrawn ?? entry.currentStep
         }
         return Row(id: entry.id, title: entry.title, kind: entry.kind, origin: entry.origin, state: entry.state,
                    stateText: Self.stateText(entry), elapsedText: Self.elapsedText(entry.elapsed(at: now)),
                    fraction: entry.state == .running ? entry.fraction : nil,
                    isHighlighted: highlighted == entry.id, step: step, isExpanded: expanded.contains(entry.id), offersCancel: entry.offersCancel,
                    isCancelling: entry.cancelRequested && entry.state == .running, offersRetry: entry.offersRetry,
-                   container: entry.container)
+                   container: entry.container, stopWithdrawn: entry.stopWithdrawn)
     }
 
     public static func stateText(_ entry: Entry) -> String {

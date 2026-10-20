@@ -306,7 +306,9 @@ private struct TaskRowView: View {
             let what = made.host.isLocal ? made.id
                 : "\(made.id) on \(model.hostMode.hostName(made.host, local: model.hostLabel))"
             TaskIconButton(systemImage: "stop.fill", label: "Stop \(what)", help: "Stop \(what)") {
-                Task { await model.perform(.stop, on: container, host: made.host) }
+                // `made`: checked again on the host just before it stops, since this list may be
+                // a poll old and the name may belong to a newer container by now.
+                Task { await model.perform(.stop, on: container, host: made.host, made: made) }
             }
         }
     }
