@@ -11,8 +11,6 @@ struct NetworksView: View {
 
     @State private var search = ""
     @State private var showingCreate = false
-    @State private var showingSuggestions = false
-    @State private var createPrefill: NetworkSuggestion?
     /// A menu's request for one network's page on a particular tab. Each request is new (`nonce`),
     /// so asking for a tab again after leaving it still lands on it.
     private struct DetailTarget: Hashable {
@@ -40,7 +38,6 @@ struct NetworksView: View {
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .network else { return }
         showingCreate = false
-        showingSuggestions = false
         pushing = nil
         open(HostRef.local.rowID(subject))
         model.clearPendingDetail()
@@ -51,15 +48,8 @@ struct NetworksView: View {
             if let network = pushing {
                 PushDefinitionView(model: model, subject: .network(network)) { pushing = nil }
             } else if showingCreate {
-                NewNetworkView(model: model, dismiss: { showingCreate = false; createPrefill = nil },
-                               prefill: createPrefill, initialHost: ui.hostFilter ?? .local)
-            } else if showingSuggestions {
-                ResourceSuggestionsGallery(
-                    intro: "Networks for common layouts. Use one to open New Network with it "
-                        + "filled in — change anything before you create it.",
-                    items: NetworkSuggestion.catalogue,
-                    use: useSuggestion,
-                    dismiss: { showingSuggestions = false })
+                NewNetworkView(model: model, dismiss: { showingCreate = false },
+                               initialHost: ui.hostFilter ?? .local)
             } else {
                 // Q58: the list, and the selected network's page beside it.
                 SplitPanes(list: "networks", pane: ui.pane, showing: shownRow?.id) {
@@ -109,15 +99,6 @@ struct NetworksView: View {
         .onAppear {
             if model.pendingNetworkForm { showingCreate = true; model.pendingNetworkForm = false }
         }
-        // File ▸ Suggestions ▸ Networks…. One-shot.
-        .onChange(of: model.pendingSuggestions) { _, section in
-            if section == .networks { model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true }
-        }
-        .onAppear {
-            if model.pendingSuggestions == .networks {
-                model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true
-            }
-        }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
                                     set: { if !$0 { model.clearActionError() } })) {
@@ -164,11 +145,6 @@ struct NetworksView: View {
         }
     }
 
-    private func useSuggestion(_ suggestion: NetworkSuggestion) {
-        createPrefill = suggestion
-        showingSuggestions = false
-        showingCreate = true
-    }
 
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { [weak ui] in ui?.search ?? "" },
@@ -200,9 +176,9 @@ struct NetworksView: View {
     /// and a right-click on empty space alike.
     @ViewBuilder
     private var addMenuItems: some View {
-        Button("New Network…") { createPrefill = nil; showingCreate = true }
+        Button("New Network…") { showingCreate = true }
         Divider()
-        Button("Suggestions…") { showingSuggestions = true }
+        Button("Suggestions…") { model.requestSuggestionsTab(.networks, host: ui.hostFilter) }
     }
 
     /// What the Sort menu orders the rows by — one per column the old table sorted on ("On hosts"
@@ -357,7 +333,6 @@ struct NetworksView: View {
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .network) }
 
-
     /// The selected rows as tag subjects, in the table's own order.
     ///
     /// Built from `actionable`, not from `selection`: filtering does not clear a table's
@@ -431,13 +406,13 @@ struct NetworksView: View {
                     Button("Clear Filter") { ui.search = ""; ui.filterID = "all"; ui.hostFilter = nil }
                 } else {
                     VStack(spacing: 14) {
-                        Button("New Network…") { createPrefill = nil; showingCreate = true }
+                        Button("New Network…") { showingCreate = true }
                             .buttonStyle(.borderedProminent)
                         SuggestionQuickPicks(
                             picks: NetworkSuggestion.catalogue.map { suggestion in
-                                (suggestion.title, { useSuggestion(suggestion) })
+                                (suggestion.title, { model.requestSuggestion(SuggestionItem.network(suggestion).id, host: ui.hostFilter) })
                             },
-                            more: { showingSuggestions = true })
+                            more: { model.requestSuggestionsTab(.networks, host: ui.hostFilter) })
                     }
                 }
             }
@@ -690,7 +665,6 @@ struct NetworksView: View {
     }
 
 
-
     /// Defers to `model.deletePolicy`, the one authority. This used to read the setting key
     /// directly, which is how three screens ended up with three copies of the rule and two more
     /// screens with none.
@@ -762,7 +736,7 @@ struct NewNetworkView: View {
     @State private var formToken = UUID()
 
     private var editSignature: String {
-        [newNetworkName, addressFamily.rawValue, newSubnet, newSubnetV6, newPlugin,
+        [host.token, newNetworkName, addressFamily.rawValue, newSubnet, newSubnetV6, newPlugin,
          "\(newInternal)",
          newLabels.joined(separator: ","),
          newOptions.joined(separator: ",")].joined(separator: "\u{1}")
@@ -1107,7 +1081,6 @@ struct NewNetworkView: View {
                        pluginProblem, labelsProblem, optionsProblem].compactMap { $0 }
         return claimed.contains(anyProblem) ? nil : anyProblem
     }
-
 
 
     private func problem(in args: [String]) -> String? {

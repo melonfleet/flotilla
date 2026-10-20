@@ -117,18 +117,12 @@ struct ContainersView: View {
     /// on dismiss so the next plain Run starts empty.
     @State private var runPrefill: RunPrefill?
 
-
     @State private var showingFilter = false
 
     /// New Group, full width like every other create form, when "+ ▸ New Group…" opened it. An
     /// existing group opens its overview beside the list, with Edit for its draft. Groups live here
     /// since 5 October (to-do item 4).
     @State private var editingGroup: GroupFormTarget?
-    /// Suggestions (Q28), embedded like every form. The stack is set when a quick pick in the
-    /// empty state opens one straight away.
-    @State private var showingSuggestions = false
-    @State private var suggestionPick: StackSuggestion?
-
     /// A group delete awaiting confirmation, and which kind. The owner's rule: a group row's
     /// Delete offers *both* "the group only" and "the group and its containers", and the second
     /// names every container it will remove.
@@ -785,16 +779,7 @@ struct ContainersView: View {
     private func openNewGroupFromMenu() {
         model.pendingGroupForm = false
         showingRun = false
-        showingSuggestions = false
         editingGroup = .new
-    }
-
-    private func openSuggestionsFromMenu() {
-        model.pendingSuggestions = nil
-        showingRun = false
-        editingGroup = nil
-        suggestionPick = nil
-        showingSuggestions = true
     }
 
     /// "Run Container…" and "New Group…": the two ways to add to this list, in the toolbar's "+"
@@ -804,7 +789,7 @@ struct ContainersView: View {
         Button("Run Container…") { showingRun = true }
         Button("New Group…") { editingGroup = .new }
         Divider()
-        Button("Suggestions…") { suggestionPick = nil; showingSuggestions = true }
+        Button("Suggestions…") { model.requestSuggestionsTab(.apps, host: ui.hostFilter) }
     }
 
     private var rowsByID: [ContainerRow.ID: ContainerRow] {
@@ -1050,10 +1035,6 @@ struct ContainersView: View {
             } else if let target = editingGroup {
                 // Embedded, like every other create form (`CLAUDE.md`, 9 August).
                 GroupFormView(model: model, target: target) { editingGroup = nil }
-            } else if showingSuggestions {
-                SuggestionsView(model: model,
-                                dismiss: { showingSuggestions = false; suggestionPick = nil },
-                                chosen: suggestionPick)
             } else {
                 // Q58: the list, and the selected row's page beside it.
                 SplitPanes(list: "containers", pane: ui.pane, showing: shownID) {
@@ -1114,16 +1095,12 @@ struct ContainersView: View {
             if model.pendingRunSheet { showingRun = true; model.pendingRunSheet = false }
             if let draft = model.pendingRunPrefill { runPrefill = draft; showingRun = true; model.pendingRunPrefill = nil }
         }
-        // File ▸ New Group… and File ▸ Suggestions ▸ Stacks…. One-shot, like the run sheet.
+        // File ▸ New Group…. One-shot, like the run sheet.
         .onChange(of: model.pendingGroupForm) { _, requested in
             if requested { openNewGroupFromMenu() }
         }
-        .onChange(of: model.pendingSuggestions) { _, section in
-            if section == .containers { openSuggestionsFromMenu() }
-        }
         .onAppear {
             if model.pendingGroupForm { openNewGroupFromMenu() }
-            if model.pendingSuggestions == .containers { openSuggestionsFromMenu() }
         }
         // `actionable` already stops a hidden row from being *acted on*; this stops one
         // from being *counted*. It covers every way the selectable set moves out from under
@@ -1286,13 +1263,11 @@ struct ContainersView: View {
         switch model.pendingDetailKind {
         case .container:
             showingRun = false
-            showingSuggestions = false
             editingGroup = nil
             open(subject, tab: requestedTab)
             model.clearPendingDetail()
         case .group:
             showingRun = false
-            showingSuggestions = false
             editingGroup = nil
             // Palette picks use stable ids; older menu requests can still name a group.
             if let group = model.groups.groups.first(where: { $0.id == subject })
@@ -1454,10 +1429,10 @@ struct ContainersView: View {
                         // A few Suggestions, as decided: an empty list is where a ready-made
                         // stack is most useful.
                         SuggestionQuickPicks(
-                            picks: StackSuggestion.catalogue.prefix(3).map { stack in
-                                (stack.title, { suggestionPick = stack; showingSuggestions = true })
+                            picks: model.suggestionLibrary.entries.filter { $0.kind == .stack }.prefix(3).map { stack in
+                                (stack.title, { model.requestSuggestion(SuggestionItem.library(stack).id, host: ui.hostFilter) })
                             },
-                            more: { suggestionPick = nil; showingSuggestions = true })
+                            more: { model.requestSuggestionsTab(.stacks, host: ui.hostFilter) })
                     }
                 }
             }
@@ -1852,7 +1827,6 @@ struct ContainersView: View {
         if !row.host.isLocal { parts.append("on " + row.hostName) }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
-
 
     /// The disclosure caret. A group with no services has none — an empty disclosure is the
     /// control-that-does-nothing failure in miniature — but keeps the space, so names line up.

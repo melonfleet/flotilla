@@ -63,8 +63,6 @@ struct MachinesView: View {
     @State private var shown = Set<ContainerMachine.ID>()
     @State private var request: DetailTarget?
     @State private var showingCreate = false
-    @State private var showingSuggestions = false
-    @State private var createPrefill: MachineSuggestion?
     @State private var confirmingDelete: ContainerMachine?
     @State private var confirmingBulkDelete = false
 
@@ -105,18 +103,9 @@ struct MachinesView: View {
             // Create is a screen now, not a sheet — see `MachineFormView`. Checked before the
             // detail so "New Machine" from inside a detail still lands somewhere sensible.
             if showingCreate {
-                MachineFormView(model: model, prefill: createPrefill) {
+                MachineFormView(model: model) {
                     showingCreate = false
-                    createPrefill = nil
                 }
-            } else if showingSuggestions {
-                ResourceSuggestionsGallery(
-                    intro: "Machine images that boot on container 1.5 — each was booted and "
-                        + "logged in to before it was offered. Use one to open New Machine with "
-                        + "it filled in.",
-                    items: MachineSuggestion.catalogue,
-                    use: useSuggestion,
-                    dismiss: { showingSuggestions = false })
             } else {
                 // Q58: the list, and the selected machine's page beside it.
                 SplitPanes(list: "machines", pane: ui.pane, showing: shownMachine?.id) {
@@ -149,14 +138,12 @@ struct MachinesView: View {
             // Only this section's own requests. See `AppModel.requestDetail`.
             guard let subject, model.pendingDetailKind == .machine else { return }
             showingCreate = false
-            showingSuggestions = false
             open(subject, tab: requestedTab)
             model.clearPendingDetail()
         }
         .onAppear {
             if let subject = model.pendingDetailSubject, model.pendingDetailKind == .machine {
                 showingCreate = false
-                showingSuggestions = false
                 open(subject, tab: requestedTab)
                 model.clearPendingDetail()
             }
@@ -168,15 +155,6 @@ struct MachinesView: View {
         }
         .onAppear {
             if model.pendingMachineForm { showingCreate = true; model.pendingMachineForm = false }
-        }
-        // File ▸ Suggestions ▸ Machines…. One-shot.
-        .onChange(of: model.pendingSuggestions) { _, section in
-            if section == .machines { model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true }
-        }
-        .onAppear {
-            if model.pendingSuggestions == .machines {
-                model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true
-            }
         }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
@@ -255,11 +233,6 @@ struct MachinesView: View {
     /// the one section where you could not filter by state.
     /// A section that quietly offers less than its neighbours reads as unfinished rather than
     /// as a deliberate simplification.
-    private func useSuggestion(_ suggestion: MachineSuggestion) {
-        createPrefill = suggestion
-        showingSuggestions = false
-        showingCreate = true
-    }
 
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { [weak ui] in ui?.search ?? "" },
@@ -292,9 +265,9 @@ struct MachinesView: View {
     /// and a right-click on empty space alike.
     @ViewBuilder
     private var addMenuItems: some View {
-        Button("New Machine…") { createPrefill = nil; showingCreate = true }
+        Button("New Machine…") { showingCreate = true }
         Divider()
-        Button("Suggestions…") { showingSuggestions = true }
+        Button("Suggestions…") { model.requestSuggestionsTab(.machines, host: .local) }
     }
 
     /// `IconActionButton`, like every other icon control in the app — **not** a bare `Button`
@@ -362,7 +335,6 @@ struct MachinesView: View {
     private var actionable: Set<ContainerMachine.ID> { selection.intersection(visibleIDs) }
 
     private var selectionBusy: Bool { model.isAnyBusy(actionable, kind: .machine) }
-
 
     /// The selected rows as tag subjects, in the table's own order.
     ///
@@ -446,13 +418,13 @@ struct MachinesView: View {
                      + "`alpine:3.22`, rather than an installer disc."))
             } actions: {
                 VStack(spacing: 14) {
-                    Button("Create a machine…") { createPrefill = nil; showingCreate = true }
+                    Button("Create a machine…") { showingCreate = true }
                         .buttonStyle(.borderedProminent)
                     SuggestionQuickPicks(
                         picks: MachineSuggestion.catalogue.map { suggestion in
-                            (suggestion.title, { useSuggestion(suggestion) })
+                            (suggestion.title, { model.requestSuggestion(SuggestionItem.machine(suggestion).id, host: .local) })
                         },
-                        more: { showingSuggestions = true })
+                        more: { model.requestSuggestionsTab(.machines, host: .local) })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

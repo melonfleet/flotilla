@@ -329,9 +329,11 @@ private struct FlotillaCommands: Commands {
 
             Divider()
 
-            // The same galleries as each section's "+" ▸ Suggestions… (Q28).
+            // Deep links to the unified discovery tabs (Q66).
             Menu("Suggestions") {
-                Button("Stacks…") { present { model.requestSuggestions(.containers) } }
+                Button("All…") { present { model.requestSuggestionsTab(.all) } }
+                Button("Apps…") { present { model.requestSuggestionsTab(.apps) } }
+                Button("Stacks…") { present { model.requestSuggestionsTab(.stacks) } }
                 Button("Volumes…") { present { model.requestSuggestions(.volumes) } }
                 Button("Networks…") { present { model.requestSuggestions(.networks) } }
                 Button("Machines…") { present { model.requestSuggestions(.machines) } }

@@ -94,11 +94,12 @@ public enum SearchBox {
         public var completion: Scope?
         public var slugs: [String]
         public var libraryEntry: LibraryEntry?
+        public var suggestion: SuggestionItem?
 
         public init(title: String, subtitle: String? = nil, isCommand: Bool, isSection: Bool = false, scope: Scope? = nil,
-                    completion: Scope? = nil, slugs: [String] = [], libraryEntry: LibraryEntry? = nil) {
+                    completion: Scope? = nil, slugs: [String] = [], libraryEntry: LibraryEntry? = nil, suggestion: SuggestionItem? = nil) {
             self.title = title; self.subtitle = subtitle; self.isCommand = isCommand; self.isSection = isSection
-            self.scope = scope; self.completion = completion; self.slugs = slugs; self.libraryEntry = libraryEntry
+            self.scope = scope; self.completion = completion; self.slugs = slugs; self.libraryEntry = libraryEntry; self.suggestion = suggestion
         }
     }
 
@@ -156,6 +157,7 @@ public enum SearchBox {
                     }
                 }
             }
+            if let suggestion = candidate.suggestion { return suggestion.matches(input.query) }
             if let entry = candidate.libraryEntry { return entry.matches(input.query) }
             return words.allSatisfy {
                 SearchQuery.contains(candidate.title, $0) || SearchQuery.contains(candidate.subtitle ?? "", $0)

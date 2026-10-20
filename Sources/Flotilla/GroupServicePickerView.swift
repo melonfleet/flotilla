@@ -95,19 +95,8 @@ struct GroupServicePickerView: View {
                                                noun: "suggestions"), count: suggestions.count, noun: "suggestions")
             }
             ForEach(suggestions) { entry in
-            ResourceRow(
-                title: entry.title,
-                detail: entry.summary,
-                thirdLine: SuggestionsView.stats(entry),
-                selected: suggestionSelection.contains(entry.id),
-                check: RowCheck(entry.id, in: $suggestionSelection),
-                summary: "\(entry.title), \(entry.summary)",
-                leading: {
-                    SuggestionLogo(data: entry.icon.flatMap { model.libraryUpdater.icons[$0.sha256] },
-                                   category: entry.categories.first)
-                },
-                chips: {},
-                actions: {})
+            SuggestionRow(item: .library(entry), model: model, selection: $suggestionSelection,
+                          selectionID: entry.id, actions: {})
             .tag(entry.id)
             .listRowInsets(EdgeInsets())
             }

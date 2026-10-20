@@ -3114,3 +3114,31 @@ place you have to read every time.
 - Why: fewer kinds of button, in a fixed place, with one glyph for "this starts a job" and one for
   "this keeps my changes" — and the exact action still named, in the label, for anyone who needs
   the words.
+
+
+## Q66 — One Suggestions section (settled 2026-10-20)
+
+Kamal's call for beta 5, shipping Thursday 22 October. Build step 2 of
+`research/SUGGESTIONS-EXPANSION-IRIS.md`: consolidate discovery using existing data. Separate
+per-section galleries hid related recipes and made search and return navigation inconsistent.
+
+- One sidebar section, with All · Apps · Stacks · Volumes · Networks · Domains · Machines · Clusters.
+  No Images or Registries tab. Apps and stacks retain the signed library and its validation;
+  the five resource kinds retain today's compiled catalogues, with no content or schema expansion.
+- Rows only, with `ResourceRow` and `RowCheck`, in `SplitPanes` (Q56/Q58). No selection shows an
+  empty detail, one shows its page, several a summary. The tabs show match counts; ⌘K searches all
+  kinds and an empty tab offers Show all matches. A search result selects its tab and row; it never
+  runs anything. Existing resource scopes still search existing resources.
+- Use hands off to Run, the stack form, or the resource's existing create form, full-width. The
+  volume form moves out of `VolumesView` so both callers use it. Prefills are the initial clean
+  baseline, not unsaved user edits. App/stack multi-use retains the sequential forms, Skip and
+  Close. Resource batches are not introduced. Machines remain local-only, as their form is today.
+- Tab, query, category, row selection, host and pane state belong to `MainWindowView` through
+  `SuggestionsUIState`. Closing or submitting a form restores that browsing context.
+- The Containers, Volumes, Networks, Domains, Machines and Clusters galleries are removed.
+  Their menu shortcuts now open the matching tab, and named empty-state picks select its detail.
+  File ▸ Suggestions links to those same tabs. Direct New actions still open ordinary forms.
+- The group's Add Service picker keeps its own app/image/blank-service flow. It shares rows and
+  logos, never the whole discovery section. No group conversion or image-matching changes here.
+- No new creation path, Allowlist command or privileged operation. Q64/Q65 form actions and
+  existing commit validation remain the execution boundary.

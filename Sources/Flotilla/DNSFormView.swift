@@ -119,7 +119,7 @@ struct DNSFormView: View {
     }
 
     private var editSignature: String {
-        [kind.rawValue, domain, address, "\(useForContainers)"].joined(separator: "\u{1}")
+        [host.token, kind.rawValue, domain, address, "\(useForContainers)"].joined(separator: "\u{1}")
     }
 
     var body: some View {

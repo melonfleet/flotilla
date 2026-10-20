@@ -78,7 +78,7 @@ final class ToolbarSearch {
         SearchBox.results(for: text, among: entries.map {
             SearchBox.Candidate(title: $0.title, subtitle: $0.subtitle, isCommand: $0.kind == .action || (input.slashMode && $0.kind == .section),
                                 isSection: $0.kind == .section, scope: $0.scope, completion: $0.completion,
-                                slugs: $0.slugs, libraryEntry: $0.libraryEntry)
+                                slugs: $0.slugs, libraryEntry: $0.libraryEntry, suggestion: $0.suggestion)
         }, browsing: state.browsing)
     }
 

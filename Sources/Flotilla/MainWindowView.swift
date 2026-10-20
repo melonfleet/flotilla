@@ -25,6 +25,7 @@ struct MainWindowView: View {
 
     /// Same reasoning as `containersUI`, and owned here for the same reason — `MachinesView`
     /// is rebuilt from scratch on every sidebar change.
+    @State private var suggestionsUI = SuggestionsUIState()
     @State private var machinesUI = MachinesUIState()
     @State private var activityUI = ActivityUIState()
     @State private var logsUI = LogsUIState()
@@ -118,6 +119,7 @@ struct MainWindowView: View {
             // Containers first, as Docker does — this is a containers application.
             SwiftUI.Section {
                 row(.overview, count: nil)
+                row(.suggestions, count: nil)
             }
             SwiftUI.Section {
                 row(.containers, count: model.state == .loaded ? model.containers.count : nil)
@@ -266,6 +268,8 @@ struct MainWindowView: View {
     @ViewBuilder
     private var sectionContent: some View {
         switch selection ?? .overview {
+        case .suggestions:
+            SuggestionsView(model: model, ui: suggestionsUI)
         case .activity:
             ActivityView(model: model, ui: activityUI) { navigate(to: $0) }
         case .logs:

@@ -75,7 +75,9 @@ for path in sorted(pathlib.Path('Sources/Flotilla').glob('*.swift')):
         for call in re.finditer(r'PageTabs\(items:', text):
             window = text[call.end():call.end() + 400]
             window = window[:window.find('selection:')] if 'selection:' in window else window
-            if 'kind:' not in window and 'tabItems' not in window:
+            # Discovery's resource-kind tabs have their own tested order (Q66), not detail-page order.
+            discovery = path.name == 'SuggestionsView.swift' and 'SuggestionTab.allCases' in window
+            if 'kind:' not in window and 'tabItems' not in window and not discovery:
                 line = text[:call.start()].count('\n') + 1
                 failures.append(f"{path}:{line}: PageTabs items carry no kind:, so the pill can't put them in order")
 

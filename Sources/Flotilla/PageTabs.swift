@@ -29,6 +29,7 @@ struct PageTabs<Tab: Hashable>: View {
         /// container sources — which is a choice between two documents, not a page's sections,
         /// and keeps the order it is given.
         var kind: PageTabKind?
+        var count: Int? = nil
         /// A dot on the icon's corner saying what it reaches is like — a host's SSH on or off. Its
         /// value is the tooltip's and VoiceOver's too ("SSH, on"), so colour is never the only sign.
         var status: Status?
@@ -51,6 +52,7 @@ struct PageTabs<Tab: Hashable>: View {
     /// ⌘1…⌘9 for the first nine tabs. Off by default: a page inside another page (the host's
     /// settings sources) would otherwise bind the same keys twice.
     var shortcuts = false
+    var showsTitles = false
 
     @State private var hovered: Tab?
 
@@ -86,17 +88,23 @@ struct PageTabs<Tab: Hashable>: View {
 
     private func helpText(_ item: Item, shortcut: Character?) -> String {
         let title = item.status.map { $0.help ?? "\(item.title) — \($0.value)" } ?? item.title
-        return shortcut.map { "\(title) (⌘\($0))" } ?? title
+        let counted = item.count.map { "\(title) — \($0) matches" } ?? title
+        return shortcut.map { "\(counted) (⌘\($0))" } ?? counted
     }
 
     private func button(_ item: Item, index: Int) -> some View {
         let selected = item.tab == selection
         let shortcut = shortcuts && index < 9 ? Character("\(index + 1)") : nil
         return Button { selection = item.tab } label: {
-            Image(systemName: item.systemImage)
+            HStack(spacing: 5) {
+                Image(systemName: item.systemImage)
+                if showsTitles { Text(item.title) }
+                if let count = item.count { Text("\(count)").monospacedDigit() }
+            }
                 .font(.system(size: 13, weight: selected ? .semibold : .regular))
                 .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .frame(width: 34, height: 26)
+                .frame(minWidth: 34, minHeight: 26)
+                .padding(.horizontal, showsTitles ? 7 : 0)
                 .background {
                     if selected {
                         Capsule().fill(Theme.accent.opacity(0.25))
@@ -120,7 +128,7 @@ struct PageTabs<Tab: Hashable>: View {
         }
         .help(helpText(item, shortcut: shortcut))
         .accessibilityLabel(item.title)
-        .accessibilityValue(item.status?.value ?? "")
+        .accessibilityValue(item.count.map { "\($0) matches" } ?? item.status?.value ?? "")
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .background {
             // A hidden twin carries the shortcut, so the visible button keeps its plain style.

@@ -2110,25 +2110,40 @@ final class AppModel {
 
     var pendingClusterForm = false
 
-    /// File ▸ Suggestions ▸ …: a section's Suggestions gallery (Q28).
+    /// Old section shortcuts now deep-link to the one Suggestions section (Q66).
     func requestSuggestions(_ section: Section) {
+        let tab: SuggestionTab = switch section {
+        case .containers: .stacks
+        case .volumes: .volumes
+        case .networks: .networks
+        case .dns: .domains
+        case .machines: .machines
+        case .clusters: .clusters
+        default: .all
+        }
+        requestSuggestionsTab(tab)
+    }
+
+    func requestSuggestionsTab(_ tab: SuggestionTab, host: HostRef? = nil) {
         present {
-            self.pendingSection = section
-            self.pendingSuggestions = section
+            self.pendingSuggestionTab = tab
+            self.pendingSuggestionHost = host
+            self.pendingSuggestionEntry = nil
+            self.pendingSection = .suggestions
         }
     }
 
-    var pendingSuggestionEntry: LibraryEntry.ID?
+    var pendingSuggestionEntry: String?
+    var pendingSuggestionTab: SuggestionTab?
+    var pendingSuggestionHost: HostRef?
 
-    func requestSuggestion(_ id: LibraryEntry.ID) {
+    func requestSuggestion(_ id: String, host: HostRef? = nil) {
         present {
             self.pendingSuggestionEntry = id
-            self.pendingSection = .containers
-            self.pendingSuggestions = .containers
+            self.pendingSuggestionHost = host
+            self.pendingSection = .suggestions
         }
     }
-
-    var pendingSuggestions: Section?
 
     var pendingDNSForm = false
 

@@ -46,9 +46,9 @@ questions.
   Machines, Images, Volumes, Networks, Hosts, Registries, DNS and Clusters all draw
   `ResourceRow`, sort from one `RowSortMenu`, and lead each row with a checkbox (`RowCheck`) that
   is a view of the `List`'s own selection — never a second one. There is no Cards view and no
-  hideable columns; `ResourceCard` lives on only in the Suggestions galleries. Logs is the one
+  hideable columns or suggestion cards. Logs is the one
   list still a `Table` (Q19). `check-defaults.sh` pins the rows being drawn unconditionally.
-  Notifications and Suggestions now use the same row, as Greta already did (18 October).
+  Notifications and Suggestions use the same row, as Greta already did (18 October).
   Rows become one line when their own width permits the full name; narrow rows keep two or
   three lines. `ResourceTextLayout` owns that switch, with no window-width or hover dependency.
   **No live figures in rows** (Q58): CPU and memory are on the container's page.
@@ -69,6 +69,16 @@ questions.
   widens the page over the list; in a window too narrow for both, the page wins and that button
   brings the list back. Suggestions, Notifications and Docker Hub use the same component. Forms
   stay full width.
+- **One Suggestions section** (Q66, Kamal, 20 October; beta 5, shipping 22 October):
+  All · Apps · Stacks · Volumes · Networks · Domains · Machines · Clusters. Apps and stacks still
+  come from the signed library; resources still use the compiled catalogues, unchanged. There is no
+  Images or Registries tab. `SuggestionCatalogue` owns filtering, counts and typed form handoffs.
+  `SuggestionsUIState`, owned by `MainWindowView`, keeps tab, query, selection and host through a
+  form or sidebar visit. Discovery uses `ResourceRow` / `RowCheck` and the list-sized `SplitPanes`;
+  Use opens the existing form full-width, with its prefill as the clean baseline. The old section
+  galleries are gone: menus and empty-state picks link to the matching tab and detail. ⌘K searches
+  every kind, and opens results without creating anything. The group's Add Service picker remains
+  its own flow, sharing `SuggestionRow` and artwork, not the whole Suggestions section.
 - **Everything is embedded now — forms included** (9 August, the owner's call). This
   **reverses** the old "forms are modal, places are navigable" rule, and the newer
   argument is better: once Machines grew an embedded detail with Back and a tab strip, a

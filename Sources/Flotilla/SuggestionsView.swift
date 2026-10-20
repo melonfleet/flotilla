@@ -1,254 +1,316 @@
 import SwiftUI
 import FlotillaCore
 
-/// Suggestions for Containers: the suggestions library (DECISIONS Q28, Q54) — ready-made stacks and
-/// single containers, browsed like Images ▸ Browse Docker Hub (the owner, 12 October): search and a
-/// category on the left, the chosen entry on the right, its ▶ Use… at the header's top right (Q65).
-///
-/// Reached from the "+" menu and from the empty Containers list. A stack opens its form and is
-/// created as a group; a container opens the Run form filled in. Either way the form validates it
-/// like anything typed — a library entry is a suggestion, not a command.
-///
-/// Two or more ticked rows offer **Use N Suggestions…**, which walks the same forms one by one
-/// (TODO item 15): the form's ▶ runs and opens the next, Skip (in its ⋯) advances without running,
-/// ✕ stops the walk. Single Use… is unchanged.
+/// One discovery section (Q66). Use only opens an existing form; its commit owns execution.
 struct SuggestionsView: View {
     let model: AppModel
-    let dismiss: () -> Void
-    /// Opened straight into one stack's form — from the empty state's quick picks.
-    @State var chosen: StackSuggestion?
-
-    /// Typed in the window bar's search box (Q55), which this page lends it while the list is showing.
-    @State private var queryText = PageSearchText()
-    private var query: String { queryText.value }
-    @State private var category: String?
-    /// The list's own selection — checkboxes are a view of it (Q56), not a second set.
-    @State private var selection = Set<LibraryEntry.ID>()
-    /// In-flight multi-suggest walk; nil while browsing or on a single Use….
+    @Bindable var ui: SuggestionsUIState
+    @State private var form: SuggestionItem?
+    @State private var runPrefill: RunPrefill?
     @State private var batch: SuggestionBatch?
-    /// Prefill for a container step inside a batch (Run lives here so the walk can continue).
-    @State private var batchRunPrefill: RunPrefill?
-    /// The header's guard registration: Back and ✕ (and a Skip) ask about this form alone.
-    @State private var formToken = UUID()
+    @State private var preparing = false
+    @State private var preparationID = UUID()
 
     private var library: SuggestionLibrary { model.suggestionLibrary }
-
-    private var shown: [LibraryEntry] {
-        library.entries.filter { entry in
-            (category == nil || entry.categories.contains(category!)) && entry.matches(query)
-        }
-    }
-
-    private var shownIDs: [LibraryEntry.ID] { shown.map(\.id) }
-    private var selectedEntries: [LibraryEntry] {
-        shown.filter { selection.contains($0.id) }
-    }
-    private var selected: LibraryEntry? {
-        guard selection.count == 1, let id = selection.first else { return nil }
-        return library.entries.first { $0.id == id }
-    }
-    private var clashNotes: [String] { SuggestionPorts.clashNotes(for: selectedEntries) }
+    private var catalogue: SuggestionCatalogue { SuggestionCatalogue(library: library) }
+    private var shown: [SuggestionItem] { catalogue.matching(ui.query, tab: ui.tab, category: ui.category) }
+    private var shownIDs: [String] { shown.map(\.id) }
+    private var selectedItems: [SuggestionItem] { shown.filter { ui.selection.contains($0.id) } }
+    private var selected: SuggestionItem? { selectedItems.count == 1 ? selectedItems.first : nil }
+    private var counts: [SuggestionTab: Int] { catalogue.counts(ui.query, category: ui.category) }
+    private var canUse: Bool { !preparing && SuggestionCatalogue.canUseTogether(selectedItems, on: ui.host) }
+    private var clashNotes: [String] { SuggestionPorts.clashNotes(for: selectedItems.compactMap(\.libraryEntry)) }
 
     var body: some View {
-        if let batch, let entry = library.entries.first(where: { $0.id == batch.currentID }) {
-            batchStep(entry, batch: batch)
-                .id("\(batch.index)-\(entry.id)")
-        } else if let chosen {
-            StackFormView(model: model, stack: chosen, back: { self.chosen = nil }, done: dismiss)
-                .id(chosen.id)
-        } else {
-            VStack(spacing: 0) {
-                FormHeader(title: "Suggestions", systemImage: "sparkles",
-                           hasUnsavedChanges: false, onBack: dismiss, token: formToken, actions: actions)
-                Divider()
-                FormBand {
-                    Text(selection.count >= 2
-                         ? "Each opens its form in turn. ▶ runs it and opens the next; Skip, under ⋯, goes on; ✕ stops the rest."
-                         : "A stack is created as a group, left ready to start. A container opens in the Run form.")
-                        .foregroundStyle(.secondary)
-                }
-                SplitPanes("suggestions", item: selected?.id, clearing: { selection = [] }) { listPane } detail: { detailPane }
+        VStack(spacing: 0) {
+            if let form {
+                creationForm(form).id(form.id)
+            } else {
+                browser
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .searchesFromToolbar(prompt: "Search suggestions",
-                                 text: Binding(get: { [weak queryText] in queryText?.value ?? "" },
-                                               set: { [weak queryText] in queryText?.value = $0 }),
-                                 matches: shown.count)
-            .onAppear { openRequestedEntry() }
-            .onChange(of: model.pendingSuggestionEntry) { _, _ in openRequestedEntry() }
-            // Use… checks a container's new volumes against what is here, so the list must be.
-            .task { if model.volumesState != .loaded { await model.refreshVolumes() } }
-            .selection($selection, confinedTo: Set(shownIDs))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { openRequestedEntry() }
+        .onDisappear { closeForm() }
+        .onChange(of: ui.host) { _, _ in closeForm() }
+        .onChange(of: model.pendingSuggestionEntry) { _, _ in openRequestedEntry() }
+        .onChange(of: model.pendingSuggestionTab) { _, _ in openRequestedEntry() }
+        .alert("Action failed", isPresented: Binding(get: { model.actionError != nil },
+                                                     set: { if !$0 { model.clearActionError() } })) {
+            Button("OK") { model.clearActionError() }
+        } message: { Text(model.actionError ?? "") }
     }
 
-    // MARK: Multi-suggest step-through
-
-    @ViewBuilder
-    private func batchStep(_ entry: LibraryEntry, batch: SuggestionBatch) -> some View {
-        if let stack = entry.stackSuggestion {
-            StackFormView(model: model, stack: stack,
-                          back: cancelBatch,
-                          done: { advanceBatch() },
-                          progressLabel: batch.progressLabel,
-                          onSkip: { advanceBatch() },
-                          onCreated: { ports in advanceBatch(claiming: ports) },
-                          extraAvoidedPorts: batch.claimedPorts)
-        } else if let prefill = batchRunPrefill {
-            RunSheetView(model: model, prefill: prefill,
-                         progressLabel: batch.progressLabel,
-                         onSkip: { advanceBatch() },
-                         onRan: { ports in advanceBatch(claiming: ports) },
-                         dismiss: cancelBatch)
-        } else {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                .task { await openBatchStep(entry) }
+    private var browser: some View {
+        VStack(spacing: 0) {
+            ScrollView(.horizontal) {
+                PageTabs(items: SuggestionTab.allCases.map {
+                    .init(tab: $0, title: $0.rawValue, systemImage: $0.systemImage, count: counts[$0])
+                }, selection: $ui.tab, label: "Suggestion kinds", showsTitles: true)
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: 52)
+            SplitPanes(list: "suggestions", pane: ui.pane, showing: selected?.id,
+                       clearing: { ui.selection = [] }) { listPane } detail: { detailPane }
         }
+        .searchesFromToolbar(prompt: "Search all suggestions",
+                             text: Binding(get: { [weak ui] in ui?.query ?? "" },
+                                           set: { [weak ui] in ui?.query = $0 }),
+                             matches: counts[.all] ?? 0)
+        .selection($ui.selection, confinedTo: Set(shownIDs))
     }
-
-    private func openRequestedEntry() {
-        guard let id = model.pendingSuggestionEntry else { return }
-        category = nil
-        queryText.value = ""
-        selection = [id]
-        model.pendingSuggestionEntry = nil
-    }
-
-    private func startBatch() {
-        let queue = shownIDs.filter { selection.contains($0) }
-        guard queue.count >= 2 else { return }
-        batch = SuggestionBatch(queue: queue)
-        batchRunPrefill = nil
-    }
-
-    private func openBatchStep(_ entry: LibraryEntry) async {
-        if entry.stackSuggestion != nil {
-            batchRunPrefill = nil
-            return
-        }
-        guard let container = entry.container else {
-            advanceBatch()
-            return
-        }
-        await model.prepareSuggestions()
-        if model.volumesState != .loaded { await model.refreshVolumes() }
-        let avoiding = (batch?.claimedPorts ?? []).union(model.stackTaken(on: .local).hostPorts)
-        let ports = await Blocking.run {
-            SuggestionPorts.publishSpecs(for: container, avoiding: avoiding, isPortFree: AppModel.isPortFree)
-        }
-        var prefill = runPrefill(for: container, ports: ports.specs)
-        prefill.unavailablePorts = ports.unavailablePorts
-        batchRunPrefill = prefill
-    }
-
-    private func advanceBatch(claiming ports: Set<Int> = []) {
-        batchRunPrefill = nil
-        guard var walk = batch else { return }
-        walk.advance(claiming: ports)
-        if walk.isFinished {
-            finishBatch()
-        } else {
-            batch = walk
-        }
-    }
-
-    private func cancelBatch() {
-        batch = nil
-        batchRunPrefill = nil
-    }
-
-    private func finishBatch() {
-        batch = nil
-        batchRunPrefill = nil
-        selection = []
-        dismiss()
-    }
-
-    // MARK: List
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
+            HStack {
                 PaneModeButton()
-                SelectAllCheckbox(selection: $selection, ids: shownIDs, noun: "suggestions")
-                // The search is the window bar's box now (Q55).
-                Picker("", selection: $category) {
+                SelectAllCheckbox(selection: $ui.selection, ids: shownIDs, noun: "suggestions")
+                Picker("Category", selection: $ui.category) {
                     Text("All categories").tag(String?.none)
-                    Divider()
-                    ForEach(SuggestionLibrary.categories.filter { name in library.entries.contains { $0.categories.contains(name) } },
-                            id: \.self) { name in
-                        Text("\(name) (\(library.entries.count { $0.categories.contains(name) }))").tag(String?.some(name))
+                    ForEach(SuggestionLibrary.categories.filter { name in library.entries.contains { $0.categories.contains(name) } }, id: \.self) {
+                        Text($0).tag(String?.some($0))
                     }
                 }
                 .labelsHidden()
-                .fixedSize()
             }
-            Text("\(shown.count) of \(library.entries.count) · library \(library.version)")
-                .font(.caption).foregroundStyle(.secondary)
-            if !clashNotes.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(clashNotes, id: \.self) { note in
-                        Label(note, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(Theme.warning)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            Picker("Create on", selection: $ui.host) {
+                Text(model.hostLabel).tag(HostRef.local)
+                ForEach(model.hostMode.trustedHosts) {
+                    Text($0.displayName).tag(HostRef.peer($0.fingerprint))
                 }
             }
-            SelectionRevealingList(selection: selection) {
-                List(shown, selection: $selection) { entry in
-                    row(entry)
-                        .tag(entry.id)
-                        .listRowInsets(EdgeInsets())
+            if preparing { ProgressView("Preparing suggestion…").controlSize(.small) }
+            Text("\(shown.count) suggestions · library \(library.version)")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(clashNotes, id: \.self) { note in
+                Label(note, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Theme.warning)
+            }
+            if ui.selection.count > 1 {
+                BulkActionBar(title: "\(ui.selection.count) selected") { batchAction }
+            }
+            SelectionRevealingList(selection: ui.selection) {
+                List(shown, selection: $ui.selection) { item in
+                    SuggestionRow(item: item, model: model, selection: $ui.selection) {
+                        RowOverflowMenu(label: "More actions for \(item.title)") { suggestionMenu(item) }
+                    }
+                    .contextMenu { suggestionMenu(item) }
+                    .tag(item.id)
+                    .listRowInsets(EdgeInsets())
                 }
                 .listStyle(.inset)
             }
             .overlay {
-                if shown.isEmpty { ContentUnavailableView.search(text: query) }
+                if shown.isEmpty {
+                    ContentUnavailableView {
+                        Label("No matching suggestions", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Try another kind or change the search.")
+                    } actions: {
+                        if (counts[.all] ?? 0) > 0 {
+                            Button("Show all matches") { ui.tab = .all }
+                        }
+                    }
+                }
             }
         }
         .padding(16)
     }
 
-    private func row(_ entry: LibraryEntry) -> some View {
-        ResourceRow(
-            title: entry.title,
-            detail: entry.summary,
-            thirdLine: Self.stats(entry),
-            selected: selection.contains(entry.id),
-            check: RowCheck(entry.id, in: $selection),
-            summary: "\(entry.title), \(entry.kind == .stack ? "Stack" : "Container"), \(entry.summary), \(Self.stats(entry))\(entry.licenceNote == nil ? "" : ", Licence")",
-            leading: { logo(entry) },
-            chips: {
-                badge(entry.kind == .stack ? "Stack" : "Container")
-                if entry.licenceNote != nil { badge("Licence") }
-            },
-            actions: {
-                RowOverflowMenu(label: "More actions for \(entry.title)") {
-                    suggestionMenu(entry)
+    @ViewBuilder private var detailPane: some View {
+        if ui.selection.count > 1 {
+            SelectionSummaryPane(title: "\(ui.selection.count) suggestions selected", systemImage: "sparkles",
+                                 names: selectedItems.map(\.title)) {
+                batchAction
+                if !canUse { Text("Use apps and stacks together, or choose one resource.").font(.caption) }
+            }
+        } else if let item = selected {
+            VStack(spacing: 0) {
+                HStack {
+                    Text(item.title).font(.headline).lineLimit(1)
+                    Spacer()
+                    ActionCluster {
+                        IconActionButton(systemImage: "play.fill", label: "Use…", help: "Use this suggestion…",
+                                         busy: preparing, disabled: !canUse) { use(item) }
+                    }
+                    DetailStepper()
+                }.padding(12)
+                Divider()
+                if !item.supports(ui.host) {
+                    Text("Machines can only be created on This Mac. Choose This Mac to use this suggestion.")
+                        .font(.callout).foregroundStyle(.secondary).padding()
                 }
-            })
-        .contextMenu { suggestionMenu(entry) }
-    }
-
-    private func suggestionMenu(_ entry: LibraryEntry) -> some View {
-        Button(selection.contains(entry.id) && selection.count > 1 ? "Use \(selection.count) Suggestions…" : "Use…") {
-            if selection.contains(entry.id), selection.count > 1 { startBatch() }
-            else { use(entry) }
+                if let entry = item.libraryEntry {
+                    libraryDetail(entry)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(item.summary).font(.callout).foregroundStyle(.secondary)
+                            ForEach(Array(item.details.enumerated()), id: \.offset) { _, line in
+                                detailLine(line.0, line.1)
+                            }
+                            Text("Opens the existing create form. Review or change its values before creating.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    }
+                }
+            }
+            .paneStep("suggestion", "suggestions", order: shownIDs, current: item.id) { ui.selection = [$0] }
+        } else {
+            ContentUnavailableView("Choose a suggestion", systemImage: "sparkles",
+                                   description: Text("Its purpose and settings show here. Use opens a form to review."))
         }
     }
 
-    private func logo(_ entry: LibraryEntry) -> some View {
-        SuggestionLogo(data: entry.icon.flatMap { model.libraryUpdater.icons[$0.sha256] },
-                       category: entry.categories.first)
+    private var batchAction: some View {
+        Button("Use \(ui.selection.count) Suggestions…") { startBatch() }
+            .buttonStyle(.borderedProminent).disabled(!canUse)
     }
 
-    private func badge(_ text: String) -> some View {
-        Text(text)
-            .font(.caption2.weight(.medium))
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(Theme.info.opacity(0.14), in: Capsule())
-            .foregroundStyle(Theme.info)
+    private func suggestionMenu(_ item: SuggestionItem) -> some View {
+        Button(ui.selection.contains(item.id) && ui.selection.count > 1 ? "Use \(ui.selection.count) Suggestions…" : "Use…") {
+            if ui.selection.contains(item.id), ui.selection.count > 1 { startBatch() } else { use(item) }
+        }
+        .disabled(preparing || !item.supports(ui.host)
+                  || (ui.selection.contains(item.id) && ui.selection.count > 1 && !canUse))
+    }
+
+    @ViewBuilder private func creationForm(_ item: SuggestionItem) -> some View {
+        switch item {
+        case .library(let entry):
+            if let stack = entry.stackSuggestion {
+                StackFormView(model: model, stack: stack, back: closeForm, done: { advanceBatch() },
+                              progressLabel: batch?.progressLabel,
+                              onSkip: batch == nil ? nil : { advanceBatch() },
+                              onCreated: batch == nil ? nil : { advanceBatch(claiming: $0) },
+                              extraAvoidedPorts: batch?.claimedPorts ?? [], initialHost: ui.host)
+            } else if let runPrefill {
+                RunSheetView(model: model, initialHost: ui.host, prefill: runPrefill,
+                             progressLabel: batch?.progressLabel,
+                             onSkip: batch == nil ? nil : { advanceBatch() },
+                             onRan: batch == nil ? nil : { advanceBatch(claiming: $0) }, dismiss: closeForm)
+            }
+        case .volume(let value):
+            NewVolumeView(model: model, dismiss: closeForm, prefill: value, initialHost: ui.host)
+        case .network(let value):
+            NewNetworkView(model: model, dismiss: closeForm, prefill: value, initialHost: ui.host)
+        case .domain(let value):
+            DNSFormView(model: model, target: .add, prefill: value, initialHost: ui.host, dismiss: closeForm)
+        case .machine(let value):
+            MachineFormView(model: model, prefill: value, dismiss: closeForm)
+        case .cluster(let value):
+            NewClusterView(model: model, dismiss: closeForm, prefill: value, initialHost: ui.host)
+        }
+    }
+
+    private func openRequestedEntry() {
+        guard model.pendingSuggestionEntry != nil || model.pendingSuggestionTab != nil else { return }
+        closeForm()
+        ui.query = ""
+        ui.category = nil
+        if let host = model.pendingSuggestionHost { ui.host = host }
+        if let tab = model.pendingSuggestionTab { ui.tab = tab; ui.selection = [] }
+        if let id = model.pendingSuggestionEntry,
+           let item = catalogue.items.first(where: { $0.id == id || $0.libraryEntry?.id == id }) {
+            ui.tab = item.tab
+            ui.selection = [item.id]
+        }
+        model.pendingSuggestionEntry = nil
+        model.pendingSuggestionTab = nil
+        model.pendingSuggestionHost = nil
+    }
+
+    private func use(_ item: SuggestionItem) {
+        guard item.supports(ui.host), !preparing else { return }
+        if let container = item.libraryEntry?.container {
+            preparing = true
+            let token = UUID()
+            preparationID = token
+            let host = ui.host
+            Task {
+                await model.prepareSuggestions(on: host)
+                let avoiding = (batch?.claimedPorts ?? []).union(model.stackTaken(on: host).hostPorts)
+                let ports = await Blocking.run {
+                    SuggestionPorts.publishSpecs(for: container, avoiding: avoiding,
+                                                 isPortFree: { host.isLocal ? AppModel.isPortFree($0) : true })
+                }
+                guard preparationID == token else { return }
+                var prefill = makeRunPrefill(container, ports: ports.specs, host: host)
+                prefill.unavailablePorts = ports.unavailablePorts
+                runPrefill = prefill
+                preparing = false
+                form = item
+            }
+        } else if item.libraryEntry != nil {
+            form = item
+        } else {
+            preparing = true
+            let token = UUID()
+            preparationID = token
+            let host = ui.host
+            Task {
+                if host.isLocal {
+                    switch item {
+                    case .volume: await model.refreshVolumes()
+                    case .network: await model.refreshNetworks()
+                    case .domain: await model.refreshDNS()
+                    case .machine: await model.refreshMachines()
+                    case .cluster: await model.refreshClusters()
+                    case .library: break
+                    }
+                } else {
+                    await model.prepareSuggestions(on: host)
+                }
+                guard preparationID == token else { return }
+                preparing = false
+                form = item
+            }
+        }
+    }
+
+    private func startBatch() {
+        guard canUse, selectedItems.count > 1 else { return }
+        let entries = selectedItems.compactMap(\.libraryEntry)
+        batch = SuggestionBatch(queue: entries.map(\.id))
+        if let first = entries.first { use(.library(first)) }
+    }
+
+    private func advanceBatch(claiming ports: Set<Int> = []) {
+        form = nil
+        runPrefill = nil
+        guard var walk = batch else { return }
+        walk.advance(claiming: ports)
+        batch = walk.isFinished ? nil : walk
+        if let id = batch?.currentID, let entry = library.entries.first(where: { $0.id == id }) {
+            use(.library(entry))
+        }
+    }
+
+    private func closeForm() {
+        preparationID = UUID()
+        preparing = false
+        form = nil
+        runPrefill = nil
+        batch = nil
+    }
+
+    private func makeRunPrefill(_ container: LibraryContainer, ports: [String], host: HostRef) -> RunPrefill {
+        let taken = model.stackTaken(on: host)
+        var name = container.name
+        var counter = 2
+        while taken.containerNames.contains(name) || container.volumes.contains(where: { taken.volumes.contains("\(name)-\($0.suffix)") }) {
+            name = "\(container.name)-\(counter)"; counter += 1
+        }
+        let env = container.env + container.secretEnv.map { "\($0)=\(GroupSecrets.generatePassword())" }
+        return RunPrefill(draftImage: container.image, name: name, ports: ports, env: env,
+                          volumes: container.volumes.map { "\(name)-\($0.suffix):\($0.path)" },
+                          command: container.command, source: .library,
+                          volumeOwners: Dictionary(uniqueKeysWithValues: container.volumes.compactMap { volume in
+                              volume.volumeOwner.map { ("\(name)-\(volume.suffix):\(volume.path)", $0) }
+                          }))
+    }
+
+    private func logo(_ entry: LibraryEntry) -> some View {
+        SuggestionLogo(data: entry.icon.flatMap { model.libraryUpdater.icons[$0.sha256] }, category: entry.categories.first)
     }
 
     static func stats(_ entry: LibraryEntry) -> String {
@@ -259,18 +321,10 @@ struct SuggestionsView: View {
         return parts.joined(separator: " · ")
     }
 
-    // MARK: Detail
-
-    @ViewBuilder
-    private var detailPane: some View {
-        if selection.count > 1 {
-            SelectionSummaryPane(title: "\(selection.count) suggestions selected",
-                                 systemImage: "sparkles",
-                                 names: selectedEntries.map(\.title)) {
-                Button("Use \(selection.count) Suggestions…") { startBatch() }
-                    .buttonStyle(.borderedProminent)
-            }
-        } else if let entry = selected {
+    static func shortImage(_ image: String) -> String {
+        image.replacingOccurrences(of: "docker.io/library/", with: "").replacingOccurrences(of: "docker.io/", with: "")
+    }
+    private func libraryDetail(_ entry: LibraryEntry) -> some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .top, spacing: 12) {
@@ -320,10 +374,6 @@ struct SuggestionsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
             }
-        } else {
-            ContentUnavailableView("Choose a suggestion", systemImage: "sparkles",
-                                   description: Text("What it runs and what it needs show here."))
-        }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
@@ -340,56 +390,6 @@ struct SuggestionsView: View {
         }
     }
 
-    // MARK: Actions
-
-    private var actions: FormActions {
-        if selection.count >= 2 {
-            return FormActions(.startsJob("Use \(selection.count) Suggestions…") { startBatch() })
-        }
-        return FormActions(.startsJob("Use…", isDisabled: selected == nil) { use() })
-    }
-
-    private func use() {
-        guard let entry = selected else { return }
-        use(entry)
-    }
-
-    private func use(_ entry: LibraryEntry) {
-        if let stack = entry.stackSuggestion {
-            chosen = stack
-        } else if let container = entry.container {
-            model.pendingRunPrefill = runPrefill(for: container,
-                                                 ports: container.ports.map { "127.0.0.1:\($0)" })
-            dismiss()
-        }
-    }
-
-    /// Into the Run form: a free name, generated passwords, published on 127.0.0.1. The volumes
-    /// it mounts are always new — a volume named after an existing one would hand that data to
-    /// the image (Kyle, 13 October).
-    private func runPrefill(for container: LibraryContainer, ports: [String]) -> RunPrefill {
-        let taken = model.existingContainerNames(on: .local).union(model.groups.claimedNames(on: .local))
-        let volumes = Set(model.volumes.map(\.name))
-        var name = container.name
-        var counter = 2
-        while taken.contains(name) || container.volumes.contains(where: { volumes.contains("\(name)-\($0.suffix)") }) {
-            name = "\(container.name)-\(counter)"; counter += 1
-        }
-        let env = container.env + container.secretEnv.map { "\($0)=\(GroupSecrets.generatePassword())" }
-        return RunPrefill(
-            draftImage: container.image, name: name, ports: ports, env: env,
-            volumes: container.volumes.map { "\(name)-\($0.suffix):\($0.path)" },
-            command: container.command, source: .library,
-            volumeOwners: Dictionary(uniqueKeysWithValues: container.volumes.compactMap { volume in
-                volume.volumeOwner.map { ("\(name)-\(volume.suffix):\(volume.path)", $0) }
-            }))
-    }
-
-    /// `docker.io/library/postgres:18.6` → `postgres:18.6`.
-    static func shortImage(_ image: String) -> String {
-        image.replacingOccurrences(of: "docker.io/library/", with: "")
-            .replacingOccurrences(of: "docker.io/", with: "")
-    }
 }
 
 /// One stack's form: what it will be called, where it goes, and its few choices — every one with a
@@ -408,6 +408,7 @@ struct StackFormView: View {
     var onCreated: ((Set<Int>) -> Void)? = nil
     /// Ports already claimed by earlier saved steps in a multi-suggest walk.
     var extraAvoidedPorts: Set<Int> = []
+    var initialHost: HostRef = .local
 
     @State private var name = ""
     @State private var network: StackChoices.Network = .new
@@ -511,7 +512,7 @@ struct StackFormView: View {
                 railPreview
             }
         }
-        .task { await prepare() }
+        .task { host = initialHost; await prepare() }
     }
 
     // MARK: Fields
@@ -535,6 +536,7 @@ struct StackFormView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+                .disabled(progressLabel != nil)
             }
         }
 
@@ -727,40 +729,6 @@ struct StackFormView: View {
         }
         let place = host
         Task { await model.createStack(stack, choices: chosen, on: place) }
-    }
-}
-
-/// Suggestions for Volumes, Networks and Clusters: the same gallery as Containers', where "Use…"
-/// opens the section's own create form, filled in (Q28).
-struct ResourceSuggestionsGallery<Suggestion: ResourceSuggestion>: View {
-    let intro: String
-    let items: [Suggestion]
-    let use: (Suggestion) -> Void
-    let dismiss: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            FormHeader(title: "Suggestions", systemImage: "sparkles",
-                       hasUnsavedChanges: false, onBack: dismiss)
-            Divider()
-            // No `fixedSize(vertical:)` here — see `SuggestionsView`.
-            Text(intro)
-                .font(.callout).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16).padding(.top, 12)
-            ResourceCardGrid {
-                ForEach(items) { item in
-                    ResourceCard(title: item.title,
-                                 fields: [("About", item.summary)] + item.details.map { ($0.0, Optional($0.1)) },
-                                 showsTags: false,
-                                 onOpen: { use(item) }) {
-                        Button("Use…") { use(item) }
-                            .controlSize(.small)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 

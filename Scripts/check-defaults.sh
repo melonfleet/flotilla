@@ -175,9 +175,14 @@ done
 require Sources/Flotilla/ResourceRow.swift '@State private var hovering = false'
 # Notifications and Suggestions share the same row, too. A local HStack must not quietly bring
 # back a second definition of hover, padding or accessibility.
-for s in Notifications Suggestions; do
+for s in Notifications; do
     require "Sources/Flotilla/${s}View.swift" '        ResourceRow('
 done
+require Sources/Flotilla/SuggestionsView.swift '                    SuggestionRow('
+require Sources/Flotilla/GroupServicePickerView.swift '            SuggestionRow('
+require Sources/Flotilla/SuggestionRow.swift '        ResourceRow('
+require Sources/Flotilla/SuggestionsUIState.swift '    var tab: SuggestionTab = .all'
+require Sources/Flotilla/SuggestionsUIState.swift '    var selection = Set<String>()'
 # Logs and Activity are rows on that same template, in a split that opens on the rows alone (18
 # October). The `SplitPanes` key is what ties each to `listOnlyByDefault`, so it is pinned with it;
 # the known-good starting state is nothing selected, not streaming, no timestamps (Q19: a fetched
@@ -218,9 +223,9 @@ for f in ResourceListControls Containers Machines Greta Notifications Suggestion
     require "$file" 'PaneModeButton()'
 done
 # And nothing for a second presentation to be: no grid, no card type and no view-mode state in a
-# section or its UI state. `ResourceCard` lives on in the Suggestions galleries, which are not
-# sections. Comments are skipped — this file's own history is written in them.
-for f in Sources/Flotilla/{Containers,Machines,Images,Volumes,Networks,Hosts,Registries,DNS,Clusters}View.swift \
+# section or its UI state. Suggestions uses those same rows now (Q66).
+# Comments are skipped — this file's own history is written in them.
+for f in Sources/Flotilla/{Containers,Machines,Images,Volumes,Networks,Hosts,Registries,DNS,Clusters,Suggestions}View.swift \
          Sources/Flotilla/*UIState.swift; do
     hits=$(grep -nE '\b(LazyVGrid|LazyHGrid|ResourceCard|ContainerCard|ListPresentation|[A-Za-z]*ViewMode|viewMode|presentation)\b' "$f" \
            | grep -vE '^[0-9]+:[[:space:]]*//')

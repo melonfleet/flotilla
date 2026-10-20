@@ -184,7 +184,7 @@ struct RunSheetView: View {
     /// the screen appeared — not against defaults, because a prefilled run sheet opens full and
     /// that is not the user's unsaved work.
     private var editSignature: String {
-        [image, name, commandText, network,
+        [host.token, image, name, commandText, network,
          ports.map(\.value).joined(separator: ","),
          env.map(\.value).joined(separator: ","),
          volumes.map(\.value).joined(separator: ","),
@@ -351,6 +351,7 @@ struct RunSheetView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
+                    .disabled(progressLabel != nil)
                 }
                 ContainerSkewNote(model: model, hosts: [host])
             }

@@ -20,6 +20,7 @@ struct PaletteItem: Identifiable {
     var completion: SearchBox.Scope? = nil
     var slugs: [String] = []
     var libraryEntry: LibraryEntry? = nil
+    var suggestion: SuggestionItem? = nil
     let run: () -> Void
 }
 
@@ -117,11 +118,12 @@ extension AppModel {
                                      subtitle: notice.text, systemImage: "bell", scope: .notification,
                                      run: weakly { $0.requestNotice(notice.id) }))
         }
-        for entry in suggestionLibrary.entries {
-            items.append(PaletteItem(id: "suggestion:\(entry.id)", kind: .item, title: entry.title,
-                                     subtitle: "\(entry.kind.rawValue.capitalized) · \(entry.categories.first ?? "")",
-                                     systemImage: "sparkles", scope: .suggestion, libraryEntry: entry,
-                                     run: weakly { $0.requestSuggestion(entry.id) }))
+        for item in SuggestionCatalogue(library: suggestionLibrary).items {
+            items.append(PaletteItem(id: "suggestion:\(item.id)", kind: .item, title: item.title,
+                                     subtitle: "\(item.tab.rawValue) · \(item.summary)",
+                                     systemImage: item.tab.systemImage, scope: .suggestion,
+                                     libraryEntry: item.libraryEntry, suggestion: item,
+                                     run: weakly { $0.requestSuggestion(item.id) }))
         }
         for scope in SearchBox.Scope.allCases {
             items.append(PaletteItem(id: "scope:\(scope.rawValue)", kind: .item,

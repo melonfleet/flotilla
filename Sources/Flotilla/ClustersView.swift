@@ -21,8 +21,6 @@ struct ClustersView: View {
     /// through (Q58).
     @State private var shown = Set<HostedCluster.ID>()
     @State private var showingCreate = false
-    @State private var showingSuggestions = false
-    @State private var createPrefill: ClusterSuggestion?
     @State private var pendingDelete: HostedCluster?
     /// A recreate awaiting confirmation. Recreate deletes the cluster and everything in it, so it
     /// always asks, whatever `confirmDestructiveActions` says — the same rule bulk deletes follow.
@@ -64,7 +62,6 @@ struct ClustersView: View {
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .cluster else { return }
         showingCreate = false
-        showingSuggestions = false
         loadImageTarget = nil
         ui.search = ""
         ui.filterID = "all"
@@ -76,15 +73,8 @@ struct ClustersView: View {
     var body: some View {
         Group {
             if showingCreate {
-                NewClusterView(model: model, dismiss: { showingCreate = false; createPrefill = nil },
-                               prefill: createPrefill, initialHost: ui.hostFilter ?? .local)
-            } else if showingSuggestions {
-                ResourceSuggestionsGallery(
-                    intro: "Single-node clusters sized for common work, on Kubernetes 1.35 with "
-                        + "the node image pinned. Use one to open New Cluster with it filled in.",
-                    items: ClusterSuggestion.catalogue,
-                    use: useSuggestion,
-                    dismiss: { showingSuggestions = false })
+                NewClusterView(model: model, dismiss: { showingCreate = false },
+                               initialHost: ui.hostFilter ?? .local)
             } else if let target = loadImageTarget {
                 LoadImageView(model: model, cluster: target) { loadImageTarget = nil }
             } else {
@@ -111,20 +101,14 @@ struct ClustersView: View {
         .onAppear { consumeDetailRequest() }
         .onChange(of: model.pendingDetailSubject) { _, _ in consumeDetailRequest() }
         .task { await model.refreshClusters() }
-        // File ▸ New Cluster… and File ▸ Suggestions ▸ Clusters…. One-shot.
-        .onChange(of: model.pendingClusterForm) { _, requested in
-            if requested { model.pendingClusterForm = false; showingSuggestions = false; createPrefill = nil; showingCreate = true }
-        }
-        .onChange(of: model.pendingSuggestions) { _, section in
-            if section == .clusters { model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true }
-        }
+        // File ▸ New Cluster…. One-shot.
         .onAppear {
             if model.pendingClusterForm {
-                model.pendingClusterForm = false; showingSuggestions = false; createPrefill = nil; showingCreate = true
+                model.pendingClusterForm = false; showingCreate = true
             }
-            if model.pendingSuggestions == .clusters {
-                model.pendingSuggestions = nil; showingCreate = false; showingSuggestions = true
-            }
+        }
+        .onChange(of: model.pendingClusterForm) { _, requested in
+            if requested { model.pendingClusterForm = false; showingCreate = true }
         }
         .alert("Action failed",
                isPresented: Binding(get: { model.actionError != nil },
@@ -233,11 +217,6 @@ struct ClustersView: View {
         .background(Theme.warning.opacity(0.10))
     }
 
-    private func useSuggestion(_ suggestion: ClusterSuggestion) {
-        createPrefill = suggestion
-        showingSuggestions = false
-        showingCreate = true
-    }
 
     private var toolbar: some View {
         SectionToolbar(search: Binding(get: { [weak ui] in ui?.search ?? "" },
@@ -257,9 +236,9 @@ struct ClustersView: View {
                 hosts: hostChoices)
         }, trailing: {
             ToolbarIconMenu(systemImage: "plus", label: "Create a cluster") {
-                Button("New Cluster…") { createPrefill = nil; showingCreate = true }
+                Button("New Cluster…") { showingCreate = true }
                 Divider()
-                Button("Suggestions…") { showingSuggestions = true }
+                Button("Suggestions…") { model.requestSuggestionsTab(.clusters, host: ui.hostFilter) }
             }
             ToolbarRefreshButton(label: "Refresh clusters") {
                 Task { await model.refreshClusters() }
@@ -457,13 +436,13 @@ struct ClustersView: View {
                     Button("Clear Filter") { ui.search = ""; ui.hostFilter = nil }
                 } else {
                     VStack(spacing: 14) {
-                        Button("Create Cluster") { createPrefill = nil; showingCreate = true }
+                        Button("Create Cluster") { showingCreate = true }
                             .buttonStyle(.borderedProminent)
                         SuggestionQuickPicks(
                             picks: ClusterSuggestion.catalogue.map { suggestion in
-                                (suggestion.title, { useSuggestion(suggestion) })
+                                (suggestion.title, { model.requestSuggestion(SuggestionItem.cluster(suggestion).id, host: ui.hostFilter) })
                             },
-                            more: { showingSuggestions = true })
+                            more: { model.requestSuggestionsTab(.clusters, host: ui.hostFilter) })
                     }
                 }
             }
@@ -554,7 +533,6 @@ struct ClustersView: View {
         }
         return parts.joined(separator: ", ")
     }
-
 
     /// Recreate and the overflow on the row; the bin as well in the page's header — the
     /// arrangement every other section uses.

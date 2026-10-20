@@ -30,8 +30,6 @@ struct DNSView: View {
     @State private var shown = Set<HostedDNS.ID>()
     /// New Domain, full width like every other create form. Managing one domain is its page.
     @State private var form: DNSFormTarget?
-    @State private var formPrefill: DNSSuggestion?
-    @State private var showingSuggestions = false
     @State private var pendingDelete: [HostedDNS] = []
     @State private var pendingChange: ContainerDomainChange?
     /// The Mac `pendingChange` and `pendingSetUp` are for (D3).
@@ -59,7 +57,6 @@ struct DNSView: View {
     private func consumeDetailRequest() {
         guard let subject = model.pendingDetailSubject, model.pendingDetailKind == .dns else { return }
         form = nil
-        showingSuggestions = false
         open(subject)
         model.clearPendingDetail()
     }
@@ -71,21 +68,12 @@ struct DNSView: View {
     private var screens: some View {
         Group {
             if let form {
-                DNSFormView(model: model, target: form, prefill: formPrefill, initialHost: ui.hostFilter ?? .local) {
+                DNSFormView(model: model, target: form, initialHost: ui.hostFilter ?? .local) {
                     self.form = nil
-                    formPrefill = nil
                 }
                 .id(form)
             } else if showingZones {
                 DNSZonesView(model: model) { showingZones = false }
-            } else if showingSuggestions {
-                ResourceSuggestionsGallery(
-                    intro: "Domains that are safe to use on a Mac — none can ever be a real internet "
-                        + "domain. Use one to open New Domain with it filled in. Only one domain at a "
-                        + "time names containers.",
-                    items: DNSSuggestion.catalogue,
-                    use: useSuggestion,
-                    dismiss: { showingSuggestions = false })
             } else {
                 // Q58: the list, and the selected domain's page beside it.
                 SplitPanes(list: "dns", pane: ui.pane, showing: shownID) {
@@ -125,15 +113,6 @@ struct DNSView: View {
         // it exists at all.
         .selection($selection, confinedTo: visibleIDs, showing: existingIDs)
         .paneFollows($selection, into: $shown, guard: model.formGuard, existing: existingIDs)
-        // File ▸ Suggestions ▸ DNS Domains…. One-shot.
-        .onChange(of: model.pendingSuggestions) { _, section in
-            if section == .dns { model.pendingSuggestions = nil; form = nil; showingSuggestions = true }
-        }
-        .onAppear {
-            if model.pendingSuggestions == .dns {
-                model.pendingSuggestions = nil; form = nil; showingSuggestions = true
-            }
-        }
         .alert("Action failed",
                isPresented: Binding(get: { actionError != nil },
                                     set: { if !$0 { actionError = nil } })) {
@@ -193,9 +172,9 @@ struct DNSView: View {
         }, trailing: {
             if working { ProgressView().controlSize(.small).help("Applying a DNS change…") }
             ToolbarIconMenu(systemImage: "plus", label: "New domain") {
-                Button("New Domain…") { formPrefill = nil; form = .add }
+                Button("New Domain…") { form = .add }
                 Divider()
-                Button("Suggestions…") { showingSuggestions = true }
+                Button("Suggestions…") { model.requestSuggestionsTab(.domains, host: ui.hostFilter) }
                 Divider()
                 // Each Mac its own zone (D3, Part B) — once there is more than one Mac.
                 Button("Set Up Zones…") { showingZones = true }
@@ -375,13 +354,13 @@ struct DNSView: View {
                     Button("Clear Filter") { ui.search = ""; ui.filterID = "all"; ui.hostFilter = nil }
                 } else {
                     VStack(spacing: 14) {
-                        Button("New Domain…") { formPrefill = nil; form = .add }
+                        Button("New Domain…") { form = .add }
                             .buttonStyle(.borderedProminent)
                         SuggestionQuickPicks(
                             picks: DNSSuggestion.catalogue.map { suggestion in
-                                (suggestion.title, { useSuggestion(suggestion) })
+                                (suggestion.title, { model.requestSuggestion(SuggestionItem.domain(suggestion).id, host: ui.hostFilter) })
                             },
-                            more: { showingSuggestions = true })
+                            more: { model.requestSuggestionsTab(.domains, host: ui.hostFilter) })
                     }
                 }
             }
@@ -525,7 +504,6 @@ struct DNSView: View {
         }
     }
 
-
     // MARK: Row actions and menu
 
     /// Whether this row can be deleted from here: set up there, and that Mac can be changed.
@@ -605,11 +583,6 @@ struct DNSView: View {
         for host in model.hostMode.trustedHosts { await model.hostMode.refreshDNS(host.fingerprint) }
     }
 
-    private func useSuggestion(_ suggestion: DNSSuggestion) {
-        formPrefill = suggestion
-        showingSuggestions = false
-        form = .add
-    }
 
     /// The password prompt that follows is a confirmation of its own, so a single delete on This
     /// Mac follows the delete policy like every other section; several always ask. With no prompt —

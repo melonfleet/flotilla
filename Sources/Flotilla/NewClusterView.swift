@@ -27,7 +27,7 @@ struct NewClusterView: View {
     @State private var formToken = UUID()
 
     private var editSignature: String {
-        [name, "\(limitResources)", cpus, memory, nodeImage, "\(autoRemove)"]
+        [host.token, name, "\(limitResources)", cpus, memory, nodeImage, "\(autoRemove)"]
             .joined(separator: "\u{1}")
     }
 
@@ -54,7 +54,7 @@ struct NewClusterView: View {
             host = initialHost
             if let prefill {
                 name = ResourceSuggestions.uniqueName(prefill.baseName,
-                                                      taken: Set(model.clusters.map(\.name)))
+                                                      taken: clusterNames(on: host))
                 limitResources = true
                 cpus = String(prefill.cpus)
                 memory = prefill.memory
@@ -62,6 +62,13 @@ struct NewClusterView: View {
                 autoRemove = prefill.disposable
             }
             edits.open(editSignature)
+        }
+    }
+
+    private func clusterNames(on host: HostRef) -> Set<String> {
+        switch host {
+        case .local: Set(model.clusters.map(\.name))
+        case .peer(let fingerprint): Set(model.hostMode.clusterSnapshots[fingerprint]?.items.map(\.name) ?? [])
         }
     }
 
