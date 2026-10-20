@@ -1,0 +1,91 @@
+# A failed step from the public beta test plan (https://melonfleet.dev/flotilla/beta/).
+# The test page prefills these fields by id through the URL — title, step, expected, version,
+# macos, model, firsttime — so renaming an id here breaks the page's prefill. Change both together.
+name: Beta test report
+description: A step from the beta test plan didn't do what it said, or something else went wrong in a beta.
+title: "[1.5.0-beta.5] Step "
+labels: ["beta-test"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing. If you came from the [test page](https://melonfleet.dev/flotilla/beta/), most of this is already filled in: add what actually happened, and anything that helps us see it.
+
+        **Issues are public.** Don't include passwords, tokens, private keys, or personal data, in the text, a screenshot or a log.
+  - type: input
+    id: step
+    attributes:
+      label: Step
+      description: The step's number and name from the test plan. Not from the plan? Say briefly what you were doing.
+      placeholder: "18 · Use it"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: Exact wording of any error helps a lot. Does it happen every time? What did you do just before?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Flotilla version and build
+      description: In Flotilla, Settings ▸ About, the line under the name.
+      placeholder: "1.5.0-beta.5 (build number)"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Apple menu ▸ About This Mac.
+      placeholder: "26.1"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Mac model
+      description: Optional, but it helps with anything about speed, memory or hardware.
+      placeholder: "MacBook Air, M2"
+    validations:
+      required: false
+  - type: dropdown
+    id: firsttime
+    attributes:
+      label: Is this your first time using Flotilla?
+      description: This beta is tested mainly by people seeing Flotilla for the first time, on a Mac that has never had it.
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or a screen recording
+      description: Drag images or a short video here. Check them for anything private first.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Support bundle or logs
+      description: |
+        In Flotilla, choose Help ▸ Create Support Bundle…. It lists every file and lets you read each one before you save; nothing is uploaded. Save it, compress the folder in Finder (right-click ▸ Compress), and drag the .zip here. Read it first: Flotilla redacts paths and account names, but you are the last check.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you submit
+      options:
+        - label: Nothing above, including screenshots and attachments, contains a password, token, private key or personal data.
+          required: true

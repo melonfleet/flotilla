@@ -51,11 +51,13 @@ Free. No account, no sign-in, no telemetry, no subscription, no paid tier.
 
 ## Getting it
 
-**Flotilla 1.5.0.0 is in beta.** Each release on
+**Flotilla 1.5.0-beta.5 is in beta.** Each release on
 [GitHub Releases](https://github.com/melonfleet/flotilla/releases) is signed with Developer ID and
 notarised, in four forms: a DMG to drag to Applications, a `.pkg` for MDM and scripted installs, and
 a zip and a tarball of the same app. From then on an admin Mac updates itself with Sparkle (betas
 only on the pre-release channel, in **Settings → Updates**) and updates its hosts.
+
+**Testing the beta?** Thank you. The test is for people seeing Flotilla for the first time. [`BETA-TESTING.md`](BETA-TESTING.md) covers what you need, installing and reporting, and the step-by-step [test plan](https://melonfleet.dev/flotilla/beta/) starts from nothing and files a prefilled report when a step fails.
 
 To build it yourself:
 
@@ -113,7 +115,7 @@ Two supporting rules the project holds to, both learned the hard way and documen
 
 ## Status
 
-Working Swift code, not a starter kit. The current build is **1.5.0.0 beta 4**, tested against
+Working Swift code, not a starter kit. The current build is **1.5.0-beta.5**, tested against
 `container` 1.5.0. **828 tests pass** — run `swift test` for the current number rather than
 trusting this one.
 

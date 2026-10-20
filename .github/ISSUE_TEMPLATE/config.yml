@@ -1,0 +1,6 @@
+# Blank issues stay on: BETA-TESTING.md tells testers a plain issue is fine too.
+blank_issues_enabled: true
+contact_links:
+  - name: Beta test plan for 1.5.0-beta.5
+    url: https://melonfleet.dev/flotilla/beta/
+    about: Step-by-step tests with Pass, Fail and Skip. A Fail fills in a beta test report for you.

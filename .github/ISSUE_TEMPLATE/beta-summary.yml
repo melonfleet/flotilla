@@ -1,0 +1,83 @@
+# The end-of-run summary from the public beta test plan (https://melonfleet.dev/flotilla/beta/).
+# The page's Send summary button prefills these fields by id — title, version, macos, model,
+# firsttime, totals, failed, skipped, impressions — so keep the ids in step with the page.
+name: Beta test summary
+description: Your totals at the end of a run through the beta test plan.
+title: "[1.5.0-beta.5] Test summary"
+labels: ["beta-test", "beta-summary"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for working through the plan. Send this from the [test page](https://melonfleet.dev/flotilla/beta/) and the totals, lists and your first impressions fill in for you. Each failed step should also have its own report, so we can follow it up.
+  - type: input
+    id: version
+    attributes:
+      label: Flotilla version and build
+      description: In Flotilla, Settings ▸ About, the line under the name.
+      placeholder: "1.5.0-beta.5 (build number)"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "26.1"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Mac model
+      placeholder: "MacBook Air, M2"
+    validations:
+      required: false
+  - type: dropdown
+    id: firsttime
+    attributes:
+      label: Is this your first time using Flotilla?
+      description: This beta is tested mainly by people seeing Flotilla for the first time, on a Mac that has never had it.
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: totals
+    attributes:
+      label: Totals
+      placeholder: |
+        Passed:
+        Failed:
+        Skipped:
+        Not tested:
+    validations:
+      required: true
+  - type: textarea
+    id: failed
+    attributes:
+      label: Steps that failed
+      description: One per line. Link your report for each if you filed one.
+    validations:
+      required: false
+  - type: textarea
+    id: skipped
+    attributes:
+      label: Steps you skipped
+      description: If you skipped some because you couldn't try them (no second Mac, for example), a word on why helps.
+    validations:
+      required: false
+  - type: textarea
+    id: impressions
+    attributes:
+      label: First impressions
+      description: Was it clear what to do next? Was anything confusing, surprising or slow? The test page fills this in from the boxes along the way; add anything else.
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: What felt rough, confusing or slow, even if no step failed.
+    validations:
+      required: false
