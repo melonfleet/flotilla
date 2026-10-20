@@ -8,7 +8,7 @@ import Testing
         let args = operation.arguments(machine: "dev")
         let validated = try Allowlist.validated(args, execPolicy: .interactiveShell)
         #expect(validated.arguments == ["machine", "run", "--name", "dev"]
-                + (operation.runsAsRoot ? ["--root"] : []) + operation.command)
+                + (operation.runsAsRoot ? ["--root"] : []) + [operation.shellLine])
         #expect(validated.timeoutHint == 120)
         #expect(!validated.arguments.contains("--"))
         #expect(throws: AllowlistError.self) {
@@ -20,11 +20,13 @@ import Testing
         let neighbours: [[String]] = [
             args + ["extra"],
             Array(args.dropLast()),
-            ["machine", "run", "--"] + operation.command,
-            ["machine", "run", "--name", "dev", "--interactive", "--"] + operation.command,
-            ["machine", "run", "--name", "dev", "--tty", "--"] + operation.command,
+            ["machine", "run", "--", operation.shellLine],
+            ["machine", "run", "--name", "dev", "--interactive", "--", operation.shellLine],
+            ["machine", "run", "--name", "dev", "--tty", "--", operation.shellLine],
             ["machine", "run", "--name", "dev", "--", "sh", "-c", operation.command.joined(separator: " ")],
-            ["machine", "run", "--name", "dev", "--"] + operation.command + [";", "apk", "upgrade"],
+            ["machine", "run", "--name", "dev", "--", operation.shellLine, ";", "apk", "upgrade"],
+            ["machine", "run", "--name", "dev", "--"] + operation.command,
+            ["machine", "run", "--name", "dev", "--", operation.shellLine + "; id"],
         ]
         for neighbour in neighbours {
             #expect(throws: AllowlistError.self) {
@@ -92,7 +94,7 @@ private final class UpdateGuardHost: ContainerHost, @unchecked Sendable {
     #expect(throws: ContainerCLIError.self) { try cli.checkMachineUpdates("probe-alpine") }
     #expect(host.invocations == [["machine", "inspect", "probe-alpine"],
                                  ["machine", "inspect", "probe-alpine"],
-                                 ["machine", "run", "--name", "probe-alpine", "--root", "apk", "update"]])
+                                 ["machine", "run", "--name", "probe-alpine", "--root", "apk update"]])
     #expect(host.timeouts.allSatisfy { $0 > 0 && $0 <= 120 })
 }
 
@@ -114,7 +116,7 @@ private final class DNFStatusHost: ContainerHost, @unchecked Sendable {
             return .init(stdout: inspect, stderr: "", exitCode: 0)
         }
         // Stop at RPM so the parser is never tested using synthetic package output.
-        return .init(stdout: "", stderr: "", exitCode: args.contains("dnf") ? 100 : 1)
+        return .init(stdout: "", stderr: "", exitCode: args.last?.hasPrefix("dnf ") == true ? 100 : 1)
     }
 }
 
@@ -124,8 +126,20 @@ private final class DNFStatusHost: ContainerHost, @unchecked Sendable {
     #expect(throws: ContainerCLIError.self) { try cli.checkMachineUpdates("probe-alpine") }
     let commands = host.invocations.filter { $0.starts(with: ["machine", "run"]) }
     #expect(commands == [MachineUpdateCommand.dnfCheck, .rpmInstalled].map {
-        ["machine", "run", "--name", "probe-alpine"] + $0.command
+        ["machine", "run", "--name", "probe-alpine"] + [$0.shellLine]
     })
+}
+
+@Test func machinePackageChecksSurviveTheGuestShellsReparse() {
+    // container 1.5.0 joins the trailing words and has the guest's login shell parse them again.
+    #expect(MachineUpdateCommand.apkVersions.shellLine == "apk version -l '<'")
+    #expect(MachineUpdateCommand.apkRefresh.shellLine == "apk update")
+    #expect(MachineUpdateCommand.rpmInstalled.shellLine
+            == #"rpm -qa --queryformat '%{NAME}.%{ARCH}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n'"#)
+    #expect(MachineUpdateCommand.shellQuoted("it's $HOME") == #"'it'\''s $HOME'"#)
+    for operation in MachineUpdateCommand.allCases {
+        #expect(operation.arguments(machine: "dev").suffix(1) == [operation.shellLine])
+    }
 }
 
 @Test func onlyTheAlpineRefreshRunsAsRootAndItMust() throws {
@@ -134,13 +148,13 @@ private final class DNFStatusHost: ContainerHost, @unchecked Sendable {
     }
     // The refresh needs --root, and nothing else may have it.
     #expect(throws: (any Error).self) {
-        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--", "apk", "update"])
+        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--", "apk update"])
     }
-    try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk", "update"])
+    try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk update"])
     #expect(throws: (any Error).self) {
-        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk", "version", "-l", "<"])
+        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk version -l '<'"])
     }
     #expect(throws: (any Error).self) {
-        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk", "upgrade"])
+        try allowlist(.interactiveShell, ["machine", "run", "--name", "dev", "--root", "--", "apk upgrade"])
     }
 }

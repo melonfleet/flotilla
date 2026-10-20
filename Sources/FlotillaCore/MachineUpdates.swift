@@ -13,13 +13,28 @@ enum MachineUpdateCommand: CaseIterable, Sendable {
         }
     }
 
+    /// The command as the **one string** `machine run` must be given. `container machine run` joins
+    /// its trailing arguments with spaces and has the guest's login shell parse them again
+    /// (container 1.5.0, measured), so passing `apk version -l <` as separate tokens made `<` a
+    /// redirect, and `rpm`'s `\t` format lost its backslash. Each word is single-quoted here, so the
+    /// guest shell hands every one back unchanged. Fixed text only: nothing a user typed is quoted.
+    var shellLine: String { command.map(Self.shellQuoted).joined(separator: " ") }
+
+    static func shellQuoted(_ word: String) -> String {
+        let plain = !word.isEmpty && word.utf8.allSatisfy {
+            (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0)
+                || Array("_@%+=:,./-".utf8).contains($0)
+        }
+        return plain ? word : "'" + word.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
+
     /// Only `apk update` needs root inside the machine: it rewrites apk's package index, and
     /// `machine run` otherwise runs as the user matching the Mac's own (Kyle, 19 October). It changes
     /// nothing else; no package is installed.
     var runsAsRoot: Bool { self == .apkRefresh }
 
     func arguments(machine: String) -> [String] {
-        ["machine", "run", "--name", machine] + (runsAsRoot ? ["--root"] : []) + ["--"] + command
+        ["machine", "run", "--name", machine] + (runsAsRoot ? ["--root"] : []) + ["--", shellLine]
     }
 
     static func commands(for distribution: LinuxDistribution) -> [Self]? {
