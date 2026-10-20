@@ -17,8 +17,8 @@ guard CommandLine.arguments.count == 2 else { print("usage: swift Scripts/sign-l
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
 guard let data = try? Data(contentsOf: url) else { print("can't read \(url.path)"); exit(1) }
 guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      object["schema"] as? Int == 1, object["version"] is String, object["entries"] is [Any] else {
-    print("\(url.lastPathComponent) isn't a schema-1 library"); exit(1)
+      (1...2).contains(object["schema"] as? Int ?? 0), object["version"] is String, object["entries"] is [Any] else {
+    print("\(url.lastPathComponent) isn't a schema-1 or schema-2 library"); exit(1)
 }
 var item: CFTypeRef?
 let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
