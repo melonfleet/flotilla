@@ -177,6 +177,31 @@ public struct MachineSuggestion: ResourceSuggestion, Equatable {
                           image: "almalinux/10-init:10.2-20261002",
                           cpus: 4, memoryGB: 4, initSystem: "systemd"),
     ]
+
+    /// The only references with a recorded boot **and** login (DECISIONS Q28, 6 October,
+    /// container 1.5.0; `research/MACHINES-SPEC.md` §4). `alpine:latest` booted in August but was
+    /// never logged in to, and a moving tag is not the image that booted; another Alpine or
+    /// AlmaLinux tag was never tried. Anything else gets no tested mark — and is not refused.
+    public static let testedImages = ["alpine:3.22", "almalinux/9-init:9.8-20261002",
+                                      "almalinux/10-init:10.2-20261002"]
+
+    /// Exact reference, so `alpine:3.21`, `alpine`, `alpine:latest` and `alpine:3.22@sha256:…`
+    /// are not tested. Only the spelling is forgiven: `docker.io/library/alpine:3.22` is the same.
+    public static func isTested(_ reference: String) -> Bool {
+        guard let tag = tag(reference) else { return false }
+        let repository = SuggestionLibrary.imageRepository(reference)
+        return testedImages.contains {
+            SuggestionLibrary.imageRepository($0) == repository && Self.tag($0) == tag
+        }
+    }
+
+    /// Nil for no tag, or for any digest: a digest is not the reference that was booted.
+    private static func tag(_ reference: String) -> Substring? {
+        guard !reference.contains("@"), let colon = reference.lastIndex(of: ":"),
+              reference.lastIndex(of: "/").map({ colon > $0 }) ?? true else { return nil }
+        let tag = reference[reference.index(after: colon)...]
+        return tag.isEmpty ? nil : tag
+    }
 }
 
 // MARK: DNS domains

@@ -459,8 +459,12 @@ The failure is not detected at create time: the machine record is created, appea
 or was the first machine, **it also holds the default**, which leaves the host with an
 unbootable default machine.
 
-So the create form offers only Alpine as "known good", warns on anything else *before* the pull,
-and the delete dialog says what losing the default costs.
+This table records a boot, not a login, and only for the two tags shown. It says nothing about
+any other Alpine tag, and `latest` moves. So the create form marks as "verified" only the exact
+references later booted **and** logged in to on container 1.5.0 — `alpine:3.22`,
+`almalinux/9-init:9.8-20261002` and `almalinux/10-init:10.2-20261002` (DECISIONS Q28, 6 October)
+— and warns on anything else, `alpine:latest` included, *before* the pull, without refusing it.
+The delete dialog says what losing the default costs.
 
 One methodological note: a single probe recorded `alpine:latest` as failing. It had not — the
 boot was still settling. Do not classify an image on one measurement.

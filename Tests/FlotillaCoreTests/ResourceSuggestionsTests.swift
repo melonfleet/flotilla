@@ -53,6 +53,29 @@ struct ResourceSuggestionsTests {
                 image: suggestion.image, name: suggestion.baseName, cpus: suggestion.cpus,
                 memory: "\(suggestion.memoryGB)G")
             #expect(accepted(args), "\(args)")
+            #expect(MachineSuggestion.isTested(suggestion.image), "\(suggestion.image)")
+        }
+    }
+
+    @Test("only a reference that was booted and logged in to is tested; nothing else is refused")
+    func testedMachineImages() {
+        #expect(MachineSuggestion.testedImages == ["alpine:3.22", "almalinux/9-init:9.8-20261002",
+                                                   "almalinux/10-init:10.2-20261002"])
+        for same in ["alpine:3.22", "docker.io/library/alpine:3.22", "docker.io/alpine:3.22",
+                     "index.docker.io/library/alpine:3.22", "docker.io/almalinux/9-init:9.8-20261002",
+                     "almalinux/10-init:10.2-20261002"] {
+            #expect(MachineSuggestion.isTested(same), "\(same)")
+        }
+        for other in ["alpine", "alpine:latest", "alpine:3.21", "alpine:3.22.6", "alpine:3",
+                      "alpine:3.22@sha256:abc", "alpine@sha256:abc", "alpine:", "ALPINE:3.22",
+                      "ghcr.io/someone/alpine:3.22", "almalinux/9-init:latest",
+                      "almalinux/9-init:9.8-20260901", "almalinux/9-init", "almalinux:9", ""] {
+            #expect(!MachineSuggestion.isTested(other), "\(other)")
+        }
+        // Untested is a mark, not a refusal: the create command still validates.
+        for untested in ["alpine:latest", "alpine:3.21", "ubuntu:24.04"] {
+            #expect(accepted(ContainerCLI.createMachineArguments(image: untested, name: "box",
+                                                                 cpus: 2, memory: "2G")), "\(untested)")
         }
     }
 

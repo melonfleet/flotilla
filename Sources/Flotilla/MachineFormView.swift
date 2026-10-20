@@ -88,9 +88,12 @@ struct MachineFormView: View {
     ///
     /// AlmaLinux joined on 6 October: Apple needs `/sbin/init`, and AlmaLinux publishes `-init`
     /// images that have it. Both booted, and both gave a login shell, on container 1.5.0.
+    ///
+    /// `alpine:latest` left on 20 October: it booted in August, but it was never logged in to,
+    /// and `latest` today is not the image that booted. It can still be typed; it just isn't
+    /// marked. Every row here must pass `MachineSuggestion.isTested`.
     private static let suggestions: [(reference: String, note: String)] = [
         ("alpine:3.22", "verified — apk, musl libc"),
-        ("alpine:latest", "verified — tracks the newest Alpine"),
         ("almalinux/9-init:9.8-20261002", "verified — systemd, dnf, RHEL 9 compatible"),
         ("almalinux/10-init:10.2-20261002", "verified — systemd, dnf, RHEL 10 compatible"),
     ]
@@ -127,7 +130,7 @@ struct MachineFormView: View {
                       help: FieldHelp(
                           "A machine boots from a container image, not an installer.",
                           detail: "The image supplies the userland; the kernel comes from Apple's runtime. That is why this pulls from Docker Hub, and why a machine's disk reads tens of megabytes rather than gigabytes.",
-                          example: "alpine:3.22                      verified\nalpine:latest                    verified\nalmalinux/9-init:9.8-20261002    verified\nalmalinux/10-init:10.2-20261002  verified",
+                          example: "alpine:3.22                      verified\nalmalinux/9-init:9.8-20261002    verified\nalmalinux/10-init:10.2-20261002  verified",
                           warning: "Stock Ubuntu, Debian, Fedora and BusyBox each pull around 100 MB, create a machine record, and then fail to boot: a machine image needs an init system. Alpine does, and so do AlmaLinux's -init images.")) {
                 TextField("alpine:3.22", text: $image)
                     .textFieldStyle(.roundedBorder)
@@ -292,15 +295,11 @@ struct MachineFormView: View {
 
     // MARK: Preview
 
-    /// Matches on the repository, not the whole reference, so `alpine:3.19` counts as known
-    /// good too — the tag is not what decides it.
-    /// Any Alpine tag, or exactly a verified AlmaLinux build — another AlmaLinux tag has not been
-    /// booted, so it still gets the warning. `docker.io/` is the same image spelled in full.
+    /// Exactly a reference that was booted and logged in to — `alpine:3.19` was never tried, so
+    /// it gets the warning like any other untested image (Iris, 19 October). The rule and its
+    /// list live in `MachineSuggestion.isTested`, where they are tested.
     private static func isKnownGood(_ reference: String) -> Bool {
-        let short = reference.replacingOccurrences(of: "docker.io/library/", with: "")
-            .replacingOccurrences(of: "docker.io/", with: "")
-        return short == "alpine" || short.hasPrefix("alpine:")
-            || suggestions.contains { $0.reference == short }
+        MachineSuggestion.isTested(reference)
     }
 
     private var trimmedImage: String { image.trimmingCharacters(in: .whitespaces) }
