@@ -187,10 +187,22 @@ struct OverviewView: View {
     }
 
     private var status: String {
-        if editing { return "Drag a widget to move it · pick its size · ⋯ chooses what it shows · × removes it" }
-        let macs = 1 + model.hostMode.trustedHosts.count
+        // Only Edit mode's instructions: when the page was updated, and from how many Macs, is in the
+        // band (`freshness`), where it sits with the rest of the page's state (Kamal, 23 October).
+        editing ? "Drag a widget to move it · pick its size · ⋯ chooses what it shows · × removes it" : ""
+    }
+
+    /// When the page last refreshed, and how many Macs answered: connected ones, out of all of them.
+    /// It used to say "6 Macs" with three of them unreachable, which claimed an update it hadn't had.
+    private var freshness: String {
+        let macs = model.hostRows.filter { $0.isThisMac || $0.peer != nil }
+        let connected = macs.filter(\.connected).count
         let updated = model.lastRefresh.map { "Updated \(OverviewView.checkIn($0))" } ?? "Not refreshed yet"
-        return macs > 1 ? "\(updated) · \(macs) Macs" : "\(updated) · This Mac"
+        return macs.count > 1 ? "\(updated) · \(connected) of \(macs.count) Macs connected" : updated
+    }
+
+    private var freshnessLabel: some View {
+        Text(freshness).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
     }
 
     // MARK: The fixed band
@@ -229,12 +241,11 @@ struct OverviewView: View {
     private var attentionContent: some View {
         let notices = model.notices.attention
         if notices.isEmpty {
-            let hosts = model.hostMode.trustedHosts.count
             HStack {
-                Label(hosts == 0 ? "Nothing needs attention" : "Nothing needs attention on \(hosts + 1) Macs",
-                      systemImage: "checkmark.circle")
+                Label("Nothing needs attention", systemImage: "checkmark.circle")
                     .foregroundStyle(Theme.online)
                 Spacer()
+                freshnessLabel
                 Button("All Notifications") { go(.notifications) }.buttonStyle(.link).font(.caption)
             }
         } else {
@@ -260,6 +271,7 @@ struct OverviewView: View {
                     Button("Dismiss") { model.notices.dismiss([notice.id]) }.controlSize(.small)
                         .help("Hide until it changes")
                 }
+                freshnessLabel
                 if notices.count > 1 {
                     HStack(spacing: 2) {
                         Button { noticeIndex = (index - 1 + notices.count) % notices.count } label: {
