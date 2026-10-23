@@ -435,4 +435,93 @@ struct OverviewLayoutTests {
         #expect(layout.widgets[3].show == .largest)
         #expect(layout.widgets[4].show == .all)
     }
+
+    // MARK: Dragging (Kyle, beta 6 review)
+
+    /// Kyle's repro: two columns, DNS Small, Fleet Wide, Containers Wide, Tasks Small. Packed, DNS
+    /// and Tasks share row 0, Fleet is row 1 and Containers row 2.
+    private static let kyle = OverviewLayout([
+        OverviewWidget(.dns, .small), OverviewWidget(.fleet, .wide),
+        OverviewWidget(.containers, .wide), OverviewWidget(.tasks, .small),
+    ])
+
+    @Test("the old rule — take the place of whatever is under the pointer — alternates in Kyle's case")
+    func kyleCaseOscillatedBefore() {
+        // Pins why `OverviewDrag` exists: in one cell, each move brings a different widget under it.
+        var layout = Self.kyle
+        var seen: [[String]] = []
+        for _ in 0..<4 {
+            let hit = layout.placements(columns: 2).first { $0.id != "dns" && $0.contains(column: 1, row: 1) }!
+            layout.move("dns", to: layout.index(of: hit.id)!)
+            seen.append(layout.widgets.map(\.id))
+        }
+        #expect(seen[1] != seen[2])
+        #expect(seen[1] == seen[3])
+    }
+
+    @Test("a mixed-size drag settles: small movements in column 1, row 1 leave one arrangement")
+    func kyleCaseSettles() {
+        var drag = OverviewDrag("dns", in: Self.kyle, x: 0.5, y: 0.5, columns: 2)
+        let moved = drag.hover(x: 1.5, y: 1.5, columns: 2)
+        #expect(moved)
+        let settled = drag.layout
+        #expect(settled.kinds == [.fleet, .dns, .containers, .tasks])
+        for (x, y) in [(1.4, 1.6), (1.6, 1.4), (1.01, 1.99), (1.99, 1.01), (1.5, 1.5), (1.3, 1.7)] {
+            let moved = drag.hover(x: x, y: y, columns: 2)
+            #expect(!moved)
+            #expect(drag.layout == settled)
+        }
+    }
+
+    @Test("a pointer resting on a cell border does not flick between two cells")
+    func borderHysteresis() {
+        var drag = OverviewDrag("dns", in: Self.kyle, x: 0.5, y: 0.5, columns: 2)
+        drag.hover(x: 1.5, y: 1.5, columns: 2)
+        let settled = drag.layout
+        // Just over the line into row 2, where Containers is in this arrangement, and back: inside
+        // the dead band, nothing moves. Without it the first 2.05 would take Containers' place.
+        for y in [2.05, 1.95, 2.1, 1.9, 2.2] {
+            drag.hover(x: 1.5, y: y, columns: 2)
+            #expect(drag.layout == settled)
+        }
+        // Past it, the widget moves.
+        drag.hover(x: 1.5, y: 2.3, columns: 2)
+        #expect(drag.layout != settled)
+    }
+
+    @Test("entering a different cell still moves the widget")
+    func enteringAnotherCellMoves() {
+        var drag = OverviewDrag("dns", in: Self.kyle, x: 0.5, y: 0.5, columns: 2)
+        drag.hover(x: 1.5, y: 1.5, columns: 2)
+        // Down to row 2, well inside: Containers is there now, and DNS takes its place.
+        let moved = drag.hover(x: 0.5, y: 2.5, columns: 2)
+        #expect(moved)
+        #expect(drag.layout.kinds == [.fleet, .containers, .dns, .tasks])
+    }
+
+    @Test("moving within the dragged widget's own cells or over an empty one changes nothing")
+    func ownAndEmptyCells() {
+        var drag = OverviewDrag("fleet", in: Self.kyle, x: 0.5, y: 1.5, columns: 2)
+        let moved = drag.hover(x: 1.5, y: 1.5, columns: 2)
+        #expect(!moved)
+        let again = drag.hover(x: 1.5, y: 4.5, columns: 2)
+        #expect(!again)
+        #expect(!drag.changed)
+        #expect(drag.layout == Self.kyle)
+    }
+
+    @Test("the drag keeps the order it started from, for a cancel to put back")
+    func dragKeepsOriginal() {
+        var drag = OverviewDrag("dns", in: Self.kyle, x: 0.5, y: 0.5, columns: 2)
+        drag.hover(x: 1.5, y: 1.5, columns: 2)
+        drag.hover(x: 0.5, y: 2.5, columns: 2)
+        #expect(drag.changed)
+        #expect(drag.original == Self.kyle)
+        // Dragged back to where it began, there is nothing to save.
+        var back = OverviewDrag("dns", in: Self.kyle, x: 0.5, y: 0.5, columns: 2)
+        back.hover(x: 1.5, y: 0.5, columns: 2)
+        back.hover(x: 0.5, y: 0.5, columns: 2)
+        #expect(back.layout == Self.kyle)
+        #expect(!back.changed)
+    }
 }

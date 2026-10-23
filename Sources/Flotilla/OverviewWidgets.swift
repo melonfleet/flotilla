@@ -39,14 +39,21 @@ extension OverviewWidgetKind {
 
 /// Where a click on a widget goes: its section, set to the filter matching what the widget shows
 /// where the section has one (round 3). Tasks has no section — it is the drawer.
+///
+/// **A section with a host picker is given the host the widget's data came from** (Kyle, beta 6):
+/// `.local` for a widget of This Mac's, nil for one that counts the fleet. Left alone, a picker set
+/// to another Mac on an earlier visit would open on that Mac's rows under a widget about this one.
 enum OverviewLink: Equatable {
     case section(Section)
     case containers(ContainersView.Filter)
     case machines(MachinesView.Filter)
     case hosts(filterID: String)
-    case dns(filterID: String)
-    case networks(filterID: String)
-    case suggestions(SuggestionTab)
+    case dns(filterID: String, host: HostRef?)
+    case networks(filterID: String, host: HostRef?)
+    case images(host: HostRef?)
+    case volumes(host: HostRef?)
+    case clusters(host: HostRef?)
+    case suggestions(SuggestionTab, host: HostRef?)
     case tasks
 }
 
@@ -816,7 +823,7 @@ struct OverviewWidgetContent: View {
         let summary = Text(affected.first.map { "In \(affected.count) of \(imageCount) images · worst: \(ContainerImage.shortReference($0.image.reference))" }
                            ?? "Nothing listed in \(imageCount) images")
             .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-        return tile(detail: size == .small ? nil : generated, link: .section(.images), help: "Open Images") {
+        return tile(detail: size == .small ? nil : generated, link: .images(host: nil), help: "Open Images") {
             if report == nil {
                 WidgetEmpty(text: "No report yet. The daily vulnerability report arrives with the suggestions library.")
             } else if show == .worst {
@@ -1007,7 +1014,7 @@ struct OverviewWidgetContent: View {
                                                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")) : nil,
                               dot: up ? Theme.online : Color.secondary.opacity(0.45), dimmed: !up)
         }
-        return tile(detail: "\(names.count) cluster\(names.count == 1 ? "" : "s")", link: .section(.clusters)) {
+        return tile(detail: "\(names.count) cluster\(names.count == 1 ? "" : "s")", link: .clusters(host: nil)) {
             listLayout(figure: WidgetFigure(value: ready.count, of: names.count, caption: "ready"),
                        lines: shown.map { line($0, detailed: false) }, large: shown.map { line($0, detailed: true) },
                        empty: names.isEmpty ? "No clusters yet." : "No cluster is ready.")
@@ -1030,7 +1037,7 @@ struct OverviewWidgetContent: View {
                               help: domain.resolverInstalled ? domain.name : "\(domain.name) — this Mac doesn't resolve it yet")
         }
         return tile(detail: "\(domains.count) domain\(domains.count == 1 ? "" : "s")",
-                    link: .dns(filterID: show == .forContainers ? "containers" : "all")) {
+                    link: .dns(filterID: show == .forContainers ? "containers" : "all", host: .local)) {
             listLayout(figure: WidgetFigure(value: shown.count, caption: "\(resolving) resolving on This Mac"),
                        lines: shown.map { line($0, detailed: false) }, large: shown.map { line($0, detailed: true) },
                        empty: domains.isEmpty ? "No local domains. Containers are reached by address." : "No domains name containers.")
@@ -1069,7 +1076,7 @@ struct OverviewWidgetContent: View {
                 model.requestDetail(kind: .volume, subject: volume.configuration.name)
             }
         }
-        return tile(detail: "This Mac", link: .section(.volumes), help: "Open Volumes") {
+        return tile(detail: "This Mac", link: .volumes(host: .local), help: "Open Volumes") {
             switch size {
             case .small:
                 VStack(alignment: .leading, spacing: 8) {
@@ -1222,7 +1229,7 @@ struct OverviewWidgetContent: View {
         let empty = if all.isEmpty { "No images on This Mac." }
             else if report == nil { "No report yet. The daily vulnerability report arrives with the suggestions library." }
             else { "Nothing listed in \(all.count) images." }
-        return tile(detail: "This Mac", link: .section(.images)) {
+        return tile(detail: "This Mac", link: .images(host: .local)) {
             listLayout(figure: figure, lines: shown.map { line($0, detailed: false) },
                        large: shown.map { line($0, detailed: true) }, empty: empty)
         }
@@ -1247,7 +1254,7 @@ struct OverviewWidgetContent: View {
                                                     .compactMap { $0 }.joined(separator: " · ")) : nil,
                               dot: Theme.info, dimmed: network.isBuiltin)
         }
-        return tile(detail: "This Mac", link: .networks(filterID: show == .userDefined ? "user" : "all")) {
+        return tile(detail: "This Mac", link: .networks(filterID: show == .userDefined ? "user" : "all", host: .local)) {
             listLayout(figure: WidgetFigure(value: shown.count, caption: show == .userDefined
                                             ? "user-defined" : (all.count == 1 ? "network" : "networks")),
                        lines: shown.map { line($0, detailed: false) }, large: shown.map { line($0, detailed: true) },
@@ -1266,7 +1273,7 @@ struct OverviewWidgetContent: View {
         case .wide: (4, true)
         case .tall, .large: (6, true)
         }
-        return tile(link: .suggestions(tab), help: "Open Suggestions") {
+        return tile(link: .suggestions(tab, host: .local), help: "Open Suggestions") {
             if picks.isEmpty {
                 WidgetEmpty(text: "No suggestions in this library.")
             } else if size == .wide {

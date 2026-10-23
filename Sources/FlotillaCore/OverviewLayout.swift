@@ -448,3 +448,78 @@ public struct OverviewLayout: Equatable, Sendable {
         self = layout
     }
 }
+
+/// One drag of a widget across the grid, from pick-up to drop (Kyle, beta 6 review).
+///
+/// **Why it is not just "take the place of whatever is under the pointer".** Reflow can put a
+/// different widget under the same cell after every move. Kyle's case: two columns, DNS Small,
+/// Fleet Wide, Containers Wide, Tasks Small, and DNS dragged to column 1, row 1. Over Fleet, DNS
+/// moves to Fleet's place, which brings Tasks under the pointer; over Tasks it moves again, which
+/// brings Containers there; over Containers it moves back — so a pointer standing still in one cell
+/// alternated two arrangements, and each one was saved. Remembering only the last widget hit could
+/// not stop it, because the hits really did differ.
+///
+/// So a move is decided by **where the pointer is, not what is under it**: the arrangement stays
+/// until the pointer enters a different cell from the one that produced it, and a cell only counts
+/// as entered once the pointer is `hysteresis` of a cell past the edge of the last one, so a
+/// pointer resting on a border cannot flick between two either. Nothing is saved while dragging:
+/// `layout` is what the grid draws, `original` is what a cancel puts back, and the owner of the
+/// store saves `layout` once, on drop.
+///
+/// Positions are in cells — `x` 1.5 is the middle of the second column — so the rule is the same
+/// at any window width and the tests can state Kyle's case exactly.
+public struct OverviewDrag: Equatable, Sendable {
+    /// The widget being dragged.
+    public let id: String
+    /// The layout when the drag began: what Escape or a drop outside the grid puts back.
+    public let original: OverviewLayout
+    /// The arrangement as it stands — drawn while dragging, saved on drop.
+    public private(set) var layout: OverviewLayout
+    /// The cell whose entry produced the current arrangement (at first, the one it was picked up in).
+    public private(set) var anchor: (column: Int, row: Int)
+
+    /// How far past the anchor cell's edge, as a fraction of a cell, the pointer must be before it is
+    /// in another cell.
+    public static let hysteresis = 0.25
+
+    public init(_ id: String, in layout: OverviewLayout, x: Double, y: Double, columns: Int) {
+        self.id = id
+        original = layout
+        self.layout = layout
+        anchor = Self.cell(x: x, y: y, columns: columns)
+    }
+
+    /// The pointer is at (`x`, `y`) on a grid `columns` wide. Returns whether the arrangement changed.
+    @discardableResult
+    public mutating func hover(x: Double, y: Double, columns: Int) -> Bool {
+        let cell = Self.cell(x: x, y: y, columns: columns)
+        guard cell != anchor else { return false }
+        // Still within the dead band round the anchor cell: not yet in the next one.
+        let outside = max(Double(anchor.column) - x, x - Double(anchor.column + 1),
+                          Double(anchor.row) - y, y - Double(anchor.row + 1))
+        guard outside >= Self.hysteresis else { return false }
+        anchor = cell
+        let target = layout.insertionIndex(column: cell.column, row: cell.row, columns: columns, ignoring: id)
+        // An empty cell or the dragged widget's own: nothing to take the place of.
+        guard layout.placements(columns: columns).contains(where: {
+            $0.id != id && $0.contains(column: cell.column, row: cell.row)
+        }) else { return false }
+        let before = layout
+        layout.move(id, to: target)
+        return layout != before
+    }
+
+    /// Whether dropping now would change anything — a drop back where it started saves nothing.
+    public var changed: Bool { layout != original }
+
+    public static func == (a: OverviewDrag, b: OverviewDrag) -> Bool {
+        a.id == b.id && a.original == b.original && a.layout == b.layout && a.anchor == b.anchor
+    }
+
+    /// The cell a position falls in, held to the grid's columns (a pointer past the right edge is in
+    /// the last column) and to row 0 above the top.
+    static func cell(x: Double, y: Double, columns: Int) -> (column: Int, row: Int) {
+        (min(max(0, Int(max(0, x).rounded(.down))), max(1, columns) - 1),
+         max(0, Int(max(0, y).rounded(.down))))
+    }
+}

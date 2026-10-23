@@ -33,6 +33,9 @@ struct OverviewView: View {
     let hostsUI: ResourceUIState<HostRow>
     let dnsUI: ResourceUIState<HostedDNS>
     let networksUI: ResourceUIState<HostedNetwork>
+    let imagesUI: ResourceUIState<HostedImage>
+    let volumesUI: ResourceUIState<HostedVolume>
+    let clustersUI: ResourceUIState<HostedCluster>
     let go: (Section) -> Void
 
     @State private var editing = false
@@ -91,7 +94,8 @@ struct OverviewView: View {
 
     /// A widget's click: its section, set to the filter matching what the widget shows — All when
     /// the widget shows everything, so a filter left on from an earlier visit does not hide rows the
-    /// widget just listed.
+    /// widget just listed — and, where the section has a host picker, to the Macs the widget's data
+    /// came from (Kyle, beta 6): a Networks widget about This Mac must not open on another Mac.
     private func open(_ link: OverviewLink) {
         switch link {
         case .section(let section):
@@ -110,16 +114,33 @@ struct OverviewView: View {
             hostsUI.search = ""
             hostsUI.filterID = filterID
             go(.hosts)
-        case .dns(let filterID):
+        case .dns(let filterID, let host):
             dnsUI.search = ""
             dnsUI.filterID = filterID
+            dnsUI.hostFilter = host
             go(.dns)
-        case .networks(let filterID):
+        case .networks(let filterID, let host):
             networksUI.search = ""
             networksUI.filterID = filterID
+            networksUI.hostFilter = host
             go(.networks)
-        case .suggestions(let tab):
-            model.requestSuggestionsTab(tab)
+        case .images(let host):
+            imagesUI.search = ""
+            imagesUI.filterID = "all"
+            imagesUI.hostFilter = host
+            go(.images)
+        case .volumes(let host):
+            volumesUI.search = ""
+            volumesUI.filterID = "all"
+            volumesUI.hostFilter = host
+            go(.volumes)
+        case .clusters(let host):
+            clustersUI.search = ""
+            clustersUI.filterID = "all"
+            clustersUI.hostFilter = host
+            go(.clusters)
+        case .suggestions(let tab, let host):
+            model.requestSuggestionsTab(tab, host: host)
         case .tasks:
             model.tasks.showList()
         }
@@ -409,10 +430,14 @@ struct OverviewGrid: View {
     private static let space = "overviewGrid"
 
     @State private var width: CGFloat = 0
-    /// The tile being dragged, where it was grabbed, where the pointer is, and the last tile it
-    /// swapped with — so hovering over a tile that has just slid away does not swap it straight back.
-    /// All keyed by the widget's instance id, not its kind: two Containers widgets drag apart.
-    @State private var drag: (id: String, grab: CGSize, point: CGPoint, lastHit: String?)?
+    /// The drag in progress — which widget, the arrangement it has made so far and the one it began
+    /// from (`OverviewDrag`, which decides every move) — with where the tile was grabbed and where the
+    /// pointer is. Keyed by the widget's instance id, not its kind. Nothing is saved until the drop.
+    @State private var drag: (state: OverviewDrag, grab: CGSize, point: CGPoint, start: CGPoint)?
+    /// A drag Escape cancelled, by widget and where the gesture began: the gesture is still live
+    /// until the button comes up, and its later changes must not start a new one. Keyed by the start
+    /// too, so a gesture whose end never arrives cannot block the next drag.
+    @State private var cancelledDrag: (id: String, start: CGPoint)?
     /// The size a resize started from, so the grip's whole travel is measured from one place.
     @State private var resizing: (id: String, from: OverviewWidgetSize)?
     @State private var dropTargeted = false
@@ -434,12 +459,18 @@ struct OverviewGrid: View {
 
     /// The cell under a point in the grid's own coordinates.
     private func cell(at point: CGPoint) -> (column: Int, row: Int) {
-        (min(columns - 1, max(0, Int(point.x / (cellWidth + Self.gap)))),
-         max(0, Int(point.y / (Self.rowHeight + Self.gap))))
+        let at = position(point)
+        return (min(columns - 1, max(0, Int(at.x))), max(0, Int(at.y)))
+    }
+
+    /// A point in the grid's coordinates, in cells — what `OverviewDrag` reasons in.
+    private func position(_ point: CGPoint) -> (x: Double, y: Double) {
+        (Double(point.x / (cellWidth + Self.gap)), Double(point.y / (Self.rowHeight + Self.gap)))
     }
 
     var body: some View {
-        let layout = store.layout
+        // While dragging, the drag's own arrangement: the store has only what was there before.
+        let layout = drag?.state.layout ?? store.layout
         let placements = layout.placements(columns: columns)
         let rows = layout.rowCount(columns: columns)
         let height = rows > 0 ? CGFloat(rows) * Self.rowHeight + CGFloat(rows - 1) * Self.gap : 0
@@ -475,6 +506,7 @@ struct OverviewGrid: View {
             return true
         } isTargeted: { dropTargeted = $0 }
         .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: layout)
+        .background { if drag != nil { DragEscape(cancel: cancelDrag) } }
     }
 
     private var dropBand: some View {
@@ -498,7 +530,7 @@ struct OverviewGrid: View {
     @ViewBuilder
     private func tile(_ widget: OverviewWidget, drawn: OverviewWidgetSize, at rect: CGRect) -> some View {
         let id = widget.id
-        let dragged = drag?.id == id
+        let dragged = drag?.state.id == id
         let origin = dragged ? CGPoint(x: drag!.point.x - drag!.grab.width, y: drag!.point.y - drag!.grab.height)
                              : rect.origin
         OverviewWidgetContent(model: model, widget: widget, size: drawn, editing: editing, go: go)
@@ -588,32 +620,48 @@ struct OverviewGrid: View {
         Button("Remove \(widget.title)") { store.update { $0.remove(id) } }
     }
 
+    /// Takes the place of the tile under the pointer as it enters each cell, by `OverviewDrag`'s rule.
+    /// The layout reflows round it, so tiles slide out of the way and nothing overlaps — the dragged
+    /// one is drawn at the pointer until it is let go, then settles into its slot.
+    ///
+    /// **Saved once, on drop** (Kyle, beta 6): let go over the grid and the arrangement is written;
+    /// let go outside it, or press Escape, and the order from before the drag comes back.
     private func moveGesture(_ id: String, rect: CGRect) -> some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.space))
             .onChanged { value in
-                if drag?.id != id {
-                    drag = (id, CGSize(width: value.startLocation.x - rect.minX, height: value.startLocation.y - rect.minY),
-                            value.location, nil)
+                if let cancelled = cancelledDrag, cancelled.id == id, cancelled.start == value.startLocation { return }
+                if drag?.state.id != id {
+                    let start = position(value.startLocation)
+                    drag = (OverviewDrag(id, in: store.layout, x: start.x, y: start.y, columns: columns),
+                            CGSize(width: value.startLocation.x - rect.minX, height: value.startLocation.y - rect.minY),
+                            value.location, value.startLocation)
                 }
                 drag?.point = value.location
-                reorder(id, toward: value.location)
+                let at = position(value.location)
+                drag?.state.hover(x: at.x, y: at.y, columns: columns)
             }
-            .onEnded { _ in
+            .onEnded { value in
+                defer { cancelledDrag = nil }
+                guard let ended = drag?.state, ended.id == id else { return }
+                if gridBounds.contains(value.location), ended.changed {
+                    store.update { $0 = ended.layout }
+                }
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { drag = nil }
             }
     }
 
-    /// Takes the place of the tile under the pointer. The layout reflows round it on every swap, so
-    /// tiles slide out of the way and nothing overlaps — the dragged one is drawn at the pointer
-    /// until it is let go, then settles into its slot.
-    private func reorder(_ id: String, toward point: CGPoint) {
-        let target = cell(at: point)
-        let hit = store.layout.placements(columns: columns)
-            .first { $0.id != id && $0.contains(column: target.column, row: target.row) }?.id
-        guard hit != drag?.lastHit else { return }
-        drag?.lastHit = hit
-        guard let hit, let index = store.layout.index(of: hit) else { return }
-        store.update { $0.move(id, to: index) }
+    /// Escape during a drag: the tile goes back to where it was, and nothing is saved.
+    private func cancelDrag() {
+        guard let drag else { return }
+        cancelledDrag = (drag.state.id, drag.start)
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { self.drag = nil }
+    }
+
+    /// The grid's own area, the drop band included while editing — a drop anywhere else cancels.
+    private var gridBounds: CGRect {
+        let rows = (drag?.state.layout ?? store.layout).rowCount(columns: columns)
+        let height = rows > 0 ? CGFloat(rows) * Self.rowHeight + CGFloat(rows - 1) * Self.gap : 0
+        return CGRect(x: 0, y: 0, width: width, height: editing ? height + (rows > 0 ? Self.gap : 0) + 64 : height)
     }
 
     private func resizeGesture(_ widget: OverviewWidget) -> some Gesture {
@@ -700,6 +748,47 @@ struct ResizeGrip: View {
             }
         }
     }
+}
+
+/// Escape while a widget is being dragged cancels the drag. A local monitor, present only during a
+/// drag, for the reason `SplitPanes`' `EscapeCloser` gives: SwiftUI's key handlers need focus in this
+/// view, and the pointer, not focus, is what a drag is about. The key is swallowed — during a drag,
+/// Escape means only this.
+private struct DragEscape: NSViewRepresentable {
+    let cancel: () -> Void
+
+    @MainActor final class Coordinator {
+        var cancel: () -> Void = {}
+        var monitor: Any?
+        weak var view: NSView?
+
+        func start() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, event.keyCode == 53, event.window === self.view?.window else { return event }
+                self.cancel()
+                return nil
+            }
+        }
+
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.cancel = cancel
+        context.coordinator.start()
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) { context.coordinator.cancel = cancel }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.stop() }
 }
 
 // MARK: - Add Widgets

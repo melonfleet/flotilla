@@ -277,10 +277,11 @@ struct MainWindowView: View {
         case .overview:
             // The tiles drill down, so Overview drives the sidebar selection — a panel that
             // shows you a problem but cannot take you to it is a poster.
-            // Its widgets open Containers, Machines and Hosts filtered, so it is handed their
-            // list state too (Q67).
+            // Its widgets open their sections filtered, and set to the Macs they show, so it is
+            // handed their list state too (Q67).
             OverviewView(model: model, containersUI: containersUI, machinesUI: machinesUI,
-                         hostsUI: hostsUI, dnsUI: dnsUI, networksUI: networksUI) { navigate(to: $0) }
+                         hostsUI: hostsUI, dnsUI: dnsUI, networksUI: networksUI, imagesUI: imagesUI,
+                         volumesUI: volumesUI, clustersUI: clustersUI) { navigate(to: $0) }
         case .hosts:
             // Each host's landing page is the per-Mac dashboard (6 October).
             HostsView(model: model, ui: hostsUI) { navigate(to: $0) }

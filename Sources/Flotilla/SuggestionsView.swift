@@ -120,6 +120,8 @@ struct SuggestionsView: View {
                     }
                 }
             }
+            // In the list pane, under the rows that draw the logos, whatever the selection or the page
+            // beside it: a hidden list takes its footer with it, and the page then carries its own.
             LogoAttributionFooter(lines: model.libraryLogoAttributions)
         }
         .padding(16)
@@ -343,6 +345,16 @@ struct SuggestionsView: View {
                             Text(entry.summary).font(.callout).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text(entry.categories.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            // The page draws the logo large, and with the list hidden the gallery's
+                            // footer is not on screen: its owner's attribution goes with it here
+                            // (Redis's permission covers the footer only for rows, search and small
+                            // tiles — Kyle, beta 6).
+                            if let attribution = model.libraryLogoAttribution(for: entry) {
+                                Text(verbatim: attribution)
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                    .lineLimit(3)
+                                    .textSelection(.enabled)
+                            }
                         }
                     }
                     if let stack = entry.stack {

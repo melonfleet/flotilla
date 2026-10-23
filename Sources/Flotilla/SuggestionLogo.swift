@@ -75,6 +75,12 @@ extension AppModel {
         entry.logo(in: libraryUpdater.icons)?.data
     }
 
+    /// What `entry`'s logo owes where it is drawn large — its suggestion's own page — or nil when
+    /// the logo drawn needs none.
+    func libraryLogoAttribution(for entry: LibraryEntry) -> String? {
+        entry.logo(in: libraryUpdater.icons)?.attribution
+    }
+
     /// What every logo from the library currently drawn owes, for the footers and About.
     var libraryLogoAttributions: [String] {
         suggestionLibrary.logoAttributions(icons: libraryUpdater.icons)
