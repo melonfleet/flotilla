@@ -82,6 +82,9 @@ final class AppModel {
     /// Saved groups of containers that start and stop together. Data rather than view state, for
     /// the reason `tags` gives; `GroupStore` says why it is not in `SettingsStore`.
     let groups = GroupStore()
+    /// Which widgets the Overview shows, in what order and at what size (DECISIONS Q67). Content,
+    /// not configuration, for the reason `tags` gives; `OverviewLayoutStore` says where it lives.
+    let overviewLayout = OverviewLayoutStore()
     let volumeSetups = VolumeSetupStore(file: FileManager.default.urls(for: .applicationSupportDirectory,
         in: .userDomainMask)[0].appendingPathComponent(SettingsPersistence.domain)
         .appendingPathComponent("volume-setup.json"))

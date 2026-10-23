@@ -33,6 +33,15 @@ questions.
   live command preview, and container detail **in the right pane of a split** with Overview /
   Processes / Logs / Terminal / Inspect / Configuration, an ↑ ↓ stepper that moves the list's
   selection, and an expand button that widens the page over the list.
+- **The Overview is modular** (Q67, Kamal, 23 October): the notifications band, fixed at the top and
+  never a widget, then a grid of widgets the owner adds, orders and sizes (Small 1×1, Wide 2×1,
+  Tall 1×2, Large 2×2; each offers only the sizes it has more to show in). The grid adds columns on
+  a wider window rather than stretching tiles. Get started is a widget; Fleet at a glance replaced
+  "Across all hosts", and the Hosts widget's rows replaced the striped Hosts table. Edit Widgets
+  gives every tile a handle, ×, size control and grip, and an Add Widgets panel; VoiceOver and the
+  right-click move and resize them too. The rules and reflow are `OverviewLayout` in `FlotillaCore`;
+  `OverviewLayoutStore` keeps it per Mac under `overviewLayout`, plist-native like tags, never in
+  `SettingsStore`. A widget reads what its section already reads and adds no polling.
 - **Machines** (the Linux micro-VMs containers run inside) is a peer section under a
   `Virtualisation` sidebar heading, built to the same shapes: two-line rows with
   checkboxes and a Sort menu, state filter, row actions, an embedded create form, and a

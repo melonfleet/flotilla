@@ -3142,3 +3142,43 @@ per-section galleries hid related recipes and made search and return navigation 
   logos, never the whole discovery section. No group conversion or image-matching changes here.
 - No new creation path, Allowlist command or privileged operation. Q64/Q65 form actions and
   existing commit validation remain the execution boundary.
+
+## Q67 — A modular Overview (settled 2026-10-23)
+
+Kamal's call, from the four 23 October mockups (Main, FirstRun, EditMode, WidgetSizes), for beta 6
+and open to tweaks before it ships. One change to the mockups: **the notifications band is not a
+widget.**
+
+- **From the top:** the notifications band ("Nothing needs attention · All Notifications", or one
+  notice at a time), with the `container` setup banner above it when there is one. It is fixed
+  above the widgets and cannot be removed or moved, so the mockups' "Needs attention" widget is
+  dropped: the band does that job. Then a grid of widgets.
+- **Widgets:** Get started, Fleet at a glance, Hosts, Containers, Vulnerabilities, Activity,
+  Machines, Kubernetes, DNS, Storage, Tasks, Images, Networks and Suggestions. Get started is a
+  widget like any other: first for a new Mac, removable with its own ×, and in Add Widgets to bring
+  back. Fleet at a glance replaces "Across all hosts". Hosts replaces the striped Hosts table with
+  the app's row (status dot, name, This Mac / Admin chips, model and macOS, a load bar, running
+  count and version) — rows only, no columns or stripes (Q56), as in the Containers widget.
+- **Four sizes:** Small 1×1, Wide 2×1, Tall 1×2, Large 2×2, and each widget offers only the sizes
+  where it has more to show (`OverviewWidgetKind.sizes`). The grid **adds columns** on a wider
+  window — a column is at least 250pt — rather than stretching tiles; rows are a fixed 170pt.
+- **The layout is an order plus sizes, not coordinates.** `OverviewLayout.placements(columns:)`
+  packs the widgets for whatever width there is, so nothing overlaps on any display and a drag
+  only ever changes the order. Rules, reflow and plist decoding are in `FlotillaCore`, with tests.
+- **A widget reads what its section reads** and starts no polling of its own. Clicking one opens
+  its section — Containers and Machines filtered to running, Hosts to the Macs needing attention
+  when there are any; Tasks opens the drawer.
+- **Edit Widgets** (beside Add Widget on one `ActionCluster`): a handle, ×, size control and resize
+  grip on every tile; dragging reflows the grid; an Add Widgets panel lists what is not on the page,
+  with + and drag-in; the header shows Reset to Recommended and Done. Move Earlier, Move Later,
+  Change Size and Remove are VoiceOver actions and right-click items on every widget, so moving one
+  never needs a drag.
+- **With no widgets** (Get started aside), "Make the Overview yours", with one-click adds and "Use
+  the recommended layout".
+- **Remembered per Mac, as content:** `OverviewLayoutStore` writes `overviewLayout` in the app's
+  preference domain, plist-native like `TagStore`, never through `SettingsStore` — an admin locking
+  someone's widget arrangement is not a capability worth having. Absent means the recommended
+  layout (Get started, Fleet at a glance, Hosts, Containers, Vulnerabilities, Activity, Machines,
+  Kubernetes), and stays the *current* recommendation until the owner changes something; empty means
+  the owner removed everything. A Mac that had closed the old Get started card
+  (`getStartedDismissed`) does not get it back.
