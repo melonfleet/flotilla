@@ -3,7 +3,7 @@
 # firsttime, totals, failed, skipped, impressions — so keep the ids in step with the page.
 name: Beta test summary
 description: Your totals at the end of a run through the beta test plan.
-title: "[1.5.0-beta.5] Test summary"
+title: "[1.5.0-beta.6] Test summary"
 labels: ["beta-test", "beta-summary"]
 body:
   - type: markdown
@@ -15,7 +15,7 @@ body:
     attributes:
       label: Flotilla version and build
       description: In Flotilla, Settings ▸ About, the line under the name.
-      placeholder: "1.5.0-beta.5 (build number)"
+      placeholder: "1.5.0-beta.6 (build number)"
     validations:
       required: true
   - type: input

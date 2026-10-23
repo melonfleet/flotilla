@@ -1,6 +1,6 @@
 # Testing the Flotilla beta
 
-Thank you for helping. This page covers **Flotilla 1.5.0-beta.5**, tested with Apple's `container`
+Thank you for helping. This page covers **Flotilla 1.5.0-beta.6**, tested with Apple's `container`
 1.5.0.
 
 **This test is for people who have never used Flotilla,** on a Mac that has never had it. We want to
@@ -38,12 +38,12 @@ signed package and hand it to Apple's Installer. It never installs anything with
 
 ## Installing
 
-Download from the [1.5.0-beta.5 release](https://github.com/melonfleet/flotilla/releases/tag/v1.5.0-beta.5),
+Download from the [1.5.0-beta.6 release](https://github.com/melonfleet/flotilla/releases/tag/v1.5.0-beta.6),
 under **Assets**. Every file is signed with a Developer ID and notarised by Apple.
 
-- **Disk image (most people):** open `Flotilla-1.5.0-beta.5.dmg` and drag Flotilla to the
+- **Disk image (most people):** open `Flotilla-1.5.0-beta.6.dmg` and drag Flotilla to the
   Applications folder in the window that opens.
-- **Package:** open `Flotilla-1.5.0-beta.5.pkg` and follow Apple's Installer. This is the one for MDM
+- **Package:** open `Flotilla-1.5.0-beta.6.pkg` and follow Apple's Installer. This is the one for MDM
   and scripted installs. It refuses to install on macOS earlier than 26.
 
 Open Flotilla from Applications. The first time, macOS should ask only its usual question about an app
@@ -70,15 +70,15 @@ The [test plan](https://melonfleet.dev/flotilla/beta/) is in two parts:
   stopping and deleting it, downloading an image, and checking for updates. If you only have half an
   hour, do this.
 - **The deeper path, optional:** short sections on the rest of Flotilla, such as the search box,
-  lists, the Tasks panel, forms, groups, Suggestions, security findings, files, machines, health
-  checks, Greta, accessibility, and two Macs. Each section says what its words mean. Do whichever
+  lists, the Overview and its widgets, the Tasks panel, forms, groups, Suggestions, security
+  findings, files, machines, health checks, Greta, accessibility, and two Macs. Each section says what its words mean. Do whichever
   interest you.
 
 Along the core path there are a few short **first impressions** boxes: was it clear what to do next,
 was anything confusing? Write a sentence or two, or leave them empty. They go into your summary at
 the end. We read these as closely as the failures.
 
-The [release notes](https://github.com/melonfleet/flotilla/releases/tag/v1.5.0-beta.5) list the known
+The [release notes](https://github.com/melonfleet/flotilla/releases/tag/v1.5.0-beta.6) list the known
 limits. A known limit doesn't need a report unless it's worse than described.
 
 ## Reporting
@@ -97,7 +97,7 @@ Something that confused you counts, even if nothing broke.
 
 - **What you did, what you expected, and what happened.** The exact wording of an error helps most.
 - **Your Flotilla version and build**, from Settings ▸ About, for example
-  `Version 1.5.0-beta.5 (612) · Tested with container 1.5.0`.
+  `Version 1.5.0-beta.6 (612) · Tested with container 1.5.0`.
 - **Your macOS version** (Apple menu ▸ About This Mac) and, if it might matter, your Mac model.
 - **Whether this is your first time using Flotilla.**
 - **A screenshot or short screen recording**, if you can.
@@ -130,30 +130,30 @@ emails you.
 
 Skip this section if this is your first time with Flotilla.
 
-**Updating from beta 4.** You don't need to download anything. In beta 4, set the update channel in
-Settings ▸ Updates to **Pre-release**, then choose **Flotilla ▸ Check for Updates…**. Beta 5 installs
-and relaunches; your settings, groups and paired Macs are kept. Approve the Flotilla Helper if macOS
-asks. If you manage several Macs, update the admin Mac first: it then updates its hosts itself, one at
-a time, each when it is idle. The test page has a short optional section for this, at the end.
+**Updating from beta 5.** You don't need to download anything. In beta 5, set the update channel in
+Settings ▸ Updates to **Pre-release**, then choose **Flotilla ▸ Check for Updates…**. Beta 6 installs
+and relaunches; your settings, groups and paired Macs are kept. The Overview starts with the
+recommended widgets, because beta 5 had no layout to keep. Approve the Flotilla Helper if macOS asks.
+If you manage several Macs, update the admin Mac first: it then updates its hosts itself, one at a
+time, each when it is idle. The test page has a short optional section for this, at the end.
 
-**Going back to beta 4.** Your containers, images, volumes and machines belong to Apple's `container`
+**Going back to beta 5.** Your containers, images, volumes and machines belong to Apple's `container`
 and are not affected either way.
 
 1. Quit Flotilla.
-2. Download `Flotilla-1.5.0.0-beta.4.dmg` from the
-   [beta 4 release](https://github.com/melonfleet/flotilla/releases/tag/v1.5.0.0-beta.4).
+2. Download `Flotilla-1.5.0-beta.5.dmg` from the
+   [beta 5 release](https://github.com/melonfleet/flotilla/releases/tag/v1.5.0-beta.5).
 3. Drag Flotilla from the disk image to Applications and choose **Replace**. Use the disk image
    rather than the package to go back: the package is meant for upgrades.
-4. Open Flotilla. When it offers beta 5 again, choose **Skip This Version**, or set the update
+4. Open Flotilla. When it offers beta 6 again, choose **Skip This Version**, or set the update
    channel in Settings ▸ Updates back to Stable.
 
-Your settings, groups, tags and paired Macs stay. A few things beta 5 added, such as the SSH user name
-you set for a host, are not known to beta 4 and may need setting again. Keep other Macs you manage on
-the same beta as the admin Mac where you can: a Mac on beta 4 can't use the newer health-check and
-restart-policy actions with a beta 5 Mac, in either direction. The Flotilla Helper restarts by itself
-with the version inside the app you installed; if the status bar shows it as out of date, use
-**Restart** in its menu. If you went back because of a bug, please report it, and say that you went
-back.
+Your settings, groups, tags and paired Macs stay. Beta 5 doesn't know the Overview layout you made in
+beta 6, so it shows its own page. It also
+doesn't draw logos that need a credit, such as Redis's, and shows a symbol instead. Keep other Macs you
+manage on the same beta as the admin Mac where you can. The Flotilla Helper restarts by itself with the
+version inside the app you installed; if the status bar shows it as out of date, use **Restart** in
+its menu. If you went back because of a bug, please report it, and say that you went back.
 
 ## Contact
 

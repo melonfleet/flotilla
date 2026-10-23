@@ -3,7 +3,7 @@
 # macos, model, firsttime — so renaming an id here breaks the page's prefill. Change both together.
 name: Beta test report
 description: A step from the beta test plan didn't do what it said, or something else went wrong in a beta.
-title: "[1.5.0-beta.5] Step "
+title: "[1.5.0-beta.6] Step "
 labels: ["beta-test"]
 body:
   - type: markdown
@@ -38,7 +38,7 @@ body:
     attributes:
       label: Flotilla version and build
       description: In Flotilla, Settings ▸ About, the line under the name.
-      placeholder: "1.5.0-beta.5 (build number)"
+      placeholder: "1.5.0-beta.6 (build number)"
     validations:
       required: true
   - type: input

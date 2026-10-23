@@ -720,7 +720,7 @@ struct AddWidgetsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Add Widgets").font(.headline)
-            Text("Tick a widget to put it on the Overview, or drag it there. Click + to add another one showing something different.")
+            Text("Tick a widget to put it on the Overview, or drag it there. Untick it to take it off.")
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(3)
                 .padding(.bottom, 8)
