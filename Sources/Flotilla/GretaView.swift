@@ -78,8 +78,9 @@ struct GretaView: View {
     private var history: some View {
         VStack(spacing: 0) {
             SectionToolbar(search: $search, searchPrompt: "Search conversations", matches: chats.count) {
-                PaneModeButton()
                 SelectAllCheckbox(selection: $selection, ids: chats.map(\.id), noun: "conversations")
+                    .alignedWithRowChecks()
+                PaneModeButton()
                 Picker("Conversations", selection: $archived) {
                     Text("Active").tag(false)
                     Text("Archived").tag(true)

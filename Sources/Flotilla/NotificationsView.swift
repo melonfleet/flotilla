@@ -119,8 +119,9 @@ struct NotificationsView: View {
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                PaneModeButton()
                 SelectAllCheckbox(selection: $selection, ids: selectableIDs, noun: "notifications")
+                    .alignedWithRowChecks()
+                PaneModeButton()
                 // The search is the window bar's box now (Q55); the filter stays with the list it narrows.
                 Picker("Show", selection: $filter) {
                     ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }

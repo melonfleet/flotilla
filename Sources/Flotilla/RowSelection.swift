@@ -254,3 +254,14 @@ struct SelectionRevealingList<ID: Hashable, Content: View>: View {
         proxy.scrollTo(id)
     }
 }
+
+extension View {
+    /// Moves a toolbar's select-all box over the rows' own boxes. The rows sit inside the list's
+    /// inset (`.listStyle(.inset)`) as well as their own 12pt; the toolbar has only its 12pt.
+    func alignedWithRowChecks() -> some View { padding(.leading, RowCheckbox.listInset) }
+}
+
+extension RowCheckbox {
+    /// What `.listStyle(.inset)` adds before a row's content on macOS 26, measured on screen.
+    static let listInset: CGFloat = 7
+}

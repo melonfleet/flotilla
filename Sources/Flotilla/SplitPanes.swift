@@ -411,15 +411,25 @@ extension FocusedValues {
 ///
 /// Its glyph is the layout a click **switches to**, as the expand button's is: `rectangle` while the
 /// split is showing (go to the rows alone) and `rectangle.split.2x1` while the rows are alone.
+/// The two layouts side by side, the current one lit, like Finder's view buttons (Kamal, 23 October).
+/// It replaced one button whose glyph was the layout you'd switch *to*: a bare square by default,
+/// which read as an empty checkbox beside the real one.
 struct PaneModeButton: View {
     @Environment(\.paneModeControl) private var control
 
     var body: some View {
         if let control {
-            let toList = control.mode == .twoPanes
-            let label = toList ? "Show List Only" : "Show Two Panes"
-            IconActionButton(systemImage: toList ? "rectangle" : "rectangle.split.2x1",
-                             label: label, help: label, action: control.toggle)
+            ActionCluster {
+                segment(.listOnly, systemImage: "line.3.horizontal", label: "Show List Only", control)
+                segment(.twoPanes, systemImage: "rectangle.split.2x1", label: "Show Two Panes", control)
+            }
+        }
+    }
+
+    private func segment(_ mode: PaneMode, systemImage: String, label: String,
+                         _ control: PaneModeControl) -> some View {
+        IconActionButton(systemImage: systemImage, label: label, help: label, active: control.mode == mode) {
+            if control.mode != mode { control.toggle() }
         }
     }
 }

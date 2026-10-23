@@ -1305,8 +1305,9 @@ struct ContainersView: View {
                        leading: {
             // At the left, above the rows' checkboxes. It covers what is on screen — closed groups'
             // members are not, so it does not reach into them.
-            PaneModeButton()
             SelectAllCheckbox(selection: $selection, ids: selectableIDs, noun: "containers and groups")
+                .alignedWithRowChecks()
+            PaneModeButton()
 
             // Sort replaces the table's clickable headers, which the rows do not have.
             RowSortMenu(key: $ui.sortKey, ascending: $ui.sortAscending)

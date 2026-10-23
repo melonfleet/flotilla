@@ -63,8 +63,9 @@ struct SuggestionsView: View {
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                PaneModeButton()
                 SelectAllCheckbox(selection: $ui.selection, ids: shownIDs, noun: "suggestions")
+                    .alignedWithRowChecks()
+                PaneModeButton()
                 Picker("Category", selection: $ui.category) {
                     Text("All categories").tag(String?.none)
                     ForEach(SuggestionLibrary.categories.filter { name in library.entries.contains { $0.categories.contains(name) } }, id: \.self) {

@@ -241,8 +241,9 @@ struct MachinesView: View {
                        matches: displayed.count,
                        updated: model.machinesLastRefresh,
                        leading: {
-            PaneModeButton()
             SelectAllCheckbox(selection: $selection, ids: displayed.map(\.id), noun: "machines")
+                .alignedWithRowChecks()
+            PaneModeButton()
 
             // Replaces the table's clickable headers, as on Containers.
             RowSortMenu(key: Binding(get: { [weak ui] in ui?.sortKey ?? .name },
