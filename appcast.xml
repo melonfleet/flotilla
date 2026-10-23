@@ -5,6 +5,100 @@
     <link>https://melonfleet.github.io/flotilla/appcast.xml</link>
     <language>en</language>
     <item>
+      <title>Flotilla 1.5.0-beta.6</title>
+      <pubDate>Fri, 23 Oct 2026 13:52:26 +0000</pubDate>
+      <sparkle:version>600</sparkle:version>
+      <sparkle:shortVersionString>1.5.0-beta.6</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:channel>beta</sparkle:channel>
+      <description><![CDATA[<style>
+:root { color-scheme: light dark; }
+body { font: 13px -apple-system, system-ui, sans-serif; line-height: 1.45; margin: 12px 16px; }
+h3 { font-size: 13px; margin: 14px 0 4px; }
+p { margin: 6px 0; }
+ul { margin: 4px 0 8px; padding-left: 18px; }
+li { margin: 2px 0; }
+code { font: 12px ui-monospace, Menlo, monospace; }
+a { color: #2C7A7B; }
+@media (prefers-color-scheme: dark) { a { color: #59B3B0; } }
+.more { margin-top: 14px; font-size: 12px; opacity: 0.8; }
+</style>
+<p>Flotilla is a native Mac app for Apple's <code>container</code>: run and manage Linux containers on this Mac, and on a fleet of Macs from one admin Mac.</p>
+<p><strong>This is a beta</strong>, built and tested against <code>container</code> 1.5.0. Expect rough edges, and please report what you find.</p>
+<h3>Requirements</h3>
+<ul>
+<li>A Mac with Apple silicon, macOS 26 or later.</li>
+<li>Apple's <code>container</code> 1.5.0. Flotilla offers to download and install it on first run, through Apple's own Installer.</li>
+</ul>
+<h3>Version</h3>
+<p>This is <strong>Flotilla 1.5.0-beta.6, tested with container 1.5.0</strong>. About in Settings says both, and the status bar shows the version. Updates still work as before: Flotilla orders its builds by build number, not by the label.</p>
+<h3>What's new since beta 5</h3>
+<p><strong>A modular Overview.</strong></p>
+<ul>
+<li>The Overview is now a page of widgets that you choose, arrange and resize. Flotilla keeps your layout for each Mac.</li>
+<li>The notifications band stays fixed at the top. It can't be moved or removed. It says "Nothing needs attention", or shows one notice at a time, with a link to All Notifications. If <code>container</code> needs setting up, that banner sits above it.</li>
+<li>Get started is the same full-width card as before, under the band. Close it with its own ✕. A Mac that already closed it doesn't get it back.</li>
+<li>The widgets are Fleet at a glance, Hosts, Containers, Vulnerabilities, Activity, Machines, Kubernetes, DNS, Storage, Tasks, Images, Networks and Suggestions. A new Mac starts with the first seven.</li>
+<li>Every widget comes in four shapes: Small, Wide, Tall and Large. Each shape is its own layout of the same information, not a crop. Small is a figure, Wide adds a few rows, Tall is a list, and Large is a list with more detail on each row.</li>
+<li>Every widget has a ⋯ menu for its size and for <strong>Show</strong>, a choice of what it lists. For example, Containers shows Running, All, Stopped or By Host. Hosts shows All or Problems. Images shows Newest, Largest or With Vulnerabilities. Storage has no choice. The widget's title names a choice other than the usual one, such as "Containers · Stopped".</li>
+<li>Click a widget to open its section, already set to match what the widget showed.</li>
+<li><strong>Add Widget</strong> is a menu with a tick beside every widget on the page. Tick one to add it. Untick it to remove it. There is one widget of each kind.</li>
+<li><strong>Edit Widgets</strong> puts a ✕, a size control and a resize handle on every widget, and opens a panel with the same ticks. <strong>Reset to Recommended</strong> and <strong>Done</strong> are at the top.</li>
+<li>Move a widget without Edit mode. Hover it and drag the grip of dots at its top left. The others move out of the way.</li>
+<li>With no widgets, the page offers to add some, or to use the recommended layout.</li>
+<li>Widgets can be moved, resized and removed with VoiceOver actions or the right-click menu, so none of it needs a drag.</li>
+<li>A wider window gets more columns instead of stretched widgets, and a narrow one never pushes Done or the sidebar out of the window.</li>
+</ul>
+<p><strong>The status bar.</strong></p>
+<ul>
+<li>Beside the version it now says when Flotilla last refreshed, and, with more than one Mac, how many answered: "Updated just now · 2 of 6 Macs connected". It counts Macs that are connected, not every Mac you have added. It shows on every page. It no longer sits in the Overview.</li>
+</ul>
+<p><strong>Lists.</strong></p>
+<ul>
+<li>The toolbar above every list starts with the select-all checkbox, lined up over the rows' own checkboxes.</li>
+<li>The pane switch is now two buttons on one glass bar, as in Finder: list only, or two panes. The one in use is lit.</li>
+</ul>
+<p><strong>Logos that need a credit.</strong></p>
+<ul>
+<li>Flotilla can now show a logo whose owner asks for an attribution. The credit shows at the foot of Suggestions and of the Add Service picker, and in Settings ▸ About.</li>
+<li>Redis Ltd has given permission for its logo. It appears once the suggestions library that carries it is published. Until then Redis shows its category symbol. Beta 5 keeps showing the symbol even after, because only beta 6 reads the new logo and its credit.</li>
+</ul>
+<h3>What testers must do</h3>
+<ul>
+<li><strong>Look at the new Overview.</strong> Add, remove, resize and drag a few widgets, quit and reopen Flotilla, and check that the layout is kept.</li>
+<li><strong>Hosts.</strong> Update the admin Mac first. It then updates its hosts by itself, one at a time, when each is idle.</li>
+<li><strong>Helper.</strong> If macOS asks, approve the Flotilla Helper in System Settings ▸ General ▸ Login Items &amp; Extensions.</li>
+</ul>
+<h3>Downloads</h3>
+<ul>
+<li><code>Flotilla-1.5.0-beta.6.dmg</code>: drag Flotilla to Applications.</li>
+<li><code>Flotilla-1.5.0-beta.6.pkg</code>: for MDM and scripted installs.</li>
+<li><code>Flotilla-1.5.0-beta.6.zip</code> and <code>.tar.gz</code>: the same signed, notarised app.</li>
+</ul>
+<h3>Updating from beta 5</h3>
+<p>Flotilla updates itself through Sparkle. Your settings, groups and paired Macs are kept. The Overview starts with the recommended widgets, because beta 5 had no layout to carry over.</p>
+<h3>Known limits</h3>
+<ul>
+<li>Your widget layout belongs to one Mac. It isn't shared with the Macs you manage, and a host has its own.</li>
+<li>There is one widget of each kind. You can't have two Containers widgets.</li>
+<li>Redis's logo needs the library that carries it. Until that is published, Redis shows its category symbol.</li>
+<li>A new host needs one click on macOS's local network prompt; a configuration profile cannot grant it.</li>
+<li>Containers on different Macs reach each other through published ports only.</li>
+<li>A cluster on a host is reached with <code>kubectl</code> on that host.</li>
+<li>Creating a cluster on a host shows no progress until it finishes, which can take several minutes.</li>
+<li>The Docker Hub browser searches Docker Hub only.</li>
+<li>With *Show Flotilla in: Menu bar*, a window still opens at login.</li>
+<li>Vulnerability reports cover the library's images only, not images you built or pulled elsewhere.</li>
+<li>Dictation needs a language Apple's speech recognition offers on the Mac. Otherwise the button is off.</li>
+<li>Files can't change a machine's files, or another Mac's containers.</li>
+<li>A machine's update check can start a machine that was just stopped.</li>
+<li>Machine update checks cover Alpine and AlmaLinux only.</li>
+<li>Tasks can't be paused, and a run, a stack or a machine create can't be cancelled or retried. A run's task can Stop the container it made.</li>
+</ul>
+<p class="more"><a href="https://github.com/melonfleet/flotilla/releases/tag/v1.5.0-beta.6">Full release on GitHub</a></p>]]></description>
+      <enclosure url="https://github.com/melonfleet/flotilla/releases/download/v1.5.0-beta.6/Flotilla-1.5.0-beta.6.zip" type="application/octet-stream" sparkle:edSignature="nNLLW1EoeOMkEgpCYIgH0+WST89M8YdFjG/gxSZ2zNidqD+xZFIkGrG3OT/BZvUf6qDcQ3ovrtH0TrIH3L03AQ==" length="17546903"/>
+    </item>
+    <item>
       <title>Flotilla 1.5.0-beta.5</title>
       <pubDate>Tue, 20 Oct 2026 09:26:52 +0000</pubDate>
       <sparkle:version>586</sparkle:version>
