@@ -21,7 +21,7 @@ struct OverviewLayoutTests {
     @Test("Get started is the card above the grid, not a widget (round 2)")
     func getStartedIsNotAWidget() {
         #expect(OverviewWidgetKind(rawValue: "getStarted") == nil)
-        #expect(OverviewLayout().missing.allSatisfy { $0.rawValue != "getStarted" })
+        #expect(OverviewLayout().addable.allSatisfy { $0.rawValue != "getStarted" })
     }
 
     @Test("a layout saved while Get started was a widget loads without it, keeping the rest")
@@ -32,8 +32,8 @@ struct OverviewLayoutTests {
             ["widget": "hosts", "size": "wide"],
         ])
         #expect(layout.kinds == [.fleet, .hosts])
-        #expect(layout.size(of: .fleet) == .large)
-        #expect(layout.size(of: .hosts) == .wide)
+        #expect(layout.widget("fleet")?.size == .large)
+        #expect(layout.widget("hosts")?.size == .wide)
         // What the store writes back at load: the plist no longer names it.
         #expect(!layout.storage.contains { $0["widget"] == "getStarted" })
         #expect(OverviewLayout(storage: [["widget": "getStarted", "size": "wide"]]).isEmpty)
@@ -45,112 +45,244 @@ struct OverviewLayoutTests {
         #expect(OverviewWidgetKind(rawValue: "needsAttention") == nil)
     }
 
-    @Test("every widget's default size is one it offers, and each offers at least one")
+    @Test("every widget offers all four sizes, and its defaults are ones it offers (round 3)")
     func sizesAreConsistent() {
         for kind in OverviewWidgetKind.allCases {
-            #expect(!kind.sizes.isEmpty)
+            #expect(kind.sizes == [.small, .wide, .tall, .large], "\(kind)")
             #expect(kind.sizes.contains(kind.defaultSize), "\(kind)")
-            #expect(Set(kind.sizes).count == kind.sizes.count, "\(kind)")
         }
+    }
+
+    @Test("default sizes are round 2's, so the recommended page looks as it did")
+    func defaultSizesUnchanged() {
+        #expect(OverviewWidgetKind.fleet.defaultSize == .wide)
+        #expect(OverviewWidgetKind.hosts.defaultSize == .large)
+        #expect(OverviewWidgetKind.containers.defaultSize == .tall)
+        #expect(OverviewWidgetKind.activity.defaultSize == .tall)
+        #expect(OverviewWidgetKind.machines.defaultSize == .small)
+        #expect(OverviewWidgetKind.dns.defaultSize == .small)
+    }
+
+    // MARK: Show
+
+    @Test("the Show choices are Kamal's, in his order")
+    func showChoices() {
+        #expect(OverviewWidgetKind.containers.shows == [.running, .all, .stopped, .byHost])
+        #expect(OverviewWidgetKind.hosts.shows == [.all, .problems, .thisSite])
+        #expect(OverviewWidgetKind.images.shows == [.newest, .largest, .vulnerable])
+        #expect(OverviewWidgetKind.activity.shows == [.everything, .problems, .thisMac])
+        #expect(OverviewWidgetKind.vulnerabilities.shows == [.totals, .worst])
+        #expect(OverviewWidgetKind.fleet.shows == [.counts, .load, .both])
+        #expect(OverviewWidgetKind.machines.shows == [.all, .running])
+        #expect(OverviewWidgetKind.kubernetes.shows == [.all, .ready])
+        #expect(OverviewWidgetKind.dns.shows == [.all, .forContainers])
+        #expect(OverviewWidgetKind.networks.shows == [.all, .userDefined])
+        #expect(OverviewWidgetKind.tasks.shows == [.all, .running])
+        #expect(OverviewWidgetKind.suggestions.shows == [.stacks, .apps])
+        // No meaningful second choice: no menu at all, rather than a menu of one.
+        #expect(OverviewWidgetKind.storage.shows.isEmpty)
+        #expect(OverviewWidgetKind.storage.defaultShow == nil)
+    }
+
+    @Test("every default choice is one the widget offers, and no widget offers a single choice")
+    func showDefaultsConsistent() {
+        for kind in OverviewWidgetKind.allCases {
+            #expect(kind.shows.count != 1, "\(kind)")
+            #expect(Set(kind.shows).count == kind.shows.count, "\(kind)")
+            if let show = kind.defaultShow { #expect(kind.shows.contains(show), "\(kind)") }
+            #expect((kind.defaultShow == nil) == kind.shows.isEmpty, "\(kind)")
+        }
+        // What round 2 drew: every container, counts with load, stacks.
+        #expect(OverviewWidgetKind.containers.defaultShow == .all)
+        #expect(OverviewWidgetKind.fleet.defaultShow == .both)
+        #expect(OverviewWidgetKind.suggestions.defaultShow == .stacks)
+    }
+
+    @Test("every choice is offered by some widget")
+    func everyChoiceIsUsed() {
+        let offered = Set(OverviewWidgetKind.allCases.flatMap(\.shows))
+        #expect(offered == Set(OverviewWidgetShow.allCases))
+    }
+
+    @Test("setShow takes only a choice the widget offers")
+    func setShow() {
+        var layout = OverviewLayout.recommended
+        layout.setShow("containers", to: .stopped)
+        #expect(layout.widget("containers")?.show == .stopped)
+        layout.setShow("containers", to: .largest)
+        #expect(layout.widget("containers")?.show == .stopped)
+        layout.setShow("nothing", to: .stopped)  // no such widget: a no-op
+        #expect(layout.widgets.count == OverviewLayout.recommended.widgets.count)
+        var storage = OverviewLayout([OverviewWidget(.storage)])
+        storage.setShow("storage", to: .all)
+        #expect(storage.widget("storage")?.show == nil)
+    }
+
+    @Test("cycleShow steps through the choices and wraps; a widget with none is left alone")
+    func cycleShow() {
+        var layout = OverviewLayout([OverviewWidget(.images), OverviewWidget(.storage)])
+        var seen: [OverviewWidgetShow?] = []
+        for _ in 0..<3 {
+            layout.cycleShow("images")
+            seen.append(layout.widget("images")?.show)
+        }
+        #expect(seen == [.largest, .vulnerable, .newest])
+        layout.cycleShow("storage")
+        #expect(layout.widget("storage")?.show == nil)
+    }
+
+    @Test("the title names the choice only when it isn't the default")
+    func titles() {
+        #expect(OverviewWidget(.containers).title == "Containers")
+        #expect(OverviewWidget(.containers, show: .stopped).title == "Containers · Stopped")
+        #expect(OverviewWidget(.containers, show: .running).title == "Containers · Running")
+        #expect(OverviewWidget(.hosts, show: .problems).title == "Hosts · Problems")
+        #expect(OverviewWidget(.storage).title == "Storage")
+        #expect(OverviewWidget(.images, show: .apps).title == "Images")  // not offered → default
     }
 
     // MARK: Editing
 
-    @Test("add appends at the default size, and missing lists what is not on the page")
-    func addAndMissing() {
+    @Test("add appends at the default size and choice, and every kind stays addable")
+    func addAndAddable() {
         var layout = OverviewLayout()
-        #expect(layout.missing == OverviewWidgetKind.allCases)
+        #expect(layout.addable == OverviewWidgetKind.allCases)
         layout.add(.dns)
-        layout.add(.hosts)
+        let hosts = layout.add(.hosts)
         #expect(layout.kinds == [.dns, .hosts])
-        #expect(layout.size(of: .hosts) == .large)
-        #expect(!layout.missing.contains(.dns))
-        #expect(layout.missing.count == OverviewWidgetKind.allCases.count - 2)
+        #expect(layout.widget(hosts)?.size == .large)
+        #expect(layout.widget(hosts)?.show == .all)
+        #expect(layout.addable == OverviewWidgetKind.allCases)
     }
 
-    @Test("adding a widget already on the page moves it rather than duplicating it")
-    func addIsUnique() {
+    @Test("the same kind can be added again, as a second instance with its own id (round 3)")
+    func addDuplicates() {
         var layout = OverviewLayout.recommended
-        layout.add(.kubernetes, at: 0)
-        #expect(layout.kinds.first == .kubernetes)
-        #expect(layout.kinds.filter { $0 == .kubernetes }.count == 1)
-        #expect(layout.widgets.count == OverviewLayout.recommended.widgets.count)
+        let second = layout.add(.containers, show: .stopped)
+        let third = layout.add(.containers, at: 0, size: .small, show: .running)
+        #expect(second == "containers-2")
+        #expect(third == "containers-3")
+        #expect(layout.kinds.filter { $0 == .containers }.count == 3)
+        #expect(layout.widgets.first?.id == "containers-3")
+        #expect(layout.widget("containers")?.show == .all)
+        #expect(layout.widget(second)?.show == .stopped)
+        #expect(layout.widget(third)?.size == .small)
+        // Changing one instance leaves the others alone.
+        layout.resize(second, to: .large)
+        layout.setShow(third, to: .byHost)
+        #expect(layout.widget("containers")?.size == .tall)
+        #expect(layout.widget("containers")?.show == .all)
+        #expect(Set(layout.widgets.map(\.id)).count == layout.widgets.count)
     }
 
-    @Test("add at an index clamps, and honours only a size the widget offers")
+    @Test("a freed id is reused, and ids never collide")
+    func idReuse() {
+        var layout = OverviewLayout()
+        layout.add(.images)
+        let b = layout.add(.images)
+        layout.add(.images)
+        layout.remove(b)
+        #expect(layout.add(.images) == "images-2")
+        layout.remove("images")
+        #expect(layout.add(.images) == "images")
+        #expect(Set(layout.widgets.map(\.id)).count == 3)
+    }
+
+    @Test("init renames a repeated id rather than keeping two widgets under it")
+    func initDedupesIDs() {
+        let layout = OverviewLayout([OverviewWidget(.hosts), OverviewWidget(.hosts, .small, show: .problems)])
+        #expect(layout.widgets.map(\.id) == ["hosts", "hosts-2"])
+        #expect(layout.widgets[1].size == .small)
+        #expect(layout.widgets[1].show == .problems)
+    }
+
+    @Test("add at an index clamps, and honours a size and a choice")
     func addAtIndexAndSize() {
         var layout = OverviewLayout([OverviewWidget(.fleet), OverviewWidget(.hosts)])
         layout.add(.tasks, at: 1, size: .tall)
         layout.add(.storage, at: 99, size: .large)
-        layout.add(.images, at: -5)
+        layout.add(.images, at: -5, show: .largest)
         #expect(layout.kinds == [.images, .fleet, .tasks, .hosts, .storage])
-        #expect(layout.size(of: .tasks) == .tall)
-        #expect(layout.size(of: .storage) == .small)
+        #expect(layout.widget("tasks")?.size == .tall)
+        #expect(layout.widget("storage")?.size == .large)
+        #expect(layout.widget("images")?.show == .largest)
     }
 
-    @Test("remove takes the widget off and nothing else")
+    @Test("remove takes that instance off and nothing else")
     func remove() {
         var layout = OverviewLayout.recommended
-        layout.remove(.hosts)
-        layout.remove(.dns)  // not on the page: a no-op
-        #expect(!layout.contains(.hosts))
-        #expect(layout.widgets.count == OverviewLayout.recommended.widgets.count - 1)
+        let extra = layout.add(.hosts, show: .problems)
+        layout.remove("hosts")
+        layout.remove("dns")  // not on the page: a no-op
+        #expect(!layout.contains(id: "hosts"))
+        #expect(layout.contains(.hosts))
+        #expect(layout.widget(extra)?.show == .problems)
+        #expect(layout.widgets.count == OverviewLayout.recommended.widgets.count)
     }
 
-    @Test("resize accepts only the sizes a widget offers")
+    @Test("resize takes every size for every kind")
     func resize() {
-        var layout = OverviewLayout.recommended
-        layout.resize(.containers, to: .small)
-        #expect(layout.size(of: .containers) == .small)
-        layout.resize(.containers, to: .large)
-        #expect(layout.size(of: .containers) == .small)
-        layout.resize(.dns, to: .small)  // not on the page
-        #expect(!layout.contains(.dns))
+        var layout = OverviewLayout(OverviewWidgetKind.allCases.map { OverviewWidget($0) })
+        for kind in OverviewWidgetKind.allCases {
+            for size in OverviewWidgetSize.allCases {
+                layout.resize(kind.rawValue, to: size)
+                #expect(layout.widget(kind.rawValue)?.size == size, "\(kind) \(size)")
+            }
+        }
+        layout.resize("nothing", to: .small)
+        #expect(layout.widgets.count == OverviewWidgetKind.allCases.count)
     }
 
-    @Test("cycleSize steps through the offered sizes and wraps")
+    @Test("cycleSize steps through all four sizes and wraps")
     func cycleSize() {
-        var layout = OverviewLayout([OverviewWidget(.fleet, .small), OverviewWidget(.storage)])
-        layout.cycleSize(.fleet)
-        #expect(layout.size(of: .fleet) == .wide)
-        layout.cycleSize(.fleet)
-        #expect(layout.size(of: .fleet) == .large)
-        layout.cycleSize(.fleet)
-        #expect(layout.size(of: .fleet) == .small)
-        layout.cycleSize(.storage)
-        #expect(layout.size(of: .storage) == .small)
+        var layout = OverviewLayout([OverviewWidget(.storage)])
+        var seen: [OverviewWidgetSize] = []
+        for _ in 0..<4 {
+            layout.cycleSize("storage")
+            seen.append(layout.widget("storage")!.size)
+        }
+        #expect(seen == [.wide, .tall, .large, .small])
     }
 
     @Test("move earlier and later step one place and stop at the ends")
     func moveSteps() {
         var layout = OverviewLayout([OverviewWidget(.fleet), OverviewWidget(.hosts), OverviewWidget(.dns)])
-        layout.moveEarlier(.fleet)
+        layout.moveEarlier("fleet")
         #expect(layout.kinds == [.fleet, .hosts, .dns])
-        layout.moveLater(.fleet)
+        layout.moveLater("fleet")
         #expect(layout.kinds == [.hosts, .fleet, .dns])
-        layout.moveLater(.dns)
+        layout.moveLater("dns")
         #expect(layout.kinds == [.hosts, .fleet, .dns])
-        layout.moveEarlier(.dns)
+        layout.moveEarlier("dns")
         #expect(layout.kinds == [.hosts, .dns, .fleet])
-        layout.move(.hosts, to: 42)
+        layout.move("hosts", to: 42)
         #expect(layout.kinds == [.dns, .fleet, .hosts])
     }
 
-    @Test("reset restores the recommended layout")
+    @Test("moving one of two instances of a kind moves only that one")
+    func moveInstance() {
+        var layout = OverviewLayout([OverviewWidget(.containers), OverviewWidget(.dns)])
+        let second = layout.add(.containers, show: .stopped)
+        layout.move(second, to: 0)
+        #expect(layout.widgets.map(\.id) == [second, "containers", "dns"])
+    }
+
+    @Test("reset restores the recommended layout, which then counts as recommended")
     func reset() {
         var layout = OverviewLayout([OverviewWidget(.dns)])
+        layout.add(.containers, show: .stopped)
         layout.reset()
         #expect(layout == .recommended)
     }
 
-    @Test("the resize grip lands on the nearest offered size")
+    @Test("the resize grip lands on the nearest size")
     func nearestSize() {
-        #expect(OverviewWidgetKind.hosts.nearestSize(columns: 1, rows: 1) == .wide)
+        #expect(OverviewWidgetKind.hosts.nearestSize(columns: 1, rows: 1) == .small)
         #expect(OverviewWidgetKind.hosts.nearestSize(columns: 3, rows: 3) == .large)
-        #expect(OverviewWidgetKind.containers.nearestSize(columns: 2, rows: 2) == .tall)
-        #expect(OverviewWidgetKind.containers.nearestSize(columns: 2, rows: 1) == .small)
-        #expect(OverviewWidgetKind.fleet.nearestSize(columns: 2, rows: 1) == .wide)
-        #expect(OverviewWidgetKind.dns.nearestSize(columns: 2, rows: 2) == .small)
+        #expect(OverviewWidgetKind.containers.nearestSize(columns: 2, rows: 2) == .large)
+        #expect(OverviewWidgetKind.containers.nearestSize(columns: 2, rows: 1) == .wide)
+        #expect(OverviewWidgetKind.dns.nearestSize(columns: 1, rows: 2) == .tall)
+        #expect(OverviewWidgetKind.dns.nearestSize(columns: 0, rows: 0) == .small)
     }
 
     // MARK: Reflow
@@ -186,10 +318,17 @@ struct OverviewLayoutTests {
     @Test("nothing overlaps on any width, and every widget is placed")
     func noOverlapAnyWidth() {
         let all = OverviewLayout(OverviewWidgetKind.allCases.map { OverviewWidget($0, $0.sizes.last) })
+        // Every kind at every size, twice over — duplicates included (round 3).
+        var mixed = OverviewLayout()
+        for (i, kind) in (OverviewWidgetKind.allCases + OverviewWidgetKind.allCases).enumerated() {
+            mixed.add(kind, size: OverviewWidgetSize.allCases[i % 4])
+        }
         for columns in 0...9 {
             assertNoOverlap(.recommended, columns: columns)
             assertNoOverlap(all, columns: columns)
+            assertNoOverlap(mixed, columns: columns)
             #expect(all.placements(columns: columns).count == OverviewWidgetKind.allCases.count)
+            #expect(Set(mixed.placements(columns: columns).map(\.id)).count == mixed.widgets.count)
         }
     }
 
@@ -221,23 +360,54 @@ struct OverviewLayoutTests {
     @Test("a drop on a widget takes its place; on an empty cell, the end")
     func insertionIndex() {
         let layout = OverviewLayout.recommended
-        #expect(layout.insertionIndex(column: 3, row: 1, columns: 4) == layout.index(of: .hosts))
+        #expect(layout.insertionIndex(column: 3, row: 1, columns: 4) == layout.index(of: "hosts"))
         #expect(layout.insertionIndex(column: 3, row: 9, columns: 4) == layout.widgets.count)
         // Dragging Hosts over itself is not a target; over empty space it goes last.
-        #expect(layout.insertionIndex(column: 3, row: 1, columns: 4, ignoring: .hosts) == layout.widgets.count - 1)
-        #expect(layout.insertionIndex(column: 3, row: 9, columns: 4, ignoring: .hosts) == layout.widgets.count - 1)
-        #expect(layout.insertionIndex(column: 0, row: 2, columns: 4, ignoring: .hosts) == layout.index(of: .containers))
+        #expect(layout.insertionIndex(column: 3, row: 1, columns: 4, ignoring: "hosts") == layout.widgets.count - 1)
+        #expect(layout.insertionIndex(column: 3, row: 9, columns: 4, ignoring: "hosts") == layout.widgets.count - 1)
+        #expect(layout.insertionIndex(column: 0, row: 2, columns: 4, ignoring: "hosts") == layout.index(of: "containers"))
     }
 
     // MARK: Storage
 
-    @Test("the plist form round-trips")
+    @Test("the plist form round-trips, instances and choices included")
     func roundTrip() {
         var layout = OverviewLayout.recommended
-        layout.resize(.fleet, to: .large)
-        layout.add(.suggestions, at: 2, size: .wide)
+        layout.resize("fleet", to: .large)
+        layout.setShow("fleet", to: .load)
+        layout.add(.suggestions, at: 2, size: .wide, show: .apps)
+        layout.add(.containers, size: .small, show: .stopped)
+        layout.add(.storage, size: .tall)
         #expect(OverviewLayout(storage: layout.storage) == layout)
-        #expect(layout.storage.first == ["widget": "fleet", "size": "large"])
+        #expect(layout.storage.first == ["id": "fleet", "widget": "fleet", "size": "large", "show": "load"])
+        #expect(layout.storage.last == ["id": "storage", "widget": "storage", "size": "tall"])
+        #expect(layout.storage.contains(["id": "containers-2", "widget": "containers", "size": "small", "show": "stopped"]))
+    }
+
+    @Test("a round-2 layout migrates: same order, same sizes, default choices, kind names as ids")
+    func migratesRoundTwo() {
+        let saved: [[String: String]] = [
+            ["widget": "fleet", "size": "large"],
+            ["widget": "hosts", "size": "wide"],
+            ["widget": "containers", "size": "small"],
+            ["widget": "activity", "size": "tall"],
+            ["widget": "storage", "size": "small"],
+            ["widget": "suggestions", "size": "wide"],
+        ]
+        let layout = OverviewLayout(storage: saved)
+        #expect(layout.kinds == [.fleet, .hosts, .containers, .activity, .storage, .suggestions])
+        #expect(layout.widgets.map(\.size) == [.large, .wide, .small, .tall, .small, .wide])
+        #expect(layout.widgets.map(\.id) == ["fleet", "hosts", "containers", "activity", "storage", "suggestions"])
+        #expect(layout.widgets.map(\.show) == [.both, .all, .all, .everything, nil, .stacks])
+        // The store writes the migration back at load: the new form differs from what was read.
+        #expect(layout.storage != saved)
+        #expect(OverviewLayout(storage: layout.storage) == layout)
+    }
+
+    @Test("a round-2 recommended layout migrates to exactly today's recommended one")
+    func migratesRecommended() {
+        let roundTwo = OverviewLayout.recommended.widgets.map { ["widget": $0.kind.rawValue, "size": $0.size.rawValue] }
+        #expect(OverviewLayout(storage: roundTwo) == .recommended)
     }
 
     @Test("an empty plist is an empty page, not the recommended one")
@@ -248,16 +418,24 @@ struct OverviewLayoutTests {
     @Test("a hand-edited plist keeps what it can")
     func tolerantDecoding() {
         let layout = OverviewLayout(storage: [
-            ["widget": "hosts", "size": "small"],      // not offered → default
-            ["widget": "needsAttention", "size": "small"], // not a widget → dropped
-            ["widget": "dns"],                           // no size → default
-            ["widget": "hosts", "size": "wide"],         // duplicate → first kept
-            ["size": "large"],                           // no widget → dropped
-            ["widget": "containers", "size": "huge"],    // unknown size → default
+            ["widget": "hosts", "size": "small", "show": "problems"],
+            ["widget": "needsAttention", "size": "small"],          // not a widget → dropped
+            ["widget": "dns"],                                       // no size → default
+            ["widget": "hosts", "size": "wide"],                     // a second Hosts → kept, own id
+            ["size": "large"],                                       // no widget → dropped
+            ["widget": "containers", "size": "huge", "show": "x"],   // unknown size, choice → defaults
+            ["id": "hosts", "widget": "images", "show": "largest"],  // id taken → fresh id
+            ["id": " ", "widget": "tasks", "show": "stopped"],       // blank id, choice not offered
         ])
-        #expect(layout.kinds == [.hosts, .dns, .containers])
-        #expect(layout.size(of: .hosts) == .large)
-        #expect(layout.size(of: .dns) == .small)
-        #expect(layout.size(of: .containers) == .tall)
+        #expect(layout.kinds == [.hosts, .dns, .hosts, .containers, .images, .tasks])
+        #expect(layout.widgets.map(\.id) == ["hosts", "dns", "hosts-2", "containers", "images", "tasks"])
+        #expect(layout.widgets[0].size == .small)
+        #expect(layout.widgets[0].show == .problems)
+        #expect(layout.widgets[1].size == .small)
+        #expect(layout.widgets[2].size == .wide)
+        #expect(layout.widgets[3].size == .tall)
+        #expect(layout.widgets[3].show == .all)
+        #expect(layout.widgets[4].show == .largest)
+        #expect(layout.widgets[5].show == .all)
     }
 }

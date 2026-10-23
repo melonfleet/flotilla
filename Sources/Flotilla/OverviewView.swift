@@ -6,19 +6,21 @@ import FlotillaCore
 /// From the top: the notifications band, **fixed** — always first, never a widget, never removed
 /// or moved (Kamal's change to the mockups: it does the job their "Needs attention" widget did) —
 /// then Get started, the full-width card it always was (not a widget — Kamal, round 2), then a grid
-/// of widgets the owner chooses, orders and sizes.
+/// of widgets the owner chooses, orders, sizes and points at something (round 3).
 ///
 /// **The grid adds columns on a wider window** rather than stretching tiles, so a full-screen window
 /// on a big display fills with more widgets. A widget is Small 1×1, Wide 2×1, Tall 1×2 or Large
-/// 2×2; `OverviewLayout` packs them in order so nothing overlaps, and it is what is remembered — per
-/// Mac, across launches, in `OverviewLayoutStore`.
+/// 2×2 — every widget offers all four, each its own layout (Kamal, round 3) — and shows what its ⋯
+/// menu's Show says. The same kind may be on the page more than once, so a widget is an instance
+/// with its own id. `OverviewLayout` packs them in order so nothing overlaps, and it is what is
+/// remembered — per Mac, across launches, in `OverviewLayoutStore`.
 ///
 /// **Moving needs no mode** (Kamal, round 2): hovering a widget shows a dot grip at its top left,
 /// and dragging by it reorders the layout, the grid reflowing round it; a click anywhere else still
 /// opens the section. **Edit Widgets** is for the rest — an ×, a size control and a resize grip on
 /// every tile, the whole card draggable, and the Add Widgets panel on the right. VoiceOver gets Move
-/// Earlier, Move Later, Change Size and Remove on every widget, in or out of edit mode, and the
-/// right-click menu offers the same.
+/// Earlier, Move Later, Change Size, Change What It Shows and Remove on every widget, in or out of
+/// edit mode, and the right-click menu and the widget's ⋯ offer the same.
 ///
 /// **Nothing here may be wider than the pane it is given.** The detail column of the window's split
 /// takes any width its content insists on from the sidebar, so content that overflows collapses the
@@ -29,6 +31,8 @@ struct OverviewView: View {
     let containersUI: ContainersUIState
     let machinesUI: MachinesUIState
     let hostsUI: ResourceUIState<HostRow>
+    let dnsUI: ResourceUIState<HostedDNS>
+    let networksUI: ResourceUIState<HostedNetwork>
     let go: (Section) -> Void
 
     @State private var editing = false
@@ -85,25 +89,37 @@ struct OverviewView: View {
         }
     }
 
-    /// A widget's click: its section, filtered to what the widget counted where it counted a subset.
+    /// A widget's click: its section, set to the filter matching what the widget shows — All when
+    /// the widget shows everything, so a filter left on from an earlier visit does not hide rows the
+    /// widget just listed.
     private func open(_ link: OverviewLink) {
         switch link {
         case .section(let section):
             go(section)
-        case .runningContainers:
+        case .containers(let filter):
             containersUI.search = ""
             containersUI.kindFilter = .all
             containersUI.hostFilter = nil
-            containersUI.filter = .running
+            containersUI.filter = filter
             go(.containers)
-        case .runningMachines:
+        case .machines(let filter):
             machinesUI.search = ""
-            machinesUI.filter = .running
+            machinesUI.filter = filter
             go(.machines)
-        case .hostsNeedingAttention:
+        case .hosts(let filterID):
             hostsUI.search = ""
-            hostsUI.filterID = "attention"
+            hostsUI.filterID = filterID
             go(.hosts)
+        case .dns(let filterID):
+            dnsUI.search = ""
+            dnsUI.filterID = filterID
+            go(.dns)
+        case .networks(let filterID):
+            networksUI.search = ""
+            networksUI.filterID = filterID
+            go(.networks)
+        case .suggestions(let tab):
+            model.requestSuggestionsTab(tab)
         case .tasks:
             model.tasks.showList()
         }
@@ -141,8 +157,10 @@ struct OverviewView: View {
                 }
             } else {
                 ActionCluster {
+                    // Every kind, always: one already on the page can be added again with another
+                    // Show choice (round 3).
                     Menu {
-                        ForEach(store.layout.missing) { kind in
+                        ForEach(store.layout.addable) { kind in
                             Button { store.update { $0.add(kind) } } label: {
                                 Label(kind.title, systemImage: kind.systemImage)
                             }
@@ -153,8 +171,7 @@ struct OverviewView: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
-                    .disabled(store.layout.missing.isEmpty)
-                    .help(store.layout.missing.isEmpty ? "Every widget is on the Overview" : "Add a widget to the end of the Overview")
+                    .help("Add a widget to the end of the Overview")
                     Button {
                         editing = true
                     } label: {
@@ -170,7 +187,7 @@ struct OverviewView: View {
     }
 
     private var status: String {
-        if editing { return "Drag a widget to move it · pick its size · × removes it" }
+        if editing { return "Drag a widget to move it · pick its size · ⋯ chooses what it shows · × removes it" }
         let macs = 1 + model.hostMode.trustedHosts.count
         let updated = model.lastRefresh.map { "Updated \(OverviewView.checkIn($0))" } ?? "Not refreshed yet"
         return macs > 1 ? "\(updated) · \(macs) Macs" : "\(updated) · This Mac"
@@ -394,12 +411,13 @@ struct OverviewGrid: View {
     @State private var width: CGFloat = 0
     /// The tile being dragged, where it was grabbed, where the pointer is, and the last tile it
     /// swapped with — so hovering over a tile that has just slid away does not swap it straight back.
-    @State private var drag: (kind: OverviewWidgetKind, grab: CGSize, point: CGPoint, lastHit: OverviewWidgetKind?)?
+    /// All keyed by the widget's instance id, not its kind: two Containers widgets drag apart.
+    @State private var drag: (id: String, grab: CGSize, point: CGPoint, lastHit: String?)?
     /// The size a resize started from, so the grip's whole travel is measured from one place.
-    @State private var resizing: (kind: OverviewWidgetKind, from: OverviewWidgetSize)?
+    @State private var resizing: (id: String, from: OverviewWidgetSize)?
     @State private var dropTargeted = false
     /// The tile under the pointer, which shows its grip outside edit mode.
-    @State private var hovered: OverviewWidgetKind?
+    @State private var hovered: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var store: OverviewLayoutStore { model.overviewLayout }
@@ -427,9 +445,9 @@ struct OverviewGrid: View {
         let height = rows > 0 ? CGFloat(rows) * Self.rowHeight + CGFloat(rows - 1) * Self.gap : 0
         let dropTop = height + (rows > 0 ? Self.gap : 0)
         ZStack(alignment: .topLeading) {
-            ForEach(placements, id: \.kind) { placement in
-                if let widget = layout.widgets.first(where: { $0.kind == placement.kind }) {
-                    tile(widget, at: frame(placement))
+            ForEach(placements, id: \.id) { placement in
+                if let widget = layout.widget(placement.id) {
+                    tile(widget, drawn: Self.drawnSize(widget.size, placement), at: frame(placement))
                 }
             }
             if editing {
@@ -469,19 +487,25 @@ struct OverviewGrid: View {
             }
     }
 
+    /// The layout a tile draws: its own size, or the narrower one the grid gave it — a Wide on a
+    /// one-column grid is drawn Small and a Large is drawn Tall, so no layout meets a width it was
+    /// not written for.
+    static func drawnSize(_ size: OverviewWidgetSize, _ placement: OverviewPlacement) -> OverviewWidgetSize {
+        guard placement.columns < size.columns else { return size }
+        return size.rows == 2 ? .tall : .small
+    }
+
     @ViewBuilder
-    private func tile(_ widget: OverviewWidget, at rect: CGRect) -> some View {
-        let kind = widget.kind
-        let dragged = drag?.kind == kind
+    private func tile(_ widget: OverviewWidget, drawn: OverviewWidgetSize, at rect: CGRect) -> some View {
+        let id = widget.id
+        let dragged = drag?.id == id
         let origin = dragged ? CGPoint(x: drag!.point.x - drag!.grab.width, y: drag!.point.y - drag!.grab.height)
                              : rect.origin
-        OverviewWidgetContent(model: model, widget: widget, editing: editing, go: go) {
-            OverviewSizeControl(widget: widget) { size in store.update { $0.resize(kind, to: size) } }
-        }
+        OverviewWidgetContent(model: model, widget: widget, size: drawn, editing: editing, go: go)
         .frame(width: rect.width, height: rect.height)
         .overlay(alignment: .topTrailing) {
             if editing {
-                Button { store.update { $0.remove(kind) } } label: {
+                Button { store.update { $0.remove(id) } } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 17))
                         .symbolRenderingMode(.palette)
@@ -489,12 +513,12 @@ struct OverviewGrid: View {
                 }
                 .buttonStyle(.plain)
                 .offset(x: 7, y: -7)
-                .help("Remove \(kind.title)")
-                .accessibilityLabel("Remove \(kind.title)")
+                .help("Remove \(widget.title)")
+                .accessibilityLabel("Remove \(widget.title)")
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if editing, kind.sizes.count > 1 {
+            if editing {
                 ResizeGrip()
                     .frame(width: 14, height: 14)
                     .padding(6)
@@ -517,7 +541,7 @@ struct OverviewGrid: View {
         // an overlay — a sibling of the card, not inside it — so a click on it never reaches the
         // card's open-the-section tap, and the drag is its own gesture, so it works in normal mode.
         .overlay(alignment: .topLeading) {
-            if editing || hovered == kind || dragged {
+            if editing || hovered == id || dragged {
                 WidgetGrip()
                     .frame(width: 16, height: 30)
                     .contentShape(Rectangle())
@@ -526,11 +550,11 @@ struct OverviewGrid: View {
                     .help("Drag to move")
                     // Move Earlier and Move Later do this without a pointer.
                     .accessibilityHidden(true)
-                    .gesture(moveGesture(kind, rect: rect))
+                    .gesture(moveGesture(id, rect: rect))
             }
         }
         .onHover { inside in
-            if inside { hovered = kind } else if hovered == kind { hovered = nil }
+            if inside { hovered = id } else if hovered == id { hovered = nil }
         }
         .scaleEffect(dragged ? 1.02 : 1)
         .rotationEffect(.degrees(dragged && !reduceMotion ? 1.5 : 0))
@@ -539,39 +563,40 @@ struct OverviewGrid: View {
         .zIndex(dragged ? 1 : 0)
         // While editing the whole card drags; otherwise only the grip does, and a click on the
         // rest of the card opens its section as before.
-        .gesture(moveGesture(kind, rect: rect), including: editing ? .all : .subviews)
+        .gesture(moveGesture(id, rect: rect), including: editing ? .all : .subviews)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(kind.title) widget, \(widget.size.title)")
+        .accessibilityLabel("\(widget.title) widget, \(widget.size.title)")
         .accessibilityActions { arrangeActions(widget) }
         .contextMenu { arrangeActions(widget) }
     }
 
-    /// Move Earlier, Move Later, Change Size and Remove — for VoiceOver and the right-click alike,
-    /// so moving a widget never needs a drag.
+    /// Move Earlier, Move Later, Change Size, Change What It Shows and Remove — for VoiceOver and the
+    /// right-click alike, so changing a widget never needs a drag.
     @ViewBuilder
     private func arrangeActions(_ widget: OverviewWidget) -> some View {
-        let kind = widget.kind
-        let index = store.layout.index(of: kind) ?? 0
-        Button("Move Earlier") { store.update { $0.moveEarlier(kind) } }
+        let id = widget.id
+        let index = store.layout.index(of: id) ?? 0
+        Button("Move Earlier") { store.update { $0.moveEarlier(id) } }
             .disabled(index == 0)
-        Button("Move Later") { store.update { $0.moveLater(kind) } }
+        Button("Move Later") { store.update { $0.moveLater(id) } }
             .disabled(index >= store.layout.widgets.count - 1)
-        if kind.sizes.count > 1 {
-            Button("Change Size") { store.update { $0.cycleSize(kind) } }
+        Button("Change Size") { store.update { $0.cycleSize(id) } }
+        if widget.kind.shows.count > 1 {
+            Button("Change What It Shows") { store.update { $0.cycleShow(id) } }
         }
         Divider()
-        Button("Remove \(kind.title)") { store.update { $0.remove(kind) } }
+        Button("Remove \(widget.title)") { store.update { $0.remove(id) } }
     }
 
-    private func moveGesture(_ kind: OverviewWidgetKind, rect: CGRect) -> some Gesture {
+    private func moveGesture(_ id: String, rect: CGRect) -> some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.space))
             .onChanged { value in
-                if drag?.kind != kind {
-                    drag = (kind, CGSize(width: value.startLocation.x - rect.minX, height: value.startLocation.y - rect.minY),
+                if drag?.id != id {
+                    drag = (id, CGSize(width: value.startLocation.x - rect.minX, height: value.startLocation.y - rect.minY),
                             value.location, nil)
                 }
                 drag?.point = value.location
-                reorder(kind, toward: value.location)
+                reorder(id, toward: value.location)
             }
             .onEnded { _ in
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { drag = nil }
@@ -581,61 +606,61 @@ struct OverviewGrid: View {
     /// Takes the place of the tile under the pointer. The layout reflows round it on every swap, so
     /// tiles slide out of the way and nothing overlaps — the dragged one is drawn at the pointer
     /// until it is let go, then settles into its slot.
-    private func reorder(_ kind: OverviewWidgetKind, toward point: CGPoint) {
+    private func reorder(_ id: String, toward point: CGPoint) {
         let target = cell(at: point)
         let hit = store.layout.placements(columns: columns)
-            .first { $0.kind != kind && $0.contains(column: target.column, row: target.row) }?.kind
+            .first { $0.id != id && $0.contains(column: target.column, row: target.row) }?.id
         guard hit != drag?.lastHit else { return }
         drag?.lastHit = hit
         guard let hit, let index = store.layout.index(of: hit) else { return }
-        store.update { $0.move(kind, to: index) }
+        store.update { $0.move(id, to: index) }
     }
 
     private func resizeGesture(_ widget: OverviewWidget) -> some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.space))
             .onChanged { value in
-                if resizing?.kind != widget.kind { resizing = (widget.kind, widget.size) }
+                if resizing?.id != widget.id { resizing = (widget.id, widget.size) }
                 guard let from = resizing?.from else { return }
                 let columns = from.columns + Int((value.translation.width / (cellWidth + Self.gap)).rounded())
                 let rows = from.rows + Int((value.translation.height / (Self.rowHeight + Self.gap)).rounded())
                 let size = widget.kind.nearestSize(columns: columns, rows: rows)
-                store.update { $0.resize(widget.kind, to: size) }
+                store.update { $0.resize(widget.id, to: size) }
             }
             .onEnded { _ in resizing = nil }
     }
 }
 
-/// The size buttons in a tile's header while editing: S, Wide, Tall, L — only the ones it offers.
+/// The size buttons in a tile's header while editing — all four, for every widget (round 3). One
+/// letter each, so the four fit beside the title on a Small tile; the tooltip says the size.
 struct OverviewSizeControl: View {
-    let widget: OverviewWidget
+    let size: OverviewWidgetSize
     let choose: (OverviewWidgetSize) -> Void
 
     var body: some View {
-        if widget.kind.sizes.count > 1 {
-            HStack(spacing: 2) {
-                ForEach(widget.kind.sizes, id: \.self) { size in
-                    Button(Self.short(size)) { choose(size) }
-                        .buttonStyle(.plain)
-                        .font(.caption2.weight(.medium))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(size == widget.size ? Color.primary.opacity(0.12) : Color.clear, in: Capsule())
-                        .foregroundStyle(size == widget.size ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                        .help("\(size.title), \(size.columns)×\(size.rows)")
-                        .accessibilityLabel(size.title)
-                        .accessibilityAddTraits(size == widget.size ? .isSelected : [])
-                }
+        HStack(spacing: 1) {
+            ForEach(OverviewWidgetSize.allCases, id: \.self) { option in
+                Button(Self.short(option)) { choose(option) }
+                    .buttonStyle(.plain)
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(option == size ? Color.primary.opacity(0.12) : Color.clear, in: Capsule())
+                    .foregroundStyle(option == size ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                    .help("\(option.title), \(option.columns)×\(option.rows)")
+                    .accessibilityLabel(option.title)
+                    .accessibilityAddTraits(option == size ? .isSelected : [])
             }
-            .padding(2)
-            .background(.quaternary.opacity(0.5), in: Capsule())
         }
+        .padding(2)
+        .background(.quaternary.opacity(0.5), in: Capsule())
+        .fixedSize()
     }
 
     static func short(_ size: OverviewWidgetSize) -> String {
         switch size {
         case .small: "S"
-        case .wide: "Wide"
-        case .tall: "Tall"
+        case .wide: "W"
+        case .tall: "T"
         case .large: "L"
         }
     }
@@ -679,8 +704,8 @@ struct ResizeGrip: View {
 
 // MARK: - Add Widgets
 
-/// The panel on the right while editing: every widget not on the page, each with + and draggable
-/// onto the grid.
+/// The panel on the right while editing: every kind of widget — including ones already on the page,
+/// which can be added again (round 3) — each with + and draggable onto the grid.
 struct AddWidgetsPanel: View {
     let store: OverviewLayoutStore
 
@@ -689,18 +714,13 @@ struct AddWidgetsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Add Widgets").font(.headline)
-            Text("Click + or drag one onto the Overview.")
+            Text("Click + or drag one onto the Overview. Add one more than once to show different things.")
                 .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(3)
                 .padding(.bottom, 8)
             ScrollView {
                 VStack(spacing: 8) {
-                    ForEach(store.layout.missing) { kind in item(kind) }
-                    if store.layout.missing.isEmpty {
-                        Text("Every widget is on the Overview.")
-                            .font(.callout).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 8)
-                    }
+                    ForEach(store.layout.addable) { kind in item(kind) }
                 }
             }
         }
@@ -728,7 +748,8 @@ struct AddWidgetsPanel: View {
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             IconActionButton(systemImage: "plus", label: "Add \(kind.title)",
-                             help: "Add \(kind.title) to the Overview") {
+                             help: store.layout.contains(kind) ? "Add another \(kind.title) widget to the Overview"
+                                                               : "Add \(kind.title) to the Overview") {
                 store.update { $0.add(kind) }
             }
         }

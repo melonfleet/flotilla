@@ -1,7 +1,8 @@
 import SwiftUI
 import FlotillaCore
 
-/// The Overview's live `OverviewLayout`, persisted to the preference domain (DECISIONS Q67).
+/// The Overview's live `OverviewLayout` — each widget's id, kind, size and Show choice — persisted
+/// to the preference domain (DECISIONS Q67).
 ///
 /// **Content, not configuration**, for the reasons `TagStore` gives: an admin seeding or locking
 /// someone's widget arrangement is not a capability worth building, and the layout has no place in
@@ -35,8 +36,10 @@ final class OverviewLayoutStore {
             let entries = stored.compactMap { $0 as? [String: String] }
             layout = OverviewLayout(storage: entries)
             // A layout saved while Get started was a widget still names it; decoding drops it (and
-            // anything else it no longer knows). Written back at load, because an in-memory
-            // migration leaves the stale entry in the plist for ever (CLAUDE.md).
+            // anything else it no longer knows). A round-2 layout has no instance ids or Show
+            // choices; decoding gives each its kind's name and the default (round 3). Either way it
+            // is written back at load, because an in-memory migration leaves the stale entry in the
+            // plist for ever (CLAUDE.md).
             if layout.storage != entries { defaults?.set(layout.storage, forKey: Self.key) }
         } else {
             layout = .recommended

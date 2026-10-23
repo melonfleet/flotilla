@@ -3196,3 +3196,39 @@ widget.**
     panel left the grid overflowing, which pushed Done off screen, the panel past the window's edge
     and the sidebar down to a strip. Every flexible frame there now says `minWidth: 0`, the header's
     words truncate before its actions, and the panel is a fixed 280pt.
+- **Amended 2026-10-23, round 3 (Kamal): every widget is fully flexible — its shape and what it shows.**
+  - **All four sizes for every widget.** `OverviewWidgetKind.sizes` is all four for every kind, and
+    each size is its own layout of the same data, not a crop: Small a figure (and at most one row),
+    Wide the figure beside a few rows, Tall a list of one-line rows, Large a list of two-line rows
+    with the detail a row has room for (Containers: host, image and state). The size control in
+    Edit mode (S W T L, the tooltip naming each) and the resize grip offer all four. Default sizes
+    are round 2's, so the recommended page is unchanged. On a grid narrower than a widget, it draws
+    the narrower layout (Wide as Small, Large as Tall) rather than squeezing its own.
+  - **A Show choice per widget**, from a ⋯ menu on every widget (with Size and Remove beside it),
+    in and out of Edit mode, and Change What It Shows for VoiceOver and the right-click. Containers:
+    Running · All · Stopped · By Host. Hosts: All · Problems · This Mac's Site (offered only while
+    there is a Site category and This Mac has a value in it; a saved choice with no site draws All).
+    Images: Newest · Largest · With Vulnerabilities. Activity: Everything · Problems · This Mac Only.
+    Vulnerabilities: Totals · Worst Images. Fleet at a glance: Counts · Load · Counts and Load.
+    Machines and Tasks: All · Running. Kubernetes: All · Ready. DNS: All · For Containers. Networks:
+    All · User-Defined. Suggestions: Stacks · Apps. **Storage has none:** it is This Mac's disk and
+    two figures, and no second view of them answers a different question. Every choice is a filter
+    or an order over data the app already reads; none adds a command or a poll. Each kind's default
+    is what it drew in round 2 (Containers All, Fleet Counts and Load, Suggestions Stacks). The title
+    names a choice other than the default — "Containers · Stopped".
+  - **A click opens the section set to match** where the section has that filter: Containers
+    Running/Stopped/All, Machines Running/All, Hosts Needs attention/All, DNS For containers/All,
+    Networks User-defined/All, Suggestions on the Stacks or Apps tab. A widget showing everything
+    sets the section to All, so a filter left on from an earlier visit does not hide what it listed.
+    Activity, Images, Kubernetes and Vulnerabilities have no matching filter and open plain.
+  - **Activity's Problems** is an observed transition out of running (to anything but absent) or
+    into failed, error, exited or unknown — never an action Flotilla performed: the feed records no
+    failed actions, so a Stop the owner clicked is not a problem.
+  - **The same widget may be added more than once.** A placed widget is an instance with its own
+    id — the kind's name for the first, `containers-2`, `containers-3` after — so the plist stays
+    readable and the recommended layout is one fixed value. Add Widget and the Add Widgets panel
+    always offer every kind. Every edit (move, resize, Show, remove) is by instance id.
+  - **Storage:** each entry is `id`, `widget`, `size` and `show` (no `show` for Storage). A round-2
+    layout — no id, no show, one of each kind — loads in the same order at the same sizes with the
+    default choices and the kind's name as its id, and the store writes the new form back at load.
+    A repeated or blank id gets a fresh one; an unknown size or choice becomes the default.

@@ -280,7 +280,7 @@ struct MainWindowView: View {
             // Its widgets open Containers, Machines and Hosts filtered, so it is handed their
             // list state too (Q67).
             OverviewView(model: model, containersUI: containersUI, machinesUI: machinesUI,
-                         hostsUI: hostsUI) { navigate(to: $0) }
+                         hostsUI: hostsUI, dnsUI: dnsUI, networksUI: networksUI) { navigate(to: $0) }
         case .hosts:
             // Each host's landing page is the per-Mac dashboard (6 October).
             HostsView(model: model, ui: hostsUI) { navigate(to: $0) }

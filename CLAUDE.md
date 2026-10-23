@@ -34,8 +34,13 @@ questions.
   Processes / Logs / Terminal / Inspect / Configuration, an ↑ ↓ stepper that moves the list's
   selection, and an expand button that widens the page over the list.
 - **The Overview is modular** (Q67, Kamal, 23 October): the notifications band, fixed at the top and
-  never a widget, then a grid of widgets the owner adds, orders and sizes (Small 1×1, Wide 2×1,
-  Tall 1×2, Large 2×2; each offers only the sizes it has more to show in). The grid adds columns on
+  never a widget, then a grid of widgets the owner adds, orders and sizes. **Every widget offers all
+  four sizes** (Small 1×1, Wide 2×1, Tall 1×2, Large 2×2), each its own layout of the same data
+  rather than a crop (round 3), and **a Show choice** from its ⋯ menu — Containers Running · All ·
+  Stopped · By Host, Hosts All · Problems · This Mac's Site, and so on; Storage has none — named in
+  its title ("Containers · Stopped") and matched by the section a click opens where that section has
+  the filter. **The same kind may be placed more than once**, so a widget is an instance with its own
+  id (`containers`, `containers-2`) and every edit is by id. The grid adds columns on
   a wider window rather than stretching tiles. Get started is **not** a widget (round 2): it is the
   original full-width card under the band, closed by its own X (`getStartedDismissed`). Fleet at a
   glance replaced "Across all hosts", and the Hosts widget's rows replaced the striped Hosts table.
@@ -43,8 +48,10 @@ questions.
   Widgets gives every tile an ×, size control and resize grip, and an Add Widgets panel; VoiceOver
   and the right-click move and resize them too. Every flexible frame in the Overview carries
   `minWidth: 0`: content wider than the detail pane takes the width from the sidebar. The rules and reflow are `OverviewLayout` in `FlotillaCore`;
-  `OverviewLayoutStore` keeps it per Mac under `overviewLayout`, plist-native like tags, never in
-  `SettingsStore`. A widget reads what its section already reads and adds no polling.
+  `OverviewLayoutStore` keeps each instance's id, kind, size and Show choice per Mac under
+  `overviewLayout`, plist-native like tags, never in `SettingsStore`, and rewrites a round-2 layout
+  (no ids, no choices) at load. A widget reads what its section already reads and adds no polling;
+  a Show choice is a filter or an order over that, never a new command.
 - **Machines** (the Linux micro-VMs containers run inside) is a peer section under a
   `Virtualisation` sidebar heading, built to the same shapes: two-line rows with
   checkboxes and a Sort menu, state filter, row actions, an embedded create form, and a
