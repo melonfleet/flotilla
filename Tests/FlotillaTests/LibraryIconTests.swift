@@ -56,17 +56,21 @@ import FlotillaCore
         let alpineBytes = try png(width: 2, height: 2)
         let tuxBytes = try png(width: 4, height: 4)
         let k8sBytes = try png(width: 6, height: 6)
+        let redisBytes = try png(width: 5, height: 5)
         let entryIcon = metadata(entryBytes, file: "icons/redis.png")
         let alpineIcon = metadata(alpineBytes, file: "icons/alpine.png")
         let tuxIcon = metadata(tuxBytes, file: "icons/tux.png")
         let k8sIcon = metadata(k8sBytes, file: "icons/k8s.png")
+        let redisIcon = metadata(redisBytes, file: "icons/redis-attributed.png")
+        let redisAttribution = "Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd."
 
         let entry = LibraryEntry(
             id: "redis", title: "Redis", summary: "In-memory store.",
             categories: ["Databases"], kind: .container,
             tested: .init(date: "2026-10-18", macs: 1),
             container: .init(image: "docker.io/library/redis:7.4", name: "redis"),
-            icon: entryIcon
+            icon: entryIcon,
+            attributedIcon: .init(icon: redisIcon, attribution: redisAttribution)
         )
         let library = SuggestionLibrary(
             version: "2026.10.18.2",
@@ -85,6 +89,7 @@ import FlotillaCore
             alpineIcon.file: alpineBytes,
             tuxIcon.file: tuxBytes,
             k8sIcon.file: k8sBytes,
+            redisIcon.file: redisBytes,
         ]
         let suite = "dev.melonfleet.Flotilla.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -112,6 +117,9 @@ import FlotillaCore
         )
 
         #expect(updater.icons[entryIcon.sha256] == entryBytes)
+        // The attributed icon is fetched too, and drawn in preference to the plain one.
+        #expect(updater.icons[redisIcon.sha256] == redisBytes)
+        #expect(entry.logo(in: updater.icons)?.data == redisBytes)
         #expect(AppModel.distributionLogo(for: alpineMachine, in: library, icons: updater.icons) == alpineBytes)
         #expect(AppModel.distributionLogo(for: unknownMachine, in: library, icons: updater.icons) == tuxBytes)
         #expect(AppModel.distributionLogo(for: uninspectedMachine, in: library, icons: updater.icons) == tuxBytes)
@@ -123,7 +131,7 @@ import FlotillaCore
 
         // Cache retention keeps both entry and artwork PNGs and removes unreferenced ones.
         let cachedFiles = Set(try FileManager.default.contentsOfDirectory(atPath: folder.path))
-        let expectedFiles = Set([entryIcon, alpineIcon, tuxIcon, k8sIcon].map { "icon-\($0.sha256).png" })
+        let expectedFiles = Set([entryIcon, redisIcon, alpineIcon, tuxIcon, k8sIcon].map { "icon-\($0.sha256).png" })
         #expect(cachedFiles == expectedFiles)
         #expect(!FileManager.default.fileExists(atPath: staleURL.path))
 
@@ -135,11 +143,14 @@ import FlotillaCore
         #expect(AppModel.distributionLogo(for: unknownMachine, in: library, icons: reloaded.icons) == tuxBytes)
         #expect(AppModel.registryLogo(for: "registry.k8s.io", in: library, icons: reloaded.icons) == k8sBytes)
 
-        #expect(AboutView.logoLines(for: library) == [
+        #expect(AboutView.logoLines(for: library, icons: reloaded.icons) == [
             "Logos are trademarks of their owners and identify the software they name.",
             "Tux by Larry Ewing, Simon Budig and Garrett LeSage (CC0)",
             "Kubernetes logo — The Linux Foundation",
+            redisAttribution,
         ])
+        // Not owed while the attributed logo isn't drawn.
+        #expect(!AboutView.logoLines(for: library, icons: [:]).contains(redisAttribution))
     }
 }
 

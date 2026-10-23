@@ -554,7 +554,7 @@ struct ToolbarSearchDropdown: View {
     private func row(_ item: PaletteItem, isSelected: Bool) -> some View {
         HStack(spacing: 10) {
             if let entry = item.libraryEntry {
-                SuggestionLogo(data: entry.icon.flatMap { model.libraryUpdater.icons[$0.sha256] },
+                SuggestionLogo(data: model.libraryLogo(for: entry),
                                category: entry.categories.first)
                     .scaleEffect(0.5).frame(width: 22, height: 22)
             } else {

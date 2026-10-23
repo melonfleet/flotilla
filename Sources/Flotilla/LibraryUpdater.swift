@@ -194,7 +194,8 @@ final class LibraryUpdater {
     /// Entry and artwork icons, in declaration order. Both share the byte cap, per-icon checks and
     /// cache directory.
     nonisolated private static func allIcons(in library: SuggestionLibrary) -> [LibraryIcon] {
-        library.entries.compactMap(\.icon) + (library.artwork ?? []).map(\.icon)
+        library.entries.flatMap { [$0.attributedIcon?.icon, $0.icon].compactMap { $0 } }
+            + (library.artwork ?? []).map(\.icon)
     }
 
     /// Exact signed length and hash, a real PNG, bounded dimensions, and successful pixel decode.

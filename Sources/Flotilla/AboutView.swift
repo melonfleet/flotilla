@@ -53,10 +53,13 @@ enum AboutView {
 
     static let logoNotice = "Logos are trademarks of their owners and identify the software they name."
 
-    static func logoLines(for library: SuggestionLibrary) -> [String] {
+    /// The notice, then each attribution once: artwork's, and those owed by the entry logos drawn
+    /// from `icons` (`SuggestionLibrary.logoAttributions`).
+    static func logoLines(for library: SuggestionLibrary, icons: [String: Data]) -> [String] {
         var lines = [logoNotice]
         var seen: Set<String> = [logoNotice]
-        for attribution in (library.artwork ?? []).compactMap(\.attribution) where !attribution.isEmpty {
+        let attributions = (library.artwork ?? []).compactMap(\.attribution) + library.logoAttributions(icons: icons)
+        for attribution in attributions where !attribution.isEmpty {
             if seen.insert(attribution).inserted {
                 lines.append(attribution)
             }

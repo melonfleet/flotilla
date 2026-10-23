@@ -66,6 +66,10 @@ public struct SuggestionLibrary: Sendable, Codable, Equatable {
                 dropped.append((entry.id, "Icon ignored: " + problem))
                 entry.icon = nil
             }
+            if let problem = entry.attributedIcon?.problem() {
+                dropped.append((entry.id, "Attributed icon ignored: " + problem))
+                entry.attributedIcon = nil
+            }
             kept.append(entry)
         }
         if entries.count > Self.maxEntries { dropped.append(("…", "More than \(Self.maxEntries) entries; the rest were ignored.")) }
@@ -131,6 +135,10 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
     public var container: LibraryContainer?
     public var stack: LibraryStack?
     public var icon: LibraryIcon?
+    /// A logo its owner allows only beside a required attribution (Redis, 23 October). Not in
+    /// `icon`, which beta 5 reads and would draw with no attribution anywhere: that build ignores
+    /// this key, so it shows the category's symbol instead. Preferred over `icon` when both exist.
+    public var attributedIcon: LibraryAttributedIcon?
 
     public struct Tested: Sendable, Codable, Equatable {
         public var date: String
@@ -157,10 +165,21 @@ public struct LibraryEntry: Sendable, Codable, Equatable, Identifiable {
 
     public init(id: String, title: String, summary: String, categories: [String], kind: Kind,
                 licenceNote: String? = nil, tested: Tested? = nil,
-                container: LibraryContainer? = nil, stack: LibraryStack? = nil, icon: LibraryIcon? = nil) {
+                container: LibraryContainer? = nil, stack: LibraryStack? = nil, icon: LibraryIcon? = nil,
+                attributedIcon: LibraryAttributedIcon? = nil) {
         self.id = id; self.title = title; self.summary = summary; self.categories = categories
         self.kind = kind; self.licenceNote = licenceNote; self.tested = tested
         self.container = container; self.stack = stack; self.icon = icon
+        self.attributedIcon = attributedIcon
+    }
+
+    /// The logo to draw from verified PNGs keyed by SHA-256: the attributed icon first, then
+    /// `icon`. `attribution` is set only when the attributed one is what is drawn.
+    public func logo(in icons: [String: Data]) -> (data: Data, attribution: String?)? {
+        if let attributed = attributedIcon, let data = icons[attributed.icon.sha256] {
+            return (data, attributed.attribution)
+        }
+        return icon.flatMap { icons[$0.sha256] }.map { ($0, nil) }
     }
 
     /// The images it pulls.
@@ -267,6 +286,44 @@ public struct LibraryIcon: Sendable, Codable, Equatable {
         }
         guard (1...Self.maxBytes).contains(bytes) else { return "Its size isn't between 1 and 65536 bytes." }
         return nil
+    }
+}
+
+/// An entry's logo with the attribution its owner requires wherever it appears.
+public struct LibraryAttributedIcon: Sendable, Codable, Equatable {
+    public var icon: LibraryIcon
+    public var attribution: String
+
+    public init(icon: LibraryIcon, attribution: String) {
+        self.icon = icon; self.attribution = attribution
+    }
+
+    private enum CodingKeys: String, CodingKey { case icon, attribution }
+
+    // Malformed fields must not stop the surrounding entry (or library) decoding.
+    public init(from decoder: Decoder) throws {
+        let values = try? decoder.container(keyedBy: CodingKeys.self)
+        icon = (try? values?.decode(LibraryIcon.self, forKey: .icon))
+            ?? LibraryIcon(file: "", sha256: "", bytes: 0)
+        attribution = (try? values?.decode(String.self, forKey: .attribution)) ?? ""
+    }
+
+    /// The icon's rules, and an attribution as artwork's: required, plain text, at most 300.
+    public func problem() -> String? {
+        if let problem = icon.problem() { return problem }
+        guard Library.isPlainText(attribution, upTo: LibraryArtwork.maxAttributionLength, required: true) else {
+            return "Its attribution is empty, too long, or has characters that aren't plain text."
+        }
+        return nil
+    }
+}
+
+extension SuggestionLibrary {
+    /// The attributions owed for entry logos drawn from `icons`, once each, in library order. Every
+    /// place that can show such a logo can show these: About, Suggestions, the Add Service picker.
+    public func logoAttributions(icons: [String: Data]) -> [String] {
+        var seen = Set<String>()
+        return entries.compactMap { $0.logo(in: icons)?.attribution }.filter { seen.insert($0).inserted }
     }
 }
 

@@ -19,7 +19,7 @@ struct SuggestionRow<Actions: View>: View {
                     summary: "\(item.title), \(item.tab.rawValue), \(item.summary)",
                     leading: {
                         if let entry = item.libraryEntry {
-                            SuggestionLogo(data: entry.icon.flatMap { model.libraryUpdater.icons[$0.sha256] },
+                            SuggestionLogo(data: model.libraryLogo(for: entry),
                                            category: entry.categories.first)
                         } else {
                             Image(systemName: item.tab.systemImage).font(.title2).foregroundStyle(.secondary)

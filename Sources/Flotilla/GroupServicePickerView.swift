@@ -78,6 +78,8 @@ struct GroupServicePickerView: View {
             case .suggestions: suggestionList
             case .images: imageList
             }
+            LogoAttributionFooter(lines: model.libraryLogoAttributions)
+                .padding(.horizontal, 16).padding(.vertical, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .searchesFromToolbar(prompt: source == .suggestions ? "Search suggestions" : "Search images",

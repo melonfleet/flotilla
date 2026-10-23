@@ -44,14 +44,40 @@ struct SuggestionLogo: View {
     }
 }
 
+/// The attributions some library logos require (Redis's, 23 October), under a list that can show
+/// them. Always there while such a logo is in the catalogue, whatever the search or tab shows.
+struct LogoAttributionFooter: View {
+    let lines: [String]
+
+    var body: some View {
+        if !lines.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(lines, id: \.self) { Text(verbatim: $0) }
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 // Resolve artwork only from the updater's verified, in-memory PNGs.
 extension AppModel {
     func libraryLogo(for image: String) -> Data? {
-        suggestionLibrary.entry(forImage: image)?.icon.flatMap { libraryUpdater.icons[$0.sha256] }
+        suggestionLibrary.entry(forImage: image)?.logo(in: libraryUpdater.icons)?.data
     }
 
     func libraryLogo(for group: ContainerGroup) -> Data? {
-        suggestionLibrary.entry(forGroup: group)?.icon.flatMap { libraryUpdater.icons[$0.sha256] }
+        suggestionLibrary.entry(forGroup: group)?.logo(in: libraryUpdater.icons)?.data
+    }
+
+    func libraryLogo(for entry: LibraryEntry) -> Data? {
+        entry.logo(in: libraryUpdater.icons)?.data
+    }
+
+    /// What every logo from the library currently drawn owes, for the footers and About.
+    var libraryLogoAttributions: [String] {
+        suggestionLibrary.logoAttributions(icons: libraryUpdater.icons)
     }
 
     func distributionLogo(for machine: ContainerMachine) -> Data? {

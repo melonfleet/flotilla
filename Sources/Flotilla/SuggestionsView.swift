@@ -120,6 +120,7 @@ struct SuggestionsView: View {
                     }
                 }
             }
+            LogoAttributionFooter(lines: model.libraryLogoAttributions)
         }
         .padding(16)
     }
@@ -318,7 +319,7 @@ struct SuggestionsView: View {
     }
 
     private func logo(_ entry: LibraryEntry) -> some View {
-        SuggestionLogo(data: entry.icon.flatMap { model.libraryUpdater.icons[$0.sha256] }, category: entry.categories.first)
+        SuggestionLogo(data: model.libraryLogo(for: entry), category: entry.categories.first)
     }
 
     static func stats(_ entry: LibraryEntry) -> String {

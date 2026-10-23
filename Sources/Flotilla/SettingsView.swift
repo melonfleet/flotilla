@@ -811,7 +811,7 @@ private struct SettingsAboutPane: View {
 
         SettingsGroup("Logos") {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(AboutView.logoLines(for: model.suggestionLibrary), id: \.self) {
+                ForEach(AboutView.logoLines(for: model.suggestionLibrary, icons: model.libraryUpdater.icons), id: \.self) {
                     SettingsNote(verbatim: $0)
                 }
             }
