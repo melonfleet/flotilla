@@ -15,7 +15,6 @@ extension OverviewWidgetKind {
     /// Every name verified with `NSImage(systemSymbolName:)`, per the `ellipsis.vertical` incident.
     var systemImage: String {
         switch self {
-        case .getStarted: "play.fill"
         case .fleet: "gauge.with.dots.needle.33percent"
         case .hosts: Section.hosts.systemImage
         case .containers: Section.containers.systemImage
@@ -51,7 +50,7 @@ struct OverviewTile<Content: View, Controls: View>: View {
     let kind: OverviewWidgetKind
     /// The header's right-hand words — "12 of 21 running", "Today".
     var detail: String?
-    /// What the header and a click on the card open; nil for Get started, which is its buttons.
+    /// What the header and a click on the card open; nil for a card that opens nothing.
     var open: (() -> Void)?
     var openHelp: String?
     let editing: Bool
@@ -81,10 +80,7 @@ struct OverviewTile<Content: View, Controls: View>: View {
     private var header: some View {
         if editing {
             HStack(spacing: 8) {
-                // The handle says where to grab; the whole card drags.
-                Image(systemName: "line.3.horizontal")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
+                // The grip is in the tile's top-left corner, drawn by the grid (`WidgetGrip`).
                 title
                 Spacer(minLength: 4)
                 controls
@@ -236,7 +232,6 @@ struct OverviewWidgetContent<Controls: View>: View {
     let widget: OverviewWidget
     let editing: Bool
     let go: (OverviewLink) -> Void
-    let onClose: () -> Void
     @ViewBuilder var controls: Controls
 
     private var size: OverviewWidgetSize { widget.size }
@@ -252,7 +247,6 @@ struct OverviewWidgetContent<Controls: View>: View {
 
     var body: some View {
         switch widget.kind {
-        case .getStarted: getStarted
         case .fleet: fleet
         case .hosts: hosts
         case .containers: containers
@@ -273,73 +267,6 @@ struct OverviewWidgetContent<Controls: View>: View {
                                      @ViewBuilder content: () -> Content) -> some View {
         OverviewTile(kind: widget.kind, detail: detail, open: link.map { link in { go(link) } },
                      openHelp: help, editing: editing, controls: { controls }, content: content)
-    }
-
-    // MARK: Get started
-
-    /// The first things to do (Iris, 8 October; Add Host, the owner) — the old card, as a widget
-    /// (Q67). Its X removes the widget; Add Widgets brings it back.
-    private var getStarted: some View {
-        tile(link: nil) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Run your first container, bring in an image, or add another Mac.")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { getStartedButtons }
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) { runButton; pullButton }
-                        HStack(spacing: 8) { addHostButton; stackButton }
-                    }
-                }
-                .controlSize(size == .large ? .large : .regular)
-                if !model.runtimeUsable {
-                    Text("Running and pulling are available once container is running.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .background {
-            // A flotilla in faint line work behind it (the owner, 12 October).
-            if size == .large { FlotillaSeascape().clipShape(RoundedRectangle(cornerRadius: 12)) }
-        }
-        .overlay(alignment: .topTrailing) {
-            if !editing {
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(8)
-                .help("Close Get started — Add Widget brings it back")
-                .accessibilityLabel("Close Get started")
-            }
-        }
-    }
-
-    @ViewBuilder private var getStartedButtons: some View { runButton; pullButton; addHostButton; stackButton }
-
-    private var runButton: some View {
-        Button { model.requestRunSheet() } label: { Label("Run a Container\u{2026}", systemImage: "play.fill") }
-            .buttonStyle(.borderedProminent)
-            .disabled(!model.runtimeUsable)
-    }
-    private var pullButton: some View {
-        Button { model.requestPullForm() } label: { Label("Pull Image\u{2026}", systemImage: "arrow.down.circle") }
-            .disabled(!model.runtimeUsable)
-    }
-    @ViewBuilder private var addHostButton: some View {
-        if model.hostMode.isAdmin {
-            Button { model.requestAddHost() } label: { Label("Add Host\u{2026}", systemImage: "desktopcomputer") }
-        }
-    }
-    private var stackButton: some View {
-        Button { model.requestSuggestions(.containers) } label: {
-            Label("Try a Suggested Stack\u{2026}", systemImage: "square.grid.2x2")
-        }
     }
 
     // MARK: Fleet at a glance
@@ -575,14 +502,19 @@ struct OverviewWidgetContent<Controls: View>: View {
                 WidgetEmpty(text: "Nothing has changed since Flotilla opened.")
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(events.prefix(size == .small ? 3 : 8).enumerated()), id: \.element.id) { index, event in
+                    // Tall wraps each event to two lines (Kamal, round 2), so it lists seven, not eight:
+                    // seven two-line events fit the tile, and a cut-off last line reads as a bug.
+                    ForEach(Array(events.prefix(size == .small ? 3 : 7).enumerated()), id: \.element.id) { index, event in
                         if index > 0 { Divider().opacity(0.6) }
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(event.date, format: .dateTime.hour().minute())
                                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                                 .frame(width: 40, alignment: .leading)
                             Text("\(Text(event.subject).fontWeight(.semibold)) \(event.summary.lowercased())")
-                                .font(.callout).lineLimit(1).truncationMode(.middle)
+                                .font(.callout)
+                                .lineLimit(size == .small ? 1 : 2)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(.vertical, 5)
                         .help("\(event.kind.title): \(event.subject) — \(event.summary)")

@@ -28,17 +28,18 @@ final class OverviewLayoutStore {
     private(set) var layout: OverviewLayout
 
     static let key = "overviewLayout"
-    /// The old Get started card's X (9 October). Read once, for a Mac with no layout yet, so a card
-    /// the owner closed does not come back as a widget.
-    static let legacyGetStartedDismissedKey = "getStartedDismissed"
 
     init(defaults: UserDefaults? = TagStore.standardDefaults()) {
         self.defaults = defaults
         if let stored = defaults?.array(forKey: Self.key) {
-            layout = OverviewLayout(storage: stored.compactMap { $0 as? [String: String] })
+            let entries = stored.compactMap { $0 as? [String: String] }
+            layout = OverviewLayout(storage: entries)
+            // A layout saved while Get started was a widget still names it; decoding drops it (and
+            // anything else it no longer knows). Written back at load, because an in-memory
+            // migration leaves the stale entry in the plist for ever (CLAUDE.md).
+            if layout.storage != entries { defaults?.set(layout.storage, forKey: Self.key) }
         } else {
-            let dismissed = defaults?.bool(forKey: Self.legacyGetStartedDismissedKey) ?? false
-            layout = .recommended(includingGetStarted: !dismissed)
+            layout = .recommended
         }
     }
 

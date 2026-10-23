@@ -36,10 +36,13 @@ questions.
 - **The Overview is modular** (Q67, Kamal, 23 October): the notifications band, fixed at the top and
   never a widget, then a grid of widgets the owner adds, orders and sizes (Small 1×1, Wide 2×1,
   Tall 1×2, Large 2×2; each offers only the sizes it has more to show in). The grid adds columns on
-  a wider window rather than stretching tiles. Get started is a widget; Fleet at a glance replaced
-  "Across all hosts", and the Hosts widget's rows replaced the striped Hosts table. Edit Widgets
-  gives every tile a handle, ×, size control and grip, and an Add Widgets panel; VoiceOver and the
-  right-click move and resize them too. The rules and reflow are `OverviewLayout` in `FlotillaCore`;
+  a wider window rather than stretching tiles. Get started is **not** a widget (round 2): it is the
+  original full-width card under the band, closed by its own X (`getStartedDismissed`). Fleet at a
+  glance replaced "Across all hosts", and the Hosts widget's rows replaced the striped Hosts table.
+  Hovering a widget shows a 2×3 dot grip at its top left that moves it without Edit mode; Edit
+  Widgets gives every tile an ×, size control and resize grip, and an Add Widgets panel; VoiceOver
+  and the right-click move and resize them too. Every flexible frame in the Overview carries
+  `minWidth: 0`: content wider than the detail pane takes the width from the sidebar. The rules and reflow are `OverviewLayout` in `FlotillaCore`;
   `OverviewLayoutStore` keeps it per Mac under `overviewLayout`, plist-native like tags, never in
   `SettingsStore`. A widget reads what its section already reads and adds no polling.
 - **Machines** (the Linux micro-VMs containers run inside) is a peer section under a

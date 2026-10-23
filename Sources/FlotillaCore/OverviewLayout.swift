@@ -23,18 +23,19 @@ public enum OverviewWidgetSize: String, CaseIterable, Sendable, Hashable {
 }
 
 /// Every widget the Overview can show. The notifications band is **not** one (Kamal, 23 October):
-/// it is fixed above the grid and cannot be removed or moved, so it has no case here.
+/// it is fixed above the grid and cannot be removed or moved, so it has no case here. Nor is Get
+/// started (Kamal, round 2): it is the full-width card under the band again, closed with its own X.
+/// A saved layout that still names `getStarted` decodes without it, as any unknown widget does.
 ///
 /// Declaration order is the order the Add Widgets panel lists them in.
 public enum OverviewWidgetKind: String, CaseIterable, Sendable, Hashable, Identifiable {
-    case getStarted, fleet, hosts, containers, vulnerabilities, activity, machines, kubernetes
+    case fleet, hosts, containers, vulnerabilities, activity, machines, kubernetes
     case dns, storage, tasks, images, networks, suggestions
 
     public var id: Self { self }
 
     public var title: String {
         switch self {
-        case .getStarted: "Get started"
         case .fleet: "Fleet at a glance"
         case .hosts: "Hosts"
         case .containers: "Containers"
@@ -54,7 +55,6 @@ public enum OverviewWidgetKind: String, CaseIterable, Sendable, Hashable, Identi
     /// The Add Widgets panel's line under the title.
     public var summary: String {
         switch self {
-        case .getStarted: "Bring the welcome card back"
         case .fleet: "Every count, plus CPU, memory and disk"
         case .hosts: "Each Mac, its state and its load"
         case .containers: "What's running"
@@ -75,7 +75,6 @@ public enum OverviewWidgetKind: String, CaseIterable, Sendable, Hashable, Identi
     /// (`WidgetSizes` in the 23 October mockups). A widget with one size draws no size control.
     public var sizes: [OverviewWidgetSize] {
         switch self {
-        case .getStarted: [.wide, .large]
         case .fleet: [.small, .wide, .large]
         case .hosts: [.wide, .large]
         case .suggestions: [.small, .wide]
@@ -88,7 +87,7 @@ public enum OverviewWidgetKind: String, CaseIterable, Sendable, Hashable, Identi
     /// The size it is added at, and the one the recommended layout uses.
     public var defaultSize: OverviewWidgetSize {
         switch self {
-        case .getStarted, .fleet: .wide
+        case .fleet: .wide
         case .hosts: .large
         case .containers, .activity: .tall
         default: sizes[0]
@@ -153,19 +152,12 @@ public struct OverviewLayout: Equatable, Sendable {
         self.widgets = widgets.filter { seen.insert($0.kind).inserted }
     }
 
-    /// For a new Mac: Get started, then Fleet at a glance, Hosts, Containers, Vulnerabilities,
-    /// Activity, Machines and Kubernetes (Kamal, 23 October), each at its default size.
+    /// For a new Mac: Fleet at a glance, Hosts, Containers, Vulnerabilities, Activity, Machines and
+    /// Kubernetes (Kamal, 23 October), each at its default size. Get started is not in it: it is
+    /// the card above the grid, not a widget (Kamal, round 2).
     public static let recommended = OverviewLayout(
-        [.getStarted, .fleet, .hosts, .containers, .vulnerabilities, .activity, .machines, .kubernetes]
+        [.fleet, .hosts, .containers, .vulnerabilities, .activity, .machines, .kubernetes]
             .map { OverviewWidget($0) })
-
-    /// The recommended layout for a Mac whose owner closed the old Get started card before widgets
-    /// existed (`getStartedDismissed`): the card stays closed rather than coming back as a widget.
-    public static func recommended(includingGetStarted: Bool) -> OverviewLayout {
-        var layout = recommended
-        if !includingGetStarted { layout.remove(.getStarted) }
-        return layout
-    }
 
     public var kinds: [OverviewWidgetKind] { widgets.map(\.kind) }
     public var isEmpty: Bool { widgets.isEmpty }

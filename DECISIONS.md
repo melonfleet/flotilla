@@ -3153,7 +3153,7 @@ widget.**
   notice at a time), with the `container` setup banner above it when there is one. It is fixed
   above the widgets and cannot be removed or moved, so the mockups' "Needs attention" widget is
   dropped: the band does that job. Then a grid of widgets.
-- **Widgets:** Get started, Fleet at a glance, Hosts, Containers, Vulnerabilities, Activity,
+- **Widgets:** (Get started was one until round 2, below) Fleet at a glance, Hosts, Containers, Vulnerabilities, Activity,
   Machines, Kubernetes, DNS, Storage, Tasks, Images, Networks and Suggestions. Get started is a
   widget like any other: first for a new Mac, removable with its own ×, and in Add Widgets to bring
   back. Fleet at a glance replaces "Across all hosts". Hosts replaces the striped Hosts table with
@@ -3182,3 +3182,17 @@ widget.**
   Kubernetes), and stays the *current* recommendation until the owner changes something; empty means
   the owner removed everything. A Mac that had closed the old Get started card
   (`getStartedDismissed`) does not get it back.
+- **Amended 2026-10-23, round 2 (Kamal, after running it):**
+  - **Get started is not a widget.** It is the original full-width card with the drawn flotilla,
+    under the band and above the grid, restored from before Q67 and closed by its own X
+    (`getStartedDismissed`), as before. It is out of the catalogue and the recommended layout; a
+    saved layout that names `getStarted` loads without it, and the store writes that back at load.
+  - **Moving needs no mode.** Hovering a widget shows a grip at its top left — a 2×3 dot grid, drawn,
+    because ≡ read as a menu and `circle.grid.2x3` is not an SF Symbol. Dragging by it reorders the
+    widget, the grid reflowing round it, and it settles into its slot on release; a click anywhere
+    else on the widget still opens its section. Edit Widgets stays for removing, resizing and adding.
+  - **Nothing on the Overview may be wider than its pane.** The grid measured its own width under a
+    frame with no `minWidth`, so the width could grow and never shrink: opening the Add Widgets
+    panel left the grid overflowing, which pushed Done off screen, the panel past the window's edge
+    and the sidebar down to a strip. Every flexible frame there now says `minWidth: 0`, the header's
+    words truncate before its actions, and the panel is a fixed 280pt.

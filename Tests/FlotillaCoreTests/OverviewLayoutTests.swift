@@ -11,19 +11,32 @@ struct OverviewLayoutTests {
 
     @Test("the recommended layout is Kamal's list, in order, at default sizes")
     func recommendedOrder() {
-        #expect(OverviewLayout.recommended.kinds == [.getStarted, .fleet, .hosts, .containers,
-                                                     .vulnerabilities, .activity, .machines, .kubernetes])
+        #expect(OverviewLayout.recommended.kinds == [.fleet, .hosts, .containers, .vulnerabilities,
+                                                     .activity, .machines, .kubernetes])
         for widget in OverviewLayout.recommended.widgets {
             #expect(widget.size == widget.kind.defaultSize)
         }
     }
 
-    @Test("a Mac that closed the old Get started card does not get it back")
-    func recommendedWithoutGetStarted() {
-        let layout = OverviewLayout.recommended(includingGetStarted: false)
-        #expect(!layout.contains(.getStarted))
-        #expect(layout.kinds.first == .fleet)
-        #expect(OverviewLayout.recommended(includingGetStarted: true) == .recommended)
+    @Test("Get started is the card above the grid, not a widget (round 2)")
+    func getStartedIsNotAWidget() {
+        #expect(OverviewWidgetKind(rawValue: "getStarted") == nil)
+        #expect(OverviewLayout().missing.allSatisfy { $0.rawValue != "getStarted" })
+    }
+
+    @Test("a layout saved while Get started was a widget loads without it, keeping the rest")
+    func savedGetStartedIsDropped() {
+        let layout = OverviewLayout(storage: [
+            ["widget": "getStarted", "size": "large"],
+            ["widget": "fleet", "size": "large"],
+            ["widget": "hosts", "size": "wide"],
+        ])
+        #expect(layout.kinds == [.fleet, .hosts])
+        #expect(layout.size(of: .fleet) == .large)
+        #expect(layout.size(of: .hosts) == .wide)
+        // What the store writes back at load: the plist no longer names it.
+        #expect(!layout.storage.contains { $0["widget"] == "getStarted" })
+        #expect(OverviewLayout(storage: [["widget": "getStarted", "size": "wide"]]).isEmpty)
     }
 
     @Test("the notifications band is not a widget")
@@ -158,15 +171,15 @@ struct OverviewLayoutTests {
     @Test("the recommended layout packs on four columns as the mockup draws it")
     func recommendedOnFour() {
         let placed = Dictionary(uniqueKeysWithValues: OverviewLayout.recommended.placements(columns: 4).map { ($0.kind, $0) })
-        #expect(placed[.getStarted].map { [$0.column, $0.row] } == [0, 0])
-        #expect(placed[.fleet].map { [$0.column, $0.row] } == [2, 0])
-        #expect(placed[.hosts].map { [$0.column, $0.row, $0.columns, $0.rows] } == [0, 1, 2, 2])
-        #expect(placed[.containers].map { [$0.column, $0.row] } == [2, 1])
-        #expect(placed[.vulnerabilities].map { [$0.column, $0.row] } == [3, 1])
-        #expect(placed[.activity].map { [$0.column, $0.row] } == [3, 2])
-        // Tall Containers holds column 2 through row 2, so Activity drops under Vulnerabilities and
-        // the small ones fill row 3.
-        #expect(placed[.machines].map { [$0.column, $0.row] } == [0, 3])
+        #expect(placed[.fleet].map { [$0.column, $0.row] } == [0, 0])
+        #expect(placed[.hosts].map { [$0.column, $0.row, $0.columns, $0.rows] } == [2, 0, 2, 2])
+        #expect(placed[.containers].map { [$0.column, $0.row, $0.rows] } == [0, 1, 2])
+        #expect(placed[.vulnerabilities].map { [$0.column, $0.row] } == [1, 1])
+        // Tall Containers holds column 0 through row 2, so Activity drops under Vulnerabilities and
+        // the small ones fill the rest of row 2 under Hosts.
+        #expect(placed[.activity].map { [$0.column, $0.row] } == [1, 2])
+        #expect(placed[.machines].map { [$0.column, $0.row] } == [2, 2])
+        #expect(placed[.kubernetes].map { [$0.column, $0.row] } == [3, 2])
         #expect(OverviewLayout.recommended.rowCount(columns: 4) == 4)
     }
 
@@ -208,11 +221,12 @@ struct OverviewLayoutTests {
     @Test("a drop on a widget takes its place; on an empty cell, the end")
     func insertionIndex() {
         let layout = OverviewLayout.recommended
-        #expect(layout.insertionIndex(column: 0, row: 2, columns: 4) == layout.index(of: .hosts))
+        #expect(layout.insertionIndex(column: 3, row: 1, columns: 4) == layout.index(of: .hosts))
         #expect(layout.insertionIndex(column: 3, row: 9, columns: 4) == layout.widgets.count)
         // Dragging Hosts over itself is not a target; over empty space it goes last.
+        #expect(layout.insertionIndex(column: 3, row: 1, columns: 4, ignoring: .hosts) == layout.widgets.count - 1)
         #expect(layout.insertionIndex(column: 3, row: 9, columns: 4, ignoring: .hosts) == layout.widgets.count - 1)
-        #expect(layout.insertionIndex(column: 2, row: 1, columns: 4, ignoring: .hosts) == layout.index(of: .containers))
+        #expect(layout.insertionIndex(column: 0, row: 2, columns: 4, ignoring: .hosts) == layout.index(of: .containers))
     }
 
     // MARK: Storage
@@ -223,7 +237,7 @@ struct OverviewLayoutTests {
         layout.resize(.fleet, to: .large)
         layout.add(.suggestions, at: 2, size: .wide)
         #expect(OverviewLayout(storage: layout.storage) == layout)
-        #expect(layout.storage.first == ["widget": "getStarted", "size": "wide"])
+        #expect(layout.storage.first == ["widget": "fleet", "size": "large"])
     }
 
     @Test("an empty plist is an empty page, not the recommended one")

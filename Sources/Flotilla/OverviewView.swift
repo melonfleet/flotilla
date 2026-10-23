@@ -5,18 +5,24 @@ import FlotillaCore
 ///
 /// From the top: the notifications band, **fixed** — always first, never a widget, never removed
 /// or moved (Kamal's change to the mockups: it does the job their "Needs attention" widget did) —
-/// then a grid of widgets the owner chooses, orders and sizes. Get started is one of them: first on
-/// a new Mac, removable, and in Add Widgets to bring back.
+/// then Get started, the full-width card it always was (not a widget — Kamal, round 2), then a grid
+/// of widgets the owner chooses, orders and sizes.
 ///
 /// **The grid adds columns on a wider window** rather than stretching tiles, so a full-screen window
 /// on a big display fills with more widgets. A widget is Small 1×1, Wide 2×1, Tall 1×2 or Large
 /// 2×2; `OverviewLayout` packs them in order so nothing overlaps, and it is what is remembered — per
 /// Mac, across launches, in `OverviewLayoutStore`.
 ///
-/// **Edit Widgets** puts a handle, an ×, a size control and a resize grip on every tile, and the
-/// Add Widgets panel on the right. Dragging a tile reorders the layout and the grid reflows round
-/// it. VoiceOver gets Move Earlier, Move Later, Change Size and Remove on every widget, in or out
-/// of edit mode, and the right-click menu offers the same.
+/// **Moving needs no mode** (Kamal, round 2): hovering a widget shows a dot grip at its top left,
+/// and dragging by it reorders the layout, the grid reflowing round it; a click anywhere else still
+/// opens the section. **Edit Widgets** is for the rest — an ×, a size control and a resize grip on
+/// every tile, the whole card draggable, and the Add Widgets panel on the right. VoiceOver gets Move
+/// Earlier, Move Later, Change Size and Remove on every widget, in or out of edit mode, and the
+/// right-click menu offers the same.
+///
+/// **Nothing here may be wider than the pane it is given.** The detail column of the window's split
+/// takes any width its content insists on from the sidebar, so content that overflows collapses the
+/// navigation (round 2's broken sidebar). Every flexible frame on the way down says `minWidth: 0`.
 struct OverviewView: View {
     let model: AppModel
     /// The sections a widget opens filtered — owned by `MainWindowView`, which outlives this view.
@@ -39,17 +45,21 @@ struct OverviewView: View {
                         .padding(.top, 14)
                     ScrollView {
                         VStack(alignment: .leading, spacing: 20) {
+                            getStarted
                             OverviewGrid(model: model, editing: editing, go: open)
-                            if !editing, store.layout.kinds.allSatisfy({ $0 == .getStarted }) {
+                            if !editing, store.layout.isEmpty {
                                 OverviewEmptyState(store: store)
                             }
                         }
                         .padding(.horizontal, 20)
                         .padding(.bottom, 20)
                         .padding(.top, 2)
+                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // `minWidth: 0`: this pane narrows when the panel opens, whatever its content
+                // last measured — without it the frame keeps the widest child and pushes the split.
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 if editing {
                     Divider()
                     AddWidgetsPanel(store: store)
@@ -58,7 +68,7 @@ struct OverviewView: View {
         }
         // Every branch bounded: the grid's height is computed, the panel scrolls inside itself, and
         // this fills the pane rather than sizing to its content (the activity-strip lesson).
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // The lists the widgets read are refreshed by the poll only every sixth tick or on a
         // section's visit, so Overview loads them itself rather than showing zeros on a fresh
         // launch. Paired hosts are asked alongside, not first: a host that is slow to answer must
@@ -105,11 +115,14 @@ struct OverviewView: View {
     /// with the Overview's two actions on one glass cluster, as `ActionCluster` draws everywhere.
     private var header: some View {
         HStack(spacing: 12) {
+            // The words give way first: the actions on the right are always whole (round 2).
             Text(status)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            Spacer()
+                .truncationMode(.tail)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(-1)
             if editing {
                 ActionCluster {
                     Button {
@@ -119,8 +132,8 @@ struct OverviewView: View {
                     }
                     .buttonStyle(.borderless)
                     .disabled(store.isRecommended)
-                    .help("Put back Get started, Fleet at a glance, Hosts, Containers, Vulnerabilities, "
-                          + "Activity, Machines and Kubernetes, at their usual sizes")
+                    .help("Put back Fleet at a glance, Hosts, Containers, Vulnerabilities, Activity, "
+                          + "Machines and Kubernetes, at their usual sizes")
                     Button("Done") { editing = false }
                         .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
@@ -249,6 +262,73 @@ struct OverviewView: View {
         }
     }
 
+    // MARK: Get started
+
+    /// The first things to do (Iris, 8 October; Add Host, the owner). Shown once `container` is
+    /// usable — until then the top line is its setup — and **until the owner closes it** with the X
+    /// (the owner, 9 October), which records `getStartedDismissed` in the preferences domain.
+    /// Nothing else hides it: having containers already does not.
+    @AppStorage("getStartedDismissed") private var getStartedDismissed = false
+
+    @ViewBuilder
+    private var getStarted: some View {
+        if !getStartedDismissed, model.runtimeUsable, model.state == .loaded {
+            // A card of its own, centred, with the first step in colour (the owner, beta 2's
+            // test): left-aligned plain buttons under a small heading read as a footnote.
+            VStack(spacing: 14) {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(Theme.info)
+                VStack(spacing: 4) {
+                    Text("Get started").font(.title2.weight(.semibold))
+                    Text("Run your first container, bring in an image, or add another Mac.")
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                HStack(spacing: 10) {
+                    Button { model.requestRunSheet() } label: {
+                        Label("Run a Container\u{2026}", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button { model.requestPullForm() } label: {
+                        Label("Pull Image\u{2026}", systemImage: "arrow.down.circle")
+                    }
+                    if model.hostMode.isAdmin {
+                        Button { model.requestAddHost() } label: {
+                            Label("Add Host\u{2026}", systemImage: "desktopcomputer")
+                        }
+                    }
+                    Button { model.requestSuggestions(.containers) } label: {
+                        Label("Try a Suggested Stack\u{2026}", systemImage: "square.grid.2x2")
+                    }
+                }
+                .controlSize(.large)
+            }
+            .padding(.vertical, 28)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            // A flotilla in faint line work behind it (the owner, 12 October); the card's colour
+            // is unchanged.
+            .background { FlotillaSeascape().clipShape(RoundedRectangle(cornerRadius: 12)) }
+            .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.hairline))
+            // Closed for good, like after the first container (the owner, 9 October).
+            .overlay(alignment: .topTrailing) {
+                Button { getStartedDismissed = true } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(10)
+                .help("Close Get started")
+                .accessibilityLabel("Close Get started")
+            }
+        }
+    }
+
     // MARK: Formatting, shared with Hosts
 
     /// `just now`, `40 sec ago`, `12 min ago` — re-read on each poll, which redraws Overview.
@@ -318,6 +398,8 @@ struct OverviewGrid: View {
     /// The size a resize started from, so the grip's whole travel is measured from one place.
     @State private var resizing: (kind: OverviewWidgetKind, from: OverviewWidgetSize)?
     @State private var dropTargeted = false
+    /// The tile under the pointer, which shows its grip outside edit mode.
+    @State private var hovered: OverviewWidgetKind?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var store: OverviewLayoutStore { model.overviewLayout }
@@ -356,7 +438,12 @@ struct OverviewGrid: View {
                     .offset(y: dropTop)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        // `minWidth: 0` is load-bearing (round 2). The tiles are sized from `width`, which is
+        // measured here; with only `maxWidth`, this frame is never narrower than its widest tile,
+        // so the width it measures could grow and never shrink. Opening the Add Widgets panel then
+        // left the grid at its old width, overflowing the pane — which pushed the header's Done off
+        // screen, the panel past the window's edge, and the sidebar down to a sliver.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .frame(height: editing ? dropTop + 64 : height, alignment: .topLeading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .coordinateSpace(.named(Self.space))
@@ -388,8 +475,7 @@ struct OverviewGrid: View {
         let dragged = drag?.kind == kind
         let origin = dragged ? CGPoint(x: drag!.point.x - drag!.grab.width, y: drag!.point.y - drag!.grab.height)
                              : rect.origin
-        OverviewWidgetContent(model: model, widget: widget, editing: editing, go: go,
-                              onClose: { store.update { $0.remove(kind) } }) {
+        OverviewWidgetContent(model: model, widget: widget, editing: editing, go: go) {
             OverviewSizeControl(widget: widget) { size in store.update { $0.resize(kind, to: size) } }
         }
         .frame(width: rect.width, height: rect.height)
@@ -420,17 +506,39 @@ struct OverviewGrid: View {
             }
         }
         .overlay {
-            if editing {
+            if editing || dragged {
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(dragged ? Theme.accent : Color.clear, lineWidth: 1.5)
                     .allowsHitTesting(false)
             }
+        }
+        // The grip, in the tile's top-left corner: always while editing, on hover otherwise. It
+        // sits in the tile's 16pt leading margin, beside the header, so it covers nothing. It is
+        // an overlay — a sibling of the card, not inside it — so a click on it never reaches the
+        // card's open-the-section tap, and the drag is its own gesture, so it works in normal mode.
+        .overlay(alignment: .topLeading) {
+            if editing || hovered == kind || dragged {
+                WidgetGrip()
+                    .frame(width: 16, height: 30)
+                    .contentShape(Rectangle())
+                    .padding(.top, 7)
+                    .pointerStyle(dragged ? .grabActive : .grabIdle)
+                    .help("Drag to move")
+                    // Move Earlier and Move Later do this without a pointer.
+                    .accessibilityHidden(true)
+                    .gesture(moveGesture(kind, rect: rect))
+            }
+        }
+        .onHover { inside in
+            if inside { hovered = kind } else if hovered == kind { hovered = nil }
         }
         .scaleEffect(dragged ? 1.02 : 1)
         .rotationEffect(.degrees(dragged && !reduceMotion ? 1.5 : 0))
         .shadow(color: .black.opacity(dragged ? 0.22 : 0), radius: 18, y: 10)
         .offset(x: origin.x, y: origin.y)
         .zIndex(dragged ? 1 : 0)
+        // While editing the whole card drags; otherwise only the grip does, and a click on the
+        // rest of the card opens its section as before.
         .gesture(moveGesture(kind, rect: rect), including: editing ? .all : .subviews)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(kind.title) widget, \(widget.size.title)")
@@ -533,6 +641,27 @@ struct OverviewSizeControl: View {
     }
 }
 
+/// The move handle: a 2×3 grid of dots, the grip dashboards use (Kamal, round 2). Not ≡, which reads
+/// as a menu that opens something. Drawn, because SF Symbols has no 2×3 dot grid —
+/// `circle.grid.2x3` is not a symbol (checked with `NSImage(systemSymbolName:)`), and an unknown
+/// name renders nothing.
+struct WidgetGrip: View {
+    var body: some View {
+        Canvas { context, size in
+            let dot: CGFloat = 2.5
+            let step: CGFloat = 4.5
+            let origin = CGPoint(x: (size.width - dot - step) / 2, y: (size.height - dot - 2 * step) / 2)
+            for column in 0..<2 {
+                for row in 0..<3 {
+                    let rect = CGRect(x: origin.x + CGFloat(column) * step, y: origin.y + CGFloat(row) * step,
+                                      width: dot, height: dot)
+                    context.fill(Path(ellipseIn: rect), with: .style(.secondary))
+                }
+            }
+        }
+    }
+}
+
 /// Three diagonal strokes in the corner, the way a resizable window's corner reads.
 struct ResizeGrip: View {
     var body: some View {
@@ -555,6 +684,8 @@ struct ResizeGrip: View {
 struct AddWidgetsPanel: View {
     let store: OverviewLayoutStore
 
+    static let width: CGFloat = 280
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Add Widgets").font(.headline)
@@ -574,7 +705,9 @@ struct AddWidgetsPanel: View {
             }
         }
         .padding(16)
-        .frame(width: 270)
+        // Fixed, and the grid's pane is the one that gives way (`minWidth: 0` there), so the panel
+        // is always whole inside the window.
+        .frame(width: Self.width)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
@@ -585,11 +718,15 @@ struct AddWidgetsPanel: View {
                 .frame(width: 30, height: 30)
                 .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 7))
                 .accessibilityHidden(true)
+            // Takes the row's spare width, so a long summary wraps to its second line inside the
+            // panel rather than pushing the + past it (round 2).
             VStack(alignment: .leading, spacing: 1) {
                 Text(kind.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text(kind.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(kind.summary).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
             }
-            Spacer(minLength: 4)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             IconActionButton(systemImage: "plus", label: "Add \(kind.title)",
                              help: "Add \(kind.title) to the Overview") {
                 store.update { $0.add(kind) }
@@ -608,12 +745,12 @@ struct AddWidgetsPanel: View {
 
 // MARK: - Empty
 
-/// No widgets (Get started aside): one-click adds and the recommended layout, as FirstRun draws it.
+/// No widgets: one-click adds and the recommended layout, as FirstRun draws it.
 struct OverviewEmptyState: View {
     let store: OverviewLayoutStore
 
     private var picks: [OverviewWidgetKind] {
-        OverviewLayout.recommended.kinds.filter { $0 != .getStarted && !store.layout.contains($0) }
+        OverviewLayout.recommended.kinds.filter { !store.layout.contains($0) }
     }
 
     var body: some View {
@@ -638,11 +775,7 @@ struct OverviewEmptyState: View {
             }
             .frame(maxWidth: 620)
             Button("Use the recommended layout") {
-                store.update { layout in
-                    // Keeps Get started where it is: this is about the widgets, not the welcome.
-                    let keepsGetStarted = layout.contains(.getStarted)
-                    layout = .recommended(includingGetStarted: keepsGetStarted)
-                }
+                store.update { $0.reset() }
             }
             .buttonStyle(.link)
         }
