@@ -155,22 +155,18 @@ struct OverviewLayoutTests {
         #expect(layout.addable == OverviewWidgetKind.allCases)
     }
 
-    @Test("kindsPlaced and count follow every add and remove; removeAll takes every instance (round 4)")
+    @Test("kindsPlaced and count follow every add and remove; removeAll takes the kind off the page")
     func kindsPlacedAndRemoveAll() {
         var layout = OverviewLayout()
         #expect(layout.kindsPlaced.isEmpty)
         layout.add(.dns)
         layout.add(.containers)
-        let second = layout.add(.containers, show: .stopped)
+        layout.add(.containers, show: .stopped)
         layout.add(.fleet)
-        // Kind order, not page order, and one entry however many instances.
+        // Kind order, not page order.
         #expect(layout.kindsPlaced == OverviewWidgetKind.allCases.filter { [.dns, .containers, .fleet].contains($0) })
-        #expect(layout.count(of: .containers) == 2)
-        #expect(layout.count(of: .hosts) == 0)
-        layout.remove(second)
         #expect(layout.count(of: .containers) == 1)
-        #expect(layout.kindsPlaced.contains(.containers))
-        layout.add(.containers)
+        #expect(layout.count(of: .hosts) == 0)
         layout.removeAll(.containers)
         #expect(layout.count(of: .containers) == 0)
         #expect(!layout.kindsPlaced.contains(.containers))
@@ -283,12 +279,17 @@ struct OverviewLayoutTests {
         #expect(layout.kinds == [.dns, .fleet, .hosts])
     }
 
-    @Test("moving one of two instances of a kind moves only that one")
-    func moveInstance() {
+    @Test("one widget per kind: adding a kind already on the page adds nothing (Kamal, 23 October)")
+    func onePerKind() {
         var layout = OverviewLayout([OverviewWidget(.containers), OverviewWidget(.dns)])
-        let second = layout.add(.containers, show: .stopped)
-        layout.move(second, to: 0)
-        #expect(layout.widgets.map(\.id) == [second, "containers", "dns"])
+        let again = layout.add(.containers, show: .stopped)
+        #expect(again == "containers")
+        #expect(layout.widgets.map(\.id) == ["containers", "dns"])
+        #expect(layout.widget("containers")?.show != .stopped)
+        // A round-3 layout with two of a kind keeps the first.
+        let stored = [["id": "containers", "widget": "containers", "size": "tall"],
+                      ["id": "containers-2", "widget": "containers", "size": "small", "show": "stopped"]]
+        #expect(OverviewLayout(storage: stored).widgets.map(\.id) == ["containers"])
     }
 
     @Test("reset restores the recommended layout, which then counts as recommended")
@@ -342,7 +343,7 @@ struct OverviewLayoutTests {
     @Test("nothing overlaps on any width, and every widget is placed")
     func noOverlapAnyWidth() {
         let all = OverviewLayout(OverviewWidgetKind.allCases.map { OverviewWidget($0, $0.sizes.last) })
-        // Every kind at every size, twice over — duplicates included (round 3).
+        // Every kind at every size; the second pass adds nothing, one per kind.
         var mixed = OverviewLayout()
         for (i, kind) in (OverviewWidgetKind.allCases + OverviewWidgetKind.allCases).enumerated() {
             mixed.add(kind, size: OverviewWidgetSize.allCases[i % 4])
@@ -400,12 +401,10 @@ struct OverviewLayoutTests {
         layout.resize("fleet", to: .large)
         layout.setShow("fleet", to: .load)
         layout.add(.suggestions, at: 2, size: .wide, show: .apps)
-        layout.add(.containers, size: .small, show: .stopped)
         layout.add(.storage, size: .tall)
         #expect(OverviewLayout(storage: layout.storage) == layout)
         #expect(layout.storage.first == ["id": "fleet", "widget": "fleet", "size": "large", "show": "load"])
         #expect(layout.storage.last == ["id": "storage", "widget": "storage", "size": "tall"])
-        #expect(layout.storage.contains(["id": "containers-2", "widget": "containers", "size": "small", "show": "stopped"]))
     }
 
     @Test("a round-2 layout migrates: same order, same sizes, default choices, kind names as ids")

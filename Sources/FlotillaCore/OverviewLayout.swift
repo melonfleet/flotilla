@@ -279,8 +279,8 @@ public struct OverviewLayout: Equatable, Sendable {
     public func index(of id: String) -> Int? { widgets.firstIndex { $0.id == id } }
     public func widget(_ id: String) -> OverviewWidget? { widgets.first { $0.id == id } }
 
-    /// What the Add Widgets panel lists: every kind, always — a kind already on the page can be
-    /// added again with another choice (round 3).
+    /// What the Add Widgets panel and menu list: every kind, always, each with a checkbox that says
+    /// whether it is on the page.
     public var addable: [OverviewWidgetKind] { OverviewWidgetKind.allCases }
 
     /// The id a new instance of `kind` gets: the kind's name if free, else the first free
@@ -294,12 +294,14 @@ public struct OverviewLayout: Equatable, Sendable {
 
     // MARK: Editing
 
-    /// Adds a new instance of `kind` at `index` (the end when nil), at its default size and choice
-    /// unless others are given. Always a new widget, even when the kind is already on the page.
-    /// Returns its id.
+    /// Adds `kind` at `index` (the end when nil), at its default size and choice unless others are
+    /// given, and returns its id. **One widget per kind** (Kamal, 23 October, reversing round 3): a
+    /// kind already on the page is left where it is and its id returned, so a second tick, click or
+    /// drop never makes a copy.
     @discardableResult
     public mutating func add(_ kind: OverviewWidgetKind, at index: Int? = nil, size: OverviewWidgetSize? = nil,
                              show: OverviewWidgetShow? = nil) -> String {
+        if let placed = widgets.first(where: { $0.kind == kind }) { return placed.id }
         let widget = OverviewWidget(kind, size, show: show, id: nextID(for: kind))
         let at = min(max(index ?? widgets.count, 0), widgets.count)
         widgets.insert(widget, at: at)
@@ -435,6 +437,8 @@ public struct OverviewLayout: Equatable, Sendable {
         var layout = OverviewLayout()
         for entry in storage {
             guard let kind = entry["widget"].flatMap(OverviewWidgetKind.init(rawValue:)) else { continue }
+            // One per kind: a round-3 layout with two of a kind keeps the first.
+            if layout.contains(kind) { continue }
             let size = entry["size"].flatMap(OverviewWidgetSize.init(rawValue:))
             let show = entry["show"].flatMap(OverviewWidgetShow.init(rawValue:))
             let stored = entry["id"].map { $0.trimmingCharacters(in: .whitespaces) }

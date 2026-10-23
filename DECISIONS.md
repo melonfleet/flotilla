@@ -3224,7 +3224,11 @@ widget.**
   - **Activity's Problems** is an observed transition out of running (to anything but absent) or
     into failed, error, exited or unknown — never an action Flotilla performed: the feed records no
     failed actions, so a Stop the owner clicked is not a problem.
-  - **The same widget may be added more than once.** A placed widget is an instance with its own
+  - **Reversed the same day: one widget per kind** (Kamal, 23 October). Add Widget's menu and the
+    Add Widgets panel tick the kinds on the page; ticking adds, unticking removes, and `add` of a kind
+    already placed returns the one there. A saved layout with two of a kind keeps the first. The
+    passage below is how round 3 had it.
+  - **(Round 3) The same widget may be added more than once.** A placed widget is an instance with its own
     id — the kind's name for the first, `containers-2`, `containers-3` after — so the plist stays
     readable and the recommended layout is one fixed value. Add Widget and the Add Widgets panel
     always offer every kind. Every edit (move, resize, Show, remove) is by instance id.

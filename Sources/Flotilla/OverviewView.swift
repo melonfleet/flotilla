@@ -157,11 +157,13 @@ struct OverviewView: View {
                 }
             } else {
                 ActionCluster {
-                    // Every kind, always: one already on the page can be added again with another
-                    // Show choice (round 3).
+                    // Every kind, always, ticked when it is on the page: ticking adds it, unticking
+                    // removes it, and there is never more than one of a kind (Kamal, 23 October).
                     Menu {
                         ForEach(store.layout.addable) { kind in
-                            Button { store.update { $0.add(kind) } } label: {
+                            Toggle(isOn: Binding(
+                                get: { store.layout.contains(kind) },
+                                set: { on in store.update { if on { $0.add(kind) } else { $0.removeAll(kind) } } })) {
                                 Label(kind.title, systemImage: kind.systemImage)
                             }
                         }
@@ -171,7 +173,7 @@ struct OverviewView: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
-                    .help("Add a widget to the end of the Overview")
+                    .help("Choose which widgets are on the Overview")
                     Button {
                         editing = true
                     } label: {
@@ -480,7 +482,7 @@ struct OverviewGrid: View {
             .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
             .foregroundStyle(dropTargeted ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.tertiary))
             .overlay {
-                Text("Drop a widget here, or click + in Add Widgets")
+                Text("Drop a widget here, or tick it in Add Widgets")
                     .font(.callout).foregroundStyle(.secondary)
             }
     }
@@ -745,11 +747,8 @@ struct AddWidgetsPanel: View {
                 }))
                 .toggleStyle(.checkbox)
                 .labelsHidden()
-                .help(count == 0 ? "Add \(kind.title) to the Overview"
-                      : count == 1 ? "Remove \(kind.title) from the Overview"
-                      : "Remove all \(count) \(kind.title) widgets from the Overview")
+                .help(count == 0 ? "Add \(kind.title) to the Overview" : "Remove \(kind.title) from the Overview")
                 .accessibilityLabel("Show \(kind.title) on the Overview")
-                .accessibilityHint(count > 1 ? "Unticking removes all \(count)" : "")
             Image(systemName: kind.systemImage)
                 .foregroundStyle(.secondary)
                 .frame(width: 30, height: 30)
@@ -761,17 +760,12 @@ struct AddWidgetsPanel: View {
                 Text(kind.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                 // More than one on the page: the subtitle says how many, because unticking takes
                 // them all (round 4).
-                Text(count > 1 ? "\(count) on the Overview" : kind.summary)
+                Text(kind.summary)
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            IconActionButton(systemImage: "plus",
-                             label: count > 0 ? "Add another \(kind.title)" : "Add \(kind.title)",
-                             help: count > 0 ? "Add another \(kind.title)" : "Add \(kind.title) to the Overview") {
-                store.update { $0.add(kind) }
-            }
         }
         .padding(8)
         .background(Theme.raisedSurface, in: RoundedRectangle(cornerRadius: 9))

@@ -39,8 +39,9 @@ questions.
   rather than a crop (round 3), and **a Show choice** from its ⋯ menu — Containers Running · All ·
   Stopped · By Host, Hosts All · Problems · This Mac's Site, and so on; Storage has none — named in
   its title ("Containers · Stopped") and matched by the section a click opens where that section has
-  the filter. **The same kind may be placed more than once**, so a widget is an instance with its own
-  id (`containers`, `containers-2`) and every edit is by id. The grid adds columns on
+  the filter. **One widget per kind** (Kamal, 23 October, reversing round 3's copies): Add Widget's
+  menu and the Edit-mode panel tick each kind that is on the page, ticking adds it and unticking
+  removes it, and a second add of a placed kind does nothing. Widgets keep an id and every edit is by id. The grid adds columns on
   a wider window rather than stretching tiles. Get started is **not** a widget (round 2): it is the
   original full-width card under the band, closed by its own X (`getStartedDismissed`). Fleet at a
   glance replaced "Across all hosts", and the Hosts widget's rows replaced the striped Hosts table.
