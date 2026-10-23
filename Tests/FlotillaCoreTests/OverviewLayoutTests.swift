@@ -155,6 +155,30 @@ struct OverviewLayoutTests {
         #expect(layout.addable == OverviewWidgetKind.allCases)
     }
 
+    @Test("kindsPlaced and count follow every add and remove; removeAll takes every instance (round 4)")
+    func kindsPlacedAndRemoveAll() {
+        var layout = OverviewLayout()
+        #expect(layout.kindsPlaced.isEmpty)
+        layout.add(.dns)
+        layout.add(.containers)
+        let second = layout.add(.containers, show: .stopped)
+        layout.add(.fleet)
+        // Kind order, not page order, and one entry however many instances.
+        #expect(layout.kindsPlaced == OverviewWidgetKind.allCases.filter { [.dns, .containers, .fleet].contains($0) })
+        #expect(layout.count(of: .containers) == 2)
+        #expect(layout.count(of: .hosts) == 0)
+        layout.remove(second)
+        #expect(layout.count(of: .containers) == 1)
+        #expect(layout.kindsPlaced.contains(.containers))
+        layout.add(.containers)
+        layout.removeAll(.containers)
+        #expect(layout.count(of: .containers) == 0)
+        #expect(!layout.kindsPlaced.contains(.containers))
+        #expect(layout.kinds == [.dns, .fleet])
+        // Every kind stays listed, placed or not.
+        #expect(layout.addable == OverviewWidgetKind.allCases)
+    }
+
     @Test("the same kind can be added again, as a second instance with its own id (round 3)")
     func addDuplicates() {
         var layout = OverviewLayout.recommended

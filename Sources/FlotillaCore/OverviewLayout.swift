@@ -271,6 +271,11 @@ public struct OverviewLayout: Equatable, Sendable {
 
     public func contains(_ kind: OverviewWidgetKind) -> Bool { widgets.contains { $0.kind == kind } }
     public func contains(id: String) -> Bool { widgets.contains { $0.id == id } }
+    /// How many instances of `kind` are on the page — the Add Widgets row's "2 on the Overview".
+    public func count(of kind: OverviewWidgetKind) -> Int { widgets.count { $0.kind == kind } }
+    /// The kinds with at least one instance on the page, in `OverviewWidgetKind` order: the ticked
+    /// rows of the Add Widgets panel (round 4).
+    public var kindsPlaced: [OverviewWidgetKind] { OverviewWidgetKind.allCases.filter(contains) }
     public func index(of id: String) -> Int? { widgets.firstIndex { $0.id == id } }
     public func widget(_ id: String) -> OverviewWidget? { widgets.first { $0.id == id } }
 
@@ -303,6 +308,11 @@ public struct OverviewLayout: Equatable, Sendable {
 
     public mutating func remove(_ id: String) {
         widgets.removeAll { $0.id == id }
+    }
+
+    /// Removes every instance of `kind` — unticking its row in Add Widgets (round 4).
+    public mutating func removeAll(_ kind: OverviewWidgetKind) {
+        widgets.removeAll { $0.kind == kind }
     }
 
     public mutating func resize(_ id: String, to size: OverviewWidgetSize) {

@@ -704,8 +704,14 @@ struct ResizeGrip: View {
 
 // MARK: - Add Widgets
 
-/// The panel on the right while editing: every kind of widget — including ones already on the page,
-/// which can be added again (round 3) — each with + and draggable onto the grid.
+/// The panel on the right while editing: every kind of widget, always, in kind order — including
+/// ones already on the page, which can be added again (round 3) — each draggable onto the grid.
+///
+/// Each row's checkbox is ticked while at least one instance of its kind is on the page (round 4):
+/// ticking adds one at the end, as + does; unticking removes every instance. Both read and write
+/// `store.layout`, so a tile's × or a drag-in moves the box with no state of the panel's own. The
+/// Overview has no undo manager, so unticking is not undoable; there is no undo anywhere else on
+/// the page to be consistent with.
 struct AddWidgetsPanel: View {
     let store: OverviewLayoutStore
 
@@ -714,7 +720,7 @@ struct AddWidgetsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Add Widgets").font(.headline)
-            Text("Click + or drag one onto the Overview. Add one more than once to show different things.")
+            Text("Tick a widget to put it on the Overview, or drag it there. Click + to add another one showing something different.")
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(3)
                 .padding(.bottom, 8)
@@ -732,7 +738,20 @@ struct AddWidgetsPanel: View {
     }
 
     private func item(_ kind: OverviewWidgetKind) -> some View {
-        HStack(spacing: 10) {
+        let count = store.layout.count(of: kind)
+        return HStack(spacing: 10) {
+            Toggle("Show \(kind.title) on the Overview", isOn: Binding(
+                get: { count > 0 },
+                set: { on in
+                    store.update { if on { $0.add(kind) } else { $0.removeAll(kind) } }
+                }))
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .help(count == 0 ? "Add \(kind.title) to the Overview"
+                      : count == 1 ? "Remove \(kind.title) from the Overview"
+                      : "Remove all \(count) \(kind.title) widgets from the Overview")
+                .accessibilityLabel("Show \(kind.title) on the Overview")
+                .accessibilityHint(count > 1 ? "Unticking removes all \(count)" : "")
             Image(systemName: kind.systemImage)
                 .foregroundStyle(.secondary)
                 .frame(width: 30, height: 30)
@@ -742,14 +761,17 @@ struct AddWidgetsPanel: View {
             // panel rather than pushing the + past it (round 2).
             VStack(alignment: .leading, spacing: 1) {
                 Text(kind.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text(kind.summary).font(.caption).foregroundStyle(.secondary)
+                // More than one on the page: the subtitle says how many, because unticking takes
+                // them all (round 4).
+                Text(count > 1 ? "\(count) on the Overview" : kind.summary)
+                    .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            IconActionButton(systemImage: "plus", label: "Add \(kind.title)",
-                             help: store.layout.contains(kind) ? "Add another \(kind.title) widget to the Overview"
-                                                               : "Add \(kind.title) to the Overview") {
+            IconActionButton(systemImage: "plus",
+                             label: count > 0 ? "Add another \(kind.title)" : "Add \(kind.title)",
+                             help: count > 0 ? "Add another \(kind.title)" : "Add \(kind.title) to the Overview") {
                 store.update { $0.add(kind) }
             }
         }
