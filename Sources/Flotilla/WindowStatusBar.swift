@@ -27,6 +27,10 @@ struct WindowStatusBar: View {
             HelperStatusItem(model: model)     // draws its own leading line, so a hidden one leaves none
             Divider().frame(height: 12)
             versionMenu
+            // When Flotilla last refreshed, and how many Macs answered (Kamal, 23 October): beside the
+            // version, on every page. Counted from connected Macs, never from every Mac added.
+            Divider().frame(height: 12)
+            FreshnessStatusItem(model: model)
             Spacer(minLength: 12)
             // Right: Tasks alone, its text against the window edge. The update badge, when there is
             // one, sits just left of it — and still waits while Tasks has something to say, as in
@@ -189,5 +193,29 @@ private struct HelperStatusItem: View {
             }
             }
         }
+    }
+}
+
+/// "Updated just now · 2 of 6 Macs connected". It ticks over by itself, so "just now" ages without a
+/// refresh to prompt it, and it is the first thing to give way when the bar is narrow.
+private struct FreshnessStatusItem: View {
+    let model: AppModel
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help("When Flotilla last refreshed, and how many of your Macs answered")
+        }
+    }
+
+    private var text: String {
+        let macs = model.hostRows.filter { $0.isThisMac || $0.peer != nil }
+        let connected = macs.filter(\.connected).count
+        let updated = model.lastRefresh.map { "Updated \(OverviewView.checkIn($0))" } ?? "Not refreshed yet"
+        return macs.count > 1 ? "\(updated) · \(connected) of \(macs.count) Macs connected" : updated
     }
 }
