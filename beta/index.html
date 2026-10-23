@@ -1,0 +1,1827 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test the Flotilla beta — melonfleet</title>
+<meta name="description" content="The public test plan for Flotilla 1.5.0-beta.6, for people seeing it for the first time: what to do, what you should see, and a Fail button that fills in a GitHub issue for you.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-96.png" sizes="96x96" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#1B5E20">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&family=Open+Sans:wght@400;600&family=Ubuntu+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<!-- Marks that scripting is available, before first paint. The Pass, Fail and Skip buttons exist
+     only with it: a button that records nothing is worse than no button. -->
+<script>document.documentElement.className += ' js';</script>
+</head>
+<body>
+<!-- The beta test plan.
+     Everything on this page is static and self-contained: the steps are plain HTML, the script is
+     inline, and the only things fetched are the stylesheet and the fonts every page already loads.
+     Results live in this browser's localStorage under one key, and nothing is sent anywhere — Fail
+     and Send summary only open GitHub's New issue page, prefilled, for the tester to submit.
+
+     The plan is written for someone who has never used Flotilla, on a Mac that has never had it:
+     the core path starts at the download, and every term is explained where it first appears.
+     Upgrade checks for beta 5 users live in one optional section at the end.
+
+     A step is keyed by its data-step id, not by its number, so a tester's saved marks survive
+     steps being added or reordered. The numbers are display only and are quoted in issue titles;
+     if you insert a step mid-beta, renumber, and expect a few reports to quote the old numbers.
+     First-impression boxes are keyed by data-impression and go into the summary as free text.
+     The issue forms are .github/ISSUE_TEMPLATE/beta-test.yml and beta-summary.yml in
+     melonfleet/flotilla, and the query parameters below are those forms' field ids: title, step,
+     expected, version, macos, model and firsttime for a failure; title, version, macos, model,
+     firsttime, totals, failed, skipped and impressions for the summary. -->
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site"><div class="wrap nav">
+  <a class="brand" href="/" aria-label="melonfleet home">
+    <img src="/assets/melonfleet-wordmark.svg" alt="melonfleet" width="376" height="100">
+  </a>
+  <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+    <span class="nav-toggle-bars" aria-hidden="true"><span></span></span>
+  </button>
+  <nav id="site-nav" class="nav-links">
+    <a href="/#what">What it does</a>
+    <a href="/#requirements">Requirements</a>
+    <a href="/about">About</a>
+    <a href="/brand">Brand</a>
+    <a href="https://github.com/melonfleet" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</div></header>
+
+<main id="main" class="wrap beta-page">
+
+  <header class="beta-intro">
+    <img class="beta-icon" src="/assets/icons/flotilla.svg" alt="" width="64" height="64">
+    <p class="eyebrow">Flotilla 1.5.0-beta.6 &middot; public beta</p>
+    <h1>Test the beta</h1>
+    <p class="lead">This test is for people who have never used Flotilla, on a Mac that has never had it. It starts from nothing: downloading, installing and your first container. Each step says what to do and what you should see. Mark it Pass, Fail or Skip as you go; a Fail opens a GitHub issue with the step already filled in.</p>
+    <p>You don&rsquo;t need to know anything about containers. What confuses you is as useful to us as what breaks.</p>
+  </header>
+
+  <div class="beta-facts">
+    <div class="beta-fact">
+      <h2 class="beta-fact-title">Core path, under 30 minutes</h2>
+      <p>28 steps, from the download to your first container and a check for updates, with a few short first-impressions boxes. If you only have half an hour, do these.</p>
+    </div>
+    <div class="beta-fact">
+      <h2 class="beta-fact-title">Deeper path, optional</h2>
+      <p>177 more steps in short sections. Do any of them, in any order, and skip what you can&rsquo;t try.</p>
+    </div>
+    <div class="beta-fact">
+      <h2 class="beta-fact-title">Saved in this browser</h2>
+      <p>Your marks and notes stay in this browser on this device, so you can close the page and come back. Nothing is sent anywhere until you submit an issue yourself.</p>
+    </div>
+  </div>
+
+  <section class="beta-card" aria-labelledby="before-title">
+    <h2 id="before-title">Before you start</h2>
+    <p class="beta-warn"><strong>Be signed in to GitHub in this browser before you start.</strong> A free account is enough. Each Fail opens a prefilled GitHub issue, and you submit it yourself.</p>
+    <div class="beta-before">
+      <ul class="beta-list">
+        <li>A Mac with Apple silicon (M1 or later) and macOS 26 or later, that has never had Flotilla on it.</li>
+        <li>About 30 minutes, a few GB of free disk space, and the Mac&rsquo;s administrator password.</li>
+        <li>You don&rsquo;t need to install anything first. The core path downloads Flotilla, and Flotilla offers to install Apple&rsquo;s <code>container</code> for you, through Apple&rsquo;s own Installer.</li>
+        <li>A Mac where a test app doesn&rsquo;t matter. Flotilla never removes anything you didn&rsquo;t ask it to, but this is a beta.</li>
+        <li>What to include in a report, and what not to, is in <a href="https://github.com/melonfleet/flotilla/blob/main/BETA-TESTING.md" target="_blank" rel="noopener">BETA-TESTING.md</a>.</li>
+      </ul>
+
+      <form class="beta-setup" id="beta-setup" autocomplete="off" onsubmit="return false">
+        <p class="beta-setup-title">Your setup <span class="muted">(goes into each report)</span></p>
+        <label class="beta-field" for="tester-firsttime">
+          <span class="beta-field-label">First time using Flotilla?</span>
+          <select id="tester-firsttime" name="firsttime">
+            <option value="">Choose…</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </select>
+        </label>
+        <label class="beta-field" for="tester-version">
+          <span class="beta-field-label">Flotilla version and build</span>
+          <input id="tester-version" name="version" type="text" placeholder="1.5.0-beta.6 (build number)" spellcheck="false">
+          <span class="beta-field-hint">Step 14 shows you where: Settings ▸ About.</span>
+        </label>
+        <label class="beta-field" for="tester-macos">
+          <span class="beta-field-label">macOS version</span>
+          <input id="tester-macos" name="macos" type="text" placeholder="for example 26.1" spellcheck="false">
+          <span class="beta-field-hint">Apple menu ▸ About This Mac.</span>
+        </label>
+        <label class="beta-field" for="tester-model">
+          <span class="beta-field-label">Mac model <span class="muted">(optional)</span></span>
+          <input id="tester-model" name="model" type="text" placeholder="for example MacBook Air, M2" spellcheck="false">
+        </label>
+      </form>
+    </div>
+  </section>
+
+  <section class="beta-card beta-card-note" aria-labelledby="words-title">
+    <h2 id="words-title">A few words you&rsquo;ll meet</h2>
+    <dl class="beta-glossary">
+      <dt><code>container</code></dt><dd>Apple&rsquo;s free tool for running Linux containers on a Mac. You normally type its commands in Terminal; Flotilla gives it windows and buttons.</dd>
+      <dt>Container</dt><dd>A program, such as a web server or a database, packaged with everything it needs and running in its own small Linux virtual machine.</dd>
+      <dt>Image</dt><dd>The package a container is made from. Downloading one is called pulling it.</dd>
+      <dt>Volume</dt><dd>Storage a container keeps its data in, which stays when the container is deleted.</dd>
+      <dt>Suggestions</dt><dd>Ready-made recipes in Flotilla for containers and other things worth trying.</dd>
+      <dt>Widget</dt><dd>A tile on the Overview that shows one thing, such as your containers or your Macs. You choose which ones, and where they go.</dd>
+      <dt>Tasks</dt><dd>The panel where every job you start, such as a download, shows its progress.</dd>
+      <dt>Admin and host</dt><dd>An admin Mac looks after containers on itself and on other Macs, called hosts. With one Mac, it is the admin.</dd>
+      <dt>Flotilla Helper</dt><dd>A small background part of Flotilla, approved once in System Settings, for the few jobs that need administrator rights.</dd>
+    </dl>
+  </section>
+
+  <section class="beta-card beta-card-note" aria-labelledby="report-title">
+    <h2 id="report-title">How reporting works</h2>
+    <p>Flotilla&rsquo;s issues are on GitHub, and you file them with <strong>your own GitHub account</strong> (a free one is fine). This page can&rsquo;t file anything by itself. When you press Fail, it opens GitHub&rsquo;s New issue page in a new tab with the step, what should have happened and your setup already filled in. You write what actually happened, attach a screenshot if you can, and press Create.</p>
+    <p>At the end, Send summary opens one more issue with your totals, the steps that failed and your first impressions.</p>
+    <p class="beta-warn"><strong>Never paste passwords, tokens, private keys or personal data</strong> into an issue, a screenshot or a log. Issues are public. A support bundle (Help ▸ Create Support Bundle… in Flotilla) shows you every file before you save it: read it before you attach it.</p>
+    <noscript><p class="beta-warn">JavaScript is off, so this page can&rsquo;t record your results or fill in reports. You can still follow the steps and report a failure with the <a href="https://github.com/melonfleet/flotilla/issues/new?template=beta-test.yml" target="_blank" rel="noopener">beta test issue form</a>, and your first impressions with the <a href="https://github.com/melonfleet/flotilla/issues/new?template=beta-summary.yml" target="_blank" rel="noopener">summary form</a>.</p></noscript>
+    <p class="beta-warn" id="beta-storage-warning" hidden>This browser isn&rsquo;t letting the page save anything (a private window can do that), so your marks and notes will be lost when you close it. Reports still work.</p>
+  </section>
+
+  <nav class="beta-toc" aria-label="Test sections">
+    <div class="beta-toc-col">
+      <h2 class="beta-toc-title"><a href="#core">Core path</a> <span class="beta-tag beta-tag-core">under 30 min</span></h2>
+      <ol class="beta-toc-list">
+        <li><a href="#get">Get Flotilla</a> <span class="beta-toc-meta" data-toc="get" data-minutes="5">3 steps · 5 min</span></li>
+        <li><a href="#setup">The Setup Assistant</a> <span class="beta-toc-meta" data-toc="setup" data-minutes="7">8 steps · 7 min</span></li>
+        <li><a href="#look">A first look round</a> <span class="beta-toc-meta" data-toc="look" data-minutes="4">4 steps · 4 min</span></li>
+        <li><a href="#first">Your first container</a> <span class="beta-toc-meta" data-toc="first" data-minutes="9">9 steps · 9 min</span></li>
+        <li><a href="#image">Download an image</a> <span class="beta-toc-meta" data-toc="image" data-minutes="2">2 steps · 2 min</span></li>
+        <li><a href="#updates">Check for updates</a> <span class="beta-toc-meta" data-toc="updates" data-minutes="2">2 steps · 2 min</span></li>
+      </ol>
+    </div>
+    <div class="beta-toc-col">
+      <h2 class="beta-toc-title"><a href="#deeper">Deeper path</a> <span class="beta-tag">optional</span></h2>
+      <ol class="beta-toc-list">
+        <li><a href="#search">The search box</a> <span class="beta-toc-meta" data-toc="search" data-minutes="6">8 steps · 6 min</span></li>
+        <li><a href="#lists">Lists and pages</a> <span class="beta-toc-meta" data-toc="lists" data-minutes="10">12 steps · 10 min</span></li>
+        <li><a href="#overview">The Overview and its widgets</a> <span class="beta-toc-meta" data-toc="overview" data-minutes="8">9 steps · 8 min</span></li>
+        <li><a href="#tasks">The Tasks panel</a> <span class="beta-toc-meta" data-toc="tasks" data-minutes="12">15 steps · 12 min</span></li>
+        <li><a href="#forms">Forms</a> <span class="beta-toc-meta" data-toc="forms" data-minutes="8">10 steps · 8 min</span></li>
+        <li><a href="#suggestions">More of Suggestions</a> <span class="beta-toc-meta" data-toc="suggestions" data-minutes="15">26 steps · 15 min</span></li>
+        <li><a href="#library">Security findings and volume setup</a> <span class="beta-toc-meta" data-toc="library" data-minutes="15">10 steps · 15 min</span></li>
+        <li><a href="#groups">Groups</a> <span class="beta-toc-meta" data-toc="groups" data-minutes="12">13 steps · 12 min</span></li>
+        <li><a href="#inside">Inside a container: terminal and files</a> <span class="beta-toc-meta" data-toc="inside" data-minutes="8">7 steps · 8 min</span></li>
+        <li><a href="#machines">Machines</a> <span class="beta-toc-meta" data-toc="machines" data-minutes="10">6 steps · 10 min</span></li>
+        <li><a href="#health">Restart policies and health checks</a> <span class="beta-toc-meta" data-toc="health" data-minutes="10">5 steps · 10 min</span></li>
+        <li><a href="#greta">Greta and her microphone</a> <span class="beta-toc-meta" data-toc="greta" data-minutes="8">10 steps · 8 min</span></li>
+        <li><a href="#settings">Settings, About and the Helper</a> <span class="beta-toc-meta" data-toc="settings" data-minutes="8">9 steps · 8 min</span></li>
+        <li><a href="#a11y">Tooltips, keyboard and VoiceOver</a> <span class="beta-toc-meta" data-toc="a11y" data-minutes="8">5 steps · 8 min</span></li>
+        <li><a href="#other">Kubernetes, DNS and quitting</a> <span class="beta-toc-meta" data-toc="other" data-minutes="5">3 steps · 5 min</span></li>
+        <li><a href="#fleet">Two Macs</a> <span class="beta-toc-meta" data-toc="fleet" data-minutes="30">23 steps · 30 min</span></li>
+        <li><a href="#earlier">If you used an earlier beta</a> <span class="beta-toc-meta" data-toc="earlier" data-minutes="10">6 steps · 10 min</span></li>
+      </ol>
+    </div>
+  </nav>
+
+  <div class="beta-progress" id="beta-progress">
+    <p class="beta-progress-text"><span data-progress-done>0</span> of 205 done <span class="beta-progress-split">&middot; core path <span data-progress-core>0</span> of 28</span></p>
+    <div class="beta-meter" aria-hidden="true"><span class="beta-meter-pass" data-meter="pass"></span><span class="beta-meter-fail" data-meter="fail"></span><span class="beta-meter-skip" data-meter="skip"></span></div>
+    <button type="button" class="beta-link-btn" id="beta-next">Next untested step</button>
+  </div>
+  <p class="visually-hidden" id="beta-live" aria-live="polite"></p>
+
+  <section class="beta-path" id="core" aria-labelledby="core-title">
+    <header class="beta-path-head">
+      <p class="eyebrow">Core path &middot; under 30 minutes</p>
+      <h2 id="core-title">From nothing to your first container</h2>
+      <p class="beta-path-lede">Do these in order. If a step can&rsquo;t be done because an earlier one failed, mark it Skip.</p>
+    </header>
+
+    <section class="beta-section" id="get" data-section data-path="core" aria-labelledby="get-title">
+      <header class="beta-section-head">
+        <h3 id="get-title">Get Flotilla</h3>
+        <p class="beta-section-meta"><span>About 5 min</span> · <span data-section-progress>3 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Flotilla is free. It comes from its GitHub release page, signed by its developer and checked by Apple.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-c-download" data-step="c-download">
+          <h4 class="step-head"><span class="step-num">1</span> <span class="step-title">Find the download</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the <a href="https://github.com/melonfleet/flotilla/releases/tag/v1.5.0-beta.6" target="_blank" rel="noopener">release page</a> and scroll down to <strong>Assets</strong>.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The release is marked Pre-release. Under Assets are files named <code>Flotilla-1.5.0-beta.6</code> ending in <code>.dmg</code>, <code>.pkg</code>, <code>.zip</code> and <code>.tar.gz</code>. Download the <code>.dmg</code> (a disk image), unless you know you want the <code>.pkg</code> (an installer package).</span></p>
+        </li>
+        <li class="step" id="step-c-install" data-step="c-install">
+          <h4 class="step-head"><span class="step-num">2</span> <span class="step-title">Install it</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the file you downloaded from your Downloads folder. For the <code>.dmg</code>: drag the Flotilla icon onto the Applications folder in the window that opens. For the <code>.pkg</code>: follow Apple’s Installer.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The disk image opens a window with Flotilla and a shortcut to Applications, and copying takes a few seconds. The package opens Apple’s Installer, asks for your password, and ends with “The installation was successful.” Either way, Flotilla is now in your Applications folder.</span></p>
+        </li>
+        <li class="step" id="step-c-gatekeeper" data-step="c-gatekeeper">
+          <h4 class="step-head"><span class="step-num">3</span> <span class="step-title">Open it for the first time</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open your Applications folder and double-click Flotilla.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">macOS asks its usual question for an app from the internet: “Flotilla” is an app downloaded from the Internet. Are you sure you want to open it? Press Open. (After the package, it may open straight away without asking.) There is no warning about an “unidentified developer”, an app that “can’t be opened” or “is damaged”, or Apple being unable to check it.</span></p>
+        </li>
+      </ol>
+      <div class="beta-impressions" data-impression="install">
+        <label class="beta-impressions-label" for="imp-install">First impressions: <span data-impression-name>Getting it installed</span></label>
+        <p class="beta-impressions-hint" id="imp-install-hint">Was it clear which file to download and what to do with it? Did anything macOS said worry you? A sentence or two is plenty; leave it empty if nothing comes to mind. It goes into your summary.</p>
+        <textarea id="imp-install" rows="3" aria-describedby="imp-install-hint" spellcheck="true"></textarea>
+      </div>
+    </section>
+
+    <section class="beta-section" id="setup" data-section data-path="core" aria-labelledby="setup-title">
+      <header class="beta-section-head">
+        <h3 id="setup-title">The Setup Assistant</h3>
+        <p class="beta-section-meta"><span>About 7 min</span> · <span data-section-progress>8 steps</span></p>
+      </header>
+      <p class="beta-section-intro">The first time Flotilla opens, a short guide called the Setup Assistant asks a few questions. Two words it uses: an <strong>admin</strong> Mac is one you use to look after containers, on itself and on other Macs; a <strong>host</strong> is a Mac that an admin Mac looks after. With one Mac, choose Admin.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-c-welcome" data-step="c-welcome">
+          <h4 class="step-head"><span class="step-num">4</span> <span class="step-title">Welcome</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Read the first page, choose <strong>Admin</strong>, and press Continue.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A window titled “Welcome to Flotilla”, with “Step 1 of 5” and the question “How will you use this Mac?”. Admin and Host each say in a line or two what they mean, and a note says you can change this later in Settings.</span></p>
+        </li>
+        <li class="step" id="step-c-theme" data-step="c-theme">
+          <h4 class="step-head"><span class="step-num">5</span> <span class="step-title">Make It Yours</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Choose an appearance (Auto follows your Mac’s light or dark mode) and a look, then press Continue.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A small sketch of the window changes as you choose, so you can see the result before you go on.</span></p>
+        </li>
+        <li class="step" id="step-c-greta" data-step="c-greta">
+          <h4 class="step-head"><span class="step-num">6</span> <span class="step-title">Meet Greta</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Read the page about Greta, decide whether to turn her on, and press Continue (or Not now).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Greta is Flotilla’s assistant. The page says she runs on this Mac with Apple’s on-device model, sends nothing away, and never runs anything herself. If Apple’s model isn’t available on this Mac, it says so and offers Not now.</span></p>
+        </li>
+        <li class="step" id="step-c-prepare" data-step="c-prepare">
+          <h4 class="step-head"><span class="step-num">7</span> <span class="step-title">Prepare This Mac: nothing happens without you</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Read this page before clicking anything.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">An item called “Apple’s container”. If <code>container</code> isn’t on this Mac, a checkbox reads “Download and install container 1.5.0 when I continue”, with a line saying it is Apple’s installer, about 118 MB, that Flotilla checks it is Apple’s, and that Apple’s Installer asks for your password. If it is already installed, it says “Installed. Flotilla runs your containers with it.” Nothing has been downloaded yet.</span></p>
+        </li>
+        <li class="step" id="step-c-install-container" data-step="c-install-container">
+          <h4 class="step-head"><span class="step-num">8</span> <span class="step-title">Install Apple’s container</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">If the checkbox is there, tick it and press Continue. Skip this step if <code>container</code> was already installed.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Flotilla shows each stage, such as “Downloading container 1.5.0…” and “Checking it is Apple’s…”. Then Apple’s Installer opens and asks for your password: finish it there. Flotilla carries on by itself when the Installer is done.</span></p>
+        </li>
+        <li class="step" id="step-c-online" data-step="c-online">
+          <h4 class="step-head"><span class="step-num">9</span> <span class="step-title">Online Checks</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Read the page, leave both boxes ticked for this test, and press Continue.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It says Flotilla goes online by itself only for these, and each is separate: “Check for Flotilla updates automatically” and “Check daily for new suggestions”, both ticked, each naming the websites it contacts.</span></p>
+        </li>
+        <li class="step" id="step-c-finish" data-step="c-finish">
+          <h4 class="step-head"><span class="step-num">10</span> <span class="step-title">You’re set up</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look over the summary and press Start Using Flotilla.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A page titled “You’re Set Up” lists your choices (role, appearance, <code>container</code>, Greta, online checks) and says you can change any of it later in Settings. Then Flotilla’s main window opens.</span></p>
+        </li>
+        <li class="step" id="step-c-helper" data-step="c-helper">
+          <h4 class="step-head"><span class="step-num">11</span> <span class="step-title">Approve the Flotilla Helper</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">If macOS tells you Flotilla added a background item, or Flotilla asks you to switch it on, open System Settings ▸ General ▸ Login Items &amp; Extensions and switch Flotilla on.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The Helper is a small background part of Flotilla for the few jobs that need administrator rights, such as installing <code>container</code>. macOS asks about it once. Afterwards, the ● Helper dot at the bottom of Flotilla’s window is green, and hovering it shows “Flotilla Helper — Running” with a version.</span></p>
+        </li>
+      </ol>
+      <div class="beta-impressions" data-impression="setup">
+        <label class="beta-impressions-label" for="imp-setup">First impressions: <span data-impression-name>The Setup Assistant</span></label>
+        <p class="beta-impressions-hint" id="imp-setup-hint">Did you understand each choice, and Admin versus Host? Was it clear what <code>container</code> is and why it was needed? A sentence or two is plenty; leave it empty if nothing comes to mind. It goes into your summary.</p>
+        <textarea id="imp-setup" rows="3" aria-describedby="imp-setup-hint" spellcheck="true"></textarea>
+      </div>
+    </section>
+
+    <section class="beta-section" id="look" data-section data-path="core" aria-labelledby="look-title">
+      <header class="beta-section-head">
+        <h3 id="look-title">A first look round</h3>
+        <p class="beta-section-meta"><span>About 4 min</span> · <span data-section-progress>4 steps</span></p>
+      </header>
+      <p class="beta-section-intro">The main window has a sidebar of sections on the left, the section you chose on the right, a search box in the bar at the top, and a status bar along the bottom.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-c-overview" data-step="c-overview">
+          <h4 class="step-head"><span class="step-num">12</span> <span class="step-title">Overview</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look at the page that opens first.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Overview is selected in the sidebar. Across the top is a band that says “Nothing needs attention” (or shows a notice), with an All Notifications link. Under it, a Get started card offers Run a Container…, Pull Image…, Add Host… and Try a Suggested Stack…. Under that are tiles called widgets, such as Fleet at a glance, Hosts and Containers, with counts that are zero or close to it on a new Mac. If <code>container</code> still isn’t installed, a band at the top says so, with a button to install it.</span></p>
+        </li>
+        <li class="step" id="step-c-statusbar" data-step="c-statusbar">
+          <h4 class="step-head"><span class="step-num">13</span> <span class="step-title">The status bar</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look along the bottom of the window. Click ● Container.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">On the left: ● Container, ● Helper, the version, “v1.5.0-beta.6”, and then when Flotilla last refreshed, such as “Updated just now”. With more than one Mac added, that line also says how many are connected, such as “2 of 3 Macs connected”. On the right: Tasks. Clicking ● Container opens a menu whose first line is “Running”. If it says Stopped instead, choose Start Container System and wait for the dot to turn green.</span></p>
+        </li>
+        <li class="step" id="step-c-version" data-step="c-version">
+          <h4 class="step-head"><span class="step-num">14</span> <span class="step-title">Note your version</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Settings (Flotilla menu ▸ Settings…, or ⌘,) and choose About. Copy the version line into “Flotilla version and build” at the top of this page, so your reports carry it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">“Version 1.5.0-beta.6 (a build number) · Tested with container 1.5.0”.</span></p>
+        </li>
+        <li class="step" id="step-c-sidebar" data-step="c-sidebar">
+          <h4 class="step-head"><span class="step-num">15</span> <span class="step-title">Find your way</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click Containers, Images and Volumes in the sidebar, then Overview again.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each opens on the right. An empty list says there is nothing there yet and offers a way to start. Looking changes nothing on your Mac.</span></p>
+        </li>
+      </ol>
+      <div class="beta-impressions" data-impression="look">
+        <label class="beta-impressions-label" for="imp-look">First impressions: <span data-impression-name>First look</span></label>
+        <p class="beta-impressions-hint" id="imp-look-hint">From this window, could you tell what Flotilla is for? What would you have clicked first? A sentence or two is plenty; leave it empty if nothing comes to mind. It goes into your summary.</p>
+        <textarea id="imp-look" rows="3" aria-describedby="imp-look-hint" spellcheck="true"></textarea>
+      </div>
+    </section>
+
+    <section class="beta-section" id="first" data-section data-path="core" aria-labelledby="first-title">
+      <header class="beta-section-head">
+        <h3 id="first-title">Your first container</h3>
+        <p class="beta-section-meta"><span>About 9 min</span> · <span data-section-progress>9 steps</span></p>
+      </header>
+      <p class="beta-section-intro">A <strong>container</strong> is a program packaged with everything it needs, made from an <strong>image</strong> (the package) and run in its own small Linux virtual machine. <strong>Suggestions</strong> are ready-made recipes for ones worth trying. You’ll run Mailpit, a small tool developers use to catch test emails. It has a web page, needs no password, and is harmless to delete.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-c-suggestions" data-step="c-suggestions">
+          <h4 class="step-head"><span class="step-num">16</span> <span class="step-title">Open Suggestions</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click Suggestions in the sidebar, just under Overview.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A row of tabs: All, Apps, Stacks, Volumes, Networks, Domains, Machines and Clusters, each with a count. The list is on the left, and a line under it reads “N suggestions · library” and a version.</span></p>
+        </li>
+        <li class="step" id="step-c-find" data-step="c-find">
+          <h4 class="step-head"><span class="step-num">17</span> <span class="step-title">Find Mailpit</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the Apps tab, type <code>mailpit</code> in the search box at the top of the window, and select “Mailpit Email Testing Tool”.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Its details appear on the right of the list: what it is, its image (<code>ghcr.io/axllent/mailpit</code>), its ports and when it was tested. Nothing has been created. (If Mailpit isn’t listed, Flotilla hasn’t fetched its suggestions yet: click the version in the status bar, choose Check Now under Suggestions library, and search again.)</span></p>
+        </li>
+        <li class="step" id="step-c-use" data-step="c-use">
+          <h4 class="step-head"><span class="step-num">18</span> <span class="step-title">Use it</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press ▶ at the top of the details (its tooltip says “Use this suggestion…”).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The Run Container form opens across the window, already filled in: the image, the name <code>mailpit</code>, ports such as <code>127.0.0.1:8025:8025</code> (a different first number if 8025 is taken on this Mac), and a volume for its data. A preview shows the <code>container run</code> command it will use. There are no red errors. Nothing runs until you press ▶ on this form.</span></p>
+        </li>
+        <li class="step" id="step-c-run" data-step="c-run">
+          <h4 class="step-head"><span class="step-num">19</span> <span class="step-title">Run it</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Hover the ▶ at the top right of the form (tooltip “Run”), then press it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">You are back on Containers at once. A Tasks panel rises on the right with one line for the job and its progress: Flotilla downloads the image first, which can take a minute. Then <code>mailpit</code> is in the list and running, and the panel tucks itself away.</span></p>
+        </li>
+        <li class="step" id="step-c-open" data-step="c-open">
+          <h4 class="step-head"><span class="step-num">20</span> <span class="step-title">Open its web page</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In your web browser, go to <code>http://localhost:8025</code> (use the first port number from the form if it was different).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Mailpit’s page, with an empty inbox.</span></p>
+        </li>
+        <li class="step" id="step-c-page" data-step="c-page">
+          <h4 class="step-head"><span class="step-num">21</span> <span class="step-title">Its page</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Select <code>mailpit</code> in the Containers list.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Its page opens to the right of the list, starting on Overview, with its state, image and ports. Along the top is a row of tab icons, each with a tooltip when you hover: Overview, Processes, Logs, Inspect, Terminal and Files.</span></p>
+        </li>
+        <li class="step" id="step-c-logs" data-step="c-logs">
+          <h4 class="step-head"><span class="step-num">22</span> <span class="step-title">Its logs</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the Logs tab.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The lines Mailpit printed as it started, including one saying where its web page is.</span></p>
+        </li>
+        <li class="step" id="step-c-stop" data-step="c-stop">
+          <h4 class="step-head"><span class="step-num">23</span> <span class="step-title">Stop it</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In the page’s header, press Stop (a filled square; its tooltip says “Stop mailpit”).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Within a few seconds it shows as stopped, in the list and on its page, and its web page no longer loads.</span></p>
+        </li>
+        <li class="step" id="step-c-delete" data-step="c-delete">
+          <h4 class="step-head"><span class="step-num">24</span> <span class="step-title">Delete it</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In the page’s header, press the trash can (tooltip “Delete mailpit”).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Flotilla asks first: “Delete “mailpit”?”, “This cannot be undone.”, with Delete and Cancel. After Delete, it is gone from the list. The volume made for its data stays in Volumes until you delete it there.</span></p>
+        </li>
+      </ol>
+      <div class="beta-impressions" data-impression="first">
+        <label class="beta-impressions-label" for="imp-first">First impressions: <span data-impression-name>Your first container</span></label>
+        <p class="beta-impressions-hint" id="imp-first-hint">Was it clear that Use only opened a form, and nothing ran until you pressed ▶? Did the Tasks panel make sense? Was anything hard to find? A sentence or two is plenty; leave it empty if nothing comes to mind. It goes into your summary.</p>
+        <textarea id="imp-first" rows="3" aria-describedby="imp-first-hint" spellcheck="true"></textarea>
+      </div>
+    </section>
+
+    <section class="beta-section" id="image" data-section data-path="core" aria-labelledby="image-title">
+      <header class="beta-section-head">
+        <h3 id="image-title">Download an image</h3>
+        <p class="beta-section-meta"><span>About 2 min</span> · <span data-section-progress>2 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Downloading an image without running it is called <strong>pulling</strong> it. <code>alpine</code> is a very small Linux image.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-c-pull" data-step="c-pull">
+          <h4 class="step-head"><span class="step-num">25</span> <span class="step-title">Pull an image</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click Images in the sidebar and choose Pull Image… (also in the File menu). Type <code>alpine:latest</code> in Reference and press ▶ (tooltip “Pull”).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">You are back on the Images list at once, and the Tasks panel shows the pull with a percentage. The window stays usable while it runs.</span></p>
+        </li>
+        <li class="step" id="step-c-pull-done" data-step="c-pull-done">
+          <h4 class="step-head"><span class="step-num">26</span> <span class="step-title">It arrives</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Wait for the pull to finish.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text"><code>alpine</code> is in the Images list, beside Mailpit’s image. About two seconds after the pull ends, the panel tucks away, and the status bar shows “Tasks · Done” for a moment, then how many jobs finished.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="updates" data-section data-path="core" aria-labelledby="updates-title">
+      <header class="beta-section-head">
+        <h3 id="updates-title">Check for updates</h3>
+        <p class="beta-section-meta"><span>About 2 min</span> · <span data-section-progress>2 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Flotilla updates itself. Betas are offered only on the Pre-release channel, and a new Mac starts on Stable.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-c-channel" data-step="c-channel">
+          <h4 class="step-head"><span class="step-num">27</span> <span class="step-title">Switch to the Pre-release channel</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click the version (“v1.5.0-beta.6”) in the status bar. Choose Switch Channel ▸ Pre-release.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A menu with Check for Updates…, when it last checked, “Channel: Stable”, Switch Channel, Automatically check, Release Notes, and the suggestions library’s version with Check Now. Afterwards it reads “Channel: Pre-release”. (Settings ▸ Updates shows the same choice.)</span></p>
+        </li>
+        <li class="step" id="step-c-check" data-step="c-check">
+          <h4 class="step-head"><span class="step-num">28</span> <span class="step-title">Check for updates</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Choose Check for Updates… from the same menu.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A short “Checking…”, then “Flotilla is up to date”, unless a newer beta has come out since, in which case it is offered with its release notes.</span></p>
+        </li>
+      </ol>
+      <div class="beta-impressions" data-impression="overall">
+        <label class="beta-impressions-label" for="imp-overall">First impressions: <span data-impression-name>Overall</span></label>
+        <p class="beta-impressions-hint" id="imp-overall-hint">Would you use Flotilla again? What was the most confusing moment? Was there anything you expected and didn’t find? A sentence or two is plenty; leave it empty if nothing comes to mind. It goes into your summary.</p>
+        <textarea id="imp-overall" rows="3" aria-describedby="imp-overall-hint" spellcheck="true"></textarea>
+      </div>
+    </section>
+  </section>
+
+  <section class="beta-path" id="deeper" aria-labelledby="deeper-title">
+    <header class="beta-path-head">
+      <p class="eyebrow">Deeper path &middot; optional</p>
+      <h2 id="deeper-title">The rest of Flotilla</h2>
+      <p class="beta-path-lede">Pick sections that interest you, in any order. Each says what its words mean. Skip any step you can&rsquo;t try; a skip is useful information too.</p>
+    </header>
+
+    <section class="beta-section" id="search" data-section data-path="deep" aria-labelledby="search-title">
+      <header class="beta-section-head">
+        <h3 id="search-title">The search box</h3>
+        <p class="beta-section-meta"><span>About 6 min</span> · <span data-section-progress>8 steps</span></p>
+      </header>
+      <p class="beta-section-intro">The box in the bar at the top of the window filters the list you are looking at, finds things by name, and runs commands. ⌘K puts you in it from anywhere.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-s-focus" data-step="s-focus">
+          <h4 class="step-head"><span class="step-num">29</span> <span class="step-title">⌘K opens it</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press ⌘K on any page.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The search box takes focus at once and lists commands, then sections.</span></p>
+        </li>
+        <li class="step" id="step-s-filter" data-step="s-filter">
+          <h4 class="step-head"><span class="step-num">30</span> <span class="step-title">It filters the page you are on</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">On Containers or Images, type part of a name.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The list filters as you type, and the dropdown says “N on this page”.</span></p>
+        </li>
+        <li class="step" id="step-s-scope" data-step="s-scope">
+          <h4 class="step-head"><span class="step-num">31</span> <span class="step-title">Look at one kind of thing</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Type <code>image:</code> and then part of an image’s name. Try Tab while a kind is suggested.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Only images are listed, and the page behind is not filtered. Tab accepts the suggested kind.</span></p>
+        </li>
+        <li class="step" id="step-s-scopes" data-step="s-scopes">
+          <h4 class="step-head"><span class="step-num">32</span> <span class="step-title">Other kinds</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Try <code>volume:</code>, <code>net:</code>, <code>suggestion:</code> and <code>host:</code>.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each lists only that kind of thing.</span></p>
+        </li>
+        <li class="step" id="step-s-slash" data-step="s-slash">
+          <h4 class="step-head"><span class="step-num">33</span> <span class="step-title">Commands by name</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Type <code>/run-container</code>, then <code>/settings</code>, then <code>/greta</code>.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each command is listed, and Return or Tab runs it.</span></p>
+        </li>
+        <li class="step" id="step-s-commands" data-step="s-commands">
+          <h4 class="step-head"><span class="step-num">34</span> <span class="step-title">Commands only</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Type <code>&gt;</code>.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Only commands are listed, and the page is not filtered.</span></p>
+        </li>
+        <li class="step" id="step-s-esc-form" data-step="s-esc-form">
+          <h4 class="step-head"><span class="step-num">35</span> <span class="step-title">Esc in the box doesn’t close a form</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open a form (Pull Image…, say), type in a field, press ⌘K, then Esc.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Esc closes the dropdown. The form stays open with what you typed.</span></p>
+        </li>
+        <li class="step" id="step-s-hub" data-step="s-hub">
+          <h4 class="step-head"><span class="step-num">36</span> <span class="step-title">Search Docker Hub</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In Images, choose Browse Docker Hub…, type a name in the box and press Return.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Results from Docker Hub, a public catalogue of images.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="lists" data-section data-path="deep" aria-labelledby="lists-title">
+      <header class="beta-section-head">
+        <h3 id="lists-title">Lists and pages</h3>
+        <p class="beta-section-meta"><span>About 10 min</span> · <span data-section-progress>12 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Every list in Flotilla works the same way, like Mail: rows on the left, the selected row’s page on the right. Running a few containers first (from Suggestions) gives you more to look at.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-l-rows" data-step="l-rows">
+          <h4 class="step-head"><span class="step-num">37</span> <span class="step-title">Rows everywhere</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look at the list in each of Containers, Machines, Images, Volumes, Networks, Hosts, Registries, DNS and Kubernetes.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each is a list of rows with a checkbox at the start of each row and a Sort menu.</span></p>
+        </li>
+        <li class="step" id="step-l-toolbar" data-step="l-toolbar">
+          <h4 class="step-head"><span class="step-num">38</span> <span class="step-title">The bar above a list</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Containers and look at the bar above the list, then at the checkboxes at the start of the rows.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The first thing in the bar is a checkbox, directly above the rows’ own checkboxes. Next to it are two buttons on one rounded bar, one with lines (list only) and one with two panes. The one in use is lit. After them come the Sort menu and, when there is something to choose between, Filter.</span></p>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick the checkbox in the bar, then untick it. Hover each of the two buttons.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Every row is ticked, then none. The tooltips say “Show List Only” and “Show Two Panes”.</span></p>
+        </li>
+        <li class="step" id="step-l-divider" data-step="l-divider">
+          <h4 class="step-head"><span class="step-num">39</span> <span class="step-title">The divider is remembered</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Drag the divider between the list and the page, switch to another section, then come back.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The width is remembered for each section. A section you have never changed starts with the divider in the middle.</span></p>
+        </li>
+        <li class="step" id="step-l-width" data-step="l-width">
+          <h4 class="step-head"><span class="step-num">40</span> <span class="step-title">Rows fit their width</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Make the list wide, then narrow.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Rows become one line when there is room, and two or three when narrow. The small labels (chips) drop before the name is ever cut short.</span></p>
+        </li>
+        <li class="step" id="step-l-hover" data-step="l-hover">
+          <h4 class="step-head"><span class="step-num">41</span> <span class="step-title">Row actions on hover</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Hover a row, then select one. Open the ⋮ menu at its end, then right-click a row.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The row’s main action (Start or Stop, for a container) and ⋮ appear at its end. Delete is in ⋮, the right-click menu and the page header, never as a button on the row, and it asks first.</span></p>
+        </li>
+        <li class="step" id="step-l-stepper" data-step="l-stepper">
+          <h4 class="step-head"><span class="step-num">42</span> <span class="step-title">Step through the list</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">With a page open, use ↑ ↓ in its header, then ⌘[ and ⌘]. Then press the expand button beside them.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The selection moves through the list in the order shown. Expand widens the page over the list.</span></p>
+        </li>
+        <li class="step" id="step-l-bulk" data-step="l-bulk">
+          <h4 class="step-head"><span class="step-num">43</span> <span class="step-title">Several at once</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick two rows. Then hover a checkbox that can’t be ticked (This Mac in Hosts, or a built-in network).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The right side shows a summary with actions for both. A checkbox that can’t be ticked says why.</span></p>
+        </li>
+        <li class="step" id="step-l-listonly" data-step="l-listonly">
+          <h4 class="step-head"><span class="step-num">44</span> <span class="step-title">List only</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press the list-only button (the one with lines) in the bar above the list, or press ⌥⌘L. Click a row, then press ✕ or Esc. Press the two-panes button to bring the page back.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The list fills the window, a click on a row slides its page in, and ✕ or Esc closes it, also while a row has keyboard focus. The two-panes button puts the list and the page side by side again, and the button that is lit follows.</span></p>
+        </li>
+        <li class="step" id="step-l-filter-open" data-step="l-filter-open">
+          <h4 class="step-head"><span class="step-num">45</span> <span class="step-title">Filtering keeps the page open</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">With an item’s page open, filter the list so that item is hidden.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Its page stays open.</span></p>
+        </li>
+        <li class="step" id="step-l-logs" data-step="l-logs">
+          <h4 class="step-head"><span class="step-num">46</span> <span class="step-title">Logs and Activity</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Logs and click a line. Then open Activity and click a line.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The line’s full text, time, source and Mac on the right. Activity is a record, so it has no bulk actions.</span></p>
+        </li>
+        <li class="step" id="step-l-notices" data-step="l-notices">
+          <h4 class="step-head"><span class="step-num">47</span> <span class="step-title">Notifications and Suggestions</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look at Notifications and Suggestions. Dismiss several notices at once.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The same rows as the other lists. Error notices can’t be ticked.</span></p>
+        </li>
+        <li class="step" id="step-l-minwidth" data-step="l-minwidth">
+          <h4 class="step-head"><span class="step-num">48</span> <span class="step-title">The smallest window</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Make the window as small as it goes.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">No pane is cut off, the theme grid in Settings reflows to two columns, and the version in the status bar is still readable.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="overview" data-section data-path="deep" aria-labelledby="overview-title">
+      <header class="beta-section-head">
+        <h3 id="overview-title">The Overview and its widgets</h3>
+        <p class="beta-section-meta"><span>About 8 min</span> · <span data-section-progress>9 steps</span></p>
+      </header>
+      <p class="beta-section-intro">The Overview is the page Flotilla opens on. Under the band along the top, it is made of widgets: tiles that each show one thing, such as your containers or your Macs. You choose which ones, how big, what they show and where they go, and Flotilla remembers for next time. A few containers running first (from Suggestions) gives the widgets something to show.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-o-band" data-step="o-band">
+          <h4 class="step-head"><span class="step-num">49</span> <span class="step-title">The top of the Overview</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Overview. Look at the band along the top, under the title bar. Try to drag it or remove it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The band says “Nothing needs attention”, or shows one notice at a time with arrows and Dismiss, and always has an All Notifications link. It stays where it is: it can’t be moved or removed. The Get started card and the widgets are under it.</span></p>
+        </li>
+        <li class="step" id="step-o-shapes" data-step="o-shapes">
+          <h4 class="step-head"><span class="step-num">50</span> <span class="step-title">Four shapes</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Find the Containers widget and click the ⋯ at its top right. Under Size, choose Small, then Wide, Tall and Large in turn.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The widget changes shape each time, and shows a different layout of the same information: a single figure when Small, the figure with a few rows when Wide, a list of one-line rows when Tall, and a list of rows with more detail when Large. Nothing overlaps and the other widgets move to make room.</span></p>
+        </li>
+        <li class="step" id="step-o-show" data-step="o-show">
+          <h4 class="step-head"><span class="step-num">51</span> <span class="step-title">Choose what a widget shows</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the ⋯ menu of the Containers widget again and under Show choose Running, then Stopped, then All. Do the same on Hosts and Images.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The list changes each time. The widget’s title names a choice other than its usual one, such as “Containers · Stopped”. Hosts offers All and Problems, and Images offers Newest, Largest and With Vulnerabilities. Storage has no choice, because it shows this Mac’s disk and nothing else.</span></p>
+        </li>
+        <li class="step" id="step-o-open" data-step="o-open">
+          <h4 class="step-head"><span class="step-num">52</span> <span class="step-title">Click a widget</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Set Containers to Stopped, then click the widget. Go back to Overview and click Machines.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Containers opens already filtered to stopped containers, and Machines opens its section. Clicking a widget takes you to the part of Flotilla it comes from, set to what the widget showed.</span></p>
+        </li>
+        <li class="step" id="step-o-add" data-step="o-add">
+          <h4 class="step-head"><span class="step-num">53</span> <span class="step-title">Add and remove widgets</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press Add Widget in the bar at the top of the Overview, above the widgets. Tick a widget that has no tick, such as Images or Tasks. Then open the menu again and untick it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Every kind of widget is listed with an icon, and those on the page have a tick. Ticking adds the widget, and unticking takes it away. There is only ever one of each kind: ticking one that is already there changes nothing.</span></p>
+        </li>
+        <li class="step" id="step-o-grip" data-step="o-grip">
+          <h4 class="step-head"><span class="step-num">54</span> <span class="step-title">Move a widget</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Hover over a widget and look at its top left. Drag the grip of dots to another place, and let go.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A grip of six dots appears, and its tooltip says “Drag to move”. The widget lifts as you drag, the others slide out of the way, and it settles into the place where you let go. You don’t need Edit mode for this. Clicking anywhere else on the widget opens its section instead.</span></p>
+        </li>
+        <li class="step" id="step-o-edit" data-step="o-edit">
+          <h4 class="step-head"><span class="step-num">55</span> <span class="step-title">Edit Widgets</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press Edit Widgets. On one widget, press ✕. On another, press the S, W, T and L buttons, then drag the small handle at its bottom right corner. Look at the panel on the right. Then press Done.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each widget gets a ✕, buttons for its size (S small, W wide, T tall, L large) and a resize handle. The panel lists every kind of widget with a checkbox and a line about it, and ticking or unticking works as in the Add Widget menu. At the top are Reset to Recommended and Done. Done, the panel and the sidebar all stay whole in the window, even a narrow one.</span></p>
+        </li>
+        <li class="step" id="step-o-kept" data-step="o-kept">
+          <h4 class="step-head"><span class="step-num">56</span> <span class="step-title">Your layout is kept</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Arrange the widgets the way you like, quit Flotilla (⌘Q) and open it again.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The same widgets, order, sizes and choices come back. The layout belongs to this Mac: another Mac that you manage keeps its own.</span></p>
+        </li>
+        <li class="step" id="step-o-reset" data-step="o-reset">
+          <h4 class="step-head"><span class="step-num">57</span> <span class="step-title">Start again</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press Edit Widgets, then Reset to Recommended. Then remove every widget with ✕.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Reset puts back Fleet at a glance, Hosts, Containers, Vulnerabilities, Activity, Machines and Kubernetes at their usual sizes. With no widgets, the page says “Make the Overview yours”, with buttons to add widgets one at a time and “Use the recommended layout”. The band and the Get started card never go.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="tasks" data-section data-path="deep" aria-labelledby="tasks-title">
+      <header class="beta-section-head">
+        <h3 id="tasks-title">The Tasks panel</h3>
+        <p class="beta-section-meta"><span>About 12 min</span> · <span data-section-progress>15 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Every job you start, such as a pull or a run, becomes a <strong>task</strong>, shown in the Tasks panel on the right. A larger image, such as <code>postgres:17</code>, gives you time to look while it pulls.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-t-hover-caret" data-step="t-hover-caret">
+          <h4 class="step-head"><span class="step-num">58</span> <span class="step-title">A task in detail</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Start a larger pull. Hover its line in Tasks, then open its caret (the small arrow). Then put the panel away with its chevron or Esc.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The tooltip says where it runs, its state and step. The caret shows its steps and live output. Put away, the status bar shows “Tasks · 1 · N%” with a spinner.</span></p>
+        </li>
+        <li class="step" id="step-t-toggle" data-step="t-toggle">
+          <h4 class="step-head"><span class="step-num">59</span> <span class="step-title">Show and hide</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press ⌥⌘T twice.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Tasks opens, then closes.</span></p>
+        </li>
+        <li class="step" id="step-t-two-pulls" data-step="t-two-pulls">
+          <h4 class="step-head"><span class="step-num">60</span> <span class="step-title">Two jobs are two tasks</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Start a second pull while the first is running.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Two lines in Tasks, and Images stays usable.</span></p>
+        </li>
+        <li class="step" id="step-t-cancel" data-step="t-cancel">
+          <h4 class="step-head"><span class="step-num">61</span> <span class="step-title">Stop a pull</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Start a larger pull and click its Stop (a circle with a square).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The task ends as Cancelled, with no failure notice.</span></p>
+        </li>
+        <li class="step" id="step-t-pull-fail" data-step="t-pull-fail">
+          <h4 class="step-head"><span class="step-num">62</span> <span class="step-title">A job that fails says so</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Pull an image that doesn’t exist, such as <code>flotilla-beta/no-such-image:0</code>.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The task is marked failed with one red line saying why. The status bar shows “Tasks · Failed” in red, and a notice “… failed: …” offers Show Task, which opens Tasks on that line. If Flotilla is in the background, a macOS notification too.</span></p>
+        </li>
+        <li class="step" id="step-t-retry" data-step="t-retry">
+          <h4 class="step-head"><span class="step-num">63</span> <span class="step-title">Retry a failed job</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">On that failed task, click Retry (the circular arrow), twice.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A new line starts and the old one is marked retried. The second click starts nothing more.</span></p>
+        </li>
+        <li class="step" id="step-t-task-stop" data-step="t-task-stop">
+          <h4 class="step-head"><span class="step-num">64</span> <span class="step-title">Stop a container from its task</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Run a container from Suggestions, show Tasks (⌥⌘T), and hover the Stop button (a filled square) on its Run task. Click it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The tooltip names the container, such as “Stop mailpit”. The button shows a small spinner while it works, and the container stops in Containers.</span></p>
+        </li>
+        <li class="step" id="step-t-run-task" data-step="t-run-task">
+          <h4 class="step-head"><span class="step-num">65</span> <span class="step-title">A run can’t be retried</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look at a Run task.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">No stop-circle and no Retry on it: running the same container twice could do harm, so Flotilla doesn’t offer it.</span></p>
+        </li>
+        <li class="step" id="step-t-same-name" data-step="t-same-name">
+          <h4 class="step-head"><span class="step-num">66</span> <span class="step-title">Stop never reaches the wrong container</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Run a container, delete it, run another with the same name, and look at the first one’s task.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The old task has no Stop button. The new task’s Stop stops only the new container.</span></p>
+        </li>
+        <li class="step" id="step-t-fold" data-step="t-fold">
+          <h4 class="step-head"><span class="step-num">67</span> <span class="step-title">Finished jobs fold away</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Let several jobs finish, one of them failing. Then use Clear on one line, and Clear finished (✕ in a circle) in the header.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">They fold into one line, “N finished”, that opens on click, with the failure named on it in red (“· 1 failed”). Clear removes them.</span></p>
+        </li>
+        <li class="step" id="step-t-stays-up" data-step="t-stays-up">
+          <h4 class="step-head"><span class="step-num">68</span> <span class="step-title">A failure keeps the panel up</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Start two jobs, one of which fails.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The panel stays up after the good one ends, until you put it away.</span></p>
+        </li>
+        <li class="step" id="step-t-caret-open" data-step="t-caret-open">
+          <h4 class="step-head"><span class="step-num">69</span> <span class="step-title">An open line keeps the panel up</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open a line’s caret, then let a job finish.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The panel does not tuck away while a line is open.</span></p>
+        </li>
+        <li class="step" id="step-t-greta-overlap" data-step="t-greta-overlap">
+          <h4 class="step-head"><span class="step-num">70</span> <span class="step-title">Tasks and Greta</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Greta (the sidebar, or ⌘G) and start a pull.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The Tasks panel and Greta don’t overlap.</span></p>
+        </li>
+        <li class="step" id="step-t-icons" data-step="t-icons">
+          <h4 class="step-head"><span class="step-num">71</span> <span class="step-title">Every icon has a tooltip</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Hover each icon button in the panel.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Stop, Retry, Clear and Clear finished each have a tooltip.</span></p>
+        </li>
+        <li class="step" id="step-t-notif-setting" data-step="t-notif-setting">
+          <h4 class="step-head"><span class="step-num">72</span> <span class="step-title">A switch for failed jobs</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Settings ▸ Notifications.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A switch for “A job you started failed”, on by default.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="forms" data-section data-path="deep" aria-labelledby="forms-title">
+      <header class="beta-section-head">
+        <h3 id="forms-title">Forms</h3>
+        <p class="beta-section-meta"><span>About 8 min</span> · <span data-section-progress>10 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Anything you create starts with a form across the window. Every form has its buttons together at the top right, and none at the bottom.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-f-cluster" data-step="f-cluster">
+          <h4 class="step-head"><span class="step-num">73</span> <span class="step-title">One cluster of buttons</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Run Container (File ▸ Run Container…), New Volume, New Network and Pull Image.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">At the top right of each, on one rounded strip: ✕ to close, then the main action in your Mac’s accent colour. No row of buttons at the bottom.</span></p>
+        </li>
+        <li class="step" id="step-f-preview" data-step="f-preview">
+          <h4 class="step-head"><span class="step-num">74</span> <span class="step-title">The command preview</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In Run Container, type the image <code>nginx:latest</code>, the name <code>web</code> and the port <code>127.0.0.1:8080:80</code>. Watch the preview while you type.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">No red errors before you have typed anything. The preview shows the whole <code>container run …</code> command, the same command you could type in Terminal, and changes as you type.</span></p>
+        </li>
+        <li class="step" id="step-f-tooltip" data-step="f-tooltip">
+          <h4 class="step-head"><span class="step-num">75</span> <span class="step-title">▶ starts a job, ✓ keeps changes</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Hover the main action on each form, and on Tag Image, a group, a registry, a new DNS domain and Add Host.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A tooltip with its full name, such as “Pull” or “Create…”. It is ▶ on a form that starts a job (which then shows in Tasks) and ✓ on a form that keeps your changes.</span></p>
+        </li>
+        <li class="step" id="step-f-keys" data-step="f-keys">
+          <h4 class="step-head"><span class="step-num">76</span> <span class="step-title">Return and Esc</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press Return in a filled-in form, and Esc in an untouched one.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Return uses the main action. Esc closes the form.</span></p>
+        </li>
+        <li class="step" id="step-f-discard" data-step="f-discard">
+          <h4 class="step-head"><span class="step-num">77</span> <span class="step-title">Unsaved changes are asked about</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Change a field, then press ✕. Choose Keep Editing, then try Esc, then Back.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The same question each time, “Discard your changes?”, with Discard and Keep Editing.</span></p>
+        </li>
+        <li class="step" id="step-f-leave-everywhere" data-step="f-leave-everywhere">
+          <h4 class="step-head"><span class="step-num">78</span> <span class="step-title">Every way out asks</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">With a half-filled form, click another section in the sidebar, choose something from ⌘K, press ⌘Q, and use the menu-bar icon.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">One question, “Discard your changes to …?”, each time. An untouched form leaves at once.</span></p>
+        </li>
+        <li class="step" id="step-f-more" data-step="f-more">
+          <h4 class="step-head"><span class="step-num">79</span> <span class="step-title">Rare extras are in ⋯</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open a group and a DNS domain.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">⋯ to the left of ✕, with Save to File… (the group) and Delete… (the domain). Forms with no extras show no ⋯.</span></p>
+        </li>
+        <li class="step" id="step-f-close-only" data-step="f-close-only">
+          <h4 class="step-head"><span class="step-num">80</span> <span class="step-title">Close alone</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open a registry you aren’t signed in to, or a DNS domain you are only looking at.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">✕ alone, with no main action.</span></p>
+        </li>
+        <li class="step" id="step-f-export" data-step="f-export">
+          <h4 class="step-head"><span class="step-num">81</span> <span class="step-title">Export</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Choose File ▸ Export Configuration….</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A list of what can be exported, with one select-all checkbox at the top.</span></p>
+        </li>
+        <li class="step" id="step-f-host-header" data-step="f-host-header">
+          <h4 class="step-head"><span class="step-num">82</span> <span class="step-title">A host’s page isn’t a form</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open This Mac in Hosts.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Its own page header, not a form’s buttons.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="suggestions" data-section data-path="deep" aria-labelledby="suggestions-title">
+      <header class="beta-section-head">
+        <h3 id="suggestions-title">More of Suggestions</h3>
+        <p class="beta-section-meta"><span>About 15 min</span> · <span data-section-progress>26 steps</span></p>
+      </header>
+      <p class="beta-section-intro">You used one suggestion on the core path. Apps are single containers and <strong>stacks</strong> are several that work together; the other tabs suggest volumes (storage), networks, DNS domains (names for containers), machines and Kubernetes clusters. Nothing is created until you press a form’s main action.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-su-search" data-step="su-search">
+          <h4 class="step-head"><span class="step-num">83</span> <span class="step-title">Search changes the counts</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Type <code>postgres</code>, then clear it. Then try <code>database</code> and <code>licence</code>.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Every tab’s count changes, All showing the total, and the box prompts “Search all suggestions”. <code>database</code> finds the Databases category, <code>licence</code> finds entries with a licence note. Clearing brings the counts back.</span></p>
+        </li>
+        <li class="step" id="step-su-all" data-step="su-all">
+          <h4 class="step-head"><span class="step-num">84</span> <span class="step-title">All</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open All.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Apps, stacks and the others together, each row with its kind, and a logo for apps and stacks or a symbol for the rest. A Category menu narrows apps and stacks only.</span></p>
+        </li>
+        <li class="step" id="step-su-apps" data-step="su-apps">
+          <h4 class="step-head"><span class="step-num">85</span> <span class="step-title">An app’s details</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Apps and select one.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Its details on the right: image, ports, where it keeps data, any passwords it will generate, any licence note and when it was tested. Use (▶) is in the header, with ↑ ↓ to step.</span></p>
+        </li>
+        <li class="step" id="step-su-stacks" data-step="su-stacks">
+          <h4 class="step-head"><span class="step-num">86</span> <span class="step-title">A stack’s details</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Stacks and select one.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Its services with their images, and notes under “Once it’s running”.</span></p>
+        </li>
+        <li class="step" id="step-su-resources" data-step="su-resources">
+          <h4 class="step-head"><span class="step-num">87</span> <span class="step-title">Volumes, networks, domains and clusters</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Select one suggestion in each of Volumes, Networks, Domains and Clusters.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A summary, its details, and “Opens the existing create form. Review or change its values before creating.”</span></p>
+        </li>
+        <li class="step" id="step-su-machines" data-step="su-machines">
+          <h4 class="step-head"><span class="step-num">88</span> <span class="step-title">Machines are for this Mac</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Select a machine suggestion. If you have a second Mac paired, choose it in “Create on”, then This Mac again.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">On another Mac: “Machines can only be created on This Mac…” and Use is off. Back on This Mac, it is on again.</span></p>
+        </li>
+        <li class="step" id="step-su-nomatch" data-step="su-nomatch">
+          <h4 class="step-head"><span class="step-num">89</span> <span class="step-title">No match</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In one tab, type <code>zzzz</code>. Then type something that matches only in another tab.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">“No matching suggestions”, and Show all matches when another tab has one, which opens All.</span></p>
+        </li>
+        <li class="step" id="step-su-tick-two" data-step="su-tick-two">
+          <h4 class="step-head"><span class="step-num">90</span> <span class="step-title">Two at once</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick two apps. Then tick an app and a volume.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Two apps or stacks offer “Use 2 Suggestions…”. An app with a volume says “Use apps and stacks together, or choose one resource.” and the button is off.</span></p>
+        </li>
+        <li class="step" id="step-su-use-app" data-step="su-use-app">
+          <h4 class="step-head"><span class="step-num">91</span> <span class="step-title">Leaving a form you haven’t changed</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Select an app and press Use. Press ✕ at once. Use it again, change the name, then press ✕.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The first ✕ closes with no question: the filled-in values aren’t your changes. After your change, “Discard your changes?”.</span></p>
+        </li>
+        <li class="step" id="step-su-use-stack" data-step="su-use-stack">
+          <h4 class="step-head"><span class="step-num">92</span> <span class="step-title">Use a stack</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Use a stack, with the same two ✕ checks.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The stack form, with a suggested name and free web ports. No question untouched, a question after a change.</span></p>
+        </li>
+        <li class="step" id="step-su-use-resources" data-step="su-use-resources">
+          <h4 class="step-head"><span class="step-num">93</span> <span class="step-title">Use the others</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Use a volume, a network, a domain, a machine and a cluster, with the same ✕ checks each time.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">New Volume (with a name that isn’t taken), New Network, New DNS Domain, New Machine and New Cluster, each filled in. No question untouched, a question after a change.</span></p>
+        </li>
+        <li class="step" id="step-su-nothing-created" data-step="su-nothing-created">
+          <h4 class="step-head"><span class="step-num">94</span> <span class="step-title">Use only opens a form</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">After a Use, before pressing the main action, look at the matching section.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Nothing has been created.</span></p>
+        </li>
+        <li class="step" id="step-su-return" data-step="su-return">
+          <h4 class="step-head"><span class="step-num">95</span> <span class="step-title">Coming back to the same place</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">On Volumes, search <code>data</code>, select a row, press Use, then ✕.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The Volumes tab, the search, the selection and the divider exactly as you left them.</span></p>
+        </li>
+        <li class="step" id="step-su-return-commit" data-step="su-return-commit">
+          <h4 class="step-head"><span class="step-num">96</span> <span class="step-title">Coming back after creating</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Use something and press the form’s main action.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">You come back to the same tab and selection, with the job in Tasks.</span></p>
+        </li>
+        <li class="step" id="step-su-remember" data-step="su-remember">
+          <h4 class="step-head"><span class="step-num">97</span> <span class="step-title">Kept while you go elsewhere</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Pick a category, go to Containers and come back. Then quit Flotilla and reopen it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The same tab, search, category and selection after the visit. After reopening, the divider is where you left it (the tab and search start afresh).</span></p>
+        </li>
+        <li class="step" id="step-su-search-any" data-step="su-search-any">
+          <h4 class="step-head"><span class="step-num">98</span> <span class="step-title">Find suggestions from any page</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">From Containers, press ⌘K and type <code>redis</code>. Choose a volume suggestion, then try an app and a stack.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Suggestions of several kinds, each with its kind under its name. Choosing one opens Suggestions on its tab with that row selected; no form opens and nothing is created.</span></p>
+        </li>
+        <li class="step" id="step-su-scope" data-step="su-scope">
+          <h4 class="step-head"><span class="step-num">99</span> <span class="step-title">Only suggestions</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Type <code>suggestion: database</code>, then <code>suggestion:</code> alone.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Only suggestions, from every tab.</span></p>
+        </li>
+        <li class="step" id="step-su-entry-containers" data-step="su-entry-containers">
+          <h4 class="step-head"><span class="step-num">100</span> <span class="step-title">From Containers</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In Containers, choose Suggestions… from the Add menu (also on a right-click in empty space).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Suggestions on the Apps tab.</span></p>
+        </li>
+        <li class="step" id="step-su-empty-lists" data-step="su-empty-lists">
+          <h4 class="step-head"><span class="step-num">101</span> <span class="step-title">From an empty list</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In an empty list (an empty Volumes, Networks, DNS, Machines or Clusters, or Containers filtered to nothing), choose a suggestion named under “Or start from a suggestion”, then More….</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The named one, selected in its tab with its details and no form; then the whole tab.</span></p>
+        </li>
+        <li class="step" id="step-su-entry-others" data-step="su-entry-others">
+          <h4 class="step-head"><span class="step-num">102</span> <span class="step-title">From the other sections</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Choose Suggestions… from the Add menu of Volumes, Networks, DNS, Machines and Clusters.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The matching tab each time (Machines opens with This Mac).</span></p>
+        </li>
+        <li class="step" id="step-su-file-menu" data-step="su-file-menu">
+          <h4 class="step-head"><span class="step-num">103</span> <span class="step-title">From the menus</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open File ▸ Suggestions. Then try Overview’s “Try a Suggested Stack…”.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">All, Apps, Stacks, Volumes, Networks, Machines, Kubernetes Clusters and DNS Domains, each opening its tab. The Overview button opens Stacks.</span></p>
+        </li>
+        <li class="step" id="step-su-several" data-step="su-several">
+          <h4 class="step-head"><span class="step-num">104</span> <span class="step-title">Using several in turn</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick several apps or stacks and press “Use N Suggestions…”. Include two that use the same port. Look in ⋯.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each form in turn, with “1 of N”, and Skip in ⋯. The later of the two gets a free port, or says “No free port near N — choose one”.</span></p>
+        </li>
+        <li class="step" id="step-su-logos" data-step="su-logos">
+          <h4 class="step-head"><span class="step-num">105</span> <span class="step-title">Logos</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look at Apps and Stacks, then run something from a suggestion and look at its row and page. Then try dark mode.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each entry’s logo on a light tile, or its category’s symbol. The container’s row and page header show the same logo, and so does its image. In dark mode, a thin line round the tile.</span></p>
+        </li>
+        <li class="step" id="step-su-logos-other" data-step="su-logos-other">
+          <h4 class="step-head"><span class="step-num">106</span> <span class="step-title">Machine and registry logos</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Machines and Registries.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The Linux distribution’s or registry’s logo, where the library has one.</span></p>
+        </li>
+        <li class="step" id="step-su-attribution" data-step="su-attribution">
+          <h4 class="step-head"><span class="step-num">107</span> <span class="step-title">A logo that needs a credit</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Suggestions and look for Redis. If it shows only a symbol and not a logo, the library that carries it isn’t out yet: mark this step Skip. If it shows the logo, scroll to the foot of the list. Then open a group, choose Add Service, and look at the foot of the picker. Then open Settings ▸ About.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Redis’s logo on its tile, and a short credit line that Redis asks for at the foot of Suggestions, at the foot of the Add Service picker, and in About. The credit is there whatever you search for or whichever tab you are on.</span></p>
+        </li>
+        <li class="step" id="step-su-updates" data-step="su-updates">
+          <h4 class="step-head"><span class="step-num">108</span> <span class="step-title">The library in Settings</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Settings ▸ Updates, quit and reopen Flotilla, and look again.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The suggestions library’s version, when it last checked (kept after reopening), and Check Now.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="library" data-section data-path="deep" aria-labelledby="library-title">
+      <header class="beta-section-head">
+        <h3 id="library-title">Security findings and volume setup</h3>
+        <p class="beta-section-meta"><span>About 15 min</span> · <span data-section-progress>10 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Suggestions come from a library that Flotilla fetches and checks. These steps need library 2026.10.20.1 or newer. Its images are scanned every day for known security problems (vulnerabilities), and Flotilla matches that report against the images on your Mac; nothing about your Mac is sent. Some apps don’t run as the administrator inside their container, so Flotilla prepares a fresh volume (storage) for them to write to.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-li-version" data-step="li-version">
+          <h4 class="step-head"><span class="step-num">109</span> <span class="step-title">The library version</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click the version in the status bar and choose Check Now under Suggestions library.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It shows version 2026.10.20.1 or newer.</span></p>
+        </li>
+        <li class="step" id="step-li-vuln-image" data-step="li-vuln-image">
+          <h4 class="step-head"><span class="step-num">110</span> <span class="step-title">Findings for an image</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Use an app from Suggestions and run it, so its image is on this Mac (Grafana works well). Then open that image in Images.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A Vulnerabilities card, with counts for Critical, High, Medium and Low. It says the findings are in the image, that updating packages inside a container doesn’t change them, and that a newer image fixes them, with “Check for a newer image…”, which opens Pull Image. A footnote says when and by what it was scanned, and that it is advisory only.</span></p>
+        </li>
+        <li class="step" id="step-li-vuln-chips" data-step="li-vuln-chips">
+          <h4 class="step-head"><span class="step-num">111</span> <span class="step-title">In the lists</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look at the rows in Images, then at the same app in Suggestions.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">An image with critical findings has a chip such as “2 critical” on its row. The suggestion has a line such as “Its image has 2 critical issues (fixed in a newer version)”. An image with nothing reported shows nothing.</span></p>
+        </li>
+        <li class="step" id="step-li-vuln-container" data-step="li-vuln-container">
+          <h4 class="step-head"><span class="step-num">112</span> <span class="step-title">In a container</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the page of the container you ran from that image.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The same findings. Nothing is stopped or restarted because of them.</span></p>
+        </li>
+        <li class="step" id="step-li-vuln-other" data-step="li-vuln-other">
+          <h4 class="step-head"><span class="step-num">113</span> <span class="step-title">An image from elsewhere</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open <code>alpine</code> in Images (from the core path, or pull <code>alpine:latest</code>).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">No vulnerability information: the report covers the library’s images only.</span></p>
+        </li>
+        <li class="step" id="step-li-vuln-offline" data-step="li-vuln-offline">
+          <h4 class="step-head"><span class="step-num">114</span> <span class="step-title">Offline</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Turn Wi-Fi off, quit Flotilla and open it again. Look at the image from before.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The findings still show, from Flotilla’s saved copy. Turn Wi-Fi back on.</span></p>
+        </li>
+        <li class="step" id="step-li-owner-run" data-step="li-owner-run">
+          <h4 class="step-head"><span class="step-num">115</span> <span class="step-title">A volume set up for its app</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In Suggestions, Use Grafana and press ▶. Open Tasks while it runs. When it is running, open <code>http://localhost:3000</code> (or the port the form chose).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The task shows a line “Setting up … for …” before the container starts. Grafana’s sign-in page opens, and its Logs show no “permission denied”.</span></p>
+        </li>
+        <li class="step" id="step-li-owner-interrupt" data-step="li-owner-interrupt">
+          <h4 class="step-head"><span class="step-num">116</span> <span class="step-title">Interrupted half way</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Delete that container and its volume. Use Grafana again, quit Flotilla while the task says “Setting up …”, then open Flotilla, delete the half-made container if there is one, and run it again.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The setup runs again and finishes, and Grafana starts with no permission error.</span></p>
+        </li>
+        <li class="step" id="step-li-owner-existing" data-step="li-owner-existing">
+          <h4 class="step-head"><span class="step-num">117</span> <span class="step-title">A volume that already has data</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Run Grafana again with the volume name of the one that is already in use and has data (keep the name the form shows if it matches, or type it).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Flotilla doesn’t touch that volume’s contents or owner. Nothing in it is lost.</span></p>
+        </li>
+        <li class="step" id="step-li-owner-group" data-step="li-owner-group">
+          <h4 class="step-head"><span class="step-num">118</span> <span class="step-title">In a group</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Make a group (File ▸ New Group…), choose Add Service, pick Grafana, save the group and press Start.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Grafana’s new volume is set up the same way, and Grafana writes to it with no permission error.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="groups" data-section data-path="deep" aria-labelledby="groups-title">
+      <header class="beta-section-head">
+        <h3 id="groups-title">Groups</h3>
+        <p class="beta-section-meta"><span>About 12 min</span> · <span data-section-progress>13 steps</span></p>
+      </header>
+      <p class="beta-section-intro">A <strong>group</strong> is a saved set of containers that start together, such as an app and its database. Each container in a group is a <strong>service</strong>. Make one with File ▸ New Group….</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-g-picker" data-step="g-picker">
+          <h4 class="step-head"><span class="step-num">119</span> <span class="step-title">The Add Service picker</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In a new group’s form, choose Add Service.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A picker with Suggestions and the images on this Mac, a search field, a select-all row at the top of the checkboxes, and a way to start blank.</span></p>
+        </li>
+        <li class="step" id="step-g-one" data-step="g-one">
+          <h4 class="step-head"><span class="step-num">120</span> <span class="step-title">One suggestion</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick one suggestion and press the main action (tooltip “Review Service”).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The service form opens, filled in with the recipe’s image, ports, settings and volumes.</span></p>
+        </li>
+        <li class="step" id="step-g-image" data-step="g-image">
+          <h4 class="step-head"><span class="step-num">121</span> <span class="step-title">An image on this Mac</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick an image on this Mac that matches a suggestion, then one that doesn’t (such as <code>alpine</code>).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The first fills in like the suggestion. The second gives a form with just the image.</span></p>
+        </li>
+        <li class="step" id="step-g-version-recipe" data-step="g-version-recipe">
+          <h4 class="step-head"><span class="step-num">122</span> <span class="step-title">Recipes match the major version</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">With <code>postgres:17</code> and <code>postgres:latest</code> both pulled, look at their rows in the picker.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The 17 image says “Starts from PostgreSQL’s ports, variables and volumes” only if the library’s recipe is for 17. The <code>latest</code> one says “Just the image”.</span></p>
+        </li>
+        <li class="step" id="step-g-three" data-step="g-three">
+          <h4 class="step-head"><span class="step-num">123</span> <span class="step-title">Several at once</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick three and press “Add 3 Services”.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">All three are added to the group straight away, with different names, each with a free port on this Mac.</span></p>
+        </li>
+        <li class="step" id="step-g-port-clash" data-step="g-port-clash">
+          <h4 class="step-head"><span class="step-num">124</span> <span class="step-title">Two that want the same port</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick two that both use port 80.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The second is given a different port on this Mac.</span></p>
+        </li>
+        <li class="step" id="step-g-password" data-step="g-password">
+          <h4 class="step-head"><span class="step-num">125</span> <span class="step-title">Each gets its own password</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick a service that needs a password. Remove another one before saving.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The service has its own generated password, and none is saved for the one you removed.</span></p>
+        </li>
+        <li class="step" id="step-g-double" data-step="g-double">
+          <h4 class="step-head"><span class="step-num">126</span> <span class="step-title">A double click adds once</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press the main action twice quickly.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The picks are added once.</span></p>
+        </li>
+        <li class="step" id="step-g-noport" data-step="g-noport">
+          <h4 class="step-head"><span class="step-num">127</span> <span class="step-title">A port mapping needs a port on this Mac</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Edit a service and change its port to <code>127.0.0.1::80</code> (no port before the last colon).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It is marked in the form and refused on save, with “needs a host port”.</span></p>
+        </li>
+        <li class="step" id="step-g-back" data-step="g-back">
+          <h4 class="step-head"><span class="step-num">128</span> <span class="step-title">Leaving the picker</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick some rows in the picker and press Back.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It leaves without asking: nothing has been added yet.</span></p>
+        </li>
+        <li class="step" id="step-g-cancel-pending" data-step="g-cancel-pending">
+          <h4 class="step-head"><span class="step-num">129</span> <span class="step-title">Leaving cancels a pending add</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Tick several, press Add, then Back before it finishes. Try again and choose Blank Service instead of waiting.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Nothing is added afterwards, and the blank form is unchanged when the pending add would have finished.</span></p>
+        </li>
+        <li class="step" id="step-g-edit-discard" data-step="g-edit-discard">
+          <h4 class="step-head"><span class="step-num">130</span> <span class="step-title">The question names the service</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In a service’s form inside a group, change something and press Back or ✕.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The question names only that service.</span></p>
+        </li>
+        <li class="step" id="step-g-overview" data-step="g-overview">
+          <h4 class="step-head"><span class="step-num">131</span> <span class="step-title">A group’s overview</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Save the group, then select it in Containers and press Start.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">An overview: “n of m services running”, the services, a link to each container, and Edit….</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="inside" data-section data-path="deep" aria-labelledby="inside-title">
+      <header class="beta-section-head">
+        <h3 id="inside-title">Inside a container: terminal and files</h3>
+        <p class="beta-section-meta"><span>About 8 min</span> · <span data-section-progress>7 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Use a running container you don’t mind changing, such as Mailpit or nginx run from Suggestions or the Run form.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-in-terminal" data-step="in-terminal">
+          <h4 class="step-head"><span class="step-num">132</span> <span class="step-title">A terminal inside the container</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">On the container’s page, open the Terminal tab, type <code>ls /</code> and press Return.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A working command line inside the container lists its folders. Typing, Return and colours behave as in Terminal.</span></p>
+        </li>
+        <li class="step" id="step-fi-toolbar" data-step="fi-toolbar">
+          <h4 class="step-head"><span class="step-num">133</span> <span class="step-title">A small Finder</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the Files tab.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Back and forward, Icons / List / Columns, Group By, Share, Download, ⋯ and search. The path is at the bottom beside the item count.</span></p>
+        </li>
+        <li class="step" id="step-fi-groupby" data-step="fi-groupby">
+          <h4 class="step-head"><span class="step-num">134</span> <span class="step-title">Group By</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Try each Group By option.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Name, Kind, Date Modified and Size work. Created, Last Opened, Added and Application are greyed out, because a container doesn’t record them. There is no Tags.</span></p>
+        </li>
+        <li class="step" id="step-fi-edit" data-step="fi-edit">
+          <h4 class="step-head"><span class="step-num">135</span> <span class="step-title">Make, rename and move</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In <code>/tmp</code>, use New Folder, Rename and Move to….</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each works.</span></p>
+        </li>
+        <li class="step" id="step-fi-overwrite" data-step="fi-overwrite">
+          <h4 class="step-head"><span class="step-num">136</span> <span class="step-title">Moving onto an existing name</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Move a file onto a name that already exists there.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A question about replacing it, not a silent loss.</span></p>
+        </li>
+        <li class="step" id="step-fi-delete" data-step="fi-delete">
+          <h4 class="step-head"><span class="step-num">137</span> <span class="step-title">Delete asks</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Delete a file you made.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A confirmation, every time.</span></p>
+        </li>
+        <li class="step" id="step-fi-search" data-step="fi-search">
+          <h4 class="step-head"><span class="step-num">138</span> <span class="step-title">Search</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Search inside the container.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Results, with a limit on how many.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="machines" data-section data-path="deep" aria-labelledby="machines-title">
+      <header class="beta-section-head">
+        <h3 id="machines-title">Machines</h3>
+        <p class="beta-section-meta"><span>About 10 min</span> · <span data-section-progress>6 steps</span></p>
+      </header>
+      <p class="beta-section-intro">A <strong>machine</strong> is a whole Linux virtual machine you can log in to, rather than one program. Try a small Alpine one.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-m-create" data-step="m-create">
+          <h4 class="step-head"><span class="step-num">139</span> <span class="step-title">Create a machine</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Choose File ▸ New Machine…, pick Alpine, keep the suggested size and press ▶.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The form returns to Machines at once, the job is in Tasks, and the machine appears in the list.</span></p>
+        </li>
+        <li class="step" id="step-m-shell" data-step="m-shell">
+          <h4 class="step-head"><span class="step-num">140</span> <span class="step-title">Its shell</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Start the machine and open its Shell tab.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A working command line inside the machine.</span></p>
+        </li>
+        <li class="step" id="step-m-check-alpine" data-step="m-check-alpine">
+          <h4 class="step-head"><span class="step-num">141</span> <span class="step-title">Check an Alpine machine for updates</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">On the running Alpine machine’s page, press Check for Updates.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A spinner, then “Up to date” or “N updates available” listing each package’s installed and available versions, and “Last checked”. No error text in the list. The page says to run <code>apk upgrade</code> in the Terminal tab to install them.</span></p>
+        </li>
+        <li class="step" id="step-m-check-alma" data-step="m-check-alma">
+          <h4 class="step-head"><span class="step-num">142</span> <span class="step-title">Check an AlmaLinux machine</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">If you make a running AlmaLinux machine, press Check for Updates on it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The same, with versions that read normally (no <code>\t</code> or <code>\n</code> in them), and a suggestion to run <code>dnf upgrade</code>.</span></p>
+        </li>
+        <li class="step" id="step-m-stopped" data-step="m-stopped">
+          <h4 class="step-head"><span class="step-num">143</span> <span class="step-title">A stopped machine</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Stop the machine and open its page.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The button is off, with “Start this machine to check for updates.” On a running one, the page says a check starts the machine again if it has just stopped.</span></p>
+        </li>
+        <li class="step" id="step-m-other-distro" data-step="m-other-distro">
+          <h4 class="step-head"><span class="step-num">144</span> <span class="step-title">Other distributions</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">If you have a running machine of another Linux distribution, open its page.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The button is off, with “Package checks support Alpine and AlmaLinux.”</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="health" data-section data-path="deep" aria-labelledby="health-title">
+      <header class="beta-section-head">
+        <h3 id="health-title">Restart policies and health checks</h3>
+        <p class="beta-section-meta"><span>About 10 min</span> · <span data-section-progress>5 steps</span></p>
+      </header>
+      <p class="beta-section-intro">A <strong>restart policy</strong> starts a container again if it crashes; a <strong>health check</strong> keeps asking it whether it still works. Use a container with a web page, such as Mailpit.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-h-card" data-step="h-card">
+          <h4 class="step-head"><span class="step-num">145</span> <span class="step-title">The Restart and health card</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open a container’s page.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A Restart and health card, with a history and an editor.</span></p>
+        </li>
+        <li class="step" id="step-h-check" data-step="h-check">
+          <h4 class="step-head"><span class="step-num">146</span> <span class="step-title">A check that goes healthy and unhealthy</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Set an HTTP or port check on the container’s port. Then break it (stop the container’s program from the Terminal tab, for example), then fix it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The check goes healthy; then unhealthy, with a warning notice offering Restart; then healthy again.</span></p>
+        </li>
+        <li class="step" id="step-h-refused" data-step="h-refused">
+          <h4 class="step-head"><span class="step-num">147</span> <span class="step-title">Checks that can’t work are refused</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Try a check on a port the container doesn’t publish, a UDP port, or one bound to another address.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Refused when you save, with a reason.</span></p>
+        </li>
+        <li class="step" id="step-h-crash" data-step="h-crash">
+          <h4 class="step-head"><span class="step-num">148</span> <span class="step-title">Restart after a crash</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Set a restart policy and make the container crash.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It restarts at once, then after about 10, 30, 60 and 120 seconds, then gives up with an error notice offering Start.</span></p>
+        </li>
+        <li class="step" id="step-h-stop" data-step="h-stop">
+          <h4 class="step-head"><span class="step-num">149</span> <span class="step-title">Stopping isn’t crashing</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Stop the container in Flotilla.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It is not restarted.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="greta" data-section data-path="deep" aria-labelledby="greta-title">
+      <header class="beta-section-head">
+        <h3 id="greta-title">Greta and her microphone</h3>
+        <p class="beta-section-meta"><span>About 8 min</span> · <span data-section-progress>10 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Greta is Flotilla’s experimental assistant. She needs Apple Intelligence on this Mac. Speech is recognised on this Mac only.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-gr-banner" data-step="gr-banner">
+          <h4 class="step-head"><span class="step-num">150</span> <span class="step-title">Greta says she is experimental</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Greta.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A banner at the top of her panel says she is experimental: her answers can be wrong, so check anything she suggests before you run it.</span></p>
+        </li>
+        <li class="step" id="step-gr-permission" data-step="gr-permission">
+          <h4 class="step-head"><span class="step-num">151</span> <span class="step-title">The microphone permission</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click the microphone in Greta’s message field.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">macOS asks for microphone access.</span></p>
+        </li>
+        <li class="step" id="step-gr-deny" data-step="gr-deny">
+          <h4 class="step-head"><span class="step-num">152</span> <span class="step-title">If you deny it</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Deny access (you can allow it again later).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">One line, and a button that opens System Settings ▸ Privacy &amp; Security ▸ Microphone.</span></p>
+        </li>
+        <li class="step" id="step-gr-model" data-step="gr-model">
+          <h4 class="step-head"><span class="step-num">153</span> <span class="step-title">The speech model</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Allow access. If the speech model for your language isn’t installed yet, read the message before clicking.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">“macOS needs to download speech recognition for &lt;your language&gt; from Apple, once”, and a Download button. Nothing downloads before you click it.</span></p>
+        </li>
+        <li class="step" id="step-gr-download-stop" data-step="gr-download-stop">
+          <h4 class="step-head"><span class="step-num">154</span> <span class="step-title">Stopping the download</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click Download, then Stop while it downloads.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The download stops and no listening starts.</span></p>
+        </li>
+        <li class="step" id="step-gr-download-done" data-step="gr-download-done">
+          <h4 class="step-head"><span class="step-num">155</span> <span class="step-title">After the download</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Download it fully.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Dictation starts by itself, with a chime as it opens and closes.</span></p>
+        </li>
+        <li class="step" id="step-gr-dictate" data-step="gr-dictate">
+          <h4 class="step-head"><span class="step-num">156</span> <span class="step-title">Dictating, offline</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Turn Wi-Fi off and dictate a sentence.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Words appear live in the field. Nothing is sent until you press Send.</span></p>
+        </li>
+        <li class="step" id="step-gr-stop" data-step="gr-stop">
+          <h4 class="step-head"><span class="step-num">157</span> <span class="step-title">Every way to stop listening</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Stop dictation with a second click, then with Esc, by typing, and by switching windows.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Listening stops each time, and the microphone isn’t used afterwards.</span></p>
+        </li>
+        <li class="step" id="step-gr-shortcut" data-step="gr-shortcut">
+          <h4 class="step-head"><span class="step-num">158</span> <span class="step-title">The shortcut</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Press ⇧⌘D twice, and look in the menus.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Dictate to Greta and Stop Dictating, in turn.</span></p>
+        </li>
+        <li class="step" id="step-gr-conversations" data-step="gr-conversations">
+          <h4 class="step-head"><span class="step-num">159</span> <span class="step-title">Conversations</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look at Greta’s list of conversations.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Rows with Pin, Rename, Duplicate, Archive and Delete (which asks first), actions for several at once, and a rounded message field.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="settings" data-section data-path="deep" aria-labelledby="settings-title">
+      <header class="beta-section-head">
+        <h3 id="settings-title">Settings, About and the Helper</h3>
+        <p class="beta-section-meta"><span>About 8 min</span> · <span data-section-progress>9 steps</span></p>
+      </header>
+      <p class="beta-section-intro">The status bar’s dots show the state of Apple’s <code>container</code> and of the Flotilla Helper; click either for a menu.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-se-sidebar" data-step="se-sidebar">
+          <h4 class="step-head"><span class="step-num">160</span> <span class="step-title">Settings</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Settings.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A sidebar of sections with icon tiles, and grouped panes. On a Mac managed by an organisation, locked settings read “Set by your organisation”.</span></p>
+        </li>
+        <li class="step" id="step-se-about" data-step="se-about">
+          <h4 class="step-head"><span class="step-num">161</span> <span class="step-title">About</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Settings ▸ About.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">“Flotilla 1.5.0-beta.6” with “Tested with container 1.5.0”, a list of every website Flotilla can contact, where it keeps its data, and logo credits.</span></p>
+        </li>
+        <li class="step" id="step-se-about-menus" data-step="se-about-menus">
+          <h4 class="step-head"><span class="step-num">162</span> <span class="step-title">About from the menus</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Choose About Flotilla from the Flotilla menu, and from the menu-bar icon’s menu (at the top right of the screen).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Both open Settings ▸ About.</span></p>
+        </li>
+        <li class="step" id="step-se-bundle" data-step="se-bundle">
+          <h4 class="step-head"><span class="step-num">163</span> <span class="step-title">The Support Bundle</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Choose Help ▸ Create Support Bundle…. Click a file in its list to read it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Every file listed with its size and a description, readable before you save. A Close button in every state, and Esc closes it. Nothing is uploaded.</span></p>
+        </li>
+        <li class="step" id="step-sb-container" data-step="sb-container">
+          <h4 class="step-head"><span class="step-num">164</span> <span class="step-title">The Container menu</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click ● Container in the status bar.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A menu whose first line says Running (or Stopped), then its actions.</span></p>
+        </li>
+        <li class="step" id="step-sb-stop-container" data-step="sb-stop-container">
+          <h4 class="step-head"><span class="step-num">165</span> <span class="step-title">Stop and start container</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Only if nothing you need is running: choose Stop Container System… from that menu, then start it again.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A confirmation first. Then the dot changes, and changes back when it starts.</span></p>
+        </li>
+        <li class="step" id="step-se-helper-restart" data-step="se-helper-restart">
+          <h4 class="step-head"><span class="step-num">166</span> <span class="step-title">Restart the Helper</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Click ● Helper in the status bar and choose Restart.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A short wait, then Running again. The menu never freezes.</span></p>
+        </li>
+        <li class="step" id="step-se-helper-cycle" data-step="se-helper-cycle">
+          <h4 class="step-head"><span class="step-num">167</span> <span class="step-title">Reinstall, Remove, Install</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Use Reinstall, then Remove, then quit and reopen Flotilla, then Install.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The state changes each time. After Remove, it doesn’t come back by itself when Flotilla next opens.</span></p>
+        </li>
+        <li class="step" id="step-se-helper-explained" data-step="se-helper-explained">
+          <h4 class="step-head"><span class="step-num">168</span> <span class="step-title">The Helper is explained once</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look through Settings for the Helper.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It is explained in one place, not repeated in several.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="a11y" data-section data-path="deep" aria-labelledby="a11y-title">
+      <header class="beta-section-head">
+        <h3 id="a11y-title">Tooltips, keyboard and VoiceOver</h3>
+        <p class="beta-section-meta"><span>About 8 min</span> · <span data-section-progress>5 steps</span></p>
+      </header>
+      <ol class="beta-steps">
+        <li class="step" id="step-a-tooltips" data-step="a-tooltips">
+          <h4 class="step-head"><span class="step-num">169</span> <span class="step-title">Every icon says what it does</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Hover every icon button on Containers, Images, a container’s page, the status bar and a form’s header.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A tooltip on each that says what it does. None is empty.</span></p>
+        </li>
+        <li class="step" id="step-a-tab-tooltips" data-step="a-tab-tooltips">
+          <h4 class="step-head"><span class="step-num">170</span> <span class="step-title">Tab icons</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Hover each tab icon on a container’s page and a machine’s page.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each tab has its own tooltip, in the same order on every page.</span></p>
+        </li>
+        <li class="step" id="step-a-tab-keys" data-step="a-tab-keys">
+          <h4 class="step-head"><span class="step-num">171</span> <span class="step-title">Tabs from the keyboard</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">On a container’s page, press ⌘1 through ⌘6.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each switches to its tab.</span></p>
+        </li>
+        <li class="step" id="step-a-create-names" data-step="a-create-names">
+          <h4 class="step-head"><span class="step-num">172</span> <span class="step-title">Buttons say exactly what they do</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Hover the ▶ on New Machine and New Cluster. Hover the close icon on a page.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Tooltips that name the action, such as “Create Machine…”, and “Close”.</span></p>
+        </li>
+        <li class="step" id="step-a-voiceover" data-step="a-voiceover">
+          <h4 class="step-head"><span class="step-num">173</span> <span class="step-title">VoiceOver</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Turn on VoiceOver (⌘F5) and move through the Containers list.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each row offers the same as the pointer: its title, chips, buttons and ⋮.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="other" data-section data-path="deep" aria-labelledby="other-title">
+      <header class="beta-section-head">
+        <h3 id="other-title">Kubernetes, DNS and quitting</h3>
+        <p class="beta-section-meta"><span>About 5 min</span> · <span data-section-progress>3 steps</span></p>
+      </header>
+      <ol class="beta-steps">
+        <li class="step" id="step-o-lists" data-step="o-lists">
+          <h4 class="step-head"><span class="step-num">174</span> <span class="step-title">Hosts, Registries, DNS and Kubernetes</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open each of them.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Rows with Sort menus and checkboxes. Kubernetes has a Delete for several clusters at once that asks first.</span></p>
+        </li>
+        <li class="step" id="step-o-quit" data-step="o-quit">
+          <h4 class="step-head"><span class="step-num">175</span> <span class="step-title">Quitting</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Quit Flotilla with ⌘Q, then from the menu-bar icon, then with <code>osascript -e 'quit app "Flotilla"'</code> in Terminal.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It quits at once every time.</span></p>
+        </li>
+        <li class="step" id="step-o-quit-search" data-step="o-quit-search">
+          <h4 class="step-head"><span class="step-num">176</span> <span class="step-title">Quitting with the search open</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the ⌘K dropdown and press ⌘Q.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It quits, with no crash.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="fleet" data-section data-path="deep" aria-labelledby="fleet-title">
+      <header class="beta-section-head">
+        <h3 id="fleet-title">Two Macs</h3>
+        <p class="beta-section-meta"><span>About 30 min</span> · <span data-section-progress>23 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Needs a second Apple silicon Mac with macOS 26 and Flotilla beta 6, on the same network or reachable by address. Set it up as a <strong>host</strong> in its Setup Assistant; your first Mac is the <strong>admin</strong>. Linking them is called pairing.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-fl-add-host" data-step="fl-add-host">
+          <h4 class="step-head"><span class="step-num">177</span> <span class="step-title">The Add Host form</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">On the admin Mac, choose Add Host… (on Overview, or in Hosts).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The form on the left and help on the right: finding Macs nearby versus typing an address, the kinds of address that work (names, IP addresses, Tailscale), the port, and where the host shows its pairing code.</span></p>
+        </li>
+        <li class="step" id="step-fl-pair" data-step="fl-pair">
+          <h4 class="step-head"><span class="step-num">178</span> <span class="step-title">Pair a host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Pair the second Mac, following the form.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">macOS asks once for Local Network access. The host then appears in Hosts, and its containers in Containers.</span></p>
+        </li>
+        <li class="step" id="step-fl-host-icons" data-step="fl-host-icons">
+          <h4 class="step-head"><span class="step-num">179</span> <span class="step-title">Host rows</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Look at the rows in Hosts.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each Mac’s own model icon (a virtual Mac shows a plain display), and in the group headings an icon per category with a chevron.</span></p>
+        </li>
+        <li class="step" id="step-fl-connect-tabs" data-step="fl-connect-tabs">
+          <h4 class="step-head"><span class="step-num">180</span> <span class="step-title">SSH, Screen Sharing and Files</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the host’s page.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">SSH, Screen Sharing and Files tabs, each with a green, red or grey dot. This Mac’s own page has none.</span></p>
+        </li>
+        <li class="step" id="step-fl-ssh" data-step="fl-ssh">
+          <h4 class="step-head"><span class="step-num">181</span> <span class="step-title">SSH</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In the SSH tab, press Start SSH Session.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Your own <code>ssh</code> runs in a terminal, with your keys and settings. There is no connection until you press the button.</span></p>
+        </li>
+        <li class="step" id="step-fl-key" data-step="fl-key">
+          <h4 class="step-head"><span class="step-num">182</span> <span class="step-title">Flotilla’s own key</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">If you have no key for this host, use Make a Key, then Copy Key, then Try It.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text"><code>ssh-keygen</code> runs in the tab and never overwrites an existing key. Copy Key asks for the host’s password once.</span></p>
+        </li>
+        <li class="step" id="step-fl-key-regen" data-step="fl-key-regen">
+          <h4 class="step-head"><span class="step-num">183</span> <span class="step-title">Replace the key</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Use Regenerate Key….</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The old key is renamed aside, a new one made and copied, and, if you ticked it, the old one removed from the host, checked with the new key alone. Other hosts that had the old key offer Copy to ….</span></p>
+        </li>
+        <li class="step" id="step-fl-key-remove" data-step="fl-key-remove">
+          <h4 class="step-head"><span class="step-num">184</span> <span class="step-title">Remove the key</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Use Remove Key from This Host….</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Only that host’s <code>authorized_keys</code> file changes.</span></p>
+        </li>
+        <li class="step" id="step-fl-sharing" data-step="fl-sharing">
+          <h4 class="step-head"><span class="step-num">185</span> <span class="step-title">Screen Sharing and File Sharing</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the Screen Sharing and Files tabs, with each service on, then off, on the host (System Settings ▸ General ▸ Sharing).</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">With it on: Open Screen Sharing and Open in Finder. With it off: how to turn it on, with Apple’s guide.</span></p>
+        </li>
+        <li class="step" id="step-fl-run-on-host" data-step="fl-run-on-host">
+          <h4 class="step-head"><span class="step-num">186</span> <span class="step-title">Run on the host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Run a container on the host (choose it in the Run form), then press Stop on its task.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The task names the host. Stop’s tooltip names the host, and the container stops there, not on the admin.</span></p>
+        </li>
+        <li class="step" id="step-fl-host-task" data-step="fl-host-task">
+          <h4 class="step-head"><span class="step-num">187</span> <span class="step-title">Other jobs on the host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Pull an image to the host, or push a network to it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A task naming the host.</span></p>
+        </li>
+        <li class="step" id="step-fl-terminal" data-step="fl-terminal">
+          <h4 class="step-head"><span class="step-num">188</span> <span class="step-title">Same name, different Mac</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">With a container of the same name on both Macs, open the host’s one’s Terminal.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The command line is in the host’s container, not the admin’s.</span></p>
+        </li>
+        <li class="step" id="step-fl-files-ro" data-step="fl-files-ro">
+          <h4 class="step-head"><span class="step-num">189</span> <span class="step-title">Another Mac’s files are read-only</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open Files on one of the host’s containers.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">You can look but not change anything.</span></p>
+        </li>
+        <li class="step" id="step-fl-owner-host" data-step="fl-owner-host">
+          <h4 class="step-head"><span class="step-num">190</span> <span class="step-title">Volume setup on the host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In Suggestions, choose the host in “Create on”, Use Grafana and press ▶.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It works the same as on this Mac, with the volume set up on the host.</span></p>
+        </li>
+        <li class="step" id="step-fl-advisories" data-step="fl-advisories">
+          <h4 class="step-head"><span class="step-num">191</span> <span class="step-title">Security advisories</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the host’s Updates tab.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">macOS releases and fixed or actively exploited security problems (CVEs) that apply to its macOS version, and serious fixes for its Linux kernel. They match that Mac, not the admin.</span></p>
+        </li>
+        <li class="step" id="step-fl-policy" data-step="fl-policy">
+          <h4 class="step-head"><span class="step-num">192</span> <span class="step-title">Policies keep running on the host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">From the admin, set a restart policy and an HTTP or port check on one of the host’s containers. Quit Flotilla on the admin.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The host keeps applying them while the admin is closed. Command checks aren’t offered for a host.</span></p>
+        </li>
+        <li class="step" id="step-fl-suggest-host" data-step="fl-suggest-host">
+          <h4 class="step-head"><span class="step-num">193</span> <span class="step-title">Suggestions for the host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In Suggestions, choose the host in “Create on”, then Use a volume and an app.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Each form opens set to that Mac.</span></p>
+        </li>
+        <li class="step" id="step-fl-container-install" data-step="fl-container-install">
+          <h4 class="step-head"><span class="step-num">194</span> <span class="step-title">container on the host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Open the host’s menu.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Install/Upgrade container… is offered.</span></p>
+        </li>
+        <li class="step" id="step-fl-cluster-unreachable" data-step="fl-cluster-unreachable">
+          <h4 class="step-head"><span class="step-num">195</span> <span class="step-title">An unreachable host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">With the host asleep or offline, try New Cluster on it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The form stays open, with the reason in a band under its header.</span></p>
+        </li>
+        <li class="step" id="step-fl-network-change" data-step="fl-network-change">
+          <h4 class="step-head"><span class="step-num">196</span> <span class="step-title">Network changes</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">On the admin, switch Wi-Fi networks, or turn Wi-Fi off and on.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Hosts reconnect within a short time and don’t stay red.</span></p>
+        </li>
+        <li class="step" id="step-fl-busy" data-step="fl-busy">
+          <h4 class="step-head"><span class="step-num">197</span> <span class="step-title">A busy host</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Keep the host busy with a big pull and watch its status.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Amber (busy), not red, and its last information is kept.</span></p>
+        </li>
+        <li class="step" id="step-fl-asleep-quit" data-step="fl-asleep-quit">
+          <h4 class="step-head"><span class="step-num">198</span> <span class="step-title">Quitting with a host asleep</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Sleep or unplug the host, switch sections ten times, then quit Flotilla on the admin.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">It quits at once. Checks don’t pile up, and “Updated” keeps moving until then.</span></p>
+        </li>
+        <li class="step" id="step-fl-forget" data-step="fl-forget">
+          <h4 class="step-head"><span class="step-num">199</span> <span class="step-title">Forget all hosts</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Only if you are ready to pair again: Settings ▸ Forget all hosts and trust.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">The hosts disappear. Your containers and settings are untouched.</span></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="beta-section" id="earlier" data-section data-path="earlier" aria-labelledby="earlier-title">
+      <header class="beta-section-head">
+        <h3 id="earlier-title">If you used an earlier beta</h3>
+        <p class="beta-section-meta"><span>About 10 min</span> · <span data-section-progress>6 steps</span></p>
+      </header>
+      <p class="beta-section-intro">Only if you had beta 5 on this Mac or a host. Skip this section if this is your first time with Flotilla. How to go back to beta 5 is in <a href="https://github.com/melonfleet/flotilla/blob/main/BETA-TESTING.md#if-you-used-an-earlier-beta" target="_blank" rel="noopener">BETA-TESTING.md</a>.</p>
+      <ol class="beta-steps">
+        <li class="step" id="step-update-from-beta5" data-step="update-from-beta5">
+          <h4 class="step-head"><span class="step-num">200</span> <span class="step-title">Update from beta 5</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">In beta 5, open Settings ▸ Updates and set the update channel to Pre-release if it isn’t already. Then choose Flotilla ▸ Check for Updates….</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Beta 6 is offered with its release notes, installs, and relaunches Flotilla. The version now reads “1.5.0-beta.6”, not “1.5.0-beta.5”.</span></p>
+        </li>
+        <li class="step" id="step-update-kept" data-step="update-kept">
+          <h4 class="step-head"><span class="step-num">201</span> <span class="step-title">Your things are kept</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">After the update, look at your groups, your theme and other settings, the section you had open, and any Macs you had paired under Hosts. Then open Overview.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">All of it is kept. Paired Macs are still trusted, with no new pairing needed. The Overview shows the recommended widgets, because beta 5 had no widgets to keep.</span></p>
+        </li>
+        <li class="step" id="step-fl-update-hosts" data-step="fl-update-hosts">
+          <h4 class="step-head"><span class="step-num">202</span> <span class="step-title">Update a host from the admin</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">If a host is on beta 5: on the admin, open the version menu ▸ Your Macs and update Flotilla on it.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">A confirmation first. The host updates when idle, one host at a time, and comes back on beta 6.</span></p>
+        </li>
+        <li class="step" id="step-fl-update-clean" data-step="fl-update-clean">
+          <h4 class="step-head"><span class="step-num">203</span> <span class="step-title">Nothing left over</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">After a host updates, open its page.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">No “waiting on update” or failed notice left over. Its Helper shows Running at the new version.</span></p>
+        </li>
+        <li class="step" id="step-fl-update-offline" data-step="fl-update-offline">
+          <h4 class="step-head"><span class="step-num">204</span> <span class="step-title">A host offline during an update</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">Take a host offline while it is being updated.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">“Waiting”, not failed. Failed only after two minutes on the old build.</span></p>
+        </li>
+        <li class="step" id="step-fl-mixed" data-step="fl-mixed">
+          <h4 class="step-head"><span class="step-num">205</span> <span class="step-title">Mixed versions</span></h4>
+          <p class="step-do"><span class="step-label">Do</span> <span class="step-do-text">If one Mac is still on beta 5, open its page and its containers from the other.</span></p>
+          <p class="step-expect"><span class="step-label">Expect</span> <span class="step-expect-text">Everything beta 5 could do still works, and nothing is refused. The two Macs keep their own Overview layouts.</span></p>
+        </li>
+      </ol>
+    </section>
+  </section>
+
+  <section class="beta-card beta-finish" id="finish" aria-labelledby="finish-title">
+    <h2 id="finish-title">Send your summary</h2>
+    <p>When you&rsquo;ve done as much as you want to, send one summary. It opens a new issue with your totals, the steps that failed and your first impressions, for you to check and submit. You can send it more than once.</p>
+    <dl class="beta-totals">
+      <div><dt>Passed</dt><dd data-total="pass">0</dd></div>
+      <div><dt>Failed</dt><dd data-total="fail">0</dd></div>
+      <div><dt>Skipped</dt><dd data-total="skip">0</dd></div>
+      <div><dt>Not tested</dt><dd data-total="untested">205</dd></div>
+    </dl>
+    <div class="beta-finish-actions">
+      <a class="btn btn-primary" id="beta-summary" href="https://github.com/melonfleet/flotilla/issues/new?template=beta-summary.yml" target="_blank" rel="noopener">Send summary</a>
+      <button type="button" class="btn btn-ghost" id="beta-reset">Clear my marks</button>
+    </div>
+    <p class="beta-warn" id="beta-summary-trimmed" hidden>Your notes are too long to fit in one link, so the summary carries a shortened copy. Paste the rest into the issue from the boxes above.</p>
+    <p class="beta-finish-note muted">Found something that isn&rsquo;t a step here, or something confused you? <a href="https://github.com/melonfleet/flotilla/issues/new?template=beta-test.yml" target="_blank" rel="noopener">Open a beta report</a> and describe what you were doing. Thank you for testing.</p>
+  </section>
+
+</main>
+
+<footer class="site"><div class="wrap">
+  <div class="footer-brand">
+    <img src="/assets/melonfleet-wordmark.svg" alt="" width="376" height="100" aria-hidden="true">
+    <span>© 2026 melonfleet · a hobby, made for fun · no cookies, no analytics</span>
+  </div>
+  <nav class="footer-links" aria-label="Footer">
+    <a href="/about">About</a>
+    <a href="/brand">Brand</a>
+    <a href="https://github.com/melonfleet" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/apple/container" target="_blank" rel="noopener">apple/container</a>
+    <a href="mailto:hello@melonfleet.dev">hello@melonfleet.dev</a>
+  </nav>
+</div></footer>
+<script>
+/* The test plan's results and reports. No network access of its own: it reads and writes one
+   localStorage key and builds GitHub URLs. */
+(function () {
+  // One key per beta: marks from an earlier beta's page are not carried over, because steps change
+  // meaning from one beta to the next.
+  var KEY = 'flotilla-beta-1.5.0-beta.6-v1';
+  var VERSION = '1.5.0-beta.6';
+  var NEW_ISSUE = 'https://github.com/melonfleet/flotilla/issues/new';
+  // GitHub turns away very long URLs; keep well under its limit and trim lists to fit.
+  var MAX_URL = 7000;
+  var LABELS = { pass: 'Pass', fail: 'Fail', skip: 'Skip' };
+  // The setup fields, by the name both issue forms use for them.
+  var INFO = ['firsttime', 'version', 'macos', 'model'];
+
+  var store = null;
+  try {
+    localStorage.setItem(KEY + ':probe', '1');
+    localStorage.removeItem(KEY + ':probe');
+    store = localStorage;
+  } catch (e) { /* private window or storage off */ }
+  if (!store) document.getElementById('beta-storage-warning').hidden = false;
+
+  var state = { results: {}, info: {}, notes: {} };
+  function load() {
+    state = { results: {}, info: {}, notes: {} };
+    if (!store) return;
+    try {
+      var saved = JSON.parse(store.getItem(KEY) || 'null');
+      if (saved && saved.v === 1) {
+        state.results = saved.results || {};
+        state.info = saved.info || {};
+        state.notes = saved.notes || {};
+      }
+    } catch (e) { /* a damaged entry starts afresh */ }
+  }
+  function save() {
+    if (!store) return;
+    try {
+      store.setItem(KEY, JSON.stringify({ v: 1, results: state.results, info: state.info, notes: state.notes, saved: new Date().toISOString() }));
+    } catch (e) { /* full or refused: the page still works for this visit */ }
+  }
+
+  function clean(node) { return node ? node.textContent.replace(/\s+/g, ' ').trim() : ''; }
+
+  var steps = Array.prototype.map.call(document.querySelectorAll('.step[data-step]'), function (li) {
+    return {
+      el: li,
+      id: li.getAttribute('data-step'),
+      num: clean(li.querySelector('.step-num')),
+      title: clean(li.querySelector('.step-title')),
+      action: clean(li.querySelector('.step-do-text')),
+      expect: clean(li.querySelector('.step-expect-text')),
+      core: li.closest('[data-path]').getAttribute('data-path') === 'core',
+      section: li.closest('[data-section]')
+    };
+  });
+
+  var impressions = Array.prototype.map.call(document.querySelectorAll('[data-impression]'), function (box) {
+    return {
+      id: box.getAttribute('data-impression'),
+      name: clean(box.querySelector('[data-impression-name]')),
+      field: box.querySelector('textarea')
+    };
+  });
+
+  function info(name) { return (state.info[name] || '').trim(); }
+  function note(id) { return (state.notes[id] || '').trim(); }
+
+  function url(template, fields) {
+    var q = 'template=' + encodeURIComponent(template);
+    Object.keys(fields).forEach(function (k) {
+      if (fields[k]) q += '&' + k + '=' + encodeURIComponent(fields[k]);
+    });
+    return NEW_ISSUE + '?' + q;
+  }
+
+  function versionFields() {
+    return { version: info('version') || VERSION, macos: info('macos'), model: info('model'), firsttime: info('firsttime') };
+  }
+
+  function failURL(s) {
+    var f = versionFields();
+    f.title = '[' + VERSION + '] Step ' + s.num + ': ' + s.title;
+    f.step = s.num + ' · ' + s.title + ' (' + s.id + ')';
+    f.expected = s.expect + '\n\nThe step said: ' + s.action;
+    return url('beta-test.yml', f);
+  }
+
+  function counts() {
+    var c = { pass: 0, fail: 0, skip: 0, untested: 0, done: 0, core: 0 };
+    steps.forEach(function (s) {
+      var r = state.results[s.id];
+      if (r && LABELS[r]) { c[r]++; c.done++; if (s.core) c.core++; }
+      else c.untested++;
+    });
+    return c;
+  }
+
+  function lines(result) {
+    return steps.filter(function (s) { return state.results[s.id] === result; })
+                .map(function (s) { return '- Step ' + s.num + ': ' + s.title; });
+  }
+
+  var summaryTrimmed = false;
+  function summaryURL() {
+    var c = counts();
+    var core = steps.filter(function (s) { return s.core; }).length;
+    var failed = lines('fail'), skipped = lines('skip');
+    var notes = impressions.filter(function (i) { return note(i.id); })
+                           .map(function (i) { return '**' + i.name + ':** ' + note(i.id); }).join('\n\n');
+    var cut = '\n\n…shortened to fit the link. The rest is in the boxes on the test page.';
+    function build(f, s, n) {
+      var fields = versionFields();
+      fields.title = '[' + VERSION + '] Test summary: ' + c.pass + ' passed, ' + c.fail + ' failed, ' + c.skip + ' skipped';
+      fields.totals = 'Passed: ' + c.pass + '\nFailed: ' + c.fail + '\nSkipped: ' + c.skip +
+                      '\nNot tested: ' + c.untested + '\nCore path: ' + c.core + ' of ' + core + ' done';
+      fields.failed = f.length ? f.join('\n') : 'None';
+      fields.skipped = s.length ? s.join('\n') : 'None';
+      fields.impressions = n;
+      return url('beta-summary.yml', fields);
+    }
+    // Trim the skipped list first, then the failed one, then the first impressions, so the URL
+    // fits. The issue says what was left out; the test page still has it all.
+    var f = failed.slice(), s = skipped.slice(), n = notes, out = build(f, s, n);
+    while (out.length > MAX_URL && (s.length > 1 || f.length > 1)) {
+      if (s.length > 1) { s = s.slice(0, Math.floor(s.length / 2)); s.push('- …and ' + (skipped.length - s.length) + ' more'); }
+      else { f = f.slice(0, Math.floor(f.length / 2)); f.push('- …and ' + (failed.length - f.length) + ' more'); }
+      out = build(f, s, n);
+    }
+    var keep = notes.length;
+    while (out.length > MAX_URL && keep > 0) {
+      keep = Math.floor(keep * 0.8);
+      n = notes.slice(0, keep) + cut;
+      out = build(f, s, n);
+    }
+    summaryTrimmed = n !== notes;
+    return out;
+  }
+
+  // ── Per-step controls ──
+  steps.forEach(function (s) {
+    var group = document.createElement('div');
+    group.className = 'step-actions';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Result for step ' + s.num);
+    ['pass', 'fail', 'skip'].forEach(function (r) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'step-btn step-btn-' + r;
+      b.setAttribute('data-result', r);
+      b.setAttribute('aria-pressed', 'false');
+      b.textContent = LABELS[r];
+      if (r === 'fail') b.title = 'Marks the step failed and opens a filled-in GitHub issue in a new tab';
+      b.addEventListener('click', function () { mark(s, r); });
+      group.appendChild(b);
+    });
+    var report = document.createElement('p');
+    report.className = 'step-report';
+    report.hidden = true;
+    var link = document.createElement('a');
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = 'Report this on GitHub ↗';
+    report.appendChild(link);
+    report.appendChild(document.createTextNode(' Opens a filled-in issue for you to finish and submit with your GitHub account.'));
+    s.el.appendChild(group);
+    s.el.appendChild(report);
+    s.buttons = group.querySelectorAll('button');
+    s.report = report;
+    s.link = link;
+  });
+
+  function mark(s, r) {
+    var was = state.results[s.id];
+    if (was === r) delete state.results[s.id];
+    else state.results[s.id] = r;
+    save();
+    render();
+    var now = state.results[s.id];
+    document.getElementById('beta-live').textContent =
+      'Step ' + s.num + (now ? ' marked ' + LABELS[now] : ' unmarked') + '.';
+    // Opened from the click itself, so a popup blocker lets it through. The link under the step
+    // stays for later, for a blocked window, or for reporting once back online.
+    if (now === 'fail' && was !== 'fail') window.open(failURL(s), '_blank', 'noopener');
+  }
+
+  function renderStep(s) {
+    var r = state.results[s.id];
+    Array.prototype.forEach.call(s.buttons, function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-result') === r ? 'true' : 'false');
+    });
+    s.el.setAttribute('data-result', r && LABELS[r] ? r : 'none');
+    s.report.hidden = r !== 'fail';
+    if (r === 'fail') s.link.href = failURL(s);
+  }
+
+  function render() {
+    steps.forEach(renderStep);
+    var c = counts();
+    document.querySelector('[data-progress-done]').textContent = c.done;
+    document.querySelector('[data-progress-core]').textContent = c.core;
+    ['pass', 'fail', 'skip', 'untested'].forEach(function (k) {
+      document.querySelector('[data-total="' + k + '"]').textContent = c[k];
+    });
+    ['pass', 'fail', 'skip'].forEach(function (k) {
+      document.querySelector('[data-meter="' + k + '"]').style.width = (100 * c[k] / steps.length) + '%';
+    });
+    document.querySelectorAll('[data-section]').forEach(function (sec) {
+      var mine = steps.filter(function (s) { return s.section === sec; });
+      var done = mine.filter(function (s) { return LABELS[state.results[s.id]]; }).length;
+      var text = done + ' of ' + mine.length + ' done';
+      sec.querySelector('[data-section-progress]').textContent = text;
+      var toc = document.querySelector('[data-toc="' + sec.id + '"]');
+      if (toc) toc.textContent = text + ' · ' + toc.getAttribute('data-minutes') + ' min';
+      sec.setAttribute('data-complete', done === mine.length ? 'true' : 'false');
+    });
+    document.getElementById('beta-summary').href = summaryURL();
+    document.getElementById('beta-summary-trimmed').hidden = !summaryTrimmed;
+  }
+
+  function fillFields() {
+    INFO.forEach(function (name) {
+      document.getElementById('tester-' + name).value = state.info[name] || '';
+    });
+    impressions.forEach(function (i) { i.field.value = state.notes[i.id] || ''; });
+  }
+
+  // ── Setup fields and first impressions ──
+  INFO.forEach(function (name) {
+    var input = document.getElementById('tester-' + name);
+    function update() {
+      state.info[name] = input.value;
+      save();
+      render();
+    }
+    input.addEventListener('input', update);
+    input.addEventListener('change', update);
+  });
+  impressions.forEach(function (i) {
+    i.field.addEventListener('input', function () {
+      state.notes[i.id] = i.field.value;
+      save();
+      render();
+    });
+  });
+
+  document.getElementById('beta-next').addEventListener('click', function () {
+    var next = steps.filter(function (s) { return !LABELS[state.results[s.id]]; })[0];
+    if (!next) { document.getElementById('finish').scrollIntoView({ block: 'start' }); return; }
+    next.el.scrollIntoView({ block: 'center' });
+    next.buttons[0].focus({ preventScroll: true });
+  });
+
+  document.getElementById('beta-reset').addEventListener('click', function () {
+    if (!window.confirm('Clear every Pass, Fail and Skip on this page, and your first impressions? Your setup details stay.')) return;
+    state.results = {};
+    state.notes = {};
+    save();
+    fillFields();
+    render();
+    document.getElementById('beta-live').textContent = 'All marks and notes cleared.';
+  });
+
+  // Another tab of this page changed the marks: show the same thing here.
+  window.addEventListener('storage', function (e) {
+    if (e.key !== KEY) return;
+    load();
+    fillFields();
+    render();
+  });
+
+  load();
+  fillFields();
+  render();
+})();
+
+/* Mobile navigation. */
+(function () {
+  var btn = document.querySelector('.nav-toggle');
+  var nav = document.getElementById('site-nav');
+  if (!btn || !nav) return;
+  var mq = window.matchMedia('(max-width: 720px)');
+
+  function setOpen(open) {
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    nav.classList.toggle('is-open', open);
+  }
+
+  btn.addEventListener('click', function () {
+    setOpen(btn.getAttribute('aria-expanded') !== 'true');
+  });
+
+  nav.addEventListener('click', function (e) {
+    if (e.target.tagName === 'A' && mq.matches) setOpen(false);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && btn.getAttribute('aria-expanded') === 'true') {
+      setOpen(false);
+      btn.focus();
+    }
+  });
+
+  function onViewportChange() { if (!mq.matches) setOpen(false); }
+  if (mq.addEventListener) mq.addEventListener('change', onViewportChange);
+  else if (mq.addListener) mq.addListener(onViewportChange);
+})();
+</script>
+</body>
+</html>
