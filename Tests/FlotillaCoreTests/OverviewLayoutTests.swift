@@ -175,37 +175,15 @@ struct OverviewLayoutTests {
         #expect(layout.addable == OverviewWidgetKind.allCases)
     }
 
-    @Test("the same kind can be added again, as a second instance with its own id (round 3)")
-    func addDuplicates() {
-        var layout = OverviewLayout.recommended
-        let second = layout.add(.containers, show: .stopped)
-        let third = layout.add(.containers, at: 0, size: .small, show: .running)
-        #expect(second == "containers-2")
-        #expect(third == "containers-3")
-        #expect(layout.kinds.filter { $0 == .containers }.count == 3)
-        #expect(layout.widgets.first?.id == "containers-3")
-        #expect(layout.widget("containers")?.show == .all)
-        #expect(layout.widget(second)?.show == .stopped)
-        #expect(layout.widget(third)?.size == .small)
-        // Changing one instance leaves the others alone.
-        layout.resize(second, to: .large)
-        layout.setShow(third, to: .byHost)
-        #expect(layout.widget("containers")?.size == .tall)
-        #expect(layout.widget("containers")?.show == .all)
-        #expect(Set(layout.widgets.map(\.id)).count == layout.widgets.count)
-    }
-
-    @Test("a freed id is reused, and ids never collide")
-    func idReuse() {
+    @Test("removing a kind and adding it again gives back its own id")
+    func idAfterReadd() {
         var layout = OverviewLayout()
-        layout.add(.images)
-        let b = layout.add(.images)
-        layout.add(.images)
-        layout.remove(b)
-        #expect(layout.add(.images) == "images-2")
-        layout.remove("images")
         #expect(layout.add(.images) == "images")
-        #expect(Set(layout.widgets.map(\.id)).count == 3)
+        #expect(layout.add(.images) == "images")
+        layout.remove("images")
+        #expect(layout.isEmpty)
+        #expect(layout.add(.images) == "images")
+        #expect(layout.count(of: .images) == 1)
     }
 
     @Test("init renames a repeated id rather than keeping two widgets under it")
@@ -228,16 +206,13 @@ struct OverviewLayoutTests {
         #expect(layout.widget("images")?.show == .largest)
     }
 
-    @Test("remove takes that instance off and nothing else")
+    @Test("remove takes that widget off and nothing else")
     func remove() {
         var layout = OverviewLayout.recommended
-        let extra = layout.add(.hosts, show: .problems)
         layout.remove("hosts")
         layout.remove("dns")  // not on the page: a no-op
-        #expect(!layout.contains(id: "hosts"))
-        #expect(layout.contains(.hosts))
-        #expect(layout.widget(extra)?.show == .problems)
-        #expect(layout.widgets.count == OverviewLayout.recommended.widgets.count)
+        #expect(!layout.contains(.hosts))
+        #expect(layout.widgets.count == OverviewLayout.recommended.widgets.count - 1)
     }
 
     @Test("resize takes every size for every kind")
@@ -444,21 +419,20 @@ struct OverviewLayoutTests {
             ["widget": "hosts", "size": "small", "show": "problems"],
             ["widget": "needsAttention", "size": "small"],          // not a widget → dropped
             ["widget": "dns"],                                       // no size → default
-            ["widget": "hosts", "size": "wide"],                     // a second Hosts → kept, own id
+            ["widget": "hosts", "size": "wide"],                     // a second Hosts → dropped, one per kind
             ["size": "large"],                                       // no widget → dropped
             ["widget": "containers", "size": "huge", "show": "x"],   // unknown size, choice → defaults
             ["id": "hosts", "widget": "images", "show": "largest"],  // id taken → fresh id
             ["id": " ", "widget": "tasks", "show": "stopped"],       // blank id, choice not offered
         ])
-        #expect(layout.kinds == [.hosts, .dns, .hosts, .containers, .images, .tasks])
-        #expect(layout.widgets.map(\.id) == ["hosts", "dns", "hosts-2", "containers", "images", "tasks"])
+        #expect(layout.kinds == [.hosts, .dns, .containers, .images, .tasks])
+        #expect(layout.widgets.map(\.id) == ["hosts", "dns", "containers", "images", "tasks"])
         #expect(layout.widgets[0].size == .small)
         #expect(layout.widgets[0].show == .problems)
         #expect(layout.widgets[1].size == .small)
-        #expect(layout.widgets[2].size == .wide)
-        #expect(layout.widgets[3].size == .tall)
-        #expect(layout.widgets[3].show == .all)
-        #expect(layout.widgets[4].show == .largest)
-        #expect(layout.widgets[5].show == .all)
+        #expect(layout.widgets[2].size == .tall)
+        #expect(layout.widgets[2].show == .all)
+        #expect(layout.widgets[3].show == .largest)
+        #expect(layout.widgets[4].show == .all)
     }
 }
